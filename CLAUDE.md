@@ -41,8 +41,11 @@ uv run ruff check --fix src tests
 # Type checking
 uv run mypy src tests
 
-# Run all checks via tox
-uvx --with=tox-uv tox
+# Run all quality checks (lint, typecheck, spellcheck)
+uv run tox -e all-checks
+
+# Run everything (all checks + tests + docs)
+uv run tox
 ```
 
 ### Common Tasks
@@ -78,17 +81,18 @@ uvx --with=tox-uv tox
 
 ## Common Commands Reference
 
-| Task                 | Command |
-|----------------------|---------|
-| Install dependencies | `uv sync --all-extras` |
-| Run tests            | `uv run pytest` |
-| Format code          | `uv run ruff format src tests` |
-| Lint code            | `uv run ruff check src tests` |
-| Fix lint errors      | `uv run ruff check --fix src tests` |
-| Type check           | `uv run mypy src tests` |
-| Run all tox checks   | `uvx --with=tox-uv tox` |
-| Build docs           | `uv run mkdocs build` |
-| Serve docs           | `uv run mkdocs serve` |
+| Task                                   | Command                             |
+|----------------------------------------|-------------------------------------|
+| Install dependencies                   | `uv sync --all-extras`              |
+| Run tests                              | `uv run pytest`                     |
+| Format code                            | `uv run ruff format src tests`      |
+| Lint code                              | `uv run ruff check src tests`       |
+| Fix lint errors                        | `uv run ruff check --fix src tests` |
+| Type check                             | `uv run mypy src tests`             |
+| Build docs                             | `uv run mkdocs build`               |
+| Serve docs                             | `uv run mkdocs serve`               |
+| Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |
+| Run everything (checks + tests + docs) | `uv run tox`                        |
 
 ## Important Notes
 

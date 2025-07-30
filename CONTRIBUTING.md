@@ -5,7 +5,7 @@
 1. Fork and clone the repository
 2. Install dependencies: `uv sync --all-extras`
 3. Make your changes
-4. Run checks: `uvx --with=tox-uv tox -e check`
+4. Run checks: `uv run tox -e all-checks`
 5. Run tests: `uv run pytest`
 6. Submit a pull request
 
@@ -22,7 +22,7 @@
 - **Type hints**: Required for all functions and methods
 - **Docstrings**: Use Google style for public APIs
 - **Line length**: 79 characters (enforced by ruff)
-- **Formatting**: Run `uvx --with=tox-uv tox -e fix` to auto-format
+- **Formatting**: Run `uv run tox -e fix` to auto-format
 
 ## Adding New Subspecifications
 
@@ -40,25 +40,8 @@ mkdir -p tests/subspecs/my_new_subspec
 - Use `pytest.mark.parametrize` for multiple test cases
 - Mark slow tests with `@pytest.mark.slow`
 
-## Development Commands
-
-### Running Quality Checks
-```bash
-# Run all checks
-uvx --with=tox-uv tox -e check,pytest
-
-# Run individual checks
-uvx --with=tox-uv tox -e lint       # Linting with ruff
-uvx --with=tox-uv tox -e typecheck  # Type checking with mypy
-uvx --with=tox-uv tox -e spellcheck # Spell checking
-uvx --with=tox-uv tox -e pytest     # Run tests
-
-# Auto-fix formatting issues
-uvx --with=tox-uv tox -e fix
-```
-
 ## Questions?
 
 - Check existing [issues](https://github.com/leanEthereum/leanSpec/issues)
 - Open a new issue for discussion
-- See [README.md](README.md) for project overview
+- See [README.md](README.md) for more details on the project structure and commands

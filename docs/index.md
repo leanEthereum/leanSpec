@@ -7,11 +7,11 @@ cryptographic subspecifications.
 
 ### Lean Ethereum Specifications
 
-The core protocol specifications are located in `lean_spec/`.
+The core protocol specifications are located in `src/lean_spec/`.
 
 ### Cryptographic Subspecifications
 
-Supporting cryptographic primitives are located in `lean_spec/subspecs/`.
+Supporting cryptographic primitives are located in `src/lean_spec/subspecs/`.
 
 ## Design Principles
 
