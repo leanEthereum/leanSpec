@@ -23,4 +23,5 @@ class Block(BaseModel):
     slot: uint64
     parent: Bytes32
     votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
+    # Diverged from 3SF-mini.py: Removed Optional from `state_root`
     state_root: Bytes32
