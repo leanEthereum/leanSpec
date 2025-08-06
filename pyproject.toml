@@ -19,8 +19,8 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "remerkleable>=0.1.28,<0.2",
     "pydantic>=2.9.2,<3",
+    "remerkleable>=0.1.28,<0.2",
     "typing-extensions>=4.4",
 ]
 
