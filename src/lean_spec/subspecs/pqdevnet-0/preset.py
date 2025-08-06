@@ -1,3 +1,8 @@
+"""
+The `preset` module contains the parameters that are used to configure the
+Lean Consensus chain.
+"""
+
 from remerkleable.basic import uint64
 
 # Time parameters

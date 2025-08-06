@@ -1,8 +1,6 @@
 """
 A `Block` is a single link in the Lean Consensus chain. Each `Block` contains
-a `Header` and zero or more transactions. Each `Header` contains associated
-metadata like the block number, parent block hash, and how much gas was
-consumed by its transactions.
+associated metadata like the slot number, parent block hash and votes.
 
 Together, these blocks form a cryptographically secure journal recording the
 history of all state transitions that have happened since the genesis of the

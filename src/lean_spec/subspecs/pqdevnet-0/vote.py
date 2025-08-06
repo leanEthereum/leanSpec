@@ -1,18 +1,12 @@
 """
-A `Block` is a single link in the Lean Consensus chain. Each `Block` contains
-a `Header` and zero or more transactions. Each `Header` contains associated
-metadata like the block number, parent block hash, and how much gas was
-consumed by its transactions.
-
-Together, these blocks form a cryptographically secure journal recording the
-history of all state transitions that have happened since the genesis of the
-chain.
+A `Vote` is a single vote for a block in the Lean Consensus chain. Each `Vote`
+contains information about the validator that voted, the slot of the block they
+voted for, and the block hash they voted for.
 """
 
 from dataclasses import dataclass
 from remerkleable.basic import uint64
 from remerkleable.byte_arrays import Bytes32
-from remerkleable.complex import List
 from pydantic import BaseModel, ConfigDict
 
 @dataclass

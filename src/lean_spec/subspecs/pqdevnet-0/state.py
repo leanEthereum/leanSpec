@@ -1,3 +1,12 @@
+"""
+A `State` is a collection of metadata that describes the current state of the
+Lean Consensus chain. It contains information about the latest justified and
+finalized blocks, as well as the historical block hashes and justified slots.
+
+It is used to verify the integrity of the chain and to ensure that the chain is
+progressing correctly.
+"""
+
 from dataclasses import dataclass
 from remerkleable.basic import uint64
 from remerkleable.bitfields import Bitlist
