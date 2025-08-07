@@ -5,13 +5,15 @@ voted for, and the block hash they voted for.
 """
 
 from dataclasses import dataclass
-from pydantic import BaseModel, ConfigDict
 
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
+from pydantic import BaseModel, ConfigDict
+
 
 @dataclass
 class Vote(BaseModel):
+    """A single vote for a block in the Lean Consensus chain."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Diverged from 3SF-mini.py:

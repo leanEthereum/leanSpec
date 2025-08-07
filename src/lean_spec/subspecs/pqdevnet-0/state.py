@@ -8,17 +8,19 @@ progressing correctly.
 """
 
 from dataclasses import dataclass
-from pydantic import BaseModel, ConfigDict
 
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
+from pydantic import BaseModel, ConfigDict
 from ssz.sedes.bitlist import Bitlist
 from ssz.sedes.list import List
 
-from preset import MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT
+from .preset import MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT
+
 
 @dataclass
 class State(BaseModel):
+    """Represents the current state of the Lean Consensus chain."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Diverged from 3SF-mini.py:
@@ -36,6 +38,8 @@ class State(BaseModel):
     justified_slots: List[bool, MAX_HISTORICAL_BLOCK_HASHES]
 
     # Diverged from 3SF-mini.py:
-    #   - Flattened `justifications: Dict[str, List[bool]]` for SSZ compatibility
+    #   - Flattened `justifications: Dict[str, List[bool]]` for SSZ
     justifications_roots: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
-    justifications_validators: Bitlist(MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT)
+    justifications_validators: Bitlist[
+        MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT
+    ]
