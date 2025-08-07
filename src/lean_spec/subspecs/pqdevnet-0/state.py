@@ -8,11 +8,12 @@ progressing correctly.
 """
 
 from dataclasses import dataclass
-from remerkleable.basic import uint64
-from remerkleable.bitfields import Bitlist
-from remerkleable.byte_arrays import Bytes32
-from remerkleable.complex import List
 from pydantic import BaseModel, ConfigDict
+
+from ethereum_types.bytes import Bytes32
+from ethereum_types.numeric import U64
+from ssz.sedes.bitlist import Bitlist
+from ssz.sedes.list import List
 
 from preset import MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT
 
@@ -22,14 +23,14 @@ class State(BaseModel):
 
     # Diverged from 3SF-mini.py:
     #   - Removed `config: Config` from the state
-    #   - Using uint64 instead of native int for all fields
-    #   - Using Bytes32 instead of native str for all fields
+    #   - Using `U64` instead of native int for all fields
+    #   - Using `Bytes32` instead of native str for all fields
 
     latest_justified_hash: Bytes32
-    latest_justified_slot: uint64
+    latest_justified_slot: U64
 
     latest_finalized_hash: Bytes32
-    latest_finalized_slot: uint64
+    latest_finalized_slot: U64
 
     historical_block_hashes: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
     justified_slots: List[bool, MAX_HISTORICAL_BLOCK_HASHES]
@@ -37,4 +38,4 @@ class State(BaseModel):
     # Diverged from 3SF-mini.py:
     #   - Flattened `justifications: Dict[str, List[bool]]` for SSZ compatibility
     justifications_roots: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
-    justifications_validators: Bitlist[MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT]
+    justifications_validators: Bitlist(MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT)

@@ -8,10 +8,11 @@ chain.
 """
 
 from dataclasses import dataclass
-from remerkleable.basic import uint64
-from remerkleable.byte_arrays import Bytes32
-from remerkleable.complex import List
 from pydantic import BaseModel, ConfigDict
+
+from ethereum_types.bytes import Bytes32
+from ethereum_types.numeric import U64
+from ssz.sedes.list import List
 
 from preset import VALIDATOR_REGISTRY_LIMIT
 from vote import Vote
@@ -20,7 +21,7 @@ from vote import Vote
 class Block(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    slot: uint64
+    slot: U64
     parent: Bytes32
     votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
     # Diverged from 3SF-mini.py: Removed Optional from `state_root`

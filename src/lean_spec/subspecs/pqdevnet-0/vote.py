@@ -5,23 +5,24 @@ voted for, and the block hash they voted for.
 """
 
 from dataclasses import dataclass
-from remerkleable.basic import uint64
-from remerkleable.byte_arrays import Bytes32
 from pydantic import BaseModel, ConfigDict
+
+from ethereum_types.bytes import Bytes32
+from ethereum_types.numeric import U64
 
 @dataclass
 class Vote(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Diverged from 3SF-mini.py:
-    #   - Using `uint64` instead of native `int` for all fields
+    #   - Using `U64` instead of native `int` for all fields
     #   - Using `Bytes32` instead of native `str` for all fields
 
-    validator_id: uint64
-    slot: uint64
+    validator_id: U64
+    slot: U64
     head: Bytes32
-    head_slot: uint64
+    head_slot: U64
     target: Bytes32
-    target_slot: uint64
+    target_slot: U64
     source: Bytes32
-    source_slot: uint64
+    source_slot: U64
