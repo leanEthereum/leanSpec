@@ -10,11 +10,11 @@ progressing correctly.
 from dataclasses import dataclass
 
 from ethereum_types.bytes import Bytes32
-from ethereum_types.numeric import U64
 from pydantic import BaseModel, ConfigDict
 from ssz.sedes.bitlist import Bitlist
 from ssz.sedes.list import List
 
+from .checkpoint import Checkpoint
 from .preset import MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT
 
 
@@ -29,11 +29,8 @@ class State(BaseModel):
     #   - Using `U64` instead of native int for all fields
     #   - Using `Bytes32` instead of native str for all fields
 
-    latest_justified_hash: Bytes32
-    latest_justified_slot: U64
-
-    latest_finalized_hash: Bytes32
-    latest_finalized_slot: U64
+    latest_justified: Checkpoint
+    latest_finalized: Checkpoint
 
     historical_block_hashes: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
     justified_slots: List[bool, MAX_HISTORICAL_BLOCK_HASHES]

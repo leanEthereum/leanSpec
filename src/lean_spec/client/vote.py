@@ -6,9 +6,10 @@ voted for, and the block hash they voted for.
 
 from dataclasses import dataclass
 
-from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
 from pydantic import BaseModel, ConfigDict
+
+from .checkpoint import Checkpoint
 
 
 @dataclass
@@ -23,9 +24,6 @@ class Vote(BaseModel):
 
     validator_id: U64
     slot: U64
-    head: Bytes32
-    head_slot: U64
-    target: Bytes32
-    target_slot: U64
-    source: Bytes32
-    source_slot: U64
+    head: Checkpoint
+    target: Checkpoint
+    source: Checkpoint
