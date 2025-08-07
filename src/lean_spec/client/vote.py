@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 @dataclass
 class Vote(BaseModel):
     """A single vote for a block in the Lean Consensus chain."""
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Diverged from 3SF-mini.py:

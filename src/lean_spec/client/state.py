@@ -21,7 +21,7 @@ from .preset import MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT
 @dataclass
 class State(BaseModel):
     """Represents the current state of the Lean Consensus chain."""
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Diverged from 3SF-mini.py:
