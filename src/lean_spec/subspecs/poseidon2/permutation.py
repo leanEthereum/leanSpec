@@ -13,6 +13,10 @@ from typing import List
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..koalabear.field import Fp
+from .constants import (
+    ROUND_CONSTANTS_16,
+    ROUND_CONSTANTS_24,
+)
 
 # =================================================================
 # Poseidon2 Parameter Definitions
@@ -29,19 +33,9 @@ For KoalaBear, `d=3` is chosen for its low degree.
 
 
 class Poseidon2Params(BaseModel):
-    """
-    Encapsulates all necessary parameters for a specific Poseidon2 instance.
+    """Parameters for a specific Poseidon2 instance."""
 
-    This structure holds the configuration for a given state width, including
-    the number of rounds and the constants for the internal linear layer.
-    """
-
-    # Configuration to make the model immutable and prevent extra arguments.
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-        arbitrary_types_allowed=True,
-    )
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     width: int = Field(gt=0, description="The size of the state (t).")
     rounds_f: int = Field(gt=0, description="Total number of 'full' rounds.")
@@ -55,41 +49,24 @@ class Poseidon2Params(BaseModel):
             "internal linear layer matrix (M_I)."
         ),
     )
+    round_constants: List[Fp] = Field(
+        min_length=1,
+        description="The list of pre-computed constants for all rounds.",
+    )
 
     @model_validator(mode="after")
-    def check_vector_length(self) -> "Poseidon2Params":
-        """Length of the diagonal vector should match the state width."""
+    def check_lengths(self) -> "Poseidon2Params":
+        """Ensures vector lengths match the configuration."""
         if len(self.internal_diag_vectors) != self.width:
             raise ValueError(
-                f"Length of internal diagonal vector "
-                "({len(self.internal_diag_vectors)}) "
-                f"must be equal to width ({self.width})."
+                "Length of internal_diag_vectors must equal width."
             )
+
+        expected_constants = (self.rounds_f * self.width) + self.rounds_p
+        if len(self.round_constants) != expected_constants:
+            raise ValueError("Incorrect number of round constants provided.")
+
         return self
-
-
-def _generate_spec_test_round_constants(params: Poseidon2Params) -> List[Fp]:
-    """
-    Generates a deterministic list of round constants for testing the spec.
-
-    !!! WARNING !!!
-    This function produces a simple, predictable sequence of integers for the
-    sole purpose of testing the permutation's algebraic structure. Production
-    implementations MUST use constants generated from a secure,
-    unpredictable source.
-
-    Args:
-        params: The object defining the permutation's configuration.
-
-    Returns:
-        A list of Fp elements to be used as round constants for tests.
-    """
-    # The total number of constants needed for the entire permutation.
-    total_constants = (params.rounds_f * params.width) + params.rounds_p
-
-    # For the specification, we generate the constants as a deterministic
-    # sequence of integers. This is sufficient to define the mechanics.
-    return [Fp(value=i) for i in range(total_constants)]
 
 
 # Parameters for WIDTH = 16
@@ -115,6 +92,7 @@ PARAMS_16 = Poseidon2Params(
         Fp(value=-1) / Fp(value=16),
         Fp(value=-1) / Fp(value=2**24),
     ],
+    round_constants=ROUND_CONSTANTS_16,
 )
 
 # Parameters for WIDTH = 24
@@ -148,6 +126,7 @@ PARAMS_24 = Poseidon2Params(
         Fp(value=-1) / Fp(value=2**9),
         Fp(value=-1) / Fp(value=2**24),
     ],
+    round_constants=ROUND_CONSTANTS_24,
 )
 
 # Base 4x4 matrix, used in the external linear layer.
@@ -287,7 +266,7 @@ def permute(state: List[Fp], params: Poseidon2Params) -> List[Fp]:
         raise ValueError(f"Input state must have length {params.width}")
 
     # Generate the deterministic round constants for this parameter set.
-    round_constants = _generate_spec_test_round_constants(params)
+    round_constants = params.round_constants
     # The number of full rounds is split between the beginning and end.
     half_rounds_f = params.rounds_f // 2
     # Initialize index for accessing the flat list of round constants.
