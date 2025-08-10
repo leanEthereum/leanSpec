@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import Union
 
 from ethereum_types.bytes import Bytes32
-from ethereum_types.bytes import Bytes48
 from ethereum_types.numeric import U64
 from pydantic import BaseModel, ConfigDict
 from ssz.sedes.list import List
