@@ -21,7 +21,6 @@ requires-python = ">=3.12"
 dependencies = [
     "ethereum-types<=0.2.4,<0.3",
     "pydantic>=2.9.2,<3",
-    "remerkleable>=0.1.28,<0.2",
     "ssz>=0.5.2,<0.6",
     "typing-extensions>=4.4",
 ]
