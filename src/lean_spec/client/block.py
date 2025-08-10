@@ -8,8 +8,10 @@ chain.
 """
 
 from dataclasses import dataclass
+from typing import Union
 
 from ethereum_types.bytes import Bytes32
+from ethereum_types.bytes import Bytes48
 from ethereum_types.numeric import U64
 from pydantic import BaseModel, ConfigDict
 from ssz.sedes.list import List
@@ -25,7 +27,6 @@ class Block(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     slot: U64
-    parent: Bytes32
+    parent: Union[None, Bytes32]
     votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
-    # Diverged from 3SF-mini.py: Removed Optional from `state_root`
-    state_root: Bytes32
+    state_root: Union[None, Bytes32]
