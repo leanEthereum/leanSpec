@@ -8,7 +8,6 @@ chain.
 """
 
 from dataclasses import dataclass
-from typing import Union
 
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
@@ -26,6 +25,6 @@ class Block(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     slot: U64
-    parent: Union[None, Bytes32]
+    parent: Bytes32
     votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
-    state_root: Union[None, Bytes32]
+    state_root: Bytes32
