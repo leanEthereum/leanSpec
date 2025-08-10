@@ -24,10 +24,7 @@ class State(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # Diverged from 3SF-mini.py:
-    #   - Removed `config: Config` from the state
-    #   - Using `U64` instead of native int for all fields
-    #   - Using `Bytes32` instead of native str for all fields
+    # Diverged from 3SF-mini.py: Removed `config: Config` from the state
 
     latest_justified: Checkpoint
     latest_finalized: Checkpoint
@@ -35,8 +32,7 @@ class State(BaseModel):
     historical_block_hashes: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
     justified_slots: List[bool, MAX_HISTORICAL_BLOCK_HASHES]
 
-    # Diverged from 3SF-mini.py:
-    #   - Flattened `justifications: Dict[str, List[bool]]` for SSZ
+    # Diverged from 3SF-mini.py: Flattened `justifications: Dict[str, List[bool]]`
     justifications_roots: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
     justifications_validators: Bitlist[
         MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT

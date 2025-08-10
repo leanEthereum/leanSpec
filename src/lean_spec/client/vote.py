@@ -18,10 +18,6 @@ class Vote(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # Diverged from 3SF-mini.py:
-    #   - Using `U64` instead of native `int` for all fields
-    #   - Using `Bytes32` instead of native `str` for all fields
-
     validator_id: U64
     slot: U64
     head: Checkpoint

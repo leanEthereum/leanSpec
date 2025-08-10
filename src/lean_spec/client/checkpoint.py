@@ -16,9 +16,5 @@ class Checkpoint(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # Diverged from 3SF-mini.py:
-    #   - Using `Bytes32` instead of native `str` for all fields
-    #   - Using `U64` instead of native `int` for all fields
-
     root: Bytes32
     slot: U64
