@@ -32,6 +32,6 @@ class State(BaseModel):
     # Diverged from 3SF-mini.py:
     # Flattened `justifications: Dict[str, List[bool]]` for SSZ
     justifications_roots: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
-    justifications_validators: Bitlist(
-        int(MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT)
-    )
+    justifications_validators: Bitlist[
+        MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT
+    ]
