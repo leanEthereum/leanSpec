@@ -4,15 +4,12 @@ contains information about the validator that voted, the slot of the block they
 voted for, and the block hash they voted for.
 """
 
-from dataclasses import dataclass
-
 from ethereum_types.numeric import U64
 from pydantic import BaseModel, ConfigDict
 
 from .checkpoint import Checkpoint
 
 
-@dataclass
 class Vote(BaseModel):
     """A single vote for a block in the Lean Consensus chain."""
 

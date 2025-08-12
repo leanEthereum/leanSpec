@@ -7,8 +7,6 @@ It is used to verify the integrity of the chain and to ensure that the chain is
 progressing correctly.
 """
 
-from dataclasses import dataclass
-
 from ethereum_types.bytes import Bytes32
 from pydantic import BaseModel, ConfigDict
 from ssz.sedes.bitlist import Bitlist
@@ -18,7 +16,6 @@ from .checkpoint import Checkpoint
 from .preset import MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT
 
 
-@dataclass
 class State(BaseModel):
     """Represents the current state of the Lean Consensus chain."""
 

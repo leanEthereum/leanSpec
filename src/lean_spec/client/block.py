@@ -7,8 +7,6 @@ history of all state transitions that have happened since the genesis of the
 chain.
 """
 
-from dataclasses import dataclass
-
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
 from pydantic import BaseModel, ConfigDict
@@ -18,7 +16,6 @@ from .preset import VALIDATOR_REGISTRY_LIMIT
 from .vote import Vote
 
 
-@dataclass
 class Block(BaseModel):
     """A single block in the Lean Consensus chain."""
 

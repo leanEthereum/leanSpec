@@ -3,14 +3,11 @@ A `Checkpoint` is a single checkpoint for a block in the Lean Consensus chain.
 Each `Checkpoint` contains its associated block root and slot.
 """
 
-from dataclasses import dataclass
-
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
 from pydantic import BaseModel, ConfigDict
 
 
-@dataclass
 class Checkpoint(BaseModel):
     """A single checkpoint in the Lean Consensus chain."""
 
