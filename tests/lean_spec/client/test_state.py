@@ -16,7 +16,6 @@ from lean_spec.client.state import State
 
 
 def test_state():
-
     State(
         latest_justified=Checkpoint(
             root=Bytes32(b"\x00" * 32),

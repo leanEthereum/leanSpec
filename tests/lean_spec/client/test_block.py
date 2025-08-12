@@ -13,7 +13,6 @@ from lean_spec.client.vote import Vote
 
 
 def test_block():
-
     Block(
         slot=U64(1),
         parent=Bytes32(b"\x02" * 32),

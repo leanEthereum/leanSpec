@@ -10,7 +10,6 @@ from lean_spec.client.vote import Vote
 
 
 def test_vote():
-
     Vote(
         validator_id=U64(1),
         slot=U64(2),
