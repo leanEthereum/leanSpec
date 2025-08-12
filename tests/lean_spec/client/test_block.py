@@ -4,11 +4,13 @@ Tests for the client's Block container.
 
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
+from ssz.sedes.list import List
+
 from lean_spec.client.block import Block
 from lean_spec.client.checkpoint import Checkpoint
-from lean_spec.client.vote import Vote
 from lean_spec.client.preset import VALIDATOR_REGISTRY_LIMIT
-from ssz.sedes.list import List
+from lean_spec.client.vote import Vote
+
 
 def test_block():
 

@@ -4,8 +4,10 @@ Tests for the client's Vote container.
 
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
+
 from lean_spec.client.checkpoint import Checkpoint
 from lean_spec.client.vote import Vote
+
 
 def test_vote():
 

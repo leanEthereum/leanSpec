@@ -2,14 +2,18 @@
 Tests for the client's State container.
 """
 
-from unittest.loader import VALID_MODULE_NAME
 from ethereum_types.bytes import Bytes32
 from ethereum_types.numeric import U64
-from lean_spec.client.checkpoint import Checkpoint
-from lean_spec.client.preset import MAX_HISTORICAL_BLOCK_HASHES, VALIDATOR_REGISTRY_LIMIT
-from lean_spec.client.state import State
-from ssz.sedes.list import List
 from ssz.sedes.bitlist import Bitlist
+from ssz.sedes.list import List
+
+from lean_spec.client.checkpoint import Checkpoint
+from lean_spec.client.preset import (
+    MAX_HISTORICAL_BLOCK_HASHES,
+    VALIDATOR_REGISTRY_LIMIT,
+)
+from lean_spec.client.state import State
+
 
 def test_state():
 
