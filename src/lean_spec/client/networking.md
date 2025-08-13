@@ -84,7 +84,7 @@ gossipsub message is encoded.
 - `ssz_snappy` - All objects are SSZ-encoded and then compressed with
   [Snappy](https://github.com/google/snappy) block compression. Example: The
   lean block topic string is `/leanconsensus/devnet0/lean_block/ssz_snappy`,
-  and the data field of a gossipsub message is an `Attestation` that has been
+  and the data field of a gossipsub message is an `Block` that has been
   SSZ-encoded and then compressed with Snappy.
 
 ### The Req/Resp domain
@@ -123,8 +123,7 @@ used for the req/resp interaction. Only one value is possible at this time:
   [Snappy](https://github.com/google/snappy) frames compression. For objects
   containing a single field, only the field is SSZ-encoded not a container with
   a single field. For example, the `LeanBlocksByRoot` request is an
-  SSZ-encoded list of `Root`'s. This encoding type MUST be supported by all
-  clients.
+  SSZ-encoded list of `Root`'s.
 
 #### Messages
 
@@ -144,12 +143,12 @@ Response Content:
 
 ```
 (
-  List[SignedLeanBlock, MAX_REQUEST_BLOCKS]
+  List[SignedBlock, MAX_REQUEST_BLOCKS]
 )
 ```
 
-Requests blocks by block root (= `hash_tree_root(SignedLeanBlock.message)`).
-The response is a list of `SignedLeanBlock` whose length is less than or equal
+Requests blocks by block root (= `hash_tree_root(SignedBlock.message)`).
+The response is a list of `SignedBlock` whose length is less than or equal
 to the number of requested blocks. It may be less in the case that the
 responding peer is missing blocks.
 
@@ -159,7 +158,7 @@ receiving a block or attestation whose parent is unknown).
 The request MUST be encoded as an SSZ-field.
 
 The response MUST consist of zero or more `response_chunk`. Each _successful_
-`response_chunk` MUST contain a single `SignedLeanBlock` payload.
+`response_chunk` MUST contain a single `SignedBlock` payload.
 
 Clients MUST respond with at least one block, if they have it. Clients MAY limit
 the number of blocks in the response.
