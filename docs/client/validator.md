@@ -34,3 +34,7 @@ To ensure block proposal duties are distributed equally between e.g. 2
 participating clients, the validator IDs may be assigned to 2 clients in
 odd/even manner. The approach remains to be decided when the number of
 participating clients is finalized.
+
+## Remarks
+
+- This specs is still missing the file format for the centralized, pre-generated OTS keys (if any)
