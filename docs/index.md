@@ -13,6 +13,11 @@ The core protocol specifications are located in `src/lean_spec/`.
 
 Supporting cryptographic primitives are located in `src/lean_spec/subspecs/`.
 
+### Client Subspecifications
+
+Client specifications are located in `docs/client/`. The specs are in markdown
+format for the time being and are subject to change.
+
 ## Design Principles
 
 1. **Clarity over Performance**: Readable reference implementations
