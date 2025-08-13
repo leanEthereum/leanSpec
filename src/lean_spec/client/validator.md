@@ -2,7 +2,8 @@
 
 ## Validator identification
 
-Validators are defined as a list of their ENRs in a yaml file named `validators.yaml`.
+Validators are defined as a list of their ENRs in a yaml file named
+`validators.yaml`. For example:
 
 ```yaml
 - enr:-Ku4QHqVeJ8PPICcWk1vSn_XcSkjOkNiTg6Fmii5j6vUQgvzMc9L1goFnLKgXqBJspJjIsB91LTOleFmyWWrFVATGngBh2F0dG5ldHOIAAAAAAAAAACEZXRoMpC1MD8qAAAAAP__________gmlkgnY0gmlwhAMRHkWJc2VjcDI1NmsxoQKLVXFOhp2uX6jeT0DvvDpPcU8FWMjQdR4wMuORMhpX24N1ZHCCIyg
@@ -29,5 +30,7 @@ def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
     return get_current_slot() % state.config.num_validators == validator_index
 ```
 
-To ensure block proposal duties are distributed equally between 2 participating
-clients, the validator IDs may be assigned to 2 clients in odd/even manner.
+To ensure block proposal duties are distributed equally between e.g. 2
+participating clients, the validator IDs may be assigned to 2 clients in
+odd/even manner. The approach remains to be decided when the number of
+participating clients is finalized.
