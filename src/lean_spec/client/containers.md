@@ -24,14 +24,14 @@ class State(Container):
     latest_justified: Checkpoint
     latest_finalized: Checkpoint
 
-    historical_block_hashes: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
-    justified_slots: List[bool, MAX_HISTORICAL_BLOCK_HASHES]
+    historical_block_hashes: List[Bytes32, HISTORICAL_ROOTS_LIMIT]
+    justified_slots: List[bool, HISTORICAL_ROOTS_LIMIT]
 
     # Diverged from 3SF-mini.py:
     # Flattened `justifications: Dict[str, List[bool]]` for SSZ compatibility
-    justifications_roots: List[Bytes32, MAX_HISTORICAL_BLOCK_HASHES]
+    justifications_roots: List[Bytes32, HISTORICAL_ROOTS_LIMIT]
     justifications_validators: Bitlist[
-        MAX_HISTORICAL_BLOCK_HASHES * VALIDATOR_REGISTRY_LIMIT
+        HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT
     ]
 ```
 
