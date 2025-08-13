@@ -10,7 +10,7 @@ class Config(Container):
 ## `Checkpoint`
 
 ```python
-class Checkpoint(Container)
+class Checkpoint(Container):
     root: Bytes32
     slot: uint64
 ```
