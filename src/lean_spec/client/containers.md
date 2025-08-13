@@ -45,6 +45,14 @@ class Block(Container):
     state_root: Bytes32
 ```
 
+## `SignedBlock`
+
+```python
+class SignedBlock(Container):
+    data: Block,
+    signature: Bytes32,
+```
+
 ## `Vote`
 
 ```python
@@ -55,3 +63,16 @@ class Vote(Container):
     target: Checkpoint
     source: Checkpoint
 ```
+
+## `SignedVote`
+
+```python
+class SignedVote(Container):
+    data: Vote,
+    signature: Bytes32,
+```
+
+## Remarks
+
+- The signature type is still to be determined so `Bytes32` is used in the
+  interim. The actual signature size is expected to be a lot larger (~3 KiB).
