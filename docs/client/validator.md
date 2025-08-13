@@ -15,10 +15,6 @@ The validator ID is the zero-index of the list in the yaml file. For example,
 `3.17.30.69`, `54.178.44.198`, `18.216.248.220` are `validator_id: 0`,
 `validator_id: 1`, `validator_id: 2` respectively.
 
-Because pqsignature has not been implemented yet, the `secp256k1` field will
-still be the 33 bytes compressed secp256k1 public key for the time being
-and shall be replaced in subsequent devnet iterations.
-
 ## Block proposer selection
 
 The block proposer shall be determined by the modulo of current slot number by
