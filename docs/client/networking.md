@@ -89,32 +89,6 @@ gossipsub message is encoded.
 
 ### The Req/Resp domain
 
-#### Protocol identification
-
-Each message type is segregated into its own libp2p protocol ID, which is a
-case-sensitive UTF-8 string of the form:
-
-```
-/ProtocolPrefix/MessageName/SchemaVersion/Encoding
-```
-
-With:
-
-- `ProtocolPrefix` - messages are grouped into families identified by a shared
-  libp2p protocol name prefix. In this case, we use `/leanconsensus/req`.
-- `MessageName` - each request is identified by a name consisting of English
-  alphabet, digits and underscores (`_`).
-- `SchemaVersion` - an ordinal version number (e.g. 1, 2, 3…). Each schema is
-  versioned to facilitate backward and forward-compatibility when possible.
-- `Encoding` - while the schema defines the data types in more abstract terms,
-  the encoding strategy describes a specific representation of bytes that will
-  be transmitted over the wire. See the [Encodings](#Encoding-strategies)
-  section for further details.
-
-This protocol segregation allows libp2p `multistream-select 1.0` to handle the
-request type, version, and encoding negotiation before establishing the
-underlying streams.
-
 #### Encoding strategies
 
 The token of the negotiated protocol ID specifies the type of encoding to be
