@@ -95,11 +95,13 @@ Each message type is segregated into its own libp2p protocol ID, which is a
 case-sensitive UTF-8 string of the form:
 
 ```
-/leanconsensus/req/MessageName/SchemaVersion/Encoding
+/ProtocolPrefix/MessageName/SchemaVersion/Encoding
 ```
 
 With:
 
+- `ProtocolPrefix` - messages are grouped into families identified by a shared
+  libp2p protocol name prefix. In this case, we use `/leanconsensus/req`.
 - `MessageName` - each request is identified by a name consisting of English
   alphabet, digits and underscores (`_`).
 - `SchemaVersion` - an ordinal version number (e.g. 1, 2, 3…). Each schema is
