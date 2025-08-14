@@ -1,0 +1,78 @@
+# Containers
+
+## `Config`
+
+```python
+class Config(Container):
+    num_validators: uint64
+```
+
+## `Checkpoint`
+
+```python
+class Checkpoint(Container):
+    root: Bytes32
+    slot: uint64
+```
+
+## `State`
+
+```python
+class State(Container):
+    config: Config
+
+    latest_justified: Checkpoint
+    latest_finalized: Checkpoint
+
+    historical_block_hashes: List[Bytes32, HISTORICAL_ROOTS_LIMIT]
+    justified_slots: List[bool, HISTORICAL_ROOTS_LIMIT]
+
+    # Diverged from 3SF-mini.py:
+    # Flattened `justifications: Dict[str, List[bool]]` for SSZ compatibility
+    justifications_roots: List[Bytes32, HISTORICAL_ROOTS_LIMIT]
+    justifications_validators: Bitlist[
+        HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT
+    ]
+```
+
+## `Block`
+
+```python
+class Block(Container):
+    slot: uint64
+    parent: Bytes32
+    votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
+    state_root: Bytes32
+```
+
+## `SignedBlock`
+
+```python
+class SignedBlock(Container):
+    data: Block,
+    signature: Bytes32,
+```
+
+## `Vote`
+
+```python
+class Vote(Container):
+    validator_id: uint64
+    slot: uint64
+    head: Checkpoint
+    target: Checkpoint
+    source: Checkpoint
+```
+
+## `SignedVote`
+
+```python
+class SignedVote(Container):
+    data: Vote,
+    signature: Bytes32,
+```
+
+## Remarks
+
+- The signature type is still to be determined so `Bytes32` is used in the
+  interim. The actual signature size is expected to be a lot larger (~3 KiB).
