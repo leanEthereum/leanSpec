@@ -70,8 +70,8 @@ depending on the topic:
 
 | Name                             | Message Type              |
 | -------------------------------- | ------------------------- |
-| `lean_block`                     | `Block`                   |
-| `lean_attestation`               | `Attestation`             |
+| `lean_block`                     | `SignedBlock`                   |
+| `lean_vote`               | `SignedVote`             |
 
 Clients MUST reject (fail validation) messages containing an incorrect type, or
 invalid payload.
