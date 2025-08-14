@@ -21,7 +21,7 @@ For example:
 
 ## Gossip domain
 
-**Protocol ID:** `/meshsub/1.1.0`
+**Protocol ID:** `/meshsub/1.0.0`
 
 **Gossipsub Parameters**
 
