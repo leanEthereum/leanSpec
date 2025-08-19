@@ -81,7 +81,7 @@ depending on the topic:
 
 | Name                             | Message Type              |
 | -------------------------------- | ------------------------- |
-| `lean_block`                     | `SignedBlock`                   |
+| `block`                     | `SignedBlock`                   |
 | `lean_vote`               | `SignedVote`             |
 
 Clients MUST reject (fail validation) messages containing an incorrect type, or
