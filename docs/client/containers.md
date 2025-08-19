@@ -21,6 +21,7 @@ class Checkpoint(Container):
 ```python
 class State(Container):
     config: Config
+    slot: uint64
 
     latest_justified: Checkpoint
     latest_finalized: Checkpoint
