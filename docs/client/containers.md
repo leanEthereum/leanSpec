@@ -4,6 +4,7 @@
 
 ```python
 class Config(Container):
+    // temporary property to support simplified round robin block production in absence of randao & deposit mechanisms
     num_validators: uint64
 ```
 
