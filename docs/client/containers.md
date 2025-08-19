@@ -52,7 +52,7 @@ class Block(Container):
 
 ```python
 class SignedBlock(Container):
-    data: Block,
+    message: Block,
     signature: Bytes32,
 ```
 
