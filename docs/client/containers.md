@@ -44,8 +44,8 @@ class Block(Container):
     slot: uint64
     proposer_index: uin64
     parent: Bytes32
-    votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
     state_root: Bytes32
+    votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
 ```
 
 ## `SignedBlock`
