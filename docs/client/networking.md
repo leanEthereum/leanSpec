@@ -2,8 +2,7 @@
 
 ## Setup
 
-- Transport: QUIC on IPv4
-- Encryption and identification: [Libp2p-noise](https://github.com/libp2p/specs/tree/master/noise) with `secp256k1` identities
+- Transport: QUIC on IPv4, secured by TLS 1.3 with `ED25519` identities
 - Protocol negotiation: [multistream-select 1.0](https://github.com/multiformats/multistream-select/)
 - Multiplexing: Native support by QUIC
 - Gossip: [gossipsub v1](https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.0.md)
