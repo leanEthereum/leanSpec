@@ -114,6 +114,57 @@ used for the req/resp interaction. Only one value is possible at this time:
 
 #### Messages
 
+##### Status v1
+
+**Protocol ID:** `/leanconsensus/req/status/1/`
+
+Request, Response Content:
+
+```
+(
+  finalized_root: Bytes32
+  finalized_slot: uint64
+  head_root: Bytes32
+  head_slot: uint64
+)
+```
+
+The fields are, as seen by the client at the time of sending the message:
+
+- `finalized_root`: `store.finalized_checkpoint.root` according to
+  [3SF-mini](https://github.com/ethereum/research/tree/master/3sf-mini).
+  (Note this defaults to `Root(b'\x00' * 32)` for the genesis finalized
+  checkpoint).
+- `finalized_epoch`: `store.finalized_checkpoint.epoch` according to
+  [3SF-mini](https://github.com/ethereum/research/tree/master/3sf-mini).
+- `head_root`: The `hash_tree_root` root of the current head block
+  (`LeanBlock`).
+- `head_slot`: The slot of the block corresponding to the `head_root`.
+
+The dialing client MUST send a `Status` request upon connection.
+
+The request/response MUST be encoded as an SSZ-container.
+
+The response MUST consist of a single `response_chunk`.
+
+Clients SHOULD immediately disconnect from one another following the handshake
+above under the following conditions:
+
+1. If the (`finalized_root`, `finalized_epoch`) shared by the peer is not in the
+   client's chain at the expected epoch. For example, if Peer 1 sends (root,
+   epoch) of (A, 5) and Peer 2 sends (B, 3) but Peer 1 has root C at epoch 3,
+   then Peer 1 would disconnect because it knows that their chains are
+   irreparably disjoint.
+
+Once the handshake completes, the client with the lower `finalized_epoch` or
+`head_slot` (if the clients have equal `finalized_epoch`s) SHOULD request blocks
+from its counterparty via the `LeanBlocksByRoot` request.
+
+*Note*: Under abnormal network condition or after some rounds of
+`LeanBlocksByRoot` requests, the client might need to send `Status` request
+again to learn if the peer has a higher head. Implementers are free to implement
+such behavior in their own way.
+
 ##### LeanBlocksByRoot v1
 
 **Protocol ID:** `/leanconsensus/req/lean_blocks_by_root/1/`
