@@ -7,10 +7,7 @@
 | Name                                  | Value                     |     Unit     |   Duration    |
 | ------------------------------------- | ------------------------- | :----------: | :-----------: |
 | `SLOT_DURATION_MS`                    | `uint64(4000)`            | milliseconds | 4 seconds     |
-| `PROPOSER_REORG_CUTOFF_BPS`           | `uint64(2500)`            |      bps     | 25% into slot |
-| `VOTE_DUE_BPS`                        | `uint64(5000)`            |      bps     | 50% into slot |
-| `FAST_CONFIRM_DUE_BPS`                | `uint64(7500)`            |      bps     | 75% into slot |
-| `VIEW_FREEZE_CUTOFF_BPS`              | `uint64(7500)`            |      bps     | 75% into slot |
+| `INTERVALS_PER_SLOT`                  | `uint64(4)`               | intervals    | 1 second      |
 
 ## Presets
 
