@@ -18,6 +18,24 @@ For example:
 - enr:-Ku4QG-2_Md3sZIAUebGYT6g0SMskIml77l6yR-M_JXc-UdNHCmHQeOiMLbylPejyJsdAPsTHJyjJB2sYGDLe0dn8uYBh2F0dG5ldHOIAAAAAAAAAACEZXRoMpC1MD8qAAAAAP__________gmlkgnY0gmlwhBLY-NyJc2VjcDI1NmsxoQORcM6e19T1T9gi7jxEZjk_sjVLGFscUNqAY9obgZaxbIN1ZHCCIyg
 ```
 
+## ENR structure (modified)
+
+The Ethereum Node Record (ENR) for an Ethereum consensus client MUST contain the
+following entries (exclusive of the sequence number and signature, which MUST be
+present in an ENR):
+
+- The compressed ed25519 publickey, 32 bytes (`ed25519` field).
+  _**Note: This replaces the `secp256k1` field in the ENR Specification.**_
+
+The ENR MAY contain the following entries:
+
+- An IPv4 address (`ip` field).
+- An IPv4 QUIC port (`quic` field) representing the local libp2p QUIC (UDP)
+  listening port.
+
+Specifications of these parameters can be found in the
+[ENR Specification](http://eips.ethereum.org/EIPS/eip-778).
+
 ## Configuration
 
 This section outlines configurations that are used in this spec.
