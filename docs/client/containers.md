@@ -47,6 +47,13 @@ class Block(Container):
     proposer_index: uin64
     parent_root: Bytes32
     state_root: Bytes32
+    body: BlockBody
+```
+
+## `BlockBody`
+
+```python
+class BlockBody(Container):
     votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
 ```
 
