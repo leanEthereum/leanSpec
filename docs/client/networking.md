@@ -135,8 +135,8 @@ used for the req/resp interaction. Only one value is possible at this time:
   [SSZ-encoded](../../ssz/simple-serialize.md) and then compressed with
   [Snappy](https://github.com/google/snappy) frames compression. For objects
   containing a single field, only the field is SSZ-encoded not a container with
-  a single field. For example, the `LeanBlocksByRoot` request is an
-  SSZ-encoded list of `Root`'s.
+  a single field. For example, the `BlocksByRoot` request is an SSZ-encoded
+  list of `Root`'s.
 
 #### Messages
 
@@ -164,7 +164,7 @@ The fields are, as seen by the client at the time of sending the message:
 - `finalized_epoch`: `store.finalized_checkpoint.epoch` according to
   [3SF-mini](https://github.com/ethereum/research/tree/master/3sf-mini).
 - `head_root`: The `hash_tree_root` root of the current head block
-  (`LeanBlock`).
+  (`Block`).
 - `head_slot`: The slot of the block corresponding to the `head_root`.
 
 The dialing client MUST send a `Status` request upon connection.
@@ -184,14 +184,14 @@ above under the following conditions:
 
 Once the handshake completes, the client with the lower `finalized_epoch` or
 `head_slot` (if the clients have equal `finalized_epoch`s) SHOULD request blocks
-from its counterparty via the `LeanBlocksByRoot` request.
+from its counterparty via the `BlocksByRoot` request.
 
 *Note*: Under abnormal network condition or after some rounds of
-`LeanBlocksByRoot` requests, the client might need to send `Status` request
+`BlocksByRoot` requests, the client might need to send `Status` request
 again to learn if the peer has a higher head. Implementers are free to implement
 such behavior in their own way.
 
-##### LeanBlocksByRoot v1
+##### BlocksByRoot v1
 
 **Protocol ID:** `/leanconsensus/req/blocks_by_root/1/`
 
@@ -216,7 +216,7 @@ The response is a list of `SignedBlock` whose length is less than or equal
 to the number of requested blocks. It may be less in the case that the
 responding peer is missing blocks.
 
-`LeanBlocksByRoot` is primarily used to recover recent blocks (e.g. when
+`BlocksByRoot` is primarily used to recover recent blocks (e.g. when
 receiving a block or attestation whose parent is unknown).
 
 The request MUST be encoded as an SSZ-field.
