@@ -73,7 +73,7 @@ will be used:
 
 Topics are plain UTF-8 strings and are encoded on the wire as determined by
 protobuf (gossipsub messages are enveloped in protobuf messages). Topic strings
-have form: `/leanconsensus/devnet0/Name/Encoding`. This defines both the type of
+have form: `/leanconsensus/devnet{N}/Name/Encoding`. This defines both the type of
 data being sent on the topic and how the data field of the message is encoded.
 
 - `Name` - see table below
@@ -121,7 +121,7 @@ gossipsub message is encoded.
 
 - `ssz_snappy` - All objects are SSZ-encoded and then compressed with
   [Snappy](https://github.com/google/snappy) block compression. Example: The
-  lean block topic string is `/leanconsensus/devnet0/lean_block/ssz_snappy`,
+  lean block topic string is `/leanconsensus/devnet{N}/lean_block/ssz_snappy`,
   and the data field of a gossipsub message is an `Block` that has been
   SSZ-encoded and then compressed with Snappy.
 
