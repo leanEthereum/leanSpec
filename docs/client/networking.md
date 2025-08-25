@@ -108,8 +108,8 @@ depending on the topic:
 
 | Name                             | Message Type              |
 | -------------------------------- | ------------------------- |
-| `block`                     | `SignedBlock`                   |
-| `lean_vote`               | `SignedVote`             |
+| `block`                          | `SignedBlock`             |
+| `vote`                           | `SignedVote`              |
 
 Clients MUST reject (fail validation) messages containing an incorrect type, or
 invalid payload.
@@ -121,7 +121,7 @@ gossipsub message is encoded.
 
 - `ssz_snappy` - All objects are SSZ-encoded and then compressed with
   [Snappy](https://github.com/google/snappy) block compression. Example: The
-  lean block topic string is `/leanconsensus/devnet{N}/lean_block/ssz_snappy`,
+  lean block topic string is `/leanconsensus/devnet{N}/block/ssz_snappy`,
   and the data field of a gossipsub message is an `Block` that has been
   SSZ-encoded and then compressed with Snappy.
 
@@ -194,7 +194,7 @@ such behavior in their own way.
 
 ##### LeanBlocksByRoot v1
 
-**Protocol ID:** `/leanconsensus/req/lean_blocks_by_root/1/`
+**Protocol ID:** `/leanconsensus/req/blocks_by_root/1/`
 
 Request Content:
 
