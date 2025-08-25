@@ -40,10 +40,11 @@ Specifications of these parameters can be found in the
 
 This section outlines configurations that are used in this spec.
 
-| Name                                 | Value                                                                                  | Description                                                                           |
-| ------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `MESSAGE_DOMAIN_INVALID_SNAPPY`      | `DomainType('0x00000000')`                                                             | 4-byte domain for gossip message-id isolation of *invalid* snappy messages            |
-| `MESSAGE_DOMAIN_VALID_SNAPPY`        | `DomainType('0x01000000')`                                                             | 4-byte domain for gossip message-id isolation of *valid* snappy messages              |
+| Name                                 | Value                                    | Description                                                                           |
+| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| `MAX_REQUEST_BLOCKS`                 | `2**10` (= 1024)                         | Maximum number of blocks in a single request                                          |
+| `MESSAGE_DOMAIN_INVALID_SNAPPY`      | `DomainType('0x00000000')`               | 4-byte domain for gossip message-id isolation of *invalid* snappy messages            |
+| `MESSAGE_DOMAIN_VALID_SNAPPY`        | `DomainType('0x01000000')`               | 4-byte domain for gossip message-id isolation of *valid* snappy messages              |
 
 ## Gossip domain
 
