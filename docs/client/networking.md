@@ -2,7 +2,7 @@
 
 ## Setup
 
-- Transport: QUIC on IPv4, secured by TLS 1.3 with `ED25519` identities
+- Transport: QUIC on IPv4, secured by TLS 1.3 with `secp256k1` identities
 - Protocol negotiation: [multistream-select 1.0](https://github.com/multiformats/multistream-select/)
 - Multiplexing: Native support by QUIC
 - Gossip: [gossipsub v1](https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.0.md)
@@ -24,8 +24,7 @@ The Ethereum Node Record (ENR) for an Ethereum consensus client MUST contain the
 following entries (exclusive of the sequence number and signature, which MUST be
 present in an ENR):
 
-- The compressed ed25519 publickey, 32 bytes (`ed25519` field).
-  _**Note: This replaces the `secp256k1` field in the ENR Specification.**_
+- The compressed secp256k1 publickey, 32 bytes (`secp256k1` field).
 
 The ENR MAY contain the following entries:
 
