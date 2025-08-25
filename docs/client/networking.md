@@ -24,7 +24,7 @@ The Ethereum Node Record (ENR) for an Ethereum consensus client MUST contain the
 following entries (exclusive of the sequence number and signature, which MUST be
 present in an ENR):
 
-- The compressed secp256k1 publickey, 32 bytes (`secp256k1` field).
+- The compressed secp256k1 publickey, 33 bytes (`secp256k1` field).
 
 The ENR MAY contain the following entries:
 
