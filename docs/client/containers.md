@@ -52,10 +52,13 @@ class Block(Container):
 
 ## `BlockBody`
 
+
 ```python
 class BlockBody(Container):
     votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
 ```
+
+Remark: `votes` will be replaced by aggregated attestations.
 
 ## `SignedBlock`
 
