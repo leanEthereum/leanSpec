@@ -17,6 +17,18 @@ class Checkpoint(Container):
     slot: uint64
 ```
 
+## `Signature`
+
+```python
+class Signature(Container):
+    # path: hash_len_fe (8) * bytes_per_fe (4) * log_lifetime (32)
+    path: Vector[Bytes32, 32]
+    # rho: rand_len_fe (7) * bytes_per_fe (4)
+    rho: Bytes28
+    # hashes: hash_len_fe (8) * bytes_per_fe (4) * num_chains (64)
+    hashes: Vector[Bytes32, 64]
+```
+
 ## `State`
 
 ```python
@@ -65,7 +77,7 @@ Remark: `votes` will be replaced by aggregated attestations.
 ```python
 class SignedBlock(Container):
     message: Block,
-    signature: Bytes32,
+    signature: Signature,
 ```
 
 ## `Vote`
@@ -84,7 +96,7 @@ class Vote(Container):
 ```python
 class SignedVote(Container):
     data: Vote,
-    signature: Bytes32,
+    signature: Signature,
 ```
 
 ## Remarks
