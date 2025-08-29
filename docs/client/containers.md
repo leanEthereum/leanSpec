@@ -52,7 +52,6 @@ class Block(Container):
 
 ## `BlockBody`
 
-
 ```python
 class BlockBody(Container):
     votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
@@ -65,7 +64,7 @@ Remark: `votes` will be replaced by aggregated attestations.
 ```python
 class SignedBlock(Container):
     message: Block,
-    signature: Bytes32,
+    signature: List[byte, 4000],
 ```
 
 ## `Vote`
@@ -84,7 +83,7 @@ class Vote(Container):
 ```python
 class SignedVote(Container):
     data: Vote,
-    signature: Bytes32,
+    signature: List[byte, 4000],
 ```
 
 ## Remarks
