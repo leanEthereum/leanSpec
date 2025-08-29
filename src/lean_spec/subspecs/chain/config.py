@@ -18,8 +18,8 @@ SLOT_DURATION_MS: Final = 4000
 SECONDS_PER_SLOT: Final = SLOT_DURATION_MS // 1000
 """The fixed duration of a single slot in seconds."""
 
-SLOTS_PER_EPOCH: Final = 96
-"""The number of slots in an epoch."""
+SLOTS_JUSTIFICATION_LOOKBACK: Final = 3
+"""The number of slots to lookback for justification."""
 
 PROPOSER_REORG_CUTOFF_BPS: Final = 2500
 """
@@ -81,7 +81,7 @@ class _ChainConfig(BaseModel):
     # Time Parameters
     slot_duration_ms: Uint64
     second_per_slot: Uint64
-    slots_per_epoch: Uint64
+    slots_justification_lookback: Uint64
     proposer_reorg_cutoff_bps: BasisPoint
     vote_due_bps: BasisPoint
     fast_confirm_due_bps: BasisPoint
@@ -96,7 +96,7 @@ class _ChainConfig(BaseModel):
 DEVNET_CONFIG: Final = _ChainConfig(
     slot_duration_ms=SLOT_DURATION_MS,
     second_per_slot=SECONDS_PER_SLOT,
-    slots_per_epoch=SLOTS_PER_EPOCH,
+    slots_justification_lookback=SLOTS_JUSTIFICATION_LOOKBACK,
     proposer_reorg_cutoff_bps=PROPOSER_REORG_CUTOFF_BPS,
     vote_due_bps=VOTE_DUE_BPS,
     fast_confirm_due_bps=FAST_CONFIRM_DUE_BPS,
