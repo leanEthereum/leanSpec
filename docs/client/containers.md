@@ -50,6 +50,17 @@ class Block(Container):
     body: BlockBody
 ```
 
+## `BlockHeader`
+
+```python
+class BlockHeader(Container):
+    slot: uint64
+    proposer_index: uin64
+    parent_root: Bytes32
+    state_root: Bytes32
+    body_root: Bytes32
+```
+
 ## `BlockBody`
 
 
