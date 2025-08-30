@@ -5,18 +5,20 @@ hash-based signature scheme.
 It exposes the core data structures and the main interface functions.
 """
 
-from .constants import LIFETIME, MESSAGE_LENGTH
-from .interface import key_gen, sign, verify
-from .structures import HashTreeOpening, PublicKey, SecretKey, Signature
+from .interface import GeneralizedXmssScheme
+from .structures import (
+    HashTree,
+    HashTreeOpening,
+    PublicKey,
+    SecretKey,
+    Signature,
+)
 
 __all__ = [
-    "key_gen",
-    "sign",
-    "verify",
+    "GeneralizedXmssScheme",
     "PublicKey",
     "Signature",
     "SecretKey",
     "HashTreeOpening",
-    "LIFETIME",
-    "MESSAGE_LENGTH",
+    "HashTree",
 ]
