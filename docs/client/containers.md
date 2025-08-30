@@ -4,7 +4,7 @@
 
 ```python
 class Config(Container):
-    // temporary property to support simplified round robin block production in absence of randao & deposit mechanisms
+    # temporary property to support simplified round robin block production in absence of randao & deposit mechanisms
     num_validators: uint64
     genesis_time: uint64
 ```
@@ -44,14 +44,13 @@ class State(Container):
 ```python
 class Block(Container):
     slot: uint64
-    proposer_index: uin64
+    proposer_index: uint64
     parent_root: Bytes32
     state_root: Bytes32
     body: BlockBody
 ```
 
 ## `BlockBody`
-
 
 ```python
 class BlockBody(Container):

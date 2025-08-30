@@ -39,11 +39,11 @@ Specifications of these parameters can be found in the
 
 This section outlines configurations that are used in this spec.
 
-| Name                                 | Value                                    | Description                                                                           |
-| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `MAX_REQUEST_BLOCKS`                 | `2**10` (= 1024)                         | Maximum number of blocks in a single request                                          |
-| `MESSAGE_DOMAIN_INVALID_SNAPPY`      | `DomainType('0x00000000')`               | 4-byte domain for gossip message-id isolation of *invalid* snappy messages            |
-| `MESSAGE_DOMAIN_VALID_SNAPPY`        | `DomainType('0x01000000')`               | 4-byte domain for gossip message-id isolation of *valid* snappy messages              |
+| Name                            | Value                      | Description                                                                |
+| ------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| `MAX_REQUEST_BLOCKS`            | `2**10` (= 1024)           | Maximum number of blocks in a single request                               |
+| `MESSAGE_DOMAIN_INVALID_SNAPPY` | `DomainType('0x00000000')` | 4-byte domain for gossip message-id isolation of *invalid* snappy messages |
+| `MESSAGE_DOMAIN_VALID_SNAPPY`   | `DomainType('0x01000000')` | 4-byte domain for gossip message-id isolation of *valid* snappy messages   |
 
 ## Gossip domain
 
@@ -84,31 +84,27 @@ The optional `from` (1), `seqno` (3), `signature` (5) and `key` (6) protobuf
 fields are omitted from the message, since messages are identified by content,
 anonymous, and signed where necessary in the application layer.
 
-The `message-id` of a gossipsub message MUST be the following 20 byte value
-computed from the message data:
+The `message-id` MUST be the following 20 byte value computed from the message:
 
-- If `message.data` has a valid snappy decompression, set `message-id` to the
-  first 20 bytes of the `SHA256` hash of the concatenation of
-  `MESSAGE_DOMAIN_VALID_SNAPPY` with the snappy decompressed message data, i.e.
-  `SHA256(MESSAGE_DOMAIN_VALID_SNAPPY + snappy_decompress(message.data))[:20]`.
-- Otherwise, set `message-id` to the first 20 bytes of the `SHA256` hash of the
-  concatenation of `MESSAGE_DOMAIN_INVALID_SNAPPY` with the raw message data,
-  i.e. `SHA256(MESSAGE_DOMAIN_INVALID_SNAPPY + message.data)[:20]`.
+- If `message.data` has a valid snappy decompression, set `message-id` to the first 20 bytes of the `SHA256` hash of
+  the concatenation of the following data: `MESSAGE_DOMAIN_VALID_SNAPPY`, the length of the topic byte string (encoded as little-endian `uint64`),
+  the topic byte string, and the snappy decompressed message data:
+  i.e. `SHA256(MESSAGE_DOMAIN_VALID_SNAPPY + uint_to_bytes(uint64(len(message.topic))) + message.topic + snappy_decompress(message.data))[:20]`.
+- Otherwise, set `message-id` to the first 20 bytes of the `SHA256` hash of
+  the concatenation of the following data: `MESSAGE_DOMAIN_INVALID_SNAPPY`, the length of the topic byte string (encoded as little-endian `uint64`),
+  the topic byte string, and the raw message data:
+  i.e. `SHA256(MESSAGE_DOMAIN_INVALID_SNAPPY + uint_to_bytes(uint64(len(message.topic))) + message.topic + message.data)[:20]`.
 
 Where relevant, clients MUST reject messages with `message-id` sizes other than
 20 bytes.
 
-*Note*: The above logic handles two exceptional cases: (1) multiple snappy
-`data` can decompress to the same value, and (2) some message `data` can fail to
-snappy decompress altogether.
-
 The payload is carried in the `data` field of a gossipsub message, and varies
 depending on the topic:
 
-| Name                             | Message Type              |
-| -------------------------------- | ------------------------- |
-| `block`                          | `SignedBlock`             |
-| `vote`                           | `SignedVote`              |
+| Name    | Message Type  |
+| ------- | ------------- |
+| `block` | `SignedBlock` |
+| `vote`  | `SignedVote`  |
 
 Clients MUST reject (fail validation) messages containing an incorrect type, or
 invalid payload.
