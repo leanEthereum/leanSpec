@@ -28,7 +28,7 @@ update `store` by running:
 # tracked in the store
 def get_fork_choice_head(blocks: Dict[str, Block],
                          root: str,
-                         latest_votes: List[Vote],
+                         latest_votes: List[Checkpoint],
                          min_score: int = 0) -> str:
     # Start at genesis by default
     if root == ZERO_HASH:
@@ -39,8 +39,8 @@ def get_fork_choice_head(blocks: Dict[str, Block],
     vote_weights: Dict[str, int] = {}
 
     for vote in latest_votes.values():
-        if vote.head in blocks:
-            block_hash = vote.head
+        if vote.root in blocks:
+            block_hash = vote.root
             while blocks[block_hash].slot > blocks[root].slot:
                 vote_weights[block_hash] = vote_weights.get(block_hash, 0) + 1
                 block_hash = blocks[block_hash].parent
@@ -95,8 +95,8 @@ class Store(object):
     latest_finalized: Checkpoint
     blocks: Dict[Root, Block] = field(default_factory=dict)
     states: Dict[Root, State] = field(default_factory=dict)
-    latest_known_votes: Dict[ValidatorIndex, Vote] = field(default_factory=dict)
-    latest_new_votes: Dict[ValidatorIndex, Vote] = field(default_factory=dict)
+    latest_known_head_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
+    latest_new_head_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
 ```
 
 #### `get_forkchoice_store`
