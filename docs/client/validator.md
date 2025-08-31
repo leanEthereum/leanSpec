@@ -25,6 +25,33 @@ def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
     return get_current_slot() % state.config.num_validators == validator_index
 ```
 
+## Attesting
+
+A validator is expected to create, sign, and broadcast an attestation at the start of second interval(=1) of each slot.
+
+#### Construct attestation message
+
+```python
+  def get_attestation_message(validator_id: ValidatorIndex, slot: Slot, store: Store)
+  Vote(
+      validator_id=validator_id,
+      slot=slot,
+      head=store.head,
+      target=get_vote_target(store),
+      source=store.latest_justified,
+  )
+```
+
+##### Aggregate signature
+
+No signature aggregation is to done in `devnet0`.
+
+#### Broadcast attestation
+
+Finally, the validator broadcasts `SignedVote` to the associated attestation
+subnet, the `attestation` topic. There are no separate subnets for the attestations as of `devnet0`.
+
+
 ## Remarks
 
 - This spec is still missing the file format for the centralized, pre-generated

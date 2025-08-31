@@ -1,5 +1,9 @@
 # Containers
 
+## Encoding
+
+The containers for various blockchain consensus objects are primarily SSZ. However the hash tree root 
+
 ## `Config`
 
 ```python
@@ -94,7 +98,7 @@ class Vote(Container):
 
 ```python
 class SignedVote(Container):
-    data: Vote,
+    message: Vote,
     signature: Bytes32,
 ```
 
