@@ -13,6 +13,7 @@ update `store` by running:
   received
 - `on_attestation(store, attestation)` whenever an attestation `attestation` is
   received
+- `compute_proposal_head(store, slot)` whenever validator intends to make block proposal
 
 ### Configuration
 
@@ -87,7 +88,8 @@ algorithm. The important fields being tracked are described below:
 ```python
 @dataclass
 class Store(object):
-    time: uint64
+    # time in intervals since genesis
+    time: Interval,
     config: Config
     head: Root,
     safe_target: Root,
@@ -111,7 +113,7 @@ def get_forkchoice_store(anchor_state: BeaconState, anchor_block: BeaconBlock) -
     anchor_slot = anchor_block.slot
 
     return Store(
-        time=uint64(anchor_state.config.genesis_time + SECONDS_PER_SLOT * anchor_slot),
+        time=anchor_slot * INTERVALS_PER_SLOT,
         config=anchor_state.config,
         head=anchor_root,
         safe_target=anchor_root,
@@ -168,3 +170,65 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
     )
 ```
 
+
+#### `accept_new_votes`
+
+```python
+# Process new votes that the staker has received. Vote processing is done
+# at a particular time, because of safe target and view merge rules
+    def accept_new_votes(store: Store):
+        for(validator_id in store.latest_new_votes.keys):
+            store.latest_known_votes.set(validator_id, store.latest_new_votes[validator_id])
+        store.new_votes = field(default_factory=dict)
+        update_head(store)
+```
+
+##### `tick_interval`
+```python
+def tick_interval(store: Store) -> None:
+    store.time += 1
+    current_interval = store.time % INTERVALS_PER_SLOT
+    if(current_interval==0):
+        # validators will independently call to process new votes if there is
+        # a proposal
+    elif (current_interval==1):
+        # validators will vote in this interval using safe target previously
+        # computed
+    elif (current_interval==2):
+        update_safe_target(store)
+    else
+        accept_new_votes(store)
+```
+
+
+
+#### `compute_proposal_head`
+```python
+def compute_proposal_head(store: Store) -> Root:
+    accept_new_votes(store)
+    return store.head
+```
+
+### Handlers
+
+
+#### `on_tick`
+
+```python
+# called every interval
+def on_tick(store: Store, time: uin64) -> None:
+    tick_interval_time = (time - store.genesis_time) // SECONDS_PER_INTERVAL
+    while(store.time < tick_interval_time):
+        tick_interval(store)
+```
+
+#### `on_attestation`
+
+```python
+def on_attestation(store: Store, vote: Vote) -> None:
+    validate_on_attestation(store, attestation)
+    latest_validator_vote = vote.latest_new_votes.get(vote.validator_id) or vote.latest_known_votes.get(vote.validator_id)
+    if(latest_validator_vote and latest_validator_vote.slot >= vote):
+        return
+    store.latest_new_votes.set(vote.validator_id)
+```
