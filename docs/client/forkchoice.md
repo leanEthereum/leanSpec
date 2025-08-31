@@ -13,8 +13,6 @@ update `store` by running:
   received
 - `on_attestation(store, attestation)` whenever an attestation `attestation` is
   received
-- `on_attester_slashing(store, attester_slashing)` whenever an attester slashing
-  `attester_slashing` is received
 
 ### Configuration
 
