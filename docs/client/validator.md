@@ -27,7 +27,40 @@ def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
 
 #### Construction proposal message
 
-def 
+```python
+def construct_proposal(store: Store, slot: Slot) -> Block:
+  head_root = compute_proposal_head(store)
+  head_state = store.states[head_root]
+
+  new_block, state = None, None
+  votes_to_add = []
+
+  # Keep attempt to add valid votes from the list of available votes
+  while 1:
+      new_block = Block(
+          slot=new_slot,
+          parent=self.head,
+          votes=votes_to_add
+      )
+      state = process_block(head_state, new_block)
+      new_votes_to_add = [
+          vote for vote in self.known_votes if
+          vote.source == state.latest_justified_hash and
+          vote not in votes_to_add
+      ]
+
+      if len(new_votes_to_add) == 0:
+          break
+
+      votes_to_add.extend(new_votes_to_add)
+  new_block.state_root = compute_hash(state)
+  new_hash = compute_hash(new_block)
+
+  store.blocks[new_hash] = new_block
+  store.states[new_hash] = state
+
+  return new_block
+```
 
 ## Attesting
 
