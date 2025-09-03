@@ -25,6 +25,10 @@ def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
     return get_current_slot() % state.config.num_validators == validator_index
 ```
 
+#### Construction proposal message
+
+def 
+
 ## Attesting
 
 A validator is expected to create, sign, and broadcast an attestation at the start of second interval(=1) of each slot.

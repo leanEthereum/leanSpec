@@ -323,3 +323,4 @@ def process_attestations(state: State, votes: Vote[]) -> None:
     # flatten and set updated justifications back to the state
     set_justifications(state, justifications)
 ```
+

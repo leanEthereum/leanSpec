@@ -225,10 +225,36 @@ def on_tick(store: Store, time: uin64) -> None:
 #### `on_attestation`
 
 ```python
-def on_attestation(store: Store, vote: Vote) -> None:
+def on_attestation(store: Store, vote: Vote, from_block: boolean = false) -> None:
     validate_on_attestation(store, attestation)
-    latest_validator_vote = vote.latest_new_votes.get(vote.validator_id) or vote.latest_known_votes.get(vote.validator_id)
-    if(latest_validator_vote and latest_validator_vote.slot >= vote):
+    
+    latest_votes_map = from_block ? store.latest_known_votes : store.latest_new_votes
+    latest_validator_vote = latest_votes_map.get(vote.validator_id)
+    if(latest_validator_vote and latest_validator_vote.slot >= vote.slot):
         return
-    store.latest_new_votes.set(vote.validator_id)
+    store.latest_new_votes.set(vote.validator_id, vote)
+```
+
+#### `on_block`
+
+```python
+def on_block(store: Store, block: Block) -> None:
+    block_hash = compute_hash(block)
+    # If the block is already known, ignore it
+    if block_hash in self.chain:
+        return
+    parent_state = self.post_states.get(block.parent)
+    # at this point parent state should be available so node should
+    # sync parent chain if not available before adding block to forkchoice
+    assert(parent_state != None)
+    # get post state from STF
+    state = process_block(copy.deepcopy(parent_state), block)
+    store.blocks[block_hash] = block
+    store.states[block_hash] = state
+
+    # add block votes to the onchain known last votes
+    for vote in block.body.votes
+      on_attestation(store, vote, true)
+
+    update_head(store)
 ```

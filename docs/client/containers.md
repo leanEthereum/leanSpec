@@ -2,7 +2,7 @@
 
 ## Encoding
 
-The containers for various blockchain consensus objects are primarily SSZ. However the hash tree root 
+The containers for various blockchain consensus objects are primarily SSZ objects. To be more prover friendly, the Poseidon2 hasher will be used for hash tree rooting of these objects. However `devnet0` & `devnet1` continue to use the sha256 hasher.
 
 ## `Config`
 
