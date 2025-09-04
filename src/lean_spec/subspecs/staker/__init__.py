@@ -1,0 +1,1 @@
+"""Specifications for the staker's protocol participacion roles and settings."""
