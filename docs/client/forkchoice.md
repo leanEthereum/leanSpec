@@ -13,7 +13,7 @@ update `store` by running:
   received
 - `on_attestation(store, attestation)` whenever an attestation `attestation` is
   received
-- `compute_proposal_head(store, slot)` whenever validator intends to make block proposal
+- `get_proposal_head(store, slot)` whenever validator intends to make block proposal
 
 ### Configuration
 
@@ -185,12 +185,12 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
 
 ##### `tick_interval`
 ```python
-def tick_interval(store: Store) -> None:
+def tick_interval(store: Store, has_proposal: bool) -> None:
     store.time += 1
     current_interval = store.time % INTERVALS_PER_SLOT
     if(current_interval==0):
-        # validators will independently call to process new votes if there is
-        # a proposal
+        if(has_proposal):
+            accept_new_votes(store)
     elif (current_interval==1):
         # validators will vote in this interval using safe target previously
         # computed
@@ -202,9 +202,14 @@ def tick_interval(store: Store) -> None:
 
 
 
-#### `compute_proposal_head`
+#### `get_proposal_head`
 ```python
-def compute_proposal_head(store: Store) -> Root:
+def get_proposal_head(store: Store, slot: Slot) -> Root:
+    slot_time = store.genesis_time + slot * SECONDS_PER_SLOT;
+    # this would be a no-op if the store is already ticked to the current time
+    on_tick(store, slot_time, has_proposal)
+    # this would be a no-op or just a fast compute if store was already ticked to
+    # accept new votes for a registered validator with the node
     accept_new_votes(store)
     return store.head
 ```
@@ -215,11 +220,14 @@ def compute_proposal_head(store: Store) -> Root:
 #### `on_tick`
 
 ```python
-# called every interval
-def on_tick(store: Store, time: uin64) -> None:
+# called every interval and with has_proposal flag on the new slot interval if
+# node has a validator with proposal in this slot so as to not delay accepting
+# new votes and parallelize compute
+def on_tick(store: Store, time: uin64, has_proposal: bool) -> None:
     tick_interval_time = (time - store.genesis_time) // SECONDS_PER_INTERVAL
     while(store.time < tick_interval_time):
-        tick_interval(store)
+        # tick interval and signal proposal if this is the proposal interval
+        tick_interval(store, has_proposal and (store.time+1) == tick_interval_time)
 ```
 
 #### `on_attestation`

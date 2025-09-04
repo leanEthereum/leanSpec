@@ -29,7 +29,7 @@ def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
 
 ```python
 def construct_proposal(store: Store, slot: Slot) -> Block:
-  head_root = compute_proposal_head(store)
+  head_root = get_proposal_head(store)
   head_state = store.states[head_root]
 
   new_block, state = None, None
