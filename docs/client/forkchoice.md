@@ -65,13 +65,13 @@ def get_fork_choice_head(blocks: Dict[str, Block],
             block_hash = vote.root
             while blocks[block_hash].slot > blocks[root].slot:
                 vote_weights[block_hash] = vote_weights.get(block_hash, 0) + 1
-                block_hash = blocks[block_hash].parent
+                block_hash = blocks[block_hash].parent_root
 
     # Identify the children of each block
     children_map: Dict[str, List[str]] = {}
     for _hash, block in blocks.items():
-        if block.parent and vote_weights.get(_hash, 0) >= min_score:
-            children_map.setdefault(block.parent, []).append(_hash)
+        if block.parent_root and vote_weights.get(_hash, 0) >= min_score:
+            children_map.setdefault(block.parent_root, []).append(_hash)
 
     # Start at the root (latest justified hash or genesis) and repeatedly
     # choose the child with the most latest votes, tiebreaking by slot then hash
@@ -176,13 +176,13 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
     # If there is no very recent safe target, then vote for the k'th ancestor
     # of the head
     for i in range(3):
-        if store.blocks[target_block_root].slot > store.blocks[self.safe_target].slot:
+        if store.blocks[target_block_root].slot > store.blocks[store.safe_target].slot:
             target_block_root = store.blocks[target_block_root].parent
 
     # If the latest finalized slot is very far back, then only some slots are
     # valid to justify, make sure the target is one of those
     while not is_justifiable_slot(store.latest_finalized.slot, store.blocks[target_block_root].slot):
-        target_block_root = store.blocks[target_block_root].parent
+        target_block_root = store.blocks[target_block_root].parent_root
 
     return Checkpoint(
         root=target_block_root,
@@ -267,9 +267,9 @@ def on_attestation(store: Store, vote: Vote, from_block: boolean = false) -> Non
 def on_block(store: Store, block: Block) -> None:
     block_hash = compute_hash(block)
     # If the block is already known, ignore it
-    if block_hash in self.chain:
+    if block_hash in store.blocks:
         return
-    parent_state = self.post_states.get(block.parent)
+    parent_state = store.states.get(block.parent_root)
     # at this point parent state should be available so node should
     # sync parent chain if not available before adding block to forkchoice
     assert(parent_state != None)
