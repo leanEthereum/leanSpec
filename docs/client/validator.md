@@ -77,28 +77,38 @@ def construct_proposal(store: Store, slot: Slot) -> Block:
 
 ## Attesting
 
-A validator is expected to create, sign, and broadcast an attestation at the start of second interval(=1) of each slot.
+The attestation process consists of validator casting their votes and their subsequent aggregation.
 
-#### Construction attestation message
+### Validator Voting
+
+A validator is expected to create, sign, and broadcast a `SignedVote` at the start of second interval(=1) of each slot.
+
+#### Construction vote message
 
 ```python
   def get_attestation_message(slot: Slot, store: Store)
-  Vote(
-      validator_id=validator_id,
+  head = get_proposal_head(store, slot)
+  target = get_vote_target(store)
+
+  return Vote(
       slot=slot,
-      head=store.head,
-      target=get_vote_target(store),
+      head=head,
+      target=target,
       source=store.latest_justified,
   )
 ```
 
-##### Aggregate signature
+#### Broadcast votes
 
-No signature aggregation is to done in `devnet0`.
+The validator signs the constructed `Vote` message and broadcasts `SignedVote` to the `attestation` topic.
 
-#### Broadcast attestation
+Note that there are no separate subnets/committes for the attestations as of `devnet0`.
 
-The validator signs the constructed `Vote` message and broadcasts `SingleAttestation` to the associated attestation subnet, the `attestation` topic. There are no separate subnets/committes for the attestations as of `devnet0`.
+### Attestation Aggregation
+
+At the start of third interval(=2) of each slot, aggregators will aggregate signed votes received into `Attestation`s and broadcast the same to be included in the next proposal.
+
+However there is no aggregation in `devnet0` and the signed votes are directly included in the next proposal. Details for aggregation will be added in the future devnets.
 
 ## Remarks
 
