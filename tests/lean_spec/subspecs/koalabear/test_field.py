@@ -42,9 +42,7 @@ def test_base_field_arithmetic() -> None:
     assert a != "5"  # type: ignore[comparison-overlap]
 
     # Test error on inverting the zero element
-    with pytest.raises(
-        ZeroDivisionError, match="Cannot invert the zero element."
-    ):
+    with pytest.raises(ZeroDivisionError, match="Cannot invert the zero element."):
         Fp(value=0).inverse()
 
 
@@ -67,12 +65,8 @@ def test_two_adicity() -> None:
     assert gen_n ** (2 ** (TWO_ADICITY - 1)) == Fp(value=-1)
 
     # Test error handling for out-of-bounds input
-    with pytest.raises(
-        ValueError, match=f"bits must be between 0 and {TWO_ADICITY}"
-    ):
+    with pytest.raises(ValueError, match=f"bits must be between 0 and {TWO_ADICITY}"):
         Fp.two_adic_generator(TWO_ADICITY + 1)
 
-    with pytest.raises(
-        ValueError, match=f"bits must be between 0 and {TWO_ADICITY}"
-    ):
+    with pytest.raises(ValueError, match=f"bits must be between 0 and {TWO_ADICITY}"):
         Fp.two_adic_generator(-1)

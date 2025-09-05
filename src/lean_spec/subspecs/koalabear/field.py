@@ -72,9 +72,7 @@ class Fp(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    value: int = Field(
-        ge=0, lt=P, description="Field element value in the range [0, P)"
-    )
+    value: int = Field(ge=0, lt=P, description="Field element value in the range [0, P)")
 
     @field_validator("value", mode="before")
     @classmethod

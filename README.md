@@ -6,8 +6,22 @@ The Lean Ethereum protocol specifications and cryptographic subspecifications.
 
 ### Prerequisites
 
-- Python 3.12 or later
-- [uv](https://github.com/astral-sh/uv) package manager
+#### Installing uv
+
+[uv](https://github.com/astral-sh/uv) is a fast Python package manager that handles dependencies and Python versions.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+````
+
+#### Installing Python 3.12+
+
+This project requires Python 3.12 or later and should be installed via `uv`:
+
+```bash
+# Install Python 3.12, or latest stable version
+uv python install 3.12
+```
 
 ### Setup
 

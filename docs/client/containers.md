@@ -1,3 +1,19 @@
+<!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
+
+- [`Config`](#config)
+- [`Checkpoint`](#checkpoint)
+- [`State`](#state)
+- [`Block`](#block)
+- [`BlockHeader`](#blockheader)
+- [`BlockBody`](#blockbody)
+- [`SignedBlock`](#signedblock)
+- [`Vote`](#vote)
+- [`SignedVote`](#signedvote)
+  - [`Attestation`](#attestation)
+- [Remarks](#remarks)
+
+<!-- mdformat-toc end -->
+
 # Containers
 
 ## Encoding
@@ -67,27 +83,27 @@ class BlockHeader(Container):
 
 ## `BlockBody`
 
-
 ```python
 class BlockBody(Container):
-    votes: List[Vote, VALIDATOR_REGISTRY_LIMIT]
+    attestations: List[SignedVote, VALIDATOR_REGISTRY_LIMIT]
 ```
 
-Remark: `votes` will be replaced by aggregated attestations.
+Remark: `SignedVote` will be replaced by aggregated attestations.
 
 ## `SignedBlock`
 
 ```python
 class SignedBlock(Container):
     message: Block,
-    signature: Bytes32,
+    signature: Vector[byte, 4000],
 ```
 
 ## `Vote`
 
+Vote is the attestation data that can be aggregated. Although note there is no aggregation yet in `devnet0`.
+
 ```python
 class Vote(Container):
-    validator_id: uint64
     slot: uint64
     head: Checkpoint
     target: Checkpoint
@@ -98,8 +114,22 @@ class Vote(Container):
 
 ```python
 class SignedVote(Container):
+    validator_id: uint64,
     message: Vote,
-    signature: Bytes32,
+    # signature over vote message only as it would be aggregated later in attestation
+    signature: Vector[byte, 4000],
+```
+
+#### `Attestation`
+
+The votes are aggregated in `Attestation` similar to beacon protocol but without complication of committees. This is currently not used in `devnet0`.
+
+```python
+class Attestation(Container):
+    aggregation_bits: Bitlist[VALIDATOR_REGISTRY_LIMIT]
+    message: Vote
+    # this is an aggregated zk proof and is not a fix size signature 
+    signature: List[byte, 4000]
 ```
 
 ## Remarks

@@ -1,8 +1,12 @@
 """
-Defines the cryptographic constants for the XMSS specification.
+Defines the cryptographic constants and configuration presets for the
+XMSS spec.
 
 This specification corresponds to the "hashing-optimized" Top Level Target Sum
-instantiation from the canonical Rust implementation.
+instantiation from the canonical Rust implementation
+(production instantiation).
+
+We also provide a test instantiation for testing purposes.
 
 .. note::
    This specification uses the **KoalaBear** prime field, which is consistent
@@ -14,88 +18,133 @@ instantiation from the canonical Rust implementation.
    specification in the future.
 """
 
+from pydantic import BaseModel, ConfigDict
+from typing_extensions import Final
+
 from ..koalabear import Fp
 
-# =================================================================
-# Core Scheme Configuration
-# =================================================================
 
-MESSAGE_LENGTH: int = 32
-"""The length in bytes for all messages to be signed."""
+class XmssConfig(BaseModel):
+    """A model holding the configuration constants for an XMSS preset."""
 
-LOG_LIFETIME: int = 32
-"""The base-2 logarithm of the scheme's maximum lifetime."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-LIFETIME: int = 1 << LOG_LIFETIME
-"""
-The maximum number of epochs supported by this configuration.
+    # --- Core Scheme Configuration ---
+    MESSAGE_LENGTH: int
+    """The length in bytes for all messages to be signed."""
 
-An individual key pair can be active for a smaller sub-range.
-"""
+    LOG_LIFETIME: int
+    """The base-2 logarithm of the scheme's maximum lifetime."""
+
+    @property
+    def LIFETIME(self) -> int:  # noqa: N802
+        """
+        The maximum number of epochs supported by this configuration.
+
+        An individual key pair can be active for a smaller sub-range.
+        """
+        return 1 << self.LOG_LIFETIME
+
+    DIMENSION: int
+    """The total number of hash chains, `v`."""
+
+    BASE: int
+    """The alphabet size for the digits of the encoded message."""
+
+    FINAL_LAYER: int
+    """Number of top layers of the hypercube to map the hash output into."""
+
+    TARGET_SUM: int
+    """The required sum of all codeword chunks for a signature to be valid."""
+
+    MAX_TRIES: int
+    """
+    How often one should try at most to resample a random value.
+
+    This is currently based on experiments with the Rust implementation.
+    Should probably be modified in production.
+    """
+
+    PARAMETER_LEN: int
+    """
+    The length of the public parameter `P`.
+
+    It is used to specialize the hash function.
+    """
+
+    TWEAK_LEN_FE: int
+    """The length of a domain-separating tweak."""
+
+    MSG_LEN_FE: int
+    """The length of a message after being encoded into field elements."""
+
+    RAND_LEN_FE: int
+    """The length of the randomness `rho` used during message encoding."""
+
+    HASH_LEN_FE: int
+    """The output length of the main tweakable hash function."""
+
+    CAPACITY: int
+    """The capacity of the Poseidon2 sponge, defining its security level."""
+
+    POS_OUTPUT_LEN_PER_INV_FE: int
+    """Output length per invocation for the message hash."""
+
+    POS_INVOCATIONS: int
+    """Number of invocations for the message hash."""
+
+    @property
+    def POS_OUTPUT_LEN_FE(self) -> int:  # noqa: N802
+        """Total output length for the message hash."""
+        return self.POS_OUTPUT_LEN_PER_INV_FE * self.POS_INVOCATIONS
 
 
-# =================================================================
-# Target Sum WOTS Parameters
-# =================================================================
-
-DIMENSION: int = 64
-"""The total number of hash chains, `v`."""
-
-BASE: int = 8
-"""The alphabet size for the digits of the encoded message."""
-
-FINAL_LAYER: int = 77
-"""The number of top layers of the hypercube to map the hash output into."""
-
-TARGET_SUM: int = 375
-"""The required sum of all codeword chunks for a signature to be valid."""
-
-
-# =================================================================
-# Hash and Encoding Length Parameters (in field elements)
-# =================================================================
-
-PARAMETER_LEN: int = 5
-"""
-The length of the public parameter `P`.
-
-It is used to specialize the hash function.
-"""
-
-TWEAK_LEN_FE: int = 2
-"""The length of a domain-separating tweak."""
-
-MSG_LEN_FE: int = 9
-"""The length of a message after being encoded into field elements."""
-
-RAND_LEN_FE: int = 7
-"""The length of the randomness `rho` used during message encoding."""
-
-HASH_LEN_FE: int = 8
-"""The output length of the main tweakable hash function."""
-
-CAPACITY: int = 9
-"""The capacity of the Poseidon2 sponge, defining its security level."""
-
-POS_OUTPUT_LEN_PER_INV_FE: int = 15
-"""Output length per invocation for the message hash."""
-
-POS_INVOCATIONS: int = 1
-"""Number of invocations for the message hash."""
-
-POS_OUTPUT_LEN_FE: int = POS_OUTPUT_LEN_PER_INV_FE * POS_INVOCATIONS
-"""Total output length for the message hash."""
+PROD_CONFIG: Final = XmssConfig(
+    MESSAGE_LENGTH=32,
+    LOG_LIFETIME=32,
+    DIMENSION=64,
+    BASE=8,
+    FINAL_LAYER=77,
+    TARGET_SUM=375,
+    MAX_TRIES=100_000,
+    PARAMETER_LEN=5,
+    TWEAK_LEN_FE=2,
+    MSG_LEN_FE=9,
+    RAND_LEN_FE=7,
+    HASH_LEN_FE=8,
+    CAPACITY=9,
+    POS_OUTPUT_LEN_PER_INV_FE=15,
+    POS_INVOCATIONS=1,
+)
 
 
-# =================================================================
-# Domain Separator Prefixes for Tweaks
-# =================================================================
+TEST_CONFIG: Final = XmssConfig(
+    MESSAGE_LENGTH=32,
+    LOG_LIFETIME=8,
+    DIMENSION=16,
+    BASE=4,
+    FINAL_LAYER=24,
+    TARGET_SUM=24,
+    MAX_TRIES=100_000,
+    PARAMETER_LEN=5,
+    TWEAK_LEN_FE=2,
+    MSG_LEN_FE=9,
+    RAND_LEN_FE=7,
+    HASH_LEN_FE=8,
+    CAPACITY=9,
+    POS_OUTPUT_LEN_PER_INV_FE=15,
+    POS_INVOCATIONS=1,
+)
 
-TWEAK_PREFIX_CHAIN = Fp(value=0x00)
+
+TWEAK_PREFIX_CHAIN: Final = Fp(value=0x00)
 """The unique prefix for tweaks used in Winternitz-style hash chains."""
 
-TWEAK_PREFIX_TREE = Fp(value=0x01)
+TWEAK_PREFIX_TREE: Final = Fp(value=0x01)
 """The unique prefix for tweaks used when hashing Merkle tree nodes."""
 
-TWEAK_PREFIX_MESSAGE = Fp(value=0x02)
+TWEAK_PREFIX_MESSAGE: Final = Fp(value=0x02)
 """The unique prefix for tweaks used in the initial message hashing step."""
+
+PRF_KEY_LENGTH: int = 32
+"""The length of the PRF secret key in bytes."""
