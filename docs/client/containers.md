@@ -1,5 +1,6 @@
 <!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
 
+- [Encoding](#encoding)
 - [`Config`](#config)
 - [`Checkpoint`](#checkpoint)
 - [`State`](#state)

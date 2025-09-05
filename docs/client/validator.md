@@ -2,6 +2,11 @@
 
 - [Validator identification](#validator-identification)
 - [Block proposer selection](#block-proposer-selection)
+  - [Construction proposal message](#construction-proposal-message)
+- [Attesting](#attesting)
+  - [Construction attestation message](#construction-attestation-message)
+    - [Aggregate signature](#aggregate-signature)
+  - [Broadcast attestation](#broadcast-attestation)
 - [Remarks](#remarks)
 
 <!-- mdformat-toc end -->
@@ -74,10 +79,10 @@ def construct_proposal(store: Store, slot: Slot) -> Block:
 
 A validator is expected to create, sign, and broadcast an attestation at the start of second interval(=1) of each slot.
 
-#### Construct attestation message
+#### Construction attestation message
 
 ```python
-  def get_attestation_message(validator_id: ValidatorIndex, slot: Slot, store: Store)
+  def get_attestation_message(slot: Slot, store: Store)
   Vote(
       validator_id=validator_id,
       slot=slot,
@@ -93,9 +98,7 @@ No signature aggregation is to done in `devnet0`.
 
 #### Broadcast attestation
 
-Finally, the validator broadcasts `SignedVote` to the associated attestation
-subnet, the `attestation` topic. There are no separate subnets for the attestations as of `devnet0`.
-
+The validator signs the constructed `Vote` message and broadcasts `SingleAttestation` to the associated attestation subnet, the `attestation` topic. There are no separate subnets/committes for the attestations as of `devnet0`.
 
 ## Remarks
 

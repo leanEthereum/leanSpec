@@ -1,4 +1,25 @@
+<!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
 
+- [Introduction](#introduction)
+- [Fork choice](#fork-choice)
+  - [Configuration](#configuration)
+  - [Helpers](#helpers)
+    - [`get_fork_choice_head`](#get_fork_choice_head)
+    - [`get_latest_justified`](#get_latest_justified)
+    - [`Store`](#store)
+    - [`get_forkchoice_store`](#get_forkchoice_store)
+    - [`update_head`](#update_head)
+    - [`update_safe_target`](#update_safe_target)
+      - [`get_vote_target`](#get_vote_target)
+    - [`accept_new_votes`](#accept_new_votes)
+      - [`tick_interval`](#tick_interval)
+    - [`get_proposal_head`](#get_proposal_head)
+  - [Handlers](#handlers)
+    - [`on_tick`](#on_tick)
+    - [`on_attestation`](#on_attestation)
+    - [`on_block`](#on_block)
+
+<!-- mdformat-toc end -->
 
 ## Introduction
 
@@ -74,7 +95,6 @@ def get_latest_justified(states: Dict[str, State]) -> Checkpoint:
     return latest.latest_justified
 ```
 
-
 #### `Store`
 
 The `Store` is responsible for tracking information required for the fork choice
@@ -124,7 +144,6 @@ def get_forkchoice_store(anchor_state: BeaconState, anchor_block: BeaconBlock) -
     )
 ```
 
-
 #### `update_head`
 
 ```python
@@ -149,6 +168,7 @@ def update_head(store: Store) -> Root:
 ```
 
 ##### `get_vote_target`
+
 ```python
 def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
     target_block_root = store.head
@@ -170,7 +190,6 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
     )
 ```
 
-
 #### `accept_new_votes`
 
 ```python
@@ -184,6 +203,7 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
 ```
 
 ##### `tick_interval`
+
 ```python
 def tick_interval(store: Store, has_proposal: bool) -> None:
     store.time += 1
@@ -200,9 +220,8 @@ def tick_interval(store: Store, has_proposal: bool) -> None:
         accept_new_votes(store)
 ```
 
-
-
 #### `get_proposal_head`
+
 ```python
 def get_proposal_head(store: Store, slot: Slot) -> Root:
     slot_time = store.genesis_time + slot * SECONDS_PER_SLOT;
@@ -215,7 +234,6 @@ def get_proposal_head(store: Store, slot: Slot) -> Root:
 ```
 
 ### Handlers
-
 
 #### `on_tick`
 
