@@ -63,16 +63,16 @@ def _run_commit_open_verify_roundtrip(
 
 
 @pytest.mark.parametrize(
-    "num_leaves, depth, start_index, leaf_parts_len, description",
+    "num_leaves, depth, start_index, leaf_parts_len",
     [
-        (16, 4, 0, 3, "Full tree (depth 4)"),
-        (12, 5, 0, 5, "Half tree, left-aligned (depth 5)"),
-        (16, 5, 16, 2, "Half tree, right-aligned (depth 5)"),
-        (22, 6, 13, 3, "Sparse, non-aligned tree (depth 6)"),
-        (2, 2, 2, 6, "Half tree, right-aligned (small)"),
-        (1, 1, 0, 1, "Tree with a single leaf at the start"),
-        (1, 1, 1, 1, "Tree with a single leaf at an odd index"),
-        (16, 5, 7, 2, "Small sparse tree starting at an odd index"),
+        pytest.param(16, 4, 0, 3, id="Full tree (depth 4)"),
+        pytest.param(12, 5, 0, 5, id="Half tree, left-aligned (depth 5)"),
+        pytest.param(16, 5, 16, 2, id="Half tree, right-aligned (depth 5)"),
+        pytest.param(22, 6, 13, 3, id="Sparse, non-aligned tree (depth 6)"),
+        pytest.param(2, 2, 2, 6, id="Half tree, right-aligned (small)"),
+        pytest.param(1, 1, 0, 1, id="Tree with a single leaf at the start"),
+        pytest.param(1, 1, 1, 1, id="Tree with a single leaf at an odd index"),
+        pytest.param(16, 5, 7, 2, id="Small sparse tree starting at an odd index"),
     ],
 )
 def test_commit_open_verify_roundtrip(
@@ -80,7 +80,6 @@ def test_commit_open_verify_roundtrip(
     depth: int,
     start_index: int,
     leaf_parts_len: int,
-    description: str,
 ) -> None:
     """Tests the Merkle tree logic for various configurations."""
     # Ensure the test case parameters are valid for the specified tree depth.
