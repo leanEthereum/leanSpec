@@ -114,7 +114,7 @@ def set_justifications(state: State, justifications: Dict[str, List[bool]]) -> N
         assert len(justifications[root]) == VALIDATOR_REGISTRY_LIMIT
 
         justifications_roots.append(root)
-        flattened_justifications.extend(justifications[roots])
+        flattened_justifications.extend(justifications[root])
 
     # Create a new Bitlist with all the flattened votes
     justifications_validators = Bitlist[HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT](*flattened_justifications)
