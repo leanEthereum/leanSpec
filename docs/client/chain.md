@@ -40,7 +40,7 @@ This document specs the behavior and functionality of the lean chain. This is a 
 3. Empty signatures: Since we will be moving to post quantum signatures `Devnet1` onwards, `Devnet0` data is generated with zero bytes signatures with no signature verification involved. This means voting is a trusted process where the client creates a vote as per their assigned validators.
 4. No Aggregation: The votes casted in the network are simply consumed and packed without aggregation. Beacon style aggregation will be introduced in the Devnet 2.
 5. Round robin proposals: The proposal assignment process has also been kept simple to just assign the proposals based on a round robin process based on the validator index. This makes proposal also a trusted process where the client proposes a block as per their assigned validators.
-5. Simplified Validators: There is no validator deposit, activation, withdrawal or slashing making the validator lifecyle super simple. Each validator has the weight of `1` and since validators don't even generate signatures, there is no validator tracking in the state. Validators are assigned to the clients based on a config file.
+5. Simplified Validators: There is no validator deposit, activation, withdrawal or slashing making the validator lifecycle super simple. Each validator has the weight of `1` and since validators don't even generate signatures, there is no validator tracking in the state. Validators are assigned to the clients based on a config file.
 
 ## Configuration
 
@@ -236,7 +236,7 @@ def process_block_header(state: State, block: Block) -> None:
     # to correctly set genesis block root as already justified and finalized. 
     # This is not possible at the time of genesis state generation and are set at 
     # zero bytes because genesis block is calculated using genesis state causing a 
-    # circular dependancy
+    # circular dependency
     if state.latest_block_header.slot == 0:
         # block.parent_root is the genesis root
         state.latest_justified.root = block.parent_root

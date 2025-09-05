@@ -102,7 +102,7 @@ class SignedVote(Container):
 
 #### `Attestation`
 
-The votes are aggregated in `Attestation` similar to beacon protocol but without complication of committes. This is currently not used in `devnet0`.
+The votes are aggregated in `Attestation` similar to beacon protocol but without complication of committees. This is currently not used in `devnet0`.
 
 ```python
 class Attestation(Container):
