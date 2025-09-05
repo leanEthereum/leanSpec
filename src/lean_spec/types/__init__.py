@@ -2,14 +2,20 @@
 
 from .base import StrictBaseModel
 from .basispt import BasisPoint
+from .bytes import Bytes1
+from .epoch import Epoch
+from .gwei import Gwei
 from .hash import Bytes32
+from .staker import StakerIndex
 from .uint64 import Uint64
-from .validator import ValidatorIndex
 
 __all__ = [
     "Uint64",
     "BasisPoint",
     "Bytes32",
     "StrictBaseModel",
-    "ValidatorIndex",
+    "Epoch",
+    "Gwei",
+    "StakerIndex",
+    "Bytes1",
 ]

@@ -14,7 +14,7 @@ class BlockBody(StrictBaseModel):
 
     votes: Annotated[
         list[Vote],
-        Field(max_length=config.VALIDATOR_REGISTRY_LIMIT),
+        Field(max_length=config.STAKER_REGISTRY_LIMIT),
     ]
     """
     A list of votes included in the block.

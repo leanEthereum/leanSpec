@@ -4,11 +4,12 @@ from pydantic import Field
 from typing_extensions import Annotated
 
 from lean_spec.subspecs.chain import DEVNET_CONFIG
-from lean_spec.types import Bytes32, StrictBaseModel, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, StakerIndex, StrictBaseModel, Uint64
 
 from .block import BlockHeader
 from .checkpoint import Checkpoint
 from .config import Config
+from .staker import Staker
 
 
 class State(StrictBaseModel):
@@ -60,6 +61,12 @@ class State(StrictBaseModel):
     ]
     """A bitlist of validators who participated in justifications."""
 
-    def is_proposer(self, validator_index: ValidatorIndex) -> bool:
+    stakers: Annotated[
+        list[Staker],
+        Field(max_length=DEVNET_CONFIG.staker_registry_limit),
+    ]
+    """The list of stakers in the state."""
+
+    def is_proposer(self, staker_index: StakerIndex) -> bool:
         """Check if a validator is the proposer for the current slot."""
-        return self.slot % self.config.num_validators == validator_index
+        return self.slot % self.config.num_validators == staker_index
