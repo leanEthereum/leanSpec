@@ -1,3 +1,20 @@
+<!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
+
+- [Setup](#setup)
+- [Node identification](#node-identification)
+- [ENR structure (modified)](#enr-structure-modified)
+- [Configuration](#configuration)
+- [Gossip domain](#gossip-domain)
+  - [Topics and messages](#topics-and-messages)
+  - [Encodings](#encodings)
+  - [The Req/Resp domain](#the-reqresp-domain)
+    - [Encoding strategies](#encoding-strategies)
+    - [Messages](#messages)
+      - [Status v1](#status-v1)
+      - [BlocksByRoot v1](#blocksbyroot-v1)
+
+<!-- mdformat-toc end -->
+
 # Networking
 
 ## Setup
@@ -39,11 +56,11 @@ Specifications of these parameters can be found in the
 
 This section outlines configurations that are used in this spec.
 
-| Name                                 | Value                                    | Description                                                                           |
-| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `MAX_REQUEST_BLOCKS`                 | `2**10` (= 1024)                         | Maximum number of blocks in a single request                                          |
-| `MESSAGE_DOMAIN_INVALID_SNAPPY`      | `DomainType('0x00000000')`               | 4-byte domain for gossip message-id isolation of *invalid* snappy messages            |
-| `MESSAGE_DOMAIN_VALID_SNAPPY`        | `DomainType('0x01000000')`               | 4-byte domain for gossip message-id isolation of *valid* snappy messages              |
+| Name                            | Value                      | Description                                                                |
+| ------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| `MAX_REQUEST_BLOCKS`            | `2**10` (= 1024)           | Maximum number of blocks in a single request                               |
+| `MESSAGE_DOMAIN_INVALID_SNAPPY` | `DomainType('0x00000000')` | 4-byte domain for gossip message-id isolation of *invalid* snappy messages |
+| `MESSAGE_DOMAIN_VALID_SNAPPY`   | `DomainType('0x01000000')` | 4-byte domain for gossip message-id isolation of *valid* snappy messages   |
 
 ## Gossip domain
 
@@ -105,10 +122,10 @@ snappy decompress altogether.
 The payload is carried in the `data` field of a gossipsub message, and varies
 depending on the topic:
 
-| Name                             | Message Type              |
-| -------------------------------- | ------------------------- |
-| `block`                          | `SignedBlock`             |
-| `vote`                           | `SignedVote`              |
+| Name    | Message Type  |
+| ------- | ------------- |
+| `block` | `SignedBlock` |
+| `vote`  | `SignedVote`  |
 
 Clients MUST reject (fail validation) messages containing an incorrect type, or
 invalid payload.

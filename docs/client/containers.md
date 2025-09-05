@@ -1,3 +1,19 @@
+<!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
+
+- [`Config`](#config)
+- [`Checkpoint`](#checkpoint)
+- [`State`](#state)
+- [`Block`](#block)
+- [`BlockHeader`](#blockheader)
+- [`BlockBody`](#blockbody)
+- [`SignedBlock`](#signedblock)
+- [`Vote`](#vote)
+- [`SignedVote`](#signedvote)
+  - [`Attestation`](#attestation)
+- [Remarks](#remarks)
+
+<!-- mdformat-toc end -->
+
 # Containers
 
 ## `Config`
