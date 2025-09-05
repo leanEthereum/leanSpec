@@ -108,7 +108,7 @@ def set_justifications(state: State, justifications: Dict[str, List[bool]]) -> N
     justifications_roots = List[Bytes32, HISTORICAL_ROOTS_LIMIT]
     flattened_justifications = []
 
-    for root in sorted(justifications):
+    for root in sorted(justifications.keys()):
         # Assert that votes list has exactly VALIDATOR_REGISTRY_LIMIT items.
         # If the length is incorrect, the constructed bitlist will be corrupt.
         assert len(justifications[root]) == VALIDATOR_REGISTRY_LIMIT
