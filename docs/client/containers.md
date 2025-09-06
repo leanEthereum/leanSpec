@@ -1,5 +1,6 @@
 <!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
 
+- [Encoding](#encoding)
 - [`Config`](#config)
 - [`Checkpoint`](#checkpoint)
 - [`State`](#state)
@@ -15,6 +16,10 @@
 <!-- mdformat-toc end -->
 
 # Containers
+
+## Encoding
+
+The containers for various blockchain consensus objects are primarily SSZ objects. To be more prover friendly, the Poseidon2 hasher will be used for hash tree rooting of these objects. However `devnet0` & `devnet1` continue to use the sha256 hasher.
 
 ## `Config`
 

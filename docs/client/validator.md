@@ -2,6 +2,11 @@
 
 - [Validator identification](#validator-identification)
 - [Block proposer selection](#block-proposer-selection)
+  - [Construction proposal message](#construction-proposal-message)
+- [Attesting](#attesting)
+  - [Construction attestation message](#construction-attestation-message)
+    - [Aggregate signature](#aggregate-signature)
+  - [Broadcast attestation](#broadcast-attestation)
 - [Remarks](#remarks)
 
 <!-- mdformat-toc end -->
@@ -32,6 +37,68 @@ a round-robin manner by the validator IDs.
 def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
     return get_current_slot() % state.config.num_validators == validator_index
 ```
+
+#### Construction proposal message
+
+```python
+def construct_proposal(store: Store, slot: Slot) -> Block:
+  head_root = get_proposal_head(store)
+  head_state = store.states[head_root]
+
+  new_block, state = None, None
+  votes_to_add = []
+
+  # Keep attempt to add valid votes from the list of available votes
+  while 1:
+      new_block = Block(
+          slot=new_slot,
+          parent=self.head,
+          votes=votes_to_add
+      )
+      state = process_block(head_state, new_block)
+      new_votes_to_add = [
+          vote for vote in self.known_votes if
+          vote.source == state.latest_justified_hash and
+          vote not in votes_to_add
+      ]
+
+      if len(new_votes_to_add) == 0:
+          break
+
+      votes_to_add.extend(new_votes_to_add)
+  new_block.state_root = compute_hash(state)
+  new_hash = compute_hash(new_block)
+
+  store.blocks[new_hash] = new_block
+  store.states[new_hash] = state
+
+  return new_block
+```
+
+## Attesting
+
+A validator is expected to create, sign, and broadcast an attestation at the start of second interval(=1) of each slot.
+
+#### Construction attestation message
+
+```python
+  def get_attestation_message(slot: Slot, store: Store)
+  Vote(
+      validator_id=validator_id,
+      slot=slot,
+      head=store.head,
+      target=get_vote_target(store),
+      source=store.latest_justified,
+  )
+```
+
+##### Aggregate signature
+
+No signature aggregation is to done in `devnet0`.
+
+#### Broadcast attestation
+
+The validator signs the constructed `Vote` message and broadcasts `SingleAttestation` to the associated attestation subnet, the `attestation` topic. There are no separate subnets/committes for the attestations as of `devnet0`.
 
 ## Remarks
 
