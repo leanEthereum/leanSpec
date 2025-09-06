@@ -1,4 +1,5 @@
 """Pytest configuration and shared fixtures."""
+
 from hypothesis import settings
 
 # Create a profile named "no_deadline" with deadline disabled.
