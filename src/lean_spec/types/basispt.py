@@ -3,11 +3,11 @@
 from pydantic import Field
 from typing_extensions import Annotated
 
-from ..types.uint64 import Uint64
+from .uint import Uint64
 
 BasisPoint = Annotated[
     Uint64,
-    Field(le=10000, description="A value in basis points (1/10000)."),
+    Field(le=Uint64(10000), description="A value in basis points (1/10000)."),
 ]
 """
 A type alias for basis points.

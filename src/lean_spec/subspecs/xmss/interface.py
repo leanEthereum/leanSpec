@@ -15,6 +15,7 @@ from lean_spec.subspecs.xmss.target_sum import (
     TEST_TARGET_SUM_ENCODER,
     TargetSumEncoder,
 )
+from lean_spec.types.uint import Uint64
 
 from .constants import (
     PROD_CONFIG,
@@ -117,7 +118,7 @@ class GeneralizedXmssScheme:
                 # Derive the secret start of the chain from the master PRF key.
                 #
                 # This ensures each chain is unique and cryptographically secure.
-                start_digest = self.prf.apply(prf_key, epoch, chain_index)
+                start_digest = self.prf.apply(prf_key, epoch, Uint64(chain_index))
 
                 # Compute the public end of the chain by applying the hash function
                 # `BASE - 1` times. This is the public part of the one-time key.
@@ -234,7 +235,7 @@ class GeneralizedXmssScheme:
         ots_hashes: List[HashDigest] = []
         for chain_index, steps in enumerate(codeword):
             # Derive the secret start of the current chain using the master PRF key.
-            start_digest = self.prf.apply(sk.prf_key, epoch, chain_index)
+            start_digest = self.prf.apply(sk.prf_key, epoch, Uint64(chain_index))
             # Walk the hash chain for the number of `steps` specified by the
             # corresponding digit in the codeword.
             #

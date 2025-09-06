@@ -19,15 +19,15 @@ from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 @pytest.fixture
 def sample_config() -> Config:
     """Provides a sample configuration with 10 validators."""
-    return Config(num_validators=10, genesis_time=0)
+    return Config(num_validators=Uint64(10), genesis_time=Uint64(0))
 
 
 @pytest.fixture
 def sample_block_header() -> BlockHeader:
     """Provides a sample, empty block header for state initialization."""
     return BlockHeader(
-        slot=0,
-        proposer_index=0,
+        slot=Uint64(0),
+        proposer_index=Uint64(0),
         parent_root=Bytes32(b"\x00" * 32),
         state_root=Bytes32(b"\x00" * 32),
         body_root=Bytes32(b"\x00" * 32),
@@ -37,7 +37,7 @@ def sample_block_header() -> BlockHeader:
 @pytest.fixture
 def sample_checkpoint() -> Checkpoint:
     """Provides a sample, empty checkpoint for state initialization."""
-    return Checkpoint(root=Bytes32(b"\x00" * 32), slot=0)
+    return Checkpoint(root=Bytes32(b"\x00" * 32), slot=Uint64(0))
 
 
 @pytest.fixture
