@@ -126,7 +126,7 @@ The provided anchor-state will be regarded as a trusted state, to not roll back
 beyond. This should be the genesis state for a full client.
 
 ```python
-def get_forkchoice_store(anchor_state: BeaconState, anchor_block: BeaconBlock) -> Store:
+def get_forkchoice_store(anchor_state: State, anchor_block: Block) -> Store:
     assert anchor_block.state_root == hash_tree_root(anchor_state)
     anchor_root = hash_tree_root(anchor_block)
     anchor_slot = anchor_block.slot
