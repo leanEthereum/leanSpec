@@ -223,7 +223,7 @@ def tick_interval(store: Store, has_proposal: bool) -> None:
 
 ```python
 def get_proposal_head(store: Store, slot: Slot) -> Root:
-    slot_time = store.genesis_time + slot * SECONDS_PER_SLOT;
+    slot_time = store.config.genesis_time + slot * SECONDS_PER_SLOT;
     # this would be a no-op if the store is already ticked to the current time
     on_tick(store, slot_time, True)
     # this would be a no-op or just a fast compute if store was already ticked to
