@@ -106,7 +106,6 @@ algorithm. The important fields being tracked are described below:
 - `latest_new_votes`: the latest by validator new votes not yet applied
 
 ```python
-@dataclass
 class Store(object):
     # time in intervals since genesis
     time: Interval,
