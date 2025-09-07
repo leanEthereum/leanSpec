@@ -30,7 +30,7 @@ update `store` by running:
 
 - `on_tick(store, time)` whenever `time > store.time` where `time` is the
   current Unix time
-- `on_block(store, block)` whenever a block `block: SignedBeaconBlock` is
+- `on_block(store, block)` whenever a block `block: SignedBlock` is
   received
 - `on_attestation(store, attestation)` whenever an attestation `attestation` is
   received
