@@ -226,7 +226,7 @@ def tick_interval(store: Store, has_proposal: bool) -> None:
 def get_proposal_head(store: Store, slot: Slot) -> Root:
     slot_time = store.genesis_time + slot * SECONDS_PER_SLOT;
     # this would be a no-op if the store is already ticked to the current time
-    on_tick(store, slot_time, has_proposal)
+    on_tick(store, slot_time, True)
     # this would be a no-op or just a fast compute if store was already ticked to
     # accept new votes for a registered validator with the node
     accept_new_votes(store)
@@ -251,14 +251,16 @@ def on_tick(store: Store, time: uin64, has_proposal: bool) -> None:
 #### `on_attestation`
 
 ```python
-def on_attestation(store: Store, vote: Vote, from_block: boolean = false) -> None:
-    validate_on_attestation(store, attestation)
+def on_attestation(store: Store, vote: SignedVote, from_block: boolean = false) -> None:
+    validate_on_attestation(store, signed_vote)
     
+    validator_id = signed_vote.validator_id
+    vote = signed_vote.message
     latest_votes_map = from_block ? store.latest_known_votes : store.latest_new_votes
-    latest_validator_vote = latest_votes_map.get(vote.validator_id)
+    latest_validator_vote = latest_votes_map.get(validator_id)
     if(latest_validator_vote and latest_validator_vote.slot >= vote.slot):
         return
-    store.latest_new_votes.set(vote.validator_id, vote)
+    store.latest_new_votes.set(validator_id, vote)
 ```
 
 #### `on_block`
@@ -279,8 +281,8 @@ def on_block(store: Store, block: Block) -> None:
     store.states[block_hash] = state
 
     # add block votes to the onchain known last votes
-    for vote in block.body.votes
-      on_attestation(store, vote, true)
+    for signed_vote in block.body.attestations
+      on_attestation(store, signed_vote, True)
 
     update_head(store)
 ```
