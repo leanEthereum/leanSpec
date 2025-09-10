@@ -250,16 +250,30 @@ def on_tick(store: Store, time: uin64, has_proposal: bool) -> None:
 #### `on_attestation`
 
 ```python
-def on_attestation(store: Store, vote: SignedVote, from_block: boolean = false) -> None:
+def on_attestation(store: Store, vote: SignedVote, is_from_block: boolean = false) -> None:
     validate_on_attestation(store, signed_vote)
     
     validator_id = signed_vote.validator_id
     vote = signed_vote.message
-    latest_votes_map = from_block ? store.latest_known_votes : store.latest_new_votes
-    latest_validator_vote = latest_votes_map.get(validator_id)
-    if(latest_validator_vote and latest_validator_vote.slot >= vote.slot):
-        return
-    store.latest_new_votes.set(validator_id, vote)
+    time_slots = store.time // SECONDS_PER_INTERVAL
+
+    if(is_from_block):
+        # update latest known votes if this is latest
+        latest_vote = store.latest_known_votes.get(validator_id)
+        if(latest_vote == None or latest_vote.slot < vote.slot)
+          store.latest_known_votes.set(validator_id, latest_vote)
+
+        # clear from new votes if this is latest
+        latest_vote = store.latest_new_votes.get(validator_id)
+        if(latest_vote != None and latest_vote.slot < vote.slot)
+          store.latest_new_votes.del(validator_id)
+
+    else:
+        # update latest new votes if this is the latest
+        assert(vote.slot <= store.slot)
+        latest_vote = store.latest_new_votes.get(validator_id)
+        if(latest_vote == None or latest_vote.slot < vote.slot)
+          store.latest_new_votes.set(validator_id, latest_vote)
 ```
 
 #### `on_block`
