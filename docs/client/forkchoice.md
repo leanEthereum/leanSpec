@@ -182,7 +182,7 @@ def update_head(store: Store) -> Root:
 ##### `get_vote_target`
 
 ```python
-def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
+def get_vote_target(store: Store) -> Checkpoint:
     """
     Calculates the target checkpoint for a vote based on the head, safe target,
     and latest finalized state.
@@ -205,6 +205,29 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
     return Checkpoint(
         root=target_block.root,
         slot=target_block.slot
+    )
+```
+
+#### `get_attestation_message`
+
+```python
+def get_attestation_message(store: Store, slot: Slot) -> Vote:
+    """
+    Constructs a Vote object for an attestation based on the store's state.
+
+    :param store: The Store object containing the fork choice state.
+    :param slot: The slot for which the attestation is being made.
+    :return: A fully constructed Vote object.
+    """
+    head = get_proposal_head(store, slot)
+    target = get_vote_target(store)
+
+
+    return Vote(
+        slot=slot,
+        head=head,
+        target=target,
+        source=store.latest_justified,
     )
 ```
 

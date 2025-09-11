@@ -83,24 +83,10 @@ The attestation process consists of validator casting their votes and their subs
 
 A validator is expected to create, sign, and broadcast a `SignedVote` at the start of second interval(=1) of each slot.
 
-#### Construction vote message
+#### Construction & Broadcast
 
-```python
-  def get_attestation_message(slot: Slot, store: Store)
-  head = get_proposal_head(store, slot)
-  target = get_vote_target(store)
-
-  return Vote(
-      slot=slot,
-      head=head,
-      target=target,
-      source=store.latest_justified,
-  )
-```
-
-#### Broadcast votes
-
-The validator signs the constructed `Vote` message and broadcasts `SignedVote` to the `attestation` topic.
+The validator constructs, signs a `Vote` message (`get_attestation_message`)
+and further broadcasts the `SignedVote` to the `attestation` p2p topic.
 
 Note that there are no separate subnets/committes for the attestations as of `devnet0`.
 
