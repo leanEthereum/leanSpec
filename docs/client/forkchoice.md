@@ -194,7 +194,7 @@ def get_vote_target(store: Store) -> Checkpoint:
     # of the head
     for i in range(3):
         if store.blocks[target_block_root].slot > store.blocks[store.safe_target].slot:
-            target_block_root = store.blocks[target_block_root].parent
+            target_block_root = store.blocks[target_block_root].parent_root
 
     # If the latest finalized slot is very far back, then only some slots are
     # valid to justify, make sure the target is one of those
