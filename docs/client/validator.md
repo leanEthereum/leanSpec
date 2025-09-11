@@ -85,8 +85,28 @@ A validator is expected to create, sign, and broadcast a `SignedVote` at the sta
 
 #### Construction & Broadcast
 
-The validator constructs, signs a `Vote` message (`get_attestation_message`)
-and further broadcasts the `SignedVote` to the `attestation` p2p topic.
+The validator constructs, signs a `Vote` message and further broadcasts the `SignedVote` to the `attestation` p2p topic.
+
+```python
+def get_attestation_message(store: Store, slot: Slot) -> Vote:
+    """
+    Constructs a Vote object for an attestation based on the store's state.
+
+    :param store: The Store object containing the fork choice state.
+    :param slot: The slot for which the attestation is being made.
+    :return: A fully constructed Vote object.
+    """
+    head = get_proposal_head(store, slot)
+    target = get_vote_target(store)
+
+
+    return Vote(
+        slot=slot,
+        head=head,
+        target=target,
+        source=store.latest_justified,
+    )
+```
 
 Note that there are no separate subnets/committes for the attestations as of `devnet0`.
 
