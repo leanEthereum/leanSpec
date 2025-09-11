@@ -112,7 +112,7 @@ def produce_attestation_vote(store: Store, slot: Slot) -> Vote:
     )
 ```
 
-Note that there are no separate subnets/committes for the attestations as of `devnet0`.
+Note that there are no separate subnets/committees for the attestations as of `devnet0`.
 
 ### Attestation Aggregation
 
