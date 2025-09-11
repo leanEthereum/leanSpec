@@ -32,8 +32,8 @@ update `store` by running:
   current Unix time
 - `on_block(store, block)` whenever a block `block: SignedBlock` is
   received
-- `on_attestation(store, attestation)` whenever an attestation `attestation` is
-  received
+- `on_attestation(store, attestation, from_block)` whenever an attestation `attestation` is
+  received, either in a block or on network
 - `get_proposal_head(store, slot)` whenever validator intends to make block proposal
 
 ### Configuration
@@ -87,11 +87,15 @@ def get_fork_choice_head(blocks: Dict[str, Block],
 #### `get_latest_justified`
 
 ```python
-def get_latest_justified(states: Dict[str, State]) -> Checkpoint:
+
+def get_latest_justified(states: Dict[str, State]) -> Optional[Checkpoint]:
+    # Find the State object with the maximum s.latest_justified.slot value
     latest = max(
         states.values(),
         key=lambda s: s.latest_justified.slot
     )
+
+    # Return the Checkpoint from that State object
     return latest.latest_justified
 ```
 
@@ -136,8 +140,8 @@ def get_forkchoice_store(anchor_state: State, anchor_block: Block) -> Store:
         config=anchor_state.config,
         head=anchor_root,
         safe_target=anchor_root,
-        latest_justified=state.latest_justified,
-        latest_finalized=state.latest_finalized,
+        latest_justified=anchor_state.latest_justified,
+        latest_finalized=anchor_state.latest_finalized,
         blocks={anchor_root: copy(anchor_block)},
         states={anchor_root: copy(anchor_state)},
     )
@@ -147,22 +151,31 @@ def get_forkchoice_store(anchor_state: State, anchor_block: Block) -> Store:
 
 ```python
 def update_head(store: Store) -> Root:
+    """
+    Updates the store's latest justified checkpoint, head, and latest finalized state.
+    """
     store.latest_justified = get_latest_justified(store.states)
-    store.head = get_fork_choice_head(store.blocks, store.latest_justified.root, store.latest_known_votes)
+    store.head = get_fork_choice_head(
+        store.blocks,
+        store.latest_justified.root,
+        store.latest_known_votes)
+
     store.latest_finalized = store.states[store.head].latest_finalized
 ```
 
 #### `update_safe_target`
 
 ```python
-# Compute the latest block that the staker is allowed to choose
-# as the target
+# Compute the latest block that the validator is allowed to choose as the target
     def update_safe_target(store: Store):
+        # 2/3rd majority min voting voting weight for target selection
+        min_target_score = -(-store.config.num_validators * 2 // 3) # ceiling division
+
         store.safe_target = get_fork_choice_head(
             store.blocks,
             store.latest_justified.root,
             store.latest_new_votes,
-            min_score=store.config.num_validators * 2 // 3
+            min_score=min_target_score,
         )
 ```
 
@@ -170,6 +183,11 @@ def update_head(store: Store) -> Root:
 
 ```python
 def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
+    """
+    Calculates the target checkpoint for a vote based on the head, safe target,
+    and latest finalized state.
+    """
+    # Start from head as target candidate
     target_block_root = store.head
 
     # If there is no very recent safe target, then vote for the k'th ancestor
@@ -183,9 +201,10 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
     while not is_justifiable_slot(store.latest_finalized.slot, store.blocks[target_block_root].slot):
         target_block_root = store.blocks[target_block_root].parent_root
 
+    target_block = store.blocks[target_block_root]
     return Checkpoint(
-        root=target_block_root,
-        slot=store.blocks[target_block_root].root
+        root=target_block.root,
+        slot=target_block.slot
     )
 ```
 
@@ -194,11 +213,16 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
 ```python
 # Process new votes that the staker has received. Vote processing is done
 # at a particular time, because of safe target and view merge rules
-    def accept_new_votes(store: Store):
-        for(validator_id in store.latest_new_votes.keys):
-            store.latest_known_votes.set(validator_id, store.latest_new_votes[validator_id])
-        store.new_votes = field(default_factory=dict)
-        update_head(store)
+def accept_new_votes(store: Store):
+    """
+    Accepts the latest new votes, merges them into the known votes,
+    and then updates the fork-choice head.
+    """
+    for validator_id in store.latest_new_votes.keys():
+        store.latest_known_votes[validator_id] = store.latest_new_votes[validator_id]
+
+    store.latest_new_votes = {}
+    update_head(store)
 ```
 
 ##### `tick_interval`
@@ -207,15 +231,16 @@ def get_vote_target(store: Store, head_root: Root, slot: Slot) -> Checkpoint:
 def tick_interval(store: Store, has_proposal: bool) -> None:
     store.time += 1
     current_interval = store.time % INTERVALS_PER_SLOT
-    if(current_interval==0):
-        if(has_proposal):
+    if current_interval == 0:
+        if has_proposal:
             accept_new_votes(store)
-    elif (current_interval==1):
+    elif current_interval == 1:
         # validators will vote in this interval using safe target previously
         # computed
-    elif (current_interval==2):
+        pass
+    elif current_interval == 2:
         update_safe_target(store)
-    else
+    else:
         accept_new_votes(store)
 ```
 
@@ -223,7 +248,7 @@ def tick_interval(store: Store, has_proposal: bool) -> None:
 
 ```python
 def get_proposal_head(store: Store, slot: Slot) -> Root:
-    slot_time = store.config.genesis_time + slot * SECONDS_PER_SLOT;
+    slot_time = store.config.genesis_time + slot * SECONDS_PER_SLOT
     # this would be a no-op if the store is already ticked to the current time
     on_tick(store, slot_time, True)
     # this would be a no-op or just a fast compute if store was already ticked to
@@ -240,66 +265,86 @@ def get_proposal_head(store: Store, slot: Slot) -> Root:
 # called every interval and with has_proposal flag on the new slot interval if
 # node has a validator with proposal in this slot so as to not delay accepting
 # new votes and parallelize compute
-def on_tick(store: Store, time: uin64, has_proposal: bool) -> None:
+def on_tick(store: Store, time: int, has_proposal: bool) -> None:
+    """
+    Ticks the store forward in intervals until it reaches the given time.
+
+    :param store: The Store object to be updated.
+    :param time: The current time in seconds.
+    :param has_proposal: A boolean indicating if there is a proposal in this tick.
+    """
+    # Calculate the number of intervals that have passed since genesis
     tick_interval_time = (time - store.genesis_time) // SECONDS_PER_INTERVAL
-    while(store.time < tick_interval_time):
-        # tick interval and signal proposal if this is the proposal interval
-        tick_interval(store, has_proposal and (store.time+1) == tick_interval_time)
+
+    # Tick the store one interval at a time until the target time is reached
+    while store.time < tick_interval_time:
+        # Determine if a proposal should be signaled for the next interval
+        should_signal_proposal = has_proposal and (store.time + 1) == tick_interval_time
+
+        # Tick the interval and potentially signal a proposal
+        tick_interval(store, should_signal_proposal)
 ```
 
 #### `on_attestation`
 
 ```python
-def on_attestation(store: Store, vote: SignedVote, is_from_block: boolean = false) -> None:
+def on_attestation(store: Store, signed_vote: SignedVote, is_from_block: bool = False) -> None:
+    """
+    Validates and processes a new attestation (a signed vote), updating the store's
+    latest votes.
+    """
     validate_on_attestation(store, signed_vote)
     
     validator_id = signed_vote.validator_id
     vote = signed_vote.message
-    
 
-    if(is_from_block):
+    if is_from_block:
         # update latest known votes if this is latest
         latest_vote = store.latest_known_votes.get(validator_id)
-        if(latest_vote == None or latest_vote.slot < vote.slot)
-          store.latest_known_votes.set(validator_id, vote)
+        if latest_vote is None or latest_vote.slot < vote.slot:
+            store.latest_known_votes[validator_id] = vote
 
         # clear from new votes if this is latest
         latest_vote = store.latest_new_votes.get(validator_id)
-        if(latest_vote != None and latest_vote.slot < vote.slot)
-          store.latest_new_votes.del(validator_id)
-
+        if latest_vote is not None and latest_vote.slot < vote.slot:
+            del store.latest_new_votes[validator_id]
     else:
         # forkchoice should be correctly ticked to current time before
         # importing gossiped attestations
         time_slots = store.time // SECONDS_PER_INTERVAL
-        assert(vote.slot<=time_slots)
+        assert vote.slot <= time_slots
 
         # update latest new votes if this is the latest
-        assert(vote.slot <= store.slot)
         latest_vote = store.latest_new_votes.get(validator_id)
-        if(latest_vote == None or latest_vote.slot < vote.slot)
-          store.latest_new_votes.set(validator_id, latest_vote)
+        if latest_vote is None or latest_vote.slot < vote.slot:
+            store.latest_new_votes[validator_id] = vote
 ```
 
 #### `on_block`
 
 ```python
 def on_block(store: Store, block: Block) -> None:
+    """
+    Processes a new block, updates the store, and triggers a head update.
+    """
     block_hash = compute_hash(block)
     # If the block is already known, ignore it
     if block_hash in store.blocks:
         return
+
     parent_state = store.states.get(block.parent_root)
     # at this point parent state should be available so node should
     # sync parent chain if not available before adding block to forkchoice
-    assert(parent_state != None)
-    # get post state from STF
+    assert parent_state is not None, "Parent state not found, sync parent chain first"
+
+    # Get post state from STF (State Transition Function)
     state = process_block(copy.deepcopy(parent_state), block)
     store.blocks[block_hash] = block
     store.states[block_hash] = state
 
     # add block votes to the onchain known last votes
-    for signed_vote in block.body.attestations
+    for signed_vote in block.body.attestations:
+      # Add block votes to the onchain known last votes
       on_attestation(store, signed_vote, True)
 
     update_head(store)
