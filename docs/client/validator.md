@@ -2,11 +2,11 @@
 
 - [Validator identification](#validator-identification)
 - [Block proposer selection](#block-proposer-selection)
-  - [Construction proposal message](#construction-proposal-message)
+  - [Construction & Broadcast](#construction--broadcast)
 - [Attesting](#attesting)
-  - [Construction attestation message](#construction-attestation-message)
-    - [Aggregate signature](#aggregate-signature)
-  - [Broadcast attestation](#broadcast-attestation)
+  - [Validator Voting](#validator-voting)
+    - [Construction & Broadcast](#construction--broadcast-1)
+  - [Attestation Aggregation](#attestation-aggregation)
 - [Remarks](#remarks)
 
 <!-- mdformat-toc end -->
@@ -29,6 +29,8 @@ quadrivium: [2, 5, 8, 11, 14, 17, 20, 23, 26, 29]
 
 ## Block proposer selection
 
+A validator is expected to create, sign, and broadcast a block at the start of first interval(=0) of its proposal slot.
+
 The block proposer shall be determined by the modulo of the current slot number
 by the total number of validators, such that block proposers are determined in
 a round-robin manner by the validator IDs.
@@ -38,10 +40,12 @@ def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
     return get_current_slot() % state.config.num_validators == validator_index
 ```
 
-#### Construction proposal message
+#### Construction & Broadcast
+
+The validator constructs, signs a `Block` message and further broadcasts the `SignedBlock` to the `block` p2p topic.
 
 ```python
-def construct_proposal(store: Store, slot: Slot) -> Block:
+def product_block(store: Store, slot: Slot) -> Block:
   head_root = get_proposal_head(store)
   head_state = store.states[head_root]
 
@@ -52,20 +56,20 @@ def construct_proposal(store: Store, slot: Slot) -> Block:
   while 1:
       new_block = Block(
           slot=new_slot,
-          parent=self.head,
+          parent=store.head,
           votes=votes_to_add
       )
       state = process_block(head_state, new_block)
       new_votes_to_add = [
-          vote for vote in self.known_votes if
+          vote for vote in store.latest_known_votes if
           vote.source == state.latest_justified_hash and
           vote not in votes_to_add
       ]
 
       if len(new_votes_to_add) == 0:
           break
-
       votes_to_add.extend(new_votes_to_add)
+
   new_block.state_root = compute_hash(state)
   new_hash = compute_hash(new_block)
 
@@ -88,7 +92,7 @@ A validator is expected to create, sign, and broadcast a `SignedVote` at the sta
 The validator constructs, signs a `Vote` message and further broadcasts the `SignedVote` to the `attestation` p2p topic.
 
 ```python
-def get_attestation_message(store: Store, slot: Slot) -> Vote:
+def produce_attestation_vote(store: Store, slot: Slot) -> Vote:
     """
     Constructs a Vote object for an attestation based on the store's state.
 
