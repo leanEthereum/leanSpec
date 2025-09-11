@@ -62,7 +62,7 @@ def product_block(store: Store, slot: Slot) -> Block:
       state = process_block(head_state, new_block)
       new_votes_to_add = [
           vote for vote in store.latest_known_votes if
-          vote.source == state.latest_justified_hash and
+          vote.source == state.latest_justified and
           vote not in votes_to_add
       ]
 
