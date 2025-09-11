@@ -203,7 +203,7 @@ def get_vote_target(store: Store) -> Checkpoint:
 
     target_block = store.blocks[target_block_root]
     return Checkpoint(
-        root=target_block.root,
+        root=hash_tree_root(target_block),
         slot=target_block.slot
     )
 ```
