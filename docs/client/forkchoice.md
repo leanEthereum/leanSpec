@@ -150,7 +150,7 @@ def get_forkchoice_store(anchor_state: State, anchor_block: Block) -> Store:
 #### `update_head`
 
 ```python
-def update_head(store: Store) -> Root:
+def update_head(store: Store) -> None:
     """
     Updates the store's latest justified checkpoint, head, and latest finalized state.
     """
