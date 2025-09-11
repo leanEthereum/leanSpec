@@ -261,7 +261,7 @@ def on_attestation(store: Store, vote: SignedVote, is_from_block: boolean = fals
         # update latest known votes if this is latest
         latest_vote = store.latest_known_votes.get(validator_id)
         if(latest_vote == None or latest_vote.slot < vote.slot)
-          store.latest_known_votes.set(validator_id, latest_vote)
+          store.latest_known_votes.set(validator_id, vote)
 
         # clear from new votes if this is latest
         latest_vote = store.latest_new_votes.get(validator_id)
