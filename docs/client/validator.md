@@ -45,7 +45,7 @@ def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
 The validator constructs, signs a `Block` message and further broadcasts the `SignedBlock` to the `block` p2p topic.
 
 ```python
-def product_block(store: Store, slot: Slot) -> Block:
+def produce_block(store: Store, slot: Slot) -> Block:
   head_root = get_proposal_head(store)
   head_state = store.states[head_root]
 
