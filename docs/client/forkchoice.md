@@ -255,7 +255,7 @@ def on_attestation(store: Store, vote: SignedVote, is_from_block: boolean = fals
     
     validator_id = signed_vote.validator_id
     vote = signed_vote.message
-    time_slots = store.time // SECONDS_PER_INTERVAL
+    
 
     if(is_from_block):
         # update latest known votes if this is latest
@@ -269,6 +269,11 @@ def on_attestation(store: Store, vote: SignedVote, is_from_block: boolean = fals
           store.latest_new_votes.del(validator_id)
 
     else:
+        # forkchoice should be correctly ticked to current time before
+        # importing gossiped attestations
+        time_slots = store.time // SECONDS_PER_INTERVAL
+        assert(vote.slot<=time_slots)
+
         # update latest new votes if this is the latest
         assert(vote.slot <= store.slot)
         latest_vote = store.latest_new_votes.get(validator_id)
