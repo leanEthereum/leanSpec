@@ -19,15 +19,15 @@ from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 @pytest.fixture
 def sample_config() -> Config:
     """Provides a sample configuration with 10 validators."""
-    return Config(num_validators=10, genesis_time=0)
+    return Config(num_validators=Uint64(10), genesis_time=Uint64(0))
 
 
 @pytest.fixture
 def sample_block_header() -> BlockHeader:
     """Provides a sample, empty block header for state initialization."""
     return BlockHeader(
-        slot=0,
-        proposer_index=0,
+        slot=Uint64(0),
+        proposer_index=Uint64(0),
         parent_root=Bytes32(b"\x00" * 32),
         state_root=Bytes32(b"\x00" * 32),
         body_root=Bytes32(b"\x00" * 32),
@@ -37,7 +37,7 @@ def sample_block_header() -> BlockHeader:
 @pytest.fixture
 def sample_checkpoint() -> Checkpoint:
     """Provides a sample, empty checkpoint for state initialization."""
-    return Checkpoint(root=Bytes32(b"\x00" * 32), slot=0)
+    return Checkpoint(root=Bytes32(b"\x00" * 32), slot=Uint64(0))
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ def test_get_justifications_single_root(base_state: State) -> None:
     # Create a sample list of votes for this root.
     #
     # The length must match the validator registry limit.
-    votes1 = [False] * DEVNET_CONFIG.validator_registry_limit
+    votes1 = [False] * DEVNET_CONFIG.validator_registry_limit.as_int()
     votes1[2] = True  # Validator 2 voted
     votes1[5] = True  # Validator 5 voted
 
@@ -172,7 +172,7 @@ def test_get_justifications_multiple_roots(base_state: State) -> None:
 
     # Define distinct vote patterns for each root.
     # Each list must have a length equal to `VALIDATOR_REGISTRY_LIMIT`.
-    limit = DEVNET_CONFIG.validator_registry_limit
+    limit = DEVNET_CONFIG.validator_registry_limit.as_int()
     votes1 = [False] * limit
     votes1[0] = True  # Validator 0 votes for root1
 
@@ -213,7 +213,7 @@ def test_set_justifications_empty(base_state: State) -> None:
     """
     # Start with some data to ensure it gets cleared
     base_state.justifications_roots = [Bytes32(b"\x01" * 32)]
-    base_state.justifications_validators = [True] * DEVNET_CONFIG.validator_registry_limit
+    base_state.justifications_validators = [True] * DEVNET_CONFIG.validator_registry_limit.as_int()
 
     # Set with an empty map
     base_state.set_justifications({})
@@ -229,7 +229,7 @@ def test_set_justifications_deterministic_order(base_state: State) -> None:
     """
     root1 = Bytes32(b"\x01" * 32)
     root2 = Bytes32(b"\x02" * 32)
-    limit = DEVNET_CONFIG.validator_registry_limit
+    limit = DEVNET_CONFIG.validator_registry_limit.as_int()
     votes1 = [False] * limit
     votes2 = [True] * limit
 
@@ -249,7 +249,7 @@ def test_set_justifications_invalid_length(base_state: State) -> None:
     """
     root1 = Bytes32(b"\x01" * 32)
     # Create a list of votes that is one short of the required length
-    invalid_votes = [True] * (DEVNET_CONFIG.validator_registry_limit - 1)
+    invalid_votes = [True] * (DEVNET_CONFIG.validator_registry_limit - Uint64(1)).as_int()
     justifications = {root1: invalid_votes}
 
     # Verify that calling the setter with this data raises an assertion error
@@ -259,7 +259,7 @@ def test_set_justifications_invalid_length(base_state: State) -> None:
 
 def _create_votes(indices: List[int]) -> List[bool]:
     """Creates a vote list with `True` at the specified indices."""
-    votes = [False] * DEVNET_CONFIG.validator_registry_limit
+    votes = [False] * DEVNET_CONFIG.validator_registry_limit.as_int()
     for i in indices:
         votes[i] = True
     return votes
@@ -286,7 +286,7 @@ def _create_votes(indices: List[int]) -> List[bool]:
         ),
         pytest.param(
             {
-                Bytes32(b"\x03" * 32): [True] * DEVNET_CONFIG.validator_registry_limit,
+                Bytes32(b"\x03" * 32): [True] * DEVNET_CONFIG.validator_registry_limit.as_int(),
                 Bytes32(b"\x01" * 32): _create_votes([0]),
                 Bytes32(b"\x02" * 32): _create_votes([1, 2]),
             },

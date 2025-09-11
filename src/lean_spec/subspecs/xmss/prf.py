@@ -14,7 +14,7 @@ import os
 from typing import List
 
 from lean_spec.subspecs.koalabear import Fp
-from lean_spec.types.uint64 import Uint64
+from lean_spec.types.uint import Uint64
 
 from .constants import (
     PRF_KEY_LENGTH,

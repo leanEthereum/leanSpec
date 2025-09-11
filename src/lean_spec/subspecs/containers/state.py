@@ -99,7 +99,7 @@ class State(BaseModel):
         # Cache the validator registry limit for concise slicing calculations.
         #
         # This value determines the size of the block of votes for each root.
-        limit = DEVNET_CONFIG.validator_registry_limit
+        limit = DEVNET_CONFIG.validator_registry_limit.as_int()
 
         # Build the entire justifications map.
         return {
@@ -134,7 +134,7 @@ class State(BaseModel):
         new_roots: List[Bytes32] = []
         # It will store the single, concatenated list of all votes.
         flat_votes: List[bool] = []
-        limit = DEVNET_CONFIG.validator_registry_limit
+        limit = DEVNET_CONFIG.validator_registry_limit.as_int()
 
         # Iterate through the roots in sorted order for deterministic output.
         for root in sorted(justifications.keys()):
