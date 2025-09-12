@@ -5,7 +5,7 @@ from typing_extensions import Final
 
 from lean_spec.types import Uint64
 
-DELEGATIONS_REGISTRY_LIMIT: Final = 2**12
+DELEGATIONS_REGISTRY_LIMIT: Uint64 = Uint64(2**12)
 """The maximum number of delegations that can be stored in the state, per staker role."""
 
 
