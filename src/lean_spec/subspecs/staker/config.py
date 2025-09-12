@@ -9,14 +9,11 @@ DELEGATIONS_REGISTRY_LIMIT: Uint64 = Uint64(2**12)
 """The maximum number of delegations that can be stored in the state, per staker role."""
 
 
-class _StakerConfig(BaseModel):
+class _StakerConfig(StrictBaseModel):
     """
     A model holding the canonical, immutable configuration constants
     for the Staker and staking.
     """
-
-    # Configuration to make the model immutable.
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     delegations_registry_limit: Uint64
 
