@@ -120,8 +120,8 @@ class Store(object):
     latest_finalized: Checkpoint
     blocks: Dict[Root, Block] = field(default_factory=dict)
     states: Dict[Root, State] = field(default_factory=dict)
-    latest_known_head_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
-    latest_new_head_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
+    latest_known_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
+    latest_new_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
 ```
 
 #### `get_forkchoice_store`
