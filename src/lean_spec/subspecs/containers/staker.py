@@ -17,10 +17,25 @@ class Staker(StrictBaseModel):
     """The list contains the settings for each of the roles the staker can activate."""
 
     attester_role: AttesterRole
-    """Represents the state of the Attester Role."""
+    """
+    Contains the state related to the Attester role.
+    
+    This role is responsible for providing economic security by voting on the
+    validity of blocks. This field tracks all attestation-specific data.
+    """
 
     includer_role: IncluderRole
-    """Represents the state of the Includer Role."""
+    """
+    Contains the state related to the Includer role.
+    
+    This role upholds censorship resistance by creating inclusion lists (ILs)
+    that constrain block producers. This field tracks all inclusion-specific data.
+    """
 
     proposer_role: ProposerRole
-    """Represents the state of the Proposer Role."""
+    """
+    Contains the state related to the Execution Proposer role.
+    
+    This role focuses on performance by building and proposing valuable
+    execution blocks, including transaction ordering and MEV extraction.
+    """
