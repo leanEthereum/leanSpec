@@ -8,7 +8,7 @@ from lean_spec.subspecs.chain import DEVNET_CONFIG
 from lean_spec.subspecs.chain import config as chainconfig
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Boolean, Bytes32, Container, Uint64, ValidatorIndex
+from lean_spec.types import Boolean, Bytes32, Container, Uint64, ValidatorIndex, is_proposer
 from lean_spec.types import List as SSZList
 from lean_spec.types.bitfields import Bitlist
 
@@ -108,7 +108,7 @@ class State(Container):
         The proposer selection follows a simple round-robin mechanism based on the
         slot number and the total number of validators.
         """
-        return self.slot % self.config.num_validators == validator_index
+        return is_proposer(validator_index, Uint64(self.slot.as_int()), self.config.num_validators)
 
     def get_justifications(self) -> Dict[Bytes32, List[Boolean]]:
         """
@@ -545,7 +545,8 @@ class State(Container):
             # Track a unique vote for (target_root, validator_id) only
             if target_root not in justifications:
                 # Initialize a fresh bitvector for this target root (all False).
-                justifications[target_root] = [Boolean(False)] * self.config.num_validators.as_int()
+                limit = DEVNET_CONFIG.validator_registry_limit.as_int()
+                justifications[target_root] = [Boolean(False)] * limit
 
             validator_id = vote.validator_id.as_int()
             if not justifications[target_root][validator_id]:

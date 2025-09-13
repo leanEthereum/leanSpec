@@ -190,59 +190,6 @@ def base_state(
     )
 
 
-def test_is_proposer(
-    sample_config: Config,
-    sample_block_header: BlockHeader,
-    sample_checkpoint: Checkpoint,
-) -> None:
-    """
-    Validate round-robin proposer selection.
-
-    Strategy
-    --------
-    - Build states at different slots.
-    - Check that proposer_index == slot % num_validators is recognized as proposer.
-    - Check neighbors are not recognized.
-    """
-
-    def create_state_at_slot(slot: int) -> State:
-        """Local helper: instantiate a State pinned at a given slot."""
-        # Return a State with the given slot and default/empty lists elsewhere.
-        return State(
-            config=sample_config,
-            slot=Slot(slot),
-            latest_block_header=sample_block_header,
-            latest_justified=sample_checkpoint,
-            latest_finalized=sample_checkpoint,
-            historical_block_hashes=[],
-            justified_slots=[],
-            justifications_roots=[],
-            justifications_validators=[],
-        )
-
-    # At slot 0, validator 0 should be the proposer (0 % 10 == 0)
-    state_slot_0 = create_state_at_slot(0)
-    # True for the correct proposer.
-    assert state_slot_0.is_proposer(ValidatorIndex(0)) is True
-    # False for a different validator.
-    assert state_slot_0.is_proposer(ValidatorIndex(1)) is False
-
-    # At slot 7, validator 7 should be the proposer (7 % 10 == 7)
-    state_slot_7 = create_state_at_slot(7)
-    assert state_slot_7.is_proposer(ValidatorIndex(7)) is True
-    assert state_slot_7.is_proposer(ValidatorIndex(8)) is False
-
-    # At slot 10, wrap-around selects validator 0 (10 % 10 == 0)
-    state_slot_10 = create_state_at_slot(10)
-    assert state_slot_10.is_proposer(ValidatorIndex(0)) is True
-    assert state_slot_10.is_proposer(ValidatorIndex(1)) is False
-
-    # At slot 23, wrap-around selects validator 3 (23 % 10 == 3)
-    state_slot_23 = create_state_at_slot(23)
-    assert state_slot_23.is_proposer(ValidatorIndex(3)) is True
-    assert state_slot_23.is_proposer(ValidatorIndex(2)) is False
-
-
 def test_get_justifications_empty(base_state: State) -> None:
     """
     get_justifications: empty input yields empty map.

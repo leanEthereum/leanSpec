@@ -14,14 +14,16 @@ from lean_spec.subspecs.chain.config import (
 )
 from lean_spec.subspecs.containers import (
     Block,
+    BlockBody,
     Checkpoint,
     Config,
     SignedVote,
     State,
+    Vote,
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Uint64, ValidatorIndex, is_proposer
 from lean_spec.types.container import Container
 
 from .helpers import get_fork_choice_head, get_latest_justified
@@ -362,3 +364,155 @@ class Store(Container):
 
         target_block = self.blocks[target_block_root]
         return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
+
+    def produce_block(self, slot: Slot, validator_index: ValidatorIndex) -> Block:
+        """
+        Produce a new block for the given slot and validator.
+
+        This method implements the block production algorithm according to the
+        lean protocol specification. It constructs a block that includes all
+        valid attestations available in the store and ensures proper state
+        transition.
+
+        The algorithm:
+        1. Get the proposal head (parent block) for the new block
+        2. Get the parent state from the proposal head
+        3. Iteratively add valid attestations from the store
+        4. Compute the new state after applying all attestations
+        5. Set the block's state root and return the complete block
+
+        Args:
+            slot: The slot for which to produce the block.
+            validator_index: The validator index producing the block.
+
+        Returns:
+            A fully constructed Block ready for signing and broadcast.
+
+        Raises:
+            AssertionError: If the validator is not the proposer for the slot.
+        """
+        # Verify validator is authorized proposer for this slot
+        assert is_proposer(validator_index, slot, self.config.num_validators), (
+            f"Validator {validator_index} is not the proposer for slot {slot}"
+        )
+
+        # Get the head block to build upon
+        head_root = self.get_proposal_head(slot)
+        head_state = self.states[head_root]
+
+        # Start with empty attestation list
+        votes_to_add: list[SignedVote] = []
+
+        # Iteratively collect all valid attestations from the store
+        # This follows the algorithm from docs/client/validator.md
+        while True:
+            # Create candidate block with current attestation set
+            candidate_block = Block(
+                slot=slot,
+                proposer_index=validator_index,
+                parent_root=head_root,
+                state_root=Bytes32.zero(),  # Will be updated after state computation
+                body=BlockBody(attestations=votes_to_add),
+            )
+
+            # Apply state transition to get the post-block state
+            # First advance state to target slot, then process the block
+            advanced_state = copy.deepcopy(head_state).process_slots(slot)
+            post_state = advanced_state.process_block(candidate_block)
+
+            # Find new valid attestations that can be included
+            # Only include attestations that:
+            # 1. Have source matching the post-state's latest justified
+            # 2. Are not already in the block
+            new_votes_to_add = []
+            for validator_id, checkpoint in self.latest_known_votes.items():
+                # Create SignedVote for this validator's latest vote
+                vote = Vote(
+                    validator_id=validator_id,
+                    slot=checkpoint.slot,
+                    head=checkpoint,  # Use checkpoint as head
+                    target=checkpoint,
+                    source=post_state.latest_justified,
+                )
+                signed_vote = SignedVote(
+                    data=vote,
+                    signature=Bytes32.zero(),  # Placeholder signature
+                )
+
+                # Check if this vote should be included
+                if checkpoint.root in self.blocks and signed_vote not in votes_to_add:
+                    new_votes_to_add.append(signed_vote)
+
+            # If no new valid votes found, we're done
+            if not new_votes_to_add:
+                break
+
+            # Add new votes and continue iteration
+            votes_to_add.extend(new_votes_to_add)
+
+        # Create the final block with all collected attestations
+        # Need to recompute final state with all attestations
+        final_advanced_state = copy.deepcopy(head_state).process_slots(slot)
+        final_block = Block(
+            slot=slot,
+            proposer_index=validator_index,
+            parent_root=head_root,
+            state_root=Bytes32.zero(),  # Will be set after state computation
+            body=BlockBody(attestations=votes_to_add),
+        )
+        final_post_state = final_advanced_state.process_block(final_block)
+
+        # Update the block with correct state root
+        final_block = final_block.model_copy(
+            update={"state_root": hash_tree_root(final_post_state)}
+        )
+
+        # Store the new block and its state in the forkchoice store
+        final_block_hash = hash_tree_root(final_block)
+        self.blocks[final_block_hash] = final_block
+        self.states[final_block_hash] = final_post_state
+
+        return final_block
+
+    def produce_attestation_vote(self, slot: Slot, validator_index: ValidatorIndex) -> Vote:
+        """
+        Produce an attestation vote for the given slot and validator.
+
+        This method constructs a Vote object according to the lean protocol
+        specification for attestation voting. The vote represents the
+        validator's view of the chain state and their choice for the
+        next justified checkpoint.
+
+        The algorithm:
+        1. Get the current head block for proposal
+        2. Calculate the appropriate vote target using current forkchoice state
+        3. Use the store's latest justified checkpoint as the vote source
+        4. Construct and return the complete Vote object
+
+        Args:
+            slot: The slot for which to produce the attestation vote.
+            validator_index: The validator index producing the vote.
+
+        Returns:
+            A fully constructed Vote object ready for signing and broadcast.
+        """
+        # Get the head block the validator sees for this slot
+        head_root = self.get_proposal_head(slot)
+        head_checkpoint = Checkpoint(
+            root=head_root,
+            slot=self.blocks[head_root].slot,
+        )
+
+        # Calculate the target checkpoint for this vote
+        # This uses the store's current forkchoice state to determine
+        # the appropriate attestation target
+        target_checkpoint = self.get_vote_target()
+
+        # Create the vote using current forkchoice state
+        return Vote(
+            validator_id=validator_index,
+            slot=slot,
+            head=head_checkpoint,
+            target=target_checkpoint,
+            source=self.latest_justified,
+        )

@@ -7,7 +7,7 @@ from .byte_arrays import Bytes32
 from .collections import List, Vector
 from .container import Container
 from .uint import Uint64
-from .validator import ValidatorIndex
+from .validator import ValidatorIndex, is_proposer
 
 __all__ = [
     "Uint64",
@@ -15,6 +15,7 @@ __all__ = [
     "Bytes32",
     "StrictBaseModel",
     "ValidatorIndex",
+    "is_proposer",
     "List",
     "Vector",
     "Boolean",
