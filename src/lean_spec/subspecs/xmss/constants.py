@@ -7,15 +7,6 @@ instantiation from the canonical Rust implementation
 (production instantiation).
 
 We also provide a test instantiation for testing purposes.
-
-.. note::
-   This specification uses the **KoalaBear** prime field, which is consistent
-   with the formal analysis in the reference papers (e.g., Section 5 of the
-   "LeanSig" technical note: https://eprint.iacr.org/2025/1332).
-
-   The canonical Rust implementation currently uses the `BabyBear` field for
-   practical reasons but is expected to align with this
-   specification in the future.
 """
 
 from pydantic import BaseModel, ConfigDict

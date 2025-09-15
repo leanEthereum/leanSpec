@@ -57,17 +57,15 @@ def _test_correctness_roundtrip(
 
 
 @pytest.mark.parametrize(
-    "activation_epoch, num_active_epochs, description",
+    "activation_epoch, num_active_epochs",
     [
-        (10, 4, "Standard case with a short, active lifetime"),
-        (0, 8, "Lifetime starting at epoch 0"),
-        (20, 1, "Lifetime with only a single active epoch"),
-        (7, 5, "Lifetime starting at an odd-numbered epoch"),
+        pytest.param(10, 4, id="Standard case with a short, active lifetime"),
+        pytest.param(0, 8, id="Lifetime starting at epoch 0"),
+        pytest.param(20, 1, id="Lifetime with only a single active epoch"),
+        pytest.param(7, 5, id="Lifetime starting at an odd-numbered epoch"),
     ],
 )
-def test_signature_scheme_correctness(
-    activation_epoch: int, num_active_epochs: int, description: str
-) -> None:
+def test_signature_scheme_correctness(activation_epoch: int, num_active_epochs: int) -> None:
     """Runs an end-to-end test of the signature scheme."""
     _test_correctness_roundtrip(
         scheme=TEST_SIGNATURE_SCHEME,

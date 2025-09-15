@@ -19,7 +19,7 @@ class Staker(StrictBaseModel):
     attester_role: AttesterRole
     """
     Contains the state related to the Attester role.
-    
+
     This role is responsible for providing economic security by voting on the
     validity of blocks. This field tracks all attestation-specific data.
     """
@@ -27,7 +27,7 @@ class Staker(StrictBaseModel):
     includer_role: IncluderRole
     """
     Contains the state related to the Includer role.
-    
+
     This role upholds censorship resistance by creating inclusion lists (ILs)
     that constrain block producers. This field tracks all inclusion-specific data.
     """
@@ -35,7 +35,7 @@ class Staker(StrictBaseModel):
     proposer_role: ProposerRole
     """
     Contains the state related to the Execution Proposer role.
-    
+
     This role focuses on performance by building and proposing valuable
     execution blocks, including transaction ordering and MEV extraction.
     """

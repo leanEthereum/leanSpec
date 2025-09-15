@@ -1,9 +1,10 @@
 """Consensus Configuration Container."""
 
-from lean_spec.types import StrictBaseModel, Uint64
+from lean_spec.types import Uint64
+from lean_spec.types.container import Container
 
 
-class Config(StrictBaseModel):
+class Config(Container):
     """
     Holds temporary configuration properties for simplified consensus.
 

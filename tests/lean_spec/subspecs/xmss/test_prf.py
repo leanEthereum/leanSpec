@@ -5,6 +5,7 @@ from lean_spec.subspecs.xmss.constants import (
     TEST_CONFIG,
 )
 from lean_spec.subspecs.xmss.prf import TEST_PRF
+from lean_spec.types.uint import Uint64
 
 
 def test_key_gen_is_random() -> None:
@@ -53,7 +54,7 @@ def test_apply_is_sensitive_to_inputs() -> None:
     # Generate a baseline output with a set of initial inputs.
     key1 = b"\x11" * PRF_KEY_LENGTH
     epoch1 = 10
-    chain_index1 = 20
+    chain_index1 = Uint64(20)
     baseline_output = prf.apply(key1, epoch1, chain_index1)
     assert len(baseline_output) == config.HASH_LEN_FE
 
@@ -68,6 +69,6 @@ def test_apply_is_sensitive_to_inputs() -> None:
     assert baseline_output != output_epoch_changed
 
     # Test sensitivity to the chain_index.
-    chain_index2 = 21
+    chain_index2 = Uint64(21)
     output_index_changed = prf.apply(key1, epoch1, chain_index2)
     assert baseline_output != output_index_changed

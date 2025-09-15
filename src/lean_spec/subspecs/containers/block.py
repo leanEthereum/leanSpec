@@ -1,21 +1,17 @@
 """Block Containers."""
 
-from pydantic import Field
-from typing_extensions import Annotated
-
-from lean_spec.types import Bytes32, StrictBaseModel, Uint64
+from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.types import Bytes32, List, Uint64
+from lean_spec.types.container import Container
 
 from ..chain import config
-from .vote import Vote
+from .vote import SignedVote
 
 
-class BlockBody(StrictBaseModel):
+class BlockBody(Container):
     """The body of a block, containing payload data."""
 
-    votes: Annotated[
-        list[Vote],
-        Field(max_length=config.STAKER_REGISTRY_LIMIT),
-    ]
+    attestations: List[SignedVote, config.STAKER_REGISTRY_LIMIT.as_int()]  # type: ignore
     """
     A list of votes included in the block.
 
@@ -23,10 +19,10 @@ class BlockBody(StrictBaseModel):
     """
 
 
-class BlockHeader(StrictBaseModel):
+class BlockHeader(Container):
     """The header of a block, containing metadata."""
 
-    slot: Uint64
+    slot: Slot
     """The slot in which the block was proposed."""
 
     proposer_index: Uint64
@@ -42,10 +38,10 @@ class BlockHeader(StrictBaseModel):
     """The root of the block's body."""
 
 
-class Block(StrictBaseModel):
+class Block(Container):
     """Represents a single block in the chain."""
 
-    slot: Uint64
+    slot: Slot
     """The slot in which the block was proposed."""
 
     proposer_index: Uint64
@@ -61,7 +57,7 @@ class Block(StrictBaseModel):
     """The block's payload."""
 
 
-class SignedBlock(StrictBaseModel):
+class SignedBlock(Container):
     """A container for a block and the proposer's signature."""
 
     message: Block

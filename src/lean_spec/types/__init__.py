@@ -2,12 +2,16 @@
 
 from .base import StrictBaseModel
 from .basispt import BasisPoint
+from .boolean import Boolean
+from .byte_arrays import Bytes32
 from .bytes import Bytes1
+from .collections import List, Vector
+from .container import Container
 from .epoch import Epoch
 from .gwei import Gwei
-from .hash import Bytes32
 from .staker import StakerIndex
-from .uint64 import Uint64
+from .uint import Uint64
+from .validator import is_proposer
 
 __all__ = [
     "Uint64",
@@ -18,4 +22,9 @@ __all__ = [
     "Gwei",
     "StakerIndex",
     "Bytes1",
+    "is_proposer",
+    "List",
+    "Vector",
+    "Boolean",
+    "Container",
 ]

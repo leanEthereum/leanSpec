@@ -1,9 +1,8 @@
 """This file defines the parameters used for the Staker and staking."""
 
-from pydantic import BaseModel, ConfigDict
 from typing_extensions import Final
 
-from lean_spec.types import Uint64
+from lean_spec.types import StrictBaseModel, Uint64
 
 DELEGATIONS_REGISTRY_LIMIT: Uint64 = Uint64(2**12)
 """The maximum number of delegations that can be stored in the state, per staker role."""

@@ -1,10 +1,13 @@
 """Tests for the hypercube mathematical operations."""
 
+import itertools
 import math
 from functools import lru_cache
-from typing import List
+from typing import Any, Callable, List, Tuple
 
 import pytest
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 from lean_spec.subspecs.xmss.hypercube import (
     MAX_DIMENSION,
@@ -212,3 +215,146 @@ def test_big_map() -> None:
     # Assert that both steps of the roundtrip were successful.
     assert x == x_reconstructed
     assert vertex_a == vertex_b
+
+
+# ---------------------------
+# Hypothesis property tests
+# ---------------------------
+
+DrawFn = Callable[[Any], Any]
+
+
+# Strategy for small hypercubes where we can feasibly enumerate
+@st.composite
+def small_hypercube(draw: DrawFn) -> Tuple[int, int]:
+    w = draw(st.integers(min_value=2, max_value=6))
+    v = draw(st.integers(min_value=1, max_value=6))
+    assume(w**v <= 6000)  # keep enumeration feasible
+    return w, v
+
+
+@st.composite
+def small_hypercube_with_layer_and_index(draw: DrawFn) -> Tuple[int, int, int, int]:
+    w = draw(st.integers(min_value=2, max_value=6))
+    v = draw(st.integers(min_value=1, max_value=6))
+    assume(w**v <= 6000)
+    info = prepare_layer_info(w)[v]
+    d = draw(st.integers(min_value=0, max_value=len(info.sizes) - 1))
+    size = info.sizes[d]
+    assume(size > 0)
+    x = draw(st.integers(min_value=0, max_value=size - 1))
+    return w, v, d, x
+
+
+# Strategies for two distinct vertices in a layer
+@st.composite
+def two_distinct_index(draw: DrawFn) -> Tuple[int, int, int, int, int]:
+    w = draw(st.integers(2, 6))
+    v = draw(st.integers(1, 6))
+    assume(w**v <= 6000)
+    info = prepare_layer_info(w)[v]
+    # pick layer with size >= 2
+    candidates = [d for d, s in enumerate(info.sizes) if s >= 2]
+    assume(candidates)
+    d = draw(st.sampled_from(candidates))
+    s = info.sizes[d]
+    x1 = draw(st.integers(0, s - 1))
+    x2 = draw(st.integers(0, s - 1))
+    assume(x2 != x1)
+    return w, v, d, x1, x2
+
+
+@given(small_hypercube())
+@settings(max_examples=120)
+def test_property_layer_sizes_conservation_monotonicity(wv: Tuple[int, int]) -> None:
+    """All vertices should be accounted for and prefix sums monotone."""
+    w, v = wv
+    info = prepare_layer_info(w)[v]
+    # conservation
+    assert info.prefix_sums[-1] == w**v
+    assert sum(info.sizes) == w**v
+    # non-negative sizes
+    assert all(s >= 0 for s in info.sizes)
+    # monotone prefix sums
+    assert all(
+        info.prefix_sums[i] <= info.prefix_sums[i + 1] for i in range(len(info.prefix_sums) - 1)
+    )
+
+
+@given(small_hypercube_with_layer_and_index())
+@settings(max_examples=200)
+def test_property_map_vertex_roundtrip(params: Tuple[int, int, int, int]) -> None:
+    """Tests that map_to_vertex returns valid coords in layer d and
+    map_to_integer inverts it correctly."""
+    w, v, d, x = params
+    vertex = map_to_vertex(w, v, d, x)
+    assert isinstance(vertex, list) and len(vertex) == v
+    assert all(0 <= ai < w for ai in vertex)
+    # membership in layer
+    coord_sum = sum(vertex)
+    assert (w - 1) * v - coord_sum == d
+    # roundtrip via existing map_to_integer
+    x_reconstructed = map_to_integer(w, v, d, vertex)
+    assert x_reconstructed == x
+
+
+@given(small_hypercube())
+@settings(max_examples=40, deadline=None)
+def test_property_bijectivity_enum(wv: Tuple[int, int]) -> None:
+    """For tiny hypercubes, map_to_vertex enumerates exactly
+    w**v distinct vertices."""
+    w, v = wv
+    assume(w**v <= 2000)  # extra safety
+    info = prepare_layer_info(w)[v]
+    seen = set()
+    for d, size in enumerate(info.sizes):
+        for x in range(size):
+            a = tuple(map_to_vertex(w, v, d, x))
+            assert len(a) == v
+            seen.add(a)
+    assert len(seen) == w**v
+
+
+@given(small_hypercube())
+@settings(max_examples=80)
+def test_property_map_oob(wv: Tuple[int, int]) -> None:
+    """map_to_vertex should raise ValueError when x is equal
+    to the layer size (out-of-range)."""
+    w, v = wv
+    info = prepare_layer_info(w)[v]
+    for d, size in enumerate(info.sizes):
+        if size > 0:
+            with pytest.raises(ValueError):
+                map_to_vertex(w, v, d, size)
+            break
+
+
+@given(small_hypercube())
+@settings(max_examples=120, deadline=None)
+def test_property_find_layer_prefix(wv: Tuple[int, int]) -> None:
+    """hypercube_find_layer returns (d, r) consistent with
+    prefix sums and global index."""
+    w, v = wv
+    info = prepare_layer_info(w)[v]
+    total = w**v
+    candidates = {0, 1, total - 1, total // 2}
+    for x in candidates:
+        if not (0 <= x < total):
+            continue
+        d, r = hypercube_find_layer(w, v, x)
+        assert 0 <= d < len(info.sizes)
+        assert 0 <= r < info.sizes[d]
+        prev = info.prefix_sums[d - 1] if d > 0 else 0
+        assert prev + r == x
+
+
+@given(two_distinct_index())
+@settings(max_examples=200)
+def test_property_layer_injectivity(params: Tuple[int, int, int, int, int]) -> None:
+    """Ensure injectivity inside a layer for map_to_vertex.
+    This is a randomized test: we pick two distinct indices
+    and assert their mapped vertices differ."""
+    w, v, d, x1, x2 = params
+    a1 = map_to_vertex(w, v, d, x1)
+    a2 = map_to_vertex(w, v, d, x2)
+    assert a1 != a2

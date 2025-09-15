@@ -1,17 +1,19 @@
 """Vote Containers."""
 
-from lean_spec.types import Bytes32, StrictBaseModel, Uint64
+from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.types import Bytes32, Uint64
+from lean_spec.types.container import Container
 
 from .checkpoint import Checkpoint
 
 
-class Vote(StrictBaseModel):
+class Vote(Container):
     """Represents a validator's vote for chain head."""
 
     validator_id: Uint64
     """The index of the voting validator."""
 
-    slot: Uint64
+    slot: Slot
     """The slot for which this vote is cast."""
 
     head: Checkpoint
@@ -24,7 +26,7 @@ class Vote(StrictBaseModel):
     """The last justified checkpoint known to the validator."""
 
 
-class SignedVote(StrictBaseModel):
+class SignedVote(Container):
     """A container for a vote and its corresponding signature."""
 
     data: Vote
