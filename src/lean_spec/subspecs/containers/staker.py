@@ -1,7 +1,7 @@
 """
 Staker Container
 
-Lean Consensus participants are part on a unified pool of stakers, as described in this [3TS design proposal](https://ethresear.ch/t/three-tier-staking-3ts-unbundling-attesters-includers-and-execution-proposers/21648/1).
+Lean Consensus participants are part of a unified pool of stakers, as described in this [3TS design proposal](https://ethresear.ch/t/three-tier-staking-3ts-unbundling-attesters-includers-and-execution-proposers/21648/1).
 
 Each slot, the **Staker** chooses from three different available roles:
 - Attester
