@@ -71,7 +71,7 @@ With a 4-second slot, this corresponds to a history
 of approximately 12.1 days.
 """
 
-STAKER_REGISTRY_LIMIT: Final = 2**12
+STAKER_REGISTRY_LIMIT: Final = Uint64(2**12)
 """The maximum number of stakers that can be in the registry."""
 
 class _ChainConfig(BaseModel):
