@@ -17,7 +17,7 @@ class _StakerConfig(StrictBaseModel):
     delegations_registry_limit: Uint64
 
 
-# The Devnet Staker Configuration.
 DEVNET_STAKER_CONFIG: Final = _StakerConfig(
     delegations_registry_limit=DELEGATIONS_REGISTRY_LIMIT,
 )
+"""The Devnet Staker Configuration."""
