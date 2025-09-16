@@ -1,18 +1,24 @@
 """
 Staker Container
 
-Lean Consensus participants are part of a unified pool of stakers, as described in this [3TS design proposal](https://ethresear.ch/t/three-tier-staking-3ts-unbundling-attesters-includers-and-execution-proposers/21648/1).
+Lean Consensus participants are part of a unified pool of stakers,
+as described in this [3TS design proposal](
+https://ethresear.ch/t/three-tier-staking-3ts-unbundling-attesters-includers
+-and-execution-proposers/21648/1).
 
 Each slot, the **Staker** chooses from three different available roles:
 - Attester
 - Includer
 - (Execution) Proposer
 
-Each staker explicitly opts into the role(s) that they wish to take as protocol participants.
-One, two, or all three roles can be chosen, based on the stakers preferences and level of sophistication.
+Each staker explicitly opts into the role(s) that they wish to take as
+protocol participants.
+One, two, or all three roles can be chosen, based on the stakers preferences
+and level of sophistication.
 Mixing and matching multiple roles is possible, under certain constraints.
 
-Each role can be delegated to a target staker and each role can be set as delegatable for other stakers to execute as operators.
+Each role can be delegated to a target staker and each role can be set as
+delegatable for other stakers to execute as operators.
 The staker can update the staking configuration at any time.
 """
 
@@ -30,7 +36,8 @@ class Staker(StrictBaseModel):
         list[StakerSettings],
         Field(min_length=3, max_length=3),
     ]
-    """The list contains the settings for each of the roles the staker can activate."""
+    """The list contains the settings for each of the roles the staker can
+    activate."""
 
     attester_role: AttesterRole
     """
@@ -45,7 +52,8 @@ class Staker(StrictBaseModel):
     Contains the state related to the Includer role.
 
     This role upholds censorship resistance by creating inclusion lists (ILs)
-    that constrain block producers. This field tracks all inclusion-specific data.
+    that constrain block producers. This field tracks all inclusion-specific
+    data.
     """
 
     proposer_role: ProposerRole

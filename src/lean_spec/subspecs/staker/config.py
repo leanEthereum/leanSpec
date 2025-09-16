@@ -1,6 +1,7 @@
 """This file defines the parameters used for the Staker and staking."""
 
 from typing_extensions import Final
+
 from lean_spec.types import StrictBaseModel, Uint64
 
 DELEGATIONS_REGISTRY_LIMIT: Uint64 = Uint64(2**12)
