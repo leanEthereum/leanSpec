@@ -3,8 +3,8 @@
 from .base import StrictBaseModel
 from .basispt import BasisPoint
 from .boolean import Boolean
+from .byte import Byte
 from .byte_arrays import Bytes32
-from .bytes import Bytes1
 from .collections import List, Vector
 from .container import Container
 from .epoch import Epoch
@@ -21,7 +21,7 @@ __all__ = [
     "Epoch",
     "Gwei",
     "StakerIndex",
-    "Bytes1",
+    "Byte",
     "is_proposer",
     "List",
     "Vector",

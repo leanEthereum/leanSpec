@@ -1,13 +1,12 @@
 """This defines the roles a Staker can activate for itself."""
 
-from pydantic import BaseModel, Field
-from typing_extensions import Annotated
+from typing import List
 
 from lean_spec.subspecs.staker import DEVNET_STAKER_CONFIG
-from lean_spec.types import Epoch, Gwei, Uint64
+from lean_spec.types import Epoch, Gwei, StrictBaseModel, Uint64
 
 
-class AttesterRole(BaseModel):
+class AttesterRole(StrictBaseModel):
     """Parameters for the Attester Role."""
 
     activation_eligibility_epoch: Epoch
@@ -36,17 +35,13 @@ class AttesterRole(BaseModel):
     staker_quota: Uint64
     """The quota of the staker's role in the delegation."""
 
-    delegations_quotas: Annotated[
-        list[Uint64],
-        Field(max_length=DEVNET_STAKER_CONFIG.delegations_registry_limit),
-    ]
+    delegations_quotas: List[Uint64,
+    DEVNET_STAKER_CONFIG.delegations_registry_limit]
     """The quotas of each delegated balance for this role. This list is
     parallel with the stakers list from the state."""
 
-    delegated_balances: Annotated[
-        list[Uint64],
-        Field(max_length=DEVNET_STAKER_CONFIG.delegations_registry_limit),
-    ]
+    delegated_balances: List[Uint64,
+    DEVNET_STAKER_CONFIG.delegations_registry_limit]
     """The delegated balances for each staker. This list is parallel with
     the stakers list from the state."""
 
@@ -55,7 +50,7 @@ class AttesterRole(BaseModel):
     for performance optimisation purposes."""
 
 
-class IncluderRole(BaseModel):
+class IncluderRole(StrictBaseModel):
     """Parameters for the Includer Role."""
 
     is_active: bool
@@ -67,17 +62,13 @@ class IncluderRole(BaseModel):
     staker_quota: Uint64
     """The quota of the staker's role in the delegation."""
 
-    delegations_quotas: Annotated[
-        list[Uint64],
-        Field(max_length=DEVNET_STAKER_CONFIG.delegations_registry_limit),
-    ]
+    delegations_quotas: List[Uint64,
+    DEVNET_STAKER_CONFIG.delegations_registry_limit]
     """The quotas of each delegated balance for this role. This list is
     parallel with the stakers list from the state."""
 
-    delegated_balances: Annotated[
-        list[Uint64],
-        Field(max_length=DEVNET_STAKER_CONFIG.delegations_registry_limit),
-    ]
+    delegated_balances: List[Uint64,
+    DEVNET_STAKER_CONFIG.delegations_registry_limit]
     """The delegated balances for each staker. This list is parallel with
     the stakers list from the state."""
 
@@ -86,7 +77,7 @@ class IncluderRole(BaseModel):
     for performance optimisation purposes."""
 
 
-class ProposerRole(BaseModel):
+class ProposerRole(StrictBaseModel):
     """Parameters for the Proposer Role."""
 
     activation_eligibility_epoch: Epoch
@@ -115,17 +106,13 @@ class ProposerRole(BaseModel):
     staker_quota: Uint64
     """The quota of the staker's role in the delegation."""
 
-    delegations_quotas: Annotated[
-        list[Uint64],
-        Field(max_length=DEVNET_STAKER_CONFIG.delegations_registry_limit),
-    ]
+    delegations_quotas: List[Uint64,
+    DEVNET_STAKER_CONFIG.delegations_registry_limit]
     """The quotas of each delegated balance for this role. This list is
     parallel with the stakers list from the state."""
 
-    delegated_balances: Annotated[
-        list[Uint64],
-        Field(max_length=DEVNET_STAKER_CONFIG.delegations_registry_limit),
-    ]
+    delegated_balances: List[Uint64,
+    DEVNET_STAKER_CONFIG.delegations_registry_limit]
     """The delegated balances for each staker. This list is parallel with
     the stakers list from the state."""
 

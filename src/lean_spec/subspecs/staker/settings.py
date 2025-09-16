@@ -2,13 +2,13 @@
 
 from pydantic import BaseModel
 
-from lean_spec.types import Bytes1, StakerIndex, Uint64
+from lean_spec.types import Byte, StakerIndex, Uint64
 
 
 class StakerSettings(BaseModel):
     """Parameters for the StakerSettings."""
 
-    role_identifier: Bytes1
+    role_identifier: Byte
     """The role for which these settings are applied."""
 
     active: bool
