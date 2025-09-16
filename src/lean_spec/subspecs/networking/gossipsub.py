@@ -15,7 +15,7 @@ from lean_spec.subspecs.networking.config import (
     MESSAGE_DOMAIN_INVALID_SNAPPY,
     MESSAGE_DOMAIN_VALID_SNAPPY,
 )
-from lean_spec.types import StrictBaseModel
+from lean_spec.types import StrictBaseModel, Uint64
 
 
 class GossipsubParameters(StrictBaseModel):
@@ -53,7 +53,7 @@ class GossipsubParameters(StrictBaseModel):
     """The number of history windows to gossip about."""
 
     seen_ttl_secs: int = (
-        DEVNET_CONFIG.second_per_slot * DEVNET_CONFIG.justification_lookback_slots * 2
+        DEVNET_CONFIG.second_per_slot * DEVNET_CONFIG.justification_lookback_slots * Uint64(2)
     )
     """
     The expiry time in seconds for the cache of seen message IDs.

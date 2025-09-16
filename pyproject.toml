@@ -31,7 +31,7 @@ dependencies = ["pydantic>=2.9.2,<3", "typing-extensions>=4.4"]
 file = "LICENSE"
 
 [project.optional-dependencies]
-test = ["pytest>=8.3.3,<9", "pytest-cov>=6.0.0,<7", "pytest-xdist>=3.6.1,<4", "hypothesis>=6.138.14"]
+test = ["pytest>=8.3.3,<9", "pytest-cov>=6.0.0,<7", "pytest-xdist>=3.6.1,<4", "hypothesis>=6.138.14", "python-snappy>=0.7.3"]
 lint = ["ruff>=0.11.8,<1"]
 typecheck = ["mypy>=1.15.0,<1.16"]
 docs = [
