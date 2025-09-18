@@ -8,15 +8,15 @@ from pydantic import BaseModel
 from typing import Any, Type
 
 from lean_spec.types.byte_arrays import (
-    ByteVector,
-    ByteList,
+    ByteList64,
+    ByteList256,
     Bytes1,
     Bytes4,
     Bytes8,
     Bytes32,
     Bytes48,
     Bytes96,
-    ByteVectorBase,
+    BaseBytes,
     ByteListBase,
 )
 
@@ -25,43 +25,23 @@ def sha256(b: bytes) -> bytes:
     return hashlib.sha256(b).digest()
 
 
-def test_bytevector_factory_ok() -> None:
-    B7 = ByteVector.__class_getitem__(7)
-    assert issubclass(B7, ByteVectorBase)
-    assert B7.LENGTH == 7
-    v = B7(b"\x00" * 7)
-    assert isinstance(v, B7)
-    assert len(v) == 7
+def test_bytes_inheritance_ok() -> None:
+    # Test that our concrete types properly inherit from BaseBytes
+    assert issubclass(Bytes32, BaseBytes)
+    assert Bytes32.LENGTH == 32
+    v = Bytes32(b"\x00" * 32)
+    assert isinstance(v, Bytes32)
+    assert isinstance(v, bytes)  # Should also be a bytes object
+    assert len(v) == 32
 
 
-def test_bytevector_factory_bad_len_type() -> None:
-    with pytest.raises(TypeError):
-        # wrong type for N
-        ByteVector.__class_getitem__("32")  # type: ignore[arg-type]
-
-
-def test_bytevector_factory_negative() -> None:
-    with pytest.raises(TypeError):
-        ByteVector.__class_getitem__(-1)
-
-
-def test_bytelist_factory_ok() -> None:
-    L9 = ByteList.__class_getitem__(9)
-    assert issubclass(L9, ByteListBase)
-    assert L9.LIMIT == 9
-    v = L9(b"\x01\x02")
-    assert isinstance(v, L9)
+def test_bytelist_inheritance_ok() -> None:
+    # Test that our concrete ByteList types properly inherit from ByteListBase
+    assert issubclass(ByteList64, ByteListBase)
+    assert ByteList64.LIMIT == 64
+    v = ByteList64(data=b"\x01\x02")
+    assert isinstance(v, ByteList64)
     assert len(v) == 2
-
-
-def test_bytelist_factory_bad_len_type() -> None:
-    with pytest.raises(TypeError):
-        ByteList.__class_getitem__(object())  # type: ignore[arg-type]
-
-
-def test_bytelist_factory_negative() -> None:
-    with pytest.raises(TypeError):
-        ByteList.__class_getitem__(-5)
 
 
 @pytest.mark.parametrize(
@@ -98,22 +78,24 @@ def test_bytevector_wrong_length_raises() -> None:
     ],
 )
 def test_bytelist_coercion(value: Any, expected: bytes) -> None:
-    L5 = ByteList.__class_getitem__(5)
-    v = L5(value)
+    # Use a ByteList with limit 5 for testing
+    class ByteList5(ByteListBase):
+        LIMIT = 5
+
+    v = ByteList5(data=value)
     assert bytes(v) == expected
     assert len(v) == len(expected)
 
 
 def test_bytelist_over_limit_raises() -> None:
-    L5 = ByteList.__class_getitem__(5)
+    # Test with ByteList64 that has limit 64
     with pytest.raises(ValueError):
-        L5(b"\x00" * 6)
+        ByteList64(data=b"\x00" * 65)  # Over the limit
 
 
 def test_is_fixed_size_flags() -> None:
     assert Bytes32.is_fixed_size() is True
-    L7 = ByteList.__class_getitem__(7)
-    assert L7.is_fixed_size() is False
+    assert ByteList64.is_fixed_size() is False
 
 
 def test_len_iter_getitem_repr_hash_eq() -> None:
@@ -171,7 +153,7 @@ def test_hashlib_accepts_bytes32_via_add() -> None:
         (Bytes96, bytes(range(96))),
     ],
 )
-def test_encode_decode_roundtrip_vector(Typ: Type[ByteVectorBase], payload: bytes) -> None:
+def test_encode_decode_roundtrip_vector(Typ: Type[BaseBytes], payload: bytes) -> None:
     v = Typ(payload)
     assert v.encode_bytes() == payload
     assert Typ.decode_bytes(payload) == v
@@ -201,31 +183,38 @@ def test_vector_deserialize_scope_mismatch_raises() -> None:
     ],
 )
 def test_encode_decode_roundtrip_list(limit: int, data: bytes) -> None:
-    L = ByteList.__class_getitem__(limit)
-    x = L(data)
+    # Create a test-specific ByteList class with the required limit
+    class TestByteList(ByteListBase):
+        LIMIT = limit
+
+    x = TestByteList(data=data)
     assert x.encode_bytes() == data
-    assert L.decode_bytes(data) == x
+    assert TestByteList.decode_bytes(data) == x
 
     buf = io.BytesIO()
     n = x.serialize(buf)
     assert n == len(data)
     buf.seek(0)
-    y = L.deserialize(buf, len(data))
+    y = TestByteList.deserialize(buf, len(data))
     assert y == x
 
 
 def test_list_deserialize_over_limit_raises() -> None:
-    L = ByteList.__class_getitem__(2)
+    class TestByteList2(ByteListBase):
+        LIMIT = 2
+
     buf = io.BytesIO(b"\x00\x01\x02")
     with pytest.raises(ValueError):
-        L.deserialize(buf, 3)
+        TestByteList2.deserialize(buf, 3)
 
 
 def test_list_deserialize_short_stream_raises() -> None:
-    L = ByteList.__class_getitem__(10)
+    class TestByteList10(ByteListBase):
+        LIMIT = 10
+
     buf = io.BytesIO(b"\x00\x01")
     with pytest.raises(IOError):
-        L.deserialize(buf, 3)  # stream too short
+        TestByteList10.deserialize(buf, 3)  # stream too short
 
 
 class ModelVectors(BaseModel):
@@ -233,8 +222,13 @@ class ModelVectors(BaseModel):
     key: Bytes4
 
 
+# Create test ByteList16 for the ModelLists test
+class ByteList16(ByteListBase):
+    LIMIT = 16
+
+
 class ModelLists(BaseModel):
-    payload: ByteList[16]  # type: ignore
+    payload: ByteList16
 
 
 def test_pydantic_accepts_various_inputs_for_vectors() -> None:
@@ -266,11 +260,7 @@ def test_pydantic_validates_vector_lengths() -> None:
 def test_pydantic_accepts_and_serializes_bytelist() -> None:
     m = ModelLists(payload="0x000102030405060708090a0b0c0d0e0f")
 
-    # mypy does not accept a dynamic specialization directly in isinstance;
-    # bind it to a Type[Any] first.
-    BL16: Type[Any] = ByteList.__class_getitem__(16)
-    assert isinstance(m.payload, BL16)
-
+    assert isinstance(m.payload, ByteList16)
     assert m.payload.encode_bytes() == bytes(range(16))
 
     dumped = m.model_dump()
@@ -312,20 +302,26 @@ def test_sorted_bytes32_list_is_lexicographic_on_bytes() -> None:
 
 
 def test_json_like_dump_of_vectors_lists() -> None:
+    # Create test ByteList5 for this test
+    class ByteList5(ByteListBase):
+        LIMIT = 5
+
     # Ensure users can dump simple object structures to JSON by pre-encoding to hex.
     obj = {
         "root": Bytes32(b"\x11" * 32).hex(),
         "sig": Bytes96(bytes(range(96))).hex(),
-        "payload": ByteList.__class_getitem__(5)(b"\x00\x01\x02\x03\x04").hex(),
+        "payload": ByteList5(data=b"\x00\x01\x02\x03\x04").hex(),
     }
     # strings are JSON-serializable
     assert json.loads(json.dumps(obj)) == obj
 
 
 def test_bytelist_hex_and_concat_behaviour_like_vector() -> None:
-    L = ByteList.__class_getitem__(8)
-    x = L("0x00010203")
-    y = L([4, 5])
+    class ByteList8(ByteListBase):
+        LIMIT = 8
+
+    x = ByteList8(data="0x00010203")
+    y = ByteList8(data=[4, 5])
     # __add__ returns bytes
     conc = x + y
     assert conc == b"\x00\x01\x02\x03\x04\x05"

@@ -7,7 +7,7 @@ from typing import Type as PyType
 import pytest
 from pydantic import ValidationError, create_model
 
-from lean_spec.types.collections import List, Vector
+from lean_spec.types.collections import List, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.ssz_base import SSZType
 from lean_spec.types.uint import Uint8, Uint16, Uint32
@@ -24,9 +24,19 @@ def ll(elem: Any, limit: int) -> Any:
     return List.__class_getitem__((elem, limit))
 
 
+class Uint8Vector3(SSZVector):
+    """A vector of exactly 3 Uint8 values."""
+
+    ELEMENT_TYPE = Uint8
+    LENGTH = 3
+
+
 def vv(elem: Any, length: int) -> Any:
-    """Build a specialized Vector[elem, length] without [] syntax (mypy-friendly)."""
-    return Vector.__class_getitem__((elem, length))
+    """Build a specialized SSZVector[elem, length] without [] syntax (mypy-friendly)."""
+    # For our tests, we only need Uint8Vector3
+    if elem == Uint8 and length == 3:
+        return Uint8Vector3
+    raise NotImplementedError(f"Vector type {elem.__name__}[{length}] not implemented")
 
 
 class SingleField(Container):

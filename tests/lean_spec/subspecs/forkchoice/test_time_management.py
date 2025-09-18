@@ -223,7 +223,8 @@ class TestVoteProcessingTiming:
         # Add multiple new votes
         checkpoints = [
             Checkpoint(
-                root=Bytes32(f"test{i}".encode() + b"\x00" * (32 - len(f"test{i}"))), slot=Slot(i)
+                root=Bytes32(f"test{i}".encode() + b"\x00" * (32 - len(f"test{i}"))),
+                slot=Slot(i),
             )
             for i in range(5)
         ]

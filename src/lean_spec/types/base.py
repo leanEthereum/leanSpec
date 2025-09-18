@@ -6,4 +6,4 @@ from pydantic import BaseModel, ConfigDict
 class StrictBaseModel(BaseModel):
     """A strict, immutable pydantic base model."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)

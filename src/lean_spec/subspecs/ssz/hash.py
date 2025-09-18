@@ -15,10 +15,10 @@ from typing import Final, Type
 from lean_spec.subspecs.ssz.constants import BYTES_PER_CHUNK
 from lean_spec.types.bitfields import Bitlist, Bitvector
 from lean_spec.types.boolean import Boolean
-from lean_spec.types.byte_arrays import ByteListBase, Bytes32, ByteVectorBase
+from lean_spec.types.byte_arrays import BaseBytes, ByteListBase, Bytes32
 from lean_spec.types.collections import (
     List,
-    Vector,
+    SSZVector,
 )
 from lean_spec.types.container import Container
 from lean_spec.types.uint import BaseUint
@@ -79,7 +79,7 @@ def _htr_memoryview(value: memoryview) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_bytevector(value: ByteVectorBase) -> Bytes32:
+def _htr_bytevector(value: BaseBytes) -> Bytes32:
     return Merkle.merkleize(Packer.pack_bytes(value.encode_bytes()))
 
 
@@ -108,7 +108,7 @@ def _htr_bitlist(value: Bitlist) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_vector(value: Vector) -> Bytes32:
+def _htr_vector(value: SSZVector) -> Bytes32:
     elem_t: Type[object] = type(value).ELEMENT_TYPE
     length: int = type(value).LENGTH
 

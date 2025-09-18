@@ -9,135 +9,95 @@ from typing import (
     ClassVar,
     Dict,
     Iterable,
+    Iterator,
     SupportsIndex,
     Tuple,
     Type,
     cast,
 )
 
+from pydantic import Field, field_validator
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 from typing_extensions import Self
 
 from lean_spec.types.constants import OFFSET_BYTE_LENGTH
 
-from .ssz_base import SSZType
+from .ssz_base import SSZModel, SSZType
 from .uint import Uint32
 
-_VECTOR_CACHE: Dict[Tuple[Type[Vector], Type[SSZType], int], Type[Vector]] = {}
-"""A cache to store and reuse dynamically generated Vector types."""
 
+class SSZVector(SSZModel):
+    """
+    Base class for SSZ Vector types: fixed-length, immutable sequences.
 
-class Vector(tuple[SSZType, ...]):
-    """A strict Vector type: a fixed-length, immutable sequence."""
+    To create a specific vector type, inherit from this class and set:
+    - ELEMENT_TYPE: The SSZ type of elements
+    - LENGTH: The exact number of elements
+
+    Example:
+        class Uint16Vector2(SSZVector):
+            ELEMENT_TYPE = Uint16
+            LENGTH = 2
+    """
 
     ELEMENT_TYPE: ClassVar[Type[SSZType]]
-    """
-    The SSZ type of the elements in the vector.
+    """The SSZ type of the elements in the vector."""
 
-    These will be populated in the dynamically created subclass.
-    """
     LENGTH: ClassVar[int]
-    """
-    The exact number of elements in the vector.
+    """The exact number of elements in the vector."""
 
-    These will be populated in the dynamically created subclass.
-    """
+    data: Tuple[SSZType, ...] = Field(default_factory=tuple)
+    """The immutable data stored in the vector."""
 
-    def __class_getitem__(cls, params: Tuple[Type[SSZType], int]) -> Type[Vector]:  # type: ignore[override]
-        """
-        Create a specific, fixed-length Vector type.
+    @field_validator("data", mode="before")
+    @classmethod
+    def _validate_vector_data(cls, v: Any) -> Tuple[SSZType, ...]:
+        """Validate and convert input data to typed tuple."""
+        if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LENGTH"):
+            raise TypeError(f"{cls.__name__} must define ELEMENT_TYPE and LENGTH")
 
-        Args:
-            params (Tuple[Type[SSZType], int]): A tuple containing the element
-                type and the exact vector length.
+        if not isinstance(v, (list, tuple)):
+            v = tuple(v)
 
-        Returns:
-            Type[Vector]: A new, specialized Vector class.
-        """
-        # Parameter validation.
-        if not isinstance(params, tuple) or len(params) != 2:
-            raise TypeError("Usage: Vector[<element_type>, <length>]")
-        element_type, length = params
-        if not isinstance(length, int) or length <= 0:
-            raise TypeError(f"Vector length must be a positive integer, not {length!r}.")
-
-        # Use a cache to avoid recreating the same type.
-        cache_key = (cls, element_type, length)
-        if cache_key in _VECTOR_CACHE:
-            return _VECTOR_CACHE[cache_key]
-
-        # Dynamically create a new type.
-        type_name = f"{cls.__name__}[{element_type.__name__},{length}]"
-        new_type = type(
-            type_name,
-            (cls,),
-            {
-                "ELEMENT_TYPE": element_type,
-                "LENGTH": length,
-                "__doc__": f"A fixed-length vector of {length} {element_type.__name__} elements.",
-            },
-        )
-        _VECTOR_CACHE[cache_key] = new_type
-        return new_type
-
-    def __new__(cls, values: Iterable[Any]) -> Self:
-        """Create and validate a new Vector instance."""
-        # Ensure this is a specialized class (e.g., `Vector[Uint8, 32]`).
-        if not hasattr(cls, "ELEMENT_TYPE"):
-            raise TypeError("Cannot instantiate raw Vector; specify element type and length.")
-
-        # Coerce input values into the declared element type if they are not already.
+        # Convert each element to the declared type
         typed_values = tuple(
-            v if isinstance(v, cls.ELEMENT_TYPE) else cast(Any, cls.ELEMENT_TYPE)(v) for v in values
+            item if isinstance(item, cls.ELEMENT_TYPE) else cast(Any, cls.ELEMENT_TYPE)(item)
+            for item in v
         )
 
-        # Enforce the fixed-length constraint.
         if len(typed_values) != cls.LENGTH:
             raise ValueError(
                 f"{cls.__name__} requires exactly {cls.LENGTH} items, "
                 f"but {len(typed_values)} were provided."
             )
-        return super().__new__(cls, typed_values)
 
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
-        """Hook into Pydantic for strict, fixed-length validation."""
-        if not hasattr(cls, "ELEMENT_TYPE"):
-            raise TypeError("Cannot use raw Vector in Pydantic models.")
+        return typed_values
 
-        # Generate the Pydantic schema for the inner element type.
-        # We use `generate_schema` to handle nested SSZ types correctly.
-        element_schema = handler.generate_schema(cls.ELEMENT_TYPE)
+    def __len__(self) -> int:
+        """Return the length of the vector."""
+        return len(self.data)
 
-        # Define a schema for a tuple with an exact length and specific item type.
-        tuple_validator = core_schema.tuple_variable_schema(
-            items_schema=element_schema,
-            min_length=cls.LENGTH,
-            max_length=cls.LENGTH,
-        )
+    def __iter__(self) -> Iterator[SSZType]:  # type: ignore[override]
+        """Iterate over the vector elements."""
+        return iter(self.data)
 
-        # Validator function to construct our class from the validated tuple.
-        from_tuple_validator = core_schema.no_info_plain_validator_function(cls)
+    def __getitem__(self, i: int) -> SSZType:
+        """Get an element by index."""
+        return self.data[i]
 
-        return core_schema.union_schema(
-            [
-                core_schema.is_instance_schema(cls),
-                core_schema.chain_schema([tuple_validator, from_tuple_validator]),
-            ],
-            serialization=core_schema.plain_serializer_function_ser_schema(tuple),
-        )
+    def __repr__(self) -> str:
+        """String representation of the vector."""
+        return f"{self.__class__.__name__}({list(self.data)!r})"
 
     @classmethod
     def is_fixed_size(cls) -> bool:
-        """A Vector is fixed-size if and only if its elements are fixed-size."""
+        """An SSZVector is fixed-size if and only if its elements are fixed-size."""
         return cls.ELEMENT_TYPE.is_fixed_size()
 
     @classmethod
     def get_byte_length(cls) -> int:
-        """Get the byte length if the Vector is fixed-size."""
+        """Get the byte length if the SSZVector is fixed-size."""
         if not cls.is_fixed_size():
             raise TypeError(f"{cls.__name__} is not a fixed-size type.")
         return cls.ELEMENT_TYPE.get_byte_length() * cls.LENGTH
@@ -147,7 +107,7 @@ class Vector(tuple[SSZType, ...]):
         # If elements are fixed-size, serialize them back-to-back.
         if self.is_fixed_size():
             total_bytes_written = 0
-            for element in self:
+            for element in self.data:
                 total_bytes_written += element.serialize(stream)
             return total_bytes_written
         # If elements are variable-size, serialize their offsets, then their data.
@@ -157,7 +117,7 @@ class Vector(tuple[SSZType, ...]):
             # The first offset points to the end of all the offset data.
             offset = self.LENGTH * OFFSET_BYTE_LENGTH
             # Write the offsets to the main stream and the data to the temporary stream.
-            for element in self:
+            for element in self.data:
                 Uint32(offset).serialize(stream)
                 offset += element.serialize(variable_data_stream)
             # Write the serialized variable data after the offsets.
@@ -180,7 +140,7 @@ class Vector(tuple[SSZType, ...]):
             elements = [
                 cls.ELEMENT_TYPE.deserialize(stream, elem_byte_length) for _ in range(cls.LENGTH)
             ]
-            return cls(elements)
+            return cls(data=elements)
         # If elements are variable-size, read offsets to determine element boundaries.
         else:
             # The first offset tells us where the data starts, which must be after all offsets.
@@ -198,17 +158,17 @@ class Vector(tuple[SSZType, ...]):
                 if start > end:
                     raise ValueError(f"Invalid offsets: start {start} > end {end}")
                 elements.append(cls.ELEMENT_TYPE.deserialize(stream, end - start))
-            return cls(elements)
+            return cls(data=elements)
 
     def encode_bytes(self) -> bytes:
-        """Serializes the Vector to a byte string."""
+        """Serializes the SSZVector to a byte string."""
         with io.BytesIO() as stream:
             self.serialize(stream)
             return stream.getvalue()
 
     @classmethod
     def decode_bytes(cls, data: bytes) -> Self:
-        """Deserializes a byte string into a Vector instance."""
+        """Deserializes a byte string into an SSZVector instance."""
         with io.BytesIO(data) as stream:
             return cls.deserialize(stream, len(data))
 
@@ -385,15 +345,29 @@ class List(list[SSZType]):
     def append(self, value: Any) -> None:
         """Append an element to the end of the list, checking the limit."""
         self._check_capacity(1)
-        super().append(cast(Any, self.ELEMENT_TYPE)(value))
+        # Convert value to correct type if needed
+        if isinstance(value, self.ELEMENT_TYPE):
+            typed_value = value
+        else:
+            typed_value = cast(Any, self.ELEMENT_TYPE)(value)
+        super().append(typed_value)
 
     def extend(self, values: Iterable[Any]) -> None:
         """Extend the list with an iterable, checking the limit."""
-        typed_values = [cast(Any, self.ELEMENT_TYPE)(v) for v in values]
+        # Convert values to correct type if needed
+        typed_values = [
+            v if isinstance(v, self.ELEMENT_TYPE) else cast(Any, self.ELEMENT_TYPE)(v)
+            for v in values
+        ]
         self._check_capacity(len(typed_values))
         super().extend(typed_values)
 
     def insert(self, index: SupportsIndex, value: Any) -> None:
         """Insert an element at an index, checking the limit."""
         self._check_capacity(1)
-        super().insert(index, cast(Any, self.ELEMENT_TYPE)(value))
+        # Convert value to correct type if needed
+        if isinstance(value, self.ELEMENT_TYPE):
+            typed_value = value
+        else:
+            typed_value = cast(Any, self.ELEMENT_TYPE)(value)
+        super().insert(index, typed_value)

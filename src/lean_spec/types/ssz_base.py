@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import io
+from abc import ABC, abstractmethod
 from typing import IO
 
 from typing_extensions import Self
 
+from .base import StrictBaseModel
 
-class SSZType:
-    """An abstract base class for all SSZ types."""
+
+class SSZType(ABC):
+    """
+    Abstract base class for all SSZ types.
+
+    This is the minimal interface that all SSZ types must implement.
+    Use SSZModel for Pydantic-based SSZ types.
+    """
 
     @classmethod
+    @abstractmethod
     def is_fixed_size(cls) -> bool:
         """
         Check if the type has a fixed size in bytes.
@@ -18,9 +28,10 @@ class SSZType:
         Returns:
             bool: True if the size is fixed, False otherwise.
         """
-        raise NotImplementedError
+        ...
 
     @classmethod
+    @abstractmethod
     def get_byte_length(cls) -> int:
         """
         Get the byte length of the type if it is fixed-size.
@@ -31,7 +42,35 @@ class SSZType:
         Returns:
             int: The number of bytes.
         """
-        raise NotImplementedError
+        ...
+
+    @abstractmethod
+    def serialize(self, stream: IO[bytes]) -> int:
+        """
+        Serializes the object and writes it to a binary stream.
+
+        Args:
+            stream (IO[bytes]): The stream to write the serialized data to.
+
+        Returns:
+            int: The number of bytes written.
+        """
+        ...
+
+    @classmethod
+    @abstractmethod
+    def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
+        """
+        Deserializes an object from a binary stream within a given scope.
+
+        Args:
+            stream (IO[bytes]): The stream to read from.
+            scope (int): The number of bytes available to read for this object.
+
+        Returns:
+            Self: An instance of the class.
+        """
+        ...
 
     def encode_bytes(self) -> bytes:
         """
@@ -40,7 +79,9 @@ class SSZType:
         Returns:
             bytes: The serialized byte string.
         """
-        raise NotImplementedError
+        with io.BytesIO() as stream:
+            self.serialize(stream)
+            return stream.getvalue()
 
     @classmethod
     def decode_bytes(cls, data: bytes) -> Self:
@@ -53,30 +94,18 @@ class SSZType:
         Returns:
             Self: An instance of the class.
         """
-        raise NotImplementedError
+        with io.BytesIO(data) as stream:
+            return cls.deserialize(stream, len(data))
 
-    def serialize(self, stream: IO[bytes]) -> int:
-        """
-        Serializes the object and writes it to a binary stream.
 
-        Args:
-            stream (IO[bytes]): The stream to write the serialized data to.
+class SSZModel(StrictBaseModel, SSZType):
+    """
+    Base class for SSZ types that use Pydantic validation.
 
-        Returns:
-            int: The number of bytes written.
-        """
-        raise NotImplementedError
+    This combines StrictBaseModel (Pydantic validation + immutability) with SSZ serialization.
+    Use this for containers and complex types that can benefit from Pydantic.
 
-    @classmethod
-    def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
-        """
-        Deserializes an object from a binary stream within a given scope.
+    For simple types that need special inheritance (like int), use SSZType directly.
+    """
 
-        Args:
-            stream (IO[bytes]): The stream to read from.
-            scope (int): The number of bytes available to read for this object.
-
-        Returns:
-            Self: An instance of the class.
-        """
-        raise NotImplementedError
+    ...
