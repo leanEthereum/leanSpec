@@ -76,8 +76,14 @@ uv sync --all-extras
 # Run all tests from workspace root
 uv run pytest
 
-# Run tests in parallel
+# Run tests in parallel, utilizing all available CPU cores
 uv run pytest -n auto
+
+# Run tests in parallel, specifying number of workers (e.g., 4)
+uv run pytest -n 4
+
+# Skip slow tests (marked with @pytest.mark.slow)
+uv run pytest -m "not slow"
 ```
 
 ### Code Quality
@@ -207,6 +213,7 @@ you can use `uvx`:
 | Run all quality checks (no tests/docs)  | `uvx --with=tox-uv tox -e all-checks` |
 | Run everything (checks + tests + docs)  | `uvx --with=tox-uv tox`               |
 | Run specific tox environment            | `uvx --with=tox-uv tox -e lint`       |
+
 
 ## Contributing
 
