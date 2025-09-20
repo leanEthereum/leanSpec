@@ -11,7 +11,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, StakerIndex, Uint64
 
 
 @pytest.fixture
@@ -334,8 +334,8 @@ class TestSafeTargetComputation:
 
         # Add some new votes
         new_votes = {
-            ValidatorIndex(0): Checkpoint(root=block_1_hash, slot=Slot(1)),
-            ValidatorIndex(1): Checkpoint(root=block_1_hash, slot=Slot(1)),
+            StakerIndex(0): Checkpoint(root=block_1_hash, slot=Slot(1)),
+            StakerIndex(1): Checkpoint(root=block_1_hash, slot=Slot(1)),
         }
 
         store = Store(

@@ -11,7 +11,7 @@ from lean_spec.subspecs.forkchoice.helpers import (
     get_latest_justified,
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, StakerIndex, Uint64
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ class TestForkChoiceHeadFunction:
         target_hash = list(sample_blocks.keys())[2]  # block_b
 
         # Create votes pointing to target
-        votes = {ValidatorIndex(0): Checkpoint(root=target_hash, slot=Slot(2))}
+        votes = {StakerIndex(0): Checkpoint(root=target_hash, slot=Slot(2))}
 
         head = get_fork_choice_head(
             blocks=sample_blocks, root=root_hash, latest_votes=votes, min_score=0
@@ -84,7 +84,7 @@ class TestForkChoiceHeadFunction:
         target_hash = list(sample_blocks.keys())[2]  # block_b
 
         # Single vote, but require min_score of 2
-        votes = {ValidatorIndex(0): Checkpoint(root=target_hash, slot=Slot(2))}
+        votes = {StakerIndex(0): Checkpoint(root=target_hash, slot=Slot(2))}
 
         head = get_fork_choice_head(
             blocks=sample_blocks, root=root_hash, latest_votes=votes, min_score=2
@@ -100,9 +100,9 @@ class TestForkChoiceHeadFunction:
 
         # Multiple votes for same target
         votes = {
-            ValidatorIndex(0): Checkpoint(root=target_hash, slot=Slot(2)),
-            ValidatorIndex(1): Checkpoint(root=target_hash, slot=Slot(2)),
-            ValidatorIndex(2): Checkpoint(root=target_hash, slot=Slot(2)),
+            StakerIndex(0): Checkpoint(root=target_hash, slot=Slot(2)),
+            StakerIndex(1): Checkpoint(root=target_hash, slot=Slot(2)),
+            StakerIndex(2): Checkpoint(root=target_hash, slot=Slot(2)),
         }
 
         head = get_fork_choice_head(

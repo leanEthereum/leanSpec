@@ -17,7 +17,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.vote import SignedVote, Vote
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.types import Boolean, Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Boolean, Bytes32, StakerIndex, Uint64
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ def _create_block(
     # Construct the inner block message with correct parent_root linkage.
     block_message = Block(
         slot=Slot(slot),
-        proposer_index=ValidatorIndex(slot % 10),  # Using sample_config num_validators
+        proposer_index=StakerIndex(slot % 10),  # Using sample_config num_validators
         parent_root=hash_tree_root(parent_header),
         state_root=Bytes32.zero(),  # Placeholder, to be filled in by STF
         body=body,
@@ -108,10 +108,10 @@ def _create_votes(indices: List[int]) -> List[Boolean]:
     Returns
     -------
     list[Boolean]
-        A bitlist of length VALIDATOR_REGISTRY_LIMIT with True at given indices.
+        A bitlist of length STAKER_REGISTRY_LIMIT with True at given indices.
     """
     # Start with an all-false bitlist at registry-limit length.
-    votes = [Boolean(False)] * DEVNET_CONFIG.validator_registry_limit.as_int()
+    votes = [Boolean(False)] * DEVNET_CONFIG.staker_registry_limit.as_int()
     # Flip the positions listed in indices to True.
     for i in indices:
         votes[i] = Boolean(True)
@@ -180,6 +180,7 @@ def base_state(
     return State(
         config=sample_config,
         slot=Slot(0),
+        stakers=[],
         latest_block_header=sample_block_header,
         latest_justified=sample_checkpoint,
         latest_finalized=sample_checkpoint,
@@ -223,7 +224,7 @@ def test_get_justifications_single_root(base_state: State) -> None:
     root1 = Bytes32(b"\x01" * 32)
 
     # Prepare a vote bitlist with required length; flip two positions to True.
-    votes1 = [Boolean(False)] * DEVNET_CONFIG.validator_registry_limit.as_int()
+    votes1 = [Boolean(False)] * DEVNET_CONFIG.staker_registry_limit.as_int()
     votes1[2] = Boolean(True)  # Validator 2 voted
     votes1[5] = Boolean(True)  # Validator 5 voted
 
@@ -259,7 +260,7 @@ def test_get_justifications_multiple_roots(base_state: State) -> None:
     root3 = Bytes32(b"\x03" * 32)
 
     # Validator registry limit length for each vote slice.
-    limit = DEVNET_CONFIG.validator_registry_limit.as_int()
+    limit = DEVNET_CONFIG.staker_registry_limit.as_int()
 
     # Build per-root vote slices.
     votes1 = [Boolean(False)] * limit
@@ -308,13 +309,14 @@ def test_with_justifications_empty(
     initial_state = State(
         config=sample_config,
         slot=Slot(0),
+        stakers=[],
         latest_block_header=sample_block_header,
         latest_justified=sample_checkpoint,
         latest_finalized=sample_checkpoint,
         historical_block_hashes=[],
         justified_slots=[],
         justifications_roots=[Bytes32(b"\x01" * 32)],
-        justifications_validators=[True] * DEVNET_CONFIG.validator_registry_limit.as_int(),
+        justifications_validators=[True] * DEVNET_CONFIG.staker_registry_limit.as_int(),
     )
 
     # Apply an empty justifications map to get a new state snapshot.
@@ -344,7 +346,7 @@ def test_with_justifications_deterministic_order(base_state: State) -> None:
     root2 = Bytes32(b"\x02" * 32)
 
     # Build two vote slices of proper length.
-    limit = DEVNET_CONFIG.validator_registry_limit.as_int()
+    limit = DEVNET_CONFIG.staker_registry_limit.as_int()
     votes1 = [Boolean(False)] * limit
     votes2 = [Boolean(True)] * limit
 
@@ -375,7 +377,7 @@ def test_with_justifications_invalid_length(base_state: State) -> None:
     root1 = Bytes32(b"\x01" * 32)
 
     # Construct an invalid votes bitlist: one short of required length.
-    invalid_votes = [Boolean(True)] * (DEVNET_CONFIG.validator_registry_limit - Uint64(1)).as_int()
+    invalid_votes = [Boolean(True)] * (DEVNET_CONFIG.staker_registry_limit - Uint64(1)).as_int()
     justifications = {root1: invalid_votes}
 
     # The method asserts on incorrect lengths.
@@ -405,7 +407,7 @@ def test_with_justifications_invalid_length(base_state: State) -> None:
         pytest.param(
             {
                 Bytes32(b"\x03" * 32): [Boolean(True)]
-                * DEVNET_CONFIG.validator_registry_limit.as_int(),
+                * DEVNET_CONFIG.staker_registry_limit.as_int(),
                 Bytes32(b"\x01" * 32): _create_votes([0]),
                 Bytes32(b"\x02" * 32): _create_votes([1, 2]),
             },
@@ -586,7 +588,7 @@ def test_process_block_header_invalid(
     # Build a block with possibly invalid slot, proposer, or parent root.
     block = Block(
         slot=Slot(bad_slot),
-        proposer_index=ValidatorIndex(bad_proposer),
+        proposer_index=StakerIndex(bad_proposer),
         parent_root=bad_parent_root or parent_root,
         state_root=Bytes32.zero(),
         body=BlockBody(attestations=[]),
@@ -638,7 +640,7 @@ def test_process_attestations_justification_and_finalization(genesis_state: Stat
     votes_for_4 = [
         SignedVote(
             data=Vote(
-                validator_id=ValidatorIndex(i),
+                validator_id=StakerIndex(i),
                 slot=Slot(4),
                 head=checkpoint4,
                 target=checkpoint4,
