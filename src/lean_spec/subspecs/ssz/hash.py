@@ -13,7 +13,7 @@ from math import ceil
 from typing import Final, Type
 
 from lean_spec.subspecs.ssz.constants import BYTES_PER_CHUNK
-from lean_spec.types.bitfields import Bitlist, Bitvector
+from lean_spec.types.bitfields import Bitlist, BitlistBase, Bitvector, BitvectorBase
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.byte_arrays import BaseBytes, ByteListBase, Bytes32
 from lean_spec.types.collections import (
@@ -105,6 +105,22 @@ def _htr_bitlist(value: Bitlist) -> Bytes32:
     chunks = Packer.pack_bits(tuple(bool(b) for b in value))
     root = Merkle.merkleize(chunks, limit=limit)
     return Merkle.mix_in_length(root, len(value))
+
+
+@hash_tree_root.register
+def _htr_bitvector_base(value: BitvectorBase) -> Bytes32:
+    nbits = type(value).LENGTH
+    limit = (nbits + 255) // 256
+    chunks = Packer.pack_bits(tuple(bool(b) for b in value.data))
+    return Merkle.merkleize(chunks, limit=limit)
+
+
+@hash_tree_root.register
+def _htr_bitlist_base(value: BitlistBase) -> Bytes32:
+    limit = (type(value).LIMIT + 255) // 256
+    chunks = Packer.pack_bits(tuple(bool(b) for b in value.data))
+    root = Merkle.merkleize(chunks, limit=limit)
+    return Merkle.mix_in_length(root, len(value.data))
 
 
 @hash_tree_root.register

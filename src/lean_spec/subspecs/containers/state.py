@@ -16,7 +16,7 @@ from lean_spec.types import (
     ValidatorIndex,
     is_proposer,
 )
-from lean_spec.types.bitfields import Bitlist
+from lean_spec.types.bitfields import Bitlist262144, Bitlist68719476736
 
 from .block import Block, BlockBody, BlockHeader, SignedBlock, SignedVoteList4096
 from .checkpoint import Checkpoint
@@ -65,17 +65,14 @@ class State(Container):
     historical_block_hashes: Bytes32List262144
     """A list of historical block root hashes."""
 
-    justified_slots: Bitlist[DEVNET_CONFIG.historical_roots_limit.as_int()]  # type: ignore
+    justified_slots: Bitlist262144
     """A bitfield indicating which historical slots were justified."""
 
     # Justification tracking (flattened for SSZ compatibility)
     justifications_roots: Bytes32List262144
     """Roots of justified blocks."""
 
-    justifications_validators: Bitlist[  # type: ignore[valid-type, type-arg]
-        DEVNET_CONFIG.historical_roots_limit.as_int()
-        * DEVNET_CONFIG.historical_roots_limit.as_int()
-    ]
+    justifications_validators: Bitlist68719476736
     """A bitlist of validators who participated in justifications."""
 
     @classmethod
@@ -103,7 +100,7 @@ class State(Container):
             proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=[])),
+            body_root=hash_tree_root(BlockBody(attestations=SignedVoteList4096(data=[]))),
         )
 
         # Assemble and return the full genesis state.
@@ -116,10 +113,10 @@ class State(Container):
             latest_block_header=genesis_header,
             latest_justified=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
             latest_finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
-            historical_block_hashes=[],
-            justified_slots=[],
-            justifications_roots=[],
-            justifications_validators=[],
+            historical_block_hashes=Bytes32List262144(data=[]),
+            justified_slots=Bitlist262144(data=[]),
+            justifications_roots=Bytes32List262144(data=[]),
+            justifications_validators=Bitlist68719476736(data=[]),
         )
 
     def is_proposer(self, validator_index: ValidatorIndex) -> bool:
@@ -424,7 +421,7 @@ class State(Container):
         updates["historical_block_hashes"] = self.historical_block_hashes.__class__(
             data=new_historical_hashes
         )
-        updates["justified_slots"] = self.justified_slots.__class__(new_justified_slots)
+        updates["justified_slots"] = self.justified_slots.__class__(data=new_justified_slots)
 
         # Construct the new latest block header.
         #
@@ -605,6 +602,6 @@ class State(Container):
             update={
                 "latest_justified": latest_justified,
                 "latest_finalized": latest_finalized,
-                "justified_slots": self.justified_slots.__class__(justified_slots),
+                "justified_slots": self.justified_slots.__class__(data=justified_slots),
             }
         )
