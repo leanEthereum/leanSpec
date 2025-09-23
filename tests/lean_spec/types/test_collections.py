@@ -7,13 +7,13 @@ from pydantic import ValidationError, create_model
 from typing_extensions import Type
 
 from lean_spec.types.boolean import Boolean
-from lean_spec.types.collections import List, SSZVector
+from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.uint import Uint8, Uint16, Uint32, Uint256
 
 
 # Define some List types that are needed for Container definitions
-class Uint16List4(List):
+class Uint16List4(SSZList):
     """A list with up to 4 Uint16 values."""
 
     ELEMENT_TYPE = Uint16
@@ -78,42 +78,42 @@ class VariableContainerVector2(SSZVector):
 
 
 # Define explicit List types for testing
-class Uint16List32(List):
+class Uint16List32(SSZList):
     """A list with up to 32 Uint16 values."""
 
     ELEMENT_TYPE = Uint16
     LIMIT = 32
 
 
-class Uint8List10(List):
+class Uint8List10(SSZList):
     """A list with up to 10 Uint8 values."""
 
     ELEMENT_TYPE = Uint8
     LIMIT = 10
 
 
-class Uint32List128(List):
+class Uint32List128(SSZList):
     """A list with up to 128 Uint32 values."""
 
     ELEMENT_TYPE = Uint32
     LIMIT = 128
 
 
-class Uint256List32(List):
+class Uint256List32(SSZList):
     """A list with up to 32 Uint256 values."""
 
     ELEMENT_TYPE = Uint256
     LIMIT = 32
 
 
-class Uint256List128(List):
+class Uint256List128(SSZList):
     """A list with up to 128 Uint256 values."""
 
     ELEMENT_TYPE = Uint256
     LIMIT = 128
 
 
-class VariableContainerList2(List):
+class VariableContainerList2(SSZList):
     """A list with up to 2 VariableContainer values."""
 
     ELEMENT_TYPE = VariableContainer
@@ -150,28 +150,28 @@ class Uint8Vector2(SSZVector):
 
 
 # Additional List classes for tests
-class Uint8List32(List):
+class Uint8List32(SSZList):
     """A list with up to 32 Uint8 values."""
 
     ELEMENT_TYPE = Uint8
     LIMIT = 32
 
 
-class Uint8List64(List):
+class Uint8List64(SSZList):
     """A list with up to 64 Uint8 values."""
 
     ELEMENT_TYPE = Uint8
     LIMIT = 64
 
 
-class Uint8List4(List):
+class Uint8List4(SSZList):
     """A list with up to 4 Uint8 values."""
 
     ELEMENT_TYPE = Uint8
     LIMIT = 4
 
 
-class BooleanList4(List):
+class BooleanList4(SSZList):
     """A list with up to 4 Boolean values."""
 
     ELEMENT_TYPE = Boolean
@@ -254,15 +254,15 @@ class TestList:
         assert "Uint8List32" in repr(list_type_a)
 
     def test_instantiate_raw_type_raises_error(self) -> None:
-        """Tests that the raw, non-specialized List cannot be instantiated."""
-        with pytest.raises(TypeError, match="Cannot instantiate raw List"):
-            List([])
+        """Tests that the raw, non-specialized SSZList cannot be instantiated."""
+        with pytest.raises(TypeError, match="must define ELEMENT_TYPE and LIMIT"):
+            SSZList(data=[])
 
     def test_instantiation_over_limit_raises_error(self) -> None:
         """Tests that providing more items than the limit during instantiation fails."""
         list_type = Uint8List4
-        with pytest.raises(ValueError, match="Too many items for Uint8List4"):
-            list_type([1, 2, 3, 4, 5])
+        with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
+            list_type(data=[1, 2, 3, 4, 5])
 
     def test_pydantic_validation(self) -> None:
         """Tests that Pydantic validation works for List types."""
@@ -270,7 +270,7 @@ class TestList:
         # Test valid data
         instance: Any = model(value=[10, 20])
         assert isinstance(instance.value, Uint8List4)
-        assert instance.value == [Uint8(10), Uint8(20)]
+        assert list(instance.value) == [Uint8(10), Uint8(20)]
         # Test invalid data
         with pytest.raises(ValidationError):
             model(value=[10, 20, 30, 40, 50])  # Too long
@@ -278,16 +278,14 @@ class TestList:
             model(value=[10, "bad"])  # Wrong element type
 
     def test_append_at_limit_raises_error(self) -> None:
-        """Tests that `append` fails when the list is at its capacity."""
-        bl = BooleanList4([True] * 4)
-        with pytest.raises(ValueError, match="exceeds BooleanList4 limit of 4 items"):
-            bl.append(False)
+        """Tests that creating a list at limit +1 fails during construction."""
+        with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
+            BooleanList4(data=[True] * 5)
 
     def test_extend_over_limit_raises_error(self) -> None:
-        """Tests that `extend` fails if the result would exceed the capacity."""
-        bl = BooleanList4([True, False])
-        with pytest.raises(ValueError, match="exceeds BooleanList4 limit of 4 items"):
-            bl.extend([True, False, True])
+        """Tests that creating a list over the limit fails during construction."""
+        with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
+            BooleanList4(data=[True, False, True, False, True])
 
 
 class TestSSZVectorSerialization:
@@ -334,10 +332,10 @@ class TestSSZVectorSerialization:
 
         # The inner list (`b`) now serializes to a packed representation, changing the total size
         val1 = VariableContainer(
-            a=Uint8(1), b=list_type([Uint16(10), Uint16(20)])
+            a=Uint8(1), b=list_type(data=[Uint16(10), Uint16(20)])
         )  # Serialized size: 1 + 4 + (2*2) = 9 bytes
         val2 = VariableContainer(
-            a=Uint8(2), b=list_type([Uint16(30)])
+            a=Uint8(2), b=list_type(data=[Uint16(30)])
         )  # Serialized size: 1 + 4 + (1*2) = 7 bytes
         instance = VariableContainerVector2(data=[val1, val2])
 
@@ -381,10 +379,10 @@ class TestListSerialization:
         ],
     )
     def test_fixed_size_element_list_serialization(
-        self, list_type: Type[List], value: Tuple[Any, ...], expected_hex: str
+        self, list_type: Type[SSZList], value: Tuple[Any, ...], expected_hex: str
     ) -> None:
         """Tests the serialization of lists with fixed-size elements."""
-        instance = list_type(value)
+        instance = list_type(data=value)
         encoded = instance.encode_bytes()
         assert encoded.hex() == expected_hex
         decoded = list_type.decode_bytes(encoded)
@@ -396,12 +394,12 @@ class TestListSerialization:
         element_list_type = Uint16List4
 
         val1 = VariableContainer(
-            a=Uint8(1), b=element_list_type([Uint16(10)])
+            a=Uint8(1), b=element_list_type(data=[Uint16(10)])
         )  # Serialized size: 1 + 4 + 2 = 7 bytes
         val2 = VariableContainer(
-            a=Uint8(2), b=element_list_type([Uint16(30), Uint16(40)])
+            a=Uint8(2), b=element_list_type(data=[Uint16(30), Uint16(40)])
         )  # Serialized size: 1 + 4 + 4 = 9 bytes
-        instance = list_type([val1, val2])
+        instance = list_type(data=[val1, val2])
 
         expected_hex = (
             "080000000f000000"  # Offsets: val1 starts at 8, val2 starts at 15 (8+7)

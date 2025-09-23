@@ -17,7 +17,7 @@ from lean_spec.types.bitfields import Bitlist, Bitvector
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.byte_arrays import BaseBytes, ByteListBase, Bytes32
 from lean_spec.types.collections import (
-    List,
+    SSZList,
     SSZVector,
 )
 from lean_spec.types.container import Container
@@ -125,7 +125,7 @@ def _htr_vector(value: SSZVector) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_list(value: List) -> Bytes32:
+def _htr_list(value: SSZList) -> Bytes32:
     elem_t: Type[object] = type(value).ELEMENT_TYPE
     limit: int = type(value).LIMIT
 

@@ -1,17 +1,24 @@
 """Block Containers."""
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes32, List, Uint64
+from lean_spec.types import Bytes32, SSZList, Uint64
 from lean_spec.types.container import Container
 
-from ..chain import config
 from .vote import SignedVote
+
+
+# Concrete SSZList class for BlockBody
+class SignedVoteList4096(SSZList):
+    """List of SignedVote with limit 4096 (VALIDATOR_REGISTRY_LIMIT)."""
+
+    ELEMENT_TYPE = SignedVote
+    LIMIT = 4096
 
 
 class BlockBody(Container):
     """The body of a block, containing payload data."""
 
-    attestations: List[SignedVote, config.VALIDATOR_REGISTRY_LIMIT.as_int()]  # type: ignore
+    attestations: SignedVoteList4096
     """
     A list of votes included in the block.
 

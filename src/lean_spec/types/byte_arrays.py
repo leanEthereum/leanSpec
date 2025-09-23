@@ -185,6 +185,8 @@ class BaseBytes(bytes, SSZType):
 
     def hex(self, sep: str | bytes = "", bytes_per_sep: SupportsIndex = 1) -> str:
         """Return the hexadecimal string representation of the underlying bytes."""
+        if sep == "":
+            return bytes(self).hex()
         return bytes(self).hex(sep, bytes_per_sep)
 
 

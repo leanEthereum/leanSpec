@@ -355,7 +355,7 @@ def test_with_justifications_deterministic_order(base_state: State) -> None:
     new_state = base_state.with_justifications(justifications)
 
     # The stored roots should be [root1, root2].
-    assert new_state.justifications_roots == [root1, root2]
+    assert list(new_state.justifications_roots) == [root1, root2]
     # The flattened validators list should follow the same order.
     assert new_state.justifications_validators == votes1 + votes2
     # Original state remains empty.
@@ -543,7 +543,7 @@ def test_process_block_header_valid(genesis_state: State) -> None:
     assert new_state.latest_finalized.root == genesis_header_root
     assert new_state.latest_justified.root == genesis_header_root
     # History should include the parent's root at index 0.
-    assert new_state.historical_block_hashes == [genesis_header_root]
+    assert list(new_state.historical_block_hashes) == [genesis_header_root]
     # Slot 0 should be marked justified.
     assert new_state.justified_slots == [Boolean(True)]
     # Latest header now reflects the processed block's header content.

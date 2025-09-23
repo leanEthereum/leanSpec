@@ -7,18 +7,13 @@ from typing import (
     IO,
     Any,
     ClassVar,
-    Dict,
-    Iterable,
     Iterator,
-    SupportsIndex,
     Tuple,
     Type,
     cast,
 )
 
 from pydantic import Field, field_validator
-from pydantic.annotated_handlers import GetCoreSchemaHandler
-from pydantic_core import CoreSchema, core_schema
 from typing_extensions import Self
 
 from lean_spec.types.constants import OFFSET_BYTE_LENGTH
@@ -173,201 +168,182 @@ class SSZVector(SSZModel):
             return cls.deserialize(stream, len(data))
 
 
-_LIST_CACHE: Dict[Tuple[Type[List], Type[SSZType], int], Type[List]] = {}
-"""A cache to store and reuse dynamically generated List types."""
+class SSZList(SSZModel):
+    """
+    Base class for SSZ List types - variable-length homogeneous collections.
 
+    An SSZ List is a sequence that can contain between 0 and LIMIT elements,
+    where all elements must be of the same SSZ type.
 
-class List(list[SSZType]):
-    """A strict SSZ List type: a variable-length, mutable sequence with a maximum capacity."""
+    Subclasses must define:
+    - ELEMENT_TYPE: The SSZ type of elements in the list
+    - LIMIT: Maximum number of elements allowed
+
+    Example usage:
+        class Uint64List32(SSZList):
+            ELEMENT_TYPE = Uint64
+            LIMIT = 32
+
+        my_list = Uint64List32(data=[1, 2, 3])
+    """
+
+    ELEMENT_TYPE: ClassVar[Type[SSZType]]
+    """The SSZ type of elements in this list."""
 
     LIMIT: ClassVar[int]
-    """The maximum number of elements this list can hold."""
-    ELEMENT_TYPE: ClassVar[Type[SSZType]]
-    """The SSZ type of the elements in the list."""
+    """Maximum number of elements this list can contain."""
 
-    def __class_getitem__(cls, params: Tuple[Type[SSZType], int]) -> Type[List]:  # type: ignore[override]
-        """Create a specific, limited List type."""
-        if not isinstance(params, tuple) or len(params) != 2:
-            raise TypeError("Usage: List[<element_type>, <limit>]")
-        element_type, limit = params
-        if not isinstance(limit, int) or limit <= 0:
-            raise TypeError(f"List limit must be a positive integer, not {limit!r}.")
+    data: Tuple[SSZType, ...] = Field(default_factory=tuple)
+    """The elements in this list, stored as an immutable tuple."""
 
-        cache_key = (cls, element_type, limit)
-        if cache_key in _LIST_CACHE:
-            return _LIST_CACHE[cache_key]
+    @field_validator("data", mode="before")
+    @classmethod
+    def _validate_list_data(cls, v: Any) -> Tuple[SSZType, ...]:
+        """Validate and convert input to a tuple of SSZType elements."""
+        if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LIMIT"):
+            raise TypeError(f"{cls.__name__} must define ELEMENT_TYPE and LIMIT")
 
-        type_name = f"{cls.__name__}[{element_type.__name__},{limit}]"
-        new_type = type(
-            type_name,
-            (cls,),
-            {
-                "ELEMENT_TYPE": element_type,
-                "LIMIT": limit,
-                "__doc__": f"A variable-length list of {element_type.__name__} elements "
-                f"with a limit of {limit}.",
-            },
-        )
-        _LIST_CACHE[cache_key] = new_type
-        return new_type
+        # Handle various input types
+        if isinstance(v, (list, tuple)):
+            elements = v
+        elif hasattr(v, "__iter__") and not isinstance(v, (str, bytes)):
+            elements = list(v)
+        else:
+            raise TypeError(f"List data must be iterable, got {type(v)}")
 
-    def __init__(self, values: Iterable[Any] = ()) -> None:
-        """Create and validate a new List instance."""
-        if not hasattr(self, "LIMIT"):
-            raise TypeError("Cannot instantiate raw List; specify element type and limit.")
-
-        typed_values = [
-            v if isinstance(v, self.ELEMENT_TYPE) else cast(Any, self.ELEMENT_TYPE)(v)
-            for v in values
-        ]
-
-        if len(typed_values) > self.LIMIT:
+        # Check limit
+        if len(elements) > cls.LIMIT:
             raise ValueError(
-                f"Too many items for {type(self).__name__}: "
-                f"provided {len(typed_values)}, limit is {self.LIMIT}"
+                f"{cls.__name__} cannot contain more than {cls.LIMIT} elements, got {len(elements)}"
             )
 
-        super().__init__(typed_values)
+        # Convert and validate each element
+        typed_values = []
+        for i, element in enumerate(elements):
+            if isinstance(element, cls.ELEMENT_TYPE):
+                typed_values.append(element)
+            else:
+                try:
+                    typed_values.append(cast(Any, cls.ELEMENT_TYPE)(element))
+                except Exception as e:
+                    raise ValueError(
+                        f"Element {i} cannot be converted to {cls.ELEMENT_TYPE.__name__}: {e}"
+                    ) from e
 
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
-        """Hook into Pydantic for strict, max-length validation."""
-        if not hasattr(cls, "LIMIT"):
-            raise TypeError("Cannot use raw List in Pydantic models.")
+        return tuple(typed_values)
 
-        element_schema = handler.generate_schema(cls.ELEMENT_TYPE)
-        list_validator = core_schema.list_schema(items_schema=element_schema, max_length=cls.LIMIT)
-        from_list_validator = core_schema.no_info_plain_validator_function(cls)
+    def __len__(self) -> int:
+        """Return the number of elements in the list."""
+        return len(self.data)
 
-        return core_schema.union_schema(
-            [
-                core_schema.is_instance_schema(cls),
-                core_schema.chain_schema([list_validator, from_list_validator]),
-            ],
-            serialization=core_schema.plain_serializer_function_ser_schema(list),
-        )
+    def __iter__(self) -> Iterator[SSZType]:  # type: ignore[override]
+        """Iterate over the list elements."""
+        return iter(self.data)
+
+    def __getitem__(self, i: int) -> SSZType:
+        """Get an element by index."""
+        return self.data[i]
+
+    def __repr__(self) -> str:
+        """String representation of the list."""
+        return f"{self.__class__.__name__}(data={list(self.data)!r})"
 
     @classmethod
     def is_fixed_size(cls) -> bool:
-        """A List is always considered variable-size."""
+        """An SSZList is never fixed-size (length varies from 0 to LIMIT)."""
         return False
+
+    @classmethod
+    def get_byte_length(cls) -> int:
+        """Lists are variable-size, so this raises a TypeError."""
+        raise TypeError(f"{cls.__name__} is variable-size")
 
     def serialize(self, stream: IO[bytes]) -> int:
         """Serialize the list to a binary stream."""
-        # For fixed-size elements, serialize them back-to-back as per the spec.
+        # Lists are always variable-size, so we serialize offsets + data
         if self.ELEMENT_TYPE.is_fixed_size():
+            # Fixed-size elements: serialize them back-to-back
             total_bytes_written = 0
-            for element in self:
+            for element in self.data:
                 total_bytes_written += element.serialize(stream)
             return total_bytes_written
-
-        # For variable-size elements, use offsets.
-        variable_data_stream = io.BytesIO()
-        offset = len(self) * OFFSET_BYTE_LENGTH
-        for element in self:
-            Uint32(offset).serialize(stream)
-            offset += element.serialize(variable_data_stream)
-        stream.write(variable_data_stream.getvalue())
-        return offset
+        else:
+            # Variable-size elements: serialize offsets, then data
+            variable_data_stream = io.BytesIO()
+            # The first offset points to the end of all the offset data
+            offset = len(self.data) * OFFSET_BYTE_LENGTH
+            # Write the offsets to the main stream and the data to the temporary stream
+            for element in self.data:
+                Uint32(offset).serialize(stream)
+                offset += element.serialize(variable_data_stream)
+            # Write the serialized variable data after the offsets
+            stream.write(variable_data_stream.getvalue())
+            # The total bytes written is the final offset value
+            return offset
 
     @classmethod
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
         """Deserialize a list from a binary stream."""
-        elements: list[SSZType] = []
-        # Handle fixed-size elements by reading them until the scope is consumed.
         if cls.ELEMENT_TYPE.is_fixed_size():
-            if scope == 0:
-                return cls([])
-            elem_byte_length = cls.ELEMENT_TYPE.get_byte_length()
-            if elem_byte_length == 0:
-                raise ValueError("Cannot deserialize list of zero-sized elements.")
-            if scope % elem_byte_length != 0:
-                raise ValueError(
-                    f"Invalid scope {scope} for list of {cls.ELEMENT_TYPE.__name__} "
-                    f"with byte length {elem_byte_length}"
-                )
-            count = scope // elem_byte_length
+            # Fixed-size elements: read them back-to-back
+            element_size = cls.ELEMENT_TYPE.get_byte_length()
+            if scope % element_size != 0:
+                raise ValueError(f"Scope {scope} is not divisible by element size {element_size}")
+
+            num_elements = scope // element_size
+            if num_elements > cls.LIMIT:
+                raise ValueError(f"Too many elements: {num_elements} > {cls.LIMIT}")
+
+            elements = []
+            for _ in range(num_elements):
+                element = cls.ELEMENT_TYPE.deserialize(stream, element_size)
+                elements.append(element)
+
+            return cls(data=elements)
+        else:
+            # Variable-size elements: read offsets first, then data
+            if scope < OFFSET_BYTE_LENGTH:
+                # Empty list case
+                if scope == 0:
+                    return cls(data=[])
+                raise ValueError(f"Invalid scope for variable-size list: {scope}")
+
+            # Read the first offset to determine the number of elements.
+            first_offset = int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH))
+            if first_offset > scope or first_offset % OFFSET_BYTE_LENGTH != 0:
+                raise ValueError("Invalid first offset in list.")
+
+            count = first_offset // OFFSET_BYTE_LENGTH
             if count > cls.LIMIT:
                 raise ValueError(f"Decoded list length {count} exceeds limit of {cls.LIMIT}")
-            elements = [
-                cls.ELEMENT_TYPE.deserialize(stream, elem_byte_length) for _ in range(count)
+
+            # Read the rest of the offsets.
+            offsets = [first_offset] + [
+                int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH)) for _ in range(count - 1)
             ]
-            return cls(elements)
+            offsets.append(scope)
 
-        # For variable-size elements, use offsets.
-        if scope == 0:
-            return cls([])
+            # Read each element based on the calculated boundaries.
+            elements = []
+            for i in range(count):
+                start, end = offsets[i], offsets[i + 1]
+                if start > end:
+                    raise ValueError(f"Invalid offsets: start {start} > end {end}")
+                elements.append(cls.ELEMENT_TYPE.deserialize(stream, end - start))
 
-        # Read the first offset to determine the number of elements.
-        first_offset = int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH))
-        if first_offset > scope or first_offset % OFFSET_BYTE_LENGTH != 0:
-            raise ValueError("Invalid first offset in list.")
-
-        count = first_offset // OFFSET_BYTE_LENGTH
-        if count > cls.LIMIT:
-            raise ValueError(f"Decoded list length {count} exceeds limit of {cls.LIMIT}")
-
-        # Read the rest of the offsets.
-        offsets = [first_offset] + [
-            int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH)) for _ in range(count - 1)
-        ]
-        offsets.append(scope)
-
-        # Read each element based on the calculated boundaries.
-        for i in range(count):
-            start, end = offsets[i], offsets[i + 1]
-            if start > end:
-                raise ValueError(f"Invalid offsets: start {start} > end {end}")
-            elements.append(cls.ELEMENT_TYPE.deserialize(stream, end - start))
-        return cls(elements)
+            return cls(data=elements)
 
     def encode_bytes(self) -> bytes:
-        """Serializes the List to a byte string."""
+        """Return the list's canonical SSZ byte representation."""
         with io.BytesIO() as stream:
             self.serialize(stream)
             return stream.getvalue()
 
     @classmethod
     def decode_bytes(cls, data: bytes) -> Self:
-        """Deserializes a byte string into a List instance."""
+        """Deserializes a byte string into an SSZList instance."""
         with io.BytesIO(data) as stream:
             return cls.deserialize(stream, len(data))
 
-    def _check_capacity(self, added_count: int) -> None:
-        """Internal helper to check if adding items would exceed the limit."""
-        if len(self) + added_count > self.LIMIT:
-            raise ValueError(
-                f"Operation exceeds {type(self).__name__} limit of {self.LIMIT} items."
-            )
 
-    def append(self, value: Any) -> None:
-        """Append an element to the end of the list, checking the limit."""
-        self._check_capacity(1)
-        # Convert value to correct type if needed
-        if isinstance(value, self.ELEMENT_TYPE):
-            typed_value = value
-        else:
-            typed_value = cast(Any, self.ELEMENT_TYPE)(value)
-        super().append(typed_value)
-
-    def extend(self, values: Iterable[Any]) -> None:
-        """Extend the list with an iterable, checking the limit."""
-        # Convert values to correct type if needed
-        typed_values = [
-            v if isinstance(v, self.ELEMENT_TYPE) else cast(Any, self.ELEMENT_TYPE)(v)
-            for v in values
-        ]
-        self._check_capacity(len(typed_values))
-        super().extend(typed_values)
-
-    def insert(self, index: SupportsIndex, value: Any) -> None:
-        """Insert an element at an index, checking the limit."""
-        self._check_capacity(1)
-        # Convert value to correct type if needed
-        if isinstance(value, self.ELEMENT_TYPE):
-            typed_value = value
-        else:
-            typed_value = cast(Any, self.ELEMENT_TYPE)(value)
-        super().insert(index, typed_value)
+# Old List factory pattern removed, replaced with SSZList

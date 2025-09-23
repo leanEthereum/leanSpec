@@ -7,7 +7,7 @@ from typing import Type as PyType
 import pytest
 from pydantic import ValidationError, create_model
 
-from lean_spec.types.collections import List, SSZVector
+from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.ssz_base import SSZType
 from lean_spec.types.uint import Uint8, Uint16, Uint32
@@ -19,16 +19,18 @@ def u_fn(*opts: Any) -> Any:
     return SSZUnion.__class_getitem__(tuple(opts))
 
 
-def ll(elem: Any, limit: int) -> Any:
-    """Build a specialized List[elem, limit] without [] syntax (mypy-friendly)."""
-    return List.__class_getitem__((elem, limit))
-
-
 class Uint8Vector3(SSZVector):
     """A vector of exactly 3 Uint8 values."""
 
     ELEMENT_TYPE = Uint8
     LENGTH = 3
+
+
+class Uint16List8(SSZList):
+    """A list with up to 8 Uint16 values."""
+
+    ELEMENT_TYPE = Uint16
+    LIMIT = 8
 
 
 def vv(elem: Any, length: int) -> Any:
@@ -59,7 +61,7 @@ class VarPair(Container):
     # Note: this annotation uses a runtime-parameterized SSZ type;
     # mypy does not understand it as a valid type. The Container metaclass
     # needs the concrete SSZ type here though, so we keep it and ignore the type check.
-    b: ll(Uint16, 8)  # type: ignore[valid-type]
+    b: Uint16List8
 
 
 def test_class_getitem_builds_specialized_type() -> None:
@@ -153,7 +155,7 @@ def test_pydantic_validation_errors() -> None:
         (u_fn(None, Uint16, Uint32), 0, None, "00"),
         (u_fn(None, Uint16, Uint32), 1, Uint16(0xAABB), "01bbaa"),
         (u_fn(Uint16, Uint32), 1, Uint32(0xDEADBEEF), "01efbeadde"),
-        (u_fn(Uint16, Uint32, Uint8, ll(Uint16, 8)), 2, Uint8(0xAA), "02aa"),
+        (u_fn(Uint16, Uint32, Uint8, Uint16List8), 2, Uint8(0xAA), "02aa"),
         (u_fn(SingleField, SingleField), 1, SingleField(A=Uint8(0xAB)), "01ab"),
     ],
 )
@@ -186,7 +188,7 @@ def test_union_with_nested_composites_roundtrip() -> None:
     u = u_fn(vv(Uint8, 3), SingleField, VarPair, FixedPair, Uint16)
 
     # selector = 2 (VarPair)
-    elem_list = ll(Uint16, 8)([1, 2, 3])
+    elem_list = Uint16List8(data=[1, 2, 3])
     vp = VarPair(a=Uint8(0xAB), b=elem_list)
     inst = u(selector=2, value=vp)
     # round-trip

@@ -8,6 +8,7 @@ This document captures the design principles and implementation patterns for the
 2. **Type safety**: Eliminate all `type: ignore` comments (except for intentionally invalid test cases)
 3. **First principles**: Design the cleanest possible API without backwards compatibility constraints
 4. **Consistency**: Establish clear, predictable patterns across all SSZ types
+5. **NO BACKWARDS COMPATIBILITY**: This is a clean slate refactor - break everything that needs breaking
 
 ## What Didn't Work
 
@@ -42,6 +43,7 @@ class Uint64(int, StrictBaseModel, SSZType):
 3. **Type Safety**: Full MyPy compatibility without `type: ignore`
 4. **Immutability**: All SSZ types are immutable (frozen=True for models)
 5. **Pydantic Validation**: Let Pydantic handle validation for complex types
+6. **Break Everything**: No backwards compatibility - update all usage to new patterns
 
 ## Implementation Patterns
 
@@ -149,12 +151,13 @@ class ByteList256(BaseByteList):
 ## Migration Checklist
 
 - [x] SSZVector refactored to explicit classes with SSZModel
-- [x] List refactored to explicit classes with SSZModel
-- [ ] BaseBytes implemented with primitive inheritance
-- [ ] Concrete Bytes types using BaseBytes
-- [ ] ByteList refactored to SSZModel pattern
-- [ ] All factory classes removed
-- [ ] All tests updated for new constructors
+- [x] SSZList refactored to explicit classes with SSZModel (replacing List)
+- [x] BaseBytes implemented with primitive inheritance
+- [x] Concrete Bytes types using BaseBytes
+- [x] ByteList refactored to SSZModel pattern
+- [x] All factory classes removed completely (no backwards compatibility)
+- [ ] All usages updated to new explicit class patterns (BREAKING CHANGES)
+- [ ] All tests updated for new constructors (data= keyword)
 - [ ] MyPy fully passing without `type: ignore`
 
 ## Summary

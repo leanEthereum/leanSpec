@@ -5,18 +5,39 @@ from typing import Dict, List, cast
 from typing_extensions import Any
 
 from lean_spec.subspecs.chain import DEVNET_CONFIG
-from lean_spec.subspecs.chain import config as chainconfig
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Boolean, Bytes32, Container, Uint64, ValidatorIndex, is_proposer
-from lean_spec.types import List as SSZList
+from lean_spec.types import (
+    Boolean,
+    Bytes32,
+    Container,
+    SSZList,
+    Uint64,
+    ValidatorIndex,
+    is_proposer,
+)
 from lean_spec.types.bitfields import Bitlist
 
-from .block import Block, BlockBody, BlockHeader, SignedBlock
+from .block import Block, BlockBody, BlockHeader, SignedBlock, SignedVoteList4096
 from .checkpoint import Checkpoint
 from .config import Config
 from .slot import Slot
 from .vote import SignedVote, Vote
+
+
+# Concrete SSZList classes for State container
+class Bytes32List262144(SSZList):
+    """List of Bytes32 with limit 262144 (historical_roots_limit)."""
+
+    ELEMENT_TYPE = Bytes32
+    LIMIT = 262144
+
+
+class BooleanList262144Squared(SSZList):
+    """List of Boolean with limit 262144^2 (for flattened votes)."""
+
+    ELEMENT_TYPE = Boolean
+    LIMIT = 262144 * 262144
 
 
 class State(Container):
@@ -41,14 +62,14 @@ class State(Container):
     """The latest finalized checkpoint."""
 
     # Historical data
-    historical_block_hashes: SSZList[Bytes32, DEVNET_CONFIG.historical_roots_limit.as_int()]  # type: ignore
+    historical_block_hashes: Bytes32List262144
     """A list of historical block root hashes."""
 
     justified_slots: Bitlist[DEVNET_CONFIG.historical_roots_limit.as_int()]  # type: ignore
     """A bitfield indicating which historical slots were justified."""
 
     # Justification tracking (flattened for SSZ compatibility)
-    justifications_roots: SSZList[Bytes32, DEVNET_CONFIG.historical_roots_limit.as_int()]  # type: ignore
+    justifications_roots: Bytes32List262144
     """Roots of justified blocks."""
 
     justifications_validators: Bitlist[  # type: ignore[valid-type, type-arg]
@@ -174,14 +195,9 @@ class State(Container):
             AssertionError: If any vote list's length does not match the
                             `validator_registry_limit`.
         """
-        # It will store the deterministically sorted list of roots.
-        new_roots = SSZList[Bytes32, DEVNET_CONFIG.historical_roots_limit.as_int()]()  # type: ignore
-        # It will store the single, concatenated list of all votes.
-        flat_votes = SSZList[
-            Boolean,
-            DEVNET_CONFIG.historical_roots_limit.as_int()
-            * DEVNET_CONFIG.historical_roots_limit.as_int(),
-        ]()  # type: ignore
+        # Build lists to store the deterministically sorted data
+        roots_list = []
+        votes_list = []
         limit = DEVNET_CONFIG.validator_registry_limit.as_int()
 
         # Iterate through the roots in sorted order for deterministic output.
@@ -191,9 +207,13 @@ class State(Container):
             assert len(votes) == limit, f"Vote list for root {root.hex()} has incorrect length"
 
             # Append the root to the list of roots.
-            new_roots.append(root)
+            roots_list.append(root)
             # Extend the flattened list with the votes for this root.
-            flat_votes.extend(votes)
+            votes_list.extend(votes)
+
+        # Create immutable SSZList instances
+        new_roots = Bytes32List262144(data=roots_list)
+        flat_votes = BooleanList262144Squared(data=votes_list)
 
         # Return a new state object with the updated fields.
         return self.model_copy(
@@ -402,7 +422,7 @@ class State(Container):
 
         # Record updated history arrays, ensuring they are cast back to the correct SSZList type.
         updates["historical_block_hashes"] = self.historical_block_hashes.__class__(
-            new_historical_hashes
+            data=new_historical_hashes
         )
         updates["justified_slots"] = self.justified_slots.__class__(new_justified_slots)
 
@@ -438,7 +458,7 @@ class State(Container):
 
     def process_attestations(
         self,
-        attestations: SSZList[SignedVote, chainconfig.VALIDATOR_REGISTRY_LIMIT.as_int()],  # type: ignore
+        attestations: SignedVoteList4096,
     ) -> "State":
         """
         Apply attestation votes and update justification/finalization
