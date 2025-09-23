@@ -74,7 +74,7 @@ class Block(Container):
 ```python
 class BlockHeader(Container):
     slot: uint64
-    proposer_index: uin64
+    proposer_index: uint64
     parent_root: Bytes32
     state_root: Bytes32
     body_root: Bytes32
