@@ -8,7 +8,7 @@ from typing import Any, Iterable, Tuple, Type
 import pytest
 
 from lean_spec.subspecs.ssz.hash import HashTreeRoot, hash_tree_root
-from lean_spec.types.bitfields import Bitlist, Bitvector
+from lean_spec.types.bitfields import BitlistBase, BitvectorBase
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.byte import Byte
 from lean_spec.types.byte_arrays import BaseBytes, ByteListBase, Bytes48
@@ -370,8 +370,12 @@ def test_hash_tree_root_bitvector(
     A `Bitvector` is serialized into the minimum number of bytes required.
     Its hash tree root is the Merkle root of these bytes, treated like a `ByteVector`.
     """
+
     # Create the Bitvector instance.
-    bv = Bitvector[len(bits)](bits)
+    class TestBitvector(BitvectorBase):
+        LENGTH = len(bits)
+
+    bv = TestBitvector(data=bits)
     # Sanity check: ensure the serialization is correct.
     assert bv.encode_bytes().hex() == expect_serial_hex
     # Verify the hash tree root.
@@ -402,8 +406,12 @@ def test_hash_tree_root_bitlist(
     calculation separates the data bits from the length, Merkleizes the data
     part, and then mixes in the number of bits.
     """
+
     # Create the Bitlist instance.
-    bl = Bitlist[limit](bits)
+    class TestBitlist(BitlistBase):
+        LIMIT = limit
+
+    bl = TestBitlist(data=bits)
     # Sanity check the SSZ serialization.
     assert bl.encode_bytes().hex() == expect_serial_hex
     # Verify the hash tree root.
@@ -414,8 +422,12 @@ def test_hash_tree_root_bitvector_512_all_ones() -> None:
     """
     Tests the hash tree root of a large `Bitvector` that spans multiple chunks.
     """
+
     # A 512-bit vector is 64 bytes, which is exactly two 32-byte chunks.
-    bv = Bitvector[512]((1,) * 512)
+    class Bitvector512(BitvectorBase):
+        LENGTH = 512
+
+    bv = Bitvector512(data=(1,) * 512)
     # Both chunks will be all `0xff` bytes.
     left = "ff" * 32
     right = "ff" * 32
@@ -429,8 +441,12 @@ def test_hash_tree_root_bitlist_512_all_ones() -> None:
     """
     Tests the hash tree root of a large `Bitlist`.
     """
+
     # Create a Bitlist of 512 bits.
-    bl = Bitlist[512]((1,) * 512)
+    class Bitlist512(BitlistBase):
+        LIMIT = 512
+
+    bl = Bitlist512(data=(1,) * 512)
     # The data part is 512 bits (64 bytes), which forms two full chunks of `0xff`.
     # The Merkle root of the data is the hash of these two chunks.
     base = h("ff" * 32, "ff" * 32)

@@ -208,7 +208,7 @@ class TestSSZVector:
         vec_type = Uint8Vector4
         instance = vec_type(data=[1, 2, 3, 4])
         assert len(instance) == 4
-        assert instance.data == (Uint8(1), Uint8(2), Uint8(3), Uint8(4))
+        assert list(instance) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4)]
 
     def test_instantiation_with_wrong_length_raises_error(self) -> None:
         """Tests that providing the wrong number of items during instantiation fails."""
@@ -224,7 +224,7 @@ class TestSSZVector:
         # Test valid data
         instance: Any = model(value={"data": [10, 20]})
         assert isinstance(instance.value, Uint8Vector2)
-        assert instance.value.data == (Uint8(10), Uint8(20))
+        assert list(instance.value) == [Uint8(10), Uint8(20)]
         # Test invalid data
         with pytest.raises(ValidationError):
             model(value={"data": [10]})  # Too short
@@ -237,7 +237,7 @@ class TestSSZVector:
         """Tests that attempting to change an item in an SSZVector raises a TypeError."""
         vec = Uint8Vector2(data=[1, 2])
         with pytest.raises(TypeError):
-            vec.data[0] = 3  # type: ignore
+            vec[0] = 3  # type: ignore[index]  # Should fail because SSZModel is immutable
 
 
 class TestList:

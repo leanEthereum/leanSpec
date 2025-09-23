@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import io
 from abc import ABC, abstractmethod
-from typing import IO
+from typing import IO, Any
 
-from typing_extensions import Self
+from typing_extensions import Iterator, Self
 
 from .base import StrictBaseModel
 
@@ -106,6 +106,44 @@ class SSZModel(StrictBaseModel, SSZType):
     Use this for containers and complex types that can benefit from Pydantic.
 
     For simple types that need special inheritance (like int), use SSZType directly.
+
+    SSZModel provides natural iteration and indexing for collections with a 'data' field:
+    - `for item in collection` instead of `for item in collection.data`
+    - `collection[i]` instead of `collection.data[i]`
+    - `len(collection)` instead of `len(collection.data)`
     """
 
-    ...
+    def __len__(self) -> int:
+        """Return the length of the collection's data."""
+        if hasattr(self, "data"):
+            return len(self.data)
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement __len__ or have 'data' field"
+        )
+
+    def __iter__(self) -> Iterator[Any]:  # type: ignore[override]
+        """
+        Iterate over the collection's data if it's a collection type,
+        otherwise fall back to Pydantic's field iteration.
+
+        For SSZ collections with 'data' field, this iterates over the data contents.
+        For other SSZModel types, this falls back to Pydantic's field iteration.
+        """
+        if hasattr(self, "data"):
+            return iter(self.data)
+        # Fall back to Pydantic's field iteration for non-collection types
+        return super().__iter__()
+
+    def __getitem__(self, key: Any) -> Any:
+        """Get an item from the collection's data."""
+        if hasattr(self, "data"):
+            return self.data[key]
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement __getitem__ or have 'data' field"
+        )
+
+    def __repr__(self) -> str:
+        """String representation showing the class name and data."""
+        if hasattr(self, "data"):
+            return f"{self.__class__.__name__}(data={list(self.data)!r})"
+        return super().__repr__()

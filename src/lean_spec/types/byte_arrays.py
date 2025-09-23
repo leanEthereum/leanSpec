@@ -14,7 +14,7 @@ from typing import IO, Any, ClassVar, Iterable, SupportsIndex
 from pydantic import Field, field_validator
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
-from typing_extensions import Iterator, Self
+from typing_extensions import Self
 
 from .ssz_base import SSZModel, SSZType
 
@@ -310,14 +310,6 @@ class ByteListBase(SSZModel):
             raise ValueError(f"ByteList[{cls.LIMIT}] length {len(data)} exceeds limit")
         return cls(data=data)
 
-    def __len__(self) -> int:
-        """Return the length of the byte list."""
-        return len(self.data)
-
-    def __iter__(self) -> Iterator[int]:  # type: ignore[override]
-        """Return an iterator over the byte list."""
-        return iter(self.data)
-
     def __bytes__(self) -> bytes:
         """Return the byte list as a bytes object."""
         return self.data
@@ -333,10 +325,6 @@ class ByteListBase(SSZModel):
         if isinstance(other, (bytes, bytearray)):
             return bytes(other) + self.data
         return bytes(other) + self.data
-
-    def __getitem__(self, i: int) -> int:
-        """Return the i-th byte of the byte list."""
-        return self.data[i]
 
     def __repr__(self) -> str:
         """Return a string representation of the byte list."""

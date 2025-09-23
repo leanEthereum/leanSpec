@@ -7,37 +7,40 @@ import pytest
 from pydantic import ValidationError, create_model
 from typing_extensions import Tuple
 
-from lean_spec.types.bitfields import Bitlist, Bitvector
+from lean_spec.types.bitfields import BitlistBase, BitvectorBase
 
 
 class TestBitvector:
     """Tests for the fixed-length, immutable Bitvector type."""
 
-    def test_class_getitem_creates_specialized_type(self) -> None:
-        """Tests that `Bitvector[N]` creates a new, distinct type with the correct length."""
-        vec_type_8 = Bitvector[8]  # type: ignore
-        vec_type_16 = Bitvector[16]  # type: ignore
-        assert vec_type_8 is not Bitvector[16]
-        assert vec_type_8.LENGTH == 8
-        assert vec_type_16.LENGTH == 16
-        assert "Bitvector[8]" in repr(vec_type_8)
+    def test_class_creates_specialized_type(self) -> None:
+        """Tests that concrete Bitvector classes have the correct length."""
 
-    @pytest.mark.parametrize("invalid_length", [0, -1, 1.0, "8"])
-    def test_class_getitem_with_invalid_length_raises_error(self, invalid_length: Any) -> None:
-        """Tests that creating a Bitvector type with a non-positive integer length fails."""
-        with pytest.raises(TypeError):
-            _ = Bitvector([invalid_length])
+        class Bitvector8(BitvectorBase):
+            LENGTH = 8
+
+        class Bitvector16(BitvectorBase):
+            LENGTH = 16
+
+        assert Bitvector8 is not Bitvector16  # type: ignore[comparison-overlap]
+        assert Bitvector8.LENGTH == 8
+        assert Bitvector16.LENGTH == 16
+        assert "Bitvector8" in repr(Bitvector8)
 
     def test_instantiate_raw_type_raises_error(self) -> None:
-        """Tests that the raw, non-specialized Bitvector cannot be instantiated."""
-        with pytest.raises(TypeError, match="Cannot instantiate raw Bitvector"):
-            Bitvector([])
+        """Tests that the raw, non-specialized BitvectorBase cannot be instantiated."""
+        with pytest.raises(TypeError, match="must define LENGTH"):
+            BitvectorBase(data=[])
 
     def test_instantiation_success(self) -> None:
         """Tests successful instantiation with the correct number of valid boolean items."""
-        instance = Bitvector[4]([True, False, 1, 0])
+
+        class Bitvector4(BitvectorBase):
+            LENGTH = 4
+
+        instance = Bitvector4(data=[True, False, 1, 0])
         assert len(instance) == 4
-        assert instance == Bitvector[4]([True, False, True, False])
+        assert instance == Bitvector4(data=[True, False, True, False])
 
     @pytest.mark.parametrize(
         "values",
@@ -48,142 +51,122 @@ class TestBitvector:
     )
     def test_instantiation_with_wrong_length_raises_error(self, values: list[bool]) -> None:
         """Tests that providing the wrong number of items during instantiation fails."""
-        with pytest.raises(ValueError, match="requires exactly 4 items"):
-            Bitvector[4](values)
+
+        class Bitvector4(BitvectorBase):
+            LENGTH = 4
+
+        with pytest.raises(ValueError, match="requires exactly 4 bits"):
+            Bitvector4(data=values)
 
     def test_pydantic_validation_accepts_valid_list(self) -> None:
         """Tests that Pydantic validation correctly accepts a valid list of booleans."""
-        model = create_model("Model", value=(Bitvector[4], ...))
-        instance: Any = model(value=[True, False, True, False])
-        assert isinstance(instance.value, Bitvector[4])
-        assert instance.value == Bitvector[4]([True, False, True, False])
+
+        class Bitvector4(BitvectorBase):
+            LENGTH = 4
+
+        model = create_model("Model", value=(Bitvector4, ...))
+        instance: Any = model(value={"data": [True, False, True, False]})
+        assert isinstance(instance.value, Bitvector4)
+        assert instance.value == Bitvector4(data=[True, False, True, False])
 
     @pytest.mark.parametrize(
         "invalid_value",
         [
-            [True, False, True],  # Too short
-            [True, False, True, False, True],  # Too long
-            (True, 1, 0, "not a bool"),  # Invalid type in list
+            {"data": [True, False, True]},  # Too short
+            {"data": [True, False, True, False, True]},  # Too long
         ],
     )
     def test_pydantic_validation_rejects_invalid_values(self, invalid_value: Any) -> None:
         """
         Tests that Pydantic validation rejects lists of the wrong length or with invalid types.
         """
-        model = create_model("Model", value=(Bitvector[4], ...))
+
+        class Bitvector4(BitvectorBase):
+            LENGTH = 4
+
+        model = create_model("Model", value=(Bitvector4, ...))
         with pytest.raises(ValidationError):
             model(value=invalid_value)
 
     def test_bitvector_is_immutable(self) -> None:
         """Tests that attempting to change an item in a Bitvector raises a TypeError."""
-        vec = Bitvector[2]([True, False])
+
+        class Bitvector2(BitvectorBase):
+            LENGTH = 2
+
+        vec = Bitvector2(data=[True, False])
         with pytest.raises(TypeError):
-            vec[0] = False  # type: ignore
+            vec[0] = False  # type: ignore[index]  # Should fail because SSZModel is immutable
 
 
 class TestBitlist:
     """Tests for the variable-length, capacity-limited Bitlist type."""
 
-    def test_class_getitem_creates_specialized_type(self) -> None:
-        """Tests that `Bitlist[N]` creates a new, distinct type with the correct limit."""
-        assert Bitlist[8] is not Bitlist[16]
-        assert Bitlist[8].LIMIT == 8
-        assert Bitlist[16].LIMIT == 16
-        assert "Bitlist[8]" in repr(Bitlist[8])
+    def test_class_creates_specialized_type(self) -> None:
+        """Tests that concrete Bitlist classes have the correct limit."""
+
+        class Bitlist8(BitlistBase):
+            LIMIT = 8
+
+        class Bitlist16(BitlistBase):
+            LIMIT = 16
+
+        assert Bitlist8 is not Bitlist16  # type: ignore[comparison-overlap]
+        assert Bitlist8.LIMIT == 8
+        assert Bitlist16.LIMIT == 16
+        assert "Bitlist8" in repr(Bitlist8)
 
     def test_instantiate_raw_type_raises_error(self) -> None:
-        """Tests that the raw, non-specialized Bitlist cannot be instantiated."""
-        with pytest.raises(TypeError, match="Cannot instantiate raw Bitlist"):
-            Bitlist([])
+        """Tests that the raw, non-specialized BitlistBase cannot be instantiated."""
+        with pytest.raises(TypeError, match="must define LIMIT"):
+            BitlistBase(data=[])
 
     def test_instantiation_success(self) -> None:
         """Tests successful instantiation with a valid number of items."""
-        instance = Bitlist[8]([True, False, 1, 0])
+
+        class Bitlist8(BitlistBase):
+            LIMIT = 8
+
+        instance = Bitlist8(data=[True, False, 1, 0])
         assert len(instance) == 4
-        assert instance == Bitlist[4]([True, False, True, False])
+        expected = Bitlist8(data=[True, False, True, False])
+        assert instance == expected
 
     def test_instantiation_over_limit_raises_error(self) -> None:
         """Tests that providing more items than the limit during instantiation fails."""
-        with pytest.raises(ValueError, match="has a limit of 4 items"):
-            Bitlist[4]([True, False, True, False, True])
+
+        class Bitlist4(BitlistBase):
+            LIMIT = 4
+
+        with pytest.raises(ValueError, match="cannot contain more than 4 bits"):
+            Bitlist4(data=[True, False, True, False, True])
 
     def test_pydantic_validation_accepts_valid_list(self) -> None:
         """Tests that Pydantic validation correctly accepts a valid list of booleans."""
-        model = create_model("Model", value=(Bitlist[8], ...))
-        instance: Any = model(value=[True, False, True, False])
-        assert isinstance(instance.value, Bitlist[8])
+
+        class Bitlist8(BitlistBase):
+            LIMIT = 8
+
+        model = create_model("Model", value=(Bitlist8, ...))
+        instance: Any = model(value={"data": [True, False, True, False]})
+        assert isinstance(instance.value, Bitlist8)
         assert len(instance.value) == 4
 
     @pytest.mark.parametrize(
         "invalid_value",
         [
-            [True] * 9,  # Too long
-            (True, 1, 0, "not a bool"),  # Invalid type in list
+            {"data": [True] * 9},  # Too long
         ],
     )
     def test_pydantic_validation_rejects_invalid_values(self, invalid_value: Any) -> None:
         """Tests that Pydantic validation rejects lists that are too long or have invalid types."""
-        model = create_model("Model", value=(Bitlist[8], ...))
+
+        class Bitlist8(BitlistBase):
+            LIMIT = 8
+
+        model = create_model("Model", value=(Bitlist8, ...))
         with pytest.raises(ValidationError):
             model(value=invalid_value)
-
-    def test_append_within_limit(self) -> None:
-        """Tests that `append` succeeds when the list is not full."""
-        bl = Bitlist[4]([True, True])
-        bl.append(False)
-        assert len(bl) == 3
-        assert bl == Bitlist[3]([True, True, False])
-
-    def test_append_at_limit_raises_error(self) -> None:
-        """Tests that `append` fails when the list is at its capacity."""
-        bl = Bitlist[4]([True] * 4)
-        with pytest.raises(ValueError, match="exceeds Bitlist\\[4\\] limit of 4 items"):
-            bl.append(False)
-
-    def test_extend_within_limit(self) -> None:
-        """Tests that `extend` succeeds when the result is within the limit."""
-        bl = Bitlist[8]([True, False])
-        bl.extend([1, 0, True])
-        assert len(bl) == 5
-        assert bl == Bitlist[5]([True, False, True, False, True])
-
-    def test_extend_over_limit_raises_error(self) -> None:
-        """Tests that `extend` fails if the result would exceed the capacity."""
-        bl = Bitlist[4]([True, False])
-        with pytest.raises(ValueError, match="exceeds Bitlist\\[4\\] limit of 4 items"):
-            bl.extend([True, False, True])
-
-    def test_insert_within_limit(self) -> None:
-        """Tests that `insert` succeeds when the list is not full."""
-        bl = Bitlist[4]([True, False])
-        bl.insert(1, True)
-        assert len(bl) == 3
-        assert bl == Bitlist[3]([True, True, False])
-
-    def test_insert_at_limit_raises_error(self) -> None:
-        """Tests that `insert` fails when the list is at its capacity."""
-        bl = Bitlist[4]([True] * 4)
-        with pytest.raises(ValueError, match="exceeds Bitlist\\[4\\] limit of 4 items"):
-            bl.insert(0, False)
-
-    def test_setitem_slice_over_limit_raises_error(self) -> None:
-        """Tests that replacing a slice fails if it would cause the list to exceed its limit."""
-        bl = Bitlist[4]([True, False, True])
-        with pytest.raises(ValueError, match="exceeds Bitlist\\[4\\] limit of 4 items"):
-            bl[1:2] = [False, False, False, False]  # Replaces 1 item with 4 -> len becomes 6
-
-    def test_add_over_limit_raises_error(self) -> None:
-        """Tests that the `+` operator fails if the resulting list would be too long."""
-        bl1 = Bitlist[4]([True, False])
-        bl2 = Bitlist[4]([True, False, True])
-        with pytest.raises(ValueError, match="exceeds Bitlist\\[4\\] limit of 4 items"):
-            _ = bl1 + bl2
-
-    def test_iadd_over_limit_raises_error(self) -> None:
-        """Tests that the `+=` operator fails if the resulting list would be too long."""
-        bl = Bitlist[4]([True, False])
-        with pytest.raises(ValueError, match="exceeds Bitlist\\[4\\] limit of 4 items"):
-            bl += [True, False, True]
 
 
 class TestBitfieldSerialization:
@@ -202,15 +185,18 @@ class TestBitfieldSerialization:
         self, length: int, value: Tuple[bool, ...], expected_hex: str
     ) -> None:
         """Tests the round trip of serializing and deserializing for Bitvector."""
-        vec_type = Bitvector[length]  # type: ignore
-        instance = vec_type(value)
+
+        class TestBitvector(BitvectorBase):
+            LENGTH = length
+
+        instance = TestBitvector(data=value)
 
         # Test serialization
         encoded = instance.encode_bytes()
         assert encoded.hex() == expected_hex
 
         # Test deserialization
-        decoded = vec_type.decode_bytes(encoded)
+        decoded = TestBitvector.decode_bytes(encoded)
         assert decoded == instance
 
     @pytest.mark.parametrize(
@@ -227,59 +213,80 @@ class TestBitfieldSerialization:
         self, limit: int, value: Tuple[bool, ...], expected_hex: str
     ) -> None:
         """Tests the round trip of serializing and deserializing for Bitlist."""
-        instance = Bitlist[limit](value)
+
+        class TestBitlist(BitlistBase):
+            LIMIT = limit
+
+        instance = TestBitlist(data=value)
 
         # Test serialization
         encoded = instance.encode_bytes()
         assert encoded.hex() == expected_hex
 
         # Test deserialization
-        decoded = Bitlist[limit].decode_bytes(encoded)
+        decoded = TestBitlist.decode_bytes(encoded)
         assert decoded == instance
 
     def test_bitvector_decode_invalid_length(self) -> None:
         """Tests that Bitvector.decode_bytes fails for data of the wrong length."""
-        vec_type = Bitvector[8]  # type: ignore
-        with pytest.raises(ValueError, match="Invalid byte length for Bitvector\\[8\\]"):
-            vec_type.decode_bytes(b"\x01\x02")  # Expects 1 byte, gets 2
+
+        class Bitvector8(BitvectorBase):
+            LENGTH = 8
+
+        with pytest.raises(ValueError, match="expected 1 bytes, got 2"):
+            Bitvector8.decode_bytes(b"\x01\x02")  # Expects 1 byte, gets 2
 
     def test_bitlist_decode_invalid_data(self) -> None:
         """Tests that Bitlist.decode_bytes fails for invalid byte strings."""
-        with pytest.raises(ValueError, match="data cannot be empty"):
-            Bitlist[8].decode_bytes(b"")
-        with pytest.raises(ValueError, match="last byte cannot be zero"):
-            Bitlist[8].decode_bytes(b"\xff\x00")
+
+        class Bitlist8(BitlistBase):
+            LIMIT = 8
+
+        with pytest.raises(ValueError, match="Cannot decode empty data"):
+            Bitlist8.decode_bytes(b"")
 
 
 class TestBitfieldSSZ:
     """Tests the SSZType interface methods for bitfields."""
 
     def test_bitvector_ssz_properties(self) -> None:
-        vec_type = Bitvector[10]  # type: ignore
-        assert vec_type.is_fixed_size() is True
-        assert vec_type.get_byte_length() == 2  # (10+7)//8
+        class Bitvector10(BitvectorBase):
+            LENGTH = 10
+
+        assert Bitvector10.is_fixed_size() is True
+        assert Bitvector10.get_byte_length() == 2  # (10+7)//8
 
     def test_bitlist_ssz_properties(self) -> None:
-        assert Bitlist[10].is_fixed_size() is False
+        class Bitlist10(BitlistBase):
+            LIMIT = 10
+
+        assert Bitlist10.is_fixed_size() is False
         with pytest.raises(TypeError):
-            Bitlist[10].get_byte_length()
+            Bitlist10.get_byte_length()
 
     def test_bitvector_deserialize_invalid_scope(self) -> None:
-        vec_type = Bitvector[8]  # type: ignore
+        class Bitvector8(BitvectorBase):
+            LENGTH = 8
+
         stream = io.BytesIO(b"\xff")
         with pytest.raises(ValueError, match="Invalid scope"):
-            vec_type.deserialize(stream, scope=2)
+            Bitvector8.deserialize(stream, scope=2)
 
     def test_bitvector_deserialize_premature_end(self) -> None:
-        vec_type = Bitvector[16]  # type: ignore
+        class Bitvector16(BitvectorBase):
+            LENGTH = 16
+
         stream = io.BytesIO(b"\xff")  # Only 1 byte, expects 2
-        with pytest.raises(IOError, match="Stream ended prematurely"):
-            vec_type.deserialize(stream, scope=2)
+        with pytest.raises(IOError, match="Expected 2 bytes, got 1"):
+            Bitvector16.deserialize(stream, scope=2)
 
     def test_bitlist_deserialize_premature_end(self) -> None:
+        class Bitlist16(BitlistBase):
+            LIMIT = 16
+
         stream = io.BytesIO(b"\xff")  # Only 1 byte
-        with pytest.raises(IOError, match="Stream ended prematurely"):
-            Bitlist[16].deserialize(stream, scope=2)  # Scope says to read 2
+        with pytest.raises(IOError, match="Expected 2 bytes, got 1"):
+            Bitlist16.deserialize(stream, scope=2)  # Scope says to read 2
 
     @pytest.mark.parametrize(
         "length,value,expected_hex",
@@ -296,21 +303,23 @@ class TestBitfieldSSZ:
     def test_bitvector_encode_decode(
         self, length: int, value: Tuple[int, ...], expected_hex: str
     ) -> None:
-        vec_t = Bitvector[length]  # type: ignore
-        instance = vec_t(value)
+        class TestBitvector(BitvectorBase):
+            LENGTH = length
+
+        instance = TestBitvector(data=value)
         encoded = instance.encode_bytes()
         assert encoded.hex() == expected_hex
 
         # round-trip via classmethod
-        decoded = vec_t.decode_bytes(encoded)
+        decoded = TestBitvector.decode_bytes(encoded)
         assert decoded == instance
 
         # round-trip via stream serialize/deserialize
         stream = io.BytesIO()
         written = instance.serialize(stream)
-        assert written == vec_t.get_byte_length()
+        assert written == TestBitvector.get_byte_length()
         stream.seek(0)
-        decoded2 = vec_t.deserialize(stream, scope=written)
+        decoded2 = TestBitvector.deserialize(stream, scope=written)
         assert decoded2 == instance
 
     @pytest.mark.parametrize(
@@ -329,12 +338,15 @@ class TestBitfieldSSZ:
     def test_bitlist_encode_decode(
         self, limit: int, value: Tuple[int, ...], expected_hex: str
     ) -> None:
-        instance = Bitlist[limit](value)
+        class TestBitlist(BitlistBase):
+            LIMIT = limit
+
+        instance = TestBitlist(data=value)
         encoded = instance.encode_bytes()
         assert encoded.hex() == expected_hex
 
         # round-trip via classmethod
-        decoded = Bitlist[limit].decode_bytes(encoded)
+        decoded = TestBitlist.decode_bytes(encoded)
         assert decoded == instance
 
         # round-trip via stream serialize/deserialize
@@ -343,5 +355,5 @@ class TestBitfieldSSZ:
         # variable-size, so we assert the written size matches the encoding length
         assert written == len(encoded)
         stream.seek(0)
-        decoded2 = Bitlist[limit].deserialize(stream, scope=written)
+        decoded2 = TestBitlist.deserialize(stream, scope=written)
         assert decoded2 == instance

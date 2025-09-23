@@ -7,7 +7,6 @@ from typing import (
     IO,
     Any,
     ClassVar,
-    Iterator,
     Tuple,
     Type,
     cast,
@@ -68,22 +67,6 @@ class SSZVector(SSZModel):
             )
 
         return typed_values
-
-    def __len__(self) -> int:
-        """Return the length of the vector."""
-        return len(self.data)
-
-    def __iter__(self) -> Iterator[SSZType]:  # type: ignore[override]
-        """Iterate over the vector elements."""
-        return iter(self.data)
-
-    def __getitem__(self, i: int) -> SSZType:
-        """Get an element by index."""
-        return self.data[i]
-
-    def __repr__(self) -> str:
-        """String representation of the vector."""
-        return f"{self.__class__.__name__}({list(self.data)!r})"
 
     @classmethod
     def is_fixed_size(cls) -> bool:
@@ -231,22 +214,6 @@ class SSZList(SSZModel):
                     ) from e
 
         return tuple(typed_values)
-
-    def __len__(self) -> int:
-        """Return the number of elements in the list."""
-        return len(self.data)
-
-    def __iter__(self) -> Iterator[SSZType]:  # type: ignore[override]
-        """Iterate over the list elements."""
-        return iter(self.data)
-
-    def __getitem__(self, i: int) -> SSZType:
-        """Get an element by index."""
-        return self.data[i]
-
-    def __repr__(self) -> str:
-        """String representation of the list."""
-        return f"{self.__class__.__name__}(data={list(self.data)!r})"
 
     @classmethod
     def is_fixed_size(cls) -> bool:
