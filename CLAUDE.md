@@ -110,10 +110,20 @@ When creating SSZ types, follow these established patterns:
 - Define domain-specific types in modular structure (see Architecture section below)
 - Avoid generic names with numbers like `Bitlist68719476736` or `SignedVoteList4096`
 
-### Type Inheritance Strategy
-- **Primitive types** (uint, boolean, bytes): Use IS-A pattern (direct inheritance)
-- **Collection types** (lists, vectors, bitfields): Use HAS-A pattern with SSZModel/Container base classes
-- All SSZ types should have proper serialization (`encode_bytes`, `decode_bytes`, `serialize`, `deserialize`)
+### SSZType vs SSZModel Design Decision
+
+**SSZType (IS-A pattern)**: Use for types that *are* data
+- Primitive scalars: `Uint64`, `Boolean`, `Bytes32`
+- These inherit directly from their underlying Python types
+- Example: `Uint64(42)` *is* the integer 42 with SSZ serialization
+
+**SSZModel (HAS-A pattern)**: Use for types that *have* data
+- Collections: `SSZList`, `SSZVector`, bitfields
+- Containers: `State`, `Block`, etc.
+- These use Pydantic models with a `data` field for contents
+- Example: `MyList(data=[1, 2, 3])` *has* a list of data with SSZ serialization
+
+**Key principle**: If the type conceptually *holds* or *contains* other data, use SSZModel for consistent validation and immutability.
 
 ### Modular Architecture
 
@@ -164,6 +174,5 @@ class SignedVoteList4096(SSZList): ...
 ### API Compatibility
 
 When refactoring, maintain backward compatibility:
-- Use property aliases for renamed attributes: `@property def message(self) -> Vote: return self.data`
 - Keep existing import paths working through `__init__.py` exports
 - Preserve method signatures and behavior

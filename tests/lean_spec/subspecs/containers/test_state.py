@@ -636,7 +636,7 @@ def test_process_attestations_justification_and_finalization(genesis_state: Stat
 
     # Define source (genesis) and target (slot 4) checkpoints for voting.
     genesis_checkpoint = Checkpoint(
-        root=cast(Bytes32, state.historical_block_hashes[0]),  # Canonical root for slot 0
+        root=state.historical_block_hashes[0],  # Canonical root for slot 0
         slot=Slot(0),
     )
     checkpoint4 = Checkpoint(

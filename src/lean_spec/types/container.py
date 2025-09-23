@@ -9,8 +9,9 @@ Ethereum's serialization format.
 
 from __future__ import annotations
 
+import inspect
 import io
-from typing import IO, Type, cast
+from typing import IO, Any, Type
 
 from typing_extensions import Self
 
@@ -18,6 +19,30 @@ from .base import StrictBaseModel
 from .constants import OFFSET_BYTE_LENGTH
 from .ssz_base import SSZType
 from .uint import Uint32
+
+
+def _get_ssz_field_type(annotation: Any) -> Type[SSZType]:
+    """
+    Extract the SSZType class from a field annotation, with validation.
+
+    Args:
+        annotation: The field type annotation.
+
+    Returns:
+        The SSZType class.
+
+    Raises:
+        TypeError: If the annotation is not a valid SSZType class.
+    """
+    # Check if it's a class and is a subclass of SSZType
+    if inspect.isclass(annotation) and issubclass(annotation, SSZType):
+        return annotation
+
+    # If we get here, the annotation is not a valid SSZType
+    raise TypeError(
+        f"Field annotation {annotation} is not a valid SSZType class. "
+        f"Container fields must be concrete SSZType subclasses."
+    )
 
 
 class Container(StrictBaseModel, SSZType):
@@ -58,7 +83,7 @@ class Container(StrictBaseModel, SSZType):
         """
         # Check each field's type for fixed size property
         return all(
-            cast(Type[SSZType], field.annotation).is_fixed_size()
+            _get_ssz_field_type(field.annotation).is_fixed_size()
             for field in cls.model_fields.values()
         )
 
@@ -79,7 +104,7 @@ class Container(StrictBaseModel, SSZType):
 
         # Sum the byte lengths of all fixed-size fields
         return sum(
-            cast(Type[SSZType], field.annotation).get_byte_length()
+            _get_ssz_field_type(field.annotation).get_byte_length()
             for field in cls.model_fields.values()
         )
 
@@ -105,10 +130,11 @@ class Container(StrictBaseModel, SSZType):
         variable_data = []
 
         # Process each field in definition order
-        for field_name, field_info in type(self).model_fields.items():
+        for field_name, _field_info in type(self).model_fields.items():
             # Get the field value and its type
             value = getattr(self, field_name)
-            field_type = cast(Type[SSZType], field_info.annotation)
+            # Use the actual runtime type of the value, which should be an SSZType
+            field_type = type(value)
 
             # Serialize based on field type
             if field_type.is_fixed_size():
@@ -166,7 +192,7 @@ class Container(StrictBaseModel, SSZType):
 
         # Phase 1: Read fixed part
         for field_name, field_info in cls.model_fields.items():
-            field_type = cast(Type[SSZType], field_info.annotation)
+            field_type = _get_ssz_field_type(field_info.annotation)
 
             if field_type.is_fixed_size():
                 # Read and deserialize fixed field directly

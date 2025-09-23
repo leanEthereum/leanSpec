@@ -5,7 +5,7 @@ The Store tracks all information required for the LMD GHOST forkchoice algorithm
 """
 
 import copy
-from typing import Dict, cast
+from typing import Dict
 
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
@@ -208,8 +208,7 @@ class Store(Container):
         self.states[block_hash] = state
 
         # Process block's attestations as on-chain votes
-        for signed_vote_untyped in block.body.attestations:
-            signed_vote = cast(SignedVote, signed_vote_untyped)
+        for signed_vote in block.body.attestations:
             self.process_attestation(signed_vote, is_from_block=True)
 
         # Update forkchoice head

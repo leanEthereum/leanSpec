@@ -1,6 +1,6 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List
 
 from lean_spec.subspecs.chain import DEVNET_CONFIG
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
@@ -19,7 +19,7 @@ from ..block.types import Attestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
-from ..vote import SignedVote, Vote
+from ..vote import Vote
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -430,9 +430,8 @@ class State(Container):
         latest_finalized = self.latest_finalized
 
         # Process each attestation in the block.
-        for attestation in attestations:
-            signed_vote = cast(SignedVote, attestation)
-            vote: Vote = signed_vote.message
+        for signed_vote in attestations:
+            vote: Vote = signed_vote.data
             source = vote.source
             target = vote.target
 
