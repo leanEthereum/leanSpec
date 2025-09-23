@@ -91,6 +91,7 @@ plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+warn_unused_ignores = true
 no_implicit_reexport = true
 namespace_packages = false
 explicit_package_bases = false

@@ -1,6 +1,6 @@
 """Tests for checkpoint justification and finalization logic."""
 
-from typing import Dict
+from typing import TYPE_CHECKING, Dict, Type
 
 import pytest
 
@@ -12,6 +12,9 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice.helpers import get_latest_justified
 from lean_spec.types import Bytes32
 
+if TYPE_CHECKING:
+    from .conftest import MockState
+
 
 class TestJustificationLogic:
     """Test checkpoint justification logic."""
@@ -21,24 +24,19 @@ class TestJustificationLogic:
         result = get_latest_justified({})
         assert result is None
 
-    def test_get_latest_justified_single_state(self) -> None:
+    def test_get_latest_justified_single_state(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified with a single state."""
         checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(5))
 
-        # Create mock state with minimal required fields
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
-        state = MockState(checkpoint)
-        states: Dict[Bytes32, State] = {
-            Bytes32(b"state1" + b"\x00" * 26): state  # type: ignore
-        }
+        state = mock_state_factory(checkpoint)
+        states: Dict[Bytes32, State] = {Bytes32(b"state1" + b"\x00" * 26): state}
 
         result = get_latest_justified(states)
         assert result == checkpoint
 
-    def test_get_latest_justified_multiple_states(self) -> None:
+    def test_get_latest_justified_multiple_states(
+        self, mock_state_factory: Type["MockState"]
+    ) -> None:
         """Test get_latest_justified with multiple states."""
         checkpoint1 = Checkpoint(root=Bytes32(b"test1" + b"\x00" * 27), slot=Slot(10))
         checkpoint2 = Checkpoint(
@@ -47,32 +45,24 @@ class TestJustificationLogic:
         checkpoint3 = Checkpoint(root=Bytes32(b"test3" + b"\x00" * 27), slot=Slot(15))
 
         # Create mock states with minimal required fields
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
         states: Dict[Bytes32, State] = {
-            Bytes32(b"state1" + b"\x00" * 26): MockState(checkpoint1),  # type: ignore
-            Bytes32(b"state2" + b"\x00" * 26): MockState(checkpoint2),  # type: ignore
-            Bytes32(b"state3" + b"\x00" * 26): MockState(checkpoint3),  # type: ignore
+            Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint1),
+            Bytes32(b"state2" + b"\x00" * 26): mock_state_factory(checkpoint2),
+            Bytes32(b"state3" + b"\x00" * 26): mock_state_factory(checkpoint3),
         }
 
         result = get_latest_justified(states)
         assert result == checkpoint2  # Should return the one with highest slot
 
-    def test_get_latest_justified_tie_breaking(self) -> None:
+    def test_get_latest_justified_tie_breaking(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified with tied slots."""
         # Two checkpoints with same slot
         checkpoint1 = Checkpoint(root=Bytes32(b"test1" + b"\x00" * 27), slot=Slot(10))
         checkpoint2 = Checkpoint(root=Bytes32(b"test2" + b"\x00" * 27), slot=Slot(10))
 
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
         states: Dict[Bytes32, State] = {
-            Bytes32(b"state1" + b"\x00" * 26): MockState(checkpoint1),  # type: ignore
-            Bytes32(b"state2" + b"\x00" * 26): MockState(checkpoint2),  # type: ignore
+            Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint1),
+            Bytes32(b"state2" + b"\x00" * 26): mock_state_factory(checkpoint2),
         }
 
         result = get_latest_justified(states)
@@ -80,36 +70,28 @@ class TestJustificationLogic:
         assert result in [checkpoint1, checkpoint2]
         assert result.slot == Slot(10)
 
-    def test_get_latest_justified_zero_slot(self) -> None:
+    def test_get_latest_justified_zero_slot(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified with genesis (slot 0) checkpoints."""
         genesis_checkpoint = Checkpoint(root=Bytes32(b"genesis" + b"\x00" * 25), slot=Slot(0))
 
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
         states: Dict[Bytes32, State] = {
-            Bytes32(b"genesis_state" + b"\x00" * 19): MockState(genesis_checkpoint),  # type: ignore
+            Bytes32(b"genesis_state" + b"\x00" * 19): mock_state_factory(genesis_checkpoint),
         }
 
         result = get_latest_justified(states)
         assert result == genesis_checkpoint
         assert result.slot == Slot(0)
 
-    def test_get_latest_justified_large_slots(self) -> None:
+    def test_get_latest_justified_large_slots(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified with large slot numbers."""
         checkpoint1 = Checkpoint(root=Bytes32(b"test1" + b"\x00" * 27), slot=Slot(1000))
         checkpoint2 = Checkpoint(root=Bytes32(b"test2" + b"\x00" * 27), slot=Slot(999))
         checkpoint3 = Checkpoint(root=Bytes32(b"test3" + b"\x00" * 27), slot=Slot(1001))  # Highest
 
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
         states: Dict[Bytes32, State] = {
-            Bytes32(b"state1" + b"\x00" * 26): MockState(checkpoint1),  # type: ignore
-            Bytes32(b"state2" + b"\x00" * 26): MockState(checkpoint2),  # type: ignore
-            Bytes32(b"state3" + b"\x00" * 26): MockState(checkpoint3),  # type: ignore
+            Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint1),
+            Bytes32(b"state2" + b"\x00" * 26): mock_state_factory(checkpoint2),
+            Bytes32(b"state3" + b"\x00" * 26): mock_state_factory(checkpoint3),
         }
 
         result = get_latest_justified(states)

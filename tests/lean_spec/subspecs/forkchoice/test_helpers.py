@@ -1,6 +1,6 @@
 """Tests for pure forkchoice helper functions."""
 
-from typing import Dict
+from typing import TYPE_CHECKING, Dict, Type
 
 import pytest
 
@@ -13,6 +13,9 @@ from lean_spec.subspecs.forkchoice.helpers import (
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+
+if TYPE_CHECKING:
+    from .conftest import MockState
 
 
 @pytest.fixture
@@ -121,52 +124,42 @@ class TestLatestJustifiedFunction:
         result = get_latest_justified({})
         assert result is None
 
-    def test_get_latest_justified_single_state(self) -> None:
+    def test_get_latest_justified_single_state(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified with a single state."""
         checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(5))
 
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
         states: Dict[Bytes32, State] = {
-            Bytes32(b"state1" + b"\x00" * 26): MockState(checkpoint),  # type: ignore
+            Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint),
         }
 
         result = get_latest_justified(states)
         assert result == checkpoint
 
-    def test_get_latest_justified_multiple_states(self) -> None:
+    def test_get_latest_justified_multiple_states(
+        self, mock_state_factory: Type["MockState"]
+    ) -> None:
         """Test get_latest_justified with states having different justified slots."""
         checkpoint1 = Checkpoint(root=Bytes32(b"test1" + b"\x00" * 27), slot=Slot(10))
         checkpoint2 = Checkpoint(
             root=Bytes32(b"test2" + b"\x00" * 27), slot=Slot(20)
         )  # Higher slot
 
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
         states: Dict[Bytes32, State] = {
-            Bytes32(b"state1" + b"\x00" * 26): MockState(checkpoint1),  # type: ignore
-            Bytes32(b"state2" + b"\x00" * 26): MockState(checkpoint2),  # type: ignore
+            Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint1),
+            Bytes32(b"state2" + b"\x00" * 26): mock_state_factory(checkpoint2),
         }
 
         result = get_latest_justified(states)
         assert result == checkpoint2  # Should return the one with higher slot
 
-    def test_get_latest_justified_tie_breaking(self) -> None:
+    def test_get_latest_justified_tie_breaking(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified when multiple states have same justified slot."""
         checkpoint1 = Checkpoint(root=Bytes32(b"test1" + b"\x00" * 27), slot=Slot(10))
         checkpoint2 = Checkpoint(root=Bytes32(b"test2" + b"\x00" * 27), slot=Slot(10))
 
-        class MockState:
-            def __init__(self, justified: Checkpoint):
-                self.latest_justified = justified
-
         states: Dict[Bytes32, State] = {
-            Bytes32(b"state1" + b"\x00" * 26): MockState(checkpoint1),  # type: ignore
-            Bytes32(b"state2" + b"\x00" * 26): MockState(checkpoint2),  # type: ignore
+            Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint1),
+            Bytes32(b"state2" + b"\x00" * 26): mock_state_factory(checkpoint2),
         }
 
         result = get_latest_justified(states)
