@@ -11,7 +11,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, StakerIndex, Uint64
 
 
 @pytest.fixture
@@ -123,7 +123,7 @@ class TestIntervalTicking:
 
         # Add some test votes for processing
         test_checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(1))
-        sample_store.latest_new_votes[ValidatorIndex(0)] = test_checkpoint
+        sample_store.latest_new_votes[StakerIndex(0)] = test_checkpoint
 
         # Tick through a complete slot cycle
         for interval in range(INTERVALS_PER_SLOT.as_int()):
@@ -206,7 +206,7 @@ class TestVoteProcessingTiming:
         """Test basic new vote processing."""
         # Add some new votes
         checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(1))
-        sample_store.latest_new_votes[ValidatorIndex(0)] = checkpoint
+        sample_store.latest_new_votes[StakerIndex(0)] = checkpoint
 
         initial_new_votes = len(sample_store.latest_new_votes)
         initial_known_votes = len(sample_store.latest_known_votes)
@@ -229,7 +229,7 @@ class TestVoteProcessingTiming:
         ]
 
         for i, checkpoint in enumerate(checkpoints):
-            sample_store.latest_new_votes[ValidatorIndex(i)] = checkpoint
+            sample_store.latest_new_votes[StakerIndex(i)] = checkpoint
 
         # Accept all new votes
         sample_store.accept_new_votes()
@@ -240,7 +240,7 @@ class TestVoteProcessingTiming:
 
         # Verify correct mapping
         for i, checkpoint in enumerate(checkpoints):
-            assert sample_store.latest_known_votes[ValidatorIndex(i)] == checkpoint
+            assert sample_store.latest_known_votes[StakerIndex(i)] == checkpoint
 
     def test_accept_new_votes_empty(self, sample_store: Store) -> None:
         """Test accepting new votes when there are none."""
@@ -295,14 +295,14 @@ class TestProposalHeadTiming:
         """Test that get_proposal_head processes pending votes."""
         # Add some new votes
         checkpoint = Checkpoint(root=Bytes32(b"vote" + b"\x00" * 28), slot=Slot(1))
-        sample_store.latest_new_votes[ValidatorIndex(10)] = checkpoint
+        sample_store.latest_new_votes[StakerIndex(10)] = checkpoint
 
         # Get proposal head should process votes
         sample_store.get_proposal_head(Slot(1))
 
         # Votes should have been processed (moved to known votes)
-        assert ValidatorIndex(10) not in sample_store.latest_new_votes
-        assert ValidatorIndex(10) in sample_store.latest_known_votes
+        assert StakerIndex(10) not in sample_store.latest_new_votes
+        assert StakerIndex(10) in sample_store.latest_known_votes
 
 
 class TestTimeConstants:

@@ -11,7 +11,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, StakerIndex, Uint64
 
 
 @pytest.fixture
@@ -75,8 +75,8 @@ class TestStoreCreation:
             latest_finalized=checkpoint,
             blocks={block_hash: block},
             states={},
-            latest_known_votes={ValidatorIndex(0): checkpoint},
-            latest_new_votes={ValidatorIndex(1): checkpoint},
+            latest_known_votes={StakerIndex(0): checkpoint},
+            latest_new_votes={StakerIndex(1): checkpoint},
         )
 
         assert store.time == Uint64(200)
@@ -85,8 +85,8 @@ class TestStoreCreation:
         assert store.safe_target == block_hash
         assert block_hash in store.blocks
         assert store.blocks[block_hash] == block
-        assert ValidatorIndex(0) in store.latest_known_votes
-        assert ValidatorIndex(1) in store.latest_new_votes
+        assert StakerIndex(0) in store.latest_known_votes
+        assert StakerIndex(1) in store.latest_new_votes
 
     def test_store_factory_method(self) -> None:
         """Test Store.get_forkchoice_store factory method."""
@@ -110,6 +110,7 @@ class TestStoreCreation:
         state = State(
             config=config,
             slot=Slot(0),
+            stakers=[],
             latest_block_header=block_header,
             latest_justified=checkpoint,
             latest_finalized=checkpoint,

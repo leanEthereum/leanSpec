@@ -8,7 +8,14 @@ from lean_spec.subspecs.chain import DEVNET_CONFIG
 from lean_spec.subspecs.chain import config as chainconfig
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Boolean, Bytes32, Container, Uint64, ValidatorIndex, is_proposer
+from lean_spec.types import (
+    Boolean,
+    Bytes32,
+    Container,
+    StakerIndex,
+    Uint64,
+    is_proposer,
+)
 from lean_spec.types import List as SSZList
 from lean_spec.types.bitfields import Bitlist
 
@@ -16,6 +23,7 @@ from .block import Block, BlockBody, BlockHeader, SignedBlock
 from .checkpoint import Checkpoint
 from .config import Config
 from .slot import Slot
+from .staker import Staker
 from .vote import SignedVote, Vote
 
 
@@ -57,6 +65,9 @@ class State(Container):
     ]
     """A bitlist of validators who participated in justifications."""
 
+    stakers: SSZList[Staker, DEVNET_CONFIG.staker_registry_limit.as_int()]  # type: ignore
+    """The list of stakers in the state."""
+
     @classmethod
     def generate_genesis(cls, genesis_time: Uint64, num_validators: Uint64) -> "State":
         """
@@ -79,7 +90,7 @@ class State(Container):
         # Create the zeroed header that anchors the chain at genesis.
         genesis_header = BlockHeader(
             slot=Slot(0),
-            proposer_index=ValidatorIndex(0),
+            proposer_index=StakerIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
             body_root=hash_tree_root(BlockBody(attestations=[])),
@@ -92,6 +103,7 @@ class State(Container):
                 num_validators=num_validators,
             ),
             slot=Slot(0),
+            stakers=[],
             latest_block_header=genesis_header,
             latest_justified=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
             latest_finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
@@ -101,14 +113,14 @@ class State(Container):
             justifications_validators=[],
         )
 
-    def is_proposer(self, validator_index: ValidatorIndex) -> bool:
+    def is_proposer(self, staker_index: StakerIndex) -> bool:
         """
         Check if a validator is the proposer for the current slot.
 
         The proposer selection follows a simple round-robin mechanism based on the
         slot number and the total number of validators.
         """
-        return is_proposer(validator_index, Uint64(self.slot.as_int()), self.config.num_validators)
+        return is_proposer(staker_index, Uint64(self.slot.as_int()), self.config.num_validators)
 
     def get_justifications(self) -> Dict[Bytes32, List[Boolean]]:
         """
@@ -141,7 +153,7 @@ class State(Container):
         # Cache the validator registry limit for concise slicing calculations.
         #
         # This value determines the size of the block of votes for each root.
-        limit = DEVNET_CONFIG.validator_registry_limit.as_int()
+        limit = DEVNET_CONFIG.staker_registry_limit.as_int()
         roots = self.justifications_roots
         validators = self.justifications_validators
 
@@ -172,7 +184,7 @@ class State(Container):
 
         Raises:
             AssertionError: If any vote list's length does not match the
-                            `validator_registry_limit`.
+                            `staker_registry_limit`.
         """
         # It will store the deterministically sorted list of roots.
         new_roots = SSZList[Bytes32, DEVNET_CONFIG.historical_roots_limit.as_int()]()  # type: ignore
@@ -182,7 +194,7 @@ class State(Container):
             DEVNET_CONFIG.historical_roots_limit.as_int()
             * DEVNET_CONFIG.historical_roots_limit.as_int(),
         ]()  # type: ignore
-        limit = DEVNET_CONFIG.validator_registry_limit.as_int()
+        limit = DEVNET_CONFIG.staker_registry_limit.as_int()
 
         # Iterate through the roots in sorted order for deterministic output.
         for root in sorted(justifications.keys()):
@@ -438,7 +450,8 @@ class State(Container):
 
     def process_attestations(
         self,
-        attestations: SSZList[SignedVote, chainconfig.VALIDATOR_REGISTRY_LIMIT.as_int()],  # type: ignore
+        attestations: SSZList[SignedVote,
+        chainconfig.STAKER_REGISTRY_LIMIT.as_int()],  # type: ignore
     ) -> "State":
         """
         Apply attestation votes and update justification/finalization
@@ -545,7 +558,7 @@ class State(Container):
             # Track a unique vote for (target_root, validator_id) only
             if target_root not in justifications:
                 # Initialize a fresh bitvector for this target root (all False).
-                limit = DEVNET_CONFIG.validator_registry_limit.as_int()
+                limit = DEVNET_CONFIG.staker_registry_limit.as_int()
                 justifications[target_root] = [Boolean(False)] * limit
 
             validator_id = vote.validator_id.as_int()

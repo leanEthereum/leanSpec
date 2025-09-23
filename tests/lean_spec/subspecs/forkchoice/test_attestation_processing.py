@@ -13,7 +13,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, StakerIndex, Uint64
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ class TestAttestationValidation:
 
         # Create valid signed vote
         vote = Vote(
-            validator_id=ValidatorIndex(0),
+            validator_id=StakerIndex(0),
             slot=Slot(2),
             head=Checkpoint(root=target_hash, slot=Slot(2)),
             target=Checkpoint(root=target_hash, slot=Slot(2)),
@@ -105,7 +105,7 @@ class TestAttestationValidation:
 
         # Create invalid signed vote (source > target slot)
         vote = Vote(
-            validator_id=ValidatorIndex(0),
+            validator_id=StakerIndex(0),
             slot=Slot(2),
             head=Checkpoint(root=target_hash, slot=Slot(1)),
             source=Checkpoint(root=source_hash, slot=Slot(2)),
@@ -124,7 +124,7 @@ class TestAttestationValidation:
 
         # Create signed vote referencing missing blocks
         vote = Vote(
-            validator_id=ValidatorIndex(0),
+            validator_id=StakerIndex(0),
             slot=Slot(2),
             head=Checkpoint(root=target_hash, slot=Slot(2)),
             source=Checkpoint(root=source_hash, slot=Slot(1)),
@@ -163,7 +163,7 @@ class TestAttestationValidation:
 
         # Create signed vote with mismatched checkpoint slot
         vote = Vote(
-            validator_id=ValidatorIndex(0),
+            validator_id=StakerIndex(0),
             slot=Slot(2),
             head=Checkpoint(root=target_hash, slot=Slot(2)),
             source=Checkpoint(root=source_hash, slot=Slot(0)),  # Wrong slot (should be 1)
@@ -202,7 +202,7 @@ class TestAttestationValidation:
 
         # Create signed vote for future slot
         vote = Vote(
-            validator_id=ValidatorIndex(0),
+            validator_id=StakerIndex(0),
             slot=Slot(1000),  # Too far in future
             head=Checkpoint(root=target_hash, slot=Slot(1000)),
             source=Checkpoint(root=source_hash, slot=Slot(1)),
@@ -245,7 +245,7 @@ class TestAttestationProcessing:
 
         # Create valid signed vote
         vote = Vote(
-            validator_id=ValidatorIndex(5),
+            validator_id=StakerIndex(5),
             slot=Slot(2),
             head=Checkpoint(root=target_hash, slot=Slot(2)),
             source=Checkpoint(root=source_hash, slot=Slot(1)),
@@ -257,8 +257,8 @@ class TestAttestationProcessing:
         sample_store.process_attestation(signed_vote, is_from_block=False)
 
         # Vote should be added to new votes
-        assert ValidatorIndex(5) in sample_store.latest_new_votes
-        assert sample_store.latest_new_votes[ValidatorIndex(5)] == vote.target
+        assert StakerIndex(5) in sample_store.latest_new_votes
+        assert sample_store.latest_new_votes[StakerIndex(5)] == vote.target
 
     def test_process_block_attestation(self, sample_store: Store) -> None:
         """Test processing attestation from a block."""
@@ -287,7 +287,7 @@ class TestAttestationProcessing:
 
         # Create valid signed vote
         vote = Vote(
-            validator_id=ValidatorIndex(7),
+            validator_id=StakerIndex(7),
             slot=Slot(2),
             head=Checkpoint(root=target_hash, slot=Slot(2)),
             source=Checkpoint(root=source_hash, slot=Slot(1)),
@@ -299,8 +299,8 @@ class TestAttestationProcessing:
         sample_store.process_attestation(signed_vote, is_from_block=True)
 
         # Vote should be added to known votes
-        assert ValidatorIndex(7) in sample_store.latest_known_votes
-        assert sample_store.latest_known_votes[ValidatorIndex(7)] == vote.target
+        assert StakerIndex(7) in sample_store.latest_known_votes
+        assert sample_store.latest_known_votes[StakerIndex(7)] == vote.target
 
     def test_process_attestation_superseding(self, sample_store: Store) -> None:
         """Test that newer attestations supersede older ones."""
@@ -327,7 +327,7 @@ class TestAttestationProcessing:
         sample_store.blocks[target_hash_1] = target_block_1
         sample_store.blocks[target_hash_2] = target_block_2
 
-        validator = ValidatorIndex(10)
+        validator = StakerIndex(10)
 
         # Process first (older) attestation
         vote_1 = Vote(
@@ -380,7 +380,7 @@ class TestAttestationProcessing:
         sample_store.blocks[source_hash] = source_block
         sample_store.blocks[target_hash] = target_block
 
-        validator = ValidatorIndex(15)
+        validator = StakerIndex(15)
 
         # First process as network vote
         vote = Vote(
@@ -425,7 +425,7 @@ class TestBlockProcessing:
 
         # Create a vote that will be included in block
         vote = Vote(
-            validator_id=ValidatorIndex(20),
+            validator_id=StakerIndex(20),
             slot=Slot(2),
             head=Checkpoint(root=parent_hash, slot=Slot(1)),
             source=Checkpoint(root=parent_hash, slot=Slot(1)),
@@ -437,6 +437,6 @@ class TestBlockProcessing:
         sample_store.process_attestation(signed_vote, is_from_block=True)
 
         # Verify the vote was processed correctly
-        assert ValidatorIndex(20) == vote.validator_id
+        assert StakerIndex(20) == vote.validator_id
         assert vote.target.root == parent_hash
-        assert ValidatorIndex(20) in sample_store.latest_known_votes
+        assert StakerIndex(20) in sample_store.latest_known_votes

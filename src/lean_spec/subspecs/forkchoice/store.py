@@ -23,7 +23,7 @@ from lean_spec.subspecs.containers import (
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex, is_proposer
+from lean_spec.types import Bytes32, StakerIndex, Uint64, is_proposer
 from lean_spec.types.container import Container
 
 from .helpers import get_fork_choice_head, get_latest_justified
@@ -61,10 +61,10 @@ class Store(Container):
     states: Dict[Bytes32, "State"] = {}
     """Mapping from state root to State objects."""
 
-    latest_known_votes: Dict[ValidatorIndex, Checkpoint] = {}
+    latest_known_votes: Dict[StakerIndex, Checkpoint] = {}
     """Latest votes by validator that have been processed."""
 
-    latest_new_votes: Dict[ValidatorIndex, Checkpoint] = {}
+    latest_new_votes: Dict[StakerIndex, Checkpoint] = {}
     """Latest votes by validator that are pending processing."""
 
     @classmethod
@@ -152,7 +152,7 @@ class Store(Container):
         # Validate attestation structure and constraints
         self.validate_attestation(signed_vote)
 
-        validator_id = ValidatorIndex(signed_vote.data.validator_id)
+        validator_id = StakerIndex(signed_vote.data.validator_id)
         vote = signed_vote.data
 
         if is_from_block:
@@ -365,7 +365,7 @@ class Store(Container):
         target_block = self.blocks[target_block_root]
         return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
 
-    def produce_block(self, slot: Slot, validator_index: ValidatorIndex) -> Block:
+    def produce_block(self, slot: Slot, validator_index: StakerIndex) -> Block:
         """
         Produce a new block for the given slot and validator.
 
@@ -470,7 +470,7 @@ class Store(Container):
 
         return finalized_block
 
-    def produce_attestation_vote(self, slot: Slot, validator_index: ValidatorIndex) -> Vote:
+    def produce_attestation_vote(self, slot: Slot, validator_index: StakerIndex) -> Vote:
         """
         Produce an attestation vote for the given slot and validator.
 

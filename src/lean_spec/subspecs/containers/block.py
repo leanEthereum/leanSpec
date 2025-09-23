@@ -11,7 +11,7 @@ from .vote import SignedVote
 class BlockBody(Container):
     """The body of a block, containing payload data."""
 
-    attestations: List[SignedVote, config.VALIDATOR_REGISTRY_LIMIT.as_int()]  # type: ignore
+    attestations: List[SignedVote, config.STAKER_REGISTRY_LIMIT.as_int()]  # type: ignore
     """
     A list of votes included in the block.
 

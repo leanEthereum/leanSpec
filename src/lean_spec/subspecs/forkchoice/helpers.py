@@ -7,7 +7,7 @@ Pure functions implementing the LMD GHOST forkchoice rule and related utilities.
 from typing import Dict, Optional
 
 from lean_spec.subspecs.containers import Block, Checkpoint, State
-from lean_spec.types import Bytes32, ValidatorIndex
+from lean_spec.types import Bytes32, StakerIndex
 
 from .constants import ZERO_HASH
 
@@ -15,7 +15,7 @@ from .constants import ZERO_HASH
 def get_fork_choice_head(
     blocks: Dict[Bytes32, Block],
     root: Bytes32,
-    latest_votes: Dict[ValidatorIndex, Checkpoint],
+    latest_votes: Dict[StakerIndex, Checkpoint],
     min_score: int = 0,
 ) -> Bytes32:
     """
