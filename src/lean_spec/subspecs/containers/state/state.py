@@ -1,8 +1,9 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import Dict, List, cast
+from typing import Any, Dict, List, cast
 
 from lean_spec.subspecs.chain import DEVNET_CONFIG
+from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
     Boolean,
@@ -20,7 +21,6 @@ from ..config import Config
 from ..slot import Slot
 from ..vote import SignedVote, Vote
 from .types import (
-    BooleanList262144Squared,
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
@@ -203,7 +203,7 @@ class State(Container):
 
         # Create immutable SSZList instances
         new_roots = JustificationRoots(data=roots_list)
-        flat_votes = BooleanList262144Squared(data=votes_list)
+        flat_votes = JustificationValidators(data=votes_list)
 
         # Return a new state object with the updated fields.
         return self.model_copy(
@@ -357,11 +357,11 @@ class State(Container):
         # If there were empty slots between parent and this block, fill them.
         num_empty_slots = (block.slot - self.latest_block_header.slot - Slot(1)).as_int()
         if num_empty_slots > 0:
-            from lean_spec.subspecs.ssz.constants import ZERO_HASH
             new_historical_hashes.extend([ZERO_HASH] * num_empty_slots)
             new_justified_slots.extend([Boolean(False)] * num_empty_slots)
 
-        # Record updated history arrays, ensuring they are cast back to the correct domain-specific type.
+        # Record updated history arrays, ensuring they are cast back to the
+        # correct domain-specific type.
         updates["historical_block_hashes"] = self.historical_block_hashes.__class__(
             data=new_historical_hashes
         )

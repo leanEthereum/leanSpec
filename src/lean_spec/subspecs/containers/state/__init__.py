@@ -2,7 +2,6 @@
 
 from .state import State
 from .types import (
-    BooleanList262144Squared,
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
@@ -11,7 +10,6 @@ from .types import (
 
 __all__ = [
     "State",
-    "BooleanList262144Squared",
     "HistoricalBlockHashes",
     "JustificationRoots",
     "JustificationValidators",

@@ -321,7 +321,9 @@ def test_with_justifications_empty(
         historical_block_hashes=HistoricalBlockHashes(data=[]),
         justified_slots=JustifiedSlots(data=[]),
         justifications_roots=JustificationRoots(data=[Bytes32(b"\x01" * 32)]),
-        justifications_validators=JustificationValidators(data=[Boolean(True)] * DEVNET_CONFIG.validator_registry_limit.as_int()),
+        justifications_validators=JustificationValidators(
+            data=[Boolean(True)] * DEVNET_CONFIG.validator_registry_limit.as_int()
+        ),
     )
 
     # Apply an empty justifications map to get a new state snapshot.

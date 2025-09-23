@@ -233,19 +233,19 @@ class ModelLists(BaseModel):
 
 def test_pydantic_accepts_various_inputs_for_vectors() -> None:
     m = ModelVectors(
-        root="0x" + "11" * 32,
-        key=[0, 1, 2, 3],
+        root=Bytes32("0x" + "11" * 32),
+        key=Bytes4([0, 1, 2, 3]),
     )
     assert isinstance(m.root, Bytes32)
     assert isinstance(m.key, Bytes4)
     assert bytes(m.root) == b"\x11" * 32
     assert bytes(m.key) == b"\x00\x01\x02\x03"
 
-    # serializer returns raw bytes in model_dump()
+    # serializer returns string representation in model_dump()
     dumped = m.model_dump()
-    assert isinstance(dumped["root"], (bytes, bytearray))
-    assert dumped["root"] == b"\x11" * 32
-    assert dumped["key"] == b"\x00\x01\x02\x03"
+    assert isinstance(dumped["root"], str)
+    assert dumped["root"] == "11" * 32  # hex string without 0x prefix
+    assert dumped["key"] == "00010203"  # hex string representation
 
 
 def test_pydantic_validates_vector_lengths() -> None:
@@ -258,7 +258,7 @@ def test_pydantic_validates_vector_lengths() -> None:
 
 
 def test_pydantic_accepts_and_serializes_bytelist() -> None:
-    m = ModelLists(payload="0x000102030405060708090a0b0c0d0e0f")
+    m = ModelLists(payload=ByteList16(data="0x000102030405060708090a0b0c0d0e0f"))
 
     assert isinstance(m.payload, ByteList16)
     assert m.payload.encode_bytes() == bytes(range(16))
@@ -266,9 +266,10 @@ def test_pydantic_accepts_and_serializes_bytelist() -> None:
     dumped = m.model_dump()
     payload = dumped["payload"]
 
-    # Accept any bytes-like object
-    assert isinstance(payload, (bytes, bytearray, memoryview))
-    assert bytes(payload) == bytes(range(16))
+    # ByteList serializes as dict with 'data' field
+    assert isinstance(payload, dict)
+    assert "data" in payload
+    assert payload["data"] == bytes(range(16))
 
     # Round-trip back through Pydantic using the dumped Python object
     decoded = ModelLists.model_validate(dumped)

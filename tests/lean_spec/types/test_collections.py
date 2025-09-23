@@ -268,14 +268,14 @@ class TestList:
         """Tests that Pydantic validation works for List types."""
         model = create_model("Model", value=(Uint8List4, ...))
         # Test valid data
-        instance: Any = model(value=[10, 20])
+        instance: Any = model(value=Uint8List4(data=[10, 20]))
         assert isinstance(instance.value, Uint8List4)
         assert list(instance.value) == [Uint8(10), Uint8(20)]
         # Test invalid data
         with pytest.raises(ValidationError):
-            model(value=[10, 20, 30, 40, 50])  # Too long
+            model(value=Uint8List4(data=[10, 20, 30, 40, 50]))  # Too long
         with pytest.raises(ValidationError):
-            model(value=[10, "bad"])  # Wrong element type
+            model(value=Uint8List4(data=[10, "bad"]))  # Wrong element type
 
     def test_append_at_limit_raises_error(self) -> None:
         """Tests that creating a list at limit +1 fails during construction."""
