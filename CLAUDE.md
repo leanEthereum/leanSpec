@@ -153,9 +153,11 @@ src/lean_spec/subspecs/containers/
 **Good domain-specific types:**
 ```python
 # In state/types.py
+HISTORICAL_ROOTS_LIMIT = 262144
+
 class JustificationValidators(BitlistBase):
     """Bitlist for tracking validator justifications."""
-    LIMIT = 262144 * 262144  # For flattened validator justifications
+    LIMIT = HISTORICAL_ROOTS_LIMIT * HISTORICAL_ROOTS_LIMIT
 
 # In block/types.py
 class Attestations(SSZList):
