@@ -198,7 +198,7 @@ def test_union_with_nested_composites_roundtrip() -> None:
     assert dec.value == vp
 
     # selector = 0 (Vector[Uint8,3])
-    v = vv(Uint8, 3)([9, 8, 7])
+    v = vv(Uint8, 3)(data=[9, 8, 7])
     inst2 = u(selector=0, value=v)
     assert u.decode_bytes(inst2.encode_bytes()) == inst2
 

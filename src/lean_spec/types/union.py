@@ -240,6 +240,18 @@ class Union(SSZType):
         """
         return False
 
+    @classmethod
+    def get_byte_length(cls) -> int:
+        """
+        Get the byte length of the Union type.
+
+        Since Union types are variable-size, this method always raises TypeError.
+
+        Raises:
+            TypeError: Union types are variable-size and don't have a fixed byte length.
+        """
+        raise TypeError("Union types are variable-size and don't have a fixed byte length")
+
     def serialize(self, stream: IO[bytes]) -> int:
         """
         Serialize this Union to a byte stream.
