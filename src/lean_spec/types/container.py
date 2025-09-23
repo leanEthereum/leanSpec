@@ -15,9 +15,8 @@ from typing import IO, Any, Type
 
 from typing_extensions import Self
 
-from .base import StrictBaseModel
 from .constants import OFFSET_BYTE_LENGTH
-from .ssz_base import SSZType
+from .ssz_base import SSZModel, SSZType
 from .uint import Uint32
 
 
@@ -45,7 +44,7 @@ def _get_ssz_field_type(annotation: Any) -> Type[SSZType]:
     )
 
 
-class Container(StrictBaseModel, SSZType):
+class Container(SSZModel):
     """
     SSZ Container: A strict, ordered collection of heterogeneous named fields.
 
@@ -53,18 +52,23 @@ class Container(StrictBaseModel, SSZType):
     in C or dataclasses in Python. Each field has a name and type, and the
     serialization preserves field order.
 
+    Inherits from SSZModel to get:
+    - Pydantic validation and immutability (StrictBaseModel)
+    - SSZ serialization interface (SSZType)
+    - Collection methods that work with named fields
+
     Key properties:
     - Fields are serialized in definition order
     - Fixed-size fields are packed directly
     - Variable-size fields use offset pointers
-    - Inherits Pydantic validation for type safety
+    - Field iteration via inherited __iter__ method
 
     Example:
         >>> class Block(Container):
         ...     slot: Uint64
         ...     parent_root: Bytes32
         ...     state_root: Bytes32
-        ...     body: List[Transaction, 1024]  # Variable-size field
+        ...     body: Attestations  # Variable-size field
 
     Serialization format:
         [fixed_field_1][fixed_field_2]...[offset_1][offset_2]...[variable_data_1][variable_data_2]...
