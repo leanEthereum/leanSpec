@@ -107,7 +107,7 @@ When creating SSZ types, follow these established patterns:
 
 ### Domain-Specific Types (Preferred)
 - Use meaningful names that describe the purpose: `JustificationValidators`, `HistoricalBlockHashes`, `Attestations`
-- Define domain-specific types close to where they're used (e.g., in `state.py` for state-specific types)
+- Define domain-specific types in modular structure (see Architecture section below)
 - Avoid generic names with numbers like `Bitlist68719476736` or `SignedVoteList4096`
 
 ### Type Inheritance Strategy
@@ -115,14 +115,39 @@ When creating SSZ types, follow these established patterns:
 - **Collection types** (lists, vectors, bitfields): Use HAS-A pattern with SSZModel/Container base classes
 - All SSZ types should have proper serialization (`encode_bytes`, `decode_bytes`, `serialize`, `deserialize`)
 
+### Modular Architecture
+
+Containers should be organized into modules with clear separation:
+
+```
+src/lean_spec/subspecs/containers/
+├── state/
+│   ├── __init__.py      # Exports State and related types
+│   ├── state.py         # Main State container class
+│   └── types.py         # State-specific types: JustifiedSlots, HistoricalBlockHashes, etc.
+├── block/
+│   ├── __init__.py      # Exports Block classes
+│   ├── block.py         # Main Block container classes
+│   └── types.py         # Block-specific types: Attestations, etc.
+└── ...
+```
+
+**Key principles:**
+- **Base types** (BitlistBase, SSZList, etc.) stay in general scope (`src/lean_spec/types/`)
+- **Spec-specific types** go in their respective modules (`state/types.py`, `block/types.py`)
+- **Public API** exposed through `__init__.py` files for backward compatibility
+- **Domain-specific types** defined close to where they're used
+
 ### Examples
 
 **Good domain-specific types:**
 ```python
+# In state/types.py
 class JustificationValidators(BitlistBase):
     """Bitlist for tracking validator justifications."""
     LIMIT = 262144 * 262144  # For flattened validator justifications
 
+# In block/types.py
 class Attestations(SSZList):
     """List of signed votes (attestations) included in a block."""
     ELEMENT_TYPE = SignedVote
@@ -135,3 +160,10 @@ class Attestations(SSZList):
 class Bitlist68719476736(BitlistBase): ...
 class SignedVoteList4096(SSZList): ...
 ```
+
+### API Compatibility
+
+When refactoring, maintain backward compatibility:
+- Use property aliases for renamed attributes: `@property def message(self) -> Vote: return self.data`
+- Keep existing import paths working through `__init__.py` exports
+- Preserve method signatures and behavior

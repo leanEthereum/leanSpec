@@ -38,3 +38,8 @@ class SignedVote(Container):
 
     Note: Bytes32 is a placeholder; the actual signature is much larger.
     """
+
+    @property
+    def message(self) -> Vote:
+        """Alias for data to maintain API compatibility."""
+        return self.data
