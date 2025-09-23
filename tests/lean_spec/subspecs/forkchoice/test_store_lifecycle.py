@@ -10,6 +10,7 @@ from lean_spec.subspecs.containers import (
     Config,
     State,
 )
+from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import (
     HistoricalBlockHashes,
@@ -70,7 +71,7 @@ class TestStoreCreation:
             proposer_index=Uint64(1),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"state" + b"\x00" * 27),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_hash = hash_tree_root(block)
 
@@ -130,7 +131,7 @@ class TestStoreCreation:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=hash_tree_root(state),  # Must match state
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
 
         # Create store using factory method

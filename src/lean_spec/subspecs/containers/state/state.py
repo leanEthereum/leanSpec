@@ -186,16 +186,15 @@ class State(Container):
         State
             A new state with updated justification data.
         """
-        # Build the flattened lists from the map.
+        # Build the flattened lists from the map, with sorted keys for deterministic order.
         roots_list = []
         votes_list = []
-        for root, votes in justifications.items():
+        for root in sorted(justifications.keys()):
+            votes = justifications[root]
             # Validate that the vote list has the expected length.
             expected_len = DEVNET_CONFIG.validator_registry_limit.as_int()
             if len(votes) != expected_len:
-                raise ValueError(
-                    f"Vote list for {root!r} has length {len(votes)}, expected {expected_len}"
-                )
+                raise AssertionError(f"Vote list for root {root.hex()} has incorrect length")
 
             # Add the root to the roots list.
             roots_list.append(root)
@@ -216,124 +215,171 @@ class State(Container):
 
     def process_slot(self) -> "State":
         """
-        Apply slot processing to advance the state to the next slot.
+        Perform per-slot maintenance tasks.
 
-        This method implements the per-slot state transition, including:
-        - Incrementing the slot number
-        - Updating historical data structures
+        If we are on the slot immediately after a block, the latest block header
+        has an empty state_root. In that case, cache the pre-block state root into
+        that header. Otherwise, no change is required.
 
         Returns:
         -------
         State
-            A new state advanced to the next slot.
+            A new state with latest_block_header.state_root set if needed.
         """
-        # Cache the current block root if we're starting a new block.
-        latest_block_root = hash_tree_root(self.latest_block_header)
+        # If the latest block header has no state root, fill it now.
+        #
+        # This occurs on the first slot after a block.
+        if self.latest_block_header.state_root == Bytes32.zero():
+            # Compute the root of the current (pre-block) state.
+            previous_state_root = hash_tree_root(self)
 
-        # Build a list of historical roots, adding the latest block root.
-        new_historical_hashes = list(self.historical_block_hashes)
-        new_historical_hashes.append(latest_block_root)
+            # Copy the header and set its state_root to the computed value.
+            new_header = self.latest_block_header.model_copy(
+                update={"state_root": previous_state_root}
+            )
 
-        # Build a list of justified slots, adding the current slot.
-        new_justified_slots = list(self.justified_slots)
-        new_justified_slots.append(Boolean(self.latest_block_header.slot == Slot(0)))
+            # Return a new state with the updated header in place.
+            return self.model_copy(update={"latest_block_header": new_header})
 
-        # Handle the case where we need to fill empty slots.
-        current_slot_int = self.slot.as_int()
-        header_slot_int = self.latest_block_header.slot.as_int()
-        if current_slot_int > header_slot_int:
-            num_empty_slots = current_slot_int - header_slot_int - 1
-            new_justified_slots.extend([Boolean(False)] * num_empty_slots)
-
-        # Advance to the next slot with updated history.
-        return self.model_copy(
-            update={
-                "slot": Slot(self.slot.as_int() + 1),
-                "historical_block_hashes": self.historical_block_hashes.__class__(
-                    data=new_historical_hashes
-                ),
-                "justified_slots": self.justified_slots.__class__(data=new_justified_slots),
-            }
-        )
+        # Nothing to do for this slot. Return the state unchanged.
+        return self
 
     def process_slots(self, target_slot: Slot) -> "State":
         """
-        Process multiple slots to reach a target slot.
+        Advance the state through empty slots up to, but not including, target_slot.
+
+        The loop:
+          - Calls process_slot once per missing slot.
+          - Increments the slot counter after each call.
+        The function returns a new state with slot == target_slot.
 
         Parameters
         ----------
         target_slot : Slot
-            The slot to advance to.
+            The slot to reach by processing empty slots.
 
         Returns:
         -------
         State
-            A new state advanced to the target slot.
+            A new state that has progressed to target_slot.
 
         Raises:
         ------
-        ValueError
-            If the target slot is not greater than the current slot.
+        AssertionError
+            If target_slot is not in the future.
         """
-        # Validate that we're advancing forward in time.
-        if target_slot.as_int() <= self.slot.as_int():
-            raise ValueError(
-                f"Target slot {target_slot} must be greater than current slot {self.slot}"
-            )
+        # The target must be strictly greater than the current slot.
+        assert self.slot < target_slot, "Target slot must be in the future"
 
-        # Apply slot processing iteratively until we reach the target.
+        # Work on a local variable. Do not mutate self.
         state = self
-        while state.slot.as_int() < target_slot.as_int():
-            state = state.process_slot()
 
+        # Step through each missing slot:
+        while state.slot < target_slot:
+            # Perform per-slot housekeeping (e.g., cache the state root).
+            state = state.process_slot()
+            # Increase the slot number by one for the next iteration.
+            state = state.model_copy(update={"slot": Slot(state.slot + Slot(1))})
+
+        # Reached the target slot. Return the advanced state.
         return state
 
     def process_block_header(self, block: Block) -> "State":
         """
-        Apply block header processing to validate and update the state.
+        Validate the block header and update header-linked state.
+
+        Checks:
+          - The block slot equals the current state slot.
+          - The block slot is newer than the latest header slot.
+          - The proposer index matches the round-robin selection.
+          - The parent root matches the hash of the latest block header.
+
+        Updates:
+          - For the first post-genesis block, mark genesis as justified/finalized.
+          - Append the parent root to historical hashes.
+          - Append the justified bit for the parent (true only for genesis).
+          - Insert ZERO_HASH entries for any skipped empty slots.
+          - Set latest_block_header for the new block with an empty state_root.
 
         Parameters
         ----------
         block : Block
-            The block to process.
+            The block whose header is being processed.
 
         Returns:
         -------
         State
-            A new state with the processed block header.
+            A new state with header-related fields updated.
 
         Raises:
         ------
-        ValueError
-            If the block fails validation checks.
+        AssertionError
+            If any header check fails.
         """
-        # Validate that the block is for the current slot.
-        if block.slot != self.slot:
-            raise ValueError(f"Block slot mismatch: expected {self.slot}, got {block.slot}")
+        # The block must be for the current slot.
+        assert block.slot == self.slot, "Block slot mismatch"
 
-        # Validate that the proposer is correct for this slot.
-        if not self.is_proposer(block.proposer_index):
-            raise ValueError(f"Incorrect block proposer: {block.proposer_index}")
+        # The block must be newer than the current latest header.
+        assert block.slot > self.latest_block_header.slot, "Block is older than latest header"
 
-        # Validate that the block's parent root matches the current block header.
-        expected_parent_root = hash_tree_root(self.latest_block_header)
-        if block.parent_root != expected_parent_root:
-            raise ValueError(
-                f"Block parent root mismatch: expected {expected_parent_root!r}, "
-                f"got {block.parent_root!r}"
+        # The proposer must be the expected validator for this slot.
+        assert self.is_proposer(block.proposer_index), "Incorrect block proposer"
+
+        # The declared parent must match the hash of the latest block header.
+        assert block.parent_root == hash_tree_root(self.latest_block_header), (
+            "Block parent root mismatch"
+        )
+
+        # Build a dictionary of field updates to apply in one copy operation.
+        updates: Dict[str, Any] = {}
+
+        # Cache the parent root locally for repeated use.
+        parent_root = block.parent_root
+
+        # Special case: first block after genesis.
+        #
+        # Mark genesis as both justified and finalized.
+        if self.latest_block_header.slot == Slot(0):
+            updates["latest_justified"] = self.latest_justified.model_copy(
+                update={"root": parent_root}
+            )
+            updates["latest_finalized"] = self.latest_finalized.model_copy(
+                update={"root": parent_root}
             )
 
-        # Create the new block header from the block.
-        new_header = BlockHeader(
+        # Create mutable copies to work with to avoid modifying the original object.
+        new_historical_hashes = list(self.historical_block_hashes)
+        new_historical_hashes.append(parent_root)
+
+        new_justified_slots = list(self.justified_slots)
+        new_justified_slots.append(Boolean(self.latest_block_header.slot == Slot(0)))
+
+        # If there were empty slots between parent and this block, fill them.
+        num_empty_slots = (block.slot - self.latest_block_header.slot - Slot(1)).as_int()
+        if num_empty_slots > 0:
+            from lean_spec.subspecs.ssz.constants import ZERO_HASH
+            new_historical_hashes.extend([ZERO_HASH] * num_empty_slots)
+            new_justified_slots.extend([Boolean(False)] * num_empty_slots)
+
+        # Record updated history arrays, ensuring they are cast back to the correct domain-specific type.
+        updates["historical_block_hashes"] = self.historical_block_hashes.__class__(
+            data=new_historical_hashes
+        )
+        updates["justified_slots"] = self.justified_slots.__class__(data=new_justified_slots)
+
+        # Construct the new latest block header.
+        #
+        # Leave state_root empty; it will be filled on the next process_slot call.
+        updates["latest_block_header"] = BlockHeader(
             slot=block.slot,
             proposer_index=block.proposer_index,
             parent_root=block.parent_root,
-            state_root=block.state_root,
             body_root=hash_tree_root(block.body),
+            state_root=Bytes32.zero(),
         )
 
-        # Return the state with the updated header.
-        return self.model_copy(update={"latest_block_header": new_header})
+        # Return the state with all header updates applied.
+        return self.model_copy(update=updates)
 
     def process_block(self, block: Block) -> "State":
         """

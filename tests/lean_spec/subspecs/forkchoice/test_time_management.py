@@ -8,6 +8,7 @@ from lean_spec.subspecs.containers import (
     Checkpoint,
     Config,
 )
+from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -266,7 +267,7 @@ class TestProposalHeadTiming:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         genesis_hash = hash_tree_root(genesis_block)
         sample_store.blocks[genesis_hash] = genesis_block

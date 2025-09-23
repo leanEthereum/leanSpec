@@ -21,6 +21,7 @@ from lean_spec.subspecs.containers import (
     State,
     Vote,
 )
+from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex, is_proposer
@@ -411,7 +412,7 @@ class Store(Container):
                 proposer_index=validator_index,
                 parent_root=head_root,
                 state_root=Bytes32.zero(),  # Temporary; updated after state computation
-                body=BlockBody(attestations=attestations),
+                body=BlockBody(attestations=Attestations(data=attestations)),
             )
 
             # Apply state transition to get the post-block state
@@ -454,7 +455,7 @@ class Store(Container):
             proposer_index=validator_index,
             parent_root=head_root,
             state_root=Bytes32.zero(),  # Will be updated with computed hash
-            body=BlockBody(attestations=attestations),
+            body=BlockBody(attestations=Attestations(data=attestations)),
         )
 
         # Apply state transition to get final post-state and compute state root

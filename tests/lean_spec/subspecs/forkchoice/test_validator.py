@@ -11,6 +11,7 @@ from lean_spec.subspecs.containers import (
     State,
     Vote,
 )
+from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import (
     HistoricalBlockHashes,
@@ -67,7 +68,7 @@ def sample_store(config: Config, sample_state: State) -> Store:
         proposer_index=ValidatorIndex(0),
         parent_root=Bytes32.zero(),
         state_root=hash_tree_root(sample_state),
-        body=BlockBody(attestations=[]),
+        body=BlockBody(attestations=Attestations(data=[])),
     )
     genesis_hash = hash_tree_root(genesis_block)
 
@@ -406,7 +407,7 @@ class TestValidatorIntegration:
         config = Config(genesis_time=Uint64(1000), num_validators=Uint64(3))
 
         # Create minimal genesis block first
-        genesis_body = BlockBody(attestations=[])
+        genesis_body = BlockBody(attestations=Attestations(data=[]))
 
         # Create minimal state with temporary header
         checkpoint = Checkpoint(root=Bytes32.zero(), slot=Slot(0))

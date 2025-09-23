@@ -10,6 +10,7 @@ from lean_spec.subspecs.containers import (
     Checkpoint,
     Config,
 )
+from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.forkchoice.helpers import get_fork_choice_head
@@ -25,7 +26,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
         proposer_index=Uint64(0),
         parent_root=Bytes32.zero(),
         state_root=Bytes32(b"genesis" + b"\x00" * 25),
-        body=BlockBody(attestations=[]),
+        body=BlockBody(attestations=Attestations(data=[])),
     )
     genesis_hash = hash_tree_root(genesis)
 
@@ -34,7 +35,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
         proposer_index=Uint64(1),
         parent_root=genesis_hash,
         state_root=Bytes32(b"block_a" + b"\x00" * 25),
-        body=BlockBody(attestations=[]),
+        body=BlockBody(attestations=Attestations(data=[])),
     )
     block_a_hash = hash_tree_root(block_a)
 
@@ -43,7 +44,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
         proposer_index=Uint64(2),
         parent_root=block_a_hash,
         state_root=Bytes32(b"block_b" + b"\x00" * 25),
-        body=BlockBody(attestations=[]),
+        body=BlockBody(attestations=Attestations(data=[])),
     )
     block_b_hash = hash_tree_root(block_b)
 
@@ -95,7 +96,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         genesis_hash = hash_tree_root(genesis)
 
@@ -105,7 +106,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(1),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_a" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_a_hash = hash_tree_root(block_a)
 
@@ -114,7 +115,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(2),
             parent_root=block_a_hash,
             state_root=Bytes32(b"block_b" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_b_hash = hash_tree_root(block_b)
 
@@ -124,7 +125,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(3),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_c" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_c_hash = hash_tree_root(block_c)
 
@@ -133,7 +134,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(4),
             parent_root=block_c_hash,
             state_root=Bytes32(b"block_d" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_d_hash = hash_tree_root(block_d)
 
@@ -173,7 +174,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         genesis_hash = hash_tree_root(genesis)
 
@@ -182,7 +183,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(1),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_a" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_a_hash = hash_tree_root(block_a)
 
@@ -191,7 +192,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(2),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_b" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_b_hash = hash_tree_root(block_b)
 
@@ -224,7 +225,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         genesis_hash = hash_tree_root(genesis)
 
@@ -234,7 +235,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(1),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_a" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_a_hash = hash_tree_root(block_a)
 
@@ -243,7 +244,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(2),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_b" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_b_hash = hash_tree_root(block_b)
 
@@ -276,7 +277,7 @@ class TestLMDGHOSTAlgorithm:
                 proposer_index=Uint64(i),
                 parent_root=prev_hash,
                 state_root=Bytes32(f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))),
-                body=BlockBody(attestations=[]),
+                body=BlockBody(attestations=Attestations(data=[])),
             )
             block_hash = hash_tree_root(block)
             blocks[block_hash] = block
@@ -304,7 +305,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         genesis_hash = hash_tree_root(genesis)
 
@@ -313,7 +314,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(1),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_a" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_a_hash = hash_tree_root(block_a)
 
@@ -322,7 +323,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(2),
             parent_root=block_a_hash,
             state_root=Bytes32(b"block_b" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_b_hash = hash_tree_root(block_b)
 
@@ -331,7 +332,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(3),
             parent_root=block_b_hash,
             state_root=Bytes32(b"block_c" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_c_hash = hash_tree_root(block_c)
 
@@ -364,7 +365,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         genesis_hash = hash_tree_root(genesis)
 
@@ -373,7 +374,7 @@ class TestLMDGHOSTAlgorithm:
             proposer_index=Uint64(1),
             parent_root=genesis_hash,
             state_root=Bytes32(b"block_a" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         block_a_hash = hash_tree_root(block_a)
 
@@ -411,7 +412,7 @@ class TestStoreBasedForkChoice:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=[]),
+            body=BlockBody(attestations=Attestations(data=[])),
         )
         genesis_hash = hash_tree_root(genesis_block)
 

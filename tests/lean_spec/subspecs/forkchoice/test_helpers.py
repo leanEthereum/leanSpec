@@ -5,6 +5,7 @@ from typing import Dict
 import pytest
 
 from lean_spec.subspecs.containers import Block, BlockBody, Checkpoint, State
+from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice.helpers import (
     get_fork_choice_head,
@@ -22,7 +23,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
         proposer_index=Uint64(0),
         parent_root=Bytes32.zero(),
         state_root=Bytes32(b"genesis" + b"\x00" * 25),
-        body=BlockBody(attestations=[]),
+        body=BlockBody(attestations=Attestations(data=[])),
     )
     genesis_hash = hash_tree_root(genesis)
 
@@ -31,7 +32,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
         proposer_index=Uint64(1),
         parent_root=genesis_hash,
         state_root=Bytes32(b"block_a" + b"\x00" * 25),
-        body=BlockBody(attestations=[]),
+        body=BlockBody(attestations=Attestations(data=[])),
     )
     block_a_hash = hash_tree_root(block_a)
 
@@ -40,7 +41,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
         proposer_index=Uint64(2),
         parent_root=block_a_hash,
         state_root=Bytes32(b"block_b" + b"\x00" * 25),
-        body=BlockBody(attestations=[]),
+        body=BlockBody(attestations=Attestations(data=[])),
     )
     block_b_hash = hash_tree_root(block_b)
 
