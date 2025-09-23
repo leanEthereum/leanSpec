@@ -5,10 +5,18 @@ import pytest
 from lean_spec.subspecs.containers import (
     Block,
     BlockBody,
+    BlockHeader,
     Checkpoint,
     Config,
+    State,
 )
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state import (
+    HistoricalBlockHashes,
+    JustificationRoots,
+    JustificationValidators,
+    JustifiedSlots,
+)
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
@@ -90,14 +98,11 @@ class TestStoreCreation:
 
     def test_store_factory_method(self) -> None:
         """Test Store.get_forkchoice_store factory method."""
-        from lean_spec.subspecs.containers import State
 
         config = Config(num_validators=Uint64(10), genesis_time=Uint64(1000))
         checkpoint = Checkpoint(root=Bytes32(b"genesis" + b"\x00" * 25), slot=Slot(0))
 
         # Create block header for testing
-        from lean_spec.subspecs.containers.block import BlockHeader
-
         block_header = BlockHeader(
             slot=Slot(0),
             proposer_index=Uint64(0),
@@ -113,10 +118,10 @@ class TestStoreCreation:
             latest_block_header=block_header,
             latest_justified=checkpoint,
             latest_finalized=checkpoint,
-            historical_block_hashes=[],
-            justified_slots=[],
-            justifications_roots=[],
-            justifications_validators=[],
+            historical_block_hashes=HistoricalBlockHashes(data=[]),
+            justified_slots=JustifiedSlots(data=[]),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
         )
 
         # Create anchor block

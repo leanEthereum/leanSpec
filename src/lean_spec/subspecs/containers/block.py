@@ -7,18 +7,18 @@ from lean_spec.types.container import Container
 from .vote import SignedVote
 
 
-# Concrete SSZList class for BlockBody
-class SignedVoteList4096(SSZList):
-    """List of SignedVote with limit 4096 (VALIDATOR_REGISTRY_LIMIT)."""
+# Domain-specific list type for BlockBody
+class Attestations(SSZList):
+    """List of signed votes (attestations) included in a block."""
 
     ELEMENT_TYPE = SignedVote
-    LIMIT = 4096
+    LIMIT = 4096  # VALIDATOR_REGISTRY_LIMIT
 
 
 class BlockBody(Container):
     """The body of a block, containing payload data."""
 
-    attestations: SignedVoteList4096
+    attestations: Attestations
     """
     A list of votes included in the block.
 

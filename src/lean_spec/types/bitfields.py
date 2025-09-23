@@ -995,15 +995,3 @@ class Bitlist512(BitlistBase):
     """Variable-length bitlist with limit of 512 bits."""
 
     LIMIT = 512
-
-
-class Bitlist262144(BitlistBase):
-    """Variable-length bitlist with limit of 262144 bits (for historical_roots_limit)."""
-
-    LIMIT = 262144
-
-
-class Bitlist68719476736(BitlistBase):
-    """Variable-length bitlist with limit of 68719476736 bits (262144^2)."""
-
-    LIMIT = 68719476736

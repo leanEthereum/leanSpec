@@ -14,7 +14,14 @@ from lean_spec.subspecs.containers import (
     SignedBlock,
     State,
 )
+from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state import (
+    HistoricalBlockHashes,
+    JustificationRoots,
+    JustificationValidators,
+    JustifiedSlots,
+)
 from lean_spec.subspecs.containers.vote import SignedVote, Vote
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Boolean, Bytes32, Uint64, ValidatorIndex
@@ -183,10 +190,10 @@ def base_state(
         latest_block_header=sample_block_header,
         latest_justified=sample_checkpoint,
         latest_finalized=sample_checkpoint,
-        historical_block_hashes=[],
-        justified_slots=[],
-        justifications_roots=[],
-        justifications_validators=[],
+        historical_block_hashes=HistoricalBlockHashes(data=[]),
+        justified_slots=JustifiedSlots(data=[]),
+        justifications_roots=JustificationRoots(data=[]),
+        justifications_validators=JustificationValidators(data=[]),
     )
 
 
@@ -459,7 +466,8 @@ def test_generate_genesis(sample_config: Config) -> None:
     # Slot should start at 0.
     assert state.slot == Slot(0)
     # Body root must commit to an empty body at genesis.
-    assert state.latest_block_header.body_root == hash_tree_root(BlockBody(attestations=[]))
+    expected_body = BlockBody(attestations=Attestations(data=[]))
+    assert state.latest_block_header.body_root == hash_tree_root(expected_body)
     # History and justifications must be empty initially.
     assert not state.historical_block_hashes
     assert not state.justified_slots

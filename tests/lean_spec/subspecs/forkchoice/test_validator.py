@@ -12,6 +12,12 @@ from lean_spec.subspecs.containers import (
     Vote,
 )
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state import (
+    HistoricalBlockHashes,
+    JustificationRoots,
+    JustificationValidators,
+    JustifiedSlots,
+)
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
@@ -45,10 +51,10 @@ def sample_state(config: Config) -> State:
         latest_block_header=block_header,
         latest_justified=temp_finalized,
         latest_finalized=temp_finalized,
-        historical_block_hashes=[],
-        justified_slots=[],
-        justifications_roots=[],
-        justifications_validators=[],
+        historical_block_hashes=HistoricalBlockHashes(data=[]),
+        justified_slots=JustifiedSlots(data=[]),
+        justifications_roots=JustificationRoots(data=[]),
+        justifications_validators=JustificationValidators(data=[]),
     )
 
 
@@ -416,10 +422,10 @@ class TestValidatorIntegration:
             ),
             latest_justified=checkpoint,
             latest_finalized=checkpoint,
-            historical_block_hashes=[],
-            justified_slots=[],
-            justifications_roots=[],
-            justifications_validators=[],
+            historical_block_hashes=HistoricalBlockHashes(data=[]),
+            justified_slots=JustifiedSlots(data=[]),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
         )
 
         # Compute consistent state root

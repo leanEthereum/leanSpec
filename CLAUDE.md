@@ -100,3 +100,38 @@ uv run tox
 2. All models should use Pydantic for automatic validation.
 3. Keep things simple, readable, and clear. These are meant to be clear specifications.
 4. The repository is `leanSpec` not `lean-spec`.
+
+## SSZ Type Design Patterns
+
+When creating SSZ types, follow these established patterns:
+
+### Domain-Specific Types (Preferred)
+- Use meaningful names that describe the purpose: `JustificationValidators`, `HistoricalBlockHashes`, `Attestations`
+- Define domain-specific types close to where they're used (e.g., in `state.py` for state-specific types)
+- Avoid generic names with numbers like `Bitlist68719476736` or `SignedVoteList4096`
+
+### Type Inheritance Strategy
+- **Primitive types** (uint, boolean, bytes): Use IS-A pattern (direct inheritance)
+- **Collection types** (lists, vectors, bitfields): Use HAS-A pattern with SSZModel/Container base classes
+- All SSZ types should have proper serialization (`encode_bytes`, `decode_bytes`, `serialize`, `deserialize`)
+
+### Examples
+
+**Good domain-specific types:**
+```python
+class JustificationValidators(BitlistBase):
+    """Bitlist for tracking validator justifications."""
+    LIMIT = 262144 * 262144  # For flattened validator justifications
+
+class Attestations(SSZList):
+    """List of signed votes (attestations) included in a block."""
+    ELEMENT_TYPE = SignedVote
+    LIMIT = 4096  # VALIDATOR_REGISTRY_LIMIT
+```
+
+**Avoid generic types:**
+```python
+# Don't do this:
+class Bitlist68719476736(BitlistBase): ...
+class SignedVoteList4096(SSZList): ...
+```

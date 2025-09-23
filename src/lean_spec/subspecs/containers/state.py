@@ -16,21 +16,28 @@ from lean_spec.types import (
     ValidatorIndex,
     is_proposer,
 )
-from lean_spec.types.bitfields import Bitlist262144, Bitlist68719476736
+from lean_spec.types.bitfields import BitlistBase
 
-from .block import Block, BlockBody, BlockHeader, SignedBlock, SignedVoteList4096
+from .block import Attestations, Block, BlockBody, BlockHeader, SignedBlock
 from .checkpoint import Checkpoint
 from .config import Config
 from .slot import Slot
 from .vote import SignedVote, Vote
 
 
-# Concrete SSZList classes for State container
-class Bytes32List262144(SSZList):
-    """List of Bytes32 with limit 262144 (historical_roots_limit)."""
+# Domain-specific collection types
+class HistoricalBlockHashes(SSZList):
+    """List of historical block root hashes up to historical_roots_limit."""
 
     ELEMENT_TYPE = Bytes32
-    LIMIT = 262144
+    LIMIT = 262144  # historical_roots_limit
+
+
+class JustificationRoots(SSZList):
+    """List of justified block roots up to historical_roots_limit."""
+
+    ELEMENT_TYPE = Bytes32
+    LIMIT = 262144  # historical_roots_limit
 
 
 class BooleanList262144Squared(SSZList):
@@ -38,6 +45,19 @@ class BooleanList262144Squared(SSZList):
 
     ELEMENT_TYPE = Boolean
     LIMIT = 262144 * 262144
+
+
+# Domain-specific bitfield types
+class JustifiedSlots(BitlistBase):
+    """Bitlist tracking justified slots up to historical roots limit."""
+
+    LIMIT = 262144  # historical_roots_limit
+
+
+class JustificationValidators(BitlistBase):
+    """Bitlist for tracking validator justifications (262144^2 limit)."""
+
+    LIMIT = 262144 * 262144  # For flattened validator justifications
 
 
 class State(Container):
@@ -62,17 +82,17 @@ class State(Container):
     """The latest finalized checkpoint."""
 
     # Historical data
-    historical_block_hashes: Bytes32List262144
+    historical_block_hashes: HistoricalBlockHashes
     """A list of historical block root hashes."""
 
-    justified_slots: Bitlist262144
+    justified_slots: JustifiedSlots
     """A bitfield indicating which historical slots were justified."""
 
     # Justification tracking (flattened for SSZ compatibility)
-    justifications_roots: Bytes32List262144
+    justifications_roots: JustificationRoots
     """Roots of justified blocks."""
 
-    justifications_validators: Bitlist68719476736
+    justifications_validators: JustificationValidators
     """A bitlist of validators who participated in justifications."""
 
     @classmethod
@@ -100,7 +120,7 @@ class State(Container):
             proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=SignedVoteList4096(data=[]))),
+            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
         )
 
         # Assemble and return the full genesis state.
@@ -113,10 +133,10 @@ class State(Container):
             latest_block_header=genesis_header,
             latest_justified=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
             latest_finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
-            historical_block_hashes=Bytes32List262144(data=[]),
-            justified_slots=Bitlist262144(data=[]),
-            justifications_roots=Bytes32List262144(data=[]),
-            justifications_validators=Bitlist68719476736(data=[]),
+            historical_block_hashes=HistoricalBlockHashes(data=[]),
+            justified_slots=JustifiedSlots(data=[]),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
         )
 
     def is_proposer(self, validator_index: ValidatorIndex) -> bool:
@@ -209,7 +229,7 @@ class State(Container):
             votes_list.extend(votes)
 
         # Create immutable SSZList instances
-        new_roots = Bytes32List262144(data=roots_list)
+        new_roots = JustificationRoots(data=roots_list)
         flat_votes = BooleanList262144Squared(data=votes_list)
 
         # Return a new state object with the updated fields.
@@ -455,7 +475,7 @@ class State(Container):
 
     def process_attestations(
         self,
-        attestations: SignedVoteList4096,
+        attestations: Attestations,
     ) -> "State":
         """
         Apply attestation votes and update justification/finalization
