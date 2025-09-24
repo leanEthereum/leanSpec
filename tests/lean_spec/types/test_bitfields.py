@@ -22,7 +22,6 @@ class TestBitvector:
         class Bitvector16(BitvectorBase):
             LENGTH = 16
 
-        assert Bitvector8 is not Bitvector16  # type: ignore[comparison-overlap]
         assert Bitvector8.LENGTH == 8
         assert Bitvector16.LENGTH == 16
         assert "Bitvector8" in repr(Bitvector8)
@@ -111,7 +110,6 @@ class TestBitlist:
         class Bitlist16(BitlistBase):
             LIMIT = 16
 
-        assert Bitlist8 is not Bitlist16  # type: ignore[comparison-overlap]
         assert Bitlist8.LIMIT == 8
         assert Bitlist16.LIMIT == 16
         assert "Bitlist8" in repr(Bitlist8)

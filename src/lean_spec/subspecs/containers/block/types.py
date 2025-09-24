@@ -2,12 +2,12 @@
 
 from lean_spec.types import SSZList
 
+from ...chain.config import VALIDATOR_REGISTRY_LIMIT
 from ..vote import SignedVote
 
 
-# Domain-specific list type for BlockBody
 class Attestations(SSZList):
     """List of signed votes (attestations) included in a block."""
 
     ELEMENT_TYPE = SignedVote
-    LIMIT = 4096  # VALIDATOR_REGISTRY_LIMIT
+    LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

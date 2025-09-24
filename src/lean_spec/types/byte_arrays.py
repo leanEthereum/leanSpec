@@ -183,9 +183,9 @@ class BaseBytes(bytes, SSZType):
         """Return the hash of the bytes."""
         return hash((type(self), bytes(self)))
 
-    def hex(self, sep: str | bytes = "", bytes_per_sep: SupportsIndex = 1) -> str:
+    def hex(self, sep: str | bytes | None = None, bytes_per_sep: SupportsIndex = 1) -> str:
         """Return the hexadecimal string representation of the underlying bytes."""
-        if sep == "":
+        if sep is None:
             return bytes(self).hex()
         return bytes(self).hex(sep, bytes_per_sep)
 
@@ -322,8 +322,6 @@ class ByteListBase(SSZModel):
 
     def __radd__(self, other: Any) -> bytes:
         """Return the concatenation of the argument and the byte list."""
-        if isinstance(other, (bytes, bytearray)):
-            return bytes(other) + self.data
         return bytes(other) + self.data
 
     def __repr__(self) -> str:

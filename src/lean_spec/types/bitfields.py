@@ -120,17 +120,8 @@ class BitvectorBase(SSZModel):
         if len(data) != expected_len:
             raise ValueError(f"{cls.__name__} expected {expected_len} bytes, got {len(data)}")
 
-        bits = []
-        for i in range(cls.LENGTH):
-            byte_index = i // 8
-            bit_index_in_byte = i % 8
-            if byte_index < len(data):
-                bit_value = bool((data[byte_index] >> bit_index_in_byte) & 1)
-            else:
-                bit_value = False
-            bits.append(bit_value)
-
-        return cls(data=tuple(bits))
+        bits_generator = (Boolean((data[i // 8] >> (i % 8)) & 1) for i in range(cls.LENGTH))
+        return cls(data=tuple(bits_generator))
 
 
 class BitlistBase(SSZModel):
@@ -180,10 +171,8 @@ class BitlistBase(SSZModel):
 
         return tuple(typed_values)
 
-    def __getitem__(self, key: int | slice) -> Boolean | list[Boolean]:
+    def __getitem__(self, key: int | slice) -> Boolean | tuple[Boolean, ...]:
         """Get a bit by index or slice."""
-        if isinstance(key, slice):
-            return [self.data[i] for i in range(*key.indices(len(self.data)))]
         return self.data[key]
 
     @classmethod

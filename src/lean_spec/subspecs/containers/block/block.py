@@ -63,4 +63,7 @@ class SignedBlock(Container):
     """The block being signed."""
 
     signature: Bytes32
-    """The proposer's signature over the block."""
+    """
+    The proposer's signature of the block message.
+    Note: Bytes32 is a placeholder; the actual signature is much larger.
+    """

@@ -261,10 +261,9 @@ class SSZList(SSZModel):
             if num_elements > cls.LIMIT:
                 raise ValueError(f"Too many elements: {num_elements} > {cls.LIMIT}")
 
-            elements = []
-            for _ in range(num_elements):
-                element = cls.ELEMENT_TYPE.deserialize(stream, element_size)
-                elements.append(element)
+            elements = [
+                cls.ELEMENT_TYPE.deserialize(stream, element_size) for _ in range(num_elements)
+            ]
 
             return cls(data=elements)
         else:
@@ -311,6 +310,3 @@ class SSZList(SSZModel):
         """Deserializes a byte string into an SSZList instance."""
         with io.BytesIO(data) as stream:
             return cls.deserialize(stream, len(data))
-
-
-# Old List factory pattern removed, replaced with SSZList

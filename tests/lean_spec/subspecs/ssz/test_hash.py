@@ -549,22 +549,10 @@ def test_hash_tree_root_list_uint256() -> None:
     assert hash_tree_root(test_list).hex() == expected
 
 
-# Define explicit ByteVector and ByteList types for testing.
-# Using existing Bytes48 class instead of custom ByteVector48
-# class ByteVector48(BaseBytes):
-#     """A fixed-size byte vector of exactly 48 bytes."""
-#     LENGTH = 48
-
-
 class ByteList10(ByteListBase):
     """A variable-size byte list with a maximum of 10 bytes."""
 
     LIMIT = 10
-
-    @classmethod
-    def get_byte_length(cls) -> int:
-        """ByteList is variable-size, so this raises a TypeError."""
-        raise TypeError(f"{cls.__name__} is variable-size")
 
 
 class ByteList7(ByteListBase):
@@ -572,21 +560,11 @@ class ByteList7(ByteListBase):
 
     LIMIT = 7
 
-    @classmethod
-    def get_byte_length(cls) -> int:
-        """ByteList is variable-size, so this raises a TypeError."""
-        raise TypeError(f"{cls.__name__} is variable-size")
-
 
 class ByteList50(ByteListBase):
     """A variable-size byte list with a maximum of 50 bytes."""
 
     LIMIT = 50
-
-    @classmethod
-    def get_byte_length(cls) -> int:
-        """ByteList is variable-size, so this raises a TypeError."""
-        raise TypeError(f"{cls.__name__} is variable-size")
 
 
 class ByteList256(ByteListBase):
@@ -594,24 +572,13 @@ class ByteList256(ByteListBase):
 
     LIMIT = 256
 
-    @classmethod
-    def get_byte_length(cls) -> int:
-        """ByteList is variable-size, so this raises a TypeError."""
-        raise TypeError(f"{cls.__name__} is variable-size")
-
 
 class ByteList2048(ByteListBase):
     """A variable-size byte list with a maximum of 2048 bytes."""
 
     LIMIT = 2048
 
-    @classmethod
-    def get_byte_length(cls) -> int:
-        """ByteList is variable-size, so this raises a TypeError."""
-        raise TypeError(f"{cls.__name__} is variable-size")
 
-
-# Define explicit Union types for testing.
 class UnionUint16(SSZType):
     """A union type that can hold Uint16."""
 
