@@ -13,9 +13,9 @@ from math import ceil
 from typing import Final, Type
 
 from lean_spec.subspecs.ssz.constants import BYTES_PER_CHUNK
-from lean_spec.types.bitfields import BitlistBase, BitvectorBase
+from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
-from lean_spec.types.byte_arrays import BaseBytes, ByteListBase, Bytes32
+from lean_spec.types.byte_arrays import BaseByteList, BaseBytes, Bytes32
 from lean_spec.types.collections import (
     SSZList,
     SSZVector,
@@ -84,7 +84,7 @@ def _htr_bytevector(value: BaseBytes) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_bytelist(value: ByteListBase) -> Bytes32:
+def _htr_bytelist(value: BaseByteList) -> Bytes32:
     data = value.encode_bytes()
     limit_chunks = ceil(type(value).LIMIT / BYTES_PER_CHUNK)
     root = Merkle.merkleize(Packer.pack_bytes(data), limit=limit_chunks)
@@ -92,7 +92,7 @@ def _htr_bytelist(value: ByteListBase) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_bitvector_base(value: BitvectorBase) -> Bytes32:
+def _htr_bitvector_base(value: BaseBitvector) -> Bytes32:
     nbits = type(value).LENGTH
     limit = (nbits + 255) // 256
     chunks = Packer.pack_bits(tuple(bool(b) for b in value.data))
@@ -100,7 +100,7 @@ def _htr_bitvector_base(value: BitvectorBase) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_bitlist_base(value: BitlistBase) -> Bytes32:
+def _htr_bitlist_base(value: BaseBitlist) -> Bytes32:
     limit = (type(value).LIMIT + 255) // 256
     chunks = Packer.pack_bits(tuple(bool(b) for b in value.data))
     root = Merkle.merkleize(chunks, limit=limit)

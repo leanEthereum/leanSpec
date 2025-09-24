@@ -2,8 +2,8 @@
 
 This module provides two SSZ (SimpleSerialize) collection types:
 
-- BitvectorBase: fixed-length, immutable sequence of booleans.
-- BitlistBase: variable-length, immutable sequence of booleans with max capacity.
+- BaseBitvector: fixed-length, immutable sequence of booleans.
+- BaseBitlist: variable-length, immutable sequence of booleans with max capacity.
 
 Both types support SSZ byte encoding/decoding:
 - Bitvector packs bits little-endian within each byte (bit 0 -> LSB).
@@ -11,8 +11,8 @@ Both types support SSZ byte encoding/decoding:
   immediately after the last data bit (may create a new byte).
 
 Concrete types inherit from the base classes and specify LENGTH or LIMIT:
-- class MyBitvector(BitvectorBase): LENGTH = 128
-- class MyBitlist(BitlistBase): LIMIT = 2048
+- class MyBitvector(BaseBitvector): LENGTH = 128
+- class MyBitlist(BaseBitlist): LIMIT = 2048
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from .boolean import Boolean
 from .ssz_base import SSZModel
 
 
-class BitvectorBase(SSZModel):
+class BaseBitvector(SSZModel):
     """
     Base class for fixed-length bit vectors using SSZModel pattern.
 
@@ -124,7 +124,7 @@ class BitvectorBase(SSZModel):
         return cls(data=tuple(bits_generator))
 
 
-class BitlistBase(SSZModel):
+class BaseBitlist(SSZModel):
     """
     Base class for variable-length bit lists using SSZModel pattern.
 

@@ -143,7 +143,7 @@ src/lean_spec/subspecs/containers/
 ```
 
 **Key principles:**
-- **Base types** (BitlistBase, SSZList, etc.) stay in general scope (`src/lean_spec/types/`)
+- **Base types** (BaseBitlist, SSZList, etc.) stay in general scope (`src/lean_spec/types/`)
 - **Spec-specific types** go in their respective modules (`state/types.py`, `block/types.py`)
 - **Public API** exposed through `__init__.py` files for backward compatibility
 - **Domain-specific types** defined close to where they're used
@@ -155,7 +155,7 @@ src/lean_spec/subspecs/containers/
 # In state/types.py
 HISTORICAL_ROOTS_LIMIT = 262144
 
-class JustificationValidators(BitlistBase):
+class JustificationValidators(BaseBitlist):
     """Bitlist for tracking validator justifications."""
     LIMIT = HISTORICAL_ROOTS_LIMIT * HISTORICAL_ROOTS_LIMIT
 
@@ -169,7 +169,7 @@ class Attestations(SSZList):
 **Avoid generic types:**
 ```python
 # Don't do this:
-class Bitlist68719476736(BitlistBase): ...
+class Bitlist68719476736(BaseBitlist): ...
 class SignedVoteList4096(SSZList): ...
 ```
 

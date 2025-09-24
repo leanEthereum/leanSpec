@@ -17,7 +17,7 @@ from lean_spec.types.byte_arrays import (
     Bytes48,
     Bytes96,
     BaseBytes,
-    ByteListBase,
+    BaseByteList,
 )
 
 
@@ -36,8 +36,8 @@ def test_bytes_inheritance_ok() -> None:
 
 
 def test_bytelist_inheritance_ok() -> None:
-    # Test that our concrete ByteList types properly inherit from ByteListBase
-    assert issubclass(ByteList64, ByteListBase)
+    # Test that our concrete ByteList types properly inherit from BaseByteList
+    assert issubclass(ByteList64, BaseByteList)
     assert ByteList64.LIMIT == 64
     v = ByteList64(data=b"\x01\x02")
     assert isinstance(v, ByteList64)
@@ -79,7 +79,7 @@ def test_bytevector_wrong_length_raises() -> None:
 )
 def test_bytelist_coercion(value: Any, expected: bytes) -> None:
     # Use a ByteList with limit 5 for testing
-    class ByteList5(ByteListBase):
+    class ByteList5(BaseByteList):
         LIMIT = 5
 
     v = ByteList5(data=value)
@@ -184,7 +184,7 @@ def test_vector_deserialize_scope_mismatch_raises() -> None:
 )
 def test_encode_decode_roundtrip_list(limit: int, data: bytes) -> None:
     # Create a test-specific ByteList class with the required limit
-    class TestByteList(ByteListBase):
+    class TestByteList(BaseByteList):
         LIMIT = limit
 
     x = TestByteList(data=data)
@@ -200,7 +200,7 @@ def test_encode_decode_roundtrip_list(limit: int, data: bytes) -> None:
 
 
 def test_list_deserialize_over_limit_raises() -> None:
-    class TestByteList2(ByteListBase):
+    class TestByteList2(BaseByteList):
         LIMIT = 2
 
     buf = io.BytesIO(b"\x00\x01\x02")
@@ -209,7 +209,7 @@ def test_list_deserialize_over_limit_raises() -> None:
 
 
 def test_list_deserialize_short_stream_raises() -> None:
-    class TestByteList10(ByteListBase):
+    class TestByteList10(BaseByteList):
         LIMIT = 10
 
     buf = io.BytesIO(b"\x00\x01")
@@ -223,7 +223,7 @@ class ModelVectors(BaseModel):
 
 
 # Create test ByteList16 for the ModelLists test
-class ByteList16(ByteListBase):
+class ByteList16(BaseByteList):
     LIMIT = 16
 
 
@@ -304,7 +304,7 @@ def test_sorted_bytes32_list_is_lexicographic_on_bytes() -> None:
 
 def test_json_like_dump_of_vectors_lists() -> None:
     # Create test ByteList5 for this test
-    class ByteList5(ByteListBase):
+    class ByteList5(BaseByteList):
         LIMIT = 5
 
     # Ensure users can dump simple object structures to JSON by pre-encoding to hex.
@@ -318,7 +318,7 @@ def test_json_like_dump_of_vectors_lists() -> None:
 
 
 def test_bytelist_hex_and_concat_behaviour_like_vector() -> None:
-    class ByteList8(ByteListBase):
+    class ByteList8(BaseByteList):
         LIMIT = 8
 
     x = ByteList8(data="0x00010203")

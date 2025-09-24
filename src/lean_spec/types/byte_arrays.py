@@ -226,7 +226,7 @@ class Bytes96(BaseBytes):
     LENGTH = 96
 
 
-class ByteListBase(SSZModel):
+class BaseByteList(SSZModel):
     """
     Base class for specialized `ByteList[L]`.
 
@@ -343,25 +343,25 @@ class ByteListBase(SSZModel):
 
 
 # Common ByteList types with explicit classes
-class ByteList64(ByteListBase):
+class ByteList64(BaseByteList):
     """Variable-length byte list with a limit of 64 bytes."""
 
     LIMIT = 64
 
 
-class ByteList256(ByteListBase):
+class ByteList256(BaseByteList):
     """Variable-length byte list with a limit of 256 bytes."""
 
     LIMIT = 256
 
 
-class ByteList1024(ByteListBase):
+class ByteList1024(BaseByteList):
     """Variable-length byte list with a limit of 1024 bytes."""
 
     LIMIT = 1024
 
 
-class ByteList2048(ByteListBase):
+class ByteList2048(BaseByteList):
     """Variable-length byte list with a limit of 2048 bytes."""
 
     LIMIT = 2048

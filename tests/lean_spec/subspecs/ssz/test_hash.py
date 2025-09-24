@@ -8,10 +8,10 @@ from typing import Any, Iterable, Tuple, Type
 import pytest
 
 from lean_spec.subspecs.ssz.hash import HashTreeRoot, hash_tree_root
-from lean_spec.types.bitfields import BitlistBase, BitvectorBase
+from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.byte import Byte
-from lean_spec.types.byte_arrays import BaseBytes, ByteListBase, Bytes48
+from lean_spec.types.byte_arrays import BaseByteList, BaseBytes, Bytes48
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.ssz_base import SSZType
@@ -372,7 +372,7 @@ def test_hash_tree_root_bitvector(
     """
 
     # Create the Bitvector instance.
-    class TestBitvector(BitvectorBase):
+    class TestBitvector(BaseBitvector):
         LENGTH = len(bits)
 
     bv = TestBitvector(data=bits)
@@ -408,7 +408,7 @@ def test_hash_tree_root_bitlist(
     """
 
     # Create the Bitlist instance.
-    class TestBitlist(BitlistBase):
+    class TestBitlist(BaseBitlist):
         LIMIT = limit
 
     bl = TestBitlist(data=bits)
@@ -424,7 +424,7 @@ def test_hash_tree_root_bitvector_512_all_ones() -> None:
     """
 
     # A 512-bit vector is 64 bytes, which is exactly two 32-byte chunks.
-    class Bitvector512(BitvectorBase):
+    class Bitvector512(BaseBitvector):
         LENGTH = 512
 
     bv = Bitvector512(data=(1,) * 512)
@@ -443,7 +443,7 @@ def test_hash_tree_root_bitlist_512_all_ones() -> None:
     """
 
     # Create a Bitlist of 512 bits.
-    class Bitlist512(BitlistBase):
+    class Bitlist512(BaseBitlist):
         LIMIT = 512
 
     bl = Bitlist512(data=(1,) * 512)
@@ -549,31 +549,31 @@ def test_hash_tree_root_list_uint256() -> None:
     assert hash_tree_root(test_list).hex() == expected
 
 
-class ByteList10(ByteListBase):
+class ByteList10(BaseByteList):
     """A variable-size byte list with a maximum of 10 bytes."""
 
     LIMIT = 10
 
 
-class ByteList7(ByteListBase):
+class ByteList7(BaseByteList):
     """A variable-size byte list with a maximum of 7 bytes."""
 
     LIMIT = 7
 
 
-class ByteList50(ByteListBase):
+class ByteList50(BaseByteList):
     """A variable-size byte list with a maximum of 50 bytes."""
 
     LIMIT = 50
 
 
-class ByteList256(ByteListBase):
+class ByteList256(BaseByteList):
     """A variable-size byte list with a maximum of 256 bytes."""
 
     LIMIT = 256
 
 
-class ByteList2048(ByteListBase):
+class ByteList2048(BaseByteList):
     """A variable-size byte list with a maximum of 2048 bytes."""
 
     LIMIT = 2048
