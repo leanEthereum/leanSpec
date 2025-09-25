@@ -84,7 +84,8 @@ class BlockHeader(Container):
 
 ```python
 class BlockBody(Container):
-    attestations: List[SignedVote, VALIDATOR_REGISTRY_LIMIT]
+    # all the signatures are aggregated now in a common field - the block signature
+    attestations: List[Vote, VALIDATOR_REGISTRY_LIMIT]
 ```
 
 Remark: `SignedVote` will be replaced by aggregated attestations.
@@ -94,7 +95,11 @@ Remark: `SignedVote` will be replaced by aggregated attestations.
 ```python
 class SignedBlock(Container):
     message: Block
-    signature: Vector[byte, 4000]
+    # aggregated signature for all of block's signatures, currently a naive list:
+    #  attestation signatures in the same sequence followed by proposer signature
+    #
+    # to be replaced by a single zk aggregated and verifiable signature in a future devnet
+    signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT + 1]
 ```
 
 ## `Vote`
