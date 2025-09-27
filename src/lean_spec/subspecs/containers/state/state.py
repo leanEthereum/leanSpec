@@ -2,7 +2,6 @@
 
 from typing import Any, Dict, List
 
-from lean_spec.subspecs.chain import DEVNET_CONFIG
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
@@ -149,7 +148,7 @@ class State(Container):
             return justifications
 
         # Compute the length of each validator vote slice.
-        validator_count = DEVNET_CONFIG.validator_registry_limit.as_int()
+        validator_count = self.config.num_validators.as_int()
 
         # Extract vote slices for each justified root.
         flat_votes = list(self.justifications_validators)
@@ -192,7 +191,7 @@ class State(Container):
         for root in sorted(justifications.keys()):
             votes = justifications[root]
             # Validate that the vote list has the expected length.
-            expected_len = DEVNET_CONFIG.validator_registry_limit.as_int()
+            expected_len = self.config.num_validators.as_int()
             if len(votes) != expected_len:
                 raise AssertionError(f"Vote list for root {root.hex()} has incorrect length")
 

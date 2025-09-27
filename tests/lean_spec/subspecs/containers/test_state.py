@@ -35,10 +35,10 @@ def sample_config() -> Config:
     Returns
     -------
     Config
-        A configuration with 10 validators and genesis_time set to 0.
+        A configuration with 4096 validators and genesis_time set to 0.
     """
     # Create and return a simple configuration used across tests.
-    return Config(num_validators=Uint64(10), genesis_time=Uint64(0))
+    return Config(num_validators=DEVNET_CONFIG.validator_registry_limit, genesis_time=Uint64(0))
 
 
 @pytest.fixture
@@ -230,7 +230,7 @@ def test_get_justifications_single_root(base_state: State) -> None:
     root1 = Bytes32(b"\x01" * 32)
 
     # Prepare a vote bitlist with required length; flip two positions to True.
-    votes1 = [Boolean(False)] * DEVNET_CONFIG.validator_registry_limit.as_int()
+    votes1 = [Boolean(False)] * base_state.config.num_validators.as_int()
     votes1[2] = Boolean(True)  # Validator 2 voted
     votes1[5] = Boolean(True)  # Validator 5 voted
 
@@ -265,18 +265,18 @@ def test_get_justifications_multiple_roots(base_state: State) -> None:
     root2 = Bytes32(b"\x02" * 32)
     root3 = Bytes32(b"\x03" * 32)
 
-    # Validator registry limit length for each vote slice.
-    limit = DEVNET_CONFIG.validator_registry_limit.as_int()
+    # Validator count for each vote slice.
+    count = base_state.config.num_validators.as_int()
 
     # Build per-root vote slices.
-    votes1 = [Boolean(False)] * limit
+    votes1 = [Boolean(False)] * count
     votes1[0] = Boolean(True)  # Only validator 0 in favor for root1
 
-    votes2 = [Boolean(False)] * limit
+    votes2 = [Boolean(False)] * count
     votes2[1] = Boolean(True)  # Validators 1 and 2 in favor for root2
     votes2[2] = Boolean(True)
 
-    votes3 = [Boolean(True)] * limit  # Unanimous in favor for root3
+    votes3 = [Boolean(True)] * count  # Unanimous in favor for root3
 
     # Create a state that encodes the three roots and the concatenated votes.
     state_with_data = base_state.model_copy(
@@ -322,7 +322,7 @@ def test_with_justifications_empty(
         justified_slots=JustifiedSlots(data=[]),
         justifications_roots=JustificationRoots(data=[Bytes32(b"\x01" * 32)]),
         justifications_validators=JustificationValidators(
-            data=[Boolean(True)] * DEVNET_CONFIG.validator_registry_limit.as_int()
+            data=[Boolean(True)] * sample_config.num_validators.as_int()
         ),
     )
 
@@ -353,9 +353,9 @@ def test_with_justifications_deterministic_order(base_state: State) -> None:
     root2 = Bytes32(b"\x02" * 32)
 
     # Build two vote slices of proper length.
-    limit = DEVNET_CONFIG.validator_registry_limit.as_int()
-    votes1 = [Boolean(False)] * limit
-    votes2 = [Boolean(True)] * limit
+    count = base_state.config.num_validators.as_int()
+    votes1 = [Boolean(False)] * count
+    votes2 = [Boolean(True)] * count
 
     # Intentionally supply the dict in unsorted key order.
     justifications = {root2: votes2, root1: votes1}
@@ -384,7 +384,7 @@ def test_with_justifications_invalid_length(base_state: State) -> None:
     root1 = Bytes32(b"\x01" * 32)
 
     # Construct an invalid votes bitlist: one short of required length.
-    invalid_votes = [Boolean(True)] * (DEVNET_CONFIG.validator_registry_limit - Uint64(1)).as_int()
+    invalid_votes = [Boolean(True)] * (base_state.config.num_validators - Uint64(1)).as_int()
     justifications = {root1: invalid_votes}
 
     # The method asserts on incorrect lengths.
