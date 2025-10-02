@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import IO, Any, ClassVar, Iterable, SupportsIndex
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_serializer, field_validator
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
 from typing_extensions import Self
@@ -170,7 +170,9 @@ class BaseBytes(bytes, SSZType):
                 # Case 2: The value needs to be parsed and validated.
                 python_schema,
             ],
-            serialization=core_schema.plain_serializer_function_ser_schema(lambda x: x.hex()),
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda x: "0x" + x.hex()
+            ),
         )
 
     def __repr__(self) -> str:
@@ -263,6 +265,11 @@ class BaseByteList(SSZModel):
         if len(b) > cls.LIMIT:
             raise ValueError(f"ByteList[{cls.LIMIT}] length {len(b)} exceeds limit {cls.LIMIT}")
         return b
+
+    @field_serializer("data", when_used="json")
+    def _serialize_data(self, value: bytes) -> str:
+        """Serialize bytes to 0x-prefixed hex string for JSON."""
+        return "0x" + value.hex()
 
     @classmethod
     def is_fixed_size(cls) -> bool:

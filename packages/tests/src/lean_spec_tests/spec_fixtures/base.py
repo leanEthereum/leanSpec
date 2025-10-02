@@ -1,0 +1,136 @@
+"""Base fixture definitions for consensus test formats."""
+
+import hashlib
+import json
+from typing import Any, ClassVar, Dict, Type
+
+from pydantic import ConfigDict, Field
+
+from lean_spec_tests.base_types import CamelModel
+
+
+class BaseConsensusFixture(CamelModel):
+    """
+    Base class for all consensus test fixtures.
+
+    Provides:
+    - Auto-registration of fixture formats
+    - JSON serialization with custom encoders
+    - Hash generation for fixtures
+    - Common metadata handling
+    """
+
+    # Class-level registry of all fixture formats
+    formats: ClassVar[Dict[str, Type["BaseConsensusFixture"]]] = {}
+
+    # Fixture format metadata
+    format_name: ClassVar[str] = ""
+    """The name of this fixture format (e.g., 'vote_processing_test')."""
+
+    description: ClassVar[str] = "Unknown fixture format"
+    """Human-readable description of what this fixture tests."""
+
+    # Instance fields
+    info: Dict[str, Any] = Field(default_factory=dict, alias="_info")
+    """Metadata about the test (description, fork, etc.)."""
+
+    # Configure Pydantic to use our custom serializer
+    model_config = ConfigDict(
+        **CamelModel.model_config,
+        ser_json_bytes="base64",
+    )
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        """
+        Auto-register fixture formats when subclasses are defined.
+
+        This hook is called automatically when a new subclass is created.
+        If the subclass defines a `format_name`, it will be registered in
+        the `formats` dictionary for later lookup.
+        """
+        super().__pydantic_init_subclass__(**kwargs)
+        if cls.format_name:
+            BaseConsensusFixture.formats[cls.format_name] = cls
+
+    @property
+    def json_dict(self) -> Dict[str, Any]:
+        """
+        Return the JSON representation of the fixture.
+
+        Excludes the `info` field and converts snake_case to camelCase.
+        """
+        return self.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=True,
+            exclude={"info"},
+        )
+
+    @property
+    def hash(self) -> str:
+        """
+        Generate a deterministic hash for this fixture.
+
+        The hash is computed from the JSON representation to ensure
+        consistency across runs.
+        """
+        json_str = json.dumps(
+            self.json_dict,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=CamelModel.json_encoder,
+        )
+        h = hashlib.sha256(json_str.encode("utf-8")).hexdigest()
+        return f"0x{h}"
+
+    def json_dict_with_info(self, hash_only: bool = False) -> Dict[str, Any]:
+        """
+        Return JSON representation with the info field included.
+
+        Args:
+            hash_only: If True, only include the hash in _info.
+
+        Returns:
+            Dictionary ready for JSON serialization.
+        """
+        dict_with_info = self.json_dict.copy()
+        dict_with_info["_info"] = {"hash": self.hash}
+        if not hash_only:
+            dict_with_info["_info"].update(self.info)
+        return dict_with_info
+
+    def fill_info(
+        self,
+        test_id: str,
+        fork: str,
+        description: str,
+    ) -> None:
+        """
+        Fill metadata information for this fixture.
+
+        Args:
+            test_id: Unique identifier for the test case.
+            fork: The fork this test is valid for (e.g., "devnet").
+            description: Human-readable description of the test.
+        """
+        self.info["test-id"] = test_id
+        self.info["fork"] = fork
+        self.info["description"] = description
+        self.info["fixture-format"] = self.format_name
+
+    @classmethod
+    def supports_fork(cls, fork: str) -> bool:
+        """
+        Check if this fixture format supports the given fork.
+
+        By default, all fixtures support all forks. Override in subclasses
+        to restrict to specific forks.
+
+        Args:
+            fork: The fork name (e.g., "devnet").
+
+        Returns:
+            True if the fixture supports this fork.
+        """
+        return True

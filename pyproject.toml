@@ -89,6 +89,8 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-branch",
+    # Exclude fixture generation tests from regular test runs
+    "--ignore=tests/spec_tests",
 ]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
@@ -100,6 +102,15 @@ branch = true
 number = true
 wrap = 80
 
+[tool.uv]
+required-version = ">=0.7.0"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+lean-spec-tests = { workspace = true }
+
 [dependency-groups]
 dev = [
     # debugging / convenience
@@ -110,6 +121,7 @@ dev = [
     "build>=1.2.0,<2",
     "twine>=5.1.0,<6",
     # test dependencies
+    "lean-spec-tests",
     "pytest>=8.3.3,<9",
     "pytest-cov>=6.0.0,<7",
     "pytest-xdist>=3.6.1,<4",
