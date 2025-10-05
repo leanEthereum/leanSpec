@@ -70,6 +70,7 @@ class GossipsubParameters(StrictBaseModel):
     implementations, this mode is also known as Anonymous mode.
     """
 
+
 MessageId = Annotated[bytes, Field(min_length=20, max_length=20)]
 """A 20-byte ID for gossipsub messages."""
 
