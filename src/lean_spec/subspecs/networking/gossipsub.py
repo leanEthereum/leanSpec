@@ -63,6 +63,12 @@ class GossipsubParameters(StrictBaseModel):
     This is calculated as SECONDS_PER_SLOT * JUSTIFICATION_LOOKBACK_SLOTS * 2.
     """
 
+    validation_mode: str = "strict_no_sign"
+    """The message validation mode. `strict_no_sign` requires the author,
+    sequence number and signature fields of a message to be empty. Any message
+    that contains these fields is considered invalid. In some libp2p
+    implementations, this mode is also known as Anonymous mode.
+    """
 
 MessageId = Annotated[bytes, Field(min_length=20, max_length=20)]
 """A 20-byte ID for gossipsub messages."""

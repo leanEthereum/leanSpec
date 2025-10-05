@@ -99,9 +99,11 @@ data being sent on the topic and how the data field of the message is encoded.
   bytes that will be transmitted over the wire. See the [Encodings](#Encodings)
   section for further details.
 
-The optional `from` (1), `seqno` (3), `signature` (5) and `key` (6) protobuf
+The `from` (1), `seqno` (3), `signature` (5) and `key` (6) protobuf
 fields are omitted from the message, since messages are identified by content,
-anonymous, and signed where necessary in the application layer.
+anonymous, and signed where necessary in the application layer. Clients MUST
+enforce this by applying the `StrictNoSign` signature policy (aka `Anonymous`
+in some implementations).
 
 The `message-id` MUST be the following 20 byte value computed from the message:
 
