@@ -1,7 +1,7 @@
 """State-specific SSZ types for the Lean Ethereum consensus specification."""
 
 from lean_spec.subspecs.chain.config import DEVNET_CONFIG
-from lean_spec.types import Bytes32, SSZList
+from lean_spec.types import Bytes32, SSZList, Validator
 from lean_spec.types.bitfields import BaseBitlist
 
 
@@ -32,3 +32,9 @@ class JustificationValidators(BaseBitlist):
         DEVNET_CONFIG.historical_roots_limit.as_int()
         * DEVNET_CONFIG.validator_registry_limit.as_int()
     )
+
+class Validators(SSZList):
+    """List of validators up to validator registry limit."""
+
+    ELEMENT_TYPE = Validator
+    LIMIT = DEVNET_CONFIG.validator_registry_limit.as_int()

@@ -3,6 +3,7 @@
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
+from lean_spec.subspecs.xmss.containers import Signature
 
 from .checkpoint import Checkpoint
 
@@ -32,9 +33,5 @@ class SignedVote(Container):
     data: Vote
     """The vote data."""
 
-    signature: Bytes32
-    """
-    The signature of the vote data.
-
-    Note: Bytes32 is a placeholder; the actual signature is much larger.
-    """
+    signature: Signature
+    """The signature of the vote data."""

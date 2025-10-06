@@ -24,6 +24,7 @@ from .types import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    Validators,
 )
 
 
@@ -37,6 +38,9 @@ class State(Container):
     # Slot and block tracking
     slot: Slot
     """The current slot number."""
+
+    validators: Validators
+    """The list of validators."""
 
     latest_block_header: BlockHeader
     """The header of the most recent block."""

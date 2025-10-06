@@ -3,6 +3,7 @@
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
+from lean_spec.subspecs.xmss.containers import Signature
 
 from .types import Attestations
 
@@ -62,8 +63,7 @@ class SignedBlock(Container):
     message: Block
     """The block being signed."""
 
-    signature: Bytes32
+    signature: Signature
     """
     The proposer's signature of the block message.
-    Note: Bytes32 is a placeholder; the actual signature is much larger.
     """
