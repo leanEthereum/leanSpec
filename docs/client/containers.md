@@ -127,7 +127,7 @@ class ValidatorAttestation(Container):
     message: AttestationData
 ```
 
-## `SignedAttestation`
+## `SignedValidatorAttestation`
 
 ```python
 class SignedValidatorAttestation(Container):
@@ -150,7 +150,9 @@ class Attestation(Container):
 
 #### `SignedAttestation`
 
-Aggregated votes exactly as `Attestation` but also with the aggregated signatures. This is also not currently used in devnets.
+Aggregated votes exactly as `Attestation` but also with the aggregated signatures. Since there is no specialized role envisioned as of now for aggregation (vs that of beacon protocol), this structure is much simpler.
+
+This is also not currently used in devnets.
 
 ```python
 class SignedAttestation(Container):
