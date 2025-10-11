@@ -91,7 +91,7 @@ class BlockBody(Container):
     proposer_attestation: AttestationData
 ```
 
-Remark: `Vote` will be replaced by aggregated attestations.
+Remark: `ValidatorAttestation` will be replaced by aggregated `Attestation` in future devnets.
 
 ## `SignedBlock`
 
