@@ -88,7 +88,7 @@ class BlockBody(Container):
     attestations: List[ValidatorAttestation, VALIDATOR_REGISTRY_LIMIT]
     # keeping proposer vote separate as attestation would be an aggregated packed
     # structures and standalone vote would waste aggregation bits
-    proposer_attestation: AttestationData
+    proposer_vote: AttestationData
 ```
 
 Remark: `ValidatorAttestation` will be replaced by aggregated `Attestation` in future devnets.
@@ -100,10 +100,13 @@ class SignedBlock(Container):
     message: Block
     # aggregated signature for all of block's signatures, currently a naive list:
     #   attestation signatures in the same sequence followed by proposer signature
-    #
     # to be replaced by a single zk aggregated and verifiable signature in a future devnet
-    # Note that signature list max is still validator registry limit because of proposer
-    # attestation has not separate signature
+    #
+    # Note that
+    #  i)signature list max is still validator registry limit because of proposer
+    #    attestation has no separate signature.
+    # ii)also note that current proposer signature is just its SignedValidatorAttestation
+    #   till we can actually consume a block aggregated signature for packing votes
     signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
 ```
 

@@ -113,8 +113,8 @@ class Store(object):
     latest_finalized: Checkpoint
     blocks: Dict[Root, Block] = field(default_factory=dict)
     states: Dict[Root, State] = field(default_factory=dict)
-    latest_known_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
-    latest_new_votes: Dict[ValidatorIndex, Checkpoint] = field(default_factory=dict)
+    latest_known_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = field(default_factory=dict)
+    latest_new_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = field(default_factory=dict)
 ```
 
 #### `get_forkchoice_store`
@@ -279,45 +279,46 @@ def on_tick(store: Store, time: int, has_proposal: bool) -> None:
 #### `on_attestation`
 
 ```python
-def on_attestation(store: Store, signed_vote: SignedVote, is_from_block: bool = False) -> None:
+def on_attestation(store: Store, vote: SignedValidatorAttestation, is_from_block: bool = False) -> None:
     """
     Validates and processes a new attestation (a signed vote), updating the store's
     latest votes.
     """
-    validate_on_attestation(store, signed_vote)
+    validate_on_attestation(store, vote)
 
-    validator_id = signed_vote.validator_id
-    vote = signed_vote.message
+    validator_id = vote.validator_id
 
     if is_from_block:
         # update latest known votes if this is latest
         latest_vote = store.latest_known_votes.get(validator_id)
-        if latest_vote is None or latest_vote.slot < vote.slot:
+        if latest_vote is None or latest_vote.message.slot < vote.message.slot:
             store.latest_known_votes[validator_id] = vote
 
         # clear from new votes if this is latest
         latest_vote = store.latest_new_votes.get(validator_id)
-        if latest_vote is not None and latest_vote.slot < vote.slot:
+        if latest_vote is not None and latest_vote.message.slot < vote.message.slot:
             del store.latest_new_votes[validator_id]
     else:
         # forkchoice should be correctly ticked to current time before
         # importing gossiped attestations
         time_slots = store.time // SECONDS_PER_INTERVAL
-        assert vote.slot <= time_slots
+        assert vote.message.slot <= time_slots
 
         # update latest new votes if this is the latest
         latest_vote = store.latest_new_votes.get(validator_id)
-        if latest_vote is None or latest_vote.slot < vote.slot:
+        if latest_vote is None or latest_vote.message.slot < vote.message.slot:
             store.latest_new_votes[validator_id] = vote
 ```
 
 #### `on_block`
 
 ```python
-def on_block(store: Store, block: Block) -> None:
+def on_block(store: Store, signed_block: SignedBlock) -> None:
     """
     Processes a new block, updates the store, and triggers a head update.
     """
+    block = signed_block.message
+    signatures = signed_block.signature
     block_hash = compute_hash(block)
     # If the block is already known, ignore it
     if block_hash in store.blocks:
@@ -328,15 +329,35 @@ def on_block(store: Store, block: Block) -> None:
     # sync parent chain if not available before adding block to forkchoice
     assert parent_state is not None, "Parent state not found, sync parent chain first"
 
+    valid_signatures = validate_signatures(block.signature)
     # Get post state from STF (State Transition Function)
-    state = process_block(copy.deepcopy(parent_state), block)
+    state = state_transition(copy.deepcopy(parent_state), block.message, valid_signatures, True)
     store.blocks[block_hash] = block
     store.states[block_hash] = state
 
     # add block votes to the onchain known last votes
-    for signed_vote in block.body.attestations:
+    for i in [0..block.body.attestations.len]:
+        validator_attestation = block.body.attestations[i]
+        signed_attestation = SignedValidatorAttestation(
+            validator_id=validator_attestation.validator_id,
+            message=validator_attestation.data,
+            # eventually one would be able to associate and consume an aggregated signature
+            # for individual vote validity with that information encoded in the signature
+            signature=signatures[i]
+        )
+
         # Add block votes to the onchain known last votes
-        on_attestation(store, signed_vote, True)
+        on_attestation(store, validator_attestation, True)
+    # also add the proposer vote to onchain known last votes
+    proposer_attestation=SignedValidatorAttestation(
+        validator_id=block.proposer_index,
+        message=block.body.proposer_vote,
+        # currently proposer signature is only its vote signature till we can consume
+        # aggregated signature type for purposes of validating and further packing the
+        # signed vote in future blocks if required
+        signature=signatures[signatures.len-1]
+    )
+    on_attestation(store, proposer_attestation)
 
     update_head(store)
 ```
