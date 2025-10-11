@@ -84,11 +84,14 @@ class BlockHeader(Container):
 
 ```python
 class BlockBody(Container):
-    # all the signatures are aggregated now in a common field - the block signature
-    attestations: List[Vote, VALIDATOR_REGISTRY_LIMIT]
+    # all the signatures are aggregated now in a common field - the block signatures
+    attestations: List[ValidatorAttestation, VALIDATOR_REGISTRY_LIMIT]
+    # keeping proposer vote separate as attestation would be an aggregated packed
+    # structures and standalone vote would waste aggregation bits
+    proposer_attestation: AttestationData
 ```
 
-Remark: `SignedVote` will be replaced by aggregated attestations.
+Remark: `Vote` will be replaced by aggregated attestations.
 
 ## `SignedBlock`
 
@@ -96,44 +99,67 @@ Remark: `SignedVote` will be replaced by aggregated attestations.
 class SignedBlock(Container):
     message: Block
     # aggregated signature for all of block's signatures, currently a naive list:
-    #  attestation signatures in the same sequence followed by proposer signature
+    #   attestation signatures in the same sequence followed by proposer signature
     #
     # to be replaced by a single zk aggregated and verifiable signature in a future devnet
-    signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT + 1]
+    # Note that signature list max is still validator registry limit because of proposer
+    # attestation has not separate signature
+    signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
 ```
 
-## `Vote`
+## `AttestationData`
 
 Vote is the attestation data that can be aggregated. Although note there is no aggregation yet in `devnet0`.
 
 ```python
-class Vote(Container):
+class AttestationData(Container):
     slot: uint64
     head: Checkpoint
     target: Checkpoint
     source: Checkpoint
 ```
 
-## `SignedVote`
+## `Attestation`
 
 ```python
-class SignedVote(Container):
+class ValidatorAttestation(Container):
     validator_id: uint64
-    message: Vote
+    message: AttestationData
+```
+
+## `SignedAttestation`
+
+```python
+class SignedValidatorAttestation(Container):
+    validator_id: uint64
+    message: AttestationData
     # signature over vote message only as it would be aggregated later in attestation
     signature: Vector[byte, 4000]
 ```
 
-#### `Attestation`
 
-The votes are aggregated in `Attestation` similar to beacon protocol but without complication of committees. This is currently not used in `devnet0`.
+## `Attestation`
+
+The votes are aggregated in `Attestation` similar to beacon protocol but without complication of committees. This is currently not used in devnets.
 
 ```python
 class Attestation(Container):
     aggregation_bits: Bitlist[VALIDATOR_REGISTRY_LIMIT]
-    message: Vote
-    # this is an aggregated zk proof and is not a fix size signature
-    signature: List[byte, 4000]
+    message: AttestationData
+```
+
+#### `SignedAttestation`
+
+Aggregated votes exactly as `Attestation` but also with the aggregated signatures. This is also not currently used in devnets.
+
+```python
+class SignedAttestation(Container):
+    aggregation_bits: Bitlist[VALIDATOR_REGISTRY_LIMIT]
+    message: AttestationData
+    # aggregated signature for all of validator's signatures, currently a naive list:
+    #
+    # to be replaced by a single zk aggregated and verifiable signature in a future devnet
+    signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
 ```
 
 ## Remarks
