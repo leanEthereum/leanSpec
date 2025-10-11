@@ -150,7 +150,7 @@ class Attestation(Container):
 
 #### `SignedAttestation`
 
-Aggregated votes exactly as `Attestation` but also with the aggregated signatures. Since there is no specialized role envisioned as of now for aggregation (vs that of beacon protocol), this structure is much simpler.
+Aggregated votes exactly as `Attestation` but also with the aggregated signature. Since there is no specialized role envisioned as of now for aggregation (vs that of beacon protocol), this structure is much simpler.
 
 This is also not currently used in devnets.
 
