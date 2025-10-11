@@ -331,7 +331,7 @@ def on_block(store: Store, signed_block: SignedBlock) -> None:
 
     valid_signatures = validate_signatures(block.signature)
     # Get post state from STF (State Transition Function)
-    state = state_transition(copy.deepcopy(parent_state), block.message, valid_signatures, True)
+    state = state_transition(copy.deepcopy(parent_state), block, valid_signatures, True)
     store.blocks[block_hash] = block
     store.states[block_hash] = state
 
