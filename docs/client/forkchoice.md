@@ -346,16 +346,22 @@ def on_block(store: Store, signed_block: SignedBlock) -> None:
         )
 
         # Add block votes to the onchain known last votes
-        on_attestation(store, validator_attestation, True)
-    # also add the proposer vote to onchain known last votes
-    proposer_attestation=SignedValidatorAttestation(
-        message=block.body.proposer_attestation,
-        # currently proposer signature is only its vote signature till we can consume
-        # aggregated signature type for purposes of validating and further packing the
-        # signed vote in future blocks if required
+        on_attestation(store, signed_attestation, True)
+    update_head(store)
+
+    # the proposer vote for the current slot and block as head is to be
+    # treated as the vote is independently casted in the second interval
+    proposer_attestation = ValidatorAttestation(
+        slot=block.slot,
+        head=Checkpoint(root=block_hash,slot=block.slot),
+        source=block.body.proposer_attestation.source,
+        target=block.body.proposer_attestation.target,
+    )
+    signed_proposer_attestation=SignedValidatorAttestation(
+        message=proposer_attestation,
         signature=signatures[signatures.len-1]
     )
-    on_attestation(store, proposer_attestation)
-
-    update_head(store)
+    # note that we pass False here to make sure this gets added to the new votes
+    # so that this doesn't influence this node's validators upcoming votes
+    on_attestation(store, signed_proposer_attestation, False)
 ```

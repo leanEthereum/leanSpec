@@ -89,7 +89,7 @@ class BlockBody(Container):
     # keeping proposer vote separate as attestation would be an aggregated packed
     # structures and adding standalone proposer vote as an separate attestation in
     # attestations would waste aggregation bits
-    proposer_attestation: ValidatorAttestation
+    proposer_attestation: ProposerAttestationData
 ```
 
 Remark: `ValidatorAttestation` will be replaced by aggregated `Attestation` in future devnets.
@@ -106,7 +106,8 @@ class SignedBlock(Container):
     # Note that
     #  i)signature list max is still validator registry limit because of proposer
     #    attestation has no separate signature.
-    # ii)also note that current proposer signature is just its SignedValidatorAttestation
+    # ii)also note that current proposer signature is just the proposer signature over
+    #    ValidatorAttestation created from its ProposerAttestationData.
     #   till we can actually consume a block signature for re-packing this block's
     #   proposer vote by some other future proposer
     signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
@@ -124,7 +125,17 @@ class AttestationData(Container):
     source: Checkpoint
 ```
 
-## `Attestation`
+## `ProposerAttestationData`
+
+Record the vote of the proposer for the target and source. Head and slot for this attestation is to be auto inferred as the block proposer minted as otherwise this would create a circular dependancy for head.
+
+```python
+class ProposerAttestationData(Container):
+    target: Checkpoint
+    source: Checkpoint
+```
+
+## `ValidatorAttestation`
 
 ```python
 class ValidatorAttestation(Container):
