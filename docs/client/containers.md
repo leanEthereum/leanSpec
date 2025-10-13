@@ -87,8 +87,9 @@ class BlockBody(Container):
     # all the signatures are aggregated now in a common field - the block signatures
     attestations: List[ValidatorAttestation, VALIDATOR_REGISTRY_LIMIT]
     # keeping proposer vote separate as attestation would be an aggregated packed
-    # structures and standalone vote would waste aggregation bits
-    proposer_vote: AttestationData
+    # structures and adding standalone proposer vote as an separate attestation in
+    # attestations would waste aggregation bits
+    proposer_attestation: ValidatorAttestation
 ```
 
 Remark: `ValidatorAttestation` will be replaced by aggregated `Attestation` in future devnets.
@@ -106,7 +107,8 @@ class SignedBlock(Container):
     #  i)signature list max is still validator registry limit because of proposer
     #    attestation has no separate signature.
     # ii)also note that current proposer signature is just its SignedValidatorAttestation
-    #   till we can actually consume a block aggregated signature for packing votes
+    #   till we can actually consume a block signature for re-packing this block's
+    #   proposer vote by some other future proposer
     signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
 ```
 
@@ -127,16 +129,16 @@ class AttestationData(Container):
 ```python
 class ValidatorAttestation(Container):
     validator_id: uint64
-    message: AttestationData
+    data: AttestationData
 ```
 
 ## `SignedValidatorAttestation`
 
 ```python
 class SignedValidatorAttestation(Container):
-    validator_id: uint64
-    message: AttestationData
-    # signature over vote message only as it would be aggregated later in attestation
+    message: ValidatorAttestation
+    # unlike BLS, signatures over differing ValidatorAttestation with same 
+    # AttestationData can be aggregated by lean signature VM
     signature: Vector[byte, 4000]
 ```
 
@@ -159,15 +161,11 @@ This is also not currently used in devnets.
 
 ```python
 class SignedAttestation(Container):
-    aggregation_bits: Bitlist[VALIDATOR_REGISTRY_LIMIT]
-    message: AttestationData
+    message: Attestation
     # aggregated signature for all of validator's signatures, currently a naive list:
     #
     # to be replaced by a single zk aggregated and verifiable signature in a future devnet
+    # unlike BLS, signatures over differing Attestation and ValidatorAttestation with same
+    # AttestationData can still be recursively aggregated by lean signature VM
     signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
 ```
-
-## Remarks
-
-- The signature type is still to be determined so `Bytes32` is used in the
-  interim. The actual signature size is expected to be a lot larger (~3 KiB).

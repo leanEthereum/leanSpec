@@ -339,8 +339,7 @@ def on_block(store: Store, signed_block: SignedBlock) -> None:
     for i in [0..block.body.attestations.len]:
         validator_attestation = block.body.attestations[i]
         signed_attestation = SignedValidatorAttestation(
-            validator_id=validator_attestation.validator_id,
-            message=validator_attestation.data,
+            message=validator_attestation,
             # eventually one would be able to associate and consume an aggregated signature
             # for individual vote validity with that information encoded in the signature
             signature=signatures[i]
@@ -350,8 +349,7 @@ def on_block(store: Store, signed_block: SignedBlock) -> None:
         on_attestation(store, validator_attestation, True)
     # also add the proposer vote to onchain known last votes
     proposer_attestation=SignedValidatorAttestation(
-        validator_id=block.proposer_index,
-        message=block.body.proposer_vote,
+        message=block.body.proposer_attestation,
         # currently proposer signature is only its vote signature till we can consume
         # aggregated signature type for purposes of validating and further packing the
         # signed vote in future blocks if required

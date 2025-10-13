@@ -230,6 +230,8 @@ def process_block_header(state: State, block: Block) -> None:
     assert block.slot > state.latest_block_header.slot
     # Verify that proposer index is the correct index
     assert block.proposer_index == block.slot % state.config.num_validators
+    # Verify proposer_attestation's validator_id matches the block proposer
+    assert block.body.proposer_attestation.validator_id == block.proposer_index
     # Verify that the parent matches
     assert block.parent_root == hash_tree_root(state.latest_block_header)
 
@@ -269,8 +271,8 @@ def process_block_header(state: State, block: Block) -> None:
 
 ```python
 def process_operations(state: State, body: BlockBody) -> None:
-    # process attestations
-    process_attestations(state, body.attestations)
+    attestations=[*body.attestations, body.proposer_attestation]
+    process_attestations(state, attestations)
     # other operations will get added as the functionality evolves
 ```
 
