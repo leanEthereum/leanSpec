@@ -77,7 +77,7 @@ def produce_block(store: Store, slot: Slot) -> Block:
 
 ## Attesting
 
-The attestation process consists of validator casting their votes and their subsequent aggregation.
+The attestation process consists of validator casting their votes and their subsequent aggregation. However the slot's proposer vote is not casted independently but with the block proposer.
 
 ### Validator Voting
 
@@ -96,7 +96,7 @@ def produce_attestation_vote(store: Store, slot: Slot) -> Vote:
     :param slot: The slot for which the attestation is being made.
     :return: A fully constructed Vote object.
     """
-    head = get_proposal_head(store, slot)
+    head = store.head
     target = get_vote_target(store)
 
     return Vote(
