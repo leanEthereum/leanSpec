@@ -480,7 +480,7 @@ class Store(Container):
         next justified checkpoint.
 
         The algorithm:
-        1. Get the current head block for proposal
+        1. Get the current head
         2. Calculate the appropriate vote target using current forkchoice state
         3. Use the store's latest justified checkpoint as the vote source
         4. Construct and return the complete Vote object
@@ -493,7 +493,7 @@ class Store(Container):
             A fully constructed Vote object ready for signing and broadcast.
         """
         # Get the head block the validator sees for this slot
-        head_root = self.get_proposal_head(slot)
+        head_root = self.head
         head_checkpoint = Checkpoint(
             root=head_root,
             slot=self.blocks[head_root].slot,
