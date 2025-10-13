@@ -38,6 +38,14 @@ class Checkpoint(Container):
     slot: uint64
 ```
 
+## `Validator`
+
+```python
+class Validator(Container):
+    # XMSS OTS pub key
+    pubkey: Bytes52
+```
+
 ## `State`
 
 ```python
@@ -51,6 +59,8 @@ class State(Container):
 
     historical_block_hashes: List[Bytes32, HISTORICAL_ROOTS_LIMIT]
     justified_slots: List[bool, HISTORICAL_ROOTS_LIMIT]
+
+    validators: List[Validator, VALIDATOR_REGISTRY_LIMIT]
 
     # Diverged from 3SF-mini.py:
     # Flattened `justifications: Dict[str, List[bool]]` for SSZ compatibility
