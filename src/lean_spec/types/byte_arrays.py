@@ -217,10 +217,22 @@ class Bytes48(BaseBytes):
     LENGTH = 48
 
 
+class Bytes52(BaseBytes):
+    """Fixed-size byte array of exactly 52 bytes."""
+
+    LENGTH = 52
+
+
 class Bytes96(BaseBytes):
     """Fixed-size byte array of exactly 96 bytes."""
 
     LENGTH = 96
+
+
+class Bytes4000(BaseBytes):
+    """Fixed-size byte array of exactly 4000 bytes."""
+
+    LENGTH = 4000
 
 
 class BaseByteList(SSZModel):

@@ -3,7 +3,7 @@
 from .base import StrictBaseModel
 from .basispt import BasisPoint
 from .boolean import Boolean
-from .byte_arrays import Bytes32
+from .byte_arrays import Bytes32, Bytes52, Bytes4000
 from .collections import SSZList, SSZVector
 from .container import Container
 from .uint import Uint64
@@ -13,6 +13,8 @@ __all__ = [
     "Uint64",
     "BasisPoint",
     "Bytes32",
+    "Bytes52",
+    "Bytes4000",
     "StrictBaseModel",
     "ValidatorIndex",
     "is_proposer",

@@ -1,6 +1,6 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -13,17 +13,22 @@ from lean_spec.types import (
     is_proposer,
 )
 
-from ..block import Block, BlockBody, BlockHeader, SignedBlock
+from ..block import Block, BlockBody, BlockHeader
 from ..block.types import Attestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
-from ..vote import Vote
+from ..vote import (
+    AttestationData,
+    ProposerAttestationData,
+    ValidatorAttestation,
+)
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    Validators,
 )
 
 
@@ -54,6 +59,9 @@ class State(Container):
 
     justified_slots: JustifiedSlots
     """A bitfield indicating which historical slots were justified."""
+
+    validators: Validators
+    """Registry of validators tracked by the state."""
 
     # Justification tracking (flattened for SSZ compatibility)
     justifications_roots: JustificationRoots
@@ -86,12 +94,24 @@ class State(Container):
         )
 
         # Build the genesis block header for the state.
+        empty_attestations = Attestations(data=[])
+        empty_checkpoint = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
+        proposer_attestation = ProposerAttestationData(
+            target=empty_checkpoint,
+            source=empty_checkpoint,
+        )
+
+        genesis_body = BlockBody(
+            attestations=empty_attestations,
+            proposer_attestation=proposer_attestation,
+        )
+
         genesis_header = BlockHeader(
             slot=Slot(0),
             proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
+            body_root=hash_tree_root(genesis_body),
         )
 
         # Assemble and return the full genesis state.
@@ -103,6 +123,7 @@ class State(Container):
             latest_finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
             historical_block_hashes=HistoricalBlockHashes(data=[]),
             justified_slots=JustifiedSlots(data=[]),
+            validators=Validators(data=[]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         )
@@ -346,29 +367,36 @@ class State(Container):
                 update={"root": parent_root}
             )
 
-        # Create mutable copies to work with to avoid modifying the original object.
+    # Create mutable copies to work with to avoid mutating the source state.
         new_historical_hashes = list(self.historical_block_hashes)
         new_historical_hashes.append(parent_root)
 
         new_justified_slots = list(self.justified_slots)
-        new_justified_slots.append(Boolean(self.latest_block_header.slot == Slot(0)))
+        proposer_on_genesis = Boolean(self.latest_block_header.slot == Slot(0))
+        new_justified_slots.append(proposer_on_genesis)
 
         # If there were empty slots between parent and this block, fill them.
-        num_empty_slots = (block.slot - self.latest_block_header.slot - Slot(1)).as_int()
+        num_empty_slots = (
+            block.slot - self.latest_block_header.slot - Slot(1)
+        ).as_int()
         if num_empty_slots > 0:
             new_historical_hashes.extend([ZERO_HASH] * num_empty_slots)
             new_justified_slots.extend([Boolean(False)] * num_empty_slots)
 
         # Record updated history arrays, ensuring they are cast back to the
         # correct domain-specific type.
-        updates["historical_block_hashes"] = self.historical_block_hashes.__class__(
+        historical_hash_cls = self.historical_block_hashes.__class__
+        updates["historical_block_hashes"] = historical_hash_cls(
             data=new_historical_hashes
         )
-        updates["justified_slots"] = self.justified_slots.__class__(data=new_justified_slots)
+        updates["justified_slots"] = self.justified_slots.__class__(
+            data=new_justified_slots
+        )
 
         # Construct the new latest block header.
         #
-        # Leave state_root empty; it will be filled on the next process_slot call.
+        # Leave state_root empty; it will be filled on the next process_slot
+        # call.
         updates["latest_block_header"] = BlockHeader(
             slot=block.slot,
             proposer_index=block.proposer_index,
@@ -398,95 +426,95 @@ class State(Container):
         state = self.process_block_header(block)
 
         # Process justification votes (attestations).
-        return state.process_attestations(block.body.attestations)
+        attestation_messages: List[ValidatorAttestation] = list(
+            block.body.attestations
+        )
+
+        proposer_data = AttestationData(
+            slot=block.slot,
+            head=Checkpoint(root=hash_tree_root(block), slot=block.slot),
+            target=block.body.proposer_attestation.target,
+            source=block.body.proposer_attestation.source,
+        )
+        proposer_attestation = ValidatorAttestation(
+            validator_id=block.proposer_index,
+            data=proposer_data,
+        )
+        attestation_messages.append(proposer_attestation)
+
+        return state.process_attestations(attestation_messages)
 
     def process_attestations(
         self,
-        attestations: Attestations,
+        attestations: Iterable[ValidatorAttestation],
     ) -> "State":
-        """
-        Apply attestation votes and update justification/finalization
-        according to the Lean Consensus 3SF-mini rules.
-
-        This simplified consensus mechanism:
-        1. Processes each attestation vote
-        2. Updates justified status for target checkpoints
-        3. Applies finalization rules based on justified status
-
-        Parameters
-        ----------
-        attestations : Attestations
-            The list of attestation votes to process.
-
-        Returns:
-        -------
-        State
-            A new state with updated justification/finalization.
-        """
-        # Start with current justifications and finalization state.
+        """Apply attestation votes and update justification/finalization."""
         justified_slots = list(self.justified_slots)
         latest_justified = self.latest_justified
         latest_finalized = self.latest_finalized
 
-        # Process each attestation in the block.
-        for signed_vote in attestations:
-            vote: Vote = signed_vote.data
+        for candidate in attestations:
+            attestation = candidate
+            if hasattr(candidate, "message"):
+                attestation = candidate.message  # type: ignore[assignment]
+
+            vote = attestation.data
             source = vote.source
             target = vote.target
 
-            # Validate that this is a reasonable vote (source comes before target).
             if source.slot.as_int() >= target.slot.as_int():
-                continue  # Skip invalid votes
+                continue
 
-            # Check if source checkpoint is justified.
-            source_slot_int = source.slot.as_int()
-            target_slot_int = target.slot.as_int()
+            source_slot = source.slot.as_int()
+            target_slot = target.slot.as_int()
 
-            # Ensure we have enough justified slots history.
-            if source_slot_int < len(justified_slots):
-                source_is_justified = justified_slots[source_slot_int]
-            else:
-                continue  # Source is too far in the past
+            if source_slot >= len(justified_slots):
+                continue
 
-            # If source is justified, consider justifying the target.
+            source_is_justified = justified_slots[source_slot]
+
+            target_tracked = target_slot < len(justified_slots)
             if (
                 source_is_justified
-                and target_slot_int < len(justified_slots)
-                and justified_slots[target_slot_int]
+                and target_tracked
+                and justified_slots[target_slot]
             ):
-                # Target is already justified, check for finalization.
-                if (
-                    source.slot.as_int() + 1 == target.slot.as_int()
-                    and latest_justified.slot.as_int() < target.slot.as_int()
-                ):
-                    # Consecutive justified checkpoints -> finalize the source.
+                consecutive = source.slot.as_int() + 1 == target.slot.as_int()
+                newest_target = (
+                    latest_justified.slot.as_int() < target.slot.as_int()
+                )
+                if consecutive and newest_target:
                     latest_finalized = source
                     latest_justified = target
+                continue
 
-            else:
-                # Try to justify the target if source is justified.
-                if source_is_justified:
-                    # Ensure justified_slots is long enough, then mark the target slot.
-                    while len(justified_slots) <= target_slot_int:
-                        justified_slots.append(Boolean(False))
-                    justified_slots[target_slot_int] = Boolean(True)
+            if not source_is_justified:
+                continue
 
-                    # Update latest_justified if this target is newer.
-                    if target.slot.as_int() > latest_justified.slot.as_int():
-                        latest_justified = target
+            while len(justified_slots) <= target_slot:
+                justified_slots.append(Boolean(False))
 
-        # Return the updated state.
+            if not justified_slots[target_slot]:
+                justified_slots[target_slot] = Boolean(True)
+
+            if target.slot.as_int() > latest_justified.slot.as_int():
+                latest_justified = target
+
         return self.model_copy(
             update={
-                "justified_slots": self.justified_slots.__class__(data=justified_slots),
+                "justified_slots": self.justified_slots.__class__(
+                    data=justified_slots
+                ),
                 "latest_justified": latest_justified,
                 "latest_finalized": latest_finalized,
             }
         )
 
-    def state_transition(self, signed_block: SignedBlock, valid_signatures: bool = True) -> "State":
+    def state_transition(
+        self, block: Block, valid_signatures: bool = True
+    ) -> "State":
         """
-        Apply the complete state transition function for a signed block.
+        Apply the complete state transition function for a block.
 
         This method represents the full state transition function:
         1. Validate signatures if required
@@ -496,8 +524,8 @@ class State(Container):
 
         Parameters
         ----------
-        signed_block : SignedBlock
-            The signed block to apply to the state.
+        block : Block
+            The block to apply to the state.
         valid_signatures : bool, optional
             Whether to validate block signatures. Defaults to True.
 
@@ -514,8 +542,6 @@ class State(Container):
         # Validate signatures if required
         if not valid_signatures:
             raise AssertionError("Block signatures must be valid")
-
-        block = signed_block.message
 
         # First, process any intermediate slots.
         state = self.process_slots(block.slot)

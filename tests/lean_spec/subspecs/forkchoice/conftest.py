@@ -4,10 +4,18 @@ from typing import Type
 
 import pytest
 
-from lean_spec.subspecs.containers import BlockBody, Checkpoint, State
+from lean_spec.subspecs.containers import (
+    AttestationData,
+    BlockBody,
+    Checkpoint,
+    SignedValidatorAttestation,
+    State,
+    ValidatorAttestation,
+)
 from lean_spec.subspecs.containers.block import Attestations, BlockHeader
 from lean_spec.subspecs.containers.config import Config
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.state.types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -15,11 +23,11 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Bytes4000, Uint64, ValidatorIndex
 
 
 class MockState(State):
-    """A mock State for testing that only requires specifying latest_justified."""
+    """Mock state that exposes configurable ``latest_justified``."""
 
     def __init__(self, latest_justified: Checkpoint) -> None:
         """Initialize a mock state with minimal defaults."""
@@ -34,7 +42,9 @@ class MockState(State):
             proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
+            body_root=hash_tree_root(
+                BlockBody(attestations=Attestations(data=[]))
+            ),
         )
 
         super().__init__(
@@ -45,9 +55,34 @@ class MockState(State):
             latest_finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
             historical_block_hashes=HistoricalBlockHashes(data=[]),
             justified_slots=JustifiedSlots(data=[]),
+            validators=Validators(data=[]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         )
+
+
+def build_signed_attestation(
+    validator: ValidatorIndex,
+    target: Checkpoint,
+    source: Checkpoint | None = None,
+) -> SignedValidatorAttestation:
+    """Construct a SignedValidatorAttestation pointing to ``target``."""
+
+    source_checkpoint = source or Checkpoint(root=Bytes32.zero(), slot=Slot(0))
+    attestation_data = AttestationData(
+        slot=target.slot,
+        head=target,
+        target=target,
+        source=source_checkpoint,
+    )
+    message = ValidatorAttestation(
+        validator_id=validator,
+        data=attestation_data,
+    )
+    return SignedValidatorAttestation(
+        message=message,
+        signature=Bytes4000.zero(),
+    )
 
 
 @pytest.fixture

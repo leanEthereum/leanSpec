@@ -3,13 +3,15 @@
 import pytest
 
 from lean_spec.subspecs.containers import (
+    AttestationData,
     Block,
     BlockBody,
     BlockHeader,
     Checkpoint,
     Config,
+    SignedValidatorAttestation,
     State,
-    Vote,
+    ValidatorAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
@@ -18,10 +20,11 @@ from lean_spec.subspecs.containers.state import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    Validators,
 )
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Bytes4000, Uint64, ValidatorIndex
 from lean_spec.types.validator import is_proposer
 
 
@@ -56,6 +59,7 @@ def sample_state(config: Config) -> State:
         justified_slots=JustifiedSlots(data=[]),
         justifications_roots=JustificationRoots(data=[]),
         justifications_validators=JustificationValidators(data=[]),
+        validators=Validators(data=[]),
     )
 
 
@@ -105,6 +109,31 @@ def sample_store(config: Config, sample_state: State) -> Store:
     )
 
 
+def build_signed_attestation(
+    validator: ValidatorIndex,
+    slot: Slot,
+    head: Checkpoint,
+    source: Checkpoint,
+    target: Checkpoint,
+) -> SignedValidatorAttestation:
+    """Create a signed attestation with a zeroed signature."""
+
+    data = AttestationData(
+        slot=slot,
+        head=head,
+        target=target,
+        source=source,
+    )
+    message = ValidatorAttestation(
+        validator_id=validator,
+        data=data,
+    )
+    return SignedValidatorAttestation(
+        message=message,
+        signature=Bytes4000.zero(),
+    )
+
+
 class TestBlockProduction:
     """Test validator block production functionality."""
 
@@ -137,12 +166,32 @@ class TestBlockProduction:
 
     def test_produce_block_with_attestations(self, sample_store: Store) -> None:
         """Test block production includes available attestations."""
-        # Add some votes to the store
-        vote1 = Checkpoint(root=sample_store.head, slot=Slot(0))
-        vote2 = Checkpoint(root=sample_store.head, slot=Slot(0))
+        head_block = sample_store.blocks[sample_store.head]
+        head_checkpoint = Checkpoint(
+            root=sample_store.head,
+            slot=head_block.slot,
+        )
+        target_checkpoint = sample_store.get_vote_target()
+        source_checkpoint = sample_store.latest_justified
 
-        sample_store.latest_known_votes[ValidatorIndex(5)] = vote1
-        sample_store.latest_known_votes[ValidatorIndex(6)] = vote2
+        sample_store.latest_known_votes[ValidatorIndex(5)] = (
+            build_signed_attestation(
+                validator=ValidatorIndex(5),
+                slot=head_block.slot,
+                head=head_checkpoint,
+                source=source_checkpoint,
+                target=target_checkpoint,
+            )
+        )
+        sample_store.latest_known_votes[ValidatorIndex(6)] = (
+            build_signed_attestation(
+                validator=ValidatorIndex(6),
+                slot=head_block.slot,
+                head=head_checkpoint,
+                source=source_checkpoint,
+                target=target_checkpoint,
+            )
+        )
 
         slot = Slot(2)
         validator_idx = ValidatorIndex(2)  # Proposer for slot 2
@@ -212,8 +261,22 @@ class TestBlockProduction:
         validator_idx = ValidatorIndex(4)
 
         # Add some votes to test state computation
-        vote = Checkpoint(root=sample_store.head, slot=Slot(0))
-        sample_store.latest_known_votes[ValidatorIndex(7)] = vote
+        head_block = sample_store.blocks[sample_store.head]
+        head_checkpoint = Checkpoint(
+            root=sample_store.head,
+            slot=head_block.slot,
+        )
+        target_checkpoint = sample_store.get_vote_target()
+        source_checkpoint = sample_store.latest_justified
+        sample_store.latest_known_votes[ValidatorIndex(7)] = (
+            build_signed_attestation(
+                validator=ValidatorIndex(7),
+                slot=head_block.slot,
+                head=head_checkpoint,
+                source=source_checkpoint,
+                target=target_checkpoint,
+            )
+        )
 
         block = sample_store.produce_block(slot, validator_idx)
         block_hash = hash_tree_root(block)
@@ -427,6 +490,7 @@ class TestValidatorIntegration:
             justified_slots=JustifiedSlots(data=[]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
+            validators=Validators(data=[]),
         )
 
         # Compute consistent state root
@@ -476,7 +540,7 @@ class TestValidatorIntegration:
         vote = store.produce_attestation_vote(Slot(1), ValidatorIndex(2))
 
         assert isinstance(block, Block)
-        assert isinstance(vote, Vote)
+        assert isinstance(vote, ValidatorAttestation)
 
 
 class TestValidatorErrorHandling:

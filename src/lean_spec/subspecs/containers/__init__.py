@@ -4,7 +4,15 @@ from .block import Block, BlockBody, BlockHeader, SignedBlock
 from .checkpoint import Checkpoint
 from .config import Config
 from .state import State
-from .vote import SignedVote, Vote
+from .validator import Validator
+from .vote import (
+    Attestation,
+    AttestationData,
+    ProposerAttestationData,
+    SignedAttestation,
+    SignedValidatorAttestation,
+    ValidatorAttestation,
+)
 
 __all__ = [
     "Block",
@@ -13,7 +21,12 @@ __all__ = [
     "Checkpoint",
     "Config",
     "SignedBlock",
-    "SignedVote",
+    "Validator",
+    "AttestationData",
+    "ValidatorAttestation",
+    "SignedValidatorAttestation",
+    "SignedAttestation",
+    "ProposerAttestationData",
+    "Attestation",
     "State",
-    "Vote",
 ]

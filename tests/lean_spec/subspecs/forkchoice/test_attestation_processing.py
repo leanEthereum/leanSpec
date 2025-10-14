@@ -1,20 +1,21 @@
 """Tests for attestation validation and processing."""
 
-import pytest
+import pytest  # type: ignore[import-not-found]
 
 from lean_spec.subspecs.containers import (
+    AttestationData,
     Block,
     BlockBody,
     Checkpoint,
     Config,
-    SignedVote,
-    Vote,
+    SignedValidatorAttestation,
+    ValidatorAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Bytes4000, Uint64, ValidatorIndex
 
 
 @pytest.fixture
@@ -26,7 +27,10 @@ def sample_config() -> Config:
 @pytest.fixture
 def sample_store(sample_config: Config) -> Store:
     """Create a sample forkchoice store."""
-    checkpoint = Checkpoint(root=Bytes32(b"test_root" + b"\x00" * 23), slot=Slot(0))
+    checkpoint = Checkpoint(
+        root=Bytes32(b"test_root" + b"\x00" * 23),
+        slot=Slot(0),
+    )
 
     return Store(
         time=Uint64(100),
@@ -35,6 +39,30 @@ def sample_store(sample_config: Config) -> Store:
         safe_target=Bytes32(b"safe_root" + b"\x00" * 23),
         latest_justified=checkpoint,
         latest_finalized=checkpoint,
+    )
+
+
+def build_signed_attestation(
+    validator: ValidatorIndex,
+    slot: Slot,
+    head: Checkpoint,
+    source: Checkpoint,
+    target: Checkpoint,
+) -> SignedValidatorAttestation:
+    """Construct a signed attestation with zeroed signature."""
+    data = AttestationData(
+        slot=slot,
+        head=head,
+        target=target,
+        source=source,
+    )
+    message = ValidatorAttestation(
+        validator_id=validator,
+        data=data,
+    )
+    return SignedValidatorAttestation(
+        message=message,
+        signature=Bytes4000.zero(),
     )
 
 
@@ -67,19 +95,23 @@ class TestAttestationValidation:
         sample_store.blocks[target_hash] = target_block
 
         # Create valid signed vote
-        vote = Vote(
-            validator_id=ValidatorIndex(0),
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(2))
+        source_checkpoint = Checkpoint(root=source_hash, slot=Slot(1))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(0),
             slot=Slot(2),
-            head=Checkpoint(root=target_hash, slot=Slot(2)),
-            target=Checkpoint(root=target_hash, slot=Slot(2)),
-            source=Checkpoint(root=source_hash, slot=Slot(1)),
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
         # Should validate without error
-        sample_store.validate_attestation(signed_vote)
+        sample_store.validate_attestation(signed_attestation)
 
-    def test_validate_attestation_slot_order_invalid(self, sample_store: Store) -> None:
+    def test_validate_attestation_slot_order_invalid(
+        self,
+        sample_store: Store,
+    ) -> None:
         """Test validation fails when source slot > target slot."""
         # Create blocks with invalid slot ordering
         source_block = Block(
@@ -104,41 +136,48 @@ class TestAttestationValidation:
         sample_store.blocks[source_hash] = source_block
         sample_store.blocks[target_hash] = target_block
 
-        # Create invalid signed vote (source > target slot)
-        vote = Vote(
-            validator_id=ValidatorIndex(0),
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(1))
+        source_checkpoint = Checkpoint(root=source_hash, slot=Slot(2))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(0),
             slot=Slot(2),
-            head=Checkpoint(root=target_hash, slot=Slot(1)),
-            source=Checkpoint(root=source_hash, slot=Slot(2)),
-            target=Checkpoint(root=target_hash, slot=Slot(1)),  # Invalid: target < source
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
-        # Should raise assertion error
-        with pytest.raises(AssertionError, match="Source slot must not exceed target slot"):
-            sample_store.validate_attestation(signed_vote)
+        with pytest.raises(
+            AssertionError,
+            match="Source slot must not exceed target",
+        ):
+            sample_store.validate_attestation(signed_attestation)
 
-    def test_validate_attestation_missing_blocks(self, sample_store: Store) -> None:
+    def test_validate_attestation_missing_blocks(
+        self,
+        sample_store: Store,
+    ) -> None:
         """Test validation fails when referenced blocks are missing."""
         source_hash = Bytes32(b"missing_source" + b"\x00" * 18)
         target_hash = Bytes32(b"missing_target" + b"\x00" * 18)
 
-        # Create signed vote referencing missing blocks
-        vote = Vote(
-            validator_id=ValidatorIndex(0),
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(2))
+        source_checkpoint = Checkpoint(root=source_hash, slot=Slot(1))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(0),
             slot=Slot(2),
-            head=Checkpoint(root=target_hash, slot=Slot(2)),
-            source=Checkpoint(root=source_hash, slot=Slot(1)),
-            target=Checkpoint(root=target_hash, slot=Slot(2)),
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
-        # Should raise assertion error for missing blocks
         with pytest.raises(AssertionError, match="Unknown source block"):
-            sample_store.validate_attestation(signed_vote)
+            sample_store.validate_attestation(signed_attestation)
 
-    def test_validate_attestation_checkpoint_slot_mismatch(self, sample_store: Store) -> None:
-        """Test validation fails when checkpoint slots don't match block slots."""
+    def test_validate_attestation_checkpoint_slot_mismatch(
+        self,
+        sample_store: Store,
+    ) -> None:
+        """Test validation fails when checkpoint slots mismatch blocks."""
         # Create blocks
         source_block = Block(
             slot=Slot(1),
@@ -162,21 +201,26 @@ class TestAttestationValidation:
         sample_store.blocks[source_hash] = source_block
         sample_store.blocks[target_hash] = target_block
 
-        # Create signed vote with mismatched checkpoint slot
-        vote = Vote(
-            validator_id=ValidatorIndex(0),
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(2))
+        wrong_source_checkpoint = Checkpoint(root=source_hash, slot=Slot(0))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(0),
             slot=Slot(2),
-            head=Checkpoint(root=target_hash, slot=Slot(2)),
-            source=Checkpoint(root=source_hash, slot=Slot(0)),  # Wrong slot (should be 1)
-            target=Checkpoint(root=target_hash, slot=Slot(2)),
+            head=head_checkpoint,
+            source=wrong_source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
-        # Should raise assertion error
-        with pytest.raises(AssertionError, match="Source checkpoint slot mismatch"):
-            sample_store.validate_attestation(signed_vote)
+        with pytest.raises(
+            AssertionError,
+            match="Source checkpoint slot mismatch",
+        ):
+            sample_store.validate_attestation(signed_attestation)
 
-    def test_validate_attestation_too_far_future(self, sample_store: Store) -> None:
+    def test_validate_attestation_too_far_future(
+        self,
+        sample_store: Store,
+    ) -> None:
         """Test validation fails for attestations too far in the future."""
         # Create blocks
         source_block = Block(
@@ -201,19 +245,21 @@ class TestAttestationValidation:
         sample_store.blocks[source_hash] = source_block
         sample_store.blocks[target_hash] = target_block
 
-        # Create signed vote for future slot
-        vote = Vote(
-            validator_id=ValidatorIndex(0),
-            slot=Slot(1000),  # Too far in future
-            head=Checkpoint(root=target_hash, slot=Slot(1000)),
-            source=Checkpoint(root=source_hash, slot=Slot(1)),
-            target=Checkpoint(root=target_hash, slot=Slot(1000)),
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(1000))
+        source_checkpoint = Checkpoint(root=source_hash, slot=Slot(1))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(0),
+            slot=Slot(1000),
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
-        # Should raise assertion error
-        with pytest.raises(AssertionError, match="Attestation too far in future"):
-            sample_store.validate_attestation(signed_vote)
+        with pytest.raises(
+            AssertionError,
+            match="Attestation too far in future",
+        ):
+            sample_store.validate_attestation(signed_attestation)
 
 
 class TestAttestationProcessing:
@@ -244,22 +290,24 @@ class TestAttestationProcessing:
         sample_store.blocks[source_hash] = source_block
         sample_store.blocks[target_hash] = target_block
 
-        # Create valid signed vote
-        vote = Vote(
-            validator_id=ValidatorIndex(5),
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(2))
+        source_checkpoint = Checkpoint(root=source_hash, slot=Slot(1))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(5),
             slot=Slot(2),
-            head=Checkpoint(root=target_hash, slot=Slot(2)),
-            source=Checkpoint(root=source_hash, slot=Slot(1)),
-            target=Checkpoint(root=target_hash, slot=Slot(2)),
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
-        # Process as network attestation
-        sample_store.process_attestation(signed_vote, is_from_block=False)
+        sample_store.process_attestation(
+            signed_attestation,
+            is_from_block=False,
+        )
 
-        # Vote should be added to new votes
         assert ValidatorIndex(5) in sample_store.latest_new_votes
-        assert sample_store.latest_new_votes[ValidatorIndex(5)] == vote.target
+        stored = sample_store.latest_new_votes[ValidatorIndex(5)]
+        assert stored.message.data.target == head_checkpoint
 
     def test_process_block_attestation(self, sample_store: Store) -> None:
         """Test processing attestation from a block."""
@@ -286,24 +334,29 @@ class TestAttestationProcessing:
         sample_store.blocks[source_hash] = source_block
         sample_store.blocks[target_hash] = target_block
 
-        # Create valid signed vote
-        vote = Vote(
-            validator_id=ValidatorIndex(7),
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(2))
+        source_checkpoint = Checkpoint(root=source_hash, slot=Slot(1))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(7),
             slot=Slot(2),
-            head=Checkpoint(root=target_hash, slot=Slot(2)),
-            source=Checkpoint(root=source_hash, slot=Slot(1)),
-            target=Checkpoint(root=target_hash, slot=Slot(2)),
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
-        # Process as block attestation
-        sample_store.process_attestation(signed_vote, is_from_block=True)
+        sample_store.process_attestation(
+            signed_attestation,
+            is_from_block=True,
+        )
 
-        # Vote should be added to known votes
         assert ValidatorIndex(7) in sample_store.latest_known_votes
-        assert sample_store.latest_known_votes[ValidatorIndex(7)] == vote.target
+        stored = sample_store.latest_known_votes[ValidatorIndex(7)]
+        assert stored.message.data.target == head_checkpoint
 
-    def test_process_attestation_superseding(self, sample_store: Store) -> None:
+    def test_process_attestation_superseding(
+        self,
+        sample_store: Store,
+    ) -> None:
         """Test that newer attestations supersede older ones."""
         # Create blocks for different slots
         target_block_1 = Block(
@@ -331,32 +384,40 @@ class TestAttestationProcessing:
         validator = ValidatorIndex(10)
 
         # Process first (older) attestation
-        vote_1 = Vote(
-            validator_id=validator,
+        head_checkpoint_1 = Checkpoint(root=target_hash_1, slot=Slot(1))
+        signed_attestation_1 = build_signed_attestation(
+            validator=validator,
             slot=Slot(1),
-            head=Checkpoint(root=target_hash_1, slot=Slot(1)),
-            source=Checkpoint(root=target_hash_1, slot=Slot(1)),
-            target=Checkpoint(root=target_hash_1, slot=Slot(1)),
+            head=head_checkpoint_1,
+            source=head_checkpoint_1,
+            target=head_checkpoint_1,
         )
-        signed_vote_1 = SignedVote(data=vote_1, signature=Bytes32.zero())
-        sample_store.process_attestation(signed_vote_1, is_from_block=False)
+        sample_store.process_attestation(
+            signed_attestation_1,
+            is_from_block=False,
+        )
 
-        # Process second (newer) attestation
-        vote_2 = Vote(
-            validator_id=validator,
+        head_checkpoint_2 = Checkpoint(root=target_hash_2, slot=Slot(2))
+        signed_attestation_2 = build_signed_attestation(
+            validator=validator,
             slot=Slot(2),
-            head=Checkpoint(root=target_hash_2, slot=Slot(2)),
-            source=Checkpoint(root=target_hash_1, slot=Slot(1)),
-            target=Checkpoint(root=target_hash_2, slot=Slot(2)),
+            head=head_checkpoint_2,
+            source=head_checkpoint_1,
+            target=head_checkpoint_2,
         )
-        signed_vote_2 = SignedVote(data=vote_2, signature=Bytes32.zero())
-        sample_store.process_attestation(signed_vote_2, is_from_block=False)
+        sample_store.process_attestation(
+            signed_attestation_2,
+            is_from_block=False,
+        )
 
-        # Should have the newer vote
         assert validator in sample_store.latest_new_votes
-        assert sample_store.latest_new_votes[validator] == vote_2.target
+        stored = sample_store.latest_new_votes[validator]
+        assert stored.message.data.target == head_checkpoint_2
 
-    def test_process_attestation_from_block_supersedes_new(self, sample_store: Store) -> None:
+    def test_process_attestation_from_block_supersedes_new(
+        self,
+        sample_store: Store,
+    ) -> None:
         """Test that block attestations remove corresponding new votes."""
         # Create blocks
         source_block = Block(
@@ -384,32 +445,42 @@ class TestAttestationProcessing:
         validator = ValidatorIndex(15)
 
         # First process as network vote
-        vote = Vote(
-            validator_id=validator,
+        head_checkpoint = Checkpoint(root=target_hash, slot=Slot(2))
+        source_checkpoint = Checkpoint(root=source_hash, slot=Slot(1))
+        signed_attestation = build_signed_attestation(
+            validator=validator,
             slot=Slot(2),
-            head=Checkpoint(root=target_hash, slot=Slot(2)),
-            source=Checkpoint(root=source_hash, slot=Slot(1)),
-            target=Checkpoint(root=target_hash, slot=Slot(2)),
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
-        sample_store.process_attestation(signed_vote, is_from_block=False)
+        sample_store.process_attestation(
+            signed_attestation,
+            is_from_block=False,
+        )
 
         # Should be in new votes
         assert validator in sample_store.latest_new_votes
 
         # Process same vote as block attestation
-        sample_store.process_attestation(signed_vote, is_from_block=True)
+        sample_store.process_attestation(
+            signed_attestation,
+            is_from_block=True,
+        )
 
-        # Vote should move to known votes and be removed from new votes
         assert validator in sample_store.latest_known_votes
         assert validator not in sample_store.latest_new_votes
-        assert sample_store.latest_known_votes[validator] == vote.target
+        stored = sample_store.latest_known_votes[validator]
+        assert stored.message.data.target == head_checkpoint
 
 
 class TestBlockProcessing:
     """Test block processing that includes attestation processing."""
 
-    def test_process_block_with_attestations(self, sample_store: Store) -> None:
+    def test_process_block_with_attestations(
+        self,
+        sample_store: Store,
+    ) -> None:
         """Test processing a block that contains attestations."""
         # Create parent block
         parent_block = Block(
@@ -425,19 +496,20 @@ class TestBlockProcessing:
         sample_store.blocks[parent_hash] = parent_block
 
         # Create a vote that will be included in block
-        vote = Vote(
-            validator_id=ValidatorIndex(20),
+        head_checkpoint = Checkpoint(root=parent_hash, slot=Slot(1))
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(20),
             slot=Slot(2),
-            head=Checkpoint(root=parent_hash, slot=Slot(1)),
-            source=Checkpoint(root=parent_hash, slot=Slot(1)),
-            target=Checkpoint(root=parent_hash, slot=Slot(1)),
+            head=head_checkpoint,
+            source=head_checkpoint,
+            target=head_checkpoint,
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
-        # Test processing the block attestation
-        sample_store.process_attestation(signed_vote, is_from_block=True)
+        sample_store.process_attestation(
+            signed_attestation,
+            is_from_block=True,
+        )
 
-        # Verify the vote was processed correctly
-        assert ValidatorIndex(20) == vote.validator_id
-        assert vote.target.root == parent_hash
-        assert ValidatorIndex(20) in sample_store.latest_known_votes
+        stored = sample_store.latest_known_votes[ValidatorIndex(20)]
+        assert stored.message.validator_id == ValidatorIndex(20)
+        assert stored.message.data.target.root == parent_hash

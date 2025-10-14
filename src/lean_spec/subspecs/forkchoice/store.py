@@ -1,7 +1,7 @@
 """
 Forkchoice store for tracking chain state and votes.
 
-The Store tracks all information required for the LMD GHOST forkchoice algorithm.
+The Store tracks data required for the LMD GHOST forkchoice algorithm.
 """
 
 import copy
@@ -13,18 +13,26 @@ from lean_spec.subspecs.chain.config import (
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
+    AttestationData,
     Block,
     BlockBody,
     Checkpoint,
     Config,
-    SignedVote,
+    SignedBlock,
+    SignedValidatorAttestation,
     State,
-    Vote,
+    ValidatorAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64, ValidatorIndex, is_proposer
+from lean_spec.types import (
+    Bytes32,
+    Bytes4000,
+    Uint64,
+    ValidatorIndex,
+    is_proposer,
+)
 from lean_spec.types.container import Container
 
 from .helpers import get_fork_choice_head, get_latest_justified
@@ -62,14 +70,18 @@ class Store(Container):
     states: Dict[Bytes32, "State"] = {}
     """Mapping from state root to State objects."""
 
-    latest_known_votes: Dict[ValidatorIndex, Checkpoint] = {}
+    latest_known_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = {}
     """Latest votes by validator that have been processed."""
 
-    latest_new_votes: Dict[ValidatorIndex, Checkpoint] = {}
+    latest_new_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = {}
     """Latest votes by validator that are pending processing."""
 
     @classmethod
-    def get_forkchoice_store(cls, state: State, anchor_block: Block) -> "Store":
+    def get_forkchoice_store(
+        cls,
+        state: State,
+        anchor_block: Block,
+    ) -> "Store":
         """
         Initialize forkchoice store from an anchor state and block.
 
@@ -106,208 +118,243 @@ class Store(Container):
             states={anchor_root: copy.copy(state)},
         )
 
-    def validate_attestation(self, signed_vote: "SignedVote") -> None:
-        """
-        Validate incoming attestation before processing.
+    def validate_attestation(
+        self,
+        signed_attestation: SignedValidatorAttestation,
+    ) -> None:
+        """Validate incoming attestation before processing.
 
         Performs basic validation checks on attestation structure and timing.
 
         Args:
-            signed_vote: Attestation to validate.
+            signed_attestation: Attestation to validate.
 
         Raises:
             AssertionError: If attestation fails validation.
         """
-        vote = signed_vote.data
+        attestation = signed_attestation.message
+        data = attestation.data
 
-        # Validate vote targets exist in store
-        assert vote.source.root in self.blocks, f"Unknown source block: {vote.source.root.hex()}"
-        assert vote.target.root in self.blocks, f"Unknown target block: {vote.target.root.hex()}"
+        assert data.source.root in self.blocks, "Unknown source block"
+        assert data.target.root in self.blocks, "Unknown target block"
 
-        # Validate slot relationships
-        source_block = self.blocks[vote.source.root]
-        target_block = self.blocks[vote.target.root]
+        source_block = self.blocks[data.source.root]
+        target_block = self.blocks[data.target.root]
 
-        assert source_block.slot <= target_block.slot, "Source slot must not exceed target slot"
-        assert vote.source.slot <= vote.target.slot, "Source checkpoint slot must not exceed target"
+        assert source_block.slot <= target_block.slot, (
+            "Source slot must not exceed target"
+        )
+        assert data.source.slot <= data.target.slot, (
+            "Source checkpoint slot must not exceed target"
+        )
 
-        # Validate checkpoint slots match block slots
-        assert source_block.slot == vote.source.slot, "Source checkpoint slot mismatch"
-        assert target_block.slot == vote.target.slot, "Target checkpoint slot mismatch"
+        assert source_block.slot == data.source.slot, (
+            "Source checkpoint slot mismatch"
+        )
+        assert target_block.slot == data.target.slot, (
+            "Target checkpoint slot mismatch"
+        )
 
-        # Validate attestation is not too far in the future
         current_slot = Slot(self.time // SECONDS_PER_INTERVAL)
-        assert vote.slot <= Slot(current_slot + Slot(1)), "Attestation too far in future"
+        assert data.slot <= current_slot + Slot(1), (
+            "Attestation too far in future"
+        )
 
-    def process_attestation(self, signed_vote: "SignedVote", is_from_block: bool = False) -> None:
-        """
-        Process new attestation (signed vote).
+    def process_attestation(
+        self,
+        signed_attestation: SignedValidatorAttestation,
+        is_from_block: bool = False,
+    ) -> None:
+        """Process attestation from block propagation or gossip."""
+        self.validate_attestation(signed_attestation)
 
-        Handles attestations from blocks or network gossip, updating vote tracking
-        according to timing and precedence rules.
-
-        Args:
-            signed_vote: Attestation to process.
-            is_from_block: True if attestation came from block, False if from network.
-        """
-        # Validate attestation structure and constraints
-        self.validate_attestation(signed_vote)
-
-        validator_id = ValidatorIndex(signed_vote.data.validator_id)
-        vote = signed_vote.data
+        attestation = signed_attestation.message
+        validator_id = ValidatorIndex(attestation.validator_id)
+        attestation_slot = attestation.data.slot
 
         if is_from_block:
-            # On-chain attestation processing
-
-            # Update known votes if this is the latest from validator
+            # update latest known votes if this is latest
             latest_known = self.latest_known_votes.get(validator_id)
-            if latest_known is None or latest_known.slot < vote.slot:
-                self.latest_known_votes[validator_id] = vote.target
+            if (
+                latest_known is None
+                or latest_known.message.data.slot < attestation_slot
+            ):
+                self.latest_known_votes[validator_id] = signed_attestation
 
-            # Remove from new votes if this supersedes it
+            # clear from new votes if this is latest
             latest_new = self.latest_new_votes.get(validator_id)
-            if latest_new is not None and latest_new.slot <= vote.target.slot:
+            if (
+                latest_new is not None
+                and latest_new.message.data.slot <= attestation_slot
+            ):
                 del self.latest_new_votes[validator_id]
-
-        else:
-            # Network gossip attestation processing
-
-            # Ensure forkchoice is current before processing gossip
-            time_slots = self.time // SECONDS_PER_INTERVAL
-            assert vote.slot <= time_slots, "Attestation from future slot"
-
-            # Update new votes if this is latest from validator
-            latest_new = self.latest_new_votes.get(validator_id)
-            if latest_new is None or latest_new.slot < vote.target.slot:
-                self.latest_new_votes[validator_id] = vote.target
-
-    def process_block(self, block: Block) -> None:
-        """
-        Process new block and update forkchoice state.
-
-        Adds block to store, processes included attestations, and updates head.
-
-        Args:
-            block: Block to process.
-        """
-        block_hash = hash_tree_root(block)
-
-        # Skip if block already known
-        if block_hash in self.blocks:
             return
 
-        # Ensure parent state is available
+        # forkchoice should be correctly ticked to current time before
+        # importing gossiped attestations
+        time_slots = Slot(self.time // SECONDS_PER_INTERVAL)
+        assert attestation_slot <= time_slots, "Attestation from future slot"
+
+        # update latest new votes if this is the latest
+        latest_new = self.latest_new_votes.get(validator_id)
+        if (
+            latest_new is None
+            or latest_new.message.data.slot < attestation_slot
+        ):
+            self.latest_new_votes[validator_id] = signed_attestation
+
+    def _validate_block_signatures(
+        self,
+        block: Block,
+        signatures: list[Bytes4000],
+    ) -> bool:
+        """Temporary stub for aggregated signature validation."""
+        # TODO: plug real aggregated signature validation once available.
+        return True
+
+    def process_block(self, block: Block | SignedBlock) -> None:
+        """Process a new block or signed block and update votes and head."""
+        signatures: list[Bytes4000] = []
+        if isinstance(block, SignedBlock):
+            signed_block = block
+            block = signed_block.message
+            signatures = list(signed_block.signature)
+
+        block_hash = hash_tree_root(block)
+        if block_hash in self.blocks:
+            # If the block is already known, ignore it
+            return
+
         parent_state = self.states.get(block.parent_root)
-        assert parent_state is not None, "Parent state not found - sync parent chain first"
+        # at this point parent state should be available so node should
+        # sync parent chain if not available before adding block to forkchoice
+        assert parent_state is not None, (
+            "Parent state not found; sync parent chain first"
+        )
 
-        # Apply state transition to get post-block state
-        state = copy.deepcopy(parent_state).process_block(block)
+        valid_signatures = self._validate_block_signatures(block, signatures)
 
-        # Add block and state to store
+        # Get post state from STF (State Transition Function)
+        state = copy.deepcopy(parent_state).state_transition(
+            block,
+            valid_signatures,
+        )
+
         self.blocks[block_hash] = block
         self.states[block_hash] = state
 
-        # Process block's attestations as on-chain votes
-        for signed_vote in block.body.attestations:
-            self.process_attestation(signed_vote, is_from_block=True)
+        # add block votes to the onchain known last votes
+        for index, attestation in enumerate(block.body.attestations):
+            signature = (
+                signatures[index]
+                if index < len(signatures)
+                else Bytes4000.zero()
+            )
+            signed_attestation = SignedValidatorAttestation(
+                message=attestation,
+                # eventually one would be able to associate and consume an
+                # aggregated signature for individual vote validity with that
+                # information encoded in the signature
+                signature=signature,
+            )
+            self.process_attestation(signed_attestation, is_from_block=True)
 
-        # Update forkchoice head
         self.update_head()
 
+        proposer_signature_index = len(block.body.attestations)
+        proposer_signature = (
+            signatures[proposer_signature_index]
+            if proposer_signature_index < len(signatures)
+            else Bytes4000.zero()
+        )
+        # the proposer vote for the current slot and block as head is to be
+        # treated as the vote is independently casted in the second interval
+        proposer_attestation = ValidatorAttestation(
+            validator_id=block.proposer_index,
+            data=AttestationData(
+                slot=block.slot,
+                head=Checkpoint(root=block_hash, slot=block.slot),
+                target=block.body.proposer_attestation.target,
+                source=block.body.proposer_attestation.source,
+            ),
+        )
+        signed_proposer_attestation = SignedValidatorAttestation(
+            message=proposer_attestation,
+            signature=proposer_signature,
+        )
+        # note that we pass False here to make sure this gets added to the new
+        # votes so that this doesn't influence this node's validators upcoming
+        # votes
+        self.process_attestation(
+            signed_proposer_attestation,
+            is_from_block=False,
+        )
+
     def update_head(self) -> None:
-        """Update store's head based on latest justified checkpoint and votes."""
-        # Get latest justified checkpoint
+        """Refresh head and finalized checkpoints based on latest votes."""
         latest_justified = get_latest_justified(self.states)
-        if latest_justified:
+        if latest_justified is not None:
             object.__setattr__(self, "latest_justified", latest_justified)
 
-        # Use LMD GHOST to find new head
         new_head = get_fork_choice_head(
-            self.blocks, self.latest_justified.root, self.latest_known_votes
+            self.blocks,
+            self.latest_justified.root,
+            self.latest_known_votes,
         )
         object.__setattr__(self, "head", new_head)
 
-        # Update finalized checkpoint from head state
-        if new_head in self.states:
-            object.__setattr__(self, "latest_finalized", self.states[new_head].latest_finalized)
+        finalized_state = self.states.get(new_head)
+        if finalized_state is not None:
+            object.__setattr__(
+                self,
+                "latest_finalized",
+                finalized_state.latest_finalized,
+            )
 
     def advance_time(self, time: Uint64, has_proposal: bool) -> None:
-        """
-        Advance forkchoice store time to given timestamp.
+        """Advance store time to `time`, ticking intervals as needed."""
+        tick_target = (
+            time - self.config.genesis_time
+        ) // SECONDS_PER_INTERVAL
 
-        Ticks store forward interval by interval, performing appropriate
-        actions for each interval type.
-
-        Args:
-            time: Target time in seconds since genesis.
-            has_proposal: Whether node has proposal for current slot.
-        """
-        # Calculate target time in intervals
-        tick_interval_time = (time - self.config.genesis_time) // SECONDS_PER_INTERVAL
-
-        # Tick forward one interval at a time
-        while self.time < tick_interval_time:
-            # Check if proposal should be signaled for next interval
-            should_signal_proposal = has_proposal and (self.time + Uint64(1)) == tick_interval_time
-
-            # Advance by one interval with appropriate signaling
-            self.tick_interval(should_signal_proposal)
+        while self.time < tick_target:
+            should_signal = (
+                has_proposal
+                and (self.time + Uint64(1)) == tick_target
+            )
+            self.tick_interval(should_signal)
 
     def tick_interval(self, has_proposal: bool) -> None:
-        """
-        Advance store time by one interval and perform interval-specific actions.
-
-        Different actions are performed based on interval within slot:
-        - Interval 0: Process votes if proposal exists
-        - Interval 1: Validator voting period (no action)
-        - Interval 2: Update safe target
-        - Interval 3: Process votes
-
-        Args:
-            has_proposal: Whether a proposal exists for this interval.
-        """
+        """Advance one interval and run interval-specific actions."""
         object.__setattr__(self, "time", self.time + Uint64(1))
         current_interval = self.time % INTERVALS_PER_SLOT
 
         if current_interval == Uint64(0):
-            # Start of slot - process votes if proposal exists
             if has_proposal:
                 self.accept_new_votes()
-        elif current_interval == Uint64(1):
-            # Validator voting interval - no action
-            pass
-        elif current_interval == Uint64(2):
-            # Update safe target for next votes
+            return
+
+        if current_interval == Uint64(1):
+            return
+
+        if current_interval == Uint64(2):
             self.update_safe_target()
-        else:
-            # End of slot - process accumulated votes
-            self.accept_new_votes()
+            return
+
+        self.accept_new_votes()
 
     def accept_new_votes(self) -> None:
-        """
-        Process pending votes and update forkchoice head.
+        """Move pending votes into known votes and refresh the head."""
+        for validator_id, attestation in self.latest_new_votes.items():
+            self.latest_known_votes[validator_id] = attestation
 
-        Moves votes from latest_new_votes to latest_known_votes and triggers
-        head update.
-        """
-        # Move all new votes to known votes
-        for validator_id, vote in self.latest_new_votes.items():
-            self.latest_known_votes[validator_id] = vote
-
-        # Clear pending votes and update head
         self.latest_new_votes.clear()
         self.update_head()
 
     def update_safe_target(self) -> None:
-        """
-        Update the safe target for attestation votes.
-
-        Computes target that has sufficient (2/3+ majority) vote support.
-        """
-        # Calculate 2/3 majority threshold (ceiling division)
+        """Recompute safe target using latest pending votes."""
         min_target_score = -(-self.config.num_validators * 2 // 3)
 
-        # Find head with minimum vote threshold
         safe_target = get_fork_choice_head(
             self.blocks,
             self.latest_justified.root,
@@ -317,199 +364,137 @@ class Store(Container):
         object.__setattr__(self, "safe_target", safe_target)
 
     def get_proposal_head(self, slot: Slot) -> Bytes32:
-        """
-        Get the head for block proposal at given slot.
-
-        Ensures store is up-to-date and processes any pending votes.
-
-        Args:
-            slot: Slot for which to get proposal head.
-
-        Returns:
-            Root of block to build upon.
-        """
+        """Return the head a proposer should build on for `slot`."""
         slot_time = self.config.genesis_time + slot * SECONDS_PER_SLOT
-
-        # Tick store to current time (no-op if already current)
         self.advance_time(slot_time, True)
-
-        # Process any pending votes (no-op if already processed)
         self.accept_new_votes()
-
         return self.head
 
     def get_vote_target(self) -> Checkpoint:
-        """
-        Calculate target checkpoint for validator votes.
-
-        Determines appropriate attestation target based on head, safe target,
-        and finalization constraints.
-
-        Returns:
-            Target checkpoint for voting.
-        """
-        # Start from current head
+        """Compute the checkpoint a validator should target."""
         target_block_root = self.head
 
-        # Walk back up to 3 steps if safe target is newer
         for _ in range(3):
-            if self.blocks[target_block_root].slot > self.blocks[self.safe_target].slot:
+            if (
+                self.blocks[target_block_root].slot
+                > self.blocks[self.safe_target].slot
+            ):
                 target_block_root = self.blocks[target_block_root].parent_root
 
-        # Ensure target is in justifiable slot range
         while not self.blocks[target_block_root].slot.is_justifiable_after(
             self.latest_finalized.slot
         ):
             target_block_root = self.blocks[target_block_root].parent_root
 
         target_block = self.blocks[target_block_root]
-        return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
+        return Checkpoint(
+            root=hash_tree_root(target_block),
+            slot=target_block.slot,
+        )
 
-    def produce_block(self, slot: Slot, validator_index: ValidatorIndex) -> Block:
-        """
-        Produce a new block for the given slot and validator.
-
-        Algorithm Overview:
-        1. Validate proposer authorization for the target slot
-        2. Get the current chain head as the parent block
-        3. Iteratively build attestation set:
-           - Create candidate block with current attestations
-           - Apply state transition (slot advancement + block processing)
-           - Find new valid attestations matching post-state requirements
-           - Continue until no new attestations can be added
-        4. Finalize block with computed state root and store it
-
-        Args:
-            slot: Target slot number for block production
-            validator_index: Index of validator authorized to propose this block
-
-        Returns:
-            Complete block with maximal attestation set and valid state root
-
-        Raises:
-            AssertionError: If validator lacks proposer authorization for slot
-        """
-        # Validate proposer authorization for this slot
+    def produce_block(
+        self,
+        slot: Slot,
+        validator_index: ValidatorIndex,
+    ) -> Block:
+        """Produce a block for `slot` if `validator_index` is proposer."""
         if not is_proposer(validator_index, slot, self.config.num_validators):
-            msg = f"Validator {validator_index} is not the proposer for slot {slot}"
+            msg = (
+                f"Validator {validator_index} is not the proposer "
+                f"for slot {slot}"
+            )
             raise AssertionError(msg)
 
-        # Get parent block and state to build upon
-        head_root = self.get_proposal_head(slot)
+        head_root = self.head
         head_state = self.states[head_root]
 
-        # Initialize empty attestation set for iterative collection
-        attestations: list[SignedVote] = []
+        attestations: list[ValidatorAttestation] = []
 
-        # Iteratively collect valid attestations using fixed-point algorithm
-        #
-        # Continue until no new attestations can be added to the block
         while True:
-            # Create candidate block with current attestation set
             candidate_block = Block(
                 slot=slot,
                 proposer_index=validator_index,
                 parent_root=head_root,
-                state_root=Bytes32.zero(),  # Temporary; updated after state computation
-                body=BlockBody(attestations=Attestations(data=attestations)),
+                state_root=Bytes32.zero(),
+                body=BlockBody(
+                    attestations=Attestations(data=list(attestations)),
+                ),
             )
 
-            # Apply state transition to get the post-block state
-            # First advance state to target slot, then process the block
             advanced_state = head_state.process_slots(slot)
             post_state = advanced_state.process_block(candidate_block)
 
-            # Find new valid attestations matching post-state justification
-            new_attestations: list[SignedVote] = []
-            for validator_id, checkpoint in self.latest_known_votes.items():
-                # Skip if target block is unknown in our store
-                if checkpoint.root not in self.blocks:
+            new_attestations: list[ValidatorAttestation] = []
+            for signed in self.latest_known_votes.values():
+                data = signed.message.data
+                if data.target.root not in self.blocks:
                     continue
 
-                # Create attestation with post-state's latest justified as source
-                vote = Vote(
-                    validator_id=validator_id,
-                    slot=checkpoint.slot,
-                    head=checkpoint,
-                    target=checkpoint,
+                attestation_data = AttestationData(
+                    slot=data.slot,
+                    head=data.head,
+                    target=data.target,
                     source=post_state.latest_justified,
                 )
-                signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
+                candidate_attestation = ValidatorAttestation(
+                    validator_id=signed.message.validator_id,
+                    data=attestation_data,
+                )
 
-                # Include if not already in attestation set
-                if signed_vote not in attestations:
-                    new_attestations.append(signed_vote)
+                if candidate_attestation not in attestations:
+                    new_attestations.append(candidate_attestation)
 
-            # Fixed point reached: no new attestations found
             if not new_attestations:
                 break
 
-            # Add new attestations and continue iteration
             attestations.extend(new_attestations)
 
-        # Create final block with all collected attestations
         final_state = head_state.process_slots(slot)
         final_block = Block(
             slot=slot,
             proposer_index=validator_index,
             parent_root=head_root,
-            state_root=Bytes32.zero(),  # Will be updated with computed hash
-            body=BlockBody(attestations=Attestations(data=attestations)),
+            state_root=Bytes32.zero(),
+            body=BlockBody(
+                attestations=Attestations(data=list(attestations)),
+            ),
         )
 
-        # Apply state transition to get final post-state and compute state root
         final_post_state = final_state.process_block(final_block)
         finalized_block = final_block.model_copy(
-            update={"state_root": hash_tree_root(final_post_state)}
+            update={
+                "state_root": hash_tree_root(final_post_state),
+            }
         )
 
-        # Store block and state in forkchoice store
         block_hash = hash_tree_root(finalized_block)
         self.blocks[block_hash] = finalized_block
         self.states[block_hash] = final_post_state
 
         return finalized_block
 
-    def produce_attestation_vote(self, slot: Slot, validator_index: ValidatorIndex) -> Vote:
-        """
-        Produce an attestation vote for the given slot and validator.
-
-        This method constructs a Vote object according to the lean protocol
-        specification for attestation voting. The vote represents the
-        validator's view of the chain state and their choice for the
-        next justified checkpoint.
-
-        The algorithm:
-        1. Get the current head
-        2. Calculate the appropriate vote target using current forkchoice state
-        3. Use the store's latest justified checkpoint as the vote source
-        4. Construct and return the complete Vote object
-
-        Args:
-            slot: The slot for which to produce the attestation vote.
-            validator_index: The validator index producing the vote.
-
-        Returns:
-            A fully constructed Vote object ready for signing and broadcast.
-        """
-        # Get the head block the validator sees for this slot
+    def produce_attestation_vote(
+        self,
+        slot: Slot,
+        validator_index: ValidatorIndex,
+    ) -> ValidatorAttestation:
+        """Produce the attestation payload a validator signs for `slot`."""
         head_root = self.head
         head_checkpoint = Checkpoint(
             root=head_root,
             slot=self.blocks[head_root].slot,
         )
 
-        # Calculate the target checkpoint for this vote
-        #
-        # This uses the store's current forkchoice state to determine
-        # the appropriate attestation target
         target_checkpoint = self.get_vote_target()
 
-        # Create the vote using current forkchoice state
-        return Vote(
-            validator_id=validator_index,
+        attestation_data = AttestationData(
             slot=slot,
             head=head_checkpoint,
             target=target_checkpoint,
             source=self.latest_justified,
+        )
+
+        return ValidatorAttestation(
+            validator_id=validator_index,
+            data=attestation_data,
         )

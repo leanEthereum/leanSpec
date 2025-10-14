@@ -1,7 +1,7 @@
 """Block containers and related types for the Lean Ethereum consensus specification."""
 
 from .block import Block, BlockBody, BlockHeader, SignedBlock
-from .types import Attestations
+from .types import Attestations, BlockSignatures
 
 __all__ = [
     "Block",
@@ -9,4 +9,5 @@ __all__ = [
     "BlockHeader",
     "SignedBlock",
     "Attestations",
+    "BlockSignatures",
 ]

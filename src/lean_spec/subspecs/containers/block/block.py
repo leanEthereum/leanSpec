@@ -4,7 +4,14 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
-from .types import Attestations
+from ..checkpoint import Checkpoint
+from ..vote.vote import ProposerAttestationData
+from .types import Attestations, BlockSignatures
+
+_DEFAULT_PROPOSER_ATTESTATION = ProposerAttestationData(
+    target=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+    source=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+)
 
 
 class BlockBody(Container):
@@ -16,6 +23,11 @@ class BlockBody(Container):
 
     Note: This will eventually be replaced by aggregated attestations.
     """
+
+    proposer_attestation: ProposerAttestationData = (
+        _DEFAULT_PROPOSER_ATTESTATION
+    )
+    """The proposer sourced attestation kept separate from the list."""
 
 
 class BlockHeader(Container):
@@ -57,13 +69,10 @@ class Block(Container):
 
 
 class SignedBlock(Container):
-    """A container for a block and the proposer's signature."""
+    """A container for a block and its aggregated signatures."""
 
     message: Block
     """The block being signed."""
 
-    signature: Bytes32
-    """
-    The proposer's signature of the block message.
-    Note: Bytes32 is a placeholder; the actual signature is much larger.
-    """
+    signature: BlockSignatures
+    """Naive list of signatures aggregated for the block."""

@@ -17,10 +17,13 @@ from lean_spec.subspecs.containers.state import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    Validators,
 )
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+
+from .conftest import build_signed_attestation
 
 
 @pytest.fixture
@@ -36,7 +39,10 @@ def sample_checkpoint() -> Checkpoint:
 
 
 @pytest.fixture
-def sample_store(sample_config: Config, sample_checkpoint: Checkpoint) -> Store:
+def sample_store(
+    sample_config: Config,
+    sample_checkpoint: Checkpoint,
+) -> Store:
     """Create a sample forkchoice store."""
     return Store(
         time=Uint64(100),
@@ -63,7 +69,10 @@ class TestStoreCreation:
     def test_store_initialization_with_data(self) -> None:
         """Test Store initialization with blocks and states."""
         config = Config(num_validators=Uint64(10), genesis_time=Uint64(2000))
-        checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(5))
+        checkpoint = Checkpoint(
+            root=Bytes32(b"test" + b"\x00" * 28),
+            slot=Slot(5),
+        )
 
         # Sample block
         block = Block(
@@ -75,6 +84,15 @@ class TestStoreCreation:
         )
         block_hash = hash_tree_root(block)
 
+        signed_known = build_signed_attestation(
+            ValidatorIndex(0),
+            checkpoint,
+        )
+        signed_new = build_signed_attestation(
+            ValidatorIndex(1),
+            checkpoint,
+        )
+
         store = Store(
             time=Uint64(200),
             config=config,
@@ -84,8 +102,8 @@ class TestStoreCreation:
             latest_finalized=checkpoint,
             blocks={block_hash: block},
             states={},
-            latest_known_votes={ValidatorIndex(0): checkpoint},
-            latest_new_votes={ValidatorIndex(1): checkpoint},
+            latest_known_votes={ValidatorIndex(0): signed_known},
+            latest_new_votes={ValidatorIndex(1): signed_new},
         )
 
         assert store.time == Uint64(200)
@@ -101,7 +119,10 @@ class TestStoreCreation:
         """Test Store.get_forkchoice_store factory method."""
 
         config = Config(num_validators=Uint64(10), genesis_time=Uint64(1000))
-        checkpoint = Checkpoint(root=Bytes32(b"genesis" + b"\x00" * 25), slot=Slot(0))
+        checkpoint = Checkpoint(
+            root=Bytes32(b"genesis" + b"\x00" * 25),
+            slot=Slot(0),
+        )
 
         # Create block header for testing
         block_header = BlockHeader(
@@ -121,6 +142,7 @@ class TestStoreCreation:
             latest_finalized=checkpoint,
             historical_block_hashes=HistoricalBlockHashes(data=[]),
             justified_slots=JustifiedSlots(data=[]),
+            validators=Validators(data=[]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         )
@@ -154,7 +176,10 @@ class TestStoreDefaultValues:
     def test_store_empty_collections_by_default(self) -> None:
         """Test that Store initializes empty collections by default."""
         config = Config(num_validators=Uint64(5), genesis_time=Uint64(500))
-        checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(0))
+        checkpoint = Checkpoint(
+            root=Bytes32(b"test" + b"\x00" * 28),
+            slot=Slot(0),
+        )
 
         store = Store(
             time=Uint64(50),
@@ -176,7 +201,9 @@ class TestStoreDefaultValues:
         original_time = sample_store.time
 
         # Should not be able to modify Store fields directly
-        with pytest.raises((AttributeError, ValueError)):  # Pydantic frozen model
+        with pytest.raises(
+            (AttributeError, ValueError)
+        ):  # Pydantic frozen model
             sample_store.time = Uint64(999)  # type: ignore[misc]
 
         # Store should remain unchanged
@@ -189,7 +216,10 @@ class TestStoreValidation:
     def test_store_validation_required_fields(self) -> None:
         """Test that Store validates required fields."""
         config = Config(num_validators=Uint64(5), genesis_time=Uint64(500))
-        checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(0))
+        checkpoint = Checkpoint(
+            root=Bytes32(b"test" + b"\x00" * 28),
+            slot=Slot(0),
+        )
 
         # Should create successfully with all required fields
         store = Store(
@@ -211,7 +241,10 @@ class TestStoreValidation:
     def test_store_type_validation(self) -> None:
         """Test Store validates field types."""
         config = Config(num_validators=Uint64(5), genesis_time=Uint64(500))
-        checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(0))
+        checkpoint = Checkpoint(
+            root=Bytes32(b"test" + b"\x00" * 28),
+            slot=Slot(0),
+        )
 
         # Test with wrong type for time - should work due to Pydantic coercion
         # but verify it gets converted to the right type
@@ -232,7 +265,11 @@ class TestStoreValidation:
 class TestStoreComparison:
     """Test Store equality and comparison."""
 
-    def test_store_equality(self, sample_config: Config, sample_checkpoint: Checkpoint) -> None:
+    def test_store_equality(
+        self,
+        sample_config: Config,
+        sample_checkpoint: Checkpoint,
+    ) -> None:
         """Test Store equality comparison."""
         store1 = Store(
             time=Uint64(100),

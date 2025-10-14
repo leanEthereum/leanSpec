@@ -1,6 +1,6 @@
 """Tests for vote target selection and calculation."""
 
-import pytest
+import pytest  # type: ignore[import-not-found]
 
 from lean_spec.subspecs.containers import (
     Block,
@@ -13,6 +13,8 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+
+from .conftest import build_signed_attestation
 
 
 @pytest.fixture
@@ -83,7 +85,9 @@ class TestVoteTargetCalculation:
                 slot=Slot(i),
                 proposer_index=Uint64(i),
                 parent_root=prev_hash,
-                state_root=Bytes32(f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))),
+                state_root=Bytes32(
+                    f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))
+                ),
                 body=BlockBody(attestations=Attestations(data=[])),
             )
             block_hash = hash_tree_root(block)
@@ -92,7 +96,12 @@ class TestVoteTargetCalculation:
 
         # Very old finalized checkpoint (slot 0)
         finalized = Checkpoint(
-            root=next(h for h, b in blocks.items() if b.slot == Slot(0)), slot=Slot(0)
+            root=next(
+                h
+                for h, block in blocks.items()
+                if block.slot == Slot(0)
+            ),
+            slot=Slot(0),
         )
 
         # Current head is at slot 9
@@ -156,7 +165,7 @@ class TestVoteTargetCalculation:
         # Finalized at genesis
         finalized = Checkpoint(root=genesis_hash, slot=Slot(0))
 
-        # Create a Store instance with head at block_2 and safe target at block_1
+    # Create Store with head at block_2 and safe target at block_1
         store = Store(
             time=Uint64(100),
             config=config,
@@ -173,7 +182,10 @@ class TestVoteTargetCalculation:
         # Should walk back towards safe target
         assert target.root in blocks
 
-    def test_vote_target_justifiable_slot_constraint(self, config: Config) -> None:
+    def test_vote_target_justifiable_slot_constraint(
+        self,
+        config: Config,
+    ) -> None:
         """Test that vote target respects justifiable slot constraints."""
         # Create a long chain to test slot justification
         blocks = {}
@@ -185,7 +197,9 @@ class TestVoteTargetCalculation:
                 slot=Slot(i),
                 proposer_index=Uint64(i % 10),
                 parent_root=prev_hash,
-                state_root=Bytes32(f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))),
+                state_root=Bytes32(
+                    f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))
+                ),
                 body=BlockBody(attestations=Attestations(data=[])),
             )
             block_hash = hash_tree_root(block)
@@ -194,7 +208,12 @@ class TestVoteTargetCalculation:
 
         # Finalized very early (slot 0)
         finalized = Checkpoint(
-            root=next(h for h, b in blocks.items() if b.slot == Slot(0)), slot=Slot(0)
+            root=next(
+                h
+                for h, block in blocks.items()
+                if block.slot == Slot(0)
+            ),
+            slot=Slot(0),
         )
 
         # Head at slot 20
@@ -224,7 +243,10 @@ class TestVoteTargetCalculation:
         # The is_justifiable_after method should return True for valid slots
         assert target_slot.is_justifiable_after(finalized_slot)
 
-    def test_vote_target_with_same_head_and_safe_target(self, config: Config) -> None:
+    def test_vote_target_with_same_head_and_safe_target(
+        self,
+        config: Config,
+    ) -> None:
         """Test vote target when head and safe_target are the same."""
         # Create simple chain
         genesis = Block(
@@ -334,9 +356,16 @@ class TestSafeTargetComputation:
         checkpoint = Checkpoint(root=genesis_hash, slot=Slot(0))
 
         # Add some new votes
+        target_checkpoint = Checkpoint(root=block_1_hash, slot=Slot(1))
         new_votes = {
-            ValidatorIndex(0): Checkpoint(root=block_1_hash, slot=Slot(1)),
-            ValidatorIndex(1): Checkpoint(root=block_1_hash, slot=Slot(1)),
+            ValidatorIndex(0): build_signed_attestation(
+                ValidatorIndex(0),
+                target_checkpoint,
+            ),
+            ValidatorIndex(1): build_signed_attestation(
+                ValidatorIndex(1),
+                target_checkpoint,
+            ),
         }
 
         store = Store(
@@ -378,7 +407,8 @@ class TestEdgeCases:
         )
 
         # Should handle empty blocks gracefully (or raise appropriate error)
-        with pytest.raises(KeyError):  # Expected since head block doesn't exist
+        # Expected since head block doesn't exist
+        with pytest.raises(KeyError):
             store.get_vote_target()
 
     def test_vote_target_single_block(self, config: Config) -> None:

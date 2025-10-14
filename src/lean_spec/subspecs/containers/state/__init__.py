@@ -6,6 +6,7 @@ from .types import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    Validators,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "JustificationRoots",
     "JustificationValidators",
     "JustifiedSlots",
+    "Validators",
 ]

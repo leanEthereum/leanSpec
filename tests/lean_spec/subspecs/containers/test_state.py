@@ -1,18 +1,20 @@
 """ "Tests for the State container and its methods."""
 
-from typing import Dict, List, cast
+from typing import Dict, Iterable, List
 
 import pytest
 
 from lean_spec.subspecs.chain import DEVNET_CONFIG
 from lean_spec.subspecs.containers import (
+    AttestationData,
     Block,
     BlockBody,
     BlockHeader,
     Checkpoint,
     Config,
-    SignedBlock,
+    SignedValidatorAttestation,
     State,
+    ValidatorAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
@@ -21,10 +23,10 @@ from lean_spec.subspecs.containers.state import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    Validators,
 )
-from lean_spec.subspecs.containers.vote import SignedVote, Vote
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.types import Boolean, Bytes32, Uint64, ValidatorIndex
+from lean_spec.types import Boolean, Bytes32, Bytes4000, Uint64, ValidatorIndex
 
 
 @pytest.fixture
@@ -38,7 +40,10 @@ def sample_config() -> Config:
         A configuration with 4096 validators and genesis_time set to 0.
     """
     # Create and return a simple configuration used across tests.
-    return Config(num_validators=DEVNET_CONFIG.validator_registry_limit, genesis_time=Uint64(0))
+    return Config(
+        num_validators=DEVNET_CONFIG.validator_registry_limit,
+        genesis_time=Uint64(0),
+    )
 
 
 @pytest.fixture
@@ -64,16 +69,23 @@ def genesis_state(sample_config: Config) -> State:
 
 
 def _create_block(
-    slot: int, parent_header: BlockHeader, votes: List[SignedVote] | None = None
-) -> SignedBlock:
+    slot: int,
+    parent_header: BlockHeader,
+    votes: Iterable[
+        ValidatorAttestation | SignedValidatorAttestation
+    ]
+    | None = None,
+) -> Block:
     """
-    Helper: construct a valid SignedBlock for a given slot.
+    Helper: construct a valid `Block` for a given slot.
 
-    Notes
-    -----
-    - Uses round-robin proposer selection with modulus 10 (aligned with sample_config).
-    - Sets state_root to zero; STF will compute and validate the real root.
-    - Accepts an optional list of SignedVote to embed in the body.
+        Notes
+        -----
+        - Uses round-robin proposer selection with modulus 10 (aligned with the
+            devnet configuration).
+        - Sets state_root to zero; STF will compute and validate the real root.
+        - Accepts an optional collection of validator attestations (signed or
+            unsigned) to embed in the body.
 
     Parameters
     ----------
@@ -81,26 +93,30 @@ def _create_block(
         Slot number for the new block.
     parent_header : BlockHeader
         The header of the parent block to link against.
-    votes : list[SignedVote] | None
+    votes : Iterable[ValidatorAttestation | SignedValidatorAttestation] | None
         Optional attestations to include.
 
     Returns
     -------
-    SignedBlock
-        A signed block wrapper containing the constructed block.
+    Block
+        The constructed block message with attestations embedded.
     """
-    # Create a block body with the provided votes or an empty list.
-    body = BlockBody(attestations=Attestations(data=votes or []))
+    normalized_attestations = []
+    if votes is not None:
+        for attestation in votes:
+            message = getattr(attestation, "message", attestation)
+            normalized_attestations.append(message)
+
+    body = BlockBody(attestations=Attestations(data=normalized_attestations))
     # Construct the inner block message with correct parent_root linkage.
     block_message = Block(
         slot=Slot(slot),
-        proposer_index=ValidatorIndex(slot % 10),  # Using sample_config num_validators
+        proposer_index=ValidatorIndex(slot % 10),
         parent_root=hash_tree_root(parent_header),
         state_root=Bytes32.zero(),  # Placeholder, to be filled in by STF
         body=body,
     )
-    # Wrap the block in a SignedBlock with a zero signature for Devnet0.
-    return SignedBlock(message=block_message, signature=Bytes32.zero())
+    return block_message
 
 
 def _create_votes(indices: List[int]) -> List[Boolean]:
@@ -115,7 +131,8 @@ def _create_votes(indices: List[int]) -> List[Boolean]:
     Returns
     -------
     list[Boolean]
-        A bitlist of length VALIDATOR_REGISTRY_LIMIT with True at given indices.
+        A bitlist of length VALIDATOR_REGISTRY_LIMIT with True at the listed
+        indices.
     """
     # Start with an all-false bitlist at registry-limit length.
     votes = [Boolean(False)] * DEVNET_CONFIG.validator_registry_limit.as_int()
@@ -124,6 +141,31 @@ def _create_votes(indices: List[int]) -> List[Boolean]:
         votes[i] = Boolean(True)
     # Return the completed bitlist.
     return votes
+
+
+def build_signed_attestation(
+    validator: ValidatorIndex,
+    slot: Slot,
+    head: Checkpoint,
+    source: Checkpoint,
+    target: Checkpoint,
+) -> SignedValidatorAttestation:
+    """Create a signed attestation with a zeroed signature."""
+
+    data = AttestationData(
+        slot=slot,
+        head=head,
+        target=target,
+        source=source,
+    )
+    message = ValidatorAttestation(
+        validator_id=validator,
+        data=data,
+    )
+    return SignedValidatorAttestation(
+        message=message,
+        signature=Bytes4000.zero(),
+    )
 
 
 @pytest.fixture
@@ -194,6 +236,7 @@ def base_state(
         justified_slots=JustifiedSlots(data=[]),
         justifications_roots=JustificationRoots(data=[]),
         justifications_validators=JustificationValidators(data=[]),
+        validators=Validators(data=[]),
     )
 
 
@@ -282,7 +325,9 @@ def test_get_justifications_multiple_roots(base_state: State) -> None:
     state_with_data = base_state.model_copy(
         update={
             "justifications_roots": JustificationRoots(data=[root1, root2, root3]),
-            "justifications_validators": JustificationValidators(data=votes1 + votes2 + votes3),
+            "justifications_validators": JustificationValidators(
+                data=votes1 + votes2 + votes3
+            ),
         }
     )
 
@@ -324,6 +369,7 @@ def test_with_justifications_empty(
         justifications_validators=JustificationValidators(
             data=[Boolean(True)] * sample_config.num_validators.as_int()
         ),
+        validators=Validators(data=[]),
     )
 
     # Apply an empty justifications map to get a new state snapshot.
@@ -384,7 +430,8 @@ def test_with_justifications_invalid_length(base_state: State) -> None:
     root1 = Bytes32(b"\x01" * 32)
 
     # Construct an invalid votes bitlist: one short of required length.
-    invalid_votes = [Boolean(True)] * (base_state.config.num_validators - Uint64(1)).as_int()
+    validator_count = (base_state.config.num_validators - Uint64(1)).as_int()
+    invalid_votes = [Boolean(True)] * validator_count
     justifications = {root1: invalid_votes}
 
     # The method asserts on incorrect lengths.
@@ -396,7 +443,10 @@ def test_with_justifications_invalid_length(base_state: State) -> None:
     "justifications_map",
     [
         pytest.param({}, id="empty_justifications"),
-        pytest.param({Bytes32(b"\x01" * 32): _create_votes([0])}, id="single_root"),
+        pytest.param(
+            {Bytes32(b"\x01" * 32): _create_votes([0])},
+            id="single_root",
+        ),
         pytest.param(
             {
                 Bytes32(b"\x01" * 32): _create_votes([0]),
@@ -430,7 +480,8 @@ def test_justifications_roundtrip(
 
     Steps
     -----
-    - Write a map into the state via with_justifications (keys sorted internally).
+        - Write a map into the state via with_justifications (keys sorted
+            internally).
     - Read it back with get_justifications.
     - Compare against the original map sorted by key.
     """
@@ -495,11 +546,15 @@ def test_process_slot(genesis_state: State) -> None:
 
     # The filled root must be the hash of the pre-slot state.
     expected_root = hash_tree_root(genesis_state)
-    assert state_after_slot.latest_block_header.state_root == expected_root
+    assert (
+        state_after_slot.latest_block_header.state_root == expected_root
+    )
 
     # Re-processing the slot should be a no-op for the state_root.
     state_after_second_slot = state_after_slot.process_slot()
-    assert state_after_second_slot.latest_block_header.state_root == expected_root
+    assert (
+        state_after_second_slot.latest_block_header.state_root == expected_root
+    )
 
 
 def test_process_slots(genesis_state: State) -> None:
@@ -520,7 +575,10 @@ def test_process_slots(genesis_state: State) -> None:
     # The state's slot should equal the target.
     assert new_state.slot == target_slot
     # The header state_root should reflect the genesis state's root.
-    assert new_state.latest_block_header.state_root == hash_tree_root(genesis_state)
+    assert (
+        new_state.latest_block_header.state_root
+        == hash_tree_root(genesis_state)
+    )
 
     # Rewinding is invalid; expect an assertion.
     with pytest.raises(AssertionError):
@@ -535,8 +593,8 @@ def test_process_block_header_valid(genesis_state: State) -> None:
     -----
     - Move to slot 1 and build a valid block linked to the current header.
     - Process the header.
-    - Verify: genesis becomes justified/finalized, history updated,
-      justified_slots marked for slot 0, and latest header set for the new block.
+                - Verify: genesis is justified/finalized, history updated,
+                    slot 0 justified, latest header matches the block.
     """
     # Step to slot 1 where we will insert the new block.
     state_at_slot_1 = genesis_state.process_slots(Slot(1))
@@ -544,7 +602,7 @@ def test_process_block_header_valid(genesis_state: State) -> None:
     genesis_header_root = hash_tree_root(state_at_slot_1.latest_block_header)
 
     # Build a valid block for slot 1 with proper parent linkage.
-    block = _create_block(1, state_at_slot_1.latest_block_header).message
+    block = _create_block(1, state_at_slot_1.latest_block_header)
 
     # Apply header processing to update state.
     new_state = state_at_slot_1.process_block_header(block)
@@ -607,7 +665,9 @@ def test_process_block_header_invalid(
         state_at_slot_1.process_block_header(block)
 
 
-def test_process_attestations_justification_and_finalization(genesis_state: State) -> None:
+def test_process_attestations_justification_and_finalization(
+    genesis_state: State,
+) -> None:
     """
     process_attestations: justify a target and finalize the source.
 
@@ -624,12 +684,12 @@ def test_process_attestations_justification_and_finalization(genesis_state: Stat
     state_at_slot_1 = state.process_slots(Slot(1))
     # Create and process the block at slot 1.
     block1 = _create_block(1, state_at_slot_1.latest_block_header)
-    state = state_at_slot_1.process_block(block1.message)
+    state = state_at_slot_1.process_block(block1)
 
     # Move to slot 4 and produce/process a block.
     state_at_slot_4 = state.process_slots(Slot(4))
     block4 = _create_block(4, state_at_slot_4.latest_block_header)
-    state = state_at_slot_4.process_block(block4.message)
+    state = state_at_slot_4.process_block(block4)
 
     # Advance to slot 5 so the header at slot 4 caches its state root.
     state = state.process_slots(Slot(5))
@@ -639,34 +699,33 @@ def test_process_attestations_justification_and_finalization(genesis_state: Stat
         root=state.historical_block_hashes[0],  # Canonical root for slot 0
         slot=Slot(0),
     )
+    # Root of the block at slot 4
     checkpoint4 = Checkpoint(
-        root=hash_tree_root(state.latest_block_header),  # Root of the block at slot 4
+        root=hash_tree_root(state.latest_block_header),
         slot=Slot(4),
     )
 
     # Create 7 votes from distinct validators (indices 0..6) to reach ≥2/3.
     votes_for_4 = [
-        SignedVote(
-            data=Vote(
-                validator_id=ValidatorIndex(i),
-                slot=Slot(4),
-                head=checkpoint4,
-                target=checkpoint4,
-                source=genesis_checkpoint,
-            ),
-            signature=Bytes32.zero(),
+        build_signed_attestation(
+            validator=ValidatorIndex(i),
+            slot=Slot(4),
+            head=checkpoint4,
+            source=genesis_checkpoint,
+            target=checkpoint4,
         )
         for i in range(7)
     ]
 
     # Process attestations directly; returns a new state snapshot.
-    new_state = state.process_attestations(votes_for_4)  # type: ignore
+    new_state = state.process_attestations(votes_for_4)
 
     # The target (slot 4) should now be justified.
     assert new_state.latest_justified == checkpoint4
     # The justified bit for slot 4 must be set.
     assert bool(new_state.justified_slots[4]) is True
-    # Since no other justifiable slot exists between 0 and 4, genesis is finalized.
+    # Since no other justifiable slot exists between 0 and 4,
+    # genesis is finalized.
     assert new_state.latest_finalized == genesis_checkpoint
     # The per-root vote tracker for the justified target has been cleared.
     assert checkpoint4.root not in new_state.get_justifications()
@@ -691,9 +750,8 @@ def test_state_transition_full(genesis_state: State) -> None:
 
     # Move to slot 1 so we can propose a block.
     state_at_slot_1 = state.process_slots(Slot(1))
-    # Build a valid signed block linked to the current latest header.
-    signed_block = _create_block(1, state_at_slot_1.latest_block_header)
-    block = signed_block.message
+    # Build a valid block linked to the current latest header.
+    block = _create_block(1, state_at_slot_1.latest_block_header)
 
     # Manually compute the post-state result of processing this block.
     expected_state = state_at_slot_1.process_block(block)
@@ -701,25 +759,23 @@ def test_state_transition_full(genesis_state: State) -> None:
     block_with_correct_root = block.model_copy(
         update={"state_root": hash_tree_root(expected_state)}
     )
-    # Keep the original signature wrapper.
-    final_signed_block = SignedBlock(
-        message=block_with_correct_root, signature=signed_block.signature
-    )
 
     # Run STF and capture the output state.
-    final_state = state.state_transition(final_signed_block, valid_signatures=True)
+    final_state = state.state_transition(
+        block_with_correct_root,
+        valid_signatures=True,
+    )
 
     # The STF result must match the manually computed expected state.
     assert final_state == expected_state
 
     # Invalid signatures must cause the STF to assert.
     with pytest.raises(AssertionError, match="Block signatures must be valid"):
-        state.state_transition(final_signed_block, valid_signatures=False)
+        state.state_transition(block_with_correct_root, valid_signatures=False)
 
     # A block that commits to a wrong state_root must also assert.
-    block_with_bad_root = block.model_copy(update={"state_root": Bytes32.zero()})
-    signed_block_with_bad_root = SignedBlock(
-        message=block_with_bad_root, signature=signed_block.signature
+    block_with_bad_root = block.model_copy(
+        update={"state_root": Bytes32.zero()}
     )
     with pytest.raises(AssertionError, match="Invalid block state root"):
-        state.state_transition(signed_block_with_bad_root, valid_signatures=True)
+        state.state_transition(block_with_bad_root, valid_signatures=True)

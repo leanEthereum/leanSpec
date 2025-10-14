@@ -4,6 +4,8 @@ from lean_spec.subspecs.chain.config import DEVNET_CONFIG
 from lean_spec.types import Bytes32, SSZList
 from lean_spec.types.bitfields import BaseBitlist
 
+from ..validator import Validator
+
 
 class HistoricalBlockHashes(SSZList):
     """List of historical block root hashes up to historical_roots_limit."""
@@ -32,3 +34,10 @@ class JustificationValidators(BaseBitlist):
         DEVNET_CONFIG.historical_roots_limit.as_int()
         * DEVNET_CONFIG.validator_registry_limit.as_int()
     )
+
+
+class Validators(SSZList):
+    """Validator registry tracked in the state."""
+
+    ELEMENT_TYPE = Validator
+    LIMIT = DEVNET_CONFIG.validator_registry_limit.as_int()

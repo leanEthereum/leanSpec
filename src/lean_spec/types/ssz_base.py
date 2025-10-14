@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import io
 from abc import ABC, abstractmethod
-from typing import IO, Any
-
-from typing_extensions import Iterator, Self
+from typing import IO, Any, Iterator, Self
 
 from .base import StrictBaseModel
 
@@ -102,12 +100,15 @@ class SSZModel(StrictBaseModel, SSZType):
     """
     Base class for SSZ types that use Pydantic validation.
 
-    This combines StrictBaseModel (Pydantic validation + immutability) with SSZ serialization.
-    Use this for containers and complex types that can benefit from Pydantic.
+    This combines StrictBaseModel (Pydantic validation + immutability)
+    with SSZ serialization. Use this for containers and complex types that
+    can benefit from Pydantic.
 
-    For simple types that need special inheritance (like int), use SSZType directly.
+    For simple types that need special inheritance (like int), use SSZType
+    directly.
 
-    SSZModel provides natural iteration and indexing for collections with a 'data' field:
+    SSZModel provides natural iteration and indexing for collections with a
+    'data' field:
     - `for item in collection` instead of `for item in collection.data`
     - `collection[i]` instead of `collection.data[i]`
     - `len(collection)` instead of `len(collection.data)`
@@ -118,27 +119,30 @@ class SSZModel(StrictBaseModel, SSZType):
         if hasattr(self, "data"):
             return len(self.data)
         # For containers, return number of fields
-        return len(self.model_fields)
+        return len(type(self).model_fields)
 
     def __iter__(self) -> Iterator[Any]:  # type: ignore[override]
         """
         Iterate over the collection's data if it's a collection type,
         otherwise iterate over container field (name, value) pairs.
 
-        For SSZ collections with 'data' field, this iterates over the data contents.
-        For container types, this iterates over (field_name, field_value) pairs.
+        For SSZ collections with 'data' field, this iterates over the data
+        contents. For container types, this iterates over (field_name,
+        field_value) pairs.
         """
         if hasattr(self, "data"):
             return iter(self.data)
         # For containers, iterate over (field_name, field_value) pairs
-        return iter((name, getattr(self, name)) for name in self.model_fields.keys())
+        fields = type(self).model_fields
+        return iter((name, getattr(self, name)) for name in fields.keys())
 
     def __getitem__(self, key: Any) -> Any:
         """Get an item from the collection's data or container field by name."""
         if hasattr(self, "data"):
             return self.data[key]
         # For containers, allow field access by name
-        if isinstance(key, str) and key in self.model_fields:
+        fields = type(self).model_fields
+        if isinstance(key, str) and key in fields:
             return getattr(self, key)
         raise KeyError(f"Invalid key '{key}' for {self.__class__.__name__}")
 
@@ -147,5 +151,9 @@ class SSZModel(StrictBaseModel, SSZType):
         if hasattr(self, "data"):
             return f"{self.__class__.__name__}(data={list(self.data)!r})"
         # For containers, show field names and values
-        field_strs = [f"{name}={getattr(self, name)!r}" for name in self.model_fields.keys()]
+        fields = type(self).model_fields
+        field_strs = [
+            f"{name}={getattr(self, name)!r}"
+            for name in fields.keys()
+        ]
         return f"{self.__class__.__name__}({' '.join(field_strs)})"
