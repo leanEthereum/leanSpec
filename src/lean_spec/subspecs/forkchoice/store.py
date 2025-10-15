@@ -18,7 +18,7 @@ from lean_spec.subspecs.containers import (
     BlockBody,
     Checkpoint,
     Config,
-    SignedBlock,
+    SignedBlockAndVote,
     SignedValidatorAttestation,
     State,
     ValidatorAttestation,
@@ -206,17 +206,19 @@ class Store(Container):
         # TODO: plug real aggregated signature validation once available.
         return True
 
-    def process_block(self, signed_block: SignedBlock) -> None:
+    def process_block(self, signed_block_vote: SignedBlockAndVote) -> None:
         """
         Process new block and update forkchoice state.
 
         Adds block to store, processes included attestations, and updates head.
 
         Args:
-            signed_block: Block to process.
+            signed_block_vote: Block to process.
         """
-        block = signed_block.message
-        signatures = signed_block.signature
+        envelope = signed_block_vote.message
+        block = envelope.block
+        proposer_attestation = envelope.proposer_attestation
+        signatures = signed_block_vote.signature
 
         block_hash = hash_tree_root(block)
 
@@ -269,15 +271,6 @@ class Store(Container):
         )
         # the proposer vote for the current slot and block as head is to be
         # treated as the vote is independently casted in the second interval
-        proposer_attestation = ValidatorAttestation(
-            validator_id=block.proposer_index,
-            data=AttestationData(
-                slot=block.slot,
-                head=Checkpoint(root=block_hash, slot=block.slot),
-                target=block.body.proposer_attestation.target,
-                source=block.body.proposer_attestation.source,
-            ),
-        )
         signed_proposer_attestation = SignedValidatorAttestation(
             message=proposer_attestation,
             signature=proposer_signature,

@@ -1,6 +1,6 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import Any, Dict, Iterable, List, Union
+from typing import Any, Dict, Iterable, List
 
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -18,7 +18,7 @@ from ..block.types import Attestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
-from ..vote import ProposerAttestationData, ValidatorAttestation
+from ..vote import ValidatorAttestation
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -90,17 +90,7 @@ class State(Container):
         )
 
         # Build the genesis block header for the state.
-        empty_attestations = Attestations(data=[])
-        empty_checkpoint = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
-        proposer_attestation = ProposerAttestationData(
-            target=empty_checkpoint,
-            source=empty_checkpoint,
-        )
-
-        genesis_body = BlockBody(
-            attestations=empty_attestations,
-            proposer_attestation=proposer_attestation,
-        )
+        genesis_body = BlockBody(attestations=Attestations(data=[]))
 
         genesis_header = BlockHeader(
             slot=Slot(0),
@@ -415,18 +405,11 @@ class State(Container):
         state = self.process_block_header(block)
 
         # Process justification votes (attestations).
-        raw_attestations: List[
-            Union[ValidatorAttestation, ProposerAttestationData]
-        ] = list(block.body.attestations)
-        raw_attestations.append(block.body.proposer_attestation)
-
-        return state.process_attestations(raw_attestations)
+        return state.process_attestations(block.body.attestations)
 
     def process_attestations(
         self,
-        attestations: Iterable[
-            Union[ValidatorAttestation, ProposerAttestationData]
-        ],
+        attestations: Iterable[ValidatorAttestation],
     ) -> "State":
         """
         Apply attestation votes and update justification/finalization
@@ -439,7 +422,7 @@ class State(Container):
 
         Parameters
         ----------
-        attestations : Attestations + ProposerAttestationData
+        attestations : Attestations
             The list of attestation votes to process.
 
         Returns:
@@ -454,13 +437,9 @@ class State(Container):
 
         # Process each attestation in the block.
         for attestation in attestations:
-            if isinstance(attestation, ProposerAttestationData):
-                source = attestation.source
-                target = attestation.target
-            else:
-                vote = attestation.data
-                source = vote.source
-                target = vote.target
+            vote = attestation.data
+            source = vote.source
+            target = vote.target
 
             # Validate that this is a reasonable vote (source comes before target).
             if source.slot.as_int() >= target.slot.as_int():

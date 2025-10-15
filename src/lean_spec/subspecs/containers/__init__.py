@@ -1,6 +1,12 @@
 """The container types for the Lean consensus specification."""
 
-from .block import Block, BlockBody, BlockHeader, SignedBlock
+from .block import (
+    Block,
+    BlockAndProposerVote,
+    BlockBody,
+    BlockHeader,
+    SignedBlockAndVote,
+)
 from .checkpoint import Checkpoint
 from .config import Config
 from .state import State
@@ -16,11 +22,12 @@ from .vote import (
 
 __all__ = [
     "Block",
+    "BlockAndProposerVote",
     "BlockBody",
     "BlockHeader",
     "Checkpoint",
     "Config",
-    "SignedBlock",
+    "SignedBlockAndVote",
     "Validator",
     "AttestationData",
     "ValidatorAttestation",

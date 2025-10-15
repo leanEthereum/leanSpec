@@ -4,14 +4,8 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
-from ..checkpoint import Checkpoint
-from ..vote.vote import ProposerAttestationData
+from ..vote import ValidatorAttestation
 from .types import Attestations, BlockSignatures
-
-_DEFAULT_PROPOSER_ATTESTATION = ProposerAttestationData(
-    target=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
-    source=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
-)
 
 
 class BlockBody(Container):
@@ -22,15 +16,6 @@ class BlockBody(Container):
 
     Individual signatures live in the aggregated block signature list, so
     these entries contain only vote data without per-attestation signatures.
-    """
-
-    proposer_attestation: ProposerAttestationData = (
-        _DEFAULT_PROPOSER_ATTESTATION
-    )
-    """Standalone proposer vote kept outside the aggregated attestation list.
-
-    Aggregated attestations pack participation bits tightly; storing the
-    proposer's vote separately avoids wasting an aggregation slot.
     """
 
 
@@ -72,18 +57,25 @@ class Block(Container):
     """The block's payload."""
 
 
-class SignedBlock(Container):
-    """A container for a block and its aggregated signatures."""
+class BlockAndProposerVote(Container):
+    """Bundle containing a block and the proposer's attestation."""
 
-    message: Block
-    """The block being signed."""
+    block: Block
+    """The proposed block message."""
+
+    proposer_attestation: ValidatorAttestation
+    """The proposer's vote corresponding to this block."""
+
+
+class SignedBlockAndVote(Container):
+    """Envelope carrying a block, proposer vote, and aggregated signatures."""
+
+    message: BlockAndProposerVote
+    """The block plus proposer vote being signed."""
 
     signature: BlockSignatures
     """Aggregated signature payload for the block.
 
-    Signatures are stored in a simple list: first the attestation signatures
-    in attestation order, followed by the proposer signature. The list length
-    stays bound by the validator registry limit because the proposer vote does
-    not carry an additional signature. Eventually this field will be replaced
-    by a single zk-aggregated signature.
+    Signatures remain in attestation order followed by the proposer signature.
+    Eventually this field will be replaced by a single zk-aggregated signature.
     """
