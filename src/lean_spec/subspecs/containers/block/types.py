@@ -3,7 +3,7 @@
 from lean_spec.types import Bytes4000, SSZList
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
-from ..vote.vote import ValidatorAttestation
+from ..vote import ValidatorAttestation
 
 
 class Attestations(SSZList):
