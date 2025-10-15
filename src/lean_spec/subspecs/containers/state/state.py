@@ -466,6 +466,7 @@ class State(Container):
             if source.slot.as_int() >= target.slot.as_int():
                 continue  # Skip invalid votes
 
+            # Check if source checkpoint is justified.
             source_slot = source.slot.as_int()
             target_slot = target.slot.as_int()
 

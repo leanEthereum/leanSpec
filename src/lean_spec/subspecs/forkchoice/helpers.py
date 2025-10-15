@@ -37,10 +37,7 @@ def get_fork_choice_head(
     """
     # Start at genesis if root is zero hash
     if root == ZERO_HASH:
-        root = min(
-            blocks.keys(),
-            key=lambda block_hash: blocks[block_hash].slot,
-        )
+        root = min(blocks.keys(), key=lambda block_hash: blocks[block_hash].slot)
 
     # If no votes, return the starting root immediately
     if not latest_votes:
@@ -64,7 +61,7 @@ def get_fork_choice_head(
         if block.parent_root and vote_weights.get(block_hash, 0) >= min_score:
             children_map.setdefault(block.parent_root, []).append(block_hash)
 
-    # Walk down tree choosing child with most votes; slot/hash break ties
+    # Walk down tree, choosing child with most votes (tiebreak by slot, then hash)
     current = root
     while True:
         children = children_map.get(current, [])
@@ -72,10 +69,7 @@ def get_fork_choice_head(
             return current
 
         # Choose best child: most votes, then highest slot, then highest hash
-        current = max(
-            children,
-            key=lambda x: (vote_weights.get(x, 0), blocks[x].slot, x),
-        )
+        current = max(children, key=lambda x: (vote_weights.get(x, 0), blocks[x].slot, x))
 
 
 def get_latest_justified(

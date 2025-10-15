@@ -1,11 +1,11 @@
 """
 Forkchoice store for tracking chain state and votes.
 
-The Store tracks data required for the LMD GHOST forkchoice algorithm.
+The Store tracks all information required for the LMD GHOST forkchoice algorithm.
 """
 
 import copy
-from typing import Dict
+from typing import Dict, Sequence
 
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
@@ -135,37 +135,37 @@ class Store(Container):
         attestation = signed_attestation.message
         data = attestation.data
 
-        assert data.source.root in self.blocks, "Unknown source block"
-        assert data.target.root in self.blocks, "Unknown target block"
+        assert data.source.root in self.blocks, f"Unknown source block: {data.source.root.hex()}"
+        assert data.target.root in self.blocks, f"Unknown target block: {data.target.root.hex()}"
 
         source_block = self.blocks[data.source.root]
         target_block = self.blocks[data.target.root]
 
-        assert source_block.slot <= target_block.slot, (
-            "Source slot must not exceed target"
-        )
-        assert data.source.slot <= data.target.slot, (
-            "Source checkpoint slot must not exceed target"
-        )
+        assert source_block.slot <= target_block.slot, "Source slot must not exceed target"
+        assert data.source.slot <= data.target.slot, "Source checkpoint slot must not exceed target"
 
-        assert source_block.slot == data.source.slot, (
-            "Source checkpoint slot mismatch"
-        )
-        assert target_block.slot == data.target.slot, (
-            "Target checkpoint slot mismatch"
-        )
+        assert source_block.slot == data.source.slot, "Source checkpoint slot mismatch"
+        assert target_block.slot == data.target.slot, "Target checkpoint slot mismatch"
 
         current_slot = Slot(self.time // SECONDS_PER_INTERVAL)
-        assert data.slot <= current_slot + Slot(1), (
-            "Attestation too far in future"
-        )
+        assert data.slot <= current_slot + Slot(1), "Attestation too far in future"
 
     def process_attestation(
         self,
         signed_attestation: SignedValidatorAttestation,
         is_from_block: bool = False,
     ) -> None:
-        """Process attestation from block propagation or gossip."""
+        """
+        Process new attestation (signed validator attestation).
+
+        Handles attestations from blocks or network gossip, updating vote tracking
+        according to timing and precedence rules.
+
+        Args:
+            signed_attestation: Attestation to process.
+            is_from_block: True if attestation came from block, False if from network.
+        """
+        # Validate attestation structure and constraints
         self.validate_attestation(signed_attestation)
 
         attestation = signed_attestation.message
@@ -173,52 +173,43 @@ class Store(Container):
         attestation_slot = attestation.data.slot
 
         if is_from_block:
-            # update latest known votes if this is latest
+            # On-chain attestation processing
+
+            # Update known votes if this is the latest from validator
             latest_known = self.latest_known_votes.get(validator_id)
-            if (
-                latest_known is None
-                or latest_known.message.data.slot < attestation_slot
-            ):
+            if latest_known is None or latest_known.message.data.slot < attestation_slot:
                 self.latest_known_votes[validator_id] = signed_attestation
 
-            # clear from new votes if this is latest
+            # Remove from new votes if this supersedes it
             latest_new = self.latest_new_votes.get(validator_id)
-            if (
-                latest_new is not None
-                and latest_new.message.data.slot <= attestation_slot
-            ):
+            if latest_new is not None and latest_new.message.data.slot <= attestation_slot:
                 del self.latest_new_votes[validator_id]
             return
 
-        # forkchoice should be correctly ticked to current time before
-        # importing gossiped attestations
+        # Network gossip attestation processing
+
+        # Ensure forkchoice is current before processing gossip
         time_slots = Slot(self.time // SECONDS_PER_INTERVAL)
         assert attestation_slot <= time_slots, "Attestation from future slot"
 
-        # update latest new votes if this is the latest
+        # Update new votes if this is latest from validator
         latest_new = self.latest_new_votes.get(validator_id)
-        if (
-            latest_new is None
-            or latest_new.message.data.slot < attestation_slot
-        ):
+        if latest_new is None or latest_new.message.data.slot < attestation_slot:
             self.latest_new_votes[validator_id] = signed_attestation
 
     def _validate_block_signatures(
         self,
         block: Block,
-        signatures: list[Bytes4000],
+        signatures: Sequence[Bytes4000],
     ) -> bool:
         """Temporary stub for aggregated signature validation."""
         # TODO: plug real aggregated signature validation once available.
         return True
 
-    def process_block(self, block: Block | SignedBlock) -> None:
-        """Process a new block or signed block and update votes and head."""
-        signatures: list[Bytes4000] = []
-        if isinstance(block, SignedBlock):
-            signed_block = block
-            block = signed_block.message
-            signatures = list(signed_block.signature)
+    def process_block(self, signed_block: SignedBlock) -> None:
+        """Process a signed block and update votes and head."""
+        block = signed_block.message
+        signatures = signed_block.signature
 
         block_hash = hash_tree_root(block)
         if block_hash in self.blocks:

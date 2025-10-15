@@ -18,16 +18,20 @@ class BlockBody(Container):
     """The body of a block, containing payload data."""
 
     attestations: Attestations
-    """
-    A list of votes included in the block.
+    """Plain validator attestations carried in the block body.
 
-    Note: This will eventually be replaced by aggregated attestations.
+    Individual signatures live in the aggregated block signature list, so
+    these entries contain only vote data without per-attestation signatures.
     """
 
     proposer_attestation: ProposerAttestationData = (
         _DEFAULT_PROPOSER_ATTESTATION
     )
-    """The proposer sourced attestation kept separate from the list."""
+    """Standalone proposer vote kept outside the aggregated attestation list.
+
+    Aggregated attestations pack participation bits tightly; storing the
+    proposer's vote separately avoids wasting an aggregation slot.
+    """
 
 
 class BlockHeader(Container):
@@ -75,4 +79,11 @@ class SignedBlock(Container):
     """The block being signed."""
 
     signature: BlockSignatures
-    """Naive list of signatures aggregated for the block."""
+    """Aggregated signature payload for the block.
+
+    Signatures are stored in a simple list: first the attestation signatures
+    in attestation order, followed by the proposer signature. The list length
+    stays bound by the validator registry limit because the proposer vote does
+    not carry an additional signature. Eventually this field will be replaced
+    by a single zk-aggregated signature.
+    """

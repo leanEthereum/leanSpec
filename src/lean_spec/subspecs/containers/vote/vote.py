@@ -17,7 +17,12 @@ class AttestationData(Container):
 
 
 class ProposerAttestationData(Container):
-    """Vote metadata included by the block proposer."""
+    """Vote metadata included by the block proposer.
+
+    Captures the proposer's justification vote using only source and target
+    checkpoints. The corresponding head and slot are implied by the block the
+    proposer built, avoiding a circular dependency on the block body.
+    """
 
     target: Checkpoint
     source: Checkpoint
@@ -55,6 +60,12 @@ class SignedValidatorAttestation(Container):
 
     message: ValidatorAttestation
     signature: Bytes4000
+    """Signature produced by the lean signature VM.
+
+    Unlike BLS, signatures over ValidatorAttestation messages that share the
+    same underlying AttestationData can be aggregated efficiently by the lean
+    signature VM.
+    """
 
     @property
     def data(self) -> ValidatorAttestation:
@@ -67,6 +78,12 @@ class Attestation(Container):
 
     aggregation_bits: AggregationBits
     message: AttestationData
+    """Combined vote data similar to the beacon chain format.
+
+    Multiple validator votes are aggregated here without the complexity of
+    committee assignments. This structure is defined for future use and is not
+    currently exercised by devnets.
+    """
 
 
 class SignedAttestation(Container):
@@ -74,3 +91,11 @@ class SignedAttestation(Container):
 
     message: Attestation
     signature: AggregatedSignatures
+    """Aggregated vote plus its combined signature.
+
+    Stores a naive list of validator signatures that mirrors the attestation
+    order; this will be replaced by a single zk-verified signature in later
+    devnets. Lean signatures permit recursive aggregation even when individual
+    ValidatorAttestation and Attestation messages differ, so long as their
+    embedded AttestationData matches.
+    """
