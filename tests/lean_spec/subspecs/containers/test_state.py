@@ -713,7 +713,7 @@ def test_process_attestations_justification_and_finalization(
             head=checkpoint4,
             source=genesis_checkpoint,
             target=checkpoint4,
-        )
+        ).message
         for i in range(7)
     ]
 

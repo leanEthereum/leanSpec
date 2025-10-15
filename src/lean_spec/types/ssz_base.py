@@ -115,7 +115,7 @@ class SSZModel(StrictBaseModel, SSZType):
     """
 
     def __len__(self) -> int:
-        """Return the length of the collection's data or number of container fields."""
+        """Return collection length or the number of container fields."""
         if hasattr(self, "data"):
             return len(self.data)
         # For containers, return number of fields
@@ -127,8 +127,8 @@ class SSZModel(StrictBaseModel, SSZType):
         otherwise iterate over container field (name, value) pairs.
 
         For SSZ collections with 'data' field, this iterates over the data
-        contents. For container types, this iterates over (field_name,
-        field_value) pairs.
+        contents. For container types, this iterates over
+        (field_name, field_value) pairs.
         """
         if hasattr(self, "data"):
             return iter(self.data)
@@ -137,7 +137,7 @@ class SSZModel(StrictBaseModel, SSZType):
         return iter((name, getattr(self, name)) for name in fields.keys())
 
     def __getitem__(self, key: Any) -> Any:
-        """Get an item from the collection's data or container field by name."""
+        """Get data by index or container field value by name."""
         if hasattr(self, "data"):
             return self.data[key]
         # For containers, allow field access by name
