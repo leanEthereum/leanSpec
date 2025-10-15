@@ -1,367 +1,113 @@
 # Fork Choice
 
-<!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
+## Overview
 
-- [Fork choice](#fork-choice)
-  - [Configuration](#configuration)
-  - [Helpers](#helpers)
-    - [`get_fork_choice_head`](#get_fork_choice_head)
-    - [`get_latest_justified`](#get_latest_justified)
-    - [`Store`](#store)
-    - [`get_forkchoice_store`](#get_forkchoice_store)
-    - [`update_head`](#update_head)
-    - [`update_safe_target`](#update_safe_target)
-      - [`get_vote_target`](#get_vote_target)
-    - [`accept_new_votes`](#accept_new_votes)
-      - [`tick_interval`](#tick_interval)
-    - [`get_proposal_head`](#get_proposal_head)
-  - [Handlers](#handlers)
-    - [`on_tick`](#on_tick)
-    - [`on_attestation`](#on_attestation)
-    - [`on_block`](#on_block)
+When multiple valid chains exist, the protocol must choose one as canonical.
+This is the fork choice problem. Lean chain solves it using LMD-GHOST with
+modifications for the simpler protocol design.
 
-<!-- mdformat-toc end -->
+## The Need for Fork Choice
 
-## Fork choice
+Networks are not perfectly synchronized. Different validators may see different
+blocks first. This creates temporary forks.
 
-At genesis, let `store = get_forkchoice_store(genesis_state, genesis_block)` and
-update `store` by running:
+Fork choice provides a consistent rule. Every honest validator following the
+rule will agree on the canonical chain. This agreement must exist for
+consensus.
 
-- `on_tick(store, time)` whenever `time > store.time` where `time` is the
-  current Unix time
-- `on_block(store, block)` whenever a block `block: SignedBlock` is
-  received
-- `on_attestation(store, attestation, from_block)` whenever an attestation `attestation` is
-  received, either in a block or on network
-- `get_proposal_head(store, slot)` whenever validator intends to make block proposal
+## How It Works
 
-### Configuration
+The fork choice algorithm starts from the most recently justified block. It
+then follows validator votes forward through the tree of blocks.
 
-### Helpers
+At each branch point, the algorithm picks the child with the most votes. Votes
+for descendants count toward ancestors. This means voting for a block implicitly
+supports its entire history.
 
-#### `get_fork_choice_head`
+The algorithm continues until reaching a leaf. That leaf becomes the chain head.
 
-```python
-# Use LMD GHOST to get the head, given a particular root (usually the latest
-# known justified block)
-#
-# Note: 3sf mini divergence: it directly accepts latest_votes (known or new) as
-# tracked in the store
-def get_fork_choice_head(
-    blocks: Dict[str, Block], root: str, latest_votes: List[Checkpoint], min_score: int = 0
-) -> str:
-    # Start at genesis by default
-    if root == ZERO_HASH:
-        root = min(blocks.keys(), key=lambda block: blocks[block].slot)
+## Justification and Fork Choice
 
-    # For each block, count the number of votes for that block. A vote
-    # for any descendant of a block also counts as a vote for that block
-    vote_weights: Dict[str, int] = {}
+Only justified blocks can serve as fork choice starting points. This ties fork
+choice to finalization.
 
-    for vote in latest_votes.values():
-        if vote.root in blocks:
-            block_hash = vote.root
-            while blocks[block_hash].slot > blocks[root].slot:
-                vote_weights[block_hash] = vote_weights.get(block_hash, 0) + 1
-                block_hash = blocks[block_hash].parent_root
+Validators must justify new blocks before fork choice considers them. This
+creates a feedback loop: votes justify blocks, justified blocks anchor fork
+choice, fork choice determines what to build on.
 
-    # Identify the children of each block
-    children_map: Dict[str, List[str]] = {}
-    for _hash, block in blocks.items():
-        if block.parent_root and vote_weights.get(_hash, 0) >= min_score:
-            children_map.setdefault(block.parent_root, []).append(_hash)
+## Vote Timing
 
-    # Start at the root (latest justified hash or genesis) and repeatedly
-    # choose the child with the most latest votes, tiebreaking by slot then hash
-    current = root
-    while True:
-        children = children_map.get(current, [])
-        if not children:
-            return current
-        current = max(children, key=lambda x: (vote_weights.get(x, 0), blocks[x].slot, x))
-```
+Votes aren't processed immediately. The protocol divides each slot into
+intervals. Different intervals have different roles:
 
-#### `get_latest_justified`
+- Some intervals accept new votes
+- Some intervals update what's safe to vote for
+- Some intervals are for proposal
 
-```python
-def get_latest_justified(states: Dict[str, State]) -> Optional[Checkpoint]:
-    # Find the State object with the maximum s.latest_justified.slot value
-    latest = max(states.values(), key=lambda s: s.latest_justified.slot)
+This careful timing prevents certain attacks and ensures validators have
+consistent views.
 
-    # Return the Checkpoint from that State object
-    return latest.latest_justified
-```
+## Safe Targets
 
-#### `Store`
+Validators need to know where they can safely vote. The safe target mechanism
+finds the latest block that has enough support.
 
-The `Store` is responsible for tracking information required for the fork choice
-algorithm. The important fields being tracked are described below:
+A block needs votes from 2/3 of validators to be safe. This threshold ensures
+that conflicting blocks can't both be safe simultaneously.
 
-- `latest_justified`: the highest-slot known justified block
-- `latest_finalized`: the highest-slot known finalized block
-- `latest_known_votes`: the latest by validator votes already applied
-- `latest_new_votes`: the latest by validator new votes not yet applied
+## Computing Vote Targets
 
-```python
-class Store(object):
-    # time in intervals since genesis
-    time: Interval
-    config: Config
-    head: Root
-    safe_target: Root
-    latest_justified: Checkpoint
-    latest_finalized: Checkpoint
-    blocks: Dict[Root, Block] = field(default_factory=dict)
-    states: Dict[Root, State] = field(default_factory=dict)
-    latest_known_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = field(default_factory=dict)
-    latest_new_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = field(default_factory=dict)
-```
+When a validator votes, it must choose a target carefully. The target should be
+recent but not too recent. It should be safe but not too old.
 
-#### `get_forkchoice_store`
+The algorithm starts from the current head and works backward. It moves back a
+few blocks if needed. It continues until finding a position that can be
+justified according to protocol rules.
 
-The provided anchor-state will be regarded as a trusted state, to not roll back
-beyond. This should be the genesis state for a full client.
+## Handling New Information
 
-```python
-def get_forkchoice_store(anchor_state: State, anchor_block: Block) -> Store:
-    assert anchor_block.state_root == hash_tree_root(anchor_state)
-    anchor_root = hash_tree_root(anchor_block)
-    anchor_slot = anchor_block.slot
+Fork choice must handle new blocks and new votes. When a block arrives, it gets
+added to the tree. Its votes are extracted and counted.
 
-    return Store(
-        time=anchor_slot * INTERVALS_PER_SLOT,
-        config=anchor_state.config,
-        head=anchor_root,
-        safe_target=anchor_root,
-        latest_justified=anchor_state.latest_justified,
-        latest_finalized=anchor_state.latest_finalized,
-        blocks={anchor_root: copy(anchor_block)},
-        states={anchor_root: copy(anchor_state)},
-    )
-```
+When a vote arrives over gossip, it's held temporarily. Votes are only counted
+at specific times to maintain consistency.
 
-#### `update_head`
+## Genesis Initialization
 
-```python
-def update_head(store: Store) -> None:
-    """
-    Updates the store's latest justified checkpoint, head, and latest finalized state.
-    """
-    store.latest_justified = get_latest_justified(store.states)
-    store.head = get_fork_choice_head(
-        store.blocks, store.latest_justified.root, store.latest_known_votes
-    )
+Fork choice starts at genesis. The genesis block is automatically justified and
+finalized. This bootstraps the entire process.
 
-    store.latest_finalized = store.states[store.head].latest_finalized
-```
+From genesis, each new block references its parent. The tree grows slot by
+slot.
 
-#### `update_safe_target`
+## Reorganizations
 
-```python
-# Compute the latest block that the validator is allowed to choose as the target
-def update_safe_target(store: Store):
-    # 2/3rd majority min voting voting weight for target selection
-    min_target_score = -(-store.config.num_validators * 2 // 3)  # ceiling division
+Sometimes fork choice changes. A new vote might tip the balance to a different
+fork. The head switches to the new fork.
 
-    store.safe_target = get_fork_choice_head(
-        store.blocks,
-        store.latest_justified.root,
-        store.latest_new_votes,
-        min_score=min_target_score,
-    )
-```
+Reorganizations are normal in the protocol. Shallow reorgs happen occasionally.
+Deep reorgs past finalization cannot happen if 2/3 of validators are honest.
 
-##### `get_vote_target`
+## View Consistency
 
-```python
-def get_vote_target(store: Store) -> Checkpoint:
-    """
-    Calculates the target checkpoint for a vote based on the head, safe target,
-    and latest finalized state.
-    """
-    # Start from head as target candidate
-    target_block_root = store.head
+Different validators may have different views temporarily. They might see
+blocks in different orders. They might receive votes at different times.
 
-    # If there is no very recent safe target, then vote for the k'th ancestor
-    # of the head
-    for i in range(3):
-        if store.blocks[target_block_root].slot > store.blocks[store.safe_target].slot:
-            target_block_root = store.blocks[target_block_root].parent_root
+Fork choice rules ensure these differences don't break consensus. Eventually,
+all honest validators converge on the same head.
 
-    # If the latest finalized slot is very far back, then only some slots are
-    # valid to justify, make sure the target is one of those
-    while not is_justifiable_slot(
-        store.latest_finalized.slot, store.blocks[target_block_root].slot
-    ):
-        target_block_root = store.blocks[target_block_root].parent_root
+## Finalization Interaction
 
-    target_block = store.blocks[target_block_root]
-    return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
-```
+Fork choice respects finalization. The starting point for fork choice is always
+on the finalized chain. This prevents fork choice from reverting finalized
+blocks.
 
-#### `accept_new_votes`
+As new blocks get finalized, the fork choice tree gets pruned. Old forks that
+lost are discarded.
 
-```python
-# Process new votes that the staker has received. Vote processing is done
-# at a particular time, because of safe target and view merge rules
-def accept_new_votes(store: Store):
-    """
-    Accepts the latest new votes, merges them into the known votes,
-    and then updates the fork-choice head.
-    """
-    for validator_id in store.latest_new_votes.keys():
-        store.latest_known_votes[validator_id] = store.latest_new_votes[validator_id]
+## Implementation Details
 
-    store.latest_new_votes = {}
-    update_head(store)
-```
+The specification code implements these concepts precisely. It maintains the
+tree of blocks, tracks votes, and computes the head.
 
-##### `tick_interval`
-
-```python
-def tick_interval(store: Store, has_proposal: bool) -> None:
-    store.time += 1
-    current_interval = store.time % INTERVALS_PER_SLOT
-    if current_interval == 0:
-        if has_proposal:
-            accept_new_votes(store)
-    elif current_interval == 1:
-        # validators will vote in this interval using safe target previously
-        # computed
-        pass
-    elif current_interval == 2:
-        update_safe_target(store)
-    else:
-        accept_new_votes(store)
-```
-
-#### `get_proposal_head`
-
-```python
-def get_proposal_head(store: Store, slot: Slot) -> Root:
-    slot_time = store.config.genesis_time + slot * SECONDS_PER_SLOT
-    # this would be a no-op if the store is already ticked to the current time
-    on_tick(store, slot_time, True)
-    # this would be a no-op or just a fast compute if store was already ticked to
-    # accept new votes for a registered validator with the node
-    accept_new_votes(store)
-    return store.head
-```
-
-### Handlers
-
-#### `on_tick`
-
-```python
-# called every interval and with has_proposal flag on the new slot interval if
-# node has a validator with proposal in this slot so as to not delay accepting
-# new votes and parallelize compute
-def on_tick(store: Store, time: int, has_proposal: bool) -> None:
-    """
-    Ticks the store forward in intervals until it reaches the given time.
-
-    :param store: The Store object to be updated.
-    :param time: The current time in seconds.
-    :param has_proposal: A boolean indicating if there is a proposal in this tick.
-    """
-    # Calculate the number of intervals that have passed since genesis
-    tick_interval_time = (time - store.genesis_time) // SECONDS_PER_INTERVAL
-
-    # Tick the store one interval at a time until the target time is reached
-    while store.time < tick_interval_time:
-        # Determine if a proposal should be signaled for the next interval
-        should_signal_proposal = has_proposal and (store.time + 1) == tick_interval_time
-
-        # Tick the interval and potentially signal a proposal
-        tick_interval(store, should_signal_proposal)
-```
-
-#### `on_attestation`
-
-```python
-def on_attestation(store: Store, vote: SignedValidatorAttestation, is_from_block: bool = False) -> None:
-    """
-    Validates and processes a new attestation (a signed vote), updating the store's
-    latest votes.
-    """
-    validate_on_attestation(store, vote)
-
-    validator_id = vote.validator_id
-
-    if is_from_block:
-        # update latest known votes if this is latest
-        latest_vote = store.latest_known_votes.get(validator_id)
-        if latest_vote is None or latest_vote.message.slot < vote.message.slot:
-            store.latest_known_votes[validator_id] = vote
-
-        # clear from new votes if this is latest
-        latest_vote = store.latest_new_votes.get(validator_id)
-        if latest_vote is not None and latest_vote.message.slot < vote.message.slot:
-            del store.latest_new_votes[validator_id]
-    else:
-        # forkchoice should be correctly ticked to current time before
-        # importing gossiped attestations
-        time_slots = store.time // SECONDS_PER_INTERVAL
-        assert vote.message.slot <= time_slots
-
-        # update latest new votes if this is the latest
-        latest_vote = store.latest_new_votes.get(validator_id)
-        if latest_vote is None or latest_vote.message.slot < vote.message.slot:
-            store.latest_new_votes[validator_id] = vote
-```
-
-#### `on_block`
-
-```python
-def on_block(store: Store, signed_block: SignedBlock) -> None:
-    """
-    Processes a new block, updates the store, and triggers a head update.
-    """
-    block = signed_block.message
-    signatures = signed_block.signature
-    block_hash = compute_hash(block)
-    # If the block is already known, ignore it
-    if block_hash in store.blocks:
-        return
-
-    parent_state = store.states.get(block.parent_root)
-    # at this point parent state should be available so node should
-    # sync parent chain if not available before adding block to forkchoice
-    assert parent_state is not None, "Parent state not found, sync parent chain first"
-
-    valid_signatures = validate_signatures(block.signature)
-    # Get post state from STF (State Transition Function)
-    state = state_transition(copy.deepcopy(parent_state), block, valid_signatures, True)
-    store.blocks[block_hash] = block
-    store.states[block_hash] = state
-
-    # add block votes to the onchain known last votes
-    for i in [0..block.body.attestations.len]:
-        validator_attestation = block.body.attestations[i]
-        signed_attestation = SignedValidatorAttestation(
-            message=validator_attestation,
-            # eventually one would be able to associate and consume an aggregated signature
-            # for individual vote validity with that information encoded in the signature
-            signature=signatures[i]
-        )
-
-        # Add block votes to the onchain known last votes
-        on_attestation(store, signed_attestation, True)
-    update_head(store)
-
-    # the proposer vote for the current slot and block as head is to be
-    # treated as the vote is independently casted in the second interval
-    proposer_attestation = ValidatorAttestation(
-        slot=block.slot,
-        head=Checkpoint(root=block_hash,slot=block.slot),
-        source=block.body.proposer_attestation.source,
-        target=block.body.proposer_attestation.target,
-    )
-    signed_proposer_attestation=SignedValidatorAttestation(
-        message=proposer_attestation,
-        signature=signatures[signatures.len-1]
-    )
-    # note that we pass False here to make sure this gets added to the new votes
-    # so that this doesn't influence this node's validators upcoming votes
-    on_attestation(store, signed_proposer_attestation, False)
-```
+This documentation explains the concepts. The code provides the exact algorithm.

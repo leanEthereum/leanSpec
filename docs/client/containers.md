@@ -1,192 +1,104 @@
-# Containers
+# Data Structures
 
-<!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
+## Overview
 
-- [Encoding](#encoding)
-- [`Config`](#config)
-- [`Checkpoint`](#checkpoint)
-- [`State`](#state)
-- [`Block`](#block)
-- [`BlockHeader`](#blockheader)
-- [`BlockBody`](#blockbody)
-- [`SignedBlock`](#signedblock)
-- [`Vote`](#vote)
-- [`SignedVote`](#signedvote)
-  - [`Attestation`](#attestation)
-- [Remarks](#remarks)
+The lean chain uses several data structures to represent consensus information.
+All data uses SSZ encoding for consistency and efficiency.
 
-<!-- mdformat-toc end -->
+## Configuration
+
+The chain needs basic configuration to start. This includes when genesis occurs
+and how many validators participate. Configuration is simple and determined at
+chain launch.
+
+## Checkpoints
+
+A checkpoint marks a specific moment in the chain. It combines a block
+identifier with a slot number. Checkpoints are used for justification and
+finalization.
+
+Justified checkpoints indicate validator agreement. Finalized checkpoints
+provide stronger guarantees.
+
+## Chain State
+
+The state contains everything needed for consensus. It tracks the current slot,
+recent blocks, and validator votes. State also records which blocks are
+justified and finalized.
+
+Historical information is kept for a limited time. This prevents state from
+growing unbounded.
+
+Validator votes are stored in a space-efficient format. This reduces the size
+of state while maintaining all necessary information.
+
+## Blocks
+
+A block proposes changes to the chain. It references its parent block, creating
+a chain. The block includes a state root that represents the result of
+applying this block.
+
+Each block has a proposer who created it. The slot determines which validator
+can propose.
+
+## Block Headers
+
+Block headers summarize blocks without storing full content. The header
+includes references to the parent and the resulting state. It also contains a
+hash of the block body.
+
+Headers are smaller than full blocks. They're useful for tracking the chain
+without storing everything.
+
+## Block Contents
+
+Block contents consist of operations. Currently, the main operation is voting.
+Validators submit votes which are packaged into blocks.
+
+Later versions will add more operation types.
+
+## Signed Blocks
+
+A signed block is a block with a cryptographic signature from the proposer.
+The signature proves the proposer created this specific block.
+
+In Devnet 0, signatures are placeholders. Real signatures will be added in
+Devnet 1.
+
+## Votes
+
+Votes are how validators express their view of the chain. Each vote specifies:
+
+- What the validator thinks is the chain head
+- What should be justified
+- What is already justified
+
+Votes can be aggregated to save space, but Devnet 0 doesn't do this yet.
+
+## Signed Votes
+
+A signed vote is a vote with a validator signature. The signature proves which
+validator submitted the vote.
+
+Like block signatures, vote signatures are placeholders in Devnet 0.
+
+## Aggregated Attestations
+
+Multiple votes can be combined into a single attestation. This reduces network
+bandwidth and block size.
+
+Aggregation is not implemented in Devnet 0. It will be added in later devnets.
 
 ## Encoding
 
-The containers for various blockchain consensus objects are primarily SSZ objects. To be more prover friendly, the Poseidon2 hasher will be used for hash tree rooting of these objects. However `devnet0` & `devnet1` continue to use the sha256 hasher.
+All structures use SSZ encoding. SSZ provides deterministic serialization and
+efficient merkleization.
 
-## `Config`
+Hash functions used for merkleization differ by devnet. Early devnets use
+SHA256. Later devnets will switch to Poseidon2 for better SNARK compatibility.
 
-```python
-class Config(Container):
-    # temporary property to support simplified round robin block production in absence of randao & deposit mechanisms
-    num_validators: uint64
-    genesis_time: uint64
-```
+## Implementation
 
-## `Checkpoint`
-
-```python
-class Checkpoint(Container):
-    root: Bytes32
-    slot: uint64
-```
-
-## `Validator`
-
-```python
-class Validator(Container):
-    # XMSS OTS pub key
-    pubkey: Bytes52
-```
-
-## `State`
-
-```python
-class State(Container):
-    config: Config
-    slot: uint64
-    latest_block_header: BlockHeader
-
-    latest_justified: Checkpoint
-    latest_finalized: Checkpoint
-
-    historical_block_hashes: List[Bytes32, HISTORICAL_ROOTS_LIMIT]
-    justified_slots: List[bool, HISTORICAL_ROOTS_LIMIT]
-
-    validators: List[Validator, VALIDATOR_REGISTRY_LIMIT]
-
-    # Diverged from 3SF-mini.py:
-    # Flattened `justifications: Dict[str, List[bool]]` for SSZ compatibility
-    justifications_roots: List[Bytes32, HISTORICAL_ROOTS_LIMIT]
-    justifications_validators: Bitlist[HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT]
-```
-
-## `Block`
-
-```python
-class Block(Container):
-    slot: uint64
-    proposer_index: uint64
-    parent_root: Bytes32
-    state_root: Bytes32
-    body: BlockBody
-```
-
-## `BlockHeader`
-
-```python
-class BlockHeader(Container):
-    slot: uint64
-    proposer_index: uint64
-    parent_root: Bytes32
-    state_root: Bytes32
-    body_root: Bytes32
-```
-
-## `BlockBody`
-
-```python
-class BlockBody(Container):
-    # all the signatures are aggregated now in a common field - the block signatures
-    attestations: List[ValidatorAttestation, VALIDATOR_REGISTRY_LIMIT]
-    # keeping proposer vote separate as attestation would be an aggregated packed
-    # structures and adding standalone proposer vote as an separate attestation in
-    # attestations would waste aggregation bits
-    proposer_attestation: ProposerAttestationData
-```
-
-Remark: `ValidatorAttestation` will be replaced by aggregated `Attestation` in future devnets.
-
-## `SignedBlock`
-
-```python
-class SignedBlock(Container):
-    message: Block
-    # aggregated signature for all of block's signatures, currently a naive list:
-    #   attestation signatures in the same sequence followed by proposer signature
-    # to be replaced by a single zk aggregated and verifiable signature in a future devnet
-    #
-    # Note that
-    #  i)signature list max is still validator registry limit because of proposer
-    #    attestation has no separate signature.
-    # ii)also note that current proposer signature is just the proposer signature over
-    #    ValidatorAttestation created from its ProposerAttestationData.
-    #   till we can actually consume a block signature for re-packing this block's
-    #   proposer vote by some other future proposer
-    signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
-```
-
-## `AttestationData`
-
-Vote is the attestation data that can be aggregated. Although note there is no aggregation yet in `devnet0`.
-
-```python
-class AttestationData(Container):
-    slot: uint64
-    head: Checkpoint
-    target: Checkpoint
-    source: Checkpoint
-```
-
-## `ProposerAttestationData`
-
-Record the vote of the proposer for the target and source. Head and slot for this attestation is to be auto inferred as the block proposer minted as otherwise this would create a circular dependancy for head.
-
-```python
-class ProposerAttestationData(Container):
-    target: Checkpoint
-    source: Checkpoint
-```
-
-## `ValidatorAttestation`
-
-```python
-class ValidatorAttestation(Container):
-    validator_id: uint64
-    data: AttestationData
-```
-
-## `SignedValidatorAttestation`
-
-```python
-class SignedValidatorAttestation(Container):
-    message: ValidatorAttestation
-    # unlike BLS, signatures over differing ValidatorAttestation with same 
-    # AttestationData can be aggregated by lean signature VM
-    signature: Vector[byte, 4000]
-```
-
-
-## `Attestation`
-
-The votes are aggregated in `Attestation` similar to beacon protocol but without complication of committees. This is currently not used in devnets.
-
-```python
-class Attestation(Container):
-    aggregation_bits: Bitlist[VALIDATOR_REGISTRY_LIMIT]
-    message: AttestationData
-```
-
-#### `SignedAttestation`
-
-Aggregated votes exactly as `Attestation` but also with the aggregated signature. Since there is no specialized role envisioned as of now for aggregation (vs that of beacon protocol), this structure is much simpler.
-
-This is also not currently used in devnets.
-
-```python
-class SignedAttestation(Container):
-    message: Attestation
-    # aggregated signature for all of validator's signatures, currently a naive list:
-    #
-    # to be replaced by a single zk aggregated and verifiable signature in a future devnet
-    # unlike BLS, signatures over differing Attestation and ValidatorAttestation with same
-    # AttestationData can still be recursively aggregated by lean signature VM
-    signature: List[Vector[byte, 4000], VALIDATOR_REGISTRY_LIMIT]
-```
+The Python specification defines exact structure layouts. This documentation
+explains purpose and usage. For precise field definitions and types, see the
+implementation code.

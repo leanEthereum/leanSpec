@@ -1,121 +1,135 @@
-# Honest Validator
+# Validator Behavior
 
-<!-- mdformat-toc start --slug=github --no-anchors --maxlevel=6 --minlevel=2 -->
+## Overview
 
-- [Validator identification](#validator-identification)
-- [Block proposer selection](#block-proposer-selection)
-  - [Construction & Broadcast](#construction--broadcast)
-- [Attesting](#attesting)
-  - [Validator Voting](#validator-voting)
-    - [Construction & Broadcast](#construction--broadcast-1)
-  - [Attestation Aggregation](#attestation-aggregation)
-- [Remarks](#remarks)
+Validators participate in consensus by proposing blocks and voting. This
+document describes what honest validators do.
 
-<!-- mdformat-toc end -->
+## Validator Assignment
 
-## Validator identification
+For testing, validators are pre-assigned to clients. A configuration file maps
+each client to specific validator indices.
 
-To ensure a good distribution of block proposer duties in a round-robin manner
-and avoid clashing IDs, validator IDs are pre-assigned to each client
-implementation in a yaml file at
-[`src/lean_spec/client/validators.yaml`](../../src/lean_spec/client/validators.yaml).
-For example:
+This assignment spreads validators across different implementations. This
+diversity helps test interoperability.
 
-```yaml
-ream: [0, 3, 6, 9, 12, 15, 18, 21, 24, 27]
-zeam: [1, 4, 7, 10, 13, 16, 19, 22, 25, 28]
-quadrivium: [2, 5, 8, 11, 14, 17, 20, 23, 26, 29]
-```
+In production, validator assignment will work differently. The current approach
+is temporary for devnet testing.
 
-## Block proposer selection
+## Proposing Blocks
 
-A validator is expected to create, sign, and broadcast a block at the start of first interval(=0) of its proposal slot.
+Each slot has exactly one designated proposer. The proposer is determined by
+simple math: divide the slot number by total validators, the remainder is the
+proposer's index.
 
-The block proposer shall be determined by the modulo of the current slot number
-by the total number of validators, such that block proposers are determined in
-a round-robin manner by the validator IDs.
+This is deterministic. Everyone can compute who should propose at any slot.
 
-```py
-def is_proposer(state: BeaconState, validator_index: ValidatorIndex) -> bool:
-    return get_current_slot() % state.config.num_validators == validator_index
-```
+### When to Propose
 
-#### Construction & Broadcast
+Proposers create blocks at the start of the slot. Specifically, in the first
+interval of the slot's four intervals.
 
-The validator constructs, signs a `Block` message and further broadcasts the `SignedBlock` to the `block` p2p topic.
+Early proposal gives other validators time to see and vote on the block.
 
-```python
-def produce_block(store: Store, slot: Slot) -> Block:
-    head_root = get_proposal_head(store)
-    head_state = store.states[head_root]
+### Building a Block
 
-    new_block, state = None, None
-    votes_to_add = []
+The proposer queries fork choice for the current head. This is the parent for
+the new block.
 
-    # Keep attempt to add valid votes from the list of available votes
-    while 1:
-        new_block = Block(slot=new_slot, parent=store.head, votes=votes_to_add)
-        state = process_block(head_state, new_block)
-        new_votes_to_add = [
-            vote
-            for vote in store.latest_known_votes
-            if vote.source == state.latest_justified and vote not in votes_to_add
-        ]
+The proposer collects recent votes. Valid votes get included in the block.
+A vote is valid if its source matches the current justified checkpoint.
 
-        if len(new_votes_to_add) == 0:
-            break
-        votes_to_add.extend(new_votes_to_add)
+The proposer keeps adding votes until no more valid votes remain. This
+maximizes block utility.
 
-    new_block.state_root = compute_hash(state)
-    new_hash = compute_hash(new_block)
+After building the block, the proposer computes the state root. This is the
+state hash after applying the block.
 
-    store.blocks[new_hash] = new_block
-    store.states[new_hash] = state
+### Broadcasting
 
-    return new_block
-```
+The proposer signs the block and broadcasts it to the network. Other validators
+receive and validate it.
 
-## Attesting
+## Voting
 
-The attestation process consists of validator casting their votes and their subsequent aggregation. However the slot's proposer vote is not casted independently but with the block proposer.
+Every validator votes in every slot. Voting happens in the second interval,
+after proposals are made.
 
-### Validator Voting
+### What to Vote For
 
-A validator is expected to create, sign, and broadcast a `SignedVote` at the start of second interval(=1) of each slot.
+Validators vote for three things:
 
-#### Construction & Broadcast
+- The chain head
+- A target to justify
+- An already justified source
 
-The validator constructs, signs a `Vote` message and further broadcasts the `SignedVote` to the `attestation` p2p topic.
+The head is what fork choice says is canonical. The target is computed based on
+safe blocks and justifiability rules. The source is the most recent justified
+checkpoint.
 
-```python
-def produce_attestation_vote(store: Store, slot: Slot) -> Vote:
-    """
-    Constructs a Vote object for an attestation based on the store's state.
+### Why Vote
 
-    :param store: The Store object containing the fork choice state.
-    :param slot: The slot for which the attestation is being made.
-    :return: A fully constructed Vote object.
-    """
-    head = store.head
-    target = get_vote_target(store)
+Votes drive justification and finalization. When 2/3 of validators vote for the
+same target, it becomes justified. Justification eventually leads to
+finalization.
 
-    return Vote(
-        slot=slot,
-        head=head,
-        target=target,
-        source=store.latest_justified,
-    )
-```
+Votes also inform fork choice. Other validators see these votes and use them to
+compute the head.
 
-Note that there are no separate subnets/committees for the attestations as of `devnet0`.
+### Broadcasting Votes
 
-### Attestation Aggregation
+Validators sign their votes and broadcast them. The network uses a single topic
+for all votes. No subnets or committees in the current design.
 
-At the start of third interval(=2) of each slot, aggregators will aggregate signed votes received into `Attestation`s and broadcast the same to be included in the next proposal.
+## Timing
 
-However there is no aggregation in `devnet0` and the signed votes are directly included in the next proposal. Details for aggregation will be added in the future devnets.
+The slot divides into four one-second intervals:
 
-## Remarks
+- Interval 0: Proposals happen
+- Interval 1: Votes happen
+- Interval 2: Safe targets update
+- Interval 3: More processing
 
-- This spec is still missing the file format for the centralized, pre-generated
-  OTS keys (if any)
+This rhythm keeps the network synchronized. Validators know when to expect
+blocks and votes.
+
+## Aggregation
+
+Vote aggregation combines multiple votes into one. This saves bandwidth and
+block space.
+
+Devnet 0 has no aggregation. Each vote is separate. Future devnets will add
+aggregation.
+
+When aggregation is added, aggregators will collect votes and combine them.
+Aggregated attestations will be broadcast separately.
+
+## Signature Handling
+
+In Devnet 0, signatures are not real. All signature fields contain zeros. This
+lets clients test consensus logic without implementing post-quantum signatures
+yet.
+
+Devnet 1 will use real signatures. These signatures will be large, around 3-4
+kilobytes. The signature scheme will be post-quantum secure.
+
+## Client Responsibilities
+
+Clients must implement the validator logic correctly. This includes:
+
+- Tracking which validators they control
+- Proposing when scheduled
+- Voting every slot
+- Following fork choice
+- Obeying timing rules
+
+Correct implementation ensures the network functions properly.
+
+## Testing Focus
+
+The current design prioritizes testability over production features. Round
+robin proposals are simple but insecure for production. Pre-assigned validators
+are convenient but not decentralized.
+
+These compromises are acceptable for testing. They let developers focus on core
+consensus mechanics.
