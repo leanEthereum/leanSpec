@@ -76,6 +76,10 @@ class SignedBlockAndVote(Container):
     signature: BlockSignatures
     """Aggregated signature payload for the block.
 
-    Signatures remain in attestation order followed by the proposer signature.
+    Signatures remain in attestation order followed by the proposer signature
+    over entire message. For devnet 1, however the proposer signature is just
+    over message.proposer_attestation since lean VM is not yet there to establish
+    validity/mergability of the signature for its packaging into the future blocks.
+
     Eventually this field will be replaced by a single zk-aggregated signature.
     """
