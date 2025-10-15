@@ -2,7 +2,7 @@
 
 from .block import (
     Block,
-    BlockAndProposerVote,
+    BlockAndVote,
     BlockBody,
     BlockHeader,
     SignedBlockAndVote,
@@ -13,7 +13,7 @@ __all__ = [
     "Block",
     "BlockBody",
     "BlockHeader",
-    "BlockAndProposerVote",
+    "BlockAndVote",
     "SignedBlockAndVote",
     "Attestations",
     "BlockSignatures",

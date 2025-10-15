@@ -57,7 +57,7 @@ class Block(Container):
     """The block's payload."""
 
 
-class BlockAndProposerVote(Container):
+class BlockAndVote(Container):
     """Bundle containing a block and the proposer's attestation."""
 
     block: Block
@@ -70,7 +70,7 @@ class BlockAndProposerVote(Container):
 class SignedBlockAndVote(Container):
     """Envelope carrying a block, proposer vote, and aggregated signatures."""
 
-    message: BlockAndProposerVote
+    message: BlockAndVote
     """The block plus proposer vote being signed."""
 
     signature: BlockSignatures
