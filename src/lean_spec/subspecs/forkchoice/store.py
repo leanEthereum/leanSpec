@@ -275,9 +275,12 @@ class Store(Container):
             message=proposer_attestation,
             signature=proposer_signature,
         )
-        # note that we pass False here to make sure this gets added to the new
-        # votes so that this doesn't influence this node's validators upcoming
-        # votes
+        # note that we pass False here as this is a proposer attestation casted with
+        # block, but to treated as casted independently after the proposal in the next
+        # interval and to be hopefully included in some future block (most likely next)
+        #
+        # Hence make sure this gets added to the new votes so that this doesn't influence
+        # this node's validators upcoming votes
         self.process_attestation(
             signed_proposer_attestation,
             is_from_block=False,
