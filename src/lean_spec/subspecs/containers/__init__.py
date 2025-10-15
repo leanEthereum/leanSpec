@@ -14,7 +14,6 @@ from .validator import Validator
 from .vote import (
     Attestation,
     AttestationData,
-    ProposerAttestationData,
     SignedAttestation,
     SignedValidatorAttestation,
     ValidatorAttestation,
@@ -33,7 +32,6 @@ __all__ = [
     "ValidatorAttestation",
     "SignedValidatorAttestation",
     "SignedAttestation",
-    "ProposerAttestationData",
     "Attestation",
     "State",
 ]

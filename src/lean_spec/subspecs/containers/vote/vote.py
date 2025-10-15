@@ -15,19 +15,6 @@ class AttestationData(Container):
     target: Checkpoint
     source: Checkpoint
 
-
-class ProposerAttestationData(Container):
-    """Vote metadata included by the block proposer.
-
-    Captures the proposer's justification vote using only source and target
-    checkpoints. The corresponding head and slot are implied by the block the
-    proposer built, avoiding a circular dependency on the block body.
-    """
-
-    target: Checkpoint
-    source: Checkpoint
-
-
 class ValidatorAttestation(Container):
     """Validator specific attestation wrapping shared attestation data."""
 
