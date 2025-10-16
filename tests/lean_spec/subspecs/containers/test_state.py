@@ -1,6 +1,6 @@
 """ "Tests for the State container and its methods."""
 
-from typing import Dict, Iterable, List
+from typing import Dict, List
 
 import pytest
 
@@ -71,7 +71,7 @@ def genesis_state(sample_config: Config) -> State:
 def _create_block(
     slot: int,
     parent_header: BlockHeader,
-    votes: Iterable[ValidatorAttestation] | None = None,
+    votes: List[ValidatorAttestation] | None = None,
 ) -> Block:
     """
     Helper: construct a valid `Block` for a given slot.
@@ -81,7 +81,7 @@ def _create_block(
         - Uses round-robin proposer selection with modulus 10 (aligned with the
             devnet configuration).
         - Sets state_root to zero; STF will compute and validate the real root.
-        - Accepts an optional collection of validator attestations to embed in
+        - Accepts an optional list of validator attestations to embed in
             the body.
 
     Parameters
@@ -90,7 +90,7 @@ def _create_block(
         Slot number for the new block.
     parent_header : BlockHeader
         The header of the parent block to link against.
-    votes : Iterable[ValidatorAttestation] | None
+    votes : List[ValidatorAttestation] | None
         Optional attestations to include.
 
     Returns
@@ -98,13 +98,8 @@ def _create_block(
     Block
         The constructed block message with attestations embedded.
     """
-    normalized_attestations = []
-    if votes is not None:
-        for attestation in votes:
-            normalized_attestations.append(attestation)
-
     # Create a block body with the provided votes or an empty list.
-    body = BlockBody(attestations=Attestations(data=normalized_attestations))
+    body = BlockBody(attestations=Attestations(data=votes or []))
     # Construct the inner block message with correct parent_root linkage.
     block_message = Block(
         slot=Slot(slot),
@@ -647,9 +642,7 @@ def test_process_block_header_invalid(
         state_at_slot_1.process_block_header(block)
 
 
-def test_process_attestations_justification_and_finalization(
-    genesis_state: State,
-) -> None:
+def test_process_attestations_justification_and_finalization(genesis_state: State) -> None:
     """
     process_attestations: justify a target and finalize the source.
 
@@ -741,10 +734,7 @@ def test_state_transition_full(genesis_state: State) -> None:
     )
 
     # Run STF and capture the output state.
-    final_state = state.state_transition(
-        block_with_correct_root,
-        valid_signatures=True,
-    )
+    final_state = state.state_transition(block_with_correct_root, valid_signatures=True)
 
     # The STF result must match the manually computed expected state.
     assert final_state == expected_state

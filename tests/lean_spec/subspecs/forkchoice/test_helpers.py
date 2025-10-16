@@ -60,10 +60,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
 class TestForkChoiceHeadFunction:
     """Test the pure get_fork_choice_head helper function."""
 
-    def test_get_fork_choice_head_with_votes(
-        self,
-        sample_blocks: Dict[Bytes32, Block],
-    ) -> None:
+    def test_get_fork_choice_head_with_votes(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test get_fork_choice_head with validator votes."""
         root_hash = list(sample_blocks.keys())[0]
         target_hash = list(sample_blocks.keys())[2]  # block_b
@@ -77,18 +74,12 @@ class TestForkChoiceHeadFunction:
         }
 
         head = get_fork_choice_head(
-            blocks=sample_blocks,
-            root=root_hash,
-            latest_votes=votes,
-            min_score=0,
+            blocks=sample_blocks, root=root_hash, latest_votes=votes, min_score=0
         )
 
         assert head == target_hash
 
-    def test_get_fork_choice_head_no_votes(
-        self,
-        sample_blocks: Dict[Bytes32, Block],
-    ) -> None:
+    def test_get_fork_choice_head_no_votes(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test get_fork_choice_head with no votes returns the root."""
         root_hash = list(sample_blocks.keys())[0]
 
@@ -98,10 +89,7 @@ class TestForkChoiceHeadFunction:
 
         assert head == root_hash
 
-    def test_get_fork_choice_head_with_min_score(
-        self,
-        sample_blocks: Dict[Bytes32, Block],
-    ) -> None:
+    def test_get_fork_choice_head_with_min_score(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test get_fork_choice_head respects minimum score."""
         root_hash = list(sample_blocks.keys())[0]
         target_hash = list(sample_blocks.keys())[2]  # block_b
@@ -115,37 +103,35 @@ class TestForkChoiceHeadFunction:
         }
 
         head = get_fork_choice_head(
-            blocks=sample_blocks,
-            root=root_hash,
-            latest_votes=votes,
-            min_score=2,
+            blocks=sample_blocks,root=root_hash,latest_votes=votes,min_score=2
         )
 
         # Should fall back to root since min_score not met
         assert head == root_hash
 
-    def test_get_fork_choice_head_multiple_votes(
-        self,
-        sample_blocks: Dict[Bytes32, Block],
-    ) -> None:
+    def test_get_fork_choice_head_multiple_votes(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test get_fork_choice_head with multiple votes."""
         root_hash = list(sample_blocks.keys())[0]
         target_hash = list(sample_blocks.keys())[2]  # block_b
 
         # Multiple votes for same target
         votes = {
-            ValidatorIndex(i): build_signed_attestation(
-                ValidatorIndex(i),
+            ValidatorIndex(0): build_signed_attestation(
+                ValidatorIndex(0),
                 Checkpoint(root=target_hash, slot=Slot(2)),
-            )
-            for i in range(3)
+            ),
+            ValidatorIndex(1): build_signed_attestation(
+                ValidatorIndex(1),
+                Checkpoint(root=target_hash, slot=Slot(2)),
+            ),
+            ValidatorIndex(2): build_signed_attestation(
+                ValidatorIndex(2),
+                Checkpoint(root=target_hash, slot=Slot(2)),
+            ),
         }
 
         head = get_fork_choice_head(
-            blocks=sample_blocks,
-            root=root_hash,
-            latest_votes=votes,
-            min_score=0,
+            blocks=sample_blocks,root=root_hash,latest_votes=votes,min_score=0
         )
 
         assert head == target_hash
@@ -159,15 +145,9 @@ class TestLatestJustifiedFunction:
         result = get_latest_justified({})
         assert result is None
 
-    def test_get_latest_justified_single_state(
-        self,
-        mock_state_factory: Type["MockState"],
-    ) -> None:
+    def test_get_latest_justified_single_state(self,mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified with a single state."""
-        checkpoint = Checkpoint(
-            root=Bytes32(b"test" + b"\x00" * 28),
-            slot=Slot(5),
-        )
+        checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(5))
 
         states: Dict[Bytes32, State] = {
             Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint),
@@ -181,10 +161,7 @@ class TestLatestJustifiedFunction:
         mock_state_factory: Type["MockState"],
     ) -> None:
         """Test get_latest_justified when states have different slots."""
-        checkpoint1 = Checkpoint(
-            root=Bytes32(b"test1" + b"\x00" * 27),
-            slot=Slot(10),
-        )
+        checkpoint1 = Checkpoint(root=Bytes32(b"test1" + b"\x00" * 27), slot=Slot(10))
         checkpoint2 = Checkpoint(
             root=Bytes32(b"test2" + b"\x00" * 27), slot=Slot(20)
         )  # Higher slot
@@ -197,19 +174,10 @@ class TestLatestJustifiedFunction:
         result = get_latest_justified(states)
         assert result == checkpoint2  # Should return the one with higher slot
 
-    def test_get_latest_justified_tie_breaking(
-        self,
-        mock_state_factory: Type["MockState"],
-    ) -> None:
+    def test_get_latest_justified_tie_breaking(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified when slots tie."""
-        checkpoint1 = Checkpoint(
-            root=Bytes32(b"test1" + b"\x00" * 27),
-            slot=Slot(10),
-        )
-        checkpoint2 = Checkpoint(
-            root=Bytes32(b"test2" + b"\x00" * 27),
-            slot=Slot(10),
-        )
+        checkpoint1 = Checkpoint(root=Bytes32(b"test1" + b"\x00" * 27), slot=Slot(10))
+        checkpoint2 = Checkpoint(root=Bytes32(b"test2" + b"\x00" * 27), slot=Slot(10))
 
         states: Dict[Bytes32, State] = {
             Bytes32(b"state1" + b"\x00" * 26): mock_state_factory(checkpoint1),

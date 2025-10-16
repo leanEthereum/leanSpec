@@ -60,10 +60,7 @@ def sample_blocks() -> Dict[Bytes32, Block]:
 class TestLMDGHOSTAlgorithm:
     """Test the core LMD GHOST fork choice algorithm."""
 
-    def test_fork_choice_no_votes(
-        self,
-        sample_blocks: Dict[Bytes32, Block],
-    ) -> None:
+    def test_fork_choice_no_votes(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test fork choice algorithm with no votes returns the root."""
         root_hash = list(sample_blocks.keys())[0]
 
@@ -76,22 +73,15 @@ class TestLMDGHOSTAlgorithm:
 
         assert head == root_hash
 
-    def test_fork_choice_single_vote(
-        self,
-        sample_blocks: Dict[Bytes32, Block],
-    ) -> None:
+    def test_fork_choice_single_vote(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test fork choice algorithm with a single vote."""
         root_hash = list(sample_blocks.keys())[0]
         target_hash = list(sample_blocks.keys())[2]  # block_b
 
-        target_checkpoint = Checkpoint(
-            root=target_hash,
-            slot=Slot(2),
-        )
         votes = {
             ValidatorIndex(0): build_signed_attestation(
                 ValidatorIndex(0),
-                target_checkpoint,
+                Checkpoint(root=target_hash, slot=Slot(2)),
             )
         }
 
@@ -176,7 +166,7 @@ class TestLMDGHOSTAlgorithm:
             ValidatorIndex(2): build_signed_attestation(
                 ValidatorIndex(2),
                 Checkpoint(root=block_b_hash, slot=Slot(2)),
-            ),
+            ),  # Single vote for fork 1
         }
 
         head = get_fork_choice_head(
@@ -473,7 +463,7 @@ class TestStoreBasedForkChoice:
         )
 
         # Get proposal head for slot 0
-        head = store.head
+        head = store.get_proposal_head(Slot(0))
 
         # Should return current head
         assert head == store.head

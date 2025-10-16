@@ -1,6 +1,6 @@
 """Tests for time advancement, intervals, and slot management."""
 
-import pytest  # type: ignore[import-not-found]
+import pytest
 
 from lean_spec.subspecs.containers import (
     Block,
@@ -26,10 +26,7 @@ def sample_config() -> Config:
 @pytest.fixture
 def sample_store(sample_config: Config) -> Store:
     """Create a sample forkchoice store."""
-    checkpoint = Checkpoint(
-        root=Bytes32(b"test_root" + b"\x00" * 23),
-        slot=Slot(0),
-    )
+    checkpoint = Checkpoint(root=Bytes32(b"test_root" + b"\x00" * 23), slot=Slot(0))
 
     return Store(
         time=Uint64(100),
@@ -47,8 +44,7 @@ class TestTimeAdvancement:
     def test_advance_time_basic(self, sample_store: Store) -> None:
         """Test basic time advancement."""
         initial_time = sample_store.time
-        # Much later time
-        target_time = sample_store.config.genesis_time + Uint64(200)
+        target_time = sample_store.config.genesis_time + Uint64(200)  # Much later time
 
         sample_store.advance_time(target_time, has_proposal=True)
 
@@ -74,8 +70,7 @@ class TestTimeAdvancement:
         sample_store.advance_time(current_target, has_proposal=True)
 
         # Should not change significantly
-        # Allow small tolerance due to interval rounding
-        assert abs(sample_store.time.as_int() - initial_time.as_int()) <= 10
+        assert abs(sample_store.time.as_int() - initial_time.as_int()) <= 10  # small tolerance
 
     def test_advance_time_small_increment(self, sample_store: Store) -> None:
         """Test advance_time with small time increment."""
@@ -130,10 +125,7 @@ class TestIntervalTicking:
         object.__setattr__(sample_store, "time", initial_time)
 
         # Add some test votes for processing
-        test_checkpoint = Checkpoint(
-            root=Bytes32(b"test" + b"\x00" * 28),
-            slot=Slot(1),
-        )
+        test_checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(1))
         sample_store.latest_new_votes[ValidatorIndex(0)] = build_signed_attestation(
             ValidatorIndex(0),
             test_checkpoint,
@@ -219,10 +211,7 @@ class TestVoteProcessingTiming:
     def test_accept_new_votes_basic(self, sample_store: Store) -> None:
         """Test basic new vote processing."""
         # Add some new votes
-        checkpoint = Checkpoint(
-            root=Bytes32(b"test" + b"\x00" * 28),
-            slot=Slot(1),
-        )
+        checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(1))
         sample_store.latest_new_votes[ValidatorIndex(0)] = build_signed_attestation(
             ValidatorIndex(0),
             checkpoint,
@@ -304,10 +293,7 @@ class TestProposalHeadTiming:
         # Should return current head
         assert head == sample_store.head
 
-    def test_get_proposal_head_advances_time(
-        self,
-        sample_store: Store,
-    ) -> None:
+    def test_get_proposal_head_advances_time(self, sample_store: Store) -> None:
         """Test that get_proposal_head advances store time appropriately."""
         initial_time = sample_store.time
 
@@ -319,16 +305,10 @@ class TestProposalHeadTiming:
         # This is mainly testing that the call doesn't fail
         assert sample_store.time >= initial_time
 
-    def test_get_proposal_head_processes_votes(
-        self,
-        sample_store: Store,
-    ) -> None:
+    def test_get_proposal_head_processes_votes(self, sample_store: Store) -> None:
         """Test that get_proposal_head processes pending votes."""
         # Add some new votes
-        checkpoint = Checkpoint(
-            root=Bytes32(b"vote" + b"\x00" * 28),
-            slot=Slot(1),
-        )
+        checkpoint = Checkpoint(root=Bytes32(b"vote" + b"\x00" * 28), slot=Slot(1))
         sample_store.latest_new_votes[ValidatorIndex(10)] = build_signed_attestation(
             ValidatorIndex(10),
             checkpoint,

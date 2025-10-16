@@ -94,8 +94,7 @@ class TestVoteTargetCalculation:
 
         # Very old finalized checkpoint (slot 0)
         finalized = Checkpoint(
-            root=next(h for h, block in blocks.items() if block.slot == Slot(0)),
-            slot=Slot(0),
+            root=next(h for h, b in blocks.items() if b.slot == Slot(0)), slot=Slot(0)
         )
 
         # Current head is at slot 9
@@ -159,7 +158,7 @@ class TestVoteTargetCalculation:
         # Finalized at genesis
         finalized = Checkpoint(root=genesis_hash, slot=Slot(0))
 
-        # Create Store with head at block_2 and safe target at block_1
+        # Create a Store instance with head at block_2 and safe target at block_1
         store = Store(
             time=Uint64(100),
             config=config,
@@ -200,8 +199,7 @@ class TestVoteTargetCalculation:
 
         # Finalized very early (slot 0)
         finalized = Checkpoint(
-            root=next(h for h, block in blocks.items() if block.slot == Slot(0)),
-            slot=Slot(0),
+            root=next(h for h, b in blocks.items() if b.slot == Slot(0)), slot=Slot(0)
         )
 
         # Head at slot 20
@@ -231,10 +229,7 @@ class TestVoteTargetCalculation:
         # The is_justifiable_after method should return True for valid slots
         assert target_slot.is_justifiable_after(finalized_slot)
 
-    def test_vote_target_with_same_head_and_safe_target(
-        self,
-        config: Config,
-    ) -> None:
+    def test_vote_target_with_same_head_and_safe_target(self, config: Config) -> None:
         """Test vote target when head and safe_target are the same."""
         # Create simple chain
         genesis = Block(
@@ -344,15 +339,14 @@ class TestSafeTargetComputation:
         checkpoint = Checkpoint(root=genesis_hash, slot=Slot(0))
 
         # Add some new votes
-        target_checkpoint = Checkpoint(root=block_1_hash, slot=Slot(1))
         new_votes = {
             ValidatorIndex(0): build_signed_attestation(
                 ValidatorIndex(0),
-                target_checkpoint,
+                Checkpoint(root=block_1_hash, slot=Slot(1)),
             ),
             ValidatorIndex(1): build_signed_attestation(
                 ValidatorIndex(1),
-                target_checkpoint,
+                Checkpoint(root=block_1_hash, slot=Slot(1)),
             ),
         }
 
@@ -395,8 +389,7 @@ class TestEdgeCases:
         )
 
         # Should handle empty blocks gracefully (or raise appropriate error)
-        # Expected since head block doesn't exist
-        with pytest.raises(KeyError):
+        with pytest.raises(KeyError):  # Expected since head block doesn't exist
             store.get_vote_target()
 
     def test_vote_target_single_block(self, config: Config) -> None:
