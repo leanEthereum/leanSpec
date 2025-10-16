@@ -195,7 +195,7 @@ def sample_checkpoint() -> Checkpoint:
         A checkpoint at slot 0 with zero root.
     """
     # Construct and return a minimal checkpoint.
-    return Checkpoint(root=Bytes32.zero(), slot=Slot(0))
+    return Checkpoint.default()
 
 
 @pytest.fixture

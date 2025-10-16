@@ -197,14 +197,24 @@ class Store(Container):
         if latest_new is None or latest_new.message.data.slot < attestation_slot:
             self.latest_new_votes[validator_id] = signed_attestation
 
+    @staticmethod
+    def _is_placeholder_signature(signature: Bytes4000) -> bool:
+        """Return True when the placeholder signature is the zero value."""
+        # TODO: Replace placeholder check once aggregated signatures are
+        # wired in as part of the multi-proof integration work.
+        return signature == Bytes4000.zero()
+
     def _validate_block_signatures(
         self,
         block: Block,
         signatures: Sequence[Bytes4000],
     ) -> bool:
         """Temporary stub for aggregated signature validation."""
-        # TODO: plug real aggregated signature validation once available.
-        return True
+        # TODO: Integrate actual aggregated signature verification.
+        return all(
+            self._is_placeholder_signature(signature)
+            for signature in signatures
+        )
 
     def process_block(self, signed_block_vote: SignedBlockAndVote) -> None:
         """

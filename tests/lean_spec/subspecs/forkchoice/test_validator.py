@@ -473,7 +473,7 @@ class TestValidatorIntegration:
         genesis_body = BlockBody(attestations=Attestations(data=[]))
 
         # Create minimal state with temporary header
-        checkpoint = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
+        checkpoint = Checkpoint.default()
         state = State(
             config=config,
             slot=Slot(0),

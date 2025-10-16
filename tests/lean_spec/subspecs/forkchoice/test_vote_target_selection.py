@@ -393,7 +393,7 @@ class TestEdgeCases:
 
     def test_vote_target_empty_blocks(self, config: Config) -> None:
         """Test vote target with minimal block set."""
-        checkpoint = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
+        checkpoint = Checkpoint.default()
 
         store = Store(
             time=Uint64(100),
