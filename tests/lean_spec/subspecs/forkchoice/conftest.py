@@ -42,9 +42,7 @@ class MockState(State):
             proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(
-                BlockBody(attestations=Attestations(data=[]))
-            ),
+            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
         )
 
         super().__init__(

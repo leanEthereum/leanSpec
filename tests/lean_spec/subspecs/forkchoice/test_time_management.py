@@ -75,16 +75,12 @@ class TestTimeAdvancement:
 
         # Should not change significantly
         # Allow small tolerance due to interval rounding
-        assert (
-            abs(sample_store.time.as_int() - initial_time.as_int()) <= 10
-        )
+        assert abs(sample_store.time.as_int() - initial_time.as_int()) <= 10
 
     def test_advance_time_small_increment(self, sample_store: Store) -> None:
         """Test advance_time with small time increment."""
         initial_time = sample_store.time
-        target_time = (
-            sample_store.config.genesis_time + initial_time + Uint64(1)
-        )
+        target_time = sample_store.config.genesis_time + initial_time + Uint64(1)
 
         sample_store.advance_time(target_time, has_proposal=False)
 
@@ -138,11 +134,9 @@ class TestIntervalTicking:
             root=Bytes32(b"test" + b"\x00" * 28),
             slot=Slot(1),
         )
-        sample_store.latest_new_votes[ValidatorIndex(0)] = (
-            build_signed_attestation(
-                ValidatorIndex(0),
-                test_checkpoint,
-            )
+        sample_store.latest_new_votes[ValidatorIndex(0)] = build_signed_attestation(
+            ValidatorIndex(0),
+            test_checkpoint,
         )
 
         # Tick through a complete slot cycle
@@ -151,9 +145,7 @@ class TestIntervalTicking:
             sample_store.tick_interval(has_proposal=has_proposal)
 
             current_interval = sample_store.time % INTERVALS_PER_SLOT
-            expected_interval = Uint64(
-                (interval + 1) % INTERVALS_PER_SLOT.as_int()
-            )
+            expected_interval = Uint64((interval + 1) % INTERVALS_PER_SLOT.as_int())
             assert current_interval == expected_interval
 
 
@@ -231,11 +223,9 @@ class TestVoteProcessingTiming:
             root=Bytes32(b"test" + b"\x00" * 28),
             slot=Slot(1),
         )
-        sample_store.latest_new_votes[ValidatorIndex(0)] = (
-            build_signed_attestation(
-                ValidatorIndex(0),
-                checkpoint,
-            )
+        sample_store.latest_new_votes[ValidatorIndex(0)] = build_signed_attestation(
+            ValidatorIndex(0),
+            checkpoint,
         )
 
         initial_new_votes = len(sample_store.latest_new_votes)
@@ -246,30 +236,23 @@ class TestVoteProcessingTiming:
 
         # New votes should move to known votes
         assert len(sample_store.latest_new_votes) == 0
-        assert (
-            len(sample_store.latest_known_votes)
-            == initial_known_votes + initial_new_votes
-        )
+        assert len(sample_store.latest_known_votes) == initial_known_votes + initial_new_votes
 
     def test_accept_new_votes_multiple(self, sample_store: Store) -> None:
         """Test accepting multiple new votes."""
         # Add multiple new votes
         checkpoints = [
             Checkpoint(
-                root=Bytes32(
-                    f"test{i}".encode() + b"\x00" * (32 - len(f"test{i}"))
-                ),
+                root=Bytes32(f"test{i}".encode() + b"\x00" * (32 - len(f"test{i}"))),
                 slot=Slot(i),
             )
             for i in range(5)
         ]
 
         for i, checkpoint in enumerate(checkpoints):
-            sample_store.latest_new_votes[ValidatorIndex(i)] = (
-                build_signed_attestation(
-                    ValidatorIndex(i),
-                    checkpoint,
-                )
+            sample_store.latest_new_votes[ValidatorIndex(i)] = build_signed_attestation(
+                ValidatorIndex(i),
+                checkpoint,
             )
 
         # Accept all new votes
@@ -346,11 +329,9 @@ class TestProposalHeadTiming:
             root=Bytes32(b"vote" + b"\x00" * 28),
             slot=Slot(1),
         )
-        sample_store.latest_new_votes[ValidatorIndex(10)] = (
-            build_signed_attestation(
-                ValidatorIndex(10),
-                checkpoint,
-            )
+        sample_store.latest_new_votes[ValidatorIndex(10)] = build_signed_attestation(
+            ValidatorIndex(10),
+            checkpoint,
         )
 
         # Get proposal head should process votes
@@ -374,7 +355,7 @@ class TestTimeConstants:
             SECONDS_PER_SLOT,
         )
 
-    # SECONDS_PER_SLOT should equal INTERVALS_PER_SLOT * SECONDS_PER_INTERVAL
+        # SECONDS_PER_SLOT should equal INTERVALS_PER_SLOT * SECONDS_PER_INTERVAL
         expected_seconds_per_slot = INTERVALS_PER_SLOT * SECONDS_PER_INTERVAL
         assert SECONDS_PER_SLOT == expected_seconds_per_slot
 
@@ -396,7 +377,5 @@ class TestTimeConstants:
         remaining_intervals = total_intervals % INTERVALS_PER_SLOT
 
         # Should be able to reconstruct total
-        reconstructed = (
-            complete_slots * INTERVALS_PER_SLOT + remaining_intervals
-        )
+        reconstructed = complete_slots * INTERVALS_PER_SLOT + remaining_intervals
         assert reconstructed == total_intervals

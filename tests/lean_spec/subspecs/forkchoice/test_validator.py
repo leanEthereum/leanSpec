@@ -174,23 +174,19 @@ class TestBlockProduction:
         target_checkpoint = sample_store.get_vote_target()
         source_checkpoint = sample_store.latest_justified
 
-        sample_store.latest_known_votes[ValidatorIndex(5)] = (
-            build_signed_attestation(
-                validator=ValidatorIndex(5),
-                slot=head_block.slot,
-                head=head_checkpoint,
-                source=source_checkpoint,
-                target=target_checkpoint,
-            )
+        sample_store.latest_known_votes[ValidatorIndex(5)] = build_signed_attestation(
+            validator=ValidatorIndex(5),
+            slot=head_block.slot,
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=target_checkpoint,
         )
-        sample_store.latest_known_votes[ValidatorIndex(6)] = (
-            build_signed_attestation(
-                validator=ValidatorIndex(6),
-                slot=head_block.slot,
-                head=head_checkpoint,
-                source=source_checkpoint,
-                target=target_checkpoint,
-            )
+        sample_store.latest_known_votes[ValidatorIndex(6)] = build_signed_attestation(
+            validator=ValidatorIndex(6),
+            slot=head_block.slot,
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=target_checkpoint,
         )
 
         slot = Slot(2)
@@ -268,14 +264,12 @@ class TestBlockProduction:
         )
         target_checkpoint = sample_store.get_vote_target()
         source_checkpoint = sample_store.latest_justified
-        sample_store.latest_known_votes[ValidatorIndex(7)] = (
-            build_signed_attestation(
-                validator=ValidatorIndex(7),
-                slot=head_block.slot,
-                head=head_checkpoint,
-                source=source_checkpoint,
-                target=target_checkpoint,
-            )
+        sample_store.latest_known_votes[ValidatorIndex(7)] = build_signed_attestation(
+            validator=ValidatorIndex(7),
+            slot=head_block.slot,
+            head=head_checkpoint,
+            source=source_checkpoint,
+            target=target_checkpoint,
         )
 
         block = sample_store.produce_block(slot, validator_idx)

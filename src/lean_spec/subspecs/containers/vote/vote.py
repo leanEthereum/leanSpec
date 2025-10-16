@@ -15,6 +15,7 @@ class AttestationData(Container):
     target: Checkpoint
     source: Checkpoint
 
+
 class ValidatorAttestation(Container):
     """Validator specific attestation wrapping shared attestation data."""
 

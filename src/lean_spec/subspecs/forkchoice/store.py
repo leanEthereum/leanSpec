@@ -211,10 +211,7 @@ class Store(Container):
     ) -> bool:
         """Temporary stub for aggregated signature validation."""
         # TODO: Integrate actual aggregated signature verification.
-        return all(
-            self._is_placeholder_signature(signature)
-            for signature in signatures
-        )
+        return all(self._is_placeholder_signature(signature) for signature in signatures)
 
     def process_block(self, signed_block_vote: SignedBlockAndVote) -> None:
         """
@@ -256,11 +253,7 @@ class Store(Container):
 
         # Process block's attestations as on-chain votes
         for index, attestation in enumerate(block.body.attestations):
-            signature = (
-                signatures[index]
-                if index < len(signatures)
-                else Bytes4000.zero()
-            )
+            signature = signatures[index] if index < len(signatures) else Bytes4000.zero()
             signed_attestation = SignedValidatorAttestation(
                 message=attestation,
                 # eventually one would be able to associate and consume an
@@ -543,8 +536,8 @@ class Store(Container):
             slot=slot,
             proposer_index=validator_index,
             parent_root=head_root,
-            state_root=Bytes32.zero(), # Will be updated with computed hash
-            body=BlockBody(attestations=Attestations(data=list(attestations))), # need copy
+            state_root=Bytes32.zero(),  # Will be updated with computed hash
+            body=BlockBody(attestations=Attestations(data=list(attestations))),  # need copy
         )
 
         # Apply state transition to get final post-state and compute state root

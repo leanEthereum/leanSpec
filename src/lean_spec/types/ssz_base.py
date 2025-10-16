@@ -152,8 +152,5 @@ class SSZModel(StrictBaseModel, SSZType):
             return f"{self.__class__.__name__}(data={list(self.data)!r})"
         # For containers, show field names and values
         fields = type(self).model_fields
-        field_strs = [
-            f"{name}={getattr(self, name)!r}"
-            for name in fields.keys()
-        ]
+        field_strs = [f"{name}={getattr(self, name)!r}" for name in fields.keys()]
         return f"{self.__class__.__name__}({' '.join(field_strs)})"

@@ -85,9 +85,7 @@ class TestVoteTargetCalculation:
                 slot=Slot(i),
                 proposer_index=Uint64(i),
                 parent_root=prev_hash,
-                state_root=Bytes32(
-                    f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))
-                ),
+                state_root=Bytes32(f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))),
                 body=BlockBody(attestations=Attestations(data=[])),
             )
             block_hash = hash_tree_root(block)
@@ -96,11 +94,7 @@ class TestVoteTargetCalculation:
 
         # Very old finalized checkpoint (slot 0)
         finalized = Checkpoint(
-            root=next(
-                h
-                for h, block in blocks.items()
-                if block.slot == Slot(0)
-            ),
+            root=next(h for h, block in blocks.items() if block.slot == Slot(0)),
             slot=Slot(0),
         )
 
@@ -165,7 +159,7 @@ class TestVoteTargetCalculation:
         # Finalized at genesis
         finalized = Checkpoint(root=genesis_hash, slot=Slot(0))
 
-    # Create Store with head at block_2 and safe target at block_1
+        # Create Store with head at block_2 and safe target at block_1
         store = Store(
             time=Uint64(100),
             config=config,
@@ -197,9 +191,7 @@ class TestVoteTargetCalculation:
                 slot=Slot(i),
                 proposer_index=Uint64(i % 10),
                 parent_root=prev_hash,
-                state_root=Bytes32(
-                    f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))
-                ),
+                state_root=Bytes32(f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))),
                 body=BlockBody(attestations=Attestations(data=[])),
             )
             block_hash = hash_tree_root(block)
@@ -208,11 +200,7 @@ class TestVoteTargetCalculation:
 
         # Finalized very early (slot 0)
         finalized = Checkpoint(
-            root=next(
-                h
-                for h, block in blocks.items()
-                if block.slot == Slot(0)
-            ),
+            root=next(h for h, block in blocks.items() if block.slot == Slot(0)),
             slot=Slot(0),
         )
 

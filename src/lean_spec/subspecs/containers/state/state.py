@@ -457,15 +457,9 @@ class State(Container):
 
             target_tracked = target_slot < len(justified_slots)
             # If source is justified, consider justifying the target.
-            if (
-                source_is_justified
-                and target_tracked
-                and justified_slots[target_slot]
-            ):
+            if source_is_justified and target_tracked and justified_slots[target_slot]:
                 consecutive = source.slot.as_int() + 1 == target.slot.as_int()
-                newest_target = (
-                    latest_justified.slot.as_int() < target.slot.as_int()
-                )
+                newest_target = latest_justified.slot.as_int() < target.slot.as_int()
                 # Target is already justified, check for finalization.
                 if consecutive and newest_target:
                     # Consecutive justified checkpoints -> finalize the source.
@@ -497,9 +491,7 @@ class State(Container):
             }
         )
 
-    def state_transition(
-        self, block: Block, valid_signatures: bool = True
-    ) -> "State":
+    def state_transition(self, block: Block, valid_signatures: bool = True) -> "State":
         """
         Apply the complete state transition function for a block.
 

@@ -201,9 +201,7 @@ class TestStoreDefaultValues:
         original_time = sample_store.time
 
         # Should not be able to modify Store fields directly
-        with pytest.raises(
-            (AttributeError, ValueError)
-        ):  # Pydantic frozen model
+        with pytest.raises((AttributeError, ValueError)):  # Pydantic frozen model
             sample_store.time = Uint64(999)  # type: ignore[misc]
 
         # Store should remain unchanged

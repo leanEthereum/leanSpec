@@ -306,10 +306,7 @@ class TestLMDGHOSTAlgorithm:
                 slot=Slot(i),
                 proposer_index=Uint64(i),
                 parent_root=prev_hash,
-                state_root=Bytes32(
-                    f"block{i}".encode()
-                    + b"\x00" * (32 - len(f"block{i}"))
-                ),
+                state_root=Bytes32(f"block{i}".encode() + b"\x00" * (32 - len(f"block{i}"))),
                 body=BlockBody(attestations=Attestations(data=[])),
             )
             block_hash = hash_tree_root(block)
