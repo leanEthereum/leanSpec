@@ -72,9 +72,7 @@ def get_fork_choice_head(
         current = max(children, key=lambda x: (vote_weights.get(x, 0), blocks[x].slot, x))
 
 
-def get_latest_justified(
-    states: Dict[Bytes32, "State"],
-) -> Optional[Checkpoint]:
+def get_latest_justified(states: Dict[Bytes32, "State"]) -> Optional[Checkpoint]:
     """
     Find the justified checkpoint with the highest slot.
 

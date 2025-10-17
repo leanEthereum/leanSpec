@@ -77,11 +77,7 @@ class Store(Container):
     """Latest votes by validator that are pending processing."""
 
     @classmethod
-    def get_forkchoice_store(
-        cls,
-        state: State,
-        anchor_block: Block,
-    ) -> "Store":
+    def get_forkchoice_store(cls, state: State, anchor_block: Block) -> "Store":
         """
         Initialize forkchoice store from an anchor state and block.
 
@@ -118,11 +114,9 @@ class Store(Container):
             states={anchor_root: copy.copy(state)},
         )
 
-    def validate_attestation(
-        self,
-        signed_attestation: SignedValidatorAttestation,
-    ) -> None:
-        """Validate incoming attestation before processing.
+    def validate_attestation(self, signed_attestation: SignedValidatorAttestation) -> None:
+        """
+        Validate incoming attestation before processing.
 
         Performs basic validation checks on attestation structure and timing.
 
@@ -135,20 +129,24 @@ class Store(Container):
         attestation = signed_attestation.message
         data = attestation.data
 
+        # Validate vote targets exist in store
         assert data.source.root in self.blocks, f"Unknown source block: {data.source.root.hex()}"
         assert data.target.root in self.blocks, f"Unknown target block: {data.target.root.hex()}"
 
+        # Validate slot relationships
         source_block = self.blocks[data.source.root]
         target_block = self.blocks[data.target.root]
 
         assert source_block.slot <= target_block.slot, "Source slot must not exceed target"
         assert data.source.slot <= data.target.slot, "Source checkpoint slot must not exceed target"
 
+        # Validate checkpoint slots match block slots
         assert source_block.slot == data.source.slot, "Source checkpoint slot mismatch"
         assert target_block.slot == data.target.slot, "Target checkpoint slot mismatch"
 
+        # Validate attestation is not too far in the future
         current_slot = Slot(self.time // SECONDS_PER_INTERVAL)
-        assert data.slot <= current_slot + Slot(1), "Attestation too far in future"
+        assert data.slot <= Slot(current_slot + Slot(1)), "Attestation too far in future"
 
     def process_attestation(
         self,
@@ -184,18 +182,17 @@ class Store(Container):
             latest_new = self.latest_new_votes.get(validator_id)
             if latest_new is not None and latest_new.message.data.slot <= attestation_slot:
                 del self.latest_new_votes[validator_id]
-            return
+        else:
+            # Network gossip attestation processing
 
-        # Network gossip attestation processing
+            # Ensure forkchoice is current before processing gossip
+            time_slots = self.time // SECONDS_PER_INTERVAL
+            assert attestation_slot <= time_slots, "Attestation from future slot"
 
-        # Ensure forkchoice is current before processing gossip
-        time_slots = Slot(self.time // SECONDS_PER_INTERVAL)
-        assert attestation_slot <= time_slots, "Attestation from future slot"
-
-        # Update new votes if this is latest from validator
-        latest_new = self.latest_new_votes.get(validator_id)
-        if latest_new is None or latest_new.message.data.slot < attestation_slot:
-            self.latest_new_votes[validator_id] = signed_attestation
+            # Update new votes if this is latest from validator
+            latest_new = self.latest_new_votes.get(validator_id)
+            if latest_new is None or latest_new.message.data.slot < attestation_slot:
+                self.latest_new_votes[validator_id] = signed_attestation
 
     @staticmethod
     def _is_placeholder_signature(signature: Bytes4000) -> bool:
@@ -242,10 +239,7 @@ class Store(Container):
         valid_signatures = self._validate_block_signatures(block, signatures)
 
         # Get post state from STF (State Transition Function)
-        state = copy.deepcopy(parent_state).state_transition(
-            block,
-            valid_signatures,
-        )
+        state = copy.deepcopy(parent_state).state_transition(block, valid_signatures)
 
         # Add block and state to store
         self.blocks[block_hash] = block
@@ -284,10 +278,7 @@ class Store(Container):
         #
         # Hence make sure this gets added to the new votes so that this doesn't influence
         # this node's validators upcoming votes
-        self.process_attestation(
-            signed_proposer_attestation,
-            is_from_block=False,
-        )
+        self.process_attestation(signed_proposer_attestation, is_from_block=False)
 
     def update_head(self) -> None:
         """Update store's head based on latest justified checkpoint and votes."""
@@ -298,9 +289,7 @@ class Store(Container):
 
         # Use LMD GHOST to find new head
         new_head = get_fork_choice_head(
-            self.blocks,
-            self.latest_justified.root,
-            self.latest_known_votes,
+            self.blocks, self.latest_justified.root, self.latest_known_votes
         )
         object.__setattr__(self, "head", new_head)
 
@@ -442,11 +431,7 @@ class Store(Container):
         target_block = self.blocks[target_block_root]
         return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
 
-    def produce_block(
-        self,
-        slot: Slot,
-        validator_index: ValidatorIndex,
-    ) -> Block:
+    def produce_block(self, slot: Slot, validator_index: ValidatorIndex) -> Block:
         """
         Produce a new block for the given slot and validator.
 
