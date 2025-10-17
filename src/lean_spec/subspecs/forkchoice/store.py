@@ -208,7 +208,7 @@ class Store(Container):
     ) -> bool:
         """Temporary stub for aggregated signature validation."""
         # TODO: Integrate actual aggregated signature verification.
-        return all(self._is_placeholder_signature(signature) for signature in signatures)
+        return all(self._is_valid_signature(signature) for signature in signatures)
 
     def process_block(self, signed_block_vote: SignedBlockAndVote) -> None:
         """

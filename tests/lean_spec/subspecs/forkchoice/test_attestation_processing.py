@@ -134,9 +134,10 @@ class TestAttestationValidation:
             slot=Slot(2),
             head=Checkpoint(root=target_hash, slot=Slot(1)),
             source=Checkpoint(root=source_hash, slot=Slot(2)),
-            target=Checkpoint(root=target_hash, slot=Slot(1)),
+            target=Checkpoint(root=target_hash, slot=Slot(1)),  # Invalid: target < source
         )
 
+        # Should raise assertion error
         with pytest.raises(AssertionError, match="Source slot must not exceed target"):
             sample_store.validate_attestation(signed_attestation)
 
@@ -154,6 +155,7 @@ class TestAttestationValidation:
             target=Checkpoint(root=target_hash, slot=Slot(2)),
         )
 
+        # Should raise assertion error for missing blocks
         with pytest.raises(AssertionError, match="Unknown source block"):
             sample_store.validate_attestation(signed_attestation)
 
@@ -191,6 +193,7 @@ class TestAttestationValidation:
             target=Checkpoint(root=target_hash, slot=Slot(2)),
         )
 
+        # Should raise assertion error
         with pytest.raises(AssertionError, match="Source checkpoint slot mismatch"):
             sample_store.validate_attestation(signed_attestation)
 
@@ -222,12 +225,13 @@ class TestAttestationValidation:
         # Create signed vote for future slot
         signed_attestation = build_signed_attestation(
             validator=ValidatorIndex(0),
-            slot=Slot(1000),
+            slot=Slot(1000),  # Too far in future
             head=Checkpoint(root=target_hash, slot=Slot(1000)),
             source=Checkpoint(root=source_hash, slot=Slot(1)),
             target=Checkpoint(root=target_hash, slot=Slot(1000)),
         )
 
+        # Should raise assertion error
         with pytest.raises(AssertionError, match="Attestation too far in future"):
             sample_store.validate_attestation(signed_attestation)
 
@@ -269,8 +273,10 @@ class TestAttestationProcessing:
             target=Checkpoint(root=target_hash, slot=Slot(2)),
         )
 
+        # Process as network attestation
         sample_store.process_attestation(signed_attestation, is_from_block=False)
 
+        # Vote should be added to new votes
         assert ValidatorIndex(5) in sample_store.latest_new_votes
         stored = sample_store.latest_new_votes[ValidatorIndex(5)]
         assert stored.message.data.target == signed_attestation.message.data.target
@@ -309,8 +315,10 @@ class TestAttestationProcessing:
             target=Checkpoint(root=target_hash, slot=Slot(2)),
         )
 
+        # Process as block attestation
         sample_store.process_attestation(signed_attestation, is_from_block=True)
 
+        # Vote should be added to known votes
         assert ValidatorIndex(7) in sample_store.latest_known_votes
         stored = sample_store.latest_known_votes[ValidatorIndex(7)]
         assert stored.message.data.target == signed_attestation.message.data.target
@@ -352,6 +360,7 @@ class TestAttestationProcessing:
         )
         sample_store.process_attestation(signed_attestation_1, is_from_block=False)
 
+        # Process second (newer) attestation
         signed_attestation_2 = build_signed_attestation(
             validator=validator,
             slot=Slot(2),
@@ -361,6 +370,7 @@ class TestAttestationProcessing:
         )
         sample_store.process_attestation(signed_attestation_2, is_from_block=False)
 
+        # Should have the newer vote
         assert validator in sample_store.latest_new_votes
         stored = sample_store.latest_new_votes[validator]
         assert stored.message.data.target == signed_attestation_2.message.data.target
