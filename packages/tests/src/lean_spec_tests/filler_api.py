@@ -7,8 +7,8 @@ from lean_spec.subspecs.containers.config import Config
 from lean_spec.subspecs.containers.state import State
 from lean_spec.types import Uint64
 
-from .spec_fixtures.chain import ConsensusChainTest
 from .spec_fixtures.genesis import GenesisTest
+from .spec_fixtures.state_transition import StateTransitionTest
 
 
 def genesis_test(
@@ -47,16 +47,16 @@ def genesis_test(
     return filled
 
 
-def consensus_chain_test(
+def state_transition_test(
     pre: State,
     blocks: List[SignedBlock],
     expect_exception: type[Exception] | None = None,
-) -> ConsensusChainTest:
+) -> StateTransitionTest:
     """
-    Create a consensus chain test fixture.
+    Create a state transition test fixture.
 
     This is the public API that test writers use. It internally:
-    1. Creates a ConsensusChainTest instance
+    1. Creates a StateTransitionTest instance
     2. Calls make_fixture() to run State.state_transition() for each block
     3. Validates exception expectations
     4. Returns the filled fixture
@@ -72,11 +72,11 @@ def consensus_chain_test(
 
     Returns:
     -------
-    ConsensusChainTest
+    StateTransitionTest
         A filled fixture ready for serialization.
     """
     # Create instance with parameters
-    test_instance = ConsensusChainTest(
+    test_instance = StateTransitionTest(
         pre=pre,
         blocks=blocks,
         expect_exception=expect_exception,

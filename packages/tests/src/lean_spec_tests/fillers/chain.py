@@ -1,4 +1,4 @@
-"""Filler for ConsensusChainTest fixtures."""
+"""Filler for StateTransitionTest fixtures."""
 
 from typing import Callable, List
 
@@ -7,17 +7,17 @@ from lean_spec.subspecs.containers.state import State
 from lean_spec.types import Uint64
 
 from ..consensus_env import ConsensusEnvironment
-from ..spec_fixtures.chain import ConsensusChainTest
+from ..spec_fixtures.state_transition import StateTransitionTest
 
 
-def fill_consensus_chain_test(
+def fill_state_transition_test(
     genesis_time: Uint64,
     num_validators: Uint64,
     blocks_builder: Callable[[ConsensusEnvironment], List[SignedBlock]],
     expect_invalid: bool = False,
-) -> ConsensusChainTest:
+) -> StateTransitionTest:
     """
-    Generate a ConsensusChainTest fixture.
+    Generate a StateTransitionTest fixture.
 
     This filler uses the "spec as oracle" pattern:
     1. Start with genesis state
@@ -41,8 +41,8 @@ def fill_consensus_chain_test(
 
     Returns:
     -------
-    ConsensusChainTest
-        A complete chain test fixture ready for serialization.
+    StateTransitionTest
+        A complete state transition test fixture ready for serialization.
     """
     # Start with genesis
     env = ConsensusEnvironment.from_genesis(
@@ -76,7 +76,7 @@ def fill_consensus_chain_test(
     if expect_invalid and post_state is not None:
         raise AssertionError("Expected invalid chain but processing succeeded")
 
-    return ConsensusChainTest(
+    return StateTransitionTest(
         pre=pre_state,
         blocks=blocks,
         post=post_state,
