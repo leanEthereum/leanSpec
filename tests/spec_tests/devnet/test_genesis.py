@@ -7,6 +7,8 @@ from lean_spec_tests import GenesisTestFiller
 
 from lean_spec.types import Uint64
 
+pytestmark = pytest.mark.valid_until("Devnet")
+
 
 @pytest.mark.parametrize(
     "genesis_time,num_validators",

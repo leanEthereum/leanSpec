@@ -7,6 +7,8 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
 from lean_spec.types import Uint64
 
+pytestmark = pytest.mark.valid_until("Devnet")
+
 
 def test_invalid_proposer(state_transition_test: StateTransitionTestFiller) -> None:
     """

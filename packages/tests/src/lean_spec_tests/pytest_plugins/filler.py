@@ -7,7 +7,7 @@ from typing import Any, List
 import pytest
 
 from lean_spec_tests.base_types import CamelModel
-from lean_spec_tests.forks import Devnet, Fork
+from lean_spec_tests.forks import Fork, get_fork_by_name, get_forks
 from lean_spec_tests.spec_fixtures import BaseConsensusFixture
 
 
@@ -134,15 +134,28 @@ def pytest_configure(config: pytest.Config) -> None:
     import sys
     import textwrap
 
+    # Register fork validity markers
+    config.addinivalue_line(
+        "markers",
+        "valid_from(fork): specifies from which fork a test case is valid",
+    )
+    config.addinivalue_line(
+        "markers",
+        "valid_until(fork): specifies until which fork a test case is valid",
+    )
+    config.addinivalue_line(
+        "markers",
+        "valid_at(fork): specifies at which fork a test case is valid",
+    )
+
     # Get options
     output_dir = Path(config.getoption("--output"))
     fork_name = config.getoption("--fork")
     clean = config.getoption("--clean")
 
-    # Map of supported forks
-    supported_forks = {
-        "devnet": Devnet,
-    }
+    # Get all available forks dynamically
+    available_forks = get_forks()
+    available_fork_names = sorted(fork.name() for fork in available_forks)
 
     # Validate fork
     if not fork_name:
@@ -153,13 +166,15 @@ def pytest_configure(config: pytest.Config) -> None:
         available_forks_help = textwrap.dedent(
             f"""\
             Available forks:
-            {", ".join(supported_forks.keys())}
+            {", ".join(available_fork_names)}
             """
         )
         print(available_forks_help, file=sys.stderr)
         pytest.exit("Missing required --fork option.", returncode=pytest.ExitCode.USAGE_ERROR)
 
-    if fork_name.lower() not in supported_forks:
+    # Get the fork class by name
+    fork_class = get_fork_by_name(fork_name)
+    if fork_class is None:
         print(
             f"Error: Unsupported fork provided to --fork: {fork_name}\n",
             file=sys.stderr,
@@ -167,14 +182,11 @@ def pytest_configure(config: pytest.Config) -> None:
         available_forks_help = textwrap.dedent(
             f"""\
             Available forks:
-            {", ".join(supported_forks.keys())}
+            {", ".join(available_fork_names)}
             """
         )
         print(available_forks_help, file=sys.stderr)
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
-
-    # Get the fork class
-    fork_class = supported_forks[fork_name.lower()]
 
     # Check if output directory exists and is not empty
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -206,6 +218,101 @@ def pytest_configure(config: pytest.Config) -> None:
     config.consensus_fork_class = fork_class  # type: ignore[attr-defined]
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item]) -> None:
+    """
+    Modify collected test items to deselect tests not valid for the selected fork.
+
+    This hook runs after test collection and removes tests that aren't valid
+    for the fork specified via --fork.
+    """
+    if not hasattr(config, "consensus_fork_class"):
+        return
+
+    fork_class = config.consensus_fork_class
+    verbose = config.getoption("verbose")
+    deselected = []
+    selected = []
+
+    for item in items:
+        # Check if this test has fork validity markers
+        if not _is_test_item_valid_for_fork(item, fork_class):
+            # If verbose >= 2, keep as skipped (already marked in pytest_generate_tests)
+            # Otherwise, deselect it entirely
+            if verbose < 2:
+                deselected.append(item)
+            else:
+                selected.append(item)
+        else:
+            selected.append(item)
+
+    if deselected:
+        items[:] = selected
+        config.hook.pytest_deselected(items=deselected)
+
+
+def _is_test_item_valid_for_fork(item: pytest.Item, fork_class: Fork) -> bool:
+    """
+    Check if a test item is valid for the given fork based on validity markers.
+
+    Similar to _is_test_valid_for_fork but works on pytest.Item instead of Metafunc.
+    """
+    # Get all markers on the test
+    markers = list(item.iter_markers())
+
+    # Track which validity markers we've seen
+    has_valid_from = False
+    has_valid_until = False
+    has_valid_at = False
+
+    valid_from_forks = []
+    valid_until_forks = []
+    valid_at_forks = []
+
+    # Process each marker
+    for marker in markers:
+        if marker.name == "valid_from":
+            has_valid_from = True
+            for fork_name in marker.args:
+                target_fork = get_fork_by_name(fork_name)
+                if target_fork:
+                    valid_from_forks.append(target_fork)
+
+        elif marker.name == "valid_until":
+            has_valid_until = True
+            for fork_name in marker.args:
+                target_fork = get_fork_by_name(fork_name)
+                if target_fork:
+                    valid_until_forks.append(target_fork)
+
+        elif marker.name == "valid_at":
+            has_valid_at = True
+            for fork_name in marker.args:
+                target_fork = get_fork_by_name(fork_name)
+                if target_fork:
+                    valid_at_forks.append(target_fork)
+
+    # If no markers, test is valid for all forks
+    if not (has_valid_from or has_valid_until or has_valid_at):
+        return True
+
+    # If valid_at is specified, ONLY those forks are valid
+    if has_valid_at:
+        return fork_class in valid_at_forks
+
+    # Check valid_from constraint (fork_class >= any of the from forks)
+    from_valid = True
+    if has_valid_from:
+        from_valid = any(fork_class >= from_fork for from_fork in valid_from_forks)
+
+    # Check valid_until constraint (fork_class <= any of the until forks)
+    until_valid = True
+    if has_valid_until:
+        until_valid = any(fork_class <= until_fork for until_fork in valid_until_forks)
+
+    # Test is valid if it passes both constraints
+    return from_valid and until_valid
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Write all collected fixtures at the end of the session."""
     if hasattr(session.config, "fixture_collector"):
@@ -220,6 +327,7 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
 
     # During fixture generation, we don't care about test results
     # We only care about generating fixtures
+    # BUT: we DO care about fixture resolution errors (setup phase)
     if call.when == "call":
         # Mark as passed regardless of actual result
         report.outcome = "passed"
@@ -227,13 +335,16 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
     return report
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def fork(request: pytest.FixtureRequest) -> Fork:  # type: ignore[empty-body]
     """
     Parametrize test cases by fork.
 
     This fixture is parametrized by pytest_generate_tests() and receives
     the fork class as a parameter value.
+
+    Note: Not marked autouse=True because tests explicitly request fork
+    via their fixture parameters (genesis_test, consensus_chain_test, etc.).
     """
     pass
 
@@ -335,8 +446,8 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     Pytest hook used to dynamically generate test cases for each fork.
 
     This hook parametrizes the 'fork' fixture with the fork class specified
-    via the --fork command-line option. This follows the execution-spec-tests
-    pattern for fork parametrization.
+    via the --fork command-line option, but only if the test is valid for
+    that fork based on validity markers (valid_from, valid_until, valid_at).
     """
     # Only parametrize if the test uses the fork fixture
     if "fork" not in metafunc.fixturenames:
@@ -345,9 +456,100 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     # Get the fork class from config (validated in pytest_configure)
     fork_class = metafunc.config.consensus_fork_class  # type: ignore[attr-defined]
 
+    # Check fork validity markers on the test
+    if not _is_test_valid_for_fork(metafunc, fork_class):
+        # - High verbosity (>=2): Show skipped tests explicitly
+        # - Normal/low verbosity: Don't parametrize at all (tests aren't collected)
+        verbose = metafunc.config.getoption("verbose")
+        if verbose >= 2:
+            # Create a visible skipped test
+            metafunc.parametrize(
+                "fork",
+                [
+                    pytest.param(
+                        None,
+                        marks=pytest.mark.skip(
+                            reason=f"Test not valid for fork {fork_class.name()}"
+                        ),
+                    )
+                ],
+                scope="function",
+            )
+        # else: Don't parametrize - test won't be collected at all
+        return
+
     # Parametrize the fork fixture with the selected fork
     metafunc.parametrize(
         "fork",
         [pytest.param(fork_class, id=f"fork_{fork_class.name()}")],
         scope="function",
     )
+
+
+def _is_test_valid_for_fork(metafunc: pytest.Metafunc, fork_class: Fork) -> bool:
+    """
+    Check if a test is valid for the given fork based on validity markers.
+
+    Args:
+        metafunc: pytest Metafunc object containing test information.
+        fork_class: The fork class to check validity against.
+
+    Returns:
+        True if the test should run for this fork, False otherwise.
+    """
+    # Get all markers on the test
+    markers = list(metafunc.definition.iter_markers())
+
+    # Track which validity markers we've seen
+    has_valid_from = False
+    has_valid_until = False
+    has_valid_at = False
+
+    valid_from_forks = []
+    valid_until_forks = []
+    valid_at_forks = []
+
+    # Process each marker
+    for marker in markers:
+        if marker.name == "valid_from":
+            has_valid_from = True
+            # Marker args are fork names as strings
+            for fork_name in marker.args:
+                target_fork = get_fork_by_name(fork_name)
+                if target_fork:
+                    valid_from_forks.append(target_fork)
+
+        elif marker.name == "valid_until":
+            has_valid_until = True
+            for fork_name in marker.args:
+                target_fork = get_fork_by_name(fork_name)
+                if target_fork:
+                    valid_until_forks.append(target_fork)
+
+        elif marker.name == "valid_at":
+            has_valid_at = True
+            for fork_name in marker.args:
+                target_fork = get_fork_by_name(fork_name)
+                if target_fork:
+                    valid_at_forks.append(target_fork)
+
+    # If no markers, test is valid for all forks
+    if not (has_valid_from or has_valid_until or has_valid_at):
+        return True
+
+    # If valid_at is specified, ONLY those forks are valid
+    if has_valid_at:
+        return fork_class in valid_at_forks
+
+    # Check valid_from constraint (fork_class >= any of the from forks)
+    from_valid = True
+    if has_valid_from:
+        from_valid = any(fork_class >= from_fork for from_fork in valid_from_forks)
+
+    # Check valid_until constraint (fork_class <= any of the until forks)
+    until_valid = True
+    if has_valid_until:
+        until_valid = any(fork_class <= until_fork for until_fork in valid_until_forks)
+
+    # Test is valid if it passes both constraints
+    return from_valid and until_valid

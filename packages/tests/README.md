@@ -21,7 +21,7 @@ uv sync --all-extras
 Generate test fixtures using the `fill` command:
 
 ```bash
-uv run fill --fork devnet
+uv run fill --fork=devnet --clean
 ```
 
 See the main project documentation for more details.
