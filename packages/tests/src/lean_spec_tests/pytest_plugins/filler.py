@@ -187,7 +187,36 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
 
 # Pytest fixtures for test writers
 @pytest.fixture
-def genesis_test(request: pytest.FixtureRequest) -> type[GenesisTest]:
+def test_case_description(request: pytest.FixtureRequest) -> str:
+    """
+    Extract and combine docstrings from test class and function.
+
+    Returns:
+        str: Combined docstring or a default message if no docstring is found.
+    """
+    description_unavailable = (
+        "No description available - add a docstring to the python test class or function."
+    )
+    test_class_doc = ""
+    test_function_doc = ""
+
+    if hasattr(request.node, "cls") and request.cls:
+        test_class_doc = f"Test class documentation:\n{request.cls.__doc__}"
+    if hasattr(request.node, "function") and request.function.__doc__:
+        test_function_doc = f"{request.function.__doc__}"
+
+    if not test_class_doc and not test_function_doc:
+        return description_unavailable
+
+    combined_docstring = f"{test_class_doc}\n\n{test_function_doc}".strip()
+    return combined_docstring
+
+
+@pytest.fixture
+def genesis_test(
+    request: pytest.FixtureRequest,
+    test_case_description: str,
+) -> type[GenesisTest]:
     """
     Pytest fixture for creating genesis test vectors.
 
@@ -211,6 +240,12 @@ def genesis_test(request: pytest.FixtureRequest) -> type[GenesisTest]:
             # Run make_fixture() to fill it (runs the spec)
             filled_fixture = self.make_fixture()
 
+            # Fill metadata information
+            filled_fixture.fill_info(
+                test_id=request.node.nodeid,
+                description=test_case_description,
+            )
+
             # Add to collector if we're in fill mode
             if hasattr(request.config, "fixture_collector"):
                 request.config.fixture_collector.add_fixture(
@@ -226,6 +261,7 @@ def genesis_test(request: pytest.FixtureRequest) -> type[GenesisTest]:
 @pytest.fixture
 def consensus_chain_test(
     request: pytest.FixtureRequest,
+    test_case_description: str,
 ) -> type[ConsensusChainTest]:
     """
     Pytest fixture for creating consensus chain test vectors.
@@ -253,6 +289,12 @@ def consensus_chain_test(
 
             # Run make_fixture() to fill it (runs the spec)
             filled_fixture = self.make_fixture()
+
+            # Fill metadata information
+            filled_fixture.fill_info(
+                test_id=request.node.nodeid,
+                description=test_case_description,
+            )
 
             # Add to collector if we're in fill mode
             if hasattr(request.config, "fixture_collector"):
