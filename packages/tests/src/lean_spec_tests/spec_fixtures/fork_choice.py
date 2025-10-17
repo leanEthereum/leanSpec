@@ -65,7 +65,6 @@ class ForkChoiceTest(BaseConsensusFixture):
         anchor_state: Initial trusted state
         anchor_block: Initial trusted block
         steps: Sequence of events and checks
-        scenario_tags: Tags for categorization
     """
 
     format_name: ClassVar[str] = "fork_choice_test"

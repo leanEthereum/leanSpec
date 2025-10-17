@@ -28,7 +28,6 @@ class ConsensusChainTest(BaseConsensusFixture):
         pre: Initial consensus state
         blocks: Sequence of signed blocks to process
         post: Expected state after processing (None if invalid, filled by spec)
-        scenario_tags: Tags for categorization
         expect_exception: Expected exception for invalid tests
     """
 

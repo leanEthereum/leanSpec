@@ -14,7 +14,6 @@ def fill_consensus_chain_test(
     genesis_time: Uint64,
     num_validators: Uint64,
     blocks_builder: Callable[[ConsensusEnvironment], List[SignedBlock]],
-    scenario_tags: List[str] | None = None,
     expect_invalid: bool = False,
 ) -> ConsensusChainTest:
     """
@@ -36,8 +35,6 @@ def fill_consensus_chain_test(
         A function that takes a ConsensusEnvironment and returns a list
         of blocks to process. The environment provides helpers to create
         blocks and attestations.
-    scenario_tags : List[str], optional
-        Tags for categorization (e.g., ["attestation", "finality"]).
     expect_invalid : bool, optional
         If True, the test expects the chain to be invalid. The filler
         will still try to process blocks, and if any fail, post will be None.
@@ -46,25 +43,6 @@ def fill_consensus_chain_test(
     -------
     ConsensusChainTest
         A complete chain test fixture ready for serialization.
-
-    Examples:
-    --------
-    >>> from lean_spec.types import Uint64
-    >>> from lean_spec.subspecs.containers.slot import Slot
-    >>>
-    >>> def build_single_block(env):
-    ...     # Create a block at slot 1
-    ...     block = env.make_signed_block(slot=Slot(1))
-    ...     return [block]
-    >>>
-    >>> test = fill_consensus_chain_test(
-    ...     genesis_time=Uint64(1000000),
-    ...     num_validators=Uint64(4),
-    ...     blocks_builder=build_single_block,
-    ...     scenario_tags=["basic_block"],
-    ... )
-    >>> assert len(test.blocks) == 1
-    >>> assert test.post.slot.as_int() == 1
     """
     # Start with genesis
     env = ConsensusEnvironment.from_genesis(
@@ -98,10 +76,8 @@ def fill_consensus_chain_test(
     if expect_invalid and post_state is not None:
         raise AssertionError("Expected invalid chain but processing succeeded")
 
-    # Build the test fixture
     return ConsensusChainTest(
         pre=pre_state,
         blocks=blocks,
         post=post_state,
-        scenario_tags=scenario_tags or [],
     )
