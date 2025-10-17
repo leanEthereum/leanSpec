@@ -7,6 +7,7 @@ from typing import Any, List
 import pytest
 
 from lean_spec_tests.base_types import CamelModel
+from lean_spec_tests.forks import Devnet, Fork
 from lean_spec_tests.spec_fixtures import ConsensusChainTest, GenesisTest
 
 
@@ -187,6 +188,23 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
 
 # Pytest fixtures for test writers
 @pytest.fixture
+def fork(request: pytest.FixtureRequest) -> Fork:
+    """
+    Provide the fork for the current test.
+
+    Returns the Fork class based on the --fork command line option.
+    """
+    fork_name = request.config.getoption("--fork")
+    # Map fork names to Fork classes
+    fork_map = {
+        "devnet": Devnet,
+    }
+    if fork_name.lower() not in fork_map:
+        raise ValueError(f"Unknown fork: {fork_name}. Available forks: {list(fork_map.keys())}")
+    return fork_map[fork_name.lower()]
+
+
+@pytest.fixture
 def test_case_description(request: pytest.FixtureRequest) -> str:
     """
     Extract and combine docstrings from test class and function.
@@ -216,6 +234,7 @@ def test_case_description(request: pytest.FixtureRequest) -> str:
 def genesis_test(
     request: pytest.FixtureRequest,
     test_case_description: str,
+    fork: Fork,
 ) -> type[GenesisTest]:
     """
     Pytest fixture for creating genesis test vectors.
@@ -244,6 +263,7 @@ def genesis_test(
             filled_fixture.fill_info(
                 test_id=request.node.nodeid,
                 description=test_case_description,
+                fork=fork,
             )
 
             # Add to collector if we're in fill mode
@@ -262,6 +282,7 @@ def genesis_test(
 def consensus_chain_test(
     request: pytest.FixtureRequest,
     test_case_description: str,
+    fork: Fork,
 ) -> type[ConsensusChainTest]:
     """
     Pytest fixture for creating consensus chain test vectors.
@@ -294,6 +315,7 @@ def consensus_chain_test(
             filled_fixture.fill_info(
                 test_id=request.node.nodeid,
                 description=test_case_description,
+                fork=fork,
             )
 
             # Add to collector if we're in fill mode
