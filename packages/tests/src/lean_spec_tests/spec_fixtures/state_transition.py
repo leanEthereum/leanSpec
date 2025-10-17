@@ -1,4 +1,4 @@
-"""Consensus chain test fixture format."""
+"""State transition test fixture format."""
 
 from typing import ClassVar, List
 
@@ -10,9 +10,9 @@ from lean_spec.subspecs.containers.state.state import State
 from .base import BaseConsensusFixture
 
 
-class ConsensusChainTest(BaseConsensusFixture):
+class StateTransitionTest(BaseConsensusFixture):
     """
-    Unified test fixture for block processing through state_transition().
+    Test fixture for block processing through state_transition().
 
     This is the primary test type that covers:
     - Operations (attestations via blocks)
@@ -21,8 +21,7 @@ class ConsensusChainTest(BaseConsensusFixture):
     - Justification and finalization
     - Invalid blocks
 
-    Replaces separate operations/epoch_processing/rewards test types
-    by testing everything through the main public API.
+    Tests everything through the main state_transition() public API.
 
     Structure:
         pre: Initial consensus state
@@ -31,7 +30,7 @@ class ConsensusChainTest(BaseConsensusFixture):
         expect_exception: Expected exception for invalid tests
     """
 
-    format_name: ClassVar[str] = "consensus_chain_test"
+    format_name: ClassVar[str] = "state_transition_test"
     description: ClassVar[str] = (
         "Tests block processing through state_transition() - "
         "covers operations, epochs, and finality"
@@ -63,13 +62,13 @@ class ConsensusChainTest(BaseConsensusFixture):
         #  as in execution-spec-tests - e.g., "StateTransitionException.INVALID_SLOT"
         return value.__name__
 
-    def make_fixture(self) -> "ConsensusChainTest":
+    def make_fixture(self) -> "StateTransitionTest":
         """
         Generate the fixture by running the spec.
 
         Returns:
         -------
-        ConsensusChainTest
+        StateTransitionTest
             A filled fixture with post state populated.
 
         Raises:

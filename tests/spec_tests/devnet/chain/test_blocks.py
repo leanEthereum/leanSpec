@@ -1,13 +1,14 @@
 """Single block processing tests for the devnet fork."""
 
-from lean_spec_tests import BlockBuilder, ConsensusChainTestFiller
+import pytest
+from lean_spec_tests import BlockBuilder, StateTransitionTestFiller
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
 from lean_spec.types import Uint64
 
 
-def test_single_empty_block(consensus_chain_test: ConsensusChainTestFiller) -> None:
+def test_single_empty_block(state_transition_test: StateTransitionTestFiller) -> None:
     """
     Test processing a single empty block (no attestations).
 
@@ -24,13 +25,13 @@ def test_single_empty_block(consensus_chain_test: ConsensusChainTestFiller) -> N
     block = builder.build(Slot(1))
 
     # Generate the test fixture - the SPEC does all the work
-    consensus_chain_test(
+    state_transition_test(
         pre=genesis,
         blocks=[block],
     )
 
 
-def test_single_block_with_slot_gap(consensus_chain_test: ConsensusChainTestFiller) -> None:
+def test_single_block_with_slot_gap(state_transition_test: StateTransitionTestFiller) -> None:
     """Test processing a block with empty slots before it."""
     genesis = State.generate_genesis(
         genesis_time=Uint64(1000000),
@@ -42,13 +43,13 @@ def test_single_block_with_slot_gap(consensus_chain_test: ConsensusChainTestFill
     block = builder.build(Slot(5))
 
     # Spec processes and validates
-    consensus_chain_test(
+    state_transition_test(
         pre=genesis,
         blocks=[block],
     )
 
 
-def test_sequential_blocks(consensus_chain_test: ConsensusChainTestFiller) -> None:
+def test_sequential_blocks(state_transition_test: StateTransitionTestFiller) -> None:
     """Test processing a sequence of blocks in consecutive slots."""
     genesis = State.generate_genesis(
         genesis_time=Uint64(1000000),
@@ -67,7 +68,7 @@ def test_sequential_blocks(consensus_chain_test: ConsensusChainTestFiller) -> No
     block3 = builder.build(Slot(3))
 
     # Spec processes all blocks
-    consensus_chain_test(
+    state_transition_test(
         pre=genesis,
         blocks=[block1, block2, block3],
     )

@@ -1,13 +1,14 @@
 """Invalid block processing tests for the devnet fork."""
 
-from lean_spec_tests import BlockBuilder, ConsensusChainTestFiller
+import pytest
+from lean_spec_tests import BlockBuilder, StateTransitionTestFiller
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
 from lean_spec.types import Uint64
 
 
-def test_invalid_proposer(consensus_chain_test: ConsensusChainTestFiller) -> None:
+def test_invalid_proposer(state_transition_test: StateTransitionTestFiller) -> None:
     """
     Test that blocks with incorrect proposer are rejected.
 
@@ -39,7 +40,7 @@ def test_invalid_proposer(consensus_chain_test: ConsensusChainTestFiller) -> Non
     )
 
     # This should fail with "Incorrect block proposer"
-    consensus_chain_test(
+    state_transition_test(
         pre=genesis,
         blocks=[block],
         expect_exception=AssertionError,

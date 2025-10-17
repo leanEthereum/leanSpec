@@ -5,21 +5,21 @@ from typing import Type
 from .base_types import CamelModel
 from .builders import BlockBuilder
 from .consensus_env import ConsensusEnvironment
-from .filler_api import consensus_chain_test, genesis_test
+from .filler_api import genesis_test, state_transition_test
 from .spec_fixtures import (
     BaseConsensusFixture,
-    ConsensusChainTest,
     ForkChoiceTest,
     GenesisTest,
+    StateTransitionTest,
 )
 
 GenesisTestFiller = Type[GenesisTest]
-ConsensusChainTestFiller = Type[ConsensusChainTest]
+StateTransitionTestFiller = Type[StateTransitionTest]
 
 __all__ = [
     # Public API
     "genesis_test",
-    "consensus_chain_test",
+    "state_transition_test",
     "ConsensusEnvironment",
     "BlockBuilder",
     # Base types
@@ -27,9 +27,9 @@ __all__ = [
     # Fixture classes
     "BaseConsensusFixture",
     "GenesisTest",
-    "ConsensusChainTest",
+    "StateTransitionTest",
     "ForkChoiceTest",
     # Type aliases for test function signatures
     "GenesisTestFiller",
-    "ConsensusChainTestFiller",
+    "StateTransitionTestFiller",
 ]

@@ -1,13 +1,13 @@
 """Consensus test fixture format definitions (Pydantic models)."""
 
 from .base import BaseConsensusFixture
-from .chain import ConsensusChainTest
 from .fork_choice import ForkChoiceTest
 from .genesis import GenesisTest
+from .state_transition import StateTransitionTest
 
 __all__ = [
     "BaseConsensusFixture",
-    "ConsensusChainTest",
+    "StateTransitionTest",
     "ForkChoiceTest",
     "GenesisTest",
 ]
