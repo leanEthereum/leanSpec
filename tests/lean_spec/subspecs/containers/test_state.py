@@ -692,7 +692,7 @@ def test_process_attestations_justification_and_finalization(genesis_state: Stat
     ]
 
     # Process attestations directly; returns a new state snapshot.
-    new_state = state.process_attestations(votes_for_4)
+    new_state = state.process_attestations(votes_for_4)  # type: ignore
 
     # The target (slot 4) should now be justified.
     assert new_state.latest_justified == checkpoint4

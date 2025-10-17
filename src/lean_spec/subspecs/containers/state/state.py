@@ -1,6 +1,6 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List
 
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -18,7 +18,6 @@ from ..block.types import Attestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
-from ..vote import ValidatorAttestation
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -90,14 +89,12 @@ class State(Container):
         )
 
         # Build the genesis block header for the state.
-        genesis_body = BlockBody(attestations=Attestations(data=[]))
-
         genesis_header = BlockHeader(
             slot=Slot(0),
             proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(genesis_body),
+            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
         )
 
         # Assemble and return the full genesis state.
@@ -409,7 +406,7 @@ class State(Container):
 
     def process_attestations(
         self,
-        attestations: Iterable[ValidatorAttestation],
+        attestations: Attestations,
     ) -> "State":
         """
         Apply attestation votes and update justification/finalization
@@ -446,41 +443,41 @@ class State(Container):
                 continue  # Skip invalid votes
 
             # Check if source checkpoint is justified.
-            source_slot = source.slot.as_int()
-            target_slot = target.slot.as_int()
+            source_slot_int = source.slot.as_int()
+            target_slot_int = target.slot.as_int()
 
             # Ensure we have enough justified slots history.
-            if source_slot >= len(justified_slots):
-                continue
+            if source_slot_int < len(justified_slots):
+                source_is_justified = justified_slots[source_slot_int]
+            else:
+                continue  # Source is too far in the past
 
-            source_is_justified = justified_slots[source_slot]
-
-            target_tracked = target_slot < len(justified_slots)
             # If source is justified, consider justifying the target.
-            if source_is_justified and target_tracked and justified_slots[target_slot]:
-                consecutive = source.slot.as_int() + 1 == target.slot.as_int()
-                newest_target = latest_justified.slot.as_int() < target.slot.as_int()
+            if (
+                source_is_justified
+                and target_slot_int < len(justified_slots)
+                and justified_slots[target_slot_int]
+            ):
                 # Target is already justified, check for finalization.
-                if consecutive and newest_target:
+                if (
+                    source.slot.as_int() + 1 == target.slot.as_int()
+                    and latest_justified.slot.as_int() < target.slot.as_int()
+                ):
                     # Consecutive justified checkpoints -> finalize the source.
                     latest_finalized = source
                     latest_justified = target
-                continue
 
-            # Try to justify the target if source is justified.
-            if not source_is_justified:
-                continue
+            else:
+                # Try to justify the target if source is justified.
+                if source_is_justified:
+                    # Ensure justified_slots is long enough, then mark the target slot.
+                    while len(justified_slots) <= target_slot_int:
+                        justified_slots.append(Boolean(False))
+                    justified_slots[target_slot_int] = Boolean(True)
 
-            # Ensure justified_slots is long enough, then mark the target slot.
-            while len(justified_slots) <= target_slot:
-                justified_slots.append(Boolean(False))
-
-            if not justified_slots[target_slot]:
-                justified_slots[target_slot] = Boolean(True)
-
-            # Update latest_justified if this target is newer.
-            if target.slot.as_int() > latest_justified.slot.as_int():
-                latest_justified = target
+                    # Update latest_justified if this target is newer.
+                    if target.slot.as_int() > latest_justified.slot.as_int():
+                        latest_justified = target
 
         # Return the updated state.
         return self.model_copy(
