@@ -103,7 +103,7 @@ class TestForkChoiceHeadFunction:
         }
 
         head = get_fork_choice_head(
-            blocks=sample_blocks,root=root_hash,latest_votes=votes,min_score=2
+            blocks=sample_blocks, root=root_hash, latest_votes=votes, min_score=2
         )
 
         # Should fall back to root since min_score not met
@@ -131,7 +131,7 @@ class TestForkChoiceHeadFunction:
         }
 
         head = get_fork_choice_head(
-            blocks=sample_blocks,root=root_hash,latest_votes=votes,min_score=0
+            blocks=sample_blocks, root=root_hash, latest_votes=votes, min_score=0
         )
 
         assert head == target_hash
@@ -145,7 +145,7 @@ class TestLatestJustifiedFunction:
         result = get_latest_justified({})
         assert result is None
 
-    def test_get_latest_justified_single_state(self,mock_state_factory: Type["MockState"]) -> None:
+    def test_get_latest_justified_single_state(self, mock_state_factory: Type["MockState"]) -> None:
         """Test get_latest_justified with a single state."""
         checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(5))
 

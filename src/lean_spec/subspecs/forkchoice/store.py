@@ -5,7 +5,7 @@ The Store tracks all information required for the LMD GHOST forkchoice algorithm
 """
 
 import copy
-from typing import Dict, Sequence
+from typing import Dict
 
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
@@ -23,7 +23,7 @@ from lean_spec.subspecs.containers import (
     State,
     ValidatorAttestation,
 )
-from lean_spec.subspecs.containers.block import Attestations
+from lean_spec.subspecs.containers.block import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
@@ -207,7 +207,7 @@ class Store(Container):
     def _validate_block_signatures(
         self,
         block: Block,
-        signatures: Sequence[Bytes4000],
+        signatures: BlockSignatures,
     ) -> bool:
         """Temporary stub for aggregated signature validation."""
         # TODO: Integrate actual aggregated signature verification.

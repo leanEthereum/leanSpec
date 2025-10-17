@@ -1,6 +1,6 @@
 """Tests for vote target selection and calculation."""
 
-import pytest  # type: ignore[import-not-found]
+import pytest
 
 from lean_spec.subspecs.containers import (
     Block,
