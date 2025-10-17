@@ -195,7 +195,7 @@ class Store(Container):
                 self.latest_new_votes[validator_id] = signed_attestation
 
     @staticmethod
-    def _is_placeholder_signature(signature: Bytes4000) -> bool:
+    def _is_valid_signature(signature: Bytes4000) -> bool:
         """Return True when the placeholder signature is the zero value."""
         # TODO: Replace placeholder check once aggregated signatures are
         # wired in as part of the multi-proof integration work.
