@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Dict, Type
 from pydantic import ConfigDict, Field
 
 from lean_spec_tests.base_types import CamelModel
+from lean_spec_tests.forks import Fork
 
 
 class BaseConsensusFixture(CamelModel):
@@ -31,6 +32,9 @@ class BaseConsensusFixture(CamelModel):
     """Human-readable description of what this fixture tests."""
 
     # Instance fields
+    network: str | None = None
+    """The fork/network this fixture is valid for (e.g., 'Devnet')."""
+
     info: Dict[str, Any] = Field(default_factory=dict, alias="_info")
     """Metadata about the test (description, fork, etc.)."""
 
@@ -104,6 +108,7 @@ class BaseConsensusFixture(CamelModel):
         self,
         test_id: str,
         description: str,
+        fork: Fork,
     ) -> None:
         """
         Fill metadata information for this fixture.
@@ -111,12 +116,16 @@ class BaseConsensusFixture(CamelModel):
         Args:
             test_id: Unique identifier for the test case.
             description: Human-readable description of the test.
+            fork: The fork this test is valid for.
         """
         if "comment" not in self.info:
             self.info["comment"] = "`leanSpec` generated test"
         self.info["test-id"] = test_id
         self.info["description"] = description
         self.info["fixture-format"] = self.format_name
+
+        # Set network field on the fixture itself
+        self.network = fork.name()
 
     @classmethod
     def supports_fork(cls, fork: str) -> bool:
