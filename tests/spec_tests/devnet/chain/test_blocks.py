@@ -1,10 +1,4 @@
-"""
-Single block processing tests for the devnet fork.
-
-Tests basic block processing through state_transition().
-
-Run with: uv run fill tests/devnet/chain/ --fork devnet
-"""
+"""Single block processing tests for the devnet fork."""
 
 from lean_spec_tests import BlockBuilder, ConsensusChainTestFiller
 

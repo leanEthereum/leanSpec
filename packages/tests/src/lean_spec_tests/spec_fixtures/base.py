@@ -103,7 +103,6 @@ class BaseConsensusFixture(CamelModel):
     def fill_info(
         self,
         test_id: str,
-        fork: str,
         description: str,
     ) -> None:
         """
@@ -111,11 +110,11 @@ class BaseConsensusFixture(CamelModel):
 
         Args:
             test_id: Unique identifier for the test case.
-            fork: The fork this test is valid for (e.g., "devnet").
             description: Human-readable description of the test.
         """
+        if "comment" not in self.info:
+            self.info["comment"] = "`leanSpec` generated test"
         self.info["test-id"] = test_id
-        self.info["fork"] = fork
         self.info["description"] = description
         self.info["fixture-format"] = self.format_name
 
