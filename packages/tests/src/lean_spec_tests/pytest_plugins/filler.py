@@ -8,7 +8,7 @@ import pytest
 
 from lean_spec_tests.base_types import CamelModel
 from lean_spec_tests.forks import Devnet, Fork
-from lean_spec_tests.spec_fixtures import ConsensusChainTest, GenesisTest
+from lean_spec_tests.spec_fixtures import BaseConsensusFixture
 
 
 class FixtureCollector:
@@ -131,10 +131,50 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     """Setup fixture generation session."""
+    import sys
+    import textwrap
+
     # Get options
     output_dir = Path(config.getoption("--output"))
-    fork = config.getoption("--fork")
+    fork_name = config.getoption("--fork")
     clean = config.getoption("--clean")
+
+    # Map of supported forks
+    supported_forks = {
+        "devnet": Devnet,
+    }
+
+    # Validate fork
+    if not fork_name:
+        print(
+            "Error: --fork is required",
+            file=sys.stderr,
+        )
+        available_forks_help = textwrap.dedent(
+            f"""\
+            Available forks:
+            {", ".join(supported_forks.keys())}
+            """
+        )
+        print(available_forks_help, file=sys.stderr)
+        pytest.exit("Missing required --fork option.", returncode=pytest.ExitCode.USAGE_ERROR)
+
+    if fork_name.lower() not in supported_forks:
+        print(
+            f"Error: Unsupported fork provided to --fork: {fork_name}\n",
+            file=sys.stderr,
+        )
+        available_forks_help = textwrap.dedent(
+            f"""\
+            Available forks:
+            {", ".join(supported_forks.keys())}
+            """
+        )
+        print(available_forks_help, file=sys.stderr)
+        pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
+
+    # Get the fork class
+    fork_class = supported_forks[fork_name.lower()]
 
     # Check if output directory exists and is not empty
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -145,10 +185,11 @@ def pytest_configure(config: pytest.Config) -> None:
             if len(list(output_dir.iterdir())) > 5:
                 summary += ", ..."
 
-            raise ValueError(
+            pytest.exit(
                 f"Output directory '{output_dir}' is not empty. "
                 f"Contains: {summary}. Use --clean to remove all existing files "
-                "or specify a different output directory."
+                "or specify a different output directory.",
+                returncode=pytest.ExitCode.USAGE_ERROR,
             )
         # Clean if requested
         import shutil
@@ -159,10 +200,10 @@ def pytest_configure(config: pytest.Config) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create collector
-    config.fixture_collector = FixtureCollector(output_dir, fork)  # type: ignore[attr-defined]
+    config.fixture_collector = FixtureCollector(output_dir, fork_name)  # type: ignore[attr-defined]
 
-    # Store fork for use in fixtures
-    config.consensus_fork = fork  # type: ignore[attr-defined]
+    # Store fork class for use in fixtures
+    config.consensus_fork_class = fork_class  # type: ignore[attr-defined]
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
@@ -186,22 +227,15 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
     return report
 
 
-# Pytest fixtures for test writers
-@pytest.fixture
-def fork(request: pytest.FixtureRequest) -> Fork:
+@pytest.fixture(autouse=True)
+def fork(request: pytest.FixtureRequest) -> Fork:  # type: ignore[empty-body]
     """
-    Provide the fork for the current test.
+    Parametrize test cases by fork.
 
-    Returns the Fork class based on the --fork command line option.
+    This fixture is parametrized by pytest_generate_tests() and receives
+    the fork class as a parameter value.
     """
-    fork_name = request.config.getoption("--fork")
-    # Map fork names to Fork classes
-    fork_map = {
-        "devnet": Devnet,
-    }
-    if fork_name.lower() not in fork_map:
-        raise ValueError(f"Unknown fork: {fork_name}. Available forks: {list(fork_map.keys())}")
-    return fork_map[fork_name.lower()]
+    pass
 
 
 @pytest.fixture
@@ -230,101 +264,90 @@ def test_case_description(request: pytest.FixtureRequest) -> str:
     return combined_docstring
 
 
-@pytest.fixture
-def genesis_test(
-    request: pytest.FixtureRequest,
-    test_case_description: str,
-    fork: Fork,
-) -> type[GenesisTest]:
+def base_spec_filler_parametrizer(
+    fixture_class: type[BaseConsensusFixture],
+) -> Any:
     """
-    Pytest fixture for creating genesis test vectors.
+    Generate pytest.fixture for a given BaseConsensusFixture subclass.
+    All spec fixtures are scoped at the function level to avoid leakage between tests.
 
-    Test writers receive this as an injected fixture (a class type) and
-    instantiate it at the end of their test to generate the fixture.
+    Args:
+        fixture_class: The fixture class to create a parametrizer for.
 
-    Example:
-        def test_genesis_minimal(genesis_test: GenesisTestFiller):
-            genesis_test(
-                genesis_time=Uint64(1000000),
-                num_validators=Uint64(4),
-            )
+    Returns:
+        A pytest fixture function that creates wrapper instances.
     """
 
-    class GenesisTestWrapper(GenesisTest):
-        """Wrapper class that auto-fills and collects fixtures on instantiation."""
+    @pytest.fixture(
+        scope="function",
+        name=fixture_class.format_name,
+    )
+    def base_spec_filler_parametrizer_func(
+        request: pytest.FixtureRequest,
+        fork: Fork,
+        test_case_description: str,
+    ) -> Any:
+        """
+        Fixture used to instantiate an auto-fillable BaseConsensusFixture object.
 
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__(**kwargs)
+        Every test that defines a test filler must explicitly specify its
+        parameter name in its function arguments (e.g., genesis_test, consensus_chain_test).
+        """
 
-            # Run make_fixture() to fill it (runs the spec)
-            filled_fixture = self.make_fixture()
+        class FixtureWrapper(fixture_class):  # type: ignore[misc,valid-type]
+            """Wrapper class that auto-fills and collects fixtures on instantiation."""
 
-            # Fill metadata information
-            filled_fixture.fill_info(
-                test_id=request.node.nodeid,
-                description=test_case_description,
-                fork=fork,
-            )
+            def __init__(self, **kwargs: Any) -> None:
+                super().__init__(**kwargs)
 
-            # Add to collector if we're in fill mode
-            if hasattr(request.config, "fixture_collector"):
-                request.config.fixture_collector.add_fixture(
-                    test_name=request.node.name,
-                    fixture_format=filled_fixture.format_name,
-                    fixture=filled_fixture,
-                    test_nodeid=request.node.nodeid,
+                # Run make_fixture() to fill it (runs the spec)
+                filled_fixture = self.make_fixture()
+
+                # Fill metadata information
+                filled_fixture.fill_info(
+                    test_id=request.node.nodeid,
+                    description=test_case_description,
+                    fork=fork,
                 )
 
-    return GenesisTestWrapper
+                # Add to collector if we're in fill mode
+                if hasattr(request.config, "fixture_collector"):
+                    request.config.fixture_collector.add_fixture(
+                        test_name=request.node.name,
+                        fixture_format=filled_fixture.format_name,
+                        fixture=filled_fixture,
+                        test_nodeid=request.node.nodeid,
+                    )
+
+        return FixtureWrapper
+
+    return base_spec_filler_parametrizer_func
 
 
-@pytest.fixture
-def consensus_chain_test(
-    request: pytest.FixtureRequest,
-    test_case_description: str,
-    fork: Fork,
-) -> type[ConsensusChainTest]:
+# Dynamically generate a pytest fixture for each consensus spec fixture format.
+for format_name, fixture_class in BaseConsensusFixture.formats.items():
+    # Fixture needs to be defined in the global scope so pytest can detect it.
+    globals()[format_name] = base_spec_filler_parametrizer(fixture_class)
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """
-    Pytest fixture for creating consensus chain test vectors.
+    Pytest hook used to dynamically generate test cases for each fork.
 
-    Test writers receive this as an injected fixture (a class type) and
-    instantiate it at the end of their test to generate the fixture.
-
-    Example:
-        def test_single_block(consensus_chain_test: ConsensusChainTestFiller):
-            env = ConsensusEnvironment.from_genesis(...)
-            block = env.make_signed_block(...)
-
-            consensus_chain_test(
-                pre=env.state,
-                blocks=[block],
-                scenario_tags=["single_block"],
-            )
+    This hook parametrizes the 'fork' fixture with the fork class specified
+    via the --fork command-line option. This follows the execution-spec-tests
+    pattern for fork parametrization.
     """
+    # Only parametrize if the test uses the fork fixture
+    if "fork" not in metafunc.fixturenames:
+        return
 
-    class ConsensusChainTestWrapper(ConsensusChainTest):
-        """Wrapper class that auto-fills and collects fixtures on instantiation."""
+    # Get the fork class from config (validated in pytest_configure)
+    fork_class = metafunc.config.consensus_fork_class  # type: ignore[attr-defined]
 
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__(**kwargs)
-
-            # Run make_fixture() to fill it (runs the spec)
-            filled_fixture = self.make_fixture()
-
-            # Fill metadata information
-            filled_fixture.fill_info(
-                test_id=request.node.nodeid,
-                description=test_case_description,
-                fork=fork,
-            )
-
-            # Add to collector if we're in fill mode
-            if hasattr(request.config, "fixture_collector"):
-                request.config.fixture_collector.add_fixture(
-                    test_name=request.node.name,
-                    fixture_format=filled_fixture.format_name,
-                    fixture=filled_fixture,
-                    test_nodeid=request.node.nodeid,
-                )
-
-    return ConsensusChainTestWrapper
+    # Parametrize the fork fixture with the selected fork
+    metafunc.parametrize(
+        "fork",
+        [pytest.param(fork_class, id=f"fork_{fork_class.name()}")],
+        scope="function",
+    )

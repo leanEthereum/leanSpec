@@ -50,7 +50,6 @@ def genesis_test(
 def consensus_chain_test(
     pre: State,
     blocks: List[SignedBlock],
-    scenario_tags: List[str] | None = None,
     expect_exception: type[Exception] | None = None,
 ) -> ConsensusChainTest:
     """
@@ -68,8 +67,6 @@ def consensus_chain_test(
         Initial consensus state before processing blocks.
     blocks : List[SignedBlock]
         Sequence of signed blocks to process.
-    scenario_tags : List[str], optional
-        Tags for categorization (e.g., ["attestation", "finality"]).
     expect_exception : type[Exception], optional
         Expected exception type for invalid tests. If None, expects success.
 
@@ -82,7 +79,6 @@ def consensus_chain_test(
     test_instance = ConsensusChainTest(
         pre=pre,
         blocks=blocks,
-        scenario_tags=scenario_tags or [],
         expect_exception=expect_exception,
     )
 
