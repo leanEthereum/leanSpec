@@ -219,9 +219,8 @@ class Store(Container):
         Args:
             signed_block_vote: Block to process.
         """
-        envelope = signed_block_vote.message
-        block = envelope.block
-        proposer_attestation = envelope.proposer_attestation
+        block = signed_block_vote.message.block
+        proposer_attestation = signed_block_vote.message.proposer_attestation
         signatures = signed_block_vote.signature
 
         block_hash = hash_tree_root(block)
