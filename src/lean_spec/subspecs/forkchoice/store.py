@@ -4,6 +4,13 @@ Forkchoice store for tracking chain state and votes.
 The Store tracks all information required for the LMD GHOST forkchoice algorithm.
 """
 
+__all__ = [
+    "Store",
+    "SECONDS_PER_SLOT",
+    "SECONDS_PER_INTERVAL",
+    "INTERVALS_PER_SLOT",
+]
+
 import copy
 from typing import Dict
 
@@ -21,7 +28,7 @@ from lean_spec.subspecs.containers import (
     State,
     Vote,
 )
-from lean_spec.subspecs.containers.block import Attestations
+from lean_spec.subspecs.containers.block import Attestations, SignedBlock
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex, is_proposer
@@ -182,15 +189,17 @@ class Store(Container):
             if latest_new is None or latest_new.slot < vote.target.slot:
                 self.latest_new_votes[validator_id] = vote.target
 
-    def process_block(self, block: Block) -> None:
+    def process_block(self, signed_block: SignedBlock) -> None:
         """
         Process new block and update forkchoice state.
 
         Adds block to store, processes included attestations, and updates head.
+        This implements the `on_block` function from the fork choice spec.
 
         Args:
-            block: Block to process.
+            signed_block: Signed block to process.
         """
+        block = signed_block.message
         block_hash = hash_tree_root(block)
 
         # Skip if block already known
@@ -201,8 +210,9 @@ class Store(Container):
         parent_state = self.states.get(block.parent_root)
         assert parent_state is not None, "Parent state not found - sync parent chain first"
 
-        # Apply state transition to get post-block state
-        state = copy.deepcopy(parent_state).process_block(block)
+        # Apply full state transition (processes slots + block)
+        # This matches the spec's on_block which calls state_transition()
+        state = copy.deepcopy(parent_state).state_transition(signed_block, valid_signatures=True)
 
         # Add block and state to store
         self.blocks[block_hash] = block

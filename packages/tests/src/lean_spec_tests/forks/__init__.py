@@ -3,7 +3,7 @@
 from typing import Type
 
 from .base import BaseFork, BaseForkMeta
-from .forks import Devnet, NewFork
+from .forks import Devnet
 from .helpers import (
     ALL_FORKS,
     get_fork_by_name,
@@ -20,7 +20,6 @@ __all__ = [
     "BaseForkMeta",
     "Devnet",
     "Fork",
-    "NewFork",
     "get_fork_by_name",
     "get_forks",
     "get_forks_with_no_parents",
