@@ -62,7 +62,7 @@ class BaseUint(int, SSZType):
                 # Case 2: The value needs to be parsed and validated.
                 python_schema,
             ],
-            serialization=core_schema.plain_serializer_function_ser_schema(str),
+            serialization=core_schema.plain_serializer_function_ser_schema(int),
         )
 
     @classmethod

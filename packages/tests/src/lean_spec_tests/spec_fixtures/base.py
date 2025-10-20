@@ -4,7 +4,7 @@ import hashlib
 import json
 from typing import Any, ClassVar, Dict, Type
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
 from lean_spec_tests.base_types import CamelModel
 from lean_spec_tests.forks import Fork
@@ -37,12 +37,6 @@ class BaseConsensusFixture(CamelModel):
 
     info: Dict[str, Any] = Field(default_factory=dict, alias="_info")
     """Metadata about the test (description, fork, etc.)."""
-
-    # Configure Pydantic to use our custom serializer
-    model_config = ConfigDict(
-        **CamelModel.model_config,
-        ser_json_bytes="base64",
-    )
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
