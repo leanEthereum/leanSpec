@@ -12,11 +12,12 @@ from typing import (
     cast,
 )
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_serializer, field_validator
 from typing_extensions import Self
 
 from lean_spec.types.constants import OFFSET_BYTE_LENGTH
 
+from .byte_arrays import BaseBytes
 from .ssz_base import SSZModel, SSZType
 from .uint import Uint32
 
@@ -175,6 +176,20 @@ class SSZList(SSZModel):
 
     data: Tuple[SSZType, ...] = Field(default_factory=tuple)
     """The elements in this list, stored as an immutable tuple."""
+
+    @field_serializer("data", when_used="json")
+    def _serialize_data(self, value: Tuple[SSZType, ...]) -> list[Any]:
+        """Serialize list elements to JSON, preserving custom type serialization."""
+        result: list[Any] = []
+        for item in value:
+            # For BaseBytes subclasses, manually add 0x prefix
+            if isinstance(item, BaseBytes):
+                result.append("0x" + item.hex())
+            else:
+                # For other types (Uint, etc.), convert to int
+                # BaseUint inherits from int, so this cast is safe
+                result.append(item)
+        return result
 
     @field_validator("data", mode="before")
     @classmethod
