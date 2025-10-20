@@ -73,7 +73,7 @@ class BlockBuilder:
             slot=slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            state_root=Bytes32.zero(),  # Will compute this
+            state_root=Bytes32.zero(),
             body=body,
         )
 
@@ -92,7 +92,6 @@ class BlockBuilder:
             body=body,
         )
 
-        # Sign it (placeholder signature for now)
         signed_block = SignedBlock(
             message=final_block,
             signature=Bytes32.zero(),

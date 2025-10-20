@@ -4,6 +4,13 @@ Forkchoice store for tracking chain state and votes.
 The Store tracks all information required for the LMD GHOST forkchoice algorithm.
 """
 
+__all__ = [
+    "Store",
+    "SECONDS_PER_SLOT",
+    "SECONDS_PER_INTERVAL",
+    "INTERVALS_PER_SLOT",
+]
+
 import copy
 from typing import Dict
 
@@ -216,6 +223,7 @@ class Store(Container):
         Process new block and update forkchoice state.
 
         Adds block to store, processes included attestations, and updates head.
+        This implements the `on_block` function from the fork choice spec.
 
         Args:
             signed_block_with_attestation: Block to process.

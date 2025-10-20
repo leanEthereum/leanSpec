@@ -8,9 +8,8 @@ class BaseForkMeta(ABCMeta):
     """
     Metaclass for BaseFork enabling fork comparisons via inheritance.
 
-    Fork comparisons work by checking subclass relationships:
-    - Devnet < NewFork (if NewFork inherits from Devnet)
-    - Devnet == Devnet
+    Fork comparisons work by checking subclass relationships.
+    For example, if ForkB inherits from ForkA, then ForkA < ForkB.
     """
 
     @abstractmethod

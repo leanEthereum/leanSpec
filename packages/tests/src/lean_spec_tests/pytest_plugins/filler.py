@@ -6,9 +6,11 @@ from typing import Any, List
 
 import pytest
 
+from lean_spec.subspecs.containers import State
+from lean_spec.types import Uint64
 from lean_spec_tests.base_types import CamelModel
 from lean_spec_tests.forks import Fork, get_fork_by_name, get_forks
-from lean_spec_tests.spec_fixtures import BaseConsensusFixture
+from lean_spec_tests.test_fixtures import BaseConsensusFixture
 
 
 class FixtureCollector:
@@ -32,6 +34,7 @@ class FixtureCollector:
         fixture_format: str,
         fixture: Any,
         test_nodeid: str,
+        config: pytest.Config | None = None,
     ) -> None:
         """
         Add a fixture to the collection.
@@ -41,8 +44,30 @@ class FixtureCollector:
             fixture_format: Format name (e.g., "vote_processing_test").
             fixture: The fixture object.
             test_nodeid: Complete pytest node ID (e.g., "tests/path/test.py::test_name").
+            config: Pytest config object to attach fixture path metadata.
         """
         self.fixtures.append((test_name, fixture_format, fixture, test_nodeid))
+
+        # Set fixture path metadata on config for pytest_runtest_makereport
+        if config is not None:
+            # Calculate fixture path (will be written later in write_fixtures)
+            nodeid_parts = test_nodeid.split("::")
+            test_file_path = nodeid_parts[0]
+            func_name_with_params = nodeid_parts[1] if len(nodeid_parts) > 1 else ""
+            base_func_name = func_name_with_params.split("[")[0]
+
+            test_file = Path(test_file_path)
+            relative_path = test_file.relative_to("tests/spec_tests")
+            module_path = relative_path.with_suffix("")
+
+            format_dir = fixture_format.replace("_test", "")
+            fixture_dir = self.output_dir / format_dir / module_path
+            fixture_path = fixture_dir / f"{base_func_name}.json"
+
+            # NOTE: Use str for compatibility with pytest-dist
+            config.fixture_path_absolute = str(fixture_path.absolute())  # type: ignore[attr-defined]
+            config.fixture_path_relative = str(fixture_path.relative_to(self.output_dir))  # type: ignore[attr-defined]
+            config.fixture_format = fixture_format  # type: ignore[attr-defined]
 
     def write_fixtures(self) -> None:
         """
@@ -321,18 +346,27 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Any:
-    """Skip test failures during fixture generation."""
+    """
+    Make each test's fixture json path available to the test report via
+    user_properties.
+
+    This hook is called when each test is run and a report is being made.
+    """
     outcome = yield
     report = outcome.get_result()
 
-    # During fixture generation, we don't care about test results
-    # We only care about generating fixtures
-    # BUT: we DO care about fixture resolution errors (setup phase)
     if call.when == "call":
-        # Mark as passed regardless of actual result
-        report.outcome = "passed"
-
-    return report
+        if hasattr(item.config, "fixture_path_absolute") and hasattr(
+            item.config, "fixture_path_relative"
+        ):
+            report.user_properties.append(
+                ("fixture_path_absolute", item.config.fixture_path_absolute)
+            )
+            report.user_properties.append(
+                ("fixture_path_relative", item.config.fixture_path_relative)
+            )
+        if hasattr(item.config, "fixture_format"):
+            report.user_properties.append(("fixture_format", item.config.fixture_format))
 
 
 @pytest.fixture
@@ -373,6 +407,29 @@ def test_case_description(request: pytest.FixtureRequest) -> str:
 
     combined_docstring = f"{test_class_doc}\n\n{test_function_doc}".strip()
     return combined_docstring
+
+
+@pytest.fixture(scope="function")
+def genesis(request: pytest.FixtureRequest) -> State:
+    """
+    Default genesis state for consensus tests.
+
+    This fixture provides a standard genesis state with sensible defaults.
+    Tests can override parameters by using pytest's indirect parametrization.
+
+    Returns:
+        State: Genesis state with default configuration.
+    """
+    # Check if the fixture was parametrized indirectly
+    if hasattr(request, "param"):
+        # Indirect parametrization - param should be a dict of kwargs
+        return State.generate_genesis(**request.param)
+
+    # Default genesis state
+    return State.generate_genesis(
+        genesis_time=Uint64(0),
+        num_validators=Uint64(4),
+    )
 
 
 def base_spec_filler_parametrizer(
@@ -428,6 +485,7 @@ def base_spec_filler_parametrizer(
                         fixture_format=filled_fixture.format_name,
                         fixture=filled_fixture,
                         test_nodeid=request.node.nodeid,
+                        config=request.config,
                     )
 
         return FixtureWrapper

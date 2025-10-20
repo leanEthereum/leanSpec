@@ -7,6 +7,7 @@ from pydantic import field_serializer
 from lean_spec.subspecs.containers.block.block import SignedBlock
 from lean_spec.subspecs.containers.state.state import State
 
+from ..test_types import StateExpectation
 from .base import BaseConsensusFixture
 
 
@@ -42,11 +43,12 @@ class StateTransitionTest(BaseConsensusFixture):
     blocks: List[SignedBlock]
     """The sequence of signed blocks to process in order."""
 
-    post: State | None = None
+    post: StateExpectation | None = None
     """
-    Expected state after processing all blocks (filled by make_fixture).
+    Expected state after processing all blocks.
 
-    If None after filling, the chain is invalid and processing failed.
+    Only fields explicitly set in the StateExpectation will be validated.
+    If None, no post-state validation is performed (useful for invalid tests).
     """
 
     expect_exception: type[Exception] | None = None
@@ -69,14 +71,14 @@ class StateTransitionTest(BaseConsensusFixture):
         Returns:
         -------
         StateTransitionTest
-            A filled fixture with post state populated.
+            A validated fixture.
 
         Raises:
         ------
         AssertionError
-            If processing fails unexpectedly (when expect_exception is None).
+            If processing fails unexpectedly or validation fails.
         """
-        post_state: State | None = None
+        actual_post_state: State | None = None
         exception_raised: Exception | None = None
 
         try:
@@ -86,7 +88,7 @@ class StateTransitionTest(BaseConsensusFixture):
                     signed_block=block,
                     valid_signatures=True,  # Signatures must be valid
                 )
-            post_state = state
+            actual_post_state = state
         except (AssertionError, ValueError) as e:
             exception_raised = e
             # If we expect an exception, this is fine
@@ -106,5 +108,9 @@ class StateTransitionTest(BaseConsensusFixture):
                     f"but got {type(exception_raised).__name__}: {exception_raised}"
                 )
 
-        # Return filled fixture
-        return self.model_copy(update={"post": post_state})
+        # Validate post-state expectations if provided
+        if self.post is not None and actual_post_state is not None:
+            self.post.validate_against_state(actual_post_state)
+
+        # Return self (fixture is already complete)
+        return self

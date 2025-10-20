@@ -92,7 +92,10 @@ addopts = [
     # Exclude fixture generation tests from regular test runs
     "--ignore=tests/spec_tests",
 ]
-markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "valid_until: marks tests as valid until a specific fork version",
+]
 
 [tool.coverage.run]
 source = ["src"]
