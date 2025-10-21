@@ -65,7 +65,7 @@ class Attestation(Container):
     """Aggregated attestation consisting of participation bits and message."""
 
     aggregation_bits: AggregationBits
-    message: AttestationData
+    data: AttestationData
     """Combined vote data similar to the beacon chain format.
 
     Multiple validator votes are aggregated here without the complexity of
