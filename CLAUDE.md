@@ -17,89 +17,80 @@ subspecifications that the Lean Ethereum protocol relies on.
 
 ### Running Tests
 ```bash
-# Install and sync project and dev dependencies
-uv sync
-
-# Run all tests
-uv run pytest
-
-# Run tests with coverage
-uv run pytest --cov=src/lean_spec --cov-report=html
+uv sync                           # Install dependencies
+uv run pytest                     # Run unit tests
+uv run fill --fork=devnet --clean # Generate test vectors
 ```
 
-### Code Quality Checks
+### Code Quality
 ```bash
-# Format code
-uv run ruff format src tests
-
-# Check linting
-uv run ruff check src tests
-
-# Fix fixable linting errors
-uv run ruff check --fix src tests
-
-# Type checking
-uv run mypy src tests
-
-# Run all quality checks (lint, typecheck, spellcheck)
-uvx tox -e all-checks
-
-# Run everything (all checks + tests + docs)
-uvx tox
+uv run ruff format src tests               # Format code
+uv run ruff check --fix src tests packages # Lint and fix
+uvx tox -e typecheck                       # Type check
+uvx tox -e all-checks                      # All quality checks
+uvx tox                                    # Everything (checks + tests + docs)
 ```
 
 ### Common Tasks
-
-1. **Adding to main specs**: Located in `src/lean_spec/`
-2. **Adding to subspecs**: Located in `src/lean_spec/subspecs/`
-   - Create a new subdirectory for each subspec (e.g., `src/lean_spec/subspecs/poseidon2/`)
-   - Tests for subspecs should be in `tests/subspecs/{subspec}/`, mirroring the source structure
-
-## Important Patterns
-
-### Test Patterns
-- Tests should be placed in `tests/` and follow the same structure as the source code.
-- Use `pytest.fixture`, in `conftest.py` or test files, for reusable test setup.
-- Use `pytest.mark.parametrize` to parametrize tests with multiple inputs
-- Use `pytest.raises(...)` with specific exceptions to test error cases
-- Use `@pytest.mark.slow` for long-running tests
+- **Main specs**: `src/lean_spec/`
+- **Subspecs**: `src/lean_spec/subspecs/{subspec}/`
+- **Unit tests**: `tests/lean_spec/` (mirrors source structure)
+- **Spec tests**: `tests/spec_tests/devnet/` (generates test vectors)
 
 ## Code Style
+- Line length: 100 characters, type hints everywhere
+- Google docstring style (no docstrings for `__init__`)
+- Test files/functions must start with `test_`
 
-- Line length: 79 characters
-- Use type hints everywhere
-- Follow Google docstring style
-- No docstrings needed for `__init__` methods
-- Imports are automatically sorted by `isort` and `ruff`
+## Test Framework Structure
 
-## Testing Philosophy
+**Two types of tests:**
 
-- Tests should be simple and clear
-- Test file names must start with `test_`
-- Test function names must start with `test_`
-- Use descriptive test names that explain what's being tested
+1. **Unit tests** (`tests/lean_spec/`) - Standard pytest tests for implementation
+2. **Spec tests** (`tests/spec_tests/`) - Generate JSON test vectors via fillers
 
-## Common Commands Reference
+**Test Filling Framework:**
+- Pytest plugin in `packages/tests/src/lean_spec_tests/pytest_plugins/filler.py`
+- Write spec tests using `state_transition_test` or `fork_choice_test` fixtures
+- These fixtures are type aliases that create test vectors when called
+- Run `uv run fill --fork=devnet --clean` to generate fixtures in `fixtures/`
 
-| Task                                          | Command                          |
-|-----------------------------------------------|----------------------------------|
-| Install and sync project and dev dependencies | `uv sync`                        |
-| Run tests                                     | `uv run pytest`                  |
-| Format code                                   | `uv run ruff format src tests`   |
-| Lint code                                     | `uv run ruff check src tests`    |
-| Fix lint errors                               | `uv run ruff check --fix src tests` |
-| Type check                                    | `uv run mypy src tests`          |
-| Build docs                                    | `uv run mkdocs build`            |
-| Serve docs                                    | `uv run mkdocs serve`            |
-| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`          |
-| Run everything (checks + tests + docs)        | `uvx tox`                        |
+**Example spec test:**
+```python
+def test_block(state_transition_test: StateTransitionTestFiller) -> None:
+    state_transition_test(
+        pre=genesis_state,
+        blocks=[block],
+        post=StateExpectation(slot=Slot(1))  # Only check what matters
+    )
+```
+
+**How it works:**
+1. Test function receives a fixture class (not instance) as parameter
+2. Calling it creates a `FixtureWrapper` that runs `make_fixture()`
+3. `make_fixture()` executes the spec code (state transitions, fork choice steps)
+4. Validates output against expectations (`StateExpectation`, `StoreChecks`)
+5. Serializes to JSON via Pydantic's `model_dump(mode="json")`
+6. Writes fixtures at session end to `fixtures/{test_type}/{fork}/...`
+
+**Serialization requirements:**
+- All spec types (State, Block, Uint64, etc.) must be Pydantic models
+- Custom types need `@field_serializer` or `model_serializer` for JSON output
+- SSZ types typically serialize to hex strings (e.g., `"0x1234..."`)
+- Fixture models inherit from `BaseConsensusFixture` (uses `CamelModel` for camelCase JSON)
+- Test the serialization: `fixture.model_dump(mode="json")` must produce valid JSON
+
+**Key fixture types:**
+- `StateTransitionTest` - Tests state transitions with blocks
+- `ForkChoiceTest` - Tests fork choice with steps (tick/block/attestation)
+- Selective validation via `StateExpectation` and `StoreChecks` (only validates fields you specify)
 
 ## Important Notes
 
-1. This repository uses Python 3.12+ features
-2. All models should use Pydantic for automatic validation.
-3. Keep things simple, readable, and clear. These are meant to be clear specifications.
-4. The repository is `leanSpec` not `lean-spec`.
+- Python 3.12+ required
+- Use Pydantic models for validation
+- Keep specs simple, readable, and clear
+- Repository is `leanSpec` not `lean-spec`
 
 ## SSZ Type Design Patterns
 
