@@ -110,7 +110,7 @@ class Store(Container):
         anchor_root = hash_tree_root(anchor_block)
         anchor_slot = anchor_block.slot
 
-        # Create checkpoint from anchor block (matches consensus-specs)
+        # Create checkpoint from anchor block
         # The anchor block becomes the initial justified and finalized checkpoint
         anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
 

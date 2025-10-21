@@ -61,7 +61,6 @@ def get_fork_choice_head(
                 children_map.setdefault(block.parent_root, []).append(block_hash)
 
     # Walk down tree, choosing child with most votes (tiebreak by lexicographic hash)
-    # Matches consensus-specs: (weight, root) for tie-breaking
     current = root
     while True:
         children = children_map.get(current, [])
@@ -69,7 +68,6 @@ def get_fork_choice_head(
             return current
 
         # Choose best child: most votes, then lexicographically highest hash
-        # Note: Removed slot tiebreaker to match consensus-specs
         current = max(children, key=lambda x: (vote_weights.get(x, 0), x))
 
 
