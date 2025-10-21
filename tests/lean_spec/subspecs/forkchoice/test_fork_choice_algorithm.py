@@ -61,8 +61,14 @@ class TestLMDGHOSTAlgorithm:
     """Test the core LMD GHOST fork choice algorithm."""
 
     def test_fork_choice_no_votes(self, sample_blocks: Dict[Bytes32, Block]) -> None:
-        """Test fork choice algorithm with no votes returns the root."""
+        """
+        Test fork choice algorithm with no votes walks to the leaf.
+
+        With no votes, fork choice should walk down the tree and select the
+        leaf block (the furthest descendant), breaking ties by lexicographic hash.
+        """
         root_hash = list(sample_blocks.keys())[0]
+        leaf_hash = list(sample_blocks.keys())[2]  # block_b (slot 2, the leaf)
 
         head = get_fork_choice_head(
             blocks=sample_blocks,
@@ -71,7 +77,7 @@ class TestLMDGHOSTAlgorithm:
             min_score=0,
         )
 
-        assert head == root_hash
+        assert head == leaf_hash
 
     def test_fork_choice_single_vote(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test fork choice algorithm with a single vote."""
@@ -274,7 +280,7 @@ class TestLMDGHOSTAlgorithm:
             block_b_hash: block_b,
         }
 
-        # No votes - algorithm returns the starting root (genesis)
+        # No votes - algorithm breaks tie by lexicographically highest hash
         head = get_fork_choice_head(
             blocks=blocks,
             root=genesis_hash,
@@ -282,8 +288,9 @@ class TestLMDGHOSTAlgorithm:
             min_score=0,
         )
 
-        # Should return the genesis block when no votes exist
-        assert head == genesis_hash
+        # Should return the block with lexicographically highest hash
+        expected_head = max(block_a_hash, block_b_hash)
+        assert head == expected_head
 
     def test_fork_choice_deep_chain(self) -> None:
         """Test fork choice algorithm with a deeper chain."""

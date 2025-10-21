@@ -39,10 +39,6 @@ def get_fork_choice_head(
     if root == ZERO_HASH:
         root = min(blocks.keys(), key=lambda block_hash: blocks[block_hash].slot)
 
-    # If no votes, return the starting root immediately
-    if not latest_votes:
-        return root
-
     # Count votes for each block (votes for descendants count for ancestors)
     vote_weights: Dict[Bytes32, int] = {}
 
@@ -55,21 +51,26 @@ def get_fork_choice_head(
                 vote_weights[block_hash] = vote_weights.get(block_hash, 0) + 1
                 block_hash = blocks[block_hash].parent_root
 
-    # Build children mapping for blocks above min score
+    # Build children mapping for ALL blocks (not just those above min_score)
+    # This ensures fork choice works even when there are no votes
     children_map: Dict[Bytes32, list[Bytes32]] = {}
     for block_hash, block in blocks.items():
-        if block.parent_root and vote_weights.get(block_hash, 0) >= min_score:
-            children_map.setdefault(block.parent_root, []).append(block_hash)
+        if block.parent_root:
+            # Only include blocks that have enough votes OR when min_score is 0
+            if min_score == 0 or vote_weights.get(block_hash, 0) >= min_score:
+                children_map.setdefault(block.parent_root, []).append(block_hash)
 
-    # Walk down tree, choosing child with most votes (tiebreak by slot, then hash)
+    # Walk down tree, choosing child with most votes (tiebreak by lexicographic hash)
+    # Matches consensus-specs: (weight, root) for tie-breaking
     current = root
     while True:
         children = children_map.get(current, [])
         if not children:
             return current
 
-        # Choose best child: most votes, then highest slot, then highest hash
-        current = max(children, key=lambda x: (vote_weights.get(x, 0), blocks[x].slot, x))
+        # Choose best child: most votes, then lexicographically highest hash
+        # Note: Removed slot tiebreaker to match consensus-specs
+        current = max(children, key=lambda x: (vote_weights.get(x, 0), x))
 
 
 def get_latest_justified(states: Dict[Bytes32, "State"]) -> Optional[Checkpoint]:

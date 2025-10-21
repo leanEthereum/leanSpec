@@ -151,11 +151,13 @@ class TestStoreCreation:
 
         # Verify initialization
         anchor_root = hash_tree_root(anchor_block)
+        anchor_checkpoint = Checkpoint(root=anchor_root, slot=Slot(0))
         assert store.config == state.config
         assert store.head == anchor_root
         assert store.safe_target == anchor_root
-        assert store.latest_justified == state.latest_justified
-        assert store.latest_finalized == state.latest_finalized
+        # Store uses anchor checkpoint, not state's checkpoint
+        assert store.latest_justified == anchor_checkpoint
+        assert store.latest_finalized == anchor_checkpoint
         assert anchor_root in store.blocks
         assert anchor_root in store.states
 

@@ -25,20 +25,3 @@ class CamelModel(BaseModel):
     def copy(self: Self, **kwargs: Any) -> Self:
         """Create a copy of the model with the updated fields that are validated."""
         return self.__class__(**(self.model_dump(exclude_unset=True) | kwargs))
-
-    @staticmethod
-    def json_encoder(obj: Any) -> Any:
-        """
-        Custom JSON encoder for leanSpec types.
-
-        Converts:
-        - Bytes32 and other BaseBytes types → "0x..." hex string
-        - Uint64 and other BaseUint types → int
-        """
-        # Check if it's a bytes type (has hex() method)
-        if hasattr(obj, "hex") and callable(obj.hex):
-            return f"0x{obj.hex()}"
-        # Check if it's a uint type (subclass of int but not bool)
-        if isinstance(obj, int) and not isinstance(obj, bool):
-            return int(obj)
-        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")

@@ -80,14 +80,15 @@ class TestForkChoiceHeadFunction:
         assert head == target_hash
 
     def test_get_fork_choice_head_no_votes(self, sample_blocks: Dict[Bytes32, Block]) -> None:
-        """Test get_fork_choice_head with no votes returns the root."""
+        """Test get_fork_choice_head with no votes walks to the leaf."""
         root_hash = list(sample_blocks.keys())[0]
+        leaf_hash = list(sample_blocks.keys())[2]  # block_b is the leaf
 
         head = get_fork_choice_head(
             blocks=sample_blocks, root=root_hash, latest_votes={}, min_score=0
         )
 
-        assert head == root_hash
+        assert head == leaf_hash
 
     def test_get_fork_choice_head_with_min_score(self, sample_blocks: Dict[Bytes32, Block]) -> None:
         """Test get_fork_choice_head respects minimum score."""

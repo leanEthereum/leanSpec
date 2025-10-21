@@ -110,13 +110,17 @@ class Store(Container):
         anchor_root = hash_tree_root(anchor_block)
         anchor_slot = anchor_block.slot
 
+        # Create checkpoint from anchor block (matches consensus-specs)
+        # The anchor block becomes the initial justified and finalized checkpoint
+        anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
+
         return cls(
             time=Uint64(anchor_slot * INTERVALS_PER_SLOT),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
-            latest_justified=state.latest_justified,
-            latest_finalized=state.latest_finalized,
+            latest_justified=anchor_checkpoint,
+            latest_finalized=anchor_checkpoint,
             blocks={anchor_root: copy.copy(anchor_block)},
             states={anchor_root: copy.copy(state)},
         )
