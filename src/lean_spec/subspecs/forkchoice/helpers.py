@@ -47,10 +47,10 @@ def get_fork_choice_head(
     vote_weights: Dict[Bytes32, int] = {}
 
     for attestation in latest_votes.values():
-        target = attestation.message.data.target
-        if target.root in blocks:
+        head = attestation.message.data.head
+        if head.root in blocks:
             # Walk up from vote target, incrementing ancestor weights
-            block_hash = target.root
+            block_hash = head.root
             while blocks[block_hash].slot > blocks[root].slot:
                 vote_weights[block_hash] = vote_weights.get(block_hash, 0) + 1
                 block_hash = blocks[block_hash].parent_root
