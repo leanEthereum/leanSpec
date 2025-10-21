@@ -1,7 +1,7 @@
 """Single block processing tests for the devnet fork."""
 
 import pytest
-from lean_spec_tests import BlockBuilder, StateTransitionTestFiller
+from lean_spec_tests import BlockBuilder, StateExpectation, StateTransitionTestFiller
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
@@ -30,6 +30,9 @@ def test_single_empty_block(state_transition_test: StateTransitionTestFiller) ->
     state_transition_test(
         pre=genesis,
         blocks=[block],
+        post=StateExpectation(
+            slot=Slot(1),
+        ),
     )
 
 
@@ -48,6 +51,9 @@ def test_single_block_with_slot_gap(state_transition_test: StateTransitionTestFi
     state_transition_test(
         pre=genesis,
         blocks=[block],
+        post=StateExpectation(
+            slot=Slot(5),
+        ),
     )
 
 
@@ -73,4 +79,8 @@ def test_sequential_blocks(state_transition_test: StateTransitionTestFiller) -> 
     state_transition_test(
         pre=genesis,
         blocks=[block1, block2, block3],
+        post=StateExpectation(
+            slot=Slot(3),
+            validator_count=4,
+        ),
     )
