@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from functools import cached_property
 from typing import Any, ClassVar, Dict, Type
 
 from pydantic import Field
@@ -51,7 +52,7 @@ class BaseConsensusFixture(CamelModel):
         if cls.format_name:
             BaseConsensusFixture.formats[cls.format_name] = cls
 
-    @property
+    @cached_property
     def json_dict(self) -> Dict[str, Any]:
         """
         Return the JSON representation of the fixture.
@@ -65,7 +66,7 @@ class BaseConsensusFixture(CamelModel):
             exclude={"info"},
         )
 
-    @property
+    @cached_property
     def hash(self) -> str:
         """
         Generate a deterministic hash for this fixture.
@@ -77,7 +78,6 @@ class BaseConsensusFixture(CamelModel):
             self.json_dict,
             sort_keys=True,
             separators=(",", ":"),
-            default=CamelModel.json_encoder,
         )
         h = hashlib.sha256(json_str.encode("utf-8")).hexdigest()
         return f"0x{h}"

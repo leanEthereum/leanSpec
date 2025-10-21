@@ -8,7 +8,6 @@ import pytest
 
 from lean_spec.subspecs.containers import State
 from lean_spec.types import Uint64
-from lean_spec_tests.base_types import CamelModel
 from lean_spec_tests.forks import Fork, get_fork_by_name, get_forks
 from lean_spec_tests.test_fixtures import BaseConsensusFixture
 
@@ -127,7 +126,6 @@ class FixtureCollector:
                     all_tests,
                     f,
                     indent=4,
-                    default=CamelModel.json_encoder,
                 )
 
 
