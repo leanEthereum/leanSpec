@@ -9,6 +9,9 @@ from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.forkchoice import Store
+from lean_spec.subspecs.ssz import hash_tree_root
+from lean_spec.types import Uint64
 
 from ..test_types import AttestationStep, BlockStep, ForkChoiceStep, TickStep
 from .base import BaseConsensusFixture
@@ -64,8 +67,6 @@ class ForkChoiceTest(BaseConsensusFixture):
         anchor_state itself.
         """
         if self.anchor_block is None:
-            from lean_spec.subspecs.ssz.hash import hash_tree_root
-
             self.anchor_block = Block(
                 slot=self.anchor_state.latest_block_header.slot,
                 proposer_index=self.anchor_state.latest_block_header.proposer_index,
@@ -94,8 +95,6 @@ class ForkChoiceTest(BaseConsensusFixture):
         AssertionError
             If any step fails unexpectedly or checks don't match Store state.
         """
-        from lean_spec.subspecs.forkchoice.store import Store
-
         # Initialize Store from anchor
         # anchor_block is guaranteed to be set by the validator
         assert self.anchor_block is not None, "anchor_block must be set"
@@ -109,15 +108,10 @@ class ForkChoiceTest(BaseConsensusFixture):
             try:
                 if isinstance(step, TickStep):
                     # Advance time
-                    from lean_spec.types import Uint64
-
                     store.advance_time(Uint64(step.time), has_proposal=False)
 
                 elif isinstance(step, BlockStep):
                     # Automatically advance time to block's slot before processing
-                    # (Like consensus-specs' tick_and_add_block helper)
-                    from lean_spec.types import Uint64
-
                     block = step.block.message
                     block_time = store.config.genesis_time + block.slot * Uint64(SECONDS_PER_SLOT)
 

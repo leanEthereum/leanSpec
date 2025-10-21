@@ -1,6 +1,10 @@
 """Pytest plugin for generating consensus test fixtures."""
 
 import json
+import shutil
+import sys
+import textwrap
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, List
 
@@ -75,8 +79,6 @@ class FixtureCollector:
         Groups fixtures by their base test function (stripping parameters)
         so all parametrized variations end up in the same JSON file.
         """
-        from collections import defaultdict
-
         # Group fixtures by (file_path, base_function_name, format)
         grouped: dict[tuple[str, str, str], list[tuple[str, Any, str]]] = defaultdict(list)
 
@@ -154,9 +156,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     """Setup fixture generation session."""
-    import sys
-    import textwrap
-
     # Register fork validity markers
     config.addinivalue_line(
         "markers",
@@ -227,8 +226,6 @@ def pytest_configure(config: pytest.Config) -> None:
                 returncode=pytest.ExitCode.USAGE_ERROR,
             )
         # Clean if requested
-        import shutil
-
         shutil.rmtree(output_dir)
 
     # Create output directory
