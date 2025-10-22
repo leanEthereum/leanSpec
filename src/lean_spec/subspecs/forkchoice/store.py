@@ -19,6 +19,7 @@ from lean_spec.subspecs.containers import (
     Checkpoint,
     Config,
     SignedBlockAndVote,
+    BlockAndSignatures,
     SignedValidatorAttestation,
     State,
     ValidatorAttestation,
@@ -468,6 +469,7 @@ class Store(Container):
 
         # Initialize empty attestation set for iterative collection
         attestations: list[ValidatorAttestation] = []
+        signatures: List[Bytes4000] = []
 
         # Iteratively collect valid attestations using fixed-point algorithm
         #
@@ -489,6 +491,7 @@ class Store(Container):
 
             # Find new valid attestations matching post-state justification
             new_attestations: list[ValidatorAttestation] = []
+            new_signatures: list[Bytes4000] = []
             for signed in self.latest_known_votes.values():
                 # Skip if target block is unknown in our store
                 data = signed.message.data
@@ -509,6 +512,7 @@ class Store(Container):
 
                 if candidate_attestation not in attestations:
                     new_attestations.append(candidate_attestation)
+                    new_signatures.append(signed.signature)
 
             # Fixed point reached: no new attestations found
             if not new_attestations:
@@ -516,6 +520,7 @@ class Store(Container):
 
             # Add new attestations and continue iteration
             attestations.extend(new_attestations)
+            signatures.extend(new_signatures)
 
         # Create final block with all collected attestations
         final_state = head_state.process_slots(slot)
@@ -538,7 +543,10 @@ class Store(Container):
         self.blocks[block_hash] = finalized_block
         self.states[block_hash] = final_post_state
 
-        return finalized_block
+        return BlockAndSignatures(
+            block=finalized_block,
+            signature=signatures,
+            )
 
     def produce_attestation_vote(
         self,

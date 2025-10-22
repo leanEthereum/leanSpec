@@ -66,6 +66,18 @@ class BlockAndVote(Container):
     proposer_attestation: ValidatorAttestation
     """The proposer's vote corresponding to this block."""
 
+class BlockAndSignatures(Container):
+    """Bundle containing a block and its attestation signatures list."""
+
+    block: Block
+    """The proposed block message."""
+
+    signatures: BlockSignatures
+    """The signatures corresponding to attestations in this block.
+    These signatures are further used to create signature for in SignedBlockAndVote
+    by adding proposer signature to the list.
+    """
+
 
 class SignedBlockAndVote(Container):
     """Envelope carrying a block, proposer vote, and aggregated signatures."""
