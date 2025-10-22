@@ -430,9 +430,12 @@ class Store(Container):
         target_block = self.blocks[target_block_root]
         return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
 
-    def produce_block(self, slot: Slot, validator_index: ValidatorIndex) -> Block:
+    def produce_block(self, slot: Slot, validator_index: ValidatorIndex) -> BlockAndSignatures:
         """
-        Produce a new block for the given slot and validator.
+        Produce a new block for the given slot and validator with signatures for
+        attestations aggregated as a list. Post this proposer needs to create BlockAndVote
+        to add its own vote data after including this block in forkchoice and then sign
+        it over as SignedBlockAndVote.
 
         Algorithm Overview:
         1. Validate proposer authorization for the target slot
