@@ -118,7 +118,7 @@ class SSZModel(StrictBaseModel, SSZType):
         if hasattr(self, "data"):
             return len(self.data)
         # For containers, return number of fields
-        return len(self.model_fields)
+        return len(type(self).model_fields)
 
     def __iter__(self) -> Iterator[Any]:  # type: ignore[override]
         """
@@ -131,14 +131,14 @@ class SSZModel(StrictBaseModel, SSZType):
         if hasattr(self, "data"):
             return iter(self.data)
         # For containers, iterate over (field_name, field_value) pairs
-        return iter((name, getattr(self, name)) for name in self.model_fields.keys())
+        return iter((name, getattr(self, name)) for name in type(self).model_fields.keys())
 
     def __getitem__(self, key: Any) -> Any:
         """Get an item from the collection's data or container field by name."""
         if hasattr(self, "data"):
             return self.data[key]
         # For containers, allow field access by name
-        if isinstance(key, str) and key in self.model_fields:
+        if isinstance(key, str) and key in type(self).model_fields:
             return getattr(self, key)
         raise KeyError(f"Invalid key '{key}' for {self.__class__.__name__}")
 
@@ -147,5 +147,5 @@ class SSZModel(StrictBaseModel, SSZType):
         if hasattr(self, "data"):
             return f"{self.__class__.__name__}(data={list(self.data)!r})"
         # For containers, show field names and values
-        field_strs = [f"{name}={getattr(self, name)!r}" for name in self.model_fields.keys()]
+        field_strs = [f"{name}={getattr(self, name)!r}" for name in type(self).model_fields.keys()]
         return f"{self.__class__.__name__}({' '.join(field_strs)})"
