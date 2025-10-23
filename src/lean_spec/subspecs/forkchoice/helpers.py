@@ -9,7 +9,7 @@ from typing import Dict, Optional
 from lean_spec.subspecs.containers import (
     Block,
     Checkpoint,
-    SignedValidatorAttestation,
+    SignedAttestation,
     State,
 )
 from lean_spec.types import Bytes32, ValidatorIndex
@@ -20,7 +20,7 @@ from .constants import ZERO_HASH
 def get_fork_choice_head(
     blocks: Dict[Bytes32, Block],
     root: Bytes32,
-    latest_votes: Dict[ValidatorIndex, SignedValidatorAttestation],
+    latest_votes: Dict[ValidatorIndex, SignedAttestation],
     min_score: int = 0,
 ) -> Bytes32:
     """

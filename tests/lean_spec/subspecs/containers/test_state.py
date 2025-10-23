@@ -6,15 +6,15 @@ import pytest
 
 from lean_spec.subspecs.chain import DEVNET_CONFIG
 from lean_spec.subspecs.containers import (
+    Attestation,
     AttestationData,
     Block,
     BlockBody,
     BlockHeader,
     Checkpoint,
     Config,
-    SignedValidatorAttestation,
+    SignedAttestation,
     State,
-    ValidatorAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
@@ -71,7 +71,7 @@ def genesis_state(sample_config: Config) -> State:
 def _create_block(
     slot: int,
     parent_header: BlockHeader,
-    votes: List[ValidatorAttestation] | None = None,
+    votes: List[Attestation] | None = None,
 ) -> Block:
     """
     Helper: construct a valid `Block` for a given slot.
@@ -140,7 +140,7 @@ def _build_signed_attestation(
     head: Checkpoint,
     source: Checkpoint,
     target: Checkpoint,
-) -> SignedValidatorAttestation:
+) -> SignedAttestation:
     """Create a signed attestation with a zeroed signature."""
 
     data = AttestationData(
@@ -149,11 +149,11 @@ def _build_signed_attestation(
         target=target,
         source=source,
     )
-    message = ValidatorAttestation(
+    message = Attestation(
         validator_id=validator,
         data=data,
     )
-    return SignedValidatorAttestation(
+    return SignedAttestation(
         message=message,
         signature=Bytes4000.zero(),
     )

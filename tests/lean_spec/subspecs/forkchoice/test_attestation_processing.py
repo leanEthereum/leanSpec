@@ -3,13 +3,13 @@
 import pytest
 
 from lean_spec.subspecs.containers import (
+    Attestation,
     AttestationData,
     Block,
     BlockBody,
     Checkpoint,
     Config,
-    SignedValidatorAttestation,
-    ValidatorAttestation,
+    SignedAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
@@ -45,7 +45,7 @@ def build_signed_attestation(
     head: Checkpoint,
     source: Checkpoint,
     target: Checkpoint,
-) -> SignedValidatorAttestation:
+) -> SignedAttestation:
     """Construct a signed attestation with zeroed signature."""
     data = AttestationData(
         slot=slot,
@@ -53,11 +53,11 @@ def build_signed_attestation(
         target=target,
         source=source,
     )
-    message = ValidatorAttestation(
+    message = Attestation(
         validator_id=validator,
         data=data,
     )
-    return SignedValidatorAttestation(
+    return SignedAttestation(
         message=message,
         signature=Bytes4000.zero(),
     )

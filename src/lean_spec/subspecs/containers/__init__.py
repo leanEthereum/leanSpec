@@ -2,36 +2,36 @@
 
 from .block import (
     Block,
-    BlockAndVote,
     BlockBody,
     BlockHeader,
-    SignedBlockAndVote,
+    BlockWithAttestation,
+    SignedBlockWithAttestation,
 )
 from .checkpoint import Checkpoint
 from .config import Config
 from .state import State
 from .validator import Validator
 from .vote import (
+    AggreagtedAttestation,
     Attestation,
     AttestationData,
+    SignedAggreagtedAttestation,
     SignedAttestation,
-    SignedValidatorAttestation,
-    ValidatorAttestation,
 )
 
 __all__ = [
     "Block",
-    "BlockAndVote",
+    "BlockWithAttestation",
     "BlockBody",
     "BlockHeader",
     "Checkpoint",
     "Config",
-    "SignedBlockAndVote",
+    "SignedBlockWithAttestation",
     "Validator",
     "AttestationData",
-    "ValidatorAttestation",
-    "SignedValidatorAttestation",
-    "SignedAttestation",
     "Attestation",
+    "SignedAttestation",
+    "SignedAggreagtedAttestation",
+    "AggreagtedAttestation",
     "State",
 ]

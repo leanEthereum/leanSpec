@@ -2,19 +2,19 @@
 
 from .types import AggregatedSignatures, AggregationBits
 from .vote import (
+    AggreagtedAttestation,
     Attestation,
     AttestationData,
+    SignedAggreagtedAttestation,
     SignedAttestation,
-    SignedValidatorAttestation,
-    ValidatorAttestation,
 )
 
 __all__ = [
     "AttestationData",
-    "ValidatorAttestation",
-    "SignedValidatorAttestation",
-    "SignedAttestation",
     "Attestation",
+    "SignedAttestation",
+    "SignedAggreagtedAttestation",
+    "AggreagtedAttestation",
     "AggregatedSignatures",
     "AggregationBits",
 ]

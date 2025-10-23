@@ -14,15 +14,15 @@ from lean_spec.subspecs.chain.config import (
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
+    Attestation,
     AttestationData,
     Block,
     BlockBody,
     Checkpoint,
     Config,
-    SignedBlockAndVote,
-    SignedValidatorAttestation,
+    SignedAttestation,
+    SignedBlockWithAttestation,
     State,
-    ValidatorAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.slot import Slot
@@ -79,10 +79,10 @@ class Store(Container):
     states: Dict[Bytes32, "State"] = {}
     """Mapping from state root to State objects."""
 
-    latest_known_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = {}
+    latest_known_votes: Dict[ValidatorIndex, SignedAttestation] = {}
     """Latest votes by validator that have been processed."""
 
-    latest_new_votes: Dict[ValidatorIndex, SignedValidatorAttestation] = {}
+    latest_new_votes: Dict[ValidatorIndex, SignedAttestation] = {}
     """Latest votes by validator that are pending processing."""
 
     @classmethod
@@ -123,7 +123,7 @@ class Store(Container):
             states={anchor_root: copy.copy(state)},
         )
 
-    def validate_attestation(self, signed_attestation: SignedValidatorAttestation) -> None:
+    def validate_attestation(self, signed_attestation: SignedAttestation) -> None:
         """
         Validate incoming attestation before processing.
 
@@ -159,7 +159,7 @@ class Store(Container):
 
     def process_attestation(
         self,
-        signed_attestation: SignedValidatorAttestation,
+        signed_attestation: SignedAttestation,
         is_from_block: bool = False,
     ) -> None:
         """
@@ -219,7 +219,7 @@ class Store(Container):
         # TODO: Integrate actual aggregated signature verification.
         return all(self._is_valid_signature(signature) for signature in signatures)
 
-    def process_block(self, signed_block_vote: SignedBlockAndVote) -> None:
+    def process_block(self, signed_block_vote: SignedBlockWithAttestation) -> None:
         """
         Process new block and update forkchoice state.
 
@@ -256,7 +256,7 @@ class Store(Container):
         # Process block's attestations as on-chain votes
         for index, attestation in enumerate(block.body.attestations):
             signature = signatures[index]
-            signed_attestation = SignedValidatorAttestation(
+            signed_attestation = SignedAttestation(
                 message=attestation,
                 # eventually one would be able to associate and consume an
                 # aggregated signature for individual vote validity with that
@@ -268,10 +268,10 @@ class Store(Container):
         # Update forkchoice head
         self.update_head()
 
-        proposer_signature_index = signatures[len(block.body.attestations)]
+        proposer_signature = signatures[len(block.body.attestations)]
         # the proposer vote for the current slot and block as head is to be
         # treated as the vote is independently casted in the second interval
-        signed_proposer_attestation = SignedValidatorAttestation(
+        signed_proposer_attestation = SignedAttestation(
             message=proposer_attestation,
             signature=proposer_signature,
         )
@@ -471,7 +471,7 @@ class Store(Container):
         head_state = self.states[head_root]
 
         # Initialize empty attestation set for iterative collection
-        attestations: list[ValidatorAttestation] = []
+        attestations: list[Attestation] = []
         signatures: list[Bytes4000] = []
 
         # Iteratively collect valid attestations using fixed-point algorithm
@@ -493,12 +493,16 @@ class Store(Container):
             post_state = advanced_state.process_block(candidate_block)
 
             # Find new valid attestations matching post-state justification
-            new_attestations: list[ValidatorAttestation] = []
+            new_attestations: list[Attestation] = []
             new_signatures: list[Bytes4000] = []
             for signed in self.latest_known_votes.values():
                 # Skip if target block is unknown in our store
                 data = signed.message.data
                 if data.head.root not in self.blocks:
+                    continue
+
+                # Skip if attestation source does not match post-state's latest justified
+                if data.source != post_state.latest_justified:
                     continue
 
                 # Create attestation with post-state's latest justified as source
@@ -508,7 +512,7 @@ class Store(Container):
                     target=data.target,
                     source=post_state.latest_justified,
                 )
-                candidate_attestation = ValidatorAttestation(
+                candidate_attestation = Attestation(
                     validator_id=signed.message.validator_id,
                     data=attestation_data,
                 )
@@ -552,7 +556,7 @@ class Store(Container):
         self,
         slot: Slot,
         validator_index: ValidatorIndex,
-    ) -> ValidatorAttestation:
+    ) -> Attestation:
         """
         Produce an attestation vote for the given slot and validator.
 
@@ -595,7 +599,7 @@ class Store(Container):
         )
 
         # Create the attestation using current forkchoice state
-        return ValidatorAttestation(
+        return Attestation(
             validator_id=validator_index,
             data=attestation_data,
         )

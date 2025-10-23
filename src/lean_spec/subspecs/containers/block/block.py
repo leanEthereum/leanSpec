@@ -4,7 +4,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
-from ..vote import ValidatorAttestation
+from ..vote import Attestation
 from .types import Attestations, BlockSignatures
 
 
@@ -57,20 +57,20 @@ class Block(Container):
     """The block's payload."""
 
 
-class BlockAndVote(Container):
+class BlockWithAttestation(Container):
     """Bundle containing a block and the proposer's attestation."""
 
     block: Block
     """The proposed block message."""
 
-    proposer_attestation: ValidatorAttestation
+    proposer_attestation: Attestation
     """The proposer's vote corresponding to this block."""
 
 
-class SignedBlockAndVote(Container):
+class SignedBlockWithAttestation(Container):
     """Envelope carrying a block, proposer vote, and aggregated signatures."""
 
-    message: BlockAndVote
+    message: BlockWithAttestation
     """The block plus proposer vote being signed."""
 
     signature: BlockSignatures

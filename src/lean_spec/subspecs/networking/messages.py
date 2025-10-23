@@ -8,7 +8,7 @@ domain. All messages are SSZ-encoded and then compressed with Snappy frames.
 from pydantic import Field
 from typing_extensions import Annotated
 
-from lean_spec.subspecs.containers import Checkpoint, SignedBlockAndVote
+from lean_spec.subspecs.containers import Checkpoint, SignedBlockWithAttestation
 from lean_spec.types import Bytes32, StrictBaseModel
 
 from .config import MAX_REQUEST_BLOCKS
@@ -52,7 +52,7 @@ This is primarily used to recover recent or missing blocks from a peer.
 """
 
 BlocksByRootResponse = Annotated[
-    list[SignedBlockAndVote],
+    list[SignedBlockWithAttestation],
     Field(max_length=MAX_REQUEST_BLOCKS),
 ]
 """

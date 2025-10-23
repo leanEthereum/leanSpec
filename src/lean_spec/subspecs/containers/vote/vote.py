@@ -16,7 +16,7 @@ class AttestationData(Container):
     source: Checkpoint
 
 
-class ValidatorAttestation(Container):
+class Attestation(Container):
     """Validator specific attestation wrapping shared attestation data."""
 
     validator_id: Uint64
@@ -43,10 +43,10 @@ class ValidatorAttestation(Container):
         return self.data.source
 
 
-class SignedValidatorAttestation(Container):
+class SignedAttestation(Container):
     """Validator attestation bundled with its signature."""
 
-    message: ValidatorAttestation
+    message: Attestation
     signature: Bytes4000
     """Signature produced by the lean signature VM.
 
@@ -56,12 +56,12 @@ class SignedValidatorAttestation(Container):
     """
 
     @property
-    def data(self) -> ValidatorAttestation:
+    def data(self) -> Attestation:
         """Expose the message for backwards compatibility with SignedVote."""
         return self.message
 
 
-class Attestation(Container):
+class AggreagtedAttestation(Container):
     """Aggregated attestation consisting of participation bits and message."""
 
     aggregation_bits: AggregationBits
@@ -74,10 +74,10 @@ class Attestation(Container):
     """
 
 
-class SignedAttestation(Container):
+class SignedAggreagtedAttestation(Container):
     """Aggregated attestation bundled with aggregated signatures."""
 
-    message: Attestation
+    message: AggreagtedAttestation
     signature: AggregatedSignatures
     """Aggregated vote plus its combined signature.
 

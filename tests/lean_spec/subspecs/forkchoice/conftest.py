@@ -5,12 +5,12 @@ from typing import Type
 import pytest
 
 from lean_spec.subspecs.containers import (
+    Attestation,
     AttestationData,
     BlockBody,
     Checkpoint,
-    SignedValidatorAttestation,
+    SignedAttestation,
     State,
-    ValidatorAttestation,
 )
 from lean_spec.subspecs.containers.block import Attestations, BlockHeader
 from lean_spec.subspecs.containers.config import Config
@@ -63,7 +63,7 @@ def build_signed_attestation(
     validator: ValidatorIndex,
     target: Checkpoint,
     source: Checkpoint | None = None,
-) -> SignedValidatorAttestation:
+) -> SignedAttestation:
     """Construct a SignedValidatorAttestation pointing to ``target``."""
 
     source_checkpoint = source or Checkpoint.default()
@@ -73,11 +73,11 @@ def build_signed_attestation(
         target=target,
         source=source_checkpoint,
     )
-    message = ValidatorAttestation(
+    message = Attestation(
         validator_id=validator,
         data=attestation_data,
     )
-    return SignedValidatorAttestation(
+    return SignedAttestation(
         message=message,
         signature=Bytes4000.zero(),
     )

@@ -2,10 +2,10 @@
 
 from .block import (
     Block,
-    BlockAndVote,
     BlockBody,
     BlockHeader,
-    SignedBlockAndVote,
+    BlockWithAttestation,
+    SignedBlockWithAttestation,
 )
 from .types import Attestations, BlockSignatures
 
@@ -13,8 +13,8 @@ __all__ = [
     "Block",
     "BlockBody",
     "BlockHeader",
-    "BlockAndVote",
-    "SignedBlockAndVote",
+    "BlockWithAttestation",
+    "SignedBlockWithAttestation",
     "Attestations",
     "BlockSignatures",
 ]
