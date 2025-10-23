@@ -61,7 +61,7 @@ class SignedAttestation(Container):
         return self.message
 
 
-class AggreagtedAttestation(Container):
+class AggreagtedAttestations(Container):
     """Aggregated attestation consisting of participation bits and message."""
 
     aggregation_bits: AggregationBits
@@ -74,10 +74,10 @@ class AggreagtedAttestation(Container):
     """
 
 
-class SignedAggreagtedAttestation(Container):
+class SignedAggreagtedAttestations(Container):
     """Aggregated attestation bundled with aggregated signatures."""
 
-    message: AggreagtedAttestation
+    message: AggreagtedAttestations
     signature: AggregatedSignatures
     """Aggregated vote plus its combined signature.
 

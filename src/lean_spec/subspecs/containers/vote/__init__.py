@@ -2,10 +2,10 @@
 
 from .types import AggregatedSignatures, AggregationBits
 from .vote import (
-    AggreagtedAttestation,
+    AggreagtedAttestations,
     Attestation,
     AttestationData,
-    SignedAggreagtedAttestation,
+    SignedAggreagtedAttestations,
     SignedAttestation,
 )
 
@@ -13,8 +13,8 @@ __all__ = [
     "AttestationData",
     "Attestation",
     "SignedAttestation",
-    "SignedAggreagtedAttestation",
-    "AggreagtedAttestation",
+    "SignedAggreagtedAttestations",
+    "AggreagtedAttestations",
     "AggregatedSignatures",
     "AggregationBits",
 ]

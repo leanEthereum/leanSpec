@@ -12,10 +12,10 @@ from .config import Config
 from .state import State
 from .validator import Validator
 from .vote import (
-    AggreagtedAttestation,
+    AggreagtedAttestations,
     Attestation,
     AttestationData,
-    SignedAggreagtedAttestation,
+    SignedAggreagtedAttestations,
     SignedAttestation,
 )
 
@@ -31,7 +31,7 @@ __all__ = [
     "AttestationData",
     "Attestation",
     "SignedAttestation",
-    "SignedAggreagtedAttestation",
-    "AggreagtedAttestation",
+    "SignedAggreagtedAttestations",
+    "AggreagtedAttestations",
     "State",
 ]
