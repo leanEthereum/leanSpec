@@ -5,6 +5,7 @@ The Store tracks all information required for the LMD GHOST forkchoice algorithm
 """
 
 import copy
+from dataclasses import dataclass
 from typing import Dict
 
 from lean_spec.subspecs.chain.config import (
@@ -19,7 +20,6 @@ from lean_spec.subspecs.containers import (
     Checkpoint,
     Config,
     SignedBlockAndVote,
-    BlockAndSignatures,
     SignedValidatorAttestation,
     State,
     ValidatorAttestation,
@@ -37,6 +37,14 @@ from lean_spec.types import (
 from lean_spec.types.container import Container
 
 from .helpers import get_fork_choice_head, get_latest_justified
+
+
+@dataclass(slots=True)
+class BlockAndSignatures:
+    """Internal bundle pairing a block with its attestation signatures."""
+
+    block: Block
+    signatures: list[Bytes4000]
 
 
 class Store(Container):
@@ -464,7 +472,7 @@ class Store(Container):
 
         # Initialize empty attestation set for iterative collection
         attestations: list[ValidatorAttestation] = []
-        signatures: List[Bytes4000] = []
+        signatures: list[Bytes4000] = []
 
         # Iteratively collect valid attestations using fixed-point algorithm
         #
@@ -538,10 +546,7 @@ class Store(Container):
         self.blocks[block_hash] = finalized_block
         self.states[block_hash] = final_post_state
 
-        return BlockAndSignatures(
-            block=finalized_block,
-            signature=signatures,
-            )
+        return BlockAndSignatures(block=finalized_block, signatures=signatures)
 
     def produce_attestation_vote(
         self,

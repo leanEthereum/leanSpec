@@ -3,7 +3,6 @@
 from .block import (
     Block,
     BlockAndVote,
-    BlockAndSignatures,
     BlockBody,
     BlockHeader,
     SignedBlockAndVote,
