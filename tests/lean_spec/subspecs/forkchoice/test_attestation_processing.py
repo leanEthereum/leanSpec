@@ -267,19 +267,18 @@ class TestAttestationValidation:
         # Create an unknown head root that doesn't exist in the store
         unknown_head_root = Bytes32(b"\x99" * 32)
 
-        # Create vote with unknown head but valid source and target
-        vote = Vote(
-            validator_id=ValidatorIndex(0),
+        # Create attestation with unknown head but valid source and target
+        signed_attestation = build_signed_attestation(
+            validator=ValidatorIndex(0),
             slot=Slot(2),
             head=Checkpoint(root=unknown_head_root, slot=Slot(2)),  # Unknown head!
             target=Checkpoint(root=target_hash, slot=Slot(2)),
             source=Checkpoint(root=source_hash, slot=Slot(1)),
         )
-        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
 
         # Should raise assertion error for unknown head
         with pytest.raises(AssertionError, match="Unknown head block"):
-            sample_store.validate_attestation(signed_vote)
+            sample_store.validate_attestation(signed_attestation)
 
 
 class TestAttestationProcessing:
