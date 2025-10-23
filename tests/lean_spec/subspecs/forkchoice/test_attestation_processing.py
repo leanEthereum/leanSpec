@@ -235,6 +235,52 @@ class TestAttestationValidation:
         with pytest.raises(AssertionError, match="Attestation too far in future"):
             sample_store.validate_attestation(signed_attestation)
 
+    def test_validate_attestation_unknown_head_rejected(self, sample_store: Store) -> None:
+        """Test validation fails when head block is unknown.
+
+        This ensures consistency with source/target validation and prevents
+        spam attestations with fabricated head roots.
+        """
+        # Create valid source and target blocks
+        source_block = Block(
+            slot=Slot(1),
+            proposer_index=Uint64(1),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32(b"source" + b"\x00" * 26),
+            body=BlockBody(attestations=Attestations(data=[])),
+        )
+        source_hash = hash_tree_root(source_block)
+
+        target_block = Block(
+            slot=Slot(2),
+            proposer_index=Uint64(2),
+            parent_root=source_hash,
+            state_root=Bytes32(b"target" + b"\x00" * 26),
+            body=BlockBody(attestations=Attestations(data=[])),
+        )
+        target_hash = hash_tree_root(target_block)
+
+        # Add source and target blocks to store
+        sample_store.blocks[source_hash] = source_block
+        sample_store.blocks[target_hash] = target_block
+
+        # Create an unknown head root that doesn't exist in the store
+        unknown_head_root = Bytes32(b"\x99" * 32)
+
+        # Create vote with unknown head but valid source and target
+        vote = Vote(
+            validator_id=ValidatorIndex(0),
+            slot=Slot(2),
+            head=Checkpoint(root=unknown_head_root, slot=Slot(2)),  # Unknown head!
+            target=Checkpoint(root=target_hash, slot=Slot(2)),
+            source=Checkpoint(root=source_hash, slot=Slot(1)),
+        )
+        signed_vote = SignedVote(data=vote, signature=Bytes32.zero())
+
+        # Should raise assertion error for unknown head
+        with pytest.raises(AssertionError, match="Unknown head block"):
+            sample_store.validate_attestation(signed_vote)
+
 
 class TestAttestationProcessing:
     """Test attestation processing logic."""

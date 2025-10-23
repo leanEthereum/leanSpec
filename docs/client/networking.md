@@ -69,7 +69,7 @@ Two main message types exist:
 Blocks are proposed by validators. They propagate on the block topic. Every
 node needs to see blocks quickly.
 
-Votes come from all validators. They propagate on the vote topic. High volume
+Attestations come from all validators. They propagate on the attestation topic. High volume
 but small messages.
 
 ### Encoding
@@ -127,7 +127,7 @@ messages or violating protocol rules.
 All connections are encrypted. Eavesdroppers cannot read network traffic.
 
 Messages are authenticated at the application layer. Validators sign their
-votes and blocks. This prevents impersonation.
+attestations and blocks. This prevents impersonation.
 
 The network must resist denial of service. Rate limiting and resource
 management protect against overload.

@@ -23,9 +23,10 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.9.2,<3", "typing-extensions>=4.4"]
+dependencies = ["pydantic>=2.12.0,<3", "typing-extensions>=4.4"]
 
 [project.license]
 file = "LICENSE"

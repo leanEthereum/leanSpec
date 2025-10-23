@@ -141,6 +141,7 @@ class Store(Container):
         # Validate vote targets exist in store
         assert data.source.root in self.blocks, f"Unknown source block: {data.source.root.hex()}"
         assert data.target.root in self.blocks, f"Unknown target block: {data.target.root.hex()}"
+        assert data.head.root in self.blocks, f"Unknown head block: {data.head.root.hex()}"
 
         # Validate slot relationships
         source_block = self.blocks[data.source.root]
