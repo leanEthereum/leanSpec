@@ -26,7 +26,7 @@ __all__ = [
     "BlocksByRootRequest",
     "BlocksByRootResponse",
     "Status",
+    "GossipTopic",
     "DomainType",
     "ProtocolId",
-    "GossipTopic"
 ]

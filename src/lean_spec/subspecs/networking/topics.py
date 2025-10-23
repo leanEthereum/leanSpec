@@ -1,9 +1,4 @@
-"""
-Gossipsub topics
-
-- Allowed GossipTopic.
-- Allowed Payload annotated with the payload type.
-"""
+"""Gossipsub topics"""
 
 from enum import Enum
 
