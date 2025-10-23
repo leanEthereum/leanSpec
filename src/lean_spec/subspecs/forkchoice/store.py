@@ -498,7 +498,7 @@ class Store(Container):
             for signed in self.latest_known_votes.values():
                 # Skip if target block is unknown in our store
                 data = signed.message.data
-                if data.target.root not in self.blocks:
+                if data.head.root not in self.blocks:
                     continue
 
                 # Create attestation with post-state's latest justified as source
