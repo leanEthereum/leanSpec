@@ -9,7 +9,7 @@
 
 - [ ] Ran `tox` checks to avoid unnecessary CI fails:
     ```console
-    uvx --with=tox-uv tox
+    uvx tox -e all-checks,pytest
     ```
 - [ ] Considered adding appropriate tests for the changes.
 - [ ] Considered updating the online docs in the [./docs/](/leanEthereum/leanSpec/tree/main/docs/) directory.
