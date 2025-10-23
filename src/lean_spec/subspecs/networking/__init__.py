@@ -13,6 +13,7 @@ from .messages import (
     BlocksByRootResponse,
     Status,
 )
+from .topics import GossipTopic
 from .types import DomainType, ProtocolId
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "Status",
     "DomainType",
     "ProtocolId",
+    "GossipTopic"
 ]
