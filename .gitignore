@@ -153,7 +153,6 @@ site/
 
 # UV
 .uv/
-uv.lock
 
 # Ruff
 .ruff_cache/
