@@ -260,12 +260,7 @@ class Store(Container):
         # Update forkchoice head
         self.update_head()
 
-        proposer_signature_index = len(block.body.attestations)
-        proposer_signature = (
-            signatures[proposer_signature_index]
-            if proposer_signature_index < len(signatures)
-            else Bytes4000.zero()
-        )
+        proposer_signature_index = signatures[len(block.body.attestations)]
         # the proposer vote for the current slot and block as head is to be
         # treated as the vote is independently casted in the second interval
         signed_proposer_attestation = SignedValidatorAttestation(
