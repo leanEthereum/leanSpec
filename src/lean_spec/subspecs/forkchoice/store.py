@@ -247,7 +247,7 @@ class Store(Container):
 
         # Process block's attestations as on-chain votes
         for index, attestation in enumerate(block.body.attestations):
-            signature = signatures[index] if index < len(signatures) else Bytes4000.zero()
+            signature = signatures[index]
             signed_attestation = SignedValidatorAttestation(
                 message=attestation,
                 # eventually one would be able to associate and consume an
