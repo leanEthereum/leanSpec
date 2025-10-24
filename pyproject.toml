@@ -50,7 +50,7 @@ docs = [
 ]
 dev = [
     "lean-spec[test,lint,typecheck,docs]",
-    "lean-spec-tests",
+    "lean-ethereum-testing",
     "tox>=4.23.0,<5",
     "tox-uv>=1.29.0",
 ]
@@ -122,7 +122,9 @@ addopts = [
     "--cov-report=html",
     "--cov-branch",
     # Exclude fixture generation tests from regular test runs
-    "--ignore=tests/spec_tests",
+    # These are only run via the 'fill' command
+    "--ignore=tests/consensus",
+    "--ignore=tests/execution",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
@@ -144,7 +146,7 @@ required-version = ">=0.7.0"
 members = ["packages/*"]
 
 [tool.uv.sources]
-lean-spec-tests = { workspace = true }
+lean-ethereum-testing = { workspace = true }
 
 [dependency-groups]
 dev = [
