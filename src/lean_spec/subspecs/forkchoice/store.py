@@ -5,7 +5,6 @@ The Store tracks all information required for the LMD GHOST forkchoice algorithm
 """
 
 import copy
-from dataclasses import dataclass
 from typing import Dict
 
 from lean_spec.subspecs.chain.config import (
@@ -37,14 +36,6 @@ from lean_spec.types import (
 from lean_spec.types.container import Container
 
 from .helpers import get_fork_choice_head, get_latest_justified
-
-
-@dataclass(slots=True)
-class BlockAndSignatures:
-    """Internal bundle pairing a block with its attestation signatures."""
-
-    block: Block
-    signatures: list[Bytes4000]
 
 
 class Store(Container):
@@ -155,7 +146,7 @@ class Store(Container):
         assert target_block.slot == data.target.slot, "Target checkpoint slot mismatch"
 
         # Validate attestation is not too far in the future
-        current_slot = Slot(self.time // SECONDS_PER_INTERVAL)
+        current_slot = Slot(self.time // INTERVALS_PER_SLOT)
         assert data.slot <= Slot(current_slot + Slot(1)), "Attestation too far in future"
 
     def process_attestation(
@@ -196,7 +187,7 @@ class Store(Container):
             # Network gossip attestation processing
 
             # Ensure forkchoice is current before processing gossip
-            time_slots = self.time // SECONDS_PER_INTERVAL
+            time_slots = self.time // INTERVALS_PER_SLOT
             assert attestation_slot <= time_slots, "Attestation from future slot"
 
             # Update new votes if this is latest from validator
@@ -220,18 +211,18 @@ class Store(Container):
         # TODO: Integrate actual aggregated signature verification.
         return all(self._is_valid_signature(signature) for signature in signatures)
 
-    def process_block(self, signed_block_vote: SignedBlockWithAttestation) -> None:
+    def process_block(self, signed_block_with_attestation: SignedBlockWithAttestation) -> None:
         """
         Process new block and update forkchoice state.
 
         Adds block to store, processes included attestations, and updates head.
 
         Args:
-            signed_block_vote: Block to process.
+            signed_block_with_attestation: Block to process.
         """
-        block = signed_block_vote.message.block
-        proposer_attestation = signed_block_vote.message.proposer_attestation
-        signatures = signed_block_vote.signature
+        block = signed_block_with_attestation.message.block
+        proposer_attestation = signed_block_with_attestation.message.proposer_attestation
+        signatures = signed_block_with_attestation.signature
 
         block_hash = hash_tree_root(block)
 
@@ -435,12 +426,16 @@ class Store(Container):
         target_block = self.blocks[target_block_root]
         return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
 
-    def produce_block(self, slot: Slot, validator_index: ValidatorIndex) -> BlockAndSignatures:
+    def produce_block_with_signatures(
+        self,
+        slot: Slot,
+        validator_index: ValidatorIndex,
+    ) -> tuple[Block, list[Bytes4000]]:
         """
-        Produce a new block for the given slot and validator with signatures for
-        attestations aggregated as a list. Post this proposer needs to create BlockAndVote
-        to add its own vote data after including this block in forkchoice and then sign
-        it over as SignedBlockAndVote.
+        Produce a block and attestation signatures for the target slot.
+
+        The proposer returns the block and a naive signature list so it can
+        later craft its `SignedBlockWithAttestation` with minimal extra work.
 
         Algorithm Overview:
         1. Validate proposer authorization for the target slot
@@ -485,7 +480,7 @@ class Store(Container):
                 proposer_index=validator_index,
                 parent_root=head_root,
                 state_root=Bytes32.zero(),  # Temporary; updated after state computation
-                body=BlockBody(attestations=Attestations(data=list(attestations))),  # need copy
+                body=BlockBody(attestations=Attestations(data=attestations)),
             )
 
             # Apply state transition to get the post-block state
@@ -496,9 +491,9 @@ class Store(Container):
             # Find new valid attestations matching post-state justification
             new_attestations: list[Attestation] = []
             new_signatures: list[Bytes4000] = []
-            for signed in self.latest_known_votes.values():
+            for signed_attestation in self.latest_known_votes.values():
                 # Skip if target block is unknown in our store
-                data = signed.message.data
+                data = signed_attestation.message.data
                 if data.head.root not in self.blocks:
                     continue
 
@@ -514,13 +509,13 @@ class Store(Container):
                     source=post_state.latest_justified,
                 )
                 candidate_attestation = Attestation(
-                    validator_id=signed.message.validator_id,
+                    validator_id=signed_attestation.message.validator_id,
                     data=attestation_data,
                 )
 
                 if candidate_attestation not in attestations:
                     new_attestations.append(candidate_attestation)
-                    new_signatures.append(signed.signature)
+                    new_signatures.append(signed_attestation.signature)
 
             # Fixed point reached: no new attestations found
             if not new_attestations:
@@ -537,7 +532,7 @@ class Store(Container):
             proposer_index=validator_index,
             parent_root=head_root,
             state_root=Bytes32.zero(),  # Will be updated with computed hash
-            body=BlockBody(attestations=Attestations(data=list(attestations))),  # need copy
+            body=BlockBody(attestations=Attestations(data=attestations)),
         )
 
         # Apply state transition to get final post-state and compute state root
@@ -551,9 +546,9 @@ class Store(Container):
         self.blocks[block_hash] = finalized_block
         self.states[block_hash] = final_post_state
 
-        return BlockAndSignatures(block=finalized_block, signatures=signatures)
+        return finalized_block, signatures
 
-    def produce_attestation_vote(
+    def produce_attestation(
         self,
         slot: Slot,
         validator_index: ValidatorIndex,

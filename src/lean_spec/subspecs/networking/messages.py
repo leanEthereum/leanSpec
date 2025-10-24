@@ -56,7 +56,7 @@ BlocksByRootResponse = Annotated[
     Field(max_length=MAX_REQUEST_BLOCKS),
 ]
 """
-A response containing the requested `SignedBlockAndVote` objects.
+A response containing the requested `SignedBlockWithAttestation` objects.
 
 The length of the list may be less than the number of requested blocks if
 the responding peer does not have all of them. Each block is sent in a
