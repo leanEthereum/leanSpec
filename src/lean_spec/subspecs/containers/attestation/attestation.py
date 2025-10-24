@@ -56,8 +56,7 @@ class SignedAggregatedAttestations(Container):
     """Aggregated vote plus its combined signature.
 
     Stores a naive list of validator signatures that mirrors the attestation
-    order; this will be replaced by a single zk-verified signature in later
-    devnets. Lean signatures permit recursive aggregation even when individual
-    ValidatorAttestation and Attestation messages differ, so long as their
-    embedded AttestationData matches.
+    order.
+    
+    TODO: this will be replaced by a SNARK in future devnets.
     """
