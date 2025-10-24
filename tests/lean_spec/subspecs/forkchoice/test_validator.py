@@ -371,7 +371,8 @@ class TestValidatorIntegration:
             assert att.source.root == first_att.source.root
 
         # Validator 2 produces next block for slot 2
-        # Without votes for block1, this will build on genesis (current head)
+        # After processing block1, head should be block1 (fork choice walks the tree)
+        # So block2 will build on block1
         block2 = sample_store.produce_block(Slot(2), ValidatorIndex(2))
 
         # Verify block properties
@@ -383,10 +384,18 @@ class TestValidatorIntegration:
         assert block1_hash in sample_store.blocks
         assert block2_hash in sample_store.blocks
 
-        # Both blocks should build on genesis (the current head)
-        genesis_hash = sample_store.head
+        # block1 builds on genesis, block2 builds on block1 (current head)
+        # Get the original genesis hash from the store's blocks
+        genesis_hash = min(
+            (
+                root
+                for root in sample_store.blocks.keys()
+                if sample_store.blocks[root].slot == Slot(0)
+            ),
+            key=lambda root: root,
+        )
         assert block1.parent_root == genesis_hash
-        assert block2.parent_root == genesis_hash
+        assert block2.parent_root == block1_hash
 
     def test_validator_edge_cases(self, sample_store: Store) -> None:
         """Test edge cases in validator operations."""

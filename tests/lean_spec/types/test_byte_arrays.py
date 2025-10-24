@@ -244,8 +244,8 @@ def test_pydantic_accepts_various_inputs_for_vectors() -> None:
     # serializer returns string representation in model_dump()
     dumped = m.model_dump()
     assert isinstance(dumped["root"], str)
-    assert dumped["root"] == "11" * 32  # hex string without 0x prefix
-    assert dumped["key"] == "00010203"  # hex string representation
+    assert dumped["root"] == "0x" + "11" * 32
+    assert dumped["key"] == "0x00010203"
 
 
 def test_pydantic_validates_vector_lengths() -> None:

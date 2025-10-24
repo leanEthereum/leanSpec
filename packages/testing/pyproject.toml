@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lean-ethereum-testing"
+version = "0.0.1"
+description = "Lean Ethereum client test generation and runner framework"
+readme = "README.md"
+authors = [
+    { name = "Ethereum Foundation", email = "thomas.coratger@ethereum.org" },
+]
+keywords = ["ethereum", "testing", "consensus", "lean"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "lean-spec",
+    "pydantic>=2.12.0,<3",
+    "pytest>=8.3.3,<9",
+    "click>=8.1.0,<9",
+]
+
+license = {text = "MIT"}
+
+[project.optional-dependencies]
+test = ["pytest-cov>=6.0.0,<7"]
+lint = ["ruff>=0.11.8,<1", "mypy>=1.15.0,<1.16"]
+
+[project.urls]
+Homepage = "https://github.com/leanEthereum/lean-spec"
+Source = "https://github.com/leanEthereum/lean-spec"
+Issues = "https://github.com/leanEthereum/lean-spec/issues"
+
+[project.scripts]
+fill = "framework.cli.fill:fill"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv.sources]
+lean-spec = { workspace = true }
