@@ -1,5 +1,14 @@
 """The container types for the Lean consensus specification."""
 
+from .attestation import (
+    AggregatedAttestations,
+    AggregatedSignatures,
+    AggregationBits,
+    Attestation,
+    AttestationData,
+    SignedAggregatedAttestations,
+    SignedAttestation,
+)
 from .block import (
     Block,
     BlockBody,
@@ -11,15 +20,15 @@ from .checkpoint import Checkpoint
 from .config import Config
 from .state import State
 from .validator import Validator
-from .vote import (
-    AggreagtedAttestations,
-    Attestation,
-    AttestationData,
-    SignedAggreagtedAttestations,
-    SignedAttestation,
-)
 
 __all__ = [
+    "AggregatedAttestations",
+    "AggregatedSignatures",
+    "AggregationBits",
+    "AttestationData",
+    "Attestation",
+    "SignedAttestation",
+    "SignedAggregatedAttestations",
     "Block",
     "BlockWithAttestation",
     "BlockBody",
@@ -28,10 +37,5 @@ __all__ = [
     "Config",
     "SignedBlockWithAttestation",
     "Validator",
-    "AttestationData",
-    "Attestation",
-    "SignedAttestation",
-    "SignedAggreagtedAttestations",
-    "AggreagtedAttestations",
     "State",
 ]

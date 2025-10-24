@@ -4,7 +4,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
-from ..vote import Attestation
+from ..attestation import Attestation
 from .types import Attestations, BlockSignatures
 
 

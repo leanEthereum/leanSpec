@@ -22,26 +22,6 @@ class Attestation(Container):
     validator_id: Uint64
     data: AttestationData
 
-    @property
-    def slot(self) -> Slot:
-        """Return the attested slot."""
-        return self.data.slot
-
-    @property
-    def head(self) -> Checkpoint:
-        """Return the attested head checkpoint."""
-        return self.data.head
-
-    @property
-    def target(self) -> Checkpoint:
-        """Return the attested target checkpoint."""
-        return self.data.target
-
-    @property
-    def source(self) -> Checkpoint:
-        """Return the attested source checkpoint."""
-        return self.data.source
-
 
 class SignedAttestation(Container):
     """Validator attestation bundled with its signature."""
@@ -55,13 +35,8 @@ class SignedAttestation(Container):
     signature VM.
     """
 
-    @property
-    def data(self) -> Attestation:
-        """Expose the message for backwards compatibility with SignedVote."""
-        return self.message
 
-
-class AggreagtedAttestations(Container):
+class AggregatedAttestations(Container):
     """Aggregated attestation consisting of participation bits and message."""
 
     aggregation_bits: AggregationBits
@@ -69,15 +44,14 @@ class AggreagtedAttestations(Container):
     """Combined vote data similar to the beacon chain format.
 
     Multiple validator votes are aggregated here without the complexity of
-    committee assignments. This structure is defined for future use and is not
-    currently exercised by devnets.
+    committee assignments.
     """
 
 
-class SignedAggreagtedAttestations(Container):
+class SignedAggregatedAttestations(Container):
     """Aggregated attestation bundled with aggregated signatures."""
 
-    message: AggreagtedAttestations
+    message: AggregatedAttestations
     signature: AggregatedSignatures
     """Aggregated vote plus its combined signature.
 

@@ -282,13 +282,13 @@ class TestAttestationVoteProduction:
 
         # Verify vote structure
         assert vote.validator_id == validator_idx
-        assert vote.slot == slot
-        assert isinstance(vote.head, Checkpoint)
-        assert isinstance(vote.target, Checkpoint)
-        assert isinstance(vote.source, Checkpoint)
+        assert vote.data.slot == slot
+        assert isinstance(vote.data.head, Checkpoint)
+        assert isinstance(vote.data.target, Checkpoint)
+        assert isinstance(vote.data.source, Checkpoint)
 
         # Source should be the store's latest justified
-        assert vote.source == sample_store.latest_justified
+        assert vote.data.source == sample_store.latest_justified
 
     def test_produce_attestation_vote_head_reference(self, sample_store: Store) -> None:
         """Test that attestation vote references correct head."""
@@ -299,11 +299,11 @@ class TestAttestationVoteProduction:
 
         # Head checkpoint should reference the current proposal head
         expected_head_root = sample_store.get_proposal_head(slot)
-        assert vote.head.root == expected_head_root
+        assert vote.data.head.root == expected_head_root
 
         # Head slot should match the block's slot
         head_block = sample_store.blocks[expected_head_root]
-        assert vote.head.slot == head_block.slot
+        assert vote.data.head.slot == head_block.slot
 
     def test_produce_attestation_vote_target_calculation(self, sample_store: Store) -> None:
         """Test that attestation vote calculates target correctly."""
@@ -314,8 +314,8 @@ class TestAttestationVoteProduction:
 
         # Target should match the store's vote target calculation
         expected_target = sample_store.get_vote_target()
-        assert vote.target.root == expected_target.root
-        assert vote.target.slot == expected_target.slot
+        assert vote.data.target.root == expected_target.root
+        assert vote.data.target.slot == expected_target.slot
 
     def test_produce_attestation_vote_different_validators(self, sample_store: Store) -> None:
         """Test vote production for different validators in same slot."""
@@ -329,17 +329,17 @@ class TestAttestationVoteProduction:
 
             # Each vote should have correct validator ID
             assert vote.validator_id == ValidatorIndex(validator_idx)
-            assert vote.slot == slot
+            assert vote.data.slot == slot
 
         # All votes should have same head, target, and source (consensus)
         first_vote = votes[0]
         for vote in votes[1:]:
-            assert vote.head.root == first_vote.head.root
-            assert vote.head.slot == first_vote.head.slot
-            assert vote.target.root == first_vote.target.root
-            assert vote.target.slot == first_vote.target.slot
-            assert vote.source.root == first_vote.source.root
-            assert vote.source.slot == first_vote.source.slot
+            assert vote.data.head.root == first_vote.data.head.root
+            assert vote.data.head.slot == first_vote.data.head.slot
+            assert vote.data.target.root == first_vote.data.target.root
+            assert vote.data.target.slot == first_vote.data.target.slot
+            assert vote.data.source.root == first_vote.data.source.root
+            assert vote.data.source.slot == first_vote.data.source.slot
 
     def test_produce_attestation_vote_sequential_slots(self, sample_store: Store) -> None:
         """Test vote production across sequential slots."""
@@ -350,12 +350,12 @@ class TestAttestationVoteProduction:
         vote2 = sample_store.produce_attestation_vote(Slot(2), validator_idx)
 
         # Votes should be for different slots
-        assert vote1.slot == Slot(1)
-        assert vote2.slot == Slot(2)
+        assert vote1.data.slot == Slot(1)
+        assert vote2.data.slot == Slot(2)
 
         # Both should use same source (latest justified doesn't change)
-        assert vote1.source == vote2.source
-        assert vote1.source == sample_store.latest_justified
+        assert vote1.data.source == vote2.data.source
+        assert vote1.data.source == sample_store.latest_justified
 
     def test_produce_attestation_vote_justification_consistency(self, sample_store: Store) -> None:
         """Test that vote source uses current justified checkpoint."""
@@ -365,11 +365,11 @@ class TestAttestationVoteProduction:
         vote = sample_store.produce_attestation_vote(slot, validator_idx)
 
         # Source must be the latest justified checkpoint from store
-        assert vote.source.root == sample_store.latest_justified.root
-        assert vote.source.slot == sample_store.latest_justified.slot
+        assert vote.data.source.root == sample_store.latest_justified.root
+        assert vote.data.source.slot == sample_store.latest_justified.slot
 
         # Source checkpoint should exist in blocks
-        assert vote.source.root in sample_store.blocks
+        assert vote.data.source.root in sample_store.blocks
 
 
 class TestValidatorIntegration:
@@ -392,10 +392,10 @@ class TestValidatorIntegration:
 
         # Vote should reference the new block as head (if it became head)
         assert vote.validator_id == attestor_idx
-        assert vote.slot == attestor_slot
+        assert vote.data.slot == attestor_slot
 
         # The vote should be consistent with current forkchoice state
-        assert vote.source == sample_store.latest_justified
+        assert vote.data.source == sample_store.latest_justified
 
     def test_multiple_validators_coordination(self, sample_store: Store) -> None:
         """Test multiple validators producing blocks and attestations."""
@@ -414,9 +414,9 @@ class TestValidatorIntegration:
         # All attestations should be consistent
         first_att = attestations[0]
         for att in attestations[1:]:
-            assert att.head.root == first_att.head.root
-            assert att.target.root == first_att.target.root
-            assert att.source.root == first_att.source.root
+            assert att.data.head.root == first_att.data.head.root
+            assert att.data.target.root == first_att.data.target.root
+            assert att.data.source.root == first_att.data.source.root
 
         # Validator 2 produces next block for slot 2
         # Without votes for block1, this will build on genesis (current head)

@@ -1,4 +1,4 @@
-"""Vote-specific SSZ types for the Lean Ethereum consensus specification."""
+"""Attestation-related SSZ types for the Lean consensus specification."""
 
 from lean_spec.types import Bytes4000, SSZList
 from lean_spec.types.bitfields import BaseBitlist
