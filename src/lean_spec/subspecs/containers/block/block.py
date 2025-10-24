@@ -78,8 +78,8 @@ class SignedBlockWithAttestation(Container):
 
     Signatures remain in attestation order followed by the proposer signature
     over entire message. For devnet 1, however the proposer signature is just
-    over message.proposer_attestation since lean VM is not yet there to establish
-    validity/mergability of the signature for its packaging into the future blocks.
+    over message.proposer_attestation since leanVM is not yet performant enough
+    to aggregate signatures with sufficient throughput.
 
-    Eventually this field will be replaced by a single zk-aggregated signature.
+    Eventually this field will be replaced by a SNARK (which represents the aggregation of all signatures).
     """
