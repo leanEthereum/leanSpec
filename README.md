@@ -127,7 +127,7 @@ you can use `uvx`, which:
 * Uses tox-uv for faster dependency installation
 
 ```bash
-uvx --with=tox-uv tox -e all-checks
+uvx tox -e all-checks
 ```
 
 ### Documentation
@@ -210,9 +210,9 @@ you can use `uvx`:
 
 | Task                                    | Command                               |
 |-----------------------------------------|---------------------------------------|
-| Run all quality checks (no tests/docs)  | `uvx --with=tox-uv tox -e all-checks` |
-| Run everything (checks + tests + docs)  | `uvx --with=tox-uv tox`               |
-| Run specific tox environment            | `uvx --with=tox-uv tox -e lint`       |
+| Run all quality checks (no tests/docs)  | `uvx tox -e all-checks`               |
+| Run everything (checks + tests + docs)  | `uvx tox`               |
+| Run specific tox environment            | `uvx tox -e lint`       |
 
 
 ## Contributing
