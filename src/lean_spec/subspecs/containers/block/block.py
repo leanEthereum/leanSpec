@@ -81,5 +81,6 @@ class SignedBlockWithAttestation(Container):
     over message.proposer_attestation since leanVM is not yet performant enough
     to aggregate signatures with sufficient throughput.
 
-    Eventually this field will be replaced by a SNARK (which represents the aggregation of all signatures).
+    Eventually this field will be replaced by a SNARK (which represents the
+    aggregation of all signatures).
     """

@@ -391,7 +391,6 @@ def test_with_justifications_deterministic_order(base_state: State) -> None:
     count = base_state.config.num_validators.as_int()
     votes1 = [Boolean(False)] * count
     votes2 = [Boolean(True)] * count
-
     # Intentionally supply the dict in unsorted key order.
     justifications = {root2: votes2, root1: votes1}
 
@@ -504,6 +503,9 @@ def test_generate_genesis(sample_config: Config) -> None:
     assert state.slot == Slot(0)
     # Body root must commit to an empty body at genesis.
     expected_body = BlockBody(attestations=Attestations(data=[]))
+
+    print(f"body_root hex: {state.latest_block_header.body_root.hex()}")
+
     assert state.latest_block_header.body_root == hash_tree_root(expected_body)
     # History and justifications must be empty initially.
     assert not state.historical_block_hashes
