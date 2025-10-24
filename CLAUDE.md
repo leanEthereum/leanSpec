@@ -50,7 +50,7 @@ uvx tox                                    # Everything (checks + tests + docs)
 2. **Spec tests** (`tests/spec_tests/`) - Generate JSON test vectors via fillers
 
 **Test Filling Framework:**
-- Pytest plugin in `packages/tests/src/lean_spec_tests/pytest_plugins/filler.py`
+- Pytest plugin in `packages/testing/src/consensus_testing/pytest_plugins/filler.py`
 - Write spec tests using `state_transition_test` or `fork_choice_test` fixtures
 - These fixtures are type aliases that create test vectors when called
 - Run `uv run fill --fork=devnet --clean` to generate fixtures in `fixtures/`

@@ -90,7 +90,9 @@ addopts = [
     "--cov-report=html",
     "--cov-branch",
     # Exclude fixture generation tests from regular test runs
-    "--ignore=tests/spec_tests",
+    # These are only run via the 'fill' command
+    "--ignore=tests/consensus",
+    "--ignore=tests/execution",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
@@ -112,7 +114,7 @@ required-version = ">=0.7.0"
 members = ["packages/*"]
 
 [tool.uv.sources]
-lean-spec-tests = { workspace = true }
+lean-ethereum-testing = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -124,7 +126,7 @@ dev = [
     "build>=1.2.0,<2",
     "twine>=5.1.0,<6",
     # test dependencies
-    "lean-spec-tests",
+    "lean-ethereum-testing",
     "pytest>=8.3.3,<9",
     "pytest-cov>=6.0.0,<7",
     "pytest-xdist>=3.6.1,<4",
