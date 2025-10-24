@@ -20,6 +20,8 @@ subspecifications that the Lean Ethereum protocol relies on.
 uv sync                           # Install dependencies
 uv run pytest                     # Run unit tests
 uv run fill --fork=devnet --clean # Generate test vectors
+# Note: execution layer support is planned for future, infrastructure is ready
+# for now, `--layer=consensus` is default and the only value used.
 ```
 
 ### Code Quality
@@ -35,7 +37,8 @@ uvx tox                                    # Everything (checks + tests + docs)
 - **Main specs**: `src/lean_spec/`
 - **Subspecs**: `src/lean_spec/subspecs/{subspec}/`
 - **Unit tests**: `tests/lean_spec/` (mirrors source structure)
-- **Spec tests**: `tests/spec_tests/devnet/` (generates test vectors)
+- **Consensus spec tests**: `tests/consensus/` (generates test vectors)
+- **Execution spec tests**: `tests/execution/` (future - infrastructure ready)
 
 ## Code Style
 - Line length: 100 characters, type hints everywhere
@@ -47,13 +50,17 @@ uvx tox                                    # Everything (checks + tests + docs)
 **Two types of tests:**
 
 1. **Unit tests** (`tests/lean_spec/`) - Standard pytest tests for implementation
-2. **Spec tests** (`tests/spec_tests/`) - Generate JSON test vectors via fillers
+2. **Spec tests** (`tests/consensus/`) - Generate JSON test vectors via fillers
+   - *Note: `tests/execution/` infrastructure is ready for future execution layer work*
 
 **Test Filling Framework:**
-- Pytest plugin in `packages/testing/src/consensus_testing/pytest_plugins/filler.py`
-- Write spec tests using `state_transition_test` or `fork_choice_test` fixtures
+- Layer-agnostic pytest plugin in `packages/testing/src/framework/pytest_plugins/filler.py`
+- Layer-specific packages: `consensus_testing` (active) and `execution_testing` (future)
+- Write consensus spec tests using `state_transition_test` or `fork_choice_test` fixtures
 - These fixtures are type aliases that create test vectors when called
-- Run `uv run fill --fork=devnet --clean` to generate fixtures in `fixtures/`
+- Run `uv run fill --fork=Devnet --clean` to generate consensus fixtures
+- Use `--layer=execution` flag when execution layer is implemented
+- Output goes to `fixtures/{layer}/{format}/{test_path}/...`
 
 **Example spec test:**
 ```python
@@ -71,13 +78,22 @@ def test_block(state_transition_test: StateTransitionTestFiller) -> None:
 3. `make_fixture()` executes the spec code (state transitions, fork choice steps)
 4. Validates output against expectations (`StateExpectation`, `StoreChecks`)
 5. Serializes to JSON via Pydantic's `model_dump(mode="json")`
-6. Writes fixtures at session end to `fixtures/{test_type}/{fork}/...`
+6. Writes fixtures at session end to `fixtures/{layer}/{format}/{test_path}/...`
+
+**Layer-specific architecture:**
+- `framework/` - Shared infrastructure (base classes, pytest plugin, CLI)
+- `consensus_testing/` - Consensus layer fixtures, forks, builders
+- `execution_testing/` - Execution layer fixtures, forks, builders
+- Regular pytest runs (`uv run pytest`) ignore spec tests - they only run via `fill` command
 
 **Serialization requirements:**
 - All spec types (State, Block, Uint64, etc.) must be Pydantic models
 - Custom types need `@field_serializer` or `model_serializer` for JSON output
 - SSZ types typically serialize to hex strings (e.g., `"0x1234..."`)
-- Fixture models inherit from `BaseConsensusFixture` (uses `CamelModel` for camelCase JSON)
+- Fixture models inherit from layer-specific base classes:
+  - Consensus: `BaseConsensusFixture` (in `consensus_testing/test_fixtures/base.py`)
+  - Execution: `BaseExecutionFixture` (in `execution_testing/test_fixtures/base.py`)
+  - Both use `CamelModel` for camelCase JSON output
 - Test the serialization: `fixture.model_dump(mode="json")` must produce valid JSON
 
 **Key fixture types:**
