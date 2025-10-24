@@ -28,12 +28,7 @@ class SignedAttestation(Container):
 
     message: Attestation
     signature: Bytes4000
-    """Signature produced by the lean signature VM.
-
-    Unlike BLS, signatures over ValidatorAttestation messages that share the
-    same underlying AttestationData can be aggregated efficiently by the lean
-    signature VM.
-    """
+    """Signature aggregation produced by the leanVM (SNARKs in the future)."""
 
 
 class AggregatedAttestations(Container):
