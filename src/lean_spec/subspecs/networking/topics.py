@@ -3,8 +3,8 @@
 from enum import Enum
 from typing import Any, Type
 
-from lean_spec.subspecs.containers.block.block import SignedBlockWithAttestation
 from lean_spec.subspecs.containers.attestation import SignedAttestation
+from lean_spec.subspecs.containers.block.block import SignedBlockWithAttestation
 
 
 class GossipTopic(Enum):
