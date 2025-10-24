@@ -3,8 +3,8 @@
 from enum import Enum
 from typing import Any, Type
 
-from lean_spec.subspecs.containers.block.block import SignedBlock
-from lean_spec.subspecs.containers.vote import SignedVote
+from lean_spec.subspecs.containers.block.block import SignedBlockWithAttestation
+from lean_spec.subspecs.containers.attestation import SignedAttestation
 
 
 class GossipTopic(Enum):
@@ -28,18 +28,18 @@ class GossipTopic(Enum):
         self._value_ = value
         self.payload_type = payload_type
 
-    BLOCK = ("block", SignedBlock)
+    BLOCK = ("block", SignedBlockWithAttestation)
     """
     Topic for gossiping new blocks.
 
     - `value`: "block"
-    - `payload_type`: `SignedBlock`
+    - `payload_type`: `SignedBlockWithAttestation`
     """
 
-    VOTE = ("vote", SignedVote)
+    VOTE = ("vote", SignedAttestation)
     """
     Topic for gossiping new votes (attestations).
 
     - `value`: "vote"
-    - `payload_type`: `SignedVote`
+    - `payload_type`: `SignedAttestation`
     """
