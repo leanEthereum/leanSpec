@@ -4,9 +4,13 @@ from typing import ClassVar, List
 
 from pydantic import field_serializer
 
-from lean_spec.subspecs.containers.block.block import SignedBlock
+from lean_spec.subspecs.containers.block.block import Block, BlockBody
+from lean_spec.subspecs.containers.block.types import Attestations
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.types import Bytes32, ValidatorIndex
 
+from ..block_spec import BlockSpec
 from ..test_types import StateExpectation
 from .base import BaseConsensusFixture
 
@@ -38,10 +42,16 @@ class StateTransitionTest(BaseConsensusFixture):
     )
 
     pre: State
-    """The consensus state before processing."""
+    """The initial consensus state before processing."""
 
-    blocks: List[SignedBlock]
-    """The sequence of signed blocks to process in order."""
+    blocks: List[BlockSpec | Block]
+    """
+    The blocks that were processed through the spec.
+
+    Input: Tests provide List[BlockSpec] with optional field overrides.
+    Output: Framework builds Block objects and replaces this list during make_fixture().
+    Serialization: Only Block objects are serialized (validated in make_fixture).
+    """
 
     post: StateExpectation | None = None
     """
@@ -68,6 +78,8 @@ class StateTransitionTest(BaseConsensusFixture):
         """
         Generate the fixture by running the spec.
 
+        Builds blocks from BlockSpec if needed, then processes them through state_transition.
+
         Returns:
         -------
         StateTransitionTest
@@ -83,11 +95,27 @@ class StateTransitionTest(BaseConsensusFixture):
 
         try:
             state = self.pre
-            for block in self.blocks:
+            built_blocks = []
+
+            for item in self.blocks:
+                # Convert BlockSpec to Block if needed
+                if isinstance(item, BlockSpec):
+                    block = self._build_block_from_spec(item, state)
+                else:
+                    # Already a Block object (shouldn't happen in normal usage)
+                    block = item
+
+                # Store the actual Block object from the spec
+                built_blocks.append(block)
+
+                # Process block through state transition
                 state = state.state_transition(
-                    signed_block=block,
-                    valid_signatures=True,  # Signatures must be valid
+                    block=block,
+                    valid_signatures=True,
                 )
+
+            # Replace with actual Block objects for serialization
+            self.blocks = built_blocks  # type: ignore[assignment]
             actual_post_state = state
         except (AssertionError, ValueError) as e:
             exception_raised = e
@@ -114,3 +142,70 @@ class StateTransitionTest(BaseConsensusFixture):
 
         # Return self (fixture is already complete)
         return self
+
+    def _build_block_from_spec(self, spec: BlockSpec, state: State) -> Block:
+        """
+        Build a Block from a BlockSpec for state transition tests.
+
+        Uses provided fields from spec, computes any missing fields.
+        This mimics what a local block builder would do.
+
+        TODO: If the spec implements a State.produce_block() method in the future,
+        we should use that instead of manually computing fields here. Until then,
+        this manual approach is necessary.
+
+        Parameters
+        ----------
+        spec : BlockSpec
+            The block specification with optional field overrides.
+        state : State
+            The current state to build against.
+
+        Returns:
+        -------
+        Block
+            A complete block ready for state_transition.
+        """
+        # Use provided proposer_index or compute it
+        if spec.proposer_index is not None:
+            proposer_index = spec.proposer_index
+        else:
+            proposer_index = ValidatorIndex(int(spec.slot) % int(state.validators.count))
+
+        # Use provided parent_root or compute it
+        if spec.parent_root is not None:
+            parent_root = spec.parent_root
+        else:
+            temp_state = state.process_slots(spec.slot)
+            parent_root = hash_tree_root(temp_state.latest_block_header)
+
+        # Use provided body or create empty one
+        if spec.body is not None:
+            body = spec.body
+        else:
+            body = BlockBody(attestations=Attestations(data=[]))
+
+        # Use provided state_root or compute it via dry-run
+        if spec.state_root is not None:
+            state_root = spec.state_root
+        else:
+            # Need to dry-run to compute state_root
+            temp_state = state.process_slots(spec.slot)
+            temp_block = Block(
+                slot=spec.slot,
+                proposer_index=proposer_index,
+                parent_root=parent_root,
+                state_root=Bytes32.zero(),
+                body=body,
+            )
+            post_state = temp_state.process_block(temp_block)
+            state_root = hash_tree_root(post_state)
+
+        # Create final block with all fields
+        return Block(
+            slot=spec.slot,
+            proposer_index=proposer_index,
+            parent_root=parent_root,
+            state_root=state_root,
+            body=body,
+        )

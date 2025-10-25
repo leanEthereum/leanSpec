@@ -177,17 +177,16 @@ def test_withdrawal_amount_above_uint64_max():
 
 | Task                                          | Command                            |
 |-----------------------------------------------|------------------------------------|
-| Install and sync project and dev dependencies | `uv sync`                          |
-| Run tests                                     | `uv run pytest`                    |
+| Install and sync project and dev dependencies | `uv sync --all-packages`           |
+| Run tests                                     | `uv run pytest ...`                |
 | Format code                                   | `uv run ruff format src tests`     |
 | Lint code                                     | `uv run ruff check src tests`      |
 | Fix lint errors                               | `uv run ruff check --fix src tests` |
 | Type check                                    | `uv run mypy src tests`            |
 | Build docs                                    | `uv run mkdocs build`              |
 | Serve docs                                    | `uv run mkdocs serve`              |
-| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`            |
 | Run everything (checks + tests + docs)        | `uvx tox`                          |
-| Run specific tox environment                  | `uvx tox -e lint`                  |
+| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`            |
 
 
 ## Contributing

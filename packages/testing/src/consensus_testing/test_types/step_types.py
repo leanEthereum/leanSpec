@@ -4,9 +4,10 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
 
-from lean_spec.subspecs.containers.block import SignedBlock
-from lean_spec.subspecs.containers.vote import SignedVote
+from lean_spec.subspecs.containers import SignedAttestation
+from lean_spec.subspecs.containers.block.block import Block
 
+from ..block_spec import BlockSpec
 from .store_checks import StoreChecks
 
 
@@ -51,15 +52,24 @@ class BlockStep(BaseForkChoiceStep):
     """
     Block processing step.
 
-    Processes a signed block through the fork choice store.
+    Processes a block through the fork choice store.
     This updates the store's block tree and may trigger head updates.
+
+    Input: BlockSpec (can be partial or fully specified).
+    Output: Block object built and processed through the spec.
     """
 
     step_type: Literal["block"] = "block"
     """Discriminator field for serialization."""
 
-    block: SignedBlock
-    """Signed block to process."""
+    block: BlockSpec | Block
+    """
+    Block specification or built block.
+
+    Input: Tests provide BlockSpec with optional field overrides.
+    Output: Framework builds Block and replaces during make_fixture().
+    Serialization: Only Block objects are serialized.
+    """
 
 
 class AttestationStep(BaseForkChoiceStep):
@@ -76,8 +86,8 @@ class AttestationStep(BaseForkChoiceStep):
     step_type: Literal["attestation"] = "attestation"
     """Discriminator field for serialization."""
 
-    attestation: SignedVote
-    """Attestation (SignedVote) to process from gossip."""
+    attestation: SignedAttestation
+    """Attestation (SignedAttestation) to process from gossip."""
 
 
 # Discriminated union type for all fork choice steps

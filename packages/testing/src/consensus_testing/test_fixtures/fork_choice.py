@@ -4,15 +4,22 @@ from typing import ClassVar, List
 
 from pydantic import model_validator
 
-from lean_spec.subspecs.chain.config import SECONDS_PER_INTERVAL, SECONDS_PER_SLOT
-from lean_spec.subspecs.containers.block.block import Block, BlockBody
-from lean_spec.subspecs.containers.block.types import Attestations
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
+from lean_spec.subspecs.containers.attestation import Attestation, AttestationData
+from lean_spec.subspecs.containers.block.block import (
+    Block,
+    BlockBody,
+    BlockWithAttestation,
+    SignedBlockWithAttestation,
+)
+from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
+from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.types import Uint64
+from lean_spec.types import Bytes32, Bytes4000, Uint64, ValidatorIndex
 
+from ..block_spec import BlockSpec
 from ..test_types import AttestationStep, BlockStep, ForkChoiceStep, TickStep
 from .base import BaseConsensusFixture
 
@@ -39,8 +46,14 @@ class ForkChoiceTest(BaseConsensusFixture):
     format_name: ClassVar[str] = "fork_choice_test"
     description: ClassVar[str] = "Tests event-driven fork choice through Store operations"
 
-    anchor_state: State
-    """The initial trusted consensus state."""
+    anchor_state: State | None = None
+    """
+    The initial trusted consensus state.
+
+    If not provided, the framework will use the genesis fixture from pytest.
+    This allows tests to omit genesis for simpler test code while still
+    allowing customization when needed.
+    """
 
     anchor_block: Block | None = None
     """
@@ -65,8 +78,11 @@ class ForkChoiceTest(BaseConsensusFixture):
         This creates a block from the state's latest_block_header, which is
         typically the genesis block. The state_root is set to the hash of the
         anchor_state itself.
+
+        Note: anchor_state can be None at this point - it will be injected
+        by the pytest plugin before make_fixture() is called.
         """
-        if self.anchor_block is None:
+        if self.anchor_block is None and self.anchor_state is not None:
             self.anchor_block = Block(
                 slot=self.anchor_state.latest_block_header.slot,
                 proposer_index=self.anchor_state.latest_block_header.proposer_index,
@@ -82,7 +98,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         This validates the test by:
         1. Initializing Store from anchor_state and anchor_block
-        2. Processing each step through Store methods
+        2. Processing each step through Store methods (building blocks from specs as needed)
         3. Validating check assertions against Store state
 
         Returns:
@@ -95,9 +111,11 @@ class ForkChoiceTest(BaseConsensusFixture):
         AssertionError
             If any step fails unexpectedly or checks don't match Store state.
         """
+        # Ensure anchor_state and anchor_block are set
+        assert self.anchor_state is not None, "anchor_state must be set before make_fixture"
+        assert self.anchor_block is not None, "anchor_block must be set before make_fixture"
+
         # Initialize Store from anchor
-        # anchor_block is guaranteed to be set by the validator
-        assert self.anchor_block is not None, "anchor_block must be set"
         store = Store.get_forkchoice_store(
             state=self.anchor_state,
             anchor_block=self.anchor_block,
@@ -111,21 +129,30 @@ class ForkChoiceTest(BaseConsensusFixture):
                     store.advance_time(Uint64(step.time), has_proposal=False)
 
                 elif isinstance(step, BlockStep):
+                    # Build SignedBlockWithAttestation from BlockSpec if needed
+                    if isinstance(step.block, BlockSpec):
+                        signed_block = self._build_block_from_spec(step.block, store)
+                        # Store the actual Block object for serialization
+                        block = signed_block.message.block
+                        step.block = block
+                    else:
+                        # Already a Block object - this shouldn't happen in normal usage
+                        # but we handle it for completeness
+                        block = step.block
+                        # Would need to build SignedBlockWithAttestation wrapper
+                        raise NotImplementedError(
+                            "BlockStep with pre-built Block not yet supported"
+                        )
+
                     # Automatically advance time to block's slot before processing
-                    block = step.block.message
+                    # Compute the time corresponding to the block's slot
                     block_time = store.config.genesis_time + block.slot * Uint64(SECONDS_PER_SLOT)
 
-                    # Advance time slot by slot until we reach block time
-                    while store.time < block_time:
-                        # Compute current slot from store time
-                        current_slot = Slot(store.time // SECONDS_PER_INTERVAL)
-                        next_slot = current_slot + Slot(1)
-                        next_time = store.config.genesis_time + next_slot * Uint64(SECONDS_PER_SLOT)
-                        store.advance_time(next_time, has_proposal=False)
+                    # Use spec's advance_time method to handle time progression
+                    store.advance_time(block_time, has_proposal=True)
 
                     # Process the block (which calls state_transition internally)
-                    # state_transition will process slots, so the state will be advanced
-                    store.process_block(step.block)
+                    store.process_block(signed_block)
 
                 elif isinstance(step, AttestationStep):
                     # Process attestation from gossip (not from block)
@@ -155,3 +182,91 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         # Return self (fixture is already complete)
         return self
+
+    def _build_block_from_spec(self, spec: BlockSpec, store: Store) -> SignedBlockWithAttestation:
+        """
+        Build a full SignedBlockWithAttestation from a lightweight BlockSpec.
+
+        Builds blocks via state transition dry-run, similar to state transition tests,
+        but also creates a proper proposer attestation for fork choice.
+        This mimics what a local block builder would do.
+
+        TODO: We cannot use Store.produce_block_with_signatures() because it has
+        side effects (adds block to store at lines 556-559 of store.py). If the spec
+        is refactored to separate block production from store updates, we should use
+        that method instead. Until then, this manual approach is necessary.
+
+        Parameters
+        ----------
+        spec : BlockSpec
+            The lightweight block specification.
+        store : Store
+            The fork choice store (used to get head state and latest justified).
+
+        Returns:
+        -------
+        SignedBlockWithAttestation
+            A complete signed block ready for processing.
+        """
+        # Determine proposer
+        if spec.proposer_index is None:
+            validator_count = store.states[store.head].validators.count
+            proposer_index = ValidatorIndex(int(spec.slot) % int(validator_count))
+        else:
+            proposer_index = spec.proposer_index
+
+        # Get the current head state from the store
+        head_state = store.states[store.head]
+
+        # Dry-run to build block with correct state root
+        temp_state = head_state.process_slots(spec.slot)
+        parent_root = hash_tree_root(temp_state.latest_block_header)
+
+        # Build body (empty for now, attestations can be added later if needed)
+        body = BlockBody(attestations=Attestations(data=[]))
+
+        # Create temporary block for dry-run
+        temp_block = Block(
+            slot=spec.slot,
+            proposer_index=proposer_index,
+            parent_root=parent_root,
+            state_root=Bytes32.zero(),
+            body=body,
+        )
+
+        # Process to get correct state root
+        post_state = temp_state.process_block(temp_block)
+        correct_state_root = hash_tree_root(post_state)
+
+        # Create final block
+        final_block = Block(
+            slot=spec.slot,
+            proposer_index=proposer_index,
+            parent_root=parent_root,
+            state_root=correct_state_root,
+            body=body,
+        )
+
+        # Create proposer attestation for this block
+        block_root = hash_tree_root(final_block)
+        proposer_attestation = Attestation(
+            validator_id=proposer_index,
+            data=AttestationData(
+                slot=spec.slot,
+                head=Checkpoint(root=block_root, slot=spec.slot),
+                target=Checkpoint(root=block_root, slot=spec.slot),
+                # Use the anchor block as source for genesis case
+                source=Checkpoint(root=parent_root, slot=temp_state.latest_block_header.slot),
+            ),
+        )
+
+        # Create signed structure with placeholder signatures
+        # One signature for proposer attestation + one for the block
+        signature_list = [Bytes4000.zero(), Bytes4000.zero()]
+        return SignedBlockWithAttestation(
+            message=BlockWithAttestation(
+                block=final_block,
+                proposer_attestation=proposer_attestation,
+            ),
+            signature=BlockSignatures(data=signature_list),
+        )

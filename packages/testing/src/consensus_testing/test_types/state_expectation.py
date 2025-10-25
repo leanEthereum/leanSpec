@@ -110,7 +110,7 @@ class StateExpectation(BaseModel):
                     )
 
             elif field_name == "validator_count":
-                actual_count = int(state.config.num_validators)
+                actual_count = state.validators.count
                 if actual_count != expected_value:
                     raise AssertionError(
                         f"State validation failed: validator_count = {actual_count}, "

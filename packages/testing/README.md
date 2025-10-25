@@ -9,11 +9,12 @@ This package provides tools for generating consensus test fixtures, including:
 
 ## Installation
 
-This package is part of the lean-spec workspace and is automatically installed when you sync the parent project:
+This package is part of the lean-spec workspace and is automatically installed when you 
+sync the parent project with `--all-packages`.
 
 ```bash
-cd ../..
-uv sync --all-extras
+# from `leanSpec/` (root of workspace)
+uv sync --all-packages
 ```
 
 ## Usage
@@ -21,6 +22,7 @@ uv sync --all-extras
 Generate test fixtures using the `fill` command:
 
 ```bash
+# from `leanSpec/` (root of workspace)
 uv run fill --clean --fork=devnet
 ```
 

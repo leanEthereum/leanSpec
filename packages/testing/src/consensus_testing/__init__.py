@@ -4,7 +4,9 @@ from typing import Type
 
 from framework.base_types import CamelModel
 
-from .builders import BlockBuilder
+from . import forks
+from .block_spec import BlockSpec
+from .genesis import generate_pre_state
 from .test_fixtures import (
     BaseConsensusFixture,
     ForkChoiceTest,
@@ -25,7 +27,9 @@ ForkChoiceTestFiller = Type[ForkChoiceTest]
 
 __all__ = [
     # Public API
-    "BlockBuilder",
+    "BlockSpec",
+    "forks",
+    "generate_pre_state",
     # Base types
     "CamelModel",
     # Fixture classes

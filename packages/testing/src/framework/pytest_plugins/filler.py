@@ -10,21 +10,6 @@ from typing import Any, List
 
 import pytest
 
-# Layer configuration mapping
-LAYER_MODULES = {
-    "consensus": {
-        "forks": "consensus_testing.forks",
-        "fixtures": "consensus_testing.test_fixtures",
-        "genesis_builder": "lean_spec.subspecs.containers.State",
-    },
-    "execution": {
-        # Future execution layer modules
-        "forks": "execution_testing.forks",
-        "fixtures": "execution_testing.test_fixtures",
-        "genesis_builder": None,  # TBD
-    },
-}
-
 
 class FixtureCollector:
     """Collects generated fixtures and writes them to disk."""
@@ -189,12 +174,13 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
 
     # Check if it's a different layer directory or unit tests
     parts = relative_path.parts
-    if parts and parts[0] in LAYER_MODULES:
-        # It's a different layer, ignore it
-        return True
-
-    # It's probably unit tests (tests/lean_spec), ignore during fill
-    if parts and parts[0] not in LAYER_MODULES:
+    if parts:
+        # Known layer directories
+        known_layers = {"consensus", "execution"}
+        if parts[0] in known_layers:
+            # It's a different layer, ignore it
+            return True
+        # It's probably unit tests (tests/lean_spec), ignore during fill
         return True
 
     return None
@@ -204,24 +190,23 @@ def pytest_configure(config: pytest.Config) -> None:
     """Setup fixture generation session with layer-specific modules."""
     # Get layer and validate
     layer = config.getoption("--layer", default="consensus").lower()
-    if layer not in LAYER_MODULES:
+    known_layers = {"consensus", "execution"}
+    if layer not in known_layers:
         pytest.exit(
-            f"Invalid layer: {layer}. Must be one of: {', '.join(LAYER_MODULES.keys())}",
+            f"Invalid layer: {layer}. Must be one of: {', '.join(known_layers)}",
             returncode=pytest.ExitCode.USAGE_ERROR,
         )
 
     # Store layer for later use (needed by pytest_ignore_collect hook)
     config.test_layer = layer  # type: ignore[attr-defined]
 
-    # Dynamically import layer-specific modules
-    layer_config = LAYER_MODULES[layer]
-
+    # Dynamically import layer-specific package
     try:
-        forks_module = importlib.import_module(layer_config["forks"])  # type: ignore[index]
-        config.forks_module = forks_module  # type: ignore[attr-defined]
+        layer_module = importlib.import_module(f"{layer}_testing")
+        config.layer_module = layer_module  # type: ignore[attr-defined]
     except ImportError as e:
         pytest.exit(
-            f"Failed to import {layer} layer forks module: {e}",
+            f"Failed to import {layer}_testing module: {e}",
             returncode=pytest.ExitCode.USAGE_ERROR,
         )
 
@@ -248,8 +233,8 @@ def pytest_configure(config: pytest.Config) -> None:
     clean = config.getoption("--clean")
 
     # Get available forks from layer-specific module
-    get_forks = forks_module.get_forks
-    get_fork_by_name = forks_module.get_fork_by_name
+    get_forks = layer_module.forks.get_forks
+    get_fork_by_name = layer_module.forks.get_fork_by_name
 
     available_forks = get_forks()
     available_fork_names = sorted(fork.name() for fork in available_forks)
@@ -303,8 +288,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item
         return
 
     fork_class = config.test_fork_class
-    forks_module = config.forks_module  # type: ignore[attr-defined]
-    get_fork_by_name = forks_module.get_fork_by_name
+    layer_module = config.layer_module  # type: ignore[attr-defined]
+    get_fork_by_name = layer_module.forks.get_fork_by_name
     verbose = config.getoption("verbose")
     deselected = []
     selected = []
@@ -426,32 +411,27 @@ def test_case_description(request: pytest.FixtureRequest) -> str:
 
 
 @pytest.fixture(scope="function")
-def genesis(request: pytest.FixtureRequest) -> Any:
+def pre(request: pytest.FixtureRequest) -> Any:
     """
-    Default genesis state (layer-specific).
+    Default pre-state (layer-specific).
 
-    For consensus layer, returns a State.
-    For execution layer, returns appropriate genesis config.
+    Tests can request this fixture to customize the initial state,
+    or omit it to use the default (auto-injected by framework).
     """
     layer = request.config.test_layer  # type: ignore[attr-defined]
 
-    if layer == "consensus":
-        # Import consensus-specific genesis
-        from lean_spec.subspecs.containers import State
-        from lean_spec.types import Uint64
-
-        if hasattr(request, "param"):
-            return State.generate_genesis(**request.param)
-
-        return State.generate_genesis(
-            genesis_time=Uint64(0),
-            num_validators=Uint64(4),
+    if layer == "execution":
+        pytest.exit(
+            "Execution layer testing is not yet implemented. Use --layer=consensus (default).",
+            returncode=pytest.ExitCode.USAGE_ERROR,
         )
-    elif layer == "execution":
-        # Future: execution layer genesis
-        raise NotImplementedError("Execution layer genesis not yet implemented")
-    else:
-        raise ValueError(f"Unknown layer: {layer}")
+
+    layer_module = request.config.layer_module  # type: ignore[attr-defined]
+
+    if hasattr(request, "param"):
+        return layer_module.generate_pre_state(**request.param)
+
+    return layer_module.generate_pre_state()
 
 
 def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
@@ -473,6 +453,7 @@ def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
         request: pytest.FixtureRequest,
         fork: Any,
         test_case_description: str,
+        pre: Any,  # Auto-inject pre fixture
     ) -> Any:
         """Fixture used to instantiate an auto-fillable fixture object."""
 
@@ -480,6 +461,15 @@ def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
             """Wrapper class that auto-fills and collects fixtures on instantiation."""
 
             def __init__(self, **kwargs: Any) -> None:
+                # Auto-inject pre-state if not provided by test
+                if "pre" not in kwargs and "anchor_state" not in kwargs:
+                    # Determine which field to inject based on fixture type
+                    if hasattr(fixture_class, "__annotations__"):
+                        if "pre" in fixture_class.__annotations__:
+                            kwargs["pre"] = pre
+                        elif "anchor_state" in fixture_class.__annotations__:
+                            kwargs["anchor_state"] = pre
+
                 super().__init__(**kwargs)
 
                 filled_fixture = self.make_fixture()
@@ -509,8 +499,8 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         return
 
     fork_class = metafunc.config.test_fork_class  # type: ignore[attr-defined]
-    forks_module = metafunc.config.forks_module  # type: ignore[attr-defined]
-    get_fork_by_name = forks_module.get_fork_by_name
+    layer_module = metafunc.config.layer_module  # type: ignore[attr-defined]
+    get_fork_by_name = layer_module.forks.get_fork_by_name
 
     if not _is_test_valid_for_fork(metafunc, fork_class, get_fork_by_name):
         verbose = metafunc.config.getoption("verbose")
@@ -589,17 +579,11 @@ def _is_test_valid_for_fork(
 
 def _register_layer_fixtures(config: pytest.Config, layer: str) -> None:
     """Register layer-specific test fixture formats during configuration."""
-    layer_config = LAYER_MODULES.get(layer, {})
-    fixtures_module_name = layer_config.get("fixtures")  # type: ignore[attr-defined]
-
-    if not fixtures_module_name:
-        return
-
     try:
-        # Import the fixtures module to trigger registration
-        fixtures_module = importlib.import_module(fixtures_module_name)
+        # Import the test_fixtures module
+        fixtures_module = importlib.import_module(f"{layer}_testing.test_fixtures")
 
-        # Get the base fixture class
+        # Get the base fixture class based on layer
         if layer == "consensus":
             base_fixture_class = fixtures_module.BaseConsensusFixture
         elif layer == "execution":
