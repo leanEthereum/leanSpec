@@ -503,9 +503,6 @@ def test_generate_genesis(sample_config: Config) -> None:
     assert state.slot == Slot(0)
     # Body root must commit to an empty body at genesis.
     expected_body = BlockBody(attestations=Attestations(data=[]))
-
-    print(f"body_root hex: {state.latest_block_header.body_root.hex()}")
-
     assert state.latest_block_header.body_root == hash_tree_root(expected_body)
     # History and justifications must be empty initially.
     assert not state.historical_block_hashes
