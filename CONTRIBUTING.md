@@ -3,9 +3,9 @@
 ## Quick Start
 
 1. Fork and clone the repository
-2. Install dependencies: `uv sync --all-extras`
+2. Install dependencies: `uv sync`
 3. Make your changes
-4. Run checks: `uv run tox -e all-checks`
+4. Run checks: `uvx tox -e all-checks`
 5. Run tests: `uv run pytest`
 6. Submit a pull request
 
@@ -22,7 +22,7 @@
 - **Type hints**: Required for all functions and methods
 - **Docstrings**: Use Google style for public APIs
 - **Line length**: 79 characters (enforced by ruff)
-- **Formatting**: Run `uv run tox -e fix` to auto-format
+- **Formatting**: Run `uvx tox -e fix` to auto-format
 
 ## Adding New Subspecifications
 

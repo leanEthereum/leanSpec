@@ -17,8 +17,8 @@ subspecifications that the Lean Ethereum protocol relies on.
 
 ### Running Tests
 ```bash
-# Sync all dependencies and install packages
-uv sync --all-extras
+# Install and sync project and dev dependencies
+uv sync
 
 # Run all tests
 uv run pytest
@@ -42,10 +42,10 @@ uv run ruff check --fix src tests
 uv run mypy src tests
 
 # Run all quality checks (lint, typecheck, spellcheck)
-uv run tox -e all-checks
+uvx tox -e all-checks
 
 # Run everything (all checks + tests + docs)
-uv run tox
+uvx tox
 ```
 
 ### Common Tasks
@@ -81,18 +81,18 @@ uv run tox
 
 ## Common Commands Reference
 
-| Task                                   | Command                             |
-|----------------------------------------|-------------------------------------|
-| Install dependencies                   | `uv sync --all-extras`              |
-| Run tests                              | `uv run pytest`                     |
-| Format code                            | `uv run ruff format src tests`      |
-| Lint code                              | `uv run ruff check src tests`       |
-| Fix lint errors                        | `uv run ruff check --fix src tests` |
-| Type check                             | `uv run mypy src tests`             |
-| Build docs                             | `uv run mkdocs build`               |
-| Serve docs                             | `uv run mkdocs serve`               |
-| Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |
-| Run everything (checks + tests + docs) | `uv run tox`                        |
+| Task                                          | Command                          |
+|-----------------------------------------------|----------------------------------|
+| Install and sync project and dev dependencies | `uv sync`                        |
+| Run tests                                     | `uv run pytest`                  |
+| Format code                                   | `uv run ruff format src tests`   |
+| Lint code                                     | `uv run ruff check src tests`    |
+| Fix lint errors                               | `uv run ruff check --fix src tests` |
+| Type check                                    | `uv run mypy src tests`          |
+| Build docs                                    | `uv run mkdocs build`            |
+| Serve docs                                    | `uv run mkdocs serve`            |
+| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`          |
+| Run everything (checks + tests + docs)        | `uvx tox`                        |
 
 ## Important Notes
 

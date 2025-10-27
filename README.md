@@ -30,8 +30,8 @@ uv python install 3.12
 git clone https://github.com/leanEthereum/leanSpec leanSpec
 cd leanSpec
 
-# Install dependencies
-uv sync --all-extras
+# Install and sync project and dev dependencies, using `uv.lock` versions
+uv sync
 
 # Run tests to verify setup
 uv run pytest
@@ -61,11 +61,8 @@ uv run pytest
 ### Workspace Commands
 
 ```bash
-# Install package and required dependencies or re-sync workspace
+# Install package and dev dependencies or re-sync workspace
 uv sync
-
-# Install package along with all dependencies, including optional / extras
-uv sync --all-extras
 ```
 
 ## Development Workflow
@@ -104,30 +101,17 @@ uv run mypy src tests
 
 ### Using Tox for Comprehensive Checks
 
-After running `uv sync --all-extras`, you can use tox with `uv run`:
+You can use `tox` with `uvx`, which:
+* Creates a temporary environment just for `tox`
+* Doesn't require `uv sync` first
+* Uses `tox-uv` for faster dependency installation
 
 ```bash
-# Run all quality checks (lint, typecheck, spellcheck)
-uv run tox -e all-checks
+# Run specific environment, like "all quality checks" (lint, typecheck, spellcheck)
+uvx tox -e all-checks
 
 # Run all tox environments (all checks + tests + docs)
-uv run tox
-
-# Run specific environment
-uv run tox -e lint
-```
-
-**Alternative: Using uvx (no setup required)**
-
-If you haven't run `uv sync --all-extras` or want to use tox in isolation, 
-you can use `uvx`, which: 
-
-* Creates a temporary environment just for tox
-* Doesn't require `uv sync` first
-* Uses tox-uv for faster dependency installation
-
-```bash
-uvx tox -e all-checks
+uvx tox
 ```
 
 ### Documentation
@@ -186,33 +170,24 @@ def test_withdrawal_amount_above_uint64_max():
 - **uv**: Fast Python package manager - like npm/yarn but for Python
 - **ruff**: Linter and formatter
 - **mypy**: Type checker that works with Pydantic models
-- **tox**: Automation tool for running tests across multiple environments
+- **tox**: Automation tool for running tests across multiple environments (used via `uvx`)
 - **mkdocs**: Documentation generator - write docs in Markdown, serve them locally
 
 ## Common Commands Reference
 
-| Task                                   | Command                             |
-|----------------------------------------|-------------------------------------|
-| Install dependencies                   | `uv sync --all-extras`              |
-| Run tests                              | `uv run pytest`                     |
-| Format code                            | `uv run ruff format src tests`      |
-| Lint code                              | `uv run ruff check src tests`       |
-| Fix lint errors                        | `uv run ruff check --fix src tests` |
-| Type check                             | `uv run mypy src tests`             |
-| Build docs                             | `uv run mkdocs build`               |
-| Serve docs                             | `uv run mkdocs serve`               |
-| Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |
-| Run everything (checks + tests + docs) | `uv run tox`                        |
-| Run specific tox environment           | `uv run tox -e lint`                |
-
-If you have not run `uv sync --all-extras` or want to use `tox` in isolation, 
-you can use `uvx`:
-
-| Task                                    | Command                               |
-|-----------------------------------------|---------------------------------------|
-| Run all quality checks (no tests/docs)  | `uvx tox -e all-checks`               |
-| Run everything (checks + tests + docs)  | `uvx tox`               |
-| Run specific tox environment            | `uvx tox -e lint`       |
+| Task                                          | Command                            |
+|-----------------------------------------------|------------------------------------|
+| Install and sync project and dev dependencies | `uv sync`                          |
+| Run tests                                     | `uv run pytest`                    |
+| Format code                                   | `uv run ruff format src tests`     |
+| Lint code                                     | `uv run ruff check src tests`      |
+| Fix lint errors                               | `uv run ruff check --fix src tests` |
+| Type check                                    | `uv run mypy src tests`            |
+| Build docs                                    | `uv run mkdocs build`              |
+| Serve docs                                    | `uv run mkdocs serve`              |
+| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`            |
+| Run everything (checks + tests + docs)        | `uvx tox`                          |
+| Run specific tox environment                  | `uvx tox -e lint`                  |
 
 
 ## Contributing
