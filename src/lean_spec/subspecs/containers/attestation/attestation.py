@@ -13,9 +13,10 @@ doesn't do this yet.
 """
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes4000, Container, Uint64
+from lean_spec.types import Container, Uint64
 
 from ..checkpoint import Checkpoint
+from ..signature import Signature
 from .types import AggregatedSignatures, AggregationBits
 
 
@@ -51,7 +52,7 @@ class SignedAttestation(Container):
     message: Attestation
     """The attestation message signed by the validator."""
 
-    signature: Bytes4000
+    signature: Signature
     """Signature aggregation produced by the leanVM (SNARKs in the future)."""
 
 

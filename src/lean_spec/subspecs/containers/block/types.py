@@ -1,9 +1,10 @@
 """Block-specific SSZ types for the Lean Ethereum consensus specification."""
 
-from lean_spec.types import Bytes4000, SSZList
+from lean_spec.types import SSZList
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
 from ..attestation import Attestation
+from ..signature import Signature
 
 
 class Attestations(SSZList):
@@ -16,5 +17,5 @@ class Attestations(SSZList):
 class BlockSignatures(SSZList):
     """Aggregated signature list included alongside the block."""
 
-    ELEMENT_TYPE = Bytes4000
+    ELEMENT_TYPE = Signature
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

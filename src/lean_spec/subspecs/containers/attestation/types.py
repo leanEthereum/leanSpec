@@ -1,9 +1,10 @@
 """Attestation-related SSZ types for the Lean consensus specification."""
 
-from lean_spec.types import Bytes4000, SSZList
+from lean_spec.types import SSZList
 from lean_spec.types.bitfields import BaseBitlist
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
+from ..signature import Signature
 
 
 class AggregationBits(BaseBitlist):
@@ -15,5 +16,5 @@ class AggregationBits(BaseBitlist):
 class AggregatedSignatures(SSZList):
     """Naive list of validator signatures used for aggregation placeholders."""
 
-    ELEMENT_TYPE = Bytes4000
+    ELEMENT_TYPE = Signature
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

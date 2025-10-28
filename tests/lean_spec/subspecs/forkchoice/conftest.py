@@ -9,6 +9,7 @@ from lean_spec.subspecs.containers import (
     AttestationData,
     BlockBody,
     Checkpoint,
+    Signature,
     SignedAttestation,
     State,
 )
@@ -78,7 +79,7 @@ def build_signed_attestation(
     )
     return SignedAttestation(
         message=message,
-        signature=Bytes4000.zero(),
+        signature=Signature.zero(),
     )
 
 

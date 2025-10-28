@@ -26,6 +26,7 @@ from lean_spec.subspecs.containers import (
     BlockBody,
     Checkpoint,
     Config,
+    Signature,
     SignedAttestation,
     SignedBlockWithAttestation,
     State,
@@ -35,7 +36,6 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
     Bytes32,
-    Bytes4000,
     Uint64,
     ValidatorIndex,
     is_proposer,
@@ -204,14 +204,7 @@ class Store(Container):
             # Update new attestations if this is latest from validator
             latest_new = self.latest_new_attestations.get(validator_id)
             if latest_new is None or latest_new.message.data.slot < attestation_slot:
-                self.latest_new_attestations[validator_id] = signed_attestation
-
-    @staticmethod
-    def _is_valid_signature(signature: Bytes4000) -> bool:
-        """Return True when the placeholder signature is the zero value."""
-        # TODO: Replace placeholder check once aggregated signatures are
-        # wired in as part of the multi-proof integration work.
-        return signature == Bytes4000.zero()
+                self.latest_new_votes[validator_id] = signed_attestation
 
     def _validate_block_signatures(
         self,
@@ -220,7 +213,7 @@ class Store(Container):
     ) -> bool:
         """Temporary stub for aggregated signature validation."""
         # TODO: Integrate actual aggregated signature verification.
-        return all(self._is_valid_signature(signature) for signature in signatures)
+        return all(signature._is_valid_signature() for signature in signatures)
 
     def process_block(self, signed_block_with_attestation: SignedBlockWithAttestation) -> None:
         """
@@ -445,7 +438,7 @@ class Store(Container):
         self,
         slot: Slot,
         validator_index: ValidatorIndex,
-    ) -> tuple[Block, list[Bytes4000]]:
+    ) -> tuple[Block, list[Signature]]:
         """
         Produce a block and attestation signatures for the target slot.
 
@@ -484,7 +477,7 @@ class Store(Container):
 
         # Initialize empty attestation set for iterative collection
         attestations: list[Attestation] = []
-        signatures: list[Bytes4000] = []
+        signatures: list[Signature] = []
 
         # Iteratively collect valid attestations using fixed-point algorithm
         #
@@ -506,7 +499,7 @@ class Store(Container):
 
             # Find new valid attestations matching post-state justification
             new_attestations: list[Attestation] = []
-            new_signatures: list[Bytes4000] = []
+            new_signatures: list[Signature] = []
             for signed_attestation in self.latest_known_attestations.values():
                 # Skip if target block is unknown in our store
                 data = signed_attestation.message.data
