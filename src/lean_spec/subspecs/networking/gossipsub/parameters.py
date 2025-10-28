@@ -1,3 +1,5 @@
+"""Gossipsub parameters for the Lean Ethereum consensus specification."""
+
 from lean_spec.subspecs.chain.config import DEVNET_CONFIG
 from lean_spec.types import StrictBaseModel
 
