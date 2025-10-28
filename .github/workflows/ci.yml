@@ -57,3 +57,23 @@ jobs:
       
       - name: Run tests via tox
         run: uvx tox -e pytest
+
+  fill-tests:
+    name: Fill test fixtures - Python 3.14
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout leanSpec
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python 3.14
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+          python-version: "3.14"
+
+      - name: Sync dependencies
+        run: uv sync --all-packages --no-progress
+
+      - name: Fill test fixtures
+        run: uv run fill --fork=Devnet --clean
