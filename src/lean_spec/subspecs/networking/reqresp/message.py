@@ -11,8 +11,8 @@ from typing_extensions import Annotated
 from lean_spec.subspecs.containers import Checkpoint, SignedBlockWithAttestation
 from lean_spec.types import Bytes32, StrictBaseModel
 
-from .config import MAX_REQUEST_BLOCKS
-from .types import ProtocolId
+from ..config import MAX_REQUEST_BLOCKS
+from ..types import ProtocolId
 
 # --- Status v1 ---
 

@@ -7,7 +7,7 @@ from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block.block import SignedBlockWithAttestation
 
 
-class GossipTopic(Enum):
+class GossipsubTopic(Enum):
     """
     Enumerates gossip topics, bundling a topic's name with its payload type.
 
