@@ -1,4 +1,10 @@
-"""State Container for the Lean Ethereum consensus specification."""
+"""
+State Container for the Lean Ethereum consensus specification.
+
+The state contains everything needed for consensus. It tracks the current slot,
+recent blocks, and validator votes. State also records which blocks are
+justified and finalized.
+"""
 
 from typing import Any, Dict, List
 

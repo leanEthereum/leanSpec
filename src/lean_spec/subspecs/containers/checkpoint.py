@@ -1,4 +1,10 @@
-"""Checkpoint Container."""
+"""
+Checkpoint Container.
+
+A checkpoint marks a specific moment in the chain. It combines a block
+identifier with a slot number. Checkpoints are used for justification and
+finalization.
+"""
 
 from typing import Self
 

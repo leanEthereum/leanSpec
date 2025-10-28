@@ -1,4 +1,16 @@
-"""Attestation-related container definitions."""
+"""
+Attestation-related container definitions.
+
+Attestations are how validators express their view of the chain.
+Each attestation specifies:
+
+- What the validator thinks is the chain head
+- What is already justified (source)
+- What should be justified next (target)
+
+Attestations can be aggregated to save space, but the current specification
+doesn't do this yet.
+"""
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes4000, Container, Uint64

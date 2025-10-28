@@ -1,4 +1,13 @@
-"""Block Containers for the Lean Ethereum consensus specification."""
+"""
+Block Containers for the Lean Ethereum consensus specification.
+
+A block proposes changes to the chain. It references its parent block, creating
+a chain. The block includes a state root that represents the result of
+applying this block.
+
+Each block has a proposer who created it. The slot determines which validator
+can propose.
+"""
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
@@ -9,7 +18,12 @@ from .types import Attestations, BlockSignatures
 
 
 class BlockBody(Container):
-    """The body of a block, containing payload data."""
+    """
+    The body of a block, containing payload data.
+
+    Currently, the main operation is voting. Validators submit votes which are
+    packaged into blocks.
+    """
 
     attestations: Attestations
     """Plain validator attestations carried in the block body.
@@ -20,7 +34,16 @@ class BlockBody(Container):
 
 
 class BlockHeader(Container):
-    """The header of a block, containing metadata."""
+    """
+    The header of a block, containing metadata.
+
+    Block headers summarize blocks without storing full content. The header
+    includes references to the parent and the resulting state. It also contains
+    a hash of the block body.
+
+    Headers are smaller than full blocks. They're useful for tracking the chain
+    without storing everything.
+    """
 
     slot: Slot
     """The slot in which the block was proposed."""
