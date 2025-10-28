@@ -1,8 +1,8 @@
 """Step types for fork choice tests."""
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_serializer
 
 from lean_spec.subspecs.containers import SignedAttestation
 from lean_spec.subspecs.containers.block.block import Block
@@ -59,17 +59,55 @@ class BlockStep(BaseForkChoiceStep):
     Output: Block object built and processed through the spec.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     step_type: Literal["block"] = "block"
     """Discriminator field for serialization."""
 
-    block: BlockSpec | Block
+    block: BlockSpec
     """
-    Block specification or built block.
+    Block specification for this step.
 
-    Input: Tests provide BlockSpec with optional field overrides.
-    Output: Framework builds Block and replaces during make_fixture().
-    Serialization: Only Block objects are serialized.
+    Tests provide a BlockSpec with required slot and optional field overrides.
+    The framework fills a complete Block during make_fixture() and stores it
+    in the private _filled_block attribute for serialization.
     """
+
+    # TODO: We should figure out a configuration to raise if a private attr is
+    #  attempted to be set during model initialization.
+    _filled_block: Block | None = PrivateAttr(default=None)
+    """The filled Block, processed through the spec."""
+
+    @field_serializer("block", when_used="json")
+    def serialize_block(self, value: BlockSpec) -> dict[str, Any]:
+        """
+        Serialize the filled Block instead of the BlockSpec.
+
+        This ensures the fixture output contains the complete Block that was
+        filled from the spec, not the input BlockSpec.
+
+        Parameters:
+        ----------
+        value : BlockSpec
+            The BlockSpec field value (ignored, we use _filled_block instead).
+
+        Returns:
+        -------
+        dict[str, Any]
+            The serialized Block.
+
+        Raises:
+        ------
+        ValueError
+            If _filled_block is None (make_fixture not called yet).
+        """
+        del value
+        if self._filled_block is None:
+            raise ValueError(
+                "Block not filled yet - make_fixture() must be called before serialization. "
+                "This BlockStep should only be serialized after the fixture has been processed."
+            )
+        return self._filled_block.model_dump(mode="json")
 
 
 class AttestationStep(BaseForkChoiceStep):

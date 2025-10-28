@@ -129,20 +129,12 @@ class ForkChoiceTest(BaseConsensusFixture):
                     store.advance_time(Uint64(step.time), has_proposal=False)
 
                 elif isinstance(step, BlockStep):
-                    # Build SignedBlockWithAttestation from BlockSpec if needed
-                    if isinstance(step.block, BlockSpec):
-                        signed_block = self._build_block_from_spec(step.block, store)
-                        # Store the actual Block object for serialization
-                        block = signed_block.message.block
-                        step.block = block
-                    else:
-                        # Already a Block object - this shouldn't happen in normal usage
-                        # but we handle it for completeness
-                        block = step.block
-                        # Would need to build SignedBlockWithAttestation wrapper
-                        raise NotImplementedError(
-                            "BlockStep with pre-built Block not yet supported"
-                        )
+                    # Build SignedBlockWithAttestation from BlockSpec
+                    signed_block = self._build_block_from_spec(step.block, store)
+
+                    # Store the filled Block for serialization
+                    block = signed_block.message.block
+                    step._filled_block = block
 
                     # Automatically advance time to block's slot before processing
                     # Compute the time corresponding to the block's slot

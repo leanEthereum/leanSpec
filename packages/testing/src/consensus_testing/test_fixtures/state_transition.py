@@ -1,8 +1,8 @@
 """State transition test fixture format."""
 
-from typing import ClassVar, List
+from typing import Any, ClassVar, List
 
-from pydantic import field_serializer
+from pydantic import ConfigDict, PrivateAttr, field_serializer
 
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import Attestations
@@ -41,16 +41,28 @@ class StateTransitionTest(BaseConsensusFixture):
         "epochs, and finality"
     )
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     pre: State
     """The initial consensus state before processing."""
 
-    blocks: List[BlockSpec | Block]
+    blocks: List[BlockSpec]
     """
-    The blocks that were processed through the spec.
+    Block specifications to process through the spec.
 
-    Input: Tests provide List[BlockSpec] with optional field overrides.
-    Output: Framework builds Block objects and replaces this list during make_fixture().
-    Serialization: Only Block objects are serialized (validated in make_fixture).
+    Tests provide a list of BlockSpec objects with required slots and optional
+    field overrides. The framework fills complete Block objects during
+    make_fixture() and stores them in the private _filled_blocks attribute.
+    """
+
+    # TODO: We should figure out a configuration to raise if a private attr is
+    #  attempted to be set during model initialization.
+    _filled_blocks: List[Block] = PrivateAttr(default_factory=list)
+    """
+    The filled Blocks, processed through the specs.
+
+    This is a private attribute not part of the model schema. Tests cannot set this.
+    The framework populates it during make_fixture().
     """
 
     post: StateExpectation | None = None
@@ -58,11 +70,32 @@ class StateTransitionTest(BaseConsensusFixture):
     Expected state after processing all blocks.
 
     Only fields explicitly set in the StateExpectation will be validated.
-    If None, no post-state validation is performed (useful for invalid tests).
+    If None, no post-state validation is performed (e.g., for invalid tests).
     """
 
     expect_exception: type[Exception] | None = None
     """Expected exception type for invalid tests."""
+
+    @field_serializer("blocks", when_used="json")
+    def serialize_blocks(self, value: List[BlockSpec]) -> List[dict[str, Any]]:
+        """
+        Serialize the filled `Block`s instead of the `BlockSpec`s.
+
+        This ensures the fixture output contains the complete `Blocks` that were
+        filled from the specs, not the input `BlockSpec`s.
+
+        Parameters:
+        ----------
+        value : List[BlockSpec]
+            The BlockSpec list (ignored, we use _filled_blocks instead).
+
+        Returns:
+        -------
+        List[dict[str, Any]]
+            The serialized Blocks.
+        """
+        del value
+        return [block.model_dump(mode="json") for block in self._filled_blocks]
 
     @field_serializer("expect_exception", when_used="json")
     def serialize_exception(self, value: type[Exception] | None) -> str | None:
@@ -93,20 +126,18 @@ class StateTransitionTest(BaseConsensusFixture):
         actual_post_state: State | None = None
         exception_raised: Exception | None = None
 
+        # Initialize filled_blocks list that will be populated as we process blocks
+        filled_blocks: list[Block] = []
+
         try:
             state = self.pre
-            built_blocks = []
 
-            for item in self.blocks:
-                # Convert BlockSpec to Block if needed
-                if isinstance(item, BlockSpec):
-                    block = self._build_block_from_spec(item, state)
-                else:
-                    # Already a Block object (shouldn't happen in normal usage)
-                    block = item
+            for block_spec in self.blocks:
+                # Fill Block from BlockSpec
+                block = self._build_block_from_spec(block_spec, state)
 
-                # Store the actual Block object from the spec
-                built_blocks.append(block)
+                # Store the filled Block for serialization
+                filled_blocks.append(block)
 
                 # Process block through state transition
                 state = state.state_transition(
@@ -114,8 +145,6 @@ class StateTransitionTest(BaseConsensusFixture):
                     valid_signatures=True,
                 )
 
-            # Replace with actual Block objects for serialization
-            self.blocks = built_blocks  # type: ignore[assignment]
             actual_post_state = state
         except (AssertionError, ValueError) as e:
             exception_raised = e
@@ -123,6 +152,10 @@ class StateTransitionTest(BaseConsensusFixture):
             if self.expect_exception is None:
                 # Unexpected failure
                 raise AssertionError(f"Unexpected error processing blocks: {e}") from e
+        finally:
+            # Always store filled blocks for serialization, even if an exception occurred
+            # This ensures the test fixture includes all blocks that were attempted
+            self._filled_blocks = filled_blocks
 
         # Validate exception expectations
         if self.expect_exception is not None:

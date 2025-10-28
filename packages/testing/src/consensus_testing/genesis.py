@@ -22,6 +22,7 @@ def generate_pre_state(**kwargs: Any) -> State:
     genesis_time = kwargs.get("genesis_time", Uint64(0))
 
     # If validators not provided, create a default set of 4 validators with dummy pubkeys
+    # TODO: Set an appropriate default here for test fixtures
     if "validators" not in kwargs:
         validators = Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(4)])
     else:

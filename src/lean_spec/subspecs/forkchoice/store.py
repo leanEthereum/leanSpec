@@ -227,7 +227,6 @@ class Store(Container):
         Process new block and update forkchoice state.
 
         Adds block to store, processes included attestations, and updates head.
-        This implements the `on_block` function from the fork choice spec.
 
         Args:
             signed_block_with_attestation: Block to process.
