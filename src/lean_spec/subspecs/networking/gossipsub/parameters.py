@@ -55,4 +55,3 @@ class GossipsubParameters(StrictBaseModel):
     that contains these fields is considered invalid. In some libp2p
     implementations, this mode is also known as Anonymous mode.
     """
-
