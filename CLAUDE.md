@@ -26,7 +26,7 @@ uv run fill --fork=devnet --clean # Generate test vectors
 
 ### Code Quality
 ```bash
-uv run ruff format src tests               # Format code
+uv run ruff format src tests packages      # Format code
 uv run ruff check --fix src tests packages # Lint and fix
 uvx tox -e typecheck                       # Type check
 uvx tox -e all-checks                      # All quality checks
