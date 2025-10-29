@@ -231,11 +231,11 @@ class Bytes96(BaseBytes):
     LENGTH = 96
 
 
-class Bytes4000(BaseBytes):
-    """Fixed-size byte array of exactly 4000 bytes."""
+class Bytes3100(BaseBytes):
+    """Fixed-size byte array of exactly 3100 bytes."""
 
     # TODO: this will be removed when real signature type is implemented
-    LENGTH = 4000
+    LENGTH = 3100
 
 
 class BaseByteList(SSZModel):

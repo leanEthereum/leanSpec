@@ -28,7 +28,7 @@ from lean_spec.subspecs.containers.state import (
     Validators,
 )
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.types import Boolean, Bytes32, Bytes52, Bytes4000, Uint64, ValidatorIndex
+from lean_spec.types import Boolean, Bytes32, Bytes52, Bytes3100, Uint64, ValidatorIndex
 
 
 @pytest.fixture

@@ -204,7 +204,7 @@ class Store(Container):
             # Update new attestations if this is latest from validator
             latest_new = self.latest_new_attestations.get(validator_id)
             if latest_new is None or latest_new.message.data.slot < attestation_slot:
-                self.latest_new_votes[validator_id] = signed_attestation
+                self.latest_new_attestations[validator_id] = signed_attestation
 
     def _validate_block_signatures(
         self,
@@ -213,7 +213,7 @@ class Store(Container):
     ) -> bool:
         """Temporary stub for aggregated signature validation."""
         # TODO: Integrate actual aggregated signature verification.
-        return all(signature._is_valid_signature() for signature in signatures)
+        return all(Signature._is_valid_signature(signature) for signature in signatures)
 
     def process_block(self, signed_block_with_attestation: SignedBlockWithAttestation) -> None:
         """
