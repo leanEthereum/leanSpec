@@ -620,8 +620,8 @@ class Var(Container):
 
 
 # Set the ELEMENT_TYPE now that the classes are defined
-FixedVector4.ELEMENT_TYPE = Fixed  # type: ignore[has-type]
-VarVector2.ELEMENT_TYPE = Var  # type: ignore[has-type]
+FixedVector4.ELEMENT_TYPE = Fixed  # type: ignore[assignment]
+VarVector2.ELEMENT_TYPE = Var  # type: ignore[assignment]
 
 
 class Complex(Container):

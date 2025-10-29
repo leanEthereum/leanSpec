@@ -73,7 +73,7 @@ jobs:
           python-version: "3.14"
 
       - name: Sync dependencies
-        run: uv sync --all-packages --no-progress
+        run: uv sync --no-progress
 
       - name: Fill test fixtures
         run: uv run fill --fork=Devnet --clean

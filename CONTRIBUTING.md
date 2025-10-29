@@ -3,7 +3,7 @@
 ## Quick Start
 
 1. Fork and clone the repository
-2. Install dependencies: `uv sync --all-packages`
+2. Install dependencies: `uv sync`
 3. Make your changes
 4. Run checks: `uvx tox -e all-checks`
 5. Run tests: `uvx tox -e pytest`

@@ -28,10 +28,6 @@ dependencies = [
 
 license = {text = "MIT"}
 
-[project.optional-dependencies]
-test = ["pytest-cov>=6.0.0,<7"]
-lint = ["ruff>=0.11.8,<1", "mypy>=1.15.0,<1.16"]
-
 [project.urls]
 Homepage = "https://github.com/leanEthereum/lean-spec"
 Source = "https://github.com/leanEthereum/lean-spec"

@@ -10,11 +10,11 @@ This package provides tools for generating consensus test fixtures, including:
 ## Installation
 
 This package is part of the lean-spec workspace and is automatically installed when you 
-sync the parent project with `--all-packages`.
+sync the parent project.
 
 ```bash
 # from `leanSpec/` (root of workspace)
-uv sync --all-packages
+uv sync
 ```
 
 ## Usage

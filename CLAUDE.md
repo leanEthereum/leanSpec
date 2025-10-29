@@ -17,7 +17,7 @@ subspecifications that the Lean Ethereum protocol relies on.
 
 ### Running Tests
 ```bash
-uv sync --all-packages            # Install dependencies
+uv sync                           # Install dependencies
 uv run pytest                     # Run unit tests
 uv run fill --fork=devnet --clean # Generate test vectors
 # Note: execution layer support is planned for future, infrastructure is ready

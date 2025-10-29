@@ -117,20 +117,19 @@ members = ["packages/*"]
 lean-ethereum-testing = { workspace = true }
 
 [dependency-groups]
-dev = [
-    # debugging / convenience
-    "ipython>=8.31.0,<9",
-    "ipdb>=0.13",
-    "tomli-w>=1.0.0",
-    # packaging
-    "build>=1.2.0,<2",
-    "twine>=5.1.0,<6",
-    # test dependencies
+test = [
     "pytest>=8.3.3,<9",
     "pytest-cov>=6.0.0,<7",
     "pytest-xdist>=3.6.1,<4",
     "hypothesis>=6.138.14",
-    # docs
+    "lean-ethereum-testing",
+]
+lint = [
+    "mypy>=1.17.0,<2",
+    "ruff>=0.13.2,<1",
+    "codespell>=2.4.1,<3",
+]
+docs = [
     "mkdocs>=1.6.1,<2",
     "mkdocs-material>=9.5.45,<10",
     "mkdocstrings[python]>=0.27.0,<1",
@@ -140,8 +139,14 @@ dev = [
     "mdformat-ruff==0.1.3",
     "mdformat-toc==0.3.0",
     "mdformat==0.7.22",
-    # dev
-    "ruff>=0.11.8,<1",
-    "mypy>=1.15.0,<1.16",
-    "codespell>=2.4.1,<3",
+]
+dev = [
+    {include-group = "test"},
+    {include-group = "lint"},
+    {include-group = "docs"},
+    "ipython>=8.31.0,<9",
+    "ipdb>=0.13",
+    "tomli-w>=1.0.0",
+    "build>=1.2.0,<2",
+    "twine>=5.1.0,<6",
 ]

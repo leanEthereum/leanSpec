@@ -62,13 +62,22 @@ def fill(
         # Default layer is consensus
         fill tests/spec_tests/devnet --fork=Devnet --clean -v
     """
-    # Look for pytest-fill.ini in current directory (project root)
-    config_path = Path.cwd() / "pytest-fill.ini"
+    config_path = Path(__file__).parent / "pytest_ini_files" / "pytest-fill.ini"
+    # Find project root by looking for pyproject.toml with [tool.uv.workspace]
+    project_root = Path.cwd()
+    while project_root != project_root.parent:
+        if (project_root / "pyproject.toml").exists():
+            # Check if this is the workspace root
+            pyproject = project_root / "pyproject.toml"
+            if "[tool.uv.workspace]" in pyproject.read_text():
+                break
+        project_root = project_root.parent
 
     # Build pytest arguments
     args = [
         "-c",
         str(config_path),
+        f"--rootdir={project_root}",
         f"--output={output}",
         f"--fork={fork}",
         f"--layer={layer}",

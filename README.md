@@ -175,19 +175,18 @@ def test_withdrawal_amount_above_uint64_max():
 
 ## Common Commands Reference
 
-| Task                                          | Command                                       |
-|-----------------------------------------------|-----------------------------------------------|
-| Install and sync project and dev dependencies | `uv sync --all-packages`                      |
-| Run tests                                     | `uv run pytest ...`                           |
-| Format code                                   | `uv run ruff format src tests packages`       |
-| Lint code                                     | `uv run ruff check src tests packages`        |
-| Fix lint errors                               | `uv run ruff check --fix src tests packages`  |
-| Type check                                    | `uv run mypy src tests packages`              |
-| Build docs                                    | `uv run mkdocs build`                         |
-| Serve docs                                    | `uv run mkdocs serve`                         |
-| Run everything (checks + tests + docs)        | `uvx tox`                                     |
-| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                       |
-
+| Task                                          | Command                                      |
+|-----------------------------------------------|----------------------------------------------|
+| Install and sync project and dev dependencies | `uv sync`                                    |
+| Run tests                                     | `uv run pytest ...`                          |
+| Format code                                   | `uv run ruff format src tests packages`      |
+| Lint code                                     | `uv run ruff check src tests packages`       |
+| Fix lint errors                               | `uv run ruff check --fix src tests packages` |
+| Type check                                    | `uv run mypy src tests packages`             |
+| Build docs                                    | `uv run mkdocs build`                        |
+| Serve docs                                    | `uv run mkdocs serve`                        |
+| Run everything (checks + tests + docs)        | `uvx tox`                                    |
+| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                      |
 
 ## Contributing
 
