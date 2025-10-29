@@ -1,13 +1,11 @@
 """Lightweight block specification for test definitions."""
 
-from pydantic import BaseModel
-
 from lean_spec.subspecs.containers.block import BlockBody
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes32, ValidatorIndex
+from lean_spec.types import Bytes32, CamelModel, ValidatorIndex
 
 
-class BlockSpec(BaseModel):
+class BlockSpec(CamelModel):
     """
     Block specification for test definitions.
 

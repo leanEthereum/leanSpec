@@ -2,16 +2,17 @@
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_serializer
+from pydantic import ConfigDict, Field, PrivateAttr, field_serializer
 
 from lean_spec.subspecs.containers import SignedAttestation
 from lean_spec.subspecs.containers.block.block import Block
+from lean_spec.types import CamelModel
 
-from ..block_spec import BlockSpec
+from .block_spec import BlockSpec
 from .store_checks import StoreChecks
 
 
-class BaseForkChoiceStep(BaseModel):
+class BaseForkChoiceStep(CamelModel):
     """
     Base class for fork choice event steps.
 

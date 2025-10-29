@@ -2,16 +2,14 @@
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
-
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes32
+from lean_spec.types import Bytes32, CamelModel
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.containers.state import State
 
 
-class StateExpectation(BaseModel):
+class StateExpectation(CamelModel):
     """
     Expected State fields after state transition (selective validation).
 

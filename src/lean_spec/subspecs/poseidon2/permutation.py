@@ -8,8 +8,9 @@ Hash Function" (https://eprint.iacr.org/2023/323).
 from itertools import chain
 from typing import List
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
 
+from ...types import StrictBaseModel
 from ..koalabear.field import Fp
 from .constants import (
     ROUND_CONSTANTS_16,
@@ -30,10 +31,8 @@ For KoalaBear, `d=3` is chosen for its low degree.
 """
 
 
-class Poseidon2Params(BaseModel):
+class Poseidon2Params(StrictBaseModel):
     """Parameters for a specific Poseidon2 instance."""
-
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     width: int = Field(gt=0, description="The size of the state (t).")
     rounds_f: int = Field(gt=0, description="Total number of 'full' rounds.")

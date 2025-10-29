@@ -2,17 +2,17 @@
 
 from typing import List
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from lean_spec.types import StrictBaseModel
 
 
-class GeneralizedIndex(BaseModel):
+class GeneralizedIndex(StrictBaseModel):
     """
     Represents a Generalized Merkle Tree Index.
 
     Helper methods are provided for tree navigation.
     """
-
-    model_config = ConfigDict(strict=True)
 
     value: int = Field(..., gt=0, description="The index value, must be a positive integer.")
 

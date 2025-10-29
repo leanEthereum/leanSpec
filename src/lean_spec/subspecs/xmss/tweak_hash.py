@@ -31,7 +31,7 @@ from typing import List, Union
 
 from pydantic import Field
 
-from lean_spec.types.base import StrictBaseModel
+from lean_spec.types import StrictBaseModel
 
 from ..koalabear import Fp
 from .constants import (

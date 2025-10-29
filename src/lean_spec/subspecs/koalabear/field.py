@@ -2,7 +2,9 @@
 
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
+
+from lean_spec.types import StrictBaseModel
 
 # =================================================================
 # Field Constants
@@ -67,10 +69,8 @@ the multiplicative subgroup of order 2^n.
 # =================================================================
 
 
-class Fp(BaseModel):
+class Fp(StrictBaseModel):
     """An element in the KoalaBear prime field F_p."""
-
-    model_config = ConfigDict(frozen=True)
 
     value: int = Field(ge=0, lt=P, description="Field element value in the range [0, P)")
 

@@ -1,6 +1,6 @@
 """Reusable type definitions for the Lean Ethereum specification."""
 
-from .base import StrictBaseModel
+from .base import CamelModel, StrictBaseModel
 from .basispt import BasisPoint
 from .boolean import Boolean
 from .byte_arrays import Bytes32, Bytes52, Bytes4000
@@ -15,6 +15,7 @@ __all__ = [
     "Bytes32",
     "Bytes52",
     "Bytes4000",
+    "CamelModel",
     "StrictBaseModel",
     "ValidatorIndex",
     "is_proposer",

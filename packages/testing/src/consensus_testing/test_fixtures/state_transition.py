@@ -10,8 +10,7 @@ from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, ValidatorIndex
 
-from ..block_spec import BlockSpec
-from ..test_types import StateExpectation
+from ..test_types import BlockSpec, StateExpectation
 from .base import BaseConsensusFixture
 
 

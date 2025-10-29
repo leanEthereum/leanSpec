@@ -2,16 +2,14 @@
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
-
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes32, Uint64
+from lean_spec.types import Bytes32, CamelModel, Uint64
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.forkchoice.store import Store
 
 
-class StoreChecks(BaseModel):
+class StoreChecks(CamelModel):
     """
     Store state checks for fork choice tests.
 

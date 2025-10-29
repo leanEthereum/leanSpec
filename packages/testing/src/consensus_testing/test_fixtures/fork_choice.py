@@ -19,8 +19,7 @@ from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Bytes32, Bytes4000, Uint64, ValidatorIndex
 
-from ..block_spec import BlockSpec
-from ..test_types import AttestationStep, BlockStep, ForkChoiceStep, TickStep
+from ..test_types import AttestationStep, BlockSpec, BlockStep, ForkChoiceStep, TickStep
 from .base import BaseConsensusFixture
 
 

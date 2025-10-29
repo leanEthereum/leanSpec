@@ -9,16 +9,15 @@ instantiation from the canonical Rust implementation
 We also provide a test instantiation for testing purposes.
 """
 
-from pydantic import BaseModel, ConfigDict
 from typing_extensions import Final
+
+from lean_spec.types import StrictBaseModel
 
 from ..koalabear import Fp
 
 
-class XmssConfig(BaseModel):
+class XmssConfig(StrictBaseModel):
     """A model holding the configuration constants for an XMSS preset."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     # --- Core Scheme Configuration ---
     MESSAGE_LENGTH: int

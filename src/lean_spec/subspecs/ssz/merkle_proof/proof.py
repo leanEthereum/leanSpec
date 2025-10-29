@@ -6,7 +6,7 @@ from typing import Dict, List, Sequence, Set
 
 from pydantic import Field, model_validator
 
-from lean_spec.types.base import StrictBaseModel
+from lean_spec.types import StrictBaseModel
 from lean_spec.types.byte_arrays import Bytes32
 
 from ..constants import ZERO_HASH

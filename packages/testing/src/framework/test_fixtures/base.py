@@ -7,8 +7,8 @@ from typing import Any, ClassVar, Dict, Type
 
 from pydantic import Field
 
-from framework.base_types import CamelModel
 from framework.forks import BaseFork
+from lean_spec.types import CamelModel
 
 
 class BaseFixture(CamelModel):
@@ -117,9 +117,9 @@ class BaseFixture(CamelModel):
         """
         if "comment" not in self.info:
             self.info["comment"] = "`leanSpec` generated test"
-        self.info["test-id"] = test_id
+        self.info["testId"] = test_id
         self.info["description"] = description
-        self.info["fixture-format"] = self.format_name
+        self.info["fixtureFormat"] = self.format_name
 
         # Set network field on the fixture itself
         self.network = fork.name()

@@ -37,13 +37,13 @@ from functools import lru_cache
 from itertools import accumulate
 from typing import List, Tuple
 
-from pydantic import BaseModel, ConfigDict
+from lean_spec.types import StrictBaseModel
 
 MAX_DIMENSION = 100
 """The maximum dimension `v` for which layer sizes will be precomputed."""
 
 
-class LayerInfo(BaseModel):
+class LayerInfo(StrictBaseModel):
     """
     A data structure to store precomputed sizes and cumulative sums for the
     layers of a single hypercube configuration (fixed `w` and `v`).
@@ -52,7 +52,6 @@ class LayerInfo(BaseModel):
     range of layers, highly efficient.
     """
 
-    model_config = ConfigDict(frozen=True)
     sizes: List[int]
     """A list where `sizes[d]` is the number of vertices in layer `d`."""
     prefix_sums: List[int]

@@ -5,10 +5,9 @@ This file defines the core consensus parameters and chain presets for the
 Lean Consensus Experimental Chain.
 """
 
-from pydantic import BaseModel, ConfigDict
 from typing_extensions import Final
 
-from lean_spec.types import BasisPoint, Uint64
+from lean_spec.types import BasisPoint, StrictBaseModel, Uint64
 
 # --- Time Parameters ---
 
@@ -75,14 +74,11 @@ VALIDATOR_REGISTRY_LIMIT: Final = Uint64(2**12)
 """The maximum number of validators that can be in the registry."""
 
 
-class _ChainConfig(BaseModel):
+class _ChainConfig(StrictBaseModel):
     """
     A model holding the canonical, immutable configuration constants
     for the chain.
     """
-
-    # Configuration to make the model immutable.
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     # Time Parameters
     slot_duration_ms: Uint64

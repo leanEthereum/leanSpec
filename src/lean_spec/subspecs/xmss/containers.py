@@ -2,8 +2,9 @@
 
 from typing import Annotated, List
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
+from ...types import StrictBaseModel
 from ..koalabear import Fp
 from .constants import PRF_KEY_LENGTH
 
@@ -44,7 +45,7 @@ the final signature for the verifier to reproduce the same hash.
 """
 
 
-class HashTreeOpening(BaseModel):
+class HashTreeOpening(StrictBaseModel):
     """
     A Merkle authentication path.
 
@@ -53,12 +54,11 @@ class HashTreeOpening(BaseModel):
     path from the leaf to the top of the tree.
     """
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
     siblings: List[HashDigest]
     """List of sibling hashes, from bottom to top."""
 
 
-class HashTreeLayer(BaseModel):
+class HashTreeLayer(StrictBaseModel):
     """
     Represents a single horizontal "slice" of the sparse Merkle tree.
 
@@ -66,14 +66,13 @@ class HashTreeLayer(BaseModel):
     for the active range of leaves, not the entire conceptual layer.
     """
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
     start_index: int
     """The starting index of the first node in this layer."""
     nodes: List[HashDigest]
     """A list of the actual hash digests stored for this layer."""
 
 
-class HashTree(BaseModel):
+class HashTree(StrictBaseModel):
     """
     The pre-computed, stored portion of the sparse Merkle tree.
 
@@ -81,7 +80,6 @@ class HashTree(BaseModel):
     to generate an authentication path for any signature within the key's active lifetime.
     """
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
     depth: int
     """The total depth of the tree (e.g., 32 for a 2^32 leaf space)."""
     layers: List[HashTreeLayer]
@@ -91,7 +89,7 @@ class HashTree(BaseModel):
     """
 
 
-class PublicKey(BaseModel):
+class PublicKey(StrictBaseModel):
     """
     The public-facing component of a key pair.
 
@@ -99,14 +97,13 @@ class PublicKey(BaseModel):
     distribute publicly, and acts as the signer's identity.
     """
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
     root: List[Fp]
     """The Merkle root, which commits to all one-time keys for the key's lifetime."""
     parameter: Parameter
     """The public parameter `P` that personalizes the hash function."""
 
 
-class Signature(BaseModel):
+class Signature(StrictBaseModel):
     """
     A signature produced by the `sign` function.
 
@@ -114,7 +111,6 @@ class Signature(BaseModel):
     specific message was signed by the owner of a `PublicKey` for a specific epoch.
     """
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
     path: HashTreeOpening
     """The authentication path proving the one-time key's inclusion in the Merkle tree."""
     rho: Randomness
@@ -123,7 +119,7 @@ class Signature(BaseModel):
     """The one-time signature itself: a list of intermediate Winternitz chain hashes."""
 
 
-class SecretKey(BaseModel):
+class SecretKey(StrictBaseModel):
     """
     The private component of a key pair. **MUST BE KEPT CONFIDENTIAL.**
 
@@ -131,7 +127,6 @@ class SecretKey(BaseModel):
     generate signatures for any epoch within its active lifetime.
     """
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
     prf_key: PRFKey
     """The master secret key used to derive all one-time secrets."""
     tree: HashTree
