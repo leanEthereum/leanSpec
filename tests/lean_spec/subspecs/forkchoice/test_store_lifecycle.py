@@ -185,17 +185,6 @@ class TestStoreDefaultValues:
         assert len(store.latest_known_attestations) == 0
         assert len(store.latest_new_attestations) == 0
 
-    def test_store_immutability(self, sample_store: Store) -> None:
-        """Test that Store fields are immutable (frozen)."""
-        original_time = sample_store.time
-
-        # Should not be able to modify Store fields directly
-        with pytest.raises((AttributeError, ValueError)):  # Pydantic frozen model
-            sample_store.time = Uint64(999)  # type: ignore[misc]
-
-        # Store should remain unchanged
-        assert sample_store.time == original_time
-
 
 class TestStoreValidation:
     """Test Store field validation."""

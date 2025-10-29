@@ -14,6 +14,8 @@ __all__ = [
 import copy
 from typing import Dict
 
+from pydantic import BaseModel
+
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
     SECONDS_PER_INTERVAL,
@@ -40,12 +42,11 @@ from lean_spec.types import (
     ValidatorIndex,
     is_proposer,
 )
-from lean_spec.types.container import Container
 
 from .helpers import get_fork_choice_head, get_latest_justified
 
 
-class Store(Container):
+class Store(BaseModel):
     """
     Forkchoice store tracking chain state and validator attestations.
 
@@ -291,17 +292,17 @@ class Store(Container):
         # Get latest justified checkpoint
         latest_justified = get_latest_justified(self.states)
         if latest_justified:
-            object.__setattr__(self, "latest_justified", latest_justified)
+            self.latest_justified = latest_justified
 
         # Use LMD GHOST to find new head
         new_head = get_fork_choice_head(
             self.blocks, self.latest_justified.root, self.latest_known_attestations
         )
-        object.__setattr__(self, "head", new_head)
+        self.head = new_head
 
         # Update finalized checkpoint from head state
         if new_head in self.states:
-            object.__setattr__(self, "latest_finalized", self.states[new_head].latest_finalized)
+            self.latest_finalized = self.states[new_head].latest_finalized
 
     def advance_time(self, time: Uint64, has_proposal: bool) -> None:
         """
@@ -338,7 +339,7 @@ class Store(Container):
         Args:
             has_proposal: Whether a proposal exists for this interval.
         """
-        object.__setattr__(self, "time", self.time + Uint64(1))
+        self.time += Uint64(1)
         current_interval = self.time % INTERVALS_PER_SLOT
 
         if current_interval == Uint64(0):
@@ -390,7 +391,7 @@ class Store(Container):
             self.latest_new_attestations,
             min_score=min_target_score,
         )
-        object.__setattr__(self, "safe_target", safe_target)
+        self.safe_target = safe_target
 
     def get_proposal_head(self, slot: Slot) -> Bytes32:
         """

@@ -144,7 +144,7 @@ class TestIntervalTicking:
 
         # Reset store to known state
         initial_time = Uint64(0)
-        object.__setattr__(sample_store, "time", initial_time)
+        sample_store.time = initial_time
 
         # Add some test attestations for processing
         test_checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(1))
@@ -310,7 +310,7 @@ class TestProposalHeadTiming:
         sample_store.blocks[genesis_hash] = genesis_block
 
         # Set store head to genesis
-        object.__setattr__(sample_store, "head", genesis_hash)
+        sample_store.head = genesis_hash
 
         # Get proposal head for slot 0
         head = sample_store.get_proposal_head(Slot(0))
