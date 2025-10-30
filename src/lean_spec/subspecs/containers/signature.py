@@ -9,7 +9,7 @@ class Signature(Bytes3100):
     """Represents aggregated signature produced by the leanVM (SNARKs in the future)."""
 
     @staticmethod
-    def _is_valid_signature(signature: Signature) -> bool:
+    def is_valid(signature: Signature) -> bool:
         """Return True when the placeholder signature is the zero value."""
         # TODO: Replace placeholder check once aggregated signatures are
         # wired in as part of the multi-proof integration work.
