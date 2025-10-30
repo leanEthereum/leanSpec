@@ -24,7 +24,7 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Bytes3100, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
 
 class MockState(State):

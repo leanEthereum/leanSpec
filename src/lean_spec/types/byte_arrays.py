@@ -234,7 +234,6 @@ class Bytes96(BaseBytes):
 class Bytes3100(BaseBytes):
     """Fixed-size byte array of exactly 3100 bytes."""
 
-    # TODO: this will be removed when real signature type is implemented
     LENGTH = 3100
 
 

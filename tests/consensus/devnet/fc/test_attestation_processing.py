@@ -47,7 +47,7 @@ from lean_spec.subspecs.containers import (
     SignedAttestation,
 )
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes4000, ValidatorIndex
+from lean_spec.types import ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 

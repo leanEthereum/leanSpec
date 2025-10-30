@@ -14,10 +14,11 @@ from lean_spec.subspecs.containers.block.block import (
 )
 from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
+from lean_spec.subspecs.containers.signature import Signature
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.types import Bytes32, Bytes3100, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
 from ..test_types import AttestationStep, BlockSpec, BlockStep, ForkChoiceStep, TickStep
 from .base import BaseConsensusFixture
@@ -253,7 +254,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         # Create signed structure with placeholder signatures
         # One signature for proposer attestation + one for the block
-        signature_list = [Bytes3100.zero(), Bytes3100.zero()]
+        signature_list = [Signature.zero(), Signature.zero()]
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,

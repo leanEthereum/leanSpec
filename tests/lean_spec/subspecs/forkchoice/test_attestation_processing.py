@@ -16,7 +16,7 @@ from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Bytes3100, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
 
 @pytest.fixture
@@ -505,4 +505,3 @@ class TestBlockProcessing:
         assert ValidatorIndex(20) == signed_attestation.message.validator_id
         assert signed_attestation.message.data.target.root == parent_hash
         assert ValidatorIndex(20) in sample_store.latest_known_attestations
-
