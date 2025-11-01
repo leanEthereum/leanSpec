@@ -1,5 +1,7 @@
 """Fork choice test fixture format."""
 
+from __future__ import annotations
+
 from typing import ClassVar, List
 
 from pydantic import model_validator
@@ -71,7 +73,7 @@ class ForkChoiceTest(BaseConsensusFixture):
     """
 
     @model_validator(mode="after")
-    def set_anchor_block_default(self) -> "ForkChoiceTest":
+    def set_anchor_block_default(self) -> ForkChoiceTest:
         """
         Auto-generate anchor_block from anchor_state if not provided.
 
@@ -92,7 +94,7 @@ class ForkChoiceTest(BaseConsensusFixture):
             )
         return self
 
-    def make_fixture(self) -> "ForkChoiceTest":
+    def make_fixture(self) -> ForkChoiceTest:
         """
         Generate the fixture by running the spec's Store.
 
@@ -260,10 +262,13 @@ class ForkChoiceTest(BaseConsensusFixture):
         )
 
         # Create signatures using the key manager
-        # One signature for proposer attestation + one for the block
-        attestation_signature = key_manager.sign_attestation(proposer_attestation)
-        block_signature = key_manager.sign_block(final_block, proposer_index)
-        signature_list = [attestation_signature, block_signature]
+        signature_list = []
+        for attestation in body.attestations:
+            attestation_signature = key_manager.sign_attestation(attestation)
+            signature_list.append(attestation_signature)
+        proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
+        signature_list.append(proposer_attestation_signature)
+
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,

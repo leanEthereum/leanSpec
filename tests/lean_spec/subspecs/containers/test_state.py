@@ -1,23 +1,18 @@
 """ "Tests for the State container and its methods."""
 
-# Import from forkchoice conftest using relative import
-import sys
-from pathlib import Path
 from typing import Dict, List
 
 import pytest
+from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain import DEVNET_CONFIG
 from lean_spec.subspecs.containers import (
     Attestation,
-    AttestationData,
     Block,
     BlockBody,
     BlockHeader,
     Checkpoint,
     Config,
-    Signature,
-    SignedAttestation,
     State,
     Validator,
 )
@@ -33,17 +28,7 @@ from lean_spec.subspecs.containers.state import (
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Boolean, Bytes32, Bytes52, Uint64, ValidatorIndex
 
-# Add the forkchoice test directory to the path so we can import from conftest
-_forkchoice_test_dir = Path(__file__).parent.parent / "forkchoice"
-sys.path.insert(0, str(_forkchoice_test_dir))
-
-from conftest import (  # type: ignore[import-not-found]  # noqa: E402
-    XmssKeyManager,
-    build_signed_attestation,
-)
-
-# Clean up
-sys.path.pop(0)
+from ..forkchoice.conftest import build_signed_attestation
 
 
 @pytest.fixture
@@ -694,6 +679,8 @@ def test_process_attestations_justification_and_finalization(
             validator=ValidatorIndex(i),
             target=checkpoint4,
             source=genesis_checkpoint,
+            slot=Slot(4),
+            head=checkpoint4,
         ).message
         for i in range(7)
     ]

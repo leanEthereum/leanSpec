@@ -8,10 +8,8 @@ from consensus_testing.keys import XmssKeyManager
 from lean_spec.subspecs.containers import (
     Attestation,
     AttestationData,
-    Block,
     BlockBody,
     Checkpoint,
-    Signature,
     SignedAttestation,
     State,
 )
@@ -27,6 +25,12 @@ from lean_spec.subspecs.containers.state.types import (
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
+
+
+@pytest.fixture
+def xmss_key_manager() -> XmssKeyManager:
+    """Fixture for creating an XMSS key manager."""
+    return XmssKeyManager()
 
 
 class MockState(State):
@@ -61,12 +65,6 @@ class MockState(State):
         )
 
 
-@pytest.fixture
-def xmss_key_manager() -> XmssKeyManager:
-    """Fixture for creating an XMSS key manager."""
-    return XmssKeyManager()
-
-
 def build_signed_attestation(
     key_manager: XmssKeyManager,
     validator: ValidatorIndex,
@@ -75,7 +73,7 @@ def build_signed_attestation(
     slot: Slot | None = None,
     head: Checkpoint | None = None,
 ) -> SignedAttestation:
-    """Construct a SignedValidatorAttestation pointing to ``target``."""
+    """Construct a SignedAttestation pointing to ``target``."""
 
     source_checkpoint = source or Checkpoint.default()
     attestation_slot = slot if slot is not None else target.slot

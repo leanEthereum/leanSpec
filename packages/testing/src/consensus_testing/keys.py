@@ -2,7 +2,6 @@
 
 from lean_spec.subspecs.containers import (
     Attestation,
-    Block,
     Signature,
     Validator,
 )
@@ -70,23 +69,6 @@ class XmssKeyManager:
         _, sk = self.get_or_create_key(validator_id)
         message = bytes(hash_tree_root(attestation))
         epoch = int(attestation.data.slot)
-        xmss_sig = TEST_SIGNATURE_SCHEME.sign(sk, epoch, message)
-        return Signature.from_xmss(xmss_sig)
-
-    def sign_block(self, block: Block, proposer_index: ValidatorIndex) -> Signature:
-        """
-        Sign a block with the given proposer index.
-
-        Args:
-            block: The block to sign.
-            proposer_index: The validator index of the block proposer.
-
-        Returns:
-            A signature for the given block.
-        """
-        _, sk = self.get_or_create_key(proposer_index)
-        message = bytes(hash_tree_root(block))
-        epoch = int(block.slot)
         xmss_sig = TEST_SIGNATURE_SCHEME.sign(sk, epoch, message)
         return Signature.from_xmss(xmss_sig)
 

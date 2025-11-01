@@ -139,37 +139,41 @@ TWEAK_PREFIX_MESSAGE: Final = Fp(value=0x02)
 PRF_KEY_LENGTH: int = 32
 """The length of the PRF secret key in bytes."""
 
-FE_SIZE_BYTES: int = 4  # Size of one field element in bytes
+# Public key and signature sizes for the production and test configurations
 
-PROD_HASH_LEN_FE = PROD_CONFIG.HASH_LEN_FE  # 8 field elements per hash digest
-PROD_PARAMETER_LEN = PROD_CONFIG.PARAMETER_LEN  # 5 field elements for parameter
-PROD_RAND_LEN_FE = PROD_CONFIG.RAND_LEN_FE  # 7 field elements for randomness
-PROD_LOG_LIFETIME = PROD_CONFIG.LOG_LIFETIME  # 32 layers in merkle tree
-PROD_DIMENSION = PROD_CONFIG.DIMENSION  # 64 hash chains
+FE_SIZE_BYTES: int = 4
+"""Size of a single field element in bytes."""
 
-TEST_LOG_LIFETIME = TEST_CONFIG.LOG_LIFETIME  # 8 layers in merkle tree
-TEST_DIMENSION = TEST_CONFIG.DIMENSION  # 16 hash chains
-TEST_HASH_LEN_FE = TEST_CONFIG.HASH_LEN_FE  # 8 field elements per hash digest
-TEST_PARAMETER_LEN = TEST_CONFIG.PARAMETER_LEN  # 5 field elements for parameter
-TEST_RAND_LEN_FE = TEST_CONFIG.RAND_LEN_FE  # 7 field elements for randomness
+# 52 bytes
+PROD_PUBKEY_SIZE_BYTES = (PROD_CONFIG.HASH_LEN_FE + PROD_CONFIG.PARAMETER_LEN) * FE_SIZE_BYTES
+"""Size in bytes of the production public key representation."""
 
-PROD_PUBKEY_SIZE_BYTES = (PROD_HASH_LEN_FE + PROD_PARAMETER_LEN) * FE_SIZE_BYTES  # 52 bytes
-TEST_PUBKEY_SIZE_BYTES = (TEST_HASH_LEN_FE + TEST_PARAMETER_LEN) * FE_SIZE_BYTES  # 52 bytes
+# 52 bytes
+TEST_PUBKEY_SIZE_BYTES = (TEST_CONFIG.HASH_LEN_FE + TEST_CONFIG.PARAMETER_LEN) * FE_SIZE_BYTES
+"""Size in bytes of the test public key representation."""
 
 PROD_SIGNATURE_SIZE_BYTES = (
-    PROD_LOG_LIFETIME * PROD_HASH_LEN_FE * FE_SIZE_BYTES  # path siblings
-    + PROD_RAND_LEN_FE * FE_SIZE_BYTES  # rho
-    + PROD_DIMENSION * PROD_HASH_LEN_FE * FE_SIZE_BYTES  # hashes
+    PROD_CONFIG.LOG_LIFETIME * PROD_CONFIG.HASH_LEN_FE * FE_SIZE_BYTES
+    + PROD_CONFIG.RAND_LEN_FE * FE_SIZE_BYTES
+    + PROD_CONFIG.DIMENSION * PROD_CONFIG.HASH_LEN_FE * FE_SIZE_BYTES
 )  # 3100 bytes
+"""Total size in bytes of a production signature, including all components."""
 
 TEST_SIGNATURE_SIZE_BYTES = (
-    TEST_LOG_LIFETIME * TEST_HASH_LEN_FE * FE_SIZE_BYTES  # path siblings
-    + TEST_RAND_LEN_FE * FE_SIZE_BYTES  # rho
-    + TEST_DIMENSION * TEST_HASH_LEN_FE * FE_SIZE_BYTES  # hashes
+    TEST_CONFIG.LOG_LIFETIME * TEST_CONFIG.HASH_LEN_FE * FE_SIZE_BYTES
+    + TEST_CONFIG.RAND_LEN_FE * FE_SIZE_BYTES
+    + TEST_CONFIG.DIMENSION * TEST_CONFIG.HASH_LEN_FE * FE_SIZE_BYTES
 )  # 796 bytes
+"""Total size in bytes of a test signature, including all components."""
 
-PUBKEY_SIZE_BYTES = max(PROD_PUBKEY_SIZE_BYTES, TEST_PUBKEY_SIZE_BYTES)
-SIGNATURE_SIZE_BYTES = max(PROD_SIGNATURE_SIZE_BYTES, TEST_SIGNATURE_SIZE_BYTES)
+PUBKEY_SIZE_BYTES = max(PROD_PUBKEY_SIZE_BYTES, TEST_PUBKEY_SIZE_BYTES)  # 52 bytes
+"""Maximum public key size across all XMSS presets."""
 
-PUBKEY_PADDING_LENGTH = abs(PROD_PUBKEY_SIZE_BYTES - TEST_PUBKEY_SIZE_BYTES)
-SIGNATURE_PADDING_LENGTH = abs(PROD_SIGNATURE_SIZE_BYTES - TEST_SIGNATURE_SIZE_BYTES)
+SIGNATURE_SIZE_BYTES = max(PROD_SIGNATURE_SIZE_BYTES, TEST_SIGNATURE_SIZE_BYTES)  # 3100 bytes
+"""Maximum signature size across all XMSS presets."""
+
+PUBKEY_PADDING_LENGTH = abs(PROD_PUBKEY_SIZE_BYTES - TEST_PUBKEY_SIZE_BYTES)  # 0 bytes
+"""Padding required to align public key sizes between presets."""
+
+SIGNATURE_PADDING_LENGTH = abs(PROD_SIGNATURE_SIZE_BYTES - TEST_SIGNATURE_SIZE_BYTES)  # 2304 bytes
+"""Padding required to align signature sizes between presets."""

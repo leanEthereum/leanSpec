@@ -11,23 +11,15 @@ from ..koalabear import Fp
 from .constants import (
     FE_SIZE_BYTES,
     PRF_KEY_LENGTH,
-    PROD_DIMENSION,
-    PROD_HASH_LEN_FE,
-    PROD_LOG_LIFETIME,
-    PROD_PARAMETER_LEN,
+    PROD_CONFIG,
     PROD_PUBKEY_SIZE_BYTES,
-    PROD_RAND_LEN_FE,
     PROD_SIGNATURE_SIZE_BYTES,
     PUBKEY_PADDING_LENGTH,
     PUBKEY_SIZE_BYTES,
     SIGNATURE_PADDING_LENGTH,
     SIGNATURE_SIZE_BYTES,
-    TEST_DIMENSION,
-    TEST_HASH_LEN_FE,
-    TEST_LOG_LIFETIME,
-    TEST_PARAMETER_LEN,
+    TEST_CONFIG,
     TEST_PUBKEY_SIZE_BYTES,
-    TEST_RAND_LEN_FE,
     TEST_SIGNATURE_SIZE_BYTES,
 )
 
@@ -157,7 +149,7 @@ class PublicKey(StrictBaseModel):
             )
 
         if len(result) < PUBKEY_SIZE_BYTES:
-            append_zero_bytes = b"\x00" * (PUBKEY_SIZE_BYTES - len(result))
+            append_zero_bytes = b"\x00" * PUBKEY_PADDING_LENGTH
             result.extend(append_zero_bytes)
 
         return bytes(result)
@@ -185,11 +177,11 @@ class PublicKey(StrictBaseModel):
         # Remove padding bytes if any
         if data[-PUBKEY_PADDING_LENGTH:] == b"\x00" * PUBKEY_PADDING_LENGTH:
             data = data[:-PUBKEY_PADDING_LENGTH]
-            hash_len_fe = TEST_HASH_LEN_FE
-            parameter_len = TEST_PARAMETER_LEN
+            hash_len_fe = TEST_CONFIG.HASH_LEN_FE
+            parameter_len = TEST_CONFIG.PARAMETER_LEN
         else:
-            hash_len_fe = PROD_HASH_LEN_FE
-            parameter_len = PROD_PARAMETER_LEN
+            hash_len_fe = PROD_CONFIG.HASH_LEN_FE
+            parameter_len = PROD_CONFIG.PARAMETER_LEN
 
         offset = 0
 
@@ -262,7 +254,7 @@ class Signature(StrictBaseModel):
             )
 
         if len(result) != SIGNATURE_SIZE_BYTES:
-            append_zero_bytes = b"\x00" * (SIGNATURE_SIZE_BYTES - len(result))
+            append_zero_bytes = b"\x00" * SIGNATURE_PADDING_LENGTH
             result.extend(append_zero_bytes)
 
         return bytes(result)
@@ -287,15 +279,15 @@ class Signature(StrictBaseModel):
         # Remove padding bytes if any
         if data[-SIGNATURE_PADDING_LENGTH:] == b"\x00" * SIGNATURE_PADDING_LENGTH:
             data = data[:-SIGNATURE_PADDING_LENGTH]
-            log_lifetime = TEST_LOG_LIFETIME
-            hash_len_fe = TEST_HASH_LEN_FE
-            rand_len_fe = TEST_RAND_LEN_FE
-            dimension = TEST_DIMENSION
+            log_lifetime = TEST_CONFIG.LOG_LIFETIME
+            hash_len_fe = TEST_CONFIG.HASH_LEN_FE
+            rand_len_fe = TEST_CONFIG.RAND_LEN_FE
+            dimension = TEST_CONFIG.DIMENSION
         else:
-            log_lifetime = PROD_LOG_LIFETIME
-            hash_len_fe = PROD_HASH_LEN_FE
-            rand_len_fe = PROD_RAND_LEN_FE
-            dimension = PROD_DIMENSION
+            log_lifetime = PROD_CONFIG.LOG_LIFETIME
+            hash_len_fe = PROD_CONFIG.HASH_LEN_FE
+            rand_len_fe = PROD_CONFIG.RAND_LEN_FE
+            dimension = PROD_CONFIG.DIMENSION
 
         offset = 0
 
