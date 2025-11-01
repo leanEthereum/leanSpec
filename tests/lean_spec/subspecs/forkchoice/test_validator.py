@@ -29,6 +29,8 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Bytes52, Uint64, ValidatorIndex
 from lean_spec.types.validator import is_proposer
 
+from .conftest import XmssKeyManager, build_signed_attestation
+
 
 @pytest.fixture
 def config() -> Config:
@@ -114,31 +116,6 @@ def sample_store(config: Config, sample_state: State) -> Store:
     )
 
 
-def build_signed_attestation(
-    validator: ValidatorIndex,
-    slot: Slot,
-    head: Checkpoint,
-    source: Checkpoint,
-    target: Checkpoint,
-) -> SignedAttestation:
-    """Create a signed attestation with a zeroed signature."""
-
-    data = AttestationData(
-        slot=slot,
-        head=head,
-        target=target,
-        source=source,
-    )
-    message = Attestation(
-        validator_id=validator,
-        data=data,
-    )
-    return SignedAttestation(
-        message=message,
-        signature=Signature.zero(),
-    )
-
-
 class TestBlockProduction:
     """Test validator block production functionality."""
 
@@ -168,23 +145,19 @@ class TestBlockProduction:
         with pytest.raises(AssertionError, match="is not the proposer for slot"):
             sample_store.produce_block_with_signatures(slot, wrong_validator)
 
-    def test_produce_block_with_attestations(self, sample_store: Store) -> None:
+    def test_produce_block_with_attestations(
+        self, sample_store: Store, xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test block production includes available attestations."""
-        head_block = sample_store.blocks[sample_store.head]
-
         # Add some attestations to the store
         sample_store.latest_known_attestations[ValidatorIndex(5)] = build_signed_attestation(
+            key_manager=xmss_key_manager,
             validator=ValidatorIndex(5),
-            slot=head_block.slot,
-            head=Checkpoint(root=sample_store.head, slot=head_block.slot),
-            source=sample_store.latest_justified,
             target=sample_store.get_attestation_target(),
         )
         sample_store.latest_known_attestations[ValidatorIndex(6)] = build_signed_attestation(
+            key_manager=xmss_key_manager,
             validator=ValidatorIndex(6),
-            slot=head_block.slot,
-            head=Checkpoint(root=sample_store.head, slot=head_block.slot),
-            source=sample_store.latest_justified,
             target=sample_store.get_attestation_target(),
         )
 
@@ -262,7 +235,9 @@ class TestBlockProduction:
         assert block.proposer_index == validator_idx
         assert block.state_root != Bytes32.zero()
 
-    def test_produce_block_state_consistency(self, sample_store: Store) -> None:
+    def test_produce_block_state_consistency(
+        self, sample_store: Store, xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test that produced block's state is consistent with block content."""
         slot = Slot(4)
         validator_idx = ValidatorIndex(4)
@@ -270,11 +245,12 @@ class TestBlockProduction:
         # Add some attestations to test state computation
         head_block = sample_store.blocks[sample_store.head]
         sample_store.latest_known_attestations[ValidatorIndex(7)] = build_signed_attestation(
+            key_manager=xmss_key_manager,
             validator=ValidatorIndex(7),
+            target=sample_store.get_attestation_target(),
+            source=sample_store.latest_justified,
             slot=head_block.slot,
             head=Checkpoint(root=sample_store.head, slot=head_block.slot),
-            source=sample_store.latest_justified,
-            target=sample_store.get_attestation_target(),
         )
 
         block, _signatures = sample_store.produce_block_with_signatures(

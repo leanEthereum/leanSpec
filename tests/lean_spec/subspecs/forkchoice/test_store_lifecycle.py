@@ -23,7 +23,7 @@ from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
-from .conftest import build_signed_attestation
+from .conftest import XmssKeyManager, build_signed_attestation
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ class TestStoreCreation:
         assert isinstance(sample_store.latest_justified, Checkpoint)
         assert isinstance(sample_store.latest_finalized, Checkpoint)
 
-    def test_store_initialization_with_data(self) -> None:
+    def test_store_initialization_with_data(self, xmss_key_manager: XmssKeyManager) -> None:
         """Test Store initialization with blocks and states."""
         config = Config(genesis_time=Uint64(2000))
         checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(5))
@@ -78,12 +78,14 @@ class TestStoreCreation:
         block_hash = hash_tree_root(block)
 
         signed_known = build_signed_attestation(
-            ValidatorIndex(0),
-            checkpoint,
+            key_manager=xmss_key_manager,
+            validator=ValidatorIndex(0),
+            target=checkpoint,
         )
         signed_new = build_signed_attestation(
-            ValidatorIndex(1),
-            checkpoint,
+            key_manager=xmss_key_manager,
+            validator=ValidatorIndex(1),
+            target=checkpoint,
         )
 
         store = Store(

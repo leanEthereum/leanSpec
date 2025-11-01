@@ -14,7 +14,7 @@ from lean_spec.subspecs.forkchoice.helpers import (
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
-from .conftest import build_signed_attestation
+from .conftest import XmssKeyManager, build_signed_attestation
 
 if TYPE_CHECKING:
     from .conftest import MockState
@@ -61,7 +61,7 @@ class TestForkChoiceHeadFunction:
     """Test the pure get_fork_choice_head helper function."""
 
     def test_get_fork_choice_head_with_attestations(
-        self, sample_blocks: Dict[Bytes32, Block]
+        self, sample_blocks: Dict[Bytes32, Block], xmss_key_manager: XmssKeyManager
     ) -> None:
         """Test get_fork_choice_head with validator attestations."""
         root_hash = list(sample_blocks.keys())[0]
@@ -70,8 +70,9 @@ class TestForkChoiceHeadFunction:
         # Create attestations pointing to target
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=target_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=target_hash, slot=Slot(2)),
             )
         }
 
@@ -94,7 +95,9 @@ class TestForkChoiceHeadFunction:
 
         assert head == leaf_hash
 
-    def test_get_fork_choice_head_with_min_score(self, sample_blocks: Dict[Bytes32, Block]) -> None:
+    def test_get_fork_choice_head_with_min_score(
+        self, sample_blocks: Dict[Bytes32, Block], xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test get_fork_choice_head respects minimum score."""
         root_hash = list(sample_blocks.keys())[0]
         target_hash = list(sample_blocks.keys())[2]  # block_b
@@ -102,8 +105,9 @@ class TestForkChoiceHeadFunction:
         # Single attestation, but require min_score of 2
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=target_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=target_hash, slot=Slot(2)),
             )
         }
 
@@ -115,7 +119,7 @@ class TestForkChoiceHeadFunction:
         assert head == root_hash
 
     def test_get_fork_choice_head_multiple_attestations(
-        self, sample_blocks: Dict[Bytes32, Block]
+        self, sample_blocks: Dict[Bytes32, Block], xmss_key_manager: XmssKeyManager
     ) -> None:
         """Test get_fork_choice_head with multiple attestations."""
         root_hash = list(sample_blocks.keys())[0]
@@ -124,16 +128,19 @@ class TestForkChoiceHeadFunction:
         # Multiple attestations for same target
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=target_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=target_hash, slot=Slot(2)),
             ),
             ValidatorIndex(1): build_signed_attestation(
-                ValidatorIndex(1),
-                Checkpoint(root=target_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(1),
+                target=Checkpoint(root=target_hash, slot=Slot(2)),
             ),
             ValidatorIndex(2): build_signed_attestation(
-                ValidatorIndex(2),
-                Checkpoint(root=target_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(2),
+                target=Checkpoint(root=target_hash, slot=Slot(2)),
             ),
         }
 

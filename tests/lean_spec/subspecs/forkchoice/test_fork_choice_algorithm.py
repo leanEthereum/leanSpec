@@ -17,7 +17,7 @@ from lean_spec.subspecs.forkchoice.helpers import get_fork_choice_head
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
-from .conftest import build_signed_attestation
+from .conftest import XmssKeyManager, build_signed_attestation
 
 
 @pytest.fixture
@@ -79,15 +79,18 @@ class TestLMDGHOSTAlgorithm:
 
         assert head == leaf_hash
 
-    def test_fork_choice_single_attestation(self, sample_blocks: Dict[Bytes32, Block]) -> None:
+    def test_fork_choice_single_attestation(
+        self, sample_blocks: Dict[Bytes32, Block], xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test fork choice algorithm with a single attestation."""
         root_hash = list(sample_blocks.keys())[0]
         target_hash = list(sample_blocks.keys())[2]  # block_b
 
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=target_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=target_hash, slot=Slot(2)),
             )
         }
 
@@ -100,7 +103,7 @@ class TestLMDGHOSTAlgorithm:
 
         assert head == target_hash
 
-    def test_fork_choice_with_multiple_forks(self) -> None:
+    def test_fork_choice_with_multiple_forks(self, xmss_key_manager: XmssKeyManager) -> None:
         """Test fork choice algorithm with competing forks."""
         # Create a fork structure: genesis -> A -> B
         #                                  -> C -> D
@@ -162,16 +165,19 @@ class TestLMDGHOSTAlgorithm:
         # More attestations for fork 2 (C->D)
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=block_d_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=block_d_hash, slot=Slot(2)),
             ),
             ValidatorIndex(1): build_signed_attestation(
-                ValidatorIndex(1),
-                Checkpoint(root=block_d_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(1),
+                target=Checkpoint(root=block_d_hash, slot=Slot(2)),
             ),
             ValidatorIndex(2): build_signed_attestation(
-                ValidatorIndex(2),
-                Checkpoint(root=block_b_hash, slot=Slot(2)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(2),
+                target=Checkpoint(root=block_b_hash, slot=Slot(2)),
             ),  # Single attestation for fork 1
         }
 
@@ -185,7 +191,7 @@ class TestLMDGHOSTAlgorithm:
         # Fork 2 should win with 2 attestations vs 1
         assert head == block_d_hash
 
-    def test_fork_choice_competing_attestations(self) -> None:
+    def test_fork_choice_competing_attestations(self, xmss_key_manager: XmssKeyManager) -> None:
         """Test fork choice algorithm with evenly competing attestations."""
         # Create simple fork: genesis -> A
         #                             -> B
@@ -225,12 +231,14 @@ class TestLMDGHOSTAlgorithm:
         # Equal attestations for both forks
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=block_a_hash, slot=Slot(1)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=block_a_hash, slot=Slot(1)),
             ),
             ValidatorIndex(1): build_signed_attestation(
-                ValidatorIndex(1),
-                Checkpoint(root=block_b_hash, slot=Slot(1)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(1),
+                target=Checkpoint(root=block_b_hash, slot=Slot(1)),
             ),
         }
 
@@ -292,7 +300,7 @@ class TestLMDGHOSTAlgorithm:
         expected_head = max(block_a_hash, block_b_hash)
         assert head == expected_head
 
-    def test_fork_choice_deep_chain(self) -> None:
+    def test_fork_choice_deep_chain(self, xmss_key_manager: XmssKeyManager) -> None:
         """Test fork choice algorithm with a deeper chain."""
         blocks = {}
         prev_hash = Bytes32.zero()
@@ -314,8 +322,9 @@ class TestLMDGHOSTAlgorithm:
         head_hash = prev_hash
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=head_hash, slot=Slot(9)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=head_hash, slot=Slot(9)),
             )
         }
 
@@ -329,7 +338,7 @@ class TestLMDGHOSTAlgorithm:
 
         assert result == head_hash
 
-    def test_fork_choice_ancestor_attestations(self) -> None:
+    def test_fork_choice_ancestor_attestations(self, xmss_key_manager: XmssKeyManager) -> None:
         """Test that attestations for ancestors are properly counted."""
         # Create chain: genesis -> A -> B -> C
         genesis = Block(
@@ -378,8 +387,9 @@ class TestLMDGHOSTAlgorithm:
         # Attestation for ancestor should still find the head
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=block_a_hash, slot=Slot(1)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=block_a_hash, slot=Slot(1)),
             ),
         }
 
@@ -393,7 +403,7 @@ class TestLMDGHOSTAlgorithm:
         # Should follow chain to the end
         assert head == block_c_hash
 
-    def test_fork_choice_with_min_score(self) -> None:
+    def test_fork_choice_with_min_score(self, xmss_key_manager: XmssKeyManager) -> None:
         """Test fork choice algorithm with minimum score threshold."""
         genesis = Block(
             slot=Slot(0),
@@ -421,8 +431,9 @@ class TestLMDGHOSTAlgorithm:
         # Single attestation shouldn't meet min_score of 2
         attestations = {
             ValidatorIndex(0): build_signed_attestation(
-                ValidatorIndex(0),
-                Checkpoint(root=block_a_hash, slot=Slot(1)),
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(0),
+                target=Checkpoint(root=block_a_hash, slot=Slot(1)),
             )
         }
 

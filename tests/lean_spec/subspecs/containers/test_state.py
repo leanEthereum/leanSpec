@@ -1,5 +1,8 @@
 """ "Tests for the State container and its methods."""
 
+# Import from forkchoice conftest using relative import
+import sys
+from pathlib import Path
 from typing import Dict, List
 
 import pytest
@@ -29,6 +32,24 @@ from lean_spec.subspecs.containers.state import (
 )
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Boolean, Bytes32, Bytes52, Uint64, ValidatorIndex
+
+# Add the forkchoice test directory to the path so we can import from conftest
+_forkchoice_test_dir = Path(__file__).parent.parent / "forkchoice"
+sys.path.insert(0, str(_forkchoice_test_dir))
+
+from conftest import (  # type: ignore[import-not-found]  # noqa: E402
+    XmssKeyManager,
+    build_signed_attestation,
+)
+
+# Clean up
+sys.path.pop(0)
+
+
+@pytest.fixture
+def xmss_key_manager() -> XmssKeyManager:
+    """Fixture for creating an XMSS key manager."""
+    return XmssKeyManager()
 
 
 @pytest.fixture
@@ -136,31 +157,6 @@ def _create_votes(indices: List[int]) -> List[Boolean]:
         votes[i] = Boolean(True)
     # Return the completed bitlist.
     return votes
-
-
-def _build_signed_attestation(
-    validator: ValidatorIndex,
-    slot: Slot,
-    head: Checkpoint,
-    source: Checkpoint,
-    target: Checkpoint,
-) -> SignedAttestation:
-    """Create a signed attestation with a zeroed signature."""
-
-    data = AttestationData(
-        slot=slot,
-        head=head,
-        target=target,
-        source=source,
-    )
-    message = Attestation(
-        validator_id=validator,
-        data=data,
-    )
-    return SignedAttestation(
-        message=message,
-        signature=Signature.zero(),
-    )
 
 
 @pytest.fixture
@@ -652,7 +648,9 @@ def test_process_block_header_invalid(
         state_at_slot_1.process_block_header(block)
 
 
-def test_process_attestations_justification_and_finalization(genesis_state: State) -> None:
+def test_process_attestations_justification_and_finalization(
+    genesis_state: State, xmss_key_manager: XmssKeyManager
+) -> None:
     """
     process_attestations: justify a target and finalize the source.
 
@@ -691,12 +689,11 @@ def test_process_attestations_justification_and_finalization(genesis_state: Stat
 
     # Create 7 attestations from distinct validators (indices 0..6) to reach ≥2/3.
     attestations_for_4 = [
-        _build_signed_attestation(
+        build_signed_attestation(
+            key_manager=xmss_key_manager,
             validator=ValidatorIndex(i),
-            slot=Slot(4),
-            head=checkpoint4,
-            source=genesis_checkpoint,
             target=checkpoint4,
+            source=genesis_checkpoint,
         ).message
         for i in range(7)
     ]

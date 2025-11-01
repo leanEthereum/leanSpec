@@ -30,6 +30,7 @@ from lean_spec.subspecs.containers import (
     SignedAttestation,
     SignedBlockWithAttestation,
     State,
+    Validator,
 )
 from lean_spec.subspecs.containers.block import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.slot import Slot
@@ -211,9 +212,50 @@ class Store(Container):
         block: Block,
         signatures: BlockSignatures,
     ) -> bool:
-        """Temporary stub for aggregated signature validation."""
-        # TODO: Integrate actual aggregated signature verification.
-        return all(Signature.is_valid(signature) for signature in signatures)
+        """
+        Validate block signatures.
+
+        Args:
+            block: Block to validate.
+            signatures: Block signatures to validate.
+
+        Returns:
+            True if block signatures are valid, False otherwise.
+        """
+        attestations = list(block.body.attestations)
+
+        # +1 is for the proposer signature
+        if len(signatures) != len(attestations) + 1:
+            return False
+
+        # Validate each signature
+        for index, attestation in enumerate(attestations):
+            signature = signatures[index]
+            validator_id = int(attestation.validator_id)
+
+            state = self.states[block.state_root]
+            validators = state.validators.data
+            if validator_id >= len(validators):
+                return False
+
+            validator: Validator = state.validators.data[validator_id]  # type: ignore[assignment]
+
+            try:
+                xmss_public_key = validator.get_xmss_pubkey()
+            except (ValueError, Exception):
+                return False
+
+            message = bytes(hash_tree_root(attestation))
+            epoch = int(attestation.data.slot)
+
+            # Verify the signature
+            if not signature.verify(xmss_public_key, epoch, message):
+                return False
+
+        # Does not validate the proposer signature
+        # The proposer signature should be validated in the process_block method
+
+        return True
 
     def process_block(self, signed_block_with_attestation: SignedBlockWithAttestation) -> None:
         """
@@ -240,6 +282,7 @@ class Store(Container):
         # sync parent chain if not available before adding block to forkchoice
         assert parent_state is not None, "Parent state not found - sync parent chain first"
 
+        # Validate block signatures
         valid_signatures = self._validate_block_signatures(block, signatures)
 
         # Get post state from STF (State Transition Function)

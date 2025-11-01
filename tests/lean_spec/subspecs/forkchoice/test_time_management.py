@@ -17,7 +17,7 @@ from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Bytes52, Uint64, ValidatorIndex
 
-from .conftest import build_signed_attestation
+from .conftest import XmssKeyManager, build_signed_attestation
 
 
 @pytest.fixture
@@ -138,7 +138,9 @@ class TestIntervalTicking:
         # Should have advanced by 5 intervals
         assert sample_store.time == initial_time + Uint64(5)
 
-    def test_tick_interval_actions_by_phase(self, sample_store: Store) -> None:
+    def test_tick_interval_actions_by_phase(
+        self, sample_store: Store, xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test different actions performed based on interval phase."""
         from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 
@@ -149,8 +151,9 @@ class TestIntervalTicking:
         # Add some test attestations for processing
         test_checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(1))
         sample_store.latest_new_attestations[ValidatorIndex(0)] = build_signed_attestation(
-            ValidatorIndex(0),
-            test_checkpoint,
+            key_manager=xmss_key_manager,
+            validator=ValidatorIndex(0),
+            target=test_checkpoint,
         )
 
         # Tick through a complete slot cycle
@@ -230,13 +233,16 @@ class TestSlotTimeCalculations:
 class TestAttestationProcessingTiming:
     """Test timing of attestation processing."""
 
-    def test_accept_new_attestations_basic(self, sample_store: Store) -> None:
+    def test_accept_new_attestations_basic(
+        self, sample_store: Store, xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test basic new attestation processing."""
         # Add some new attestations
         checkpoint = Checkpoint(root=Bytes32(b"test" + b"\x00" * 28), slot=Slot(1))
         sample_store.latest_new_attestations[ValidatorIndex(0)] = build_signed_attestation(
-            ValidatorIndex(0),
-            checkpoint,
+            key_manager=xmss_key_manager,
+            validator=ValidatorIndex(0),
+            target=checkpoint,
         )
 
         initial_new_attestations = len(sample_store.latest_new_attestations)
@@ -252,7 +258,9 @@ class TestAttestationProcessingTiming:
             == initial_known_attestations + initial_new_attestations
         )
 
-    def test_accept_new_attestations_multiple(self, sample_store: Store) -> None:
+    def test_accept_new_attestations_multiple(
+        self, sample_store: Store, xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test accepting multiple new attestations."""
         # Add multiple new attestations
         checkpoints = [
@@ -265,8 +273,9 @@ class TestAttestationProcessingTiming:
 
         for i, checkpoint in enumerate(checkpoints):
             sample_store.latest_new_attestations[ValidatorIndex(i)] = build_signed_attestation(
-                ValidatorIndex(i),
-                checkpoint,
+                key_manager=xmss_key_manager,
+                validator=ValidatorIndex(i),
+                target=checkpoint,
             )
 
         # Accept all new attestations
@@ -330,13 +339,16 @@ class TestProposalHeadTiming:
         # This is mainly testing that the call doesn't fail
         assert sample_store.time >= initial_time
 
-    def test_get_proposal_head_processes_attestations(self, sample_store: Store) -> None:
+    def test_get_proposal_head_processes_attestations(
+        self, sample_store: Store, xmss_key_manager: XmssKeyManager
+    ) -> None:
         """Test that get_proposal_head processes pending attestations."""
         # Add some new attestations
         checkpoint = Checkpoint(root=Bytes32(b"attestation" + b"\x00" * 21), slot=Slot(1))
         sample_store.latest_new_attestations[ValidatorIndex(10)] = build_signed_attestation(
-            ValidatorIndex(10),
-            checkpoint,
+            key_manager=xmss_key_manager,
+            validator=ValidatorIndex(10),
+            target=checkpoint,
         )
 
         # Get proposal head should process attestations
