@@ -30,7 +30,6 @@ from lean_spec.subspecs.containers import (
     SignedAttestation,
     SignedBlockWithAttestation,
     State,
-    Validator,
 )
 from lean_spec.subspecs.containers.block import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.slot import Slot
@@ -234,11 +233,11 @@ class Store(Container):
             validator_id = int(attestation.validator_id)
 
             state = self.states[block.state_root]
-            validators = state.validators.data
+            validators = state.validators
             if validator_id >= len(validators):
                 return False
 
-            validator: Validator = state.validators.data[validator_id]  # type: ignore[assignment]
+            validator = state.validators[validator_id]
 
             try:
                 xmss_public_key = validator.get_xmss_pubkey()
@@ -256,6 +255,25 @@ class Store(Container):
         # The proposer signature should be validated in the process_block method
 
         return True
+
+    def _validate_proposer_attestation(
+        self,
+        proposer_attestation: Attestation,
+        proposer_signature: Signature,
+    ) -> bool:
+        """
+        Validate proposer attestation.
+
+        Args:
+            proposer_attestation: Proposer attestation to validate.
+            proposer_signature: Proposer signature to validate.
+        """
+        validator_id = proposer_attestation.validator_id
+        validator = self.states[self.head].validators[validator_id]
+        xmss_public_key = validator.get_xmss_pubkey()
+        message = bytes(hash_tree_root(proposer_attestation))
+        epoch = int(proposer_attestation.data.slot)
+        return proposer_signature.verify(xmss_public_key, epoch, message)
 
     def process_block(self, signed_block_with_attestation: SignedBlockWithAttestation) -> None:
         """
@@ -285,6 +303,14 @@ class Store(Container):
         # Validate block signatures
         valid_signatures = self._validate_block_signatures(block, signatures)
 
+        # Validate proposer attestation
+        proposer_signature = signatures[len(block.body.attestations)]
+        valid_proposer_attestation = self._validate_proposer_attestation(
+            proposer_attestation,
+            proposer_signature,
+        )
+        assert valid_proposer_attestation, "Proposer attestation is not valid"
+
         # Get post state from STF (State Transition Function)
         state = copy.deepcopy(parent_state).state_transition(block, valid_signatures)
 
@@ -307,7 +333,6 @@ class Store(Container):
         # Update forkchoice head
         self.update_head()
 
-        proposer_signature = signatures[len(block.body.attestations)]
         # the proposer attestation for the current slot and block as head is to be
         # treated as the attestation is independently casted in the second interval
         signed_proposer_attestation = SignedAttestation(

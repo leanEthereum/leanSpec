@@ -3,6 +3,7 @@
 from typing import Dict
 
 import pytest
+from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.containers import (
     Block,
@@ -17,7 +18,7 @@ from lean_spec.subspecs.forkchoice.helpers import get_fork_choice_head
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
-from .conftest import XmssKeyManager, build_signed_attestation
+from .conftest import build_signed_attestation
 
 
 @pytest.fixture

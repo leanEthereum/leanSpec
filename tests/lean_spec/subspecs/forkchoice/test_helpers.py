@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Dict, Type
 
 import pytest
+from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.containers import Block, BlockBody, Checkpoint, State
 from lean_spec.subspecs.containers.block import Attestations
@@ -14,7 +15,7 @@ from lean_spec.subspecs.forkchoice.helpers import (
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
-from .conftest import XmssKeyManager, build_signed_attestation
+from .conftest import build_signed_attestation
 
 if TYPE_CHECKING:
     from .conftest import MockState

@@ -14,12 +14,12 @@ from lean_spec.subspecs.containers.block.block import (
 )
 from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.signature import Signature
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
+from ..keys import XmssKeyManager
 from ..test_types import AttestationStep, BlockSpec, BlockStep, ForkChoiceStep, TickStep
 from .base import BaseConsensusFixture
 
@@ -115,6 +115,9 @@ class ForkChoiceTest(BaseConsensusFixture):
         assert self.anchor_state is not None, "anchor_state must be set before make_fixture"
         assert self.anchor_block is not None, "anchor_block must be set before make_fixture"
 
+        # Initialize key manager for signing blocks and attestations
+        key_manager = XmssKeyManager()
+
         # Initialize Store from anchor
         store = Store.get_forkchoice_store(
             state=self.anchor_state,
@@ -130,7 +133,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                 elif isinstance(step, BlockStep):
                     # Build SignedBlockWithAttestation from BlockSpec
-                    signed_block = self._build_block_from_spec(step.block, store)
+                    signed_block = self._build_block_from_spec(step.block, store, key_manager)
 
                     # Store the filled Block for serialization
                     block = signed_block.message.block
@@ -175,7 +178,9 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Return self (fixture is already complete)
         return self
 
-    def _build_block_from_spec(self, spec: BlockSpec, store: Store) -> SignedBlockWithAttestation:
+    def _build_block_from_spec(
+        self, spec: BlockSpec, store: Store, key_manager: XmssKeyManager
+    ) -> SignedBlockWithAttestation:
         """
         Build a full SignedBlockWithAttestation from a lightweight BlockSpec.
 
@@ -194,6 +199,8 @@ class ForkChoiceTest(BaseConsensusFixture):
             The lightweight block specification.
         store : Store
             The fork choice store (used to get head state and latest justified).
+        key_manager : XmssKeyManager
+            Key manager for signing blocks and attestations.
 
         Returns:
         -------
@@ -252,9 +259,11 @@ class ForkChoiceTest(BaseConsensusFixture):
             ),
         )
 
-        # Create signed structure with placeholder signatures
+        # Create signatures using the key manager
         # One signature for proposer attestation + one for the block
-        signature_list = [Signature.zero(), Signature.zero()]
+        attestation_signature = key_manager.sign_attestation(proposer_attestation)
+        block_signature = key_manager.sign_block(final_block, proposer_index)
+        signature_list = [attestation_signature, block_signature]
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,
