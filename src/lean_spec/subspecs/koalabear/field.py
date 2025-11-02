@@ -19,6 +19,9 @@ P: int = 2**31 - 2**24 + 1
 P_BITS: int = 31
 """The number of bits in the prime P."""
 
+P_BYTES: int = (P_BITS + 7) // 8
+"""The size of a KoalaBear field element in bytes."""
+
 TWO_ADICITY: int = 24
 """
 The largest integer n such that 2^n divides (P - 1).
@@ -131,3 +134,15 @@ class Fp(StrictBaseModel):
         if not (0 <= bits <= TWO_ADICITY):
             raise ValueError(f"bits must be between 0 and {TWO_ADICITY}")
         return cls(value=TWO_ADIC_GENERATORS[bits])
+
+    def serialize(self) -> bytes:
+        """Serialize the field element to a byte array."""
+        return self.value.to_bytes(P_BYTES, byteorder="little")
+
+    @classmethod
+    def deserialize(cls, data: bytes) -> Self:
+        """Deserialize the field element from a byte array."""
+        try:
+            return cls(value=int.from_bytes(data, byteorder="little"))
+        except ValueError as err:
+            raise ValueError(f"Invalid field element value: {data!r}") from err

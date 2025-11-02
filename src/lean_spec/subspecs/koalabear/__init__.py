@@ -2,6 +2,7 @@
 
 from .field import (
     P_BITS,
+    P_BYTES,
     TWO_ADICITY,
     Fp,
     P,
@@ -9,6 +10,7 @@ from .field import (
 
 __all__ = [
     "P",
+    "P_BYTES",
     "P_BITS",
     "TWO_ADICITY",
     "Fp",
