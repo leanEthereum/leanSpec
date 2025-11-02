@@ -11,16 +11,11 @@ We also provide a test instantiation for testing purposes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
-
 from typing_extensions import Final
 
 from lean_spec.types import StrictBaseModel
 
 from ..koalabear import P_BYTES, Fp
-
-if TYPE_CHECKING:
-    from .containers import HashTreeOpening, PublicKey, Signature
 
 
 class XmssConfig(StrictBaseModel):
@@ -97,12 +92,12 @@ class XmssConfig(StrictBaseModel):
 
     # --- Serialization and deserialization ---
     @property
-    def PUBLIC_KEY_SIZE_BYTES(self) -> int:  # noqa: N802
+    def PUBLIC_KEY_LEN_BYTES(self) -> int:  # noqa: N802
         """The size of the public key in bytes."""
         return self.HASH_LEN_FE * P_BYTES + self.PARAMETER_LEN * P_BYTES
 
     @property
-    def SIGNATURE_SIZE_BYTES(self) -> int:  # noqa: N802
+    def SIGNATURE_LEN_BYTES(self) -> int:  # noqa: N802
         """The size of the signature in bytes."""
         # path siblings: LOG_LIFETIME siblings × HASH_LEN_FE elements
         # rho: RAND_LEN_FE elements
@@ -111,132 +106,6 @@ class XmssConfig(StrictBaseModel):
         rho_size = self.RAND_LEN_FE * P_BYTES
         hashes_size = self.DIMENSION * self.HASH_LEN_FE * P_BYTES
         return path_size + rho_size + hashes_size
-
-    def serialize_field_elements(self, field_elements: List[Fp]) -> bytes:
-        """Serialize a list of field elements to a byte array."""
-        return b"".join(fe.serialize() for fe in field_elements)
-
-    def deserialize_field_elements(self, data: bytes) -> List[Fp]:
-        """Deserialize a list of field elements from a byte array."""
-        return [Fp.deserialize(data[i : i + P_BYTES]) for i in range(0, len(data), P_BYTES)]
-
-    def serialize_public_key(self, public_key: PublicKey) -> bytes:
-        """
-        Serialize the public key to a byte array.
-
-        Args:
-            public_key: The public key to serialize.
-
-        Returns:
-            The serialized public key.
-        """
-        return self.serialize_field_elements(public_key.root) + self.serialize_field_elements(
-            public_key.parameter
-        )
-
-    def deserialize_public_key(self, data: bytes) -> PublicKey:
-        """
-        Deserialize a public key from a byte array.
-
-        Args:
-            data: The serialized public key.
-
-        Returns:
-            The deserialized public key.
-
-        Raises:
-            ValueError: If the public key is not the expected size.
-        """
-        if len(data) != self.PUBLIC_KEY_SIZE_BYTES:
-            raise ValueError(
-                f"Invalid public key length: expected {self.PUBLIC_KEY_SIZE_BYTES}, got {len(data)}"
-            )
-
-        root_size = self.HASH_LEN_FE * P_BYTES
-        root = self.deserialize_field_elements(data[:root_size])
-        parameter = self.deserialize_field_elements(data[root_size:])
-
-        return PublicKey(root=root, parameter=parameter)
-
-    def serialize_signature(self, signature: Signature) -> bytes:
-        """
-        Serialize the signature to a byte array.
-
-        Args:
-            signature: The signature to serialize.
-
-        Returns:
-            The serialized signature.
-        """
-        # Serialize path siblings (LOG_LIFETIME siblings, each HASH_LEN_FE field elements)
-        # signature.path.siblings is List[HashDigest] = List[List[Fp]], needs flattening
-        siblings_flat = [fe for sibling in signature.path.siblings for fe in sibling]
-
-        # Serialize rho (RAND_LEN_FE field elements)
-        # signature.rho is Randomness = List[Fp], already flat
-
-        # Serialize hashes (DIMENSION hashes, each HASH_LEN_FE field elements)
-        # signature.hashes is List[HashDigest] = List[List[Fp]], needs flattening
-        hashes_flat = [fe for hash_digest in signature.hashes for fe in hash_digest]
-
-        return (
-            self.serialize_field_elements(siblings_flat)
-            + self.serialize_field_elements(signature.rho)
-            + self.serialize_field_elements(hashes_flat)
-        )
-
-    def deserialize_signature(self, data: bytes) -> Signature:
-        """
-        Deserialize the signature from a byte array.
-
-        Args:
-            data: The serialized signature.
-
-        Returns:
-            The deserialized signature.
-
-        Raises:
-            ValueError: If the signature is not the expected size.
-        """
-        if len(data) != self.SIGNATURE_SIZE_BYTES:
-            raise ValueError(
-                f"Invalid signature length: expected {self.SIGNATURE_SIZE_BYTES}, got {len(data)}"
-            )
-
-        # Calculate sizes for each component
-        path_size = self.LOG_LIFETIME * self.HASH_LEN_FE * P_BYTES
-        rho_size = self.RAND_LEN_FE * P_BYTES
-
-        # Split data into sections
-        offset = 0
-        path_data = data[offset : offset + path_size]
-        offset += path_size
-        rho_data = data[offset : offset + rho_size]
-        offset += rho_size
-        hashes_data = data[offset:]
-
-        # Deserialize path siblings (LOG_LIFETIME siblings, each HASH_LEN_FE field elements)
-        siblings_flat = self.deserialize_field_elements(path_data)
-        siblings = [
-            siblings_flat[i : i + self.HASH_LEN_FE]
-            for i in range(0, len(siblings_flat), self.HASH_LEN_FE)
-        ]
-
-        # Deserialize rho (RAND_LEN_FE field elements)
-        rho = self.deserialize_field_elements(rho_data)
-
-        # Deserialize hashes (DIMENSION hashes, each HASH_LEN_FE field elements)
-        hashes_flat = self.deserialize_field_elements(hashes_data)
-        hashes = [
-            hashes_flat[i : i + self.HASH_LEN_FE]
-            for i in range(0, len(hashes_flat), self.HASH_LEN_FE)
-        ]
-
-        return Signature(
-            path=HashTreeOpening(siblings=siblings),
-            rho=rho,
-            hashes=hashes,
-        )
 
 
 PROD_CONFIG: Final = XmssConfig(

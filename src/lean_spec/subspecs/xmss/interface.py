@@ -8,7 +8,12 @@ This constitutes the public API of the signature scheme.
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Tuple
+
+from ..koalabear import P_BYTES, Fp
+
+if TYPE_CHECKING:
+    from .containers import HashTreeOpening, PublicKey, Signature
 
 from lean_spec.subspecs.xmss.target_sum import (
     PROD_TARGET_SUM_ENCODER,
@@ -343,6 +348,136 @@ class GeneralizedXmssScheme:
             position=epoch,
             leaf_parts=chain_ends,
             opening=sig.path,
+        )
+
+    def _serialize_field_elements(self, field_elements: List[Fp]) -> bytes:
+        """Serialize a list of field elements to a byte array."""
+        return b"".join(fe.serialize() for fe in field_elements)
+
+    def _deserialize_field_elements(self, data: bytes) -> List[Fp]:
+        """Deserialize a list of field elements from a byte array."""
+        return [Fp.deserialize(data[i : i + P_BYTES]) for i in range(0, len(data), P_BYTES)]
+
+    def serialize_public_key(self, public_key: PublicKey) -> bytes:
+        """
+        Serialize the public key to a byte array.
+
+        Args:
+            public_key: The public key to serialize.
+
+        Returns:
+            The serialized public key.
+        """
+        return self._serialize_field_elements(public_key.root) + self._serialize_field_elements(
+            public_key.parameter
+        )
+
+    def deserialize_public_key(self, data: bytes) -> PublicKey:
+        """
+        Deserialize a public key from a byte array.
+
+        Args:
+            data: The serialized public key.
+
+        Returns:
+            The deserialized public key.
+
+        Raises:
+            ValueError: If the public key is not the expected size.
+        """
+        if len(data) != self.config.PUBLIC_KEY_LEN_BYTES:
+            raise ValueError(
+                f"Invalid public key length: \
+                expected {self.config.PUBLIC_KEY_LEN_BYTES}, \
+                got {len(data)}"
+            )
+
+        root_size = self.config.HASH_LEN_FE * P_BYTES
+        root = self._deserialize_field_elements(data[:root_size])
+        parameter = self._deserialize_field_elements(data[root_size:])
+
+        return PublicKey(root=root, parameter=parameter)
+
+    def serialize_signature(self, signature: Signature) -> bytes:
+        """
+        Serialize the signature to a byte array.
+
+        Args:
+            signature: The signature to serialize.
+
+        Returns:
+            The serialized signature.
+        """
+        # Serialize path siblings (LOG_LIFETIME siblings, each HASH_LEN_FE field elements)
+        # signature.path.siblings is List[HashDigest] = List[List[Fp]], needs flattening
+        siblings_flat = [fe for sibling in signature.path.siblings for fe in sibling]
+
+        # Serialize rho (RAND_LEN_FE field elements)
+        # signature.rho is Randomness = List[Fp], already flat
+
+        # Serialize hashes (DIMENSION hashes, each HASH_LEN_FE field elements)
+        # signature.hashes is List[HashDigest] = List[List[Fp]], needs flattening
+        hashes_flat = [fe for hash_digest in signature.hashes for fe in hash_digest]
+
+        return (
+            self._serialize_field_elements(siblings_flat)
+            + self._serialize_field_elements(signature.rho)
+            + self._serialize_field_elements(hashes_flat)
+        )
+
+    def deserialize_signature(self, data: bytes) -> Signature:
+        """
+        Deserialize the signature from a byte array.
+
+        Args:
+            data: The serialized signature.
+
+        Returns:
+            The deserialized signature.
+
+        Raises:
+            ValueError: If the signature is not the expected size.
+        """
+        if len(data) != self.config.SIGNATURE_LEN_BYTES:
+            raise ValueError(
+                f"Invalid signature length: \
+                expected {self.config.SIGNATURE_LEN_BYTES}, \
+                got {len(data)}"
+            )
+
+        # Calculate sizes for each component
+        path_size = self.config.LOG_LIFETIME * self.config.HASH_LEN_FE * P_BYTES
+        rho_size = self.config.RAND_LEN_FE * P_BYTES
+
+        # Split data into sections
+        offset = 0
+        path_data = data[offset : offset + path_size]
+        offset += path_size
+        rho_data = data[offset : offset + rho_size]
+        offset += rho_size
+        hashes_data = data[offset:]
+
+        # Deserialize path siblings (LOG_LIFETIME siblings, each HASH_LEN_FE field elements)
+        siblings_flat = self._deserialize_field_elements(path_data)
+        siblings = [
+            siblings_flat[i : i + self.config.HASH_LEN_FE]
+            for i in range(0, len(siblings_flat), self.config.HASH_LEN_FE)
+        ]
+
+        # Deserialize rho (RAND_LEN_FE field elements)
+        rho = self._deserialize_field_elements(rho_data)
+
+        # Deserialize hashes (DIMENSION hashes, each HASH_LEN_FE field elements)
+        hashes_flat = self._deserialize_field_elements(hashes_data)
+        hashes = [
+            hashes_flat[i : i + self.config.HASH_LEN_FE]
+            for i in range(0, len(hashes_flat), self.config.HASH_LEN_FE)
+        ]
+
+        return Signature(
+            path=HashTreeOpening(siblings=siblings),
+            rho=rho,
+            hashes=hashes,
         )
 
 
