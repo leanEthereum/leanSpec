@@ -90,7 +90,6 @@ class XmssConfig(StrictBaseModel):
         """Total output length for the message hash."""
         return self.POS_OUTPUT_LEN_PER_INV_FE * self.POS_INVOCATIONS
 
-    # --- Serialization and deserialization ---
     @property
     def PUBLIC_KEY_LEN_BYTES(self) -> int:  # noqa: N802
         """The size of the public key in bytes."""
