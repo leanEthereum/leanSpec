@@ -5,7 +5,11 @@ from typing import ClassVar, List
 from pydantic import model_validator
 
 from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
-from lean_spec.subspecs.containers.attestation import Attestation, AttestationData
+from lean_spec.subspecs.containers.attestation import (
+    Attestation,
+    AttestationData,
+    SignedAttestation,
+)
 from lean_spec.subspecs.containers.block.block import (
     Block,
     BlockBody,
@@ -15,12 +19,20 @@ from lean_spec.subspecs.containers.block.block import (
 from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.signature import Signature
+from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
-from ..test_types import AttestationStep, BlockSpec, BlockStep, ForkChoiceStep, TickStep
+from ..test_types import (
+    AttestationStep,
+    BlockSpec,
+    BlockStep,
+    ForkChoiceStep,
+    SignedAttestationSpec,
+    TickStep,
+)
 from .base import BaseConsensusFixture
 
 
@@ -256,8 +268,25 @@ class ForkChoiceTest(BaseConsensusFixture):
             temp_state = head_state.process_slots(spec.slot)
             parent_root = hash_tree_root(temp_state.latest_block_header)
 
-        # Build body (empty for now, attestations can be added later if needed)
-        body = BlockBody(attestations=Attestations(data=[]))
+        # Prepare attestations from spec if provided
+        attestations = []
+        attestation_signatures = []
+        if spec.attestations is not None:
+            for attestation in spec.attestations:
+                if isinstance(attestation, SignedAttestationSpec):
+                    # Use the parent state's latest_justified for source checkpoint
+                    parent_state = store.states[parent_root]
+                    signed_attestation = self._build_signed_attestation_from_spec(attestation, block_registry, parent_state)
+                    # Extract the Attestation message and signature
+                    attestations.append(signed_attestation.message)
+                    attestation_signatures.append(signed_attestation.signature)
+                else:
+                    # Already a SignedAttestation, extract the message
+                    attestations.append(attestation.message)
+                    attestation_signatures.append(attestation.signature)
+
+        # Build block with collected attestations
+        body = BlockBody(attestations=Attestations(data=attestations))
 
         # Create temporary block for dry-run
         temp_block = Block(
@@ -294,13 +323,77 @@ class ForkChoiceTest(BaseConsensusFixture):
             ),
         )
 
-        # Create signed structure with placeholder signatures
-        # One signature for proposer attestation + one for the block
-        signature_list = [Signature.zero(), Signature.zero()]
+        # Finally create the signed block with attestation
+        # Signatures are indexed as: [attestation_0, attestation_1, ..., proposer_attestation]
+        # TODO: replace Signature.zero() with the actual proposer signature
+        signature_list = attestation_signatures + [Signature.zero()]
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,
                 proposer_attestation=proposer_attestation,
             ),
             signature=BlockSignatures(data=signature_list),
+        )
+
+    def _build_signed_attestation_from_spec(
+        self,
+        spec: SignedAttestationSpec,
+        block_registry: dict[str, Block],
+        state: State,
+    ) -> SignedAttestation:
+        """
+        Resolve a SignedAttestationSpec to a SignedAttestation by resolving target and deriving other fields.
+
+        Parameters
+        ----------
+        spec : SignedAttestationSpec
+            The attestation specification to resolve.
+        block_registry : dict[str, Block]
+            Registry of labeled blocks for resolving target_root_label.
+        state : State
+            The state to get latest_justified checkpoint from.
+
+        Returns
+        -------
+        SignedAttestation
+            The resolved signed attestation.
+        """
+        # Resolve target checkpoint from label
+        if spec.target_root_label not in block_registry:
+            raise ValueError(
+                f"target_root_label '{spec.target_root_label}' not found - "
+                f"available labels: {list(block_registry.keys())}"
+            )
+        target_block = block_registry[spec.target_root_label]
+        target_root = hash_tree_root(target_block)
+        target_checkpoint = Checkpoint(root=target_root, slot=spec.target_slot)
+
+        # Derive head = target
+        head_checkpoint = target_checkpoint
+
+        # Derive source from state's latest justified checkpoint
+        source_checkpoint = state.latest_justified
+
+        # Convert validator_id to Uint64 if needed
+        validator_id = (
+            spec.validator_id
+            if isinstance(spec.validator_id, Uint64)
+            else Uint64(int(spec.validator_id))
+        )
+
+        # Create attestation data
+        attestation_data = AttestationData(
+            slot=spec.slot,
+            head=head_checkpoint,
+            target=target_checkpoint,
+            source=source_checkpoint,
+        )
+
+        # Create attestation
+        attestation = Attestation(validator_id=validator_id, data=attestation_data)
+
+        # Create signed attestation
+        return SignedAttestation(
+            message=attestation,
+            signature=spec.signature if spec.signature is not None else Signature.zero(),
         )

@@ -15,6 +15,7 @@ from .test_types import (
     BlockSpec,
     BlockStep,
     ForkChoiceStep,
+    SignedAttestationSpec,
     StateExpectation,
     StoreChecks,
     TickStep,
@@ -27,6 +28,7 @@ ForkChoiceTestFiller = Type[ForkChoiceTest]
 __all__ = [
     # Public API
     "BlockSpec",
+    "SignedAttestationSpec",
     "forks",
     "generate_pre_state",
     # Base types
