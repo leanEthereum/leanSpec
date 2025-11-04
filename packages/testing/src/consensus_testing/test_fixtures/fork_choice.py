@@ -21,6 +21,7 @@ from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
+from lean_spec.subspecs.xmss.interface import DEFAULT_SIGNATURE_SCHEME
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
 from ..keys import XmssKeyManager
@@ -158,8 +159,8 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Update validator pubkeys to match key_manager's generated keys
         updated_validators = []
         for i, validator in enumerate(self.anchor_state.validators):
-            pubkey, _ = key_manager.get_or_create_key(ValidatorIndex(i))
-            pubkey_bytes = pubkey.to_bytes(key_manager.schema.config)
+            pubkey, _ = key_manager.create_key_pair(ValidatorIndex(i))
+            pubkey_bytes = pubkey.to_bytes(DEFAULT_SIGNATURE_SCHEME.config)
             updated_validator = validator.model_copy(update={"pubkey": pubkey_bytes})
             updated_validators.append(updated_validator)
 
