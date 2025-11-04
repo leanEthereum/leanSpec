@@ -796,6 +796,7 @@ def test_back_and_forth_reorg_oscillation(
         ],
     )
 
+
 def test_reorg_on_newly_justified_slot(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
@@ -868,8 +869,7 @@ def test_reorg_on_newly_justified_slot(
             ),
             # Fork A: slot 4 (extends, still head)
             BlockStep(
-                block=BlockSpec(slot=Slot(4), parent_label="fork_a_3", label="fork_a_4"
-                ),
+                block=BlockSpec(slot=Slot(4), parent_label="fork_a_3", label="fork_a_4"),
                 checks=StoreChecks(
                     head_slot=Slot(4),
                     head_root_label="fork_a_4",  # Fork A leads (3 blocks vs 1)
@@ -900,7 +900,7 @@ def test_reorg_on_newly_justified_slot(
                 checks=StoreChecks(
                     head_slot=Slot(5),
                     latest_justified_slot=Slot(2),
-                    head_root_label="fork_b_5", # Fork B leads because Fork B at Slot 2 is justified
+                    head_root_label="fork_b_5",  # Fork B leads because Fork B at Slot 2 is justified
                 ),
             ),
         ],
