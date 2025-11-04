@@ -53,9 +53,14 @@ from consensus_testing import (
     BlockStep,
     ForkChoiceTestFiller,
     StoreChecks,
+    TickStep,
+    generate_pre_state,
 )
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state import Validators
+from lean_spec.subspecs.containers.validator import Validator
+from lean_spec.types import Bytes52, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -367,12 +372,12 @@ def test_reorg_with_slot_gaps(
     --------
     - Slot 1: Base
     - Slot 3: Fork A (skipping slot 2)
-    - Slot 3: Fork B (competing)
+    - Slot 4: Fork B (competing)
     - Slot 7: Fork A extended (skipping slots 4-6)
-    - Slot 8: Fork B extended (skipping slots 4-7)
+    - Slot 8: Fork B extended (skipping slots 5-7)
     - Slot 9: Fork B extended again → triggers reorg
 
-    Missed Slots: 2, 4, 5, 6 (no blocks produced)
+    Missed Slots: 2, 5, 6 (no blocks produced)
 
     Expected Behavior
     -----------------
@@ -402,6 +407,9 @@ def test_reorg_with_slot_gaps(
     conditions where perfect block production is impossible.
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+        ),
         steps=[
             # Base at slot 1
             BlockStep(
@@ -419,9 +427,9 @@ def test_reorg_with_slot_gaps(
                     head_root_label="fork_a_3",
                 ),
             ),
-            # Fork B at slot 3 (competing, missed slot 2)
+            # Fork B at slot 4 (competing, missed slot 2-3)
             BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="base", label="fork_b_3"),
+                block=BlockSpec(slot=Slot(4), parent_label="base", label="fork_b_4"),
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     head_root_label="fork_a_3",  # Tie-breaker
@@ -430,14 +438,18 @@ def test_reorg_with_slot_gaps(
             # Fork A at slot 7 (missed slots 4-6)
             BlockStep(
                 block=BlockSpec(slot=Slot(7), parent_label="fork_a_3", label="fork_a_7"),
+            ),
+            # Accept fork_a_7's proposer attestation to ensure it counts in fork choice
+            TickStep(
+                time=(7 * 4 + 3),  # Slot 7, interval 3
                 checks=StoreChecks(
                     head_slot=Slot(7),
                     head_root_label="fork_a_7",
                 ),
             ),
-            # Fork B at slot 8 (missed slots 4-7, catches up)
+            # Fork B at slot 8 (missed slots 5-7, catches up)
             BlockStep(
-                block=BlockSpec(slot=Slot(8), parent_label="fork_b_3", label="fork_b_8"),
+                block=BlockSpec(slot=Slot(8), parent_label="fork_b_4", label="fork_b_8"),
                 checks=StoreChecks(
                     head_slot=Slot(7),
                     head_root_label="fork_a_7",  # Tie (both 2 blocks deep)
@@ -446,6 +458,11 @@ def test_reorg_with_slot_gaps(
             # Fork B at slot 9 (overtakes with 3rd block)
             BlockStep(
                 block=BlockSpec(slot=Slot(9), parent_label="fork_b_8", label="fork_b_9"),
+            ),
+            # Advance to end of slot 9 to accept fork_b_9's proposer attestation
+            # This ensures the attestation contributes to fork choice weight
+            TickStep(
+                time=(9 * 4 + 3),  # Slot 9, interval 3 (end of slot)
                 checks=StoreChecks(
                     head_slot=Slot(9),
                     head_root_label="fork_b_9",  # REORG with sparse blocks
@@ -604,6 +621,9 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
     - Network naturally converges on heaviest fork
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(12)])
+        ),
         steps=[
             # Common base
             BlockStep(
