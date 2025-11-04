@@ -312,35 +312,58 @@ def test_attestation_target_justifiable_constraint(
 
     Justifiability Rules (see Slot.is_justifiable_after)
     -----------------------------------------------------
-    A slot is justifiable at distance delta from finalization if:
-    1. delta ≤ 5 (first 5 slots always justifiable)
+
+    The target starts from current head and walks back at most 3 slots towards safe target.
+
+    Then, a slot is deemed justifiable at distance delta from finalization if:
+    1. delta ≤ 5
     2. delta is a perfect square (1, 4, 9, 16, 25, ...)
     3. delta is a pronic number (2, 6, 12, 20, 30, ...)
 
     Expected Target Advancement:
-        - Slots 1-3: Target = slot 0 (genesis)
-          Uses Rule 1: distance ≤ 5
+        - Slots 1-3: 3-slot walkback target = slot 0
+          delta = slot 0 (target) - slot 0 (finalized) = 0
+          Use Rule 1: delta 0 ≤ 5
 
-        - Slot 4: Target = slot 1
-          Uses Rule 2: distance 1 is a perfect square
+        - Slot 4: 3-slot walkback target = slot 1
+          delta = slot 1 (target) - slot 0 (finalized) = 1
+          Uses Rule 1: delta 1 ≤ 5
 
-        - Slot 5: Target = slot 2
-          Uses Rule 3: distance 2 is pronic (1×2)
+        - Slot 5: 3-slot walkback target = slot 2
+          delta = slot 2 (target) - slot 0 (finalized) = 2
+          Uses Rule 1: delta 2 ≤ 5
 
-        - Slot 6: Target = slot 3
-          Uses Rule 1: distance 3 ≤ 5
+        - Slot 6: 3-slot walkback target = slot 3
+          delta = slot 3 (target) - slot 0 (finalized) = 3
+          Uses Rule 1: delta 3 ≤ 5
 
-        - Slot 7: Target = slot 4
-          Uses Rule 2: distance 4 is a perfect square (2^2)
+        - Slot 7: 3-slot walkback target = slot 4
+          delta = slot 4 (target) - slot 0 (finalized) = 4
+          Uses Rule 1: delta 4 ≤ 5
 
-        - Slot 8: Target = slot 5
-          Uses Rule 1: distance 5 ≤ 5
+        - Slot 8: 3-slot walkback target = slot 5
+          delta = slot 5 (target) - slot 0 (finalized) = 5
+          Uses Rule 1: delta 5 ≤ 5
 
-        - Slot 9: Target = slot 6
-          Uses Rule 3: distance 6 is pronic (2×3)
+        - Slot 9: 3-slot walkback target = slot 6
+          delta = slot 6 (target) - slot 0 (finalized) = 6
+          Uses Rule 3: delta 6 is pronic (2×3)
 
-        - Slot 10: Target = slot 6
-          Target can't advance: distance 7 fails all rules
+        - Slot 10: 3-slot walkback target = slot 7
+          delta = slot 7 (target) - slot 0 (finalized) = 7
+          Target can't advance: delta 7 fails all rules
+
+        - Slot 11: 3-slot walkback target = slot 8
+          delta = slot 8 (target) - slot 0 (finalized) = 8
+          Target can't advance: delta 8 fails all rules
+
+        - Slot 12: 3-slot walkback target = slot 9
+          delta = slot 9 (target) - slot 0 (finalized) = 9
+          Uses Rule 2: delta 9 is a perfect square (3^2)
+
+        - Slot 13: 3-slot walkback target = slot 10
+          delta = slot 10 (target) - slot 0 (finalized) = 10
+          Target can't advance: delta 10 fails all rules
 
     Why This Matters
     ----------------
@@ -358,10 +381,10 @@ def test_attestation_target_justifiable_constraint(
                 block=BlockSpec(slot=Slot(i)),
                 checks=StoreChecks(
                     head_slot=Slot(i),
-                    # Target advancement pattern (conservative start, then gradual advance):
-                    # - Slot 1: target = 0 (genesis)
-                    # - Slot 2: target = 0 (genesis)
-                    # - Slot 3: target = 0 (genesis)
+                    # Target advancement pattern:
+                    # - Slot 1: target = 0 (3-slot walkback reaches safe target at slot 0)
+                    # - Slot 2: target = 0 (3-slot walkback reaches safe target at slot 0)
+                    # - Slot 3: target = 0 (3-slot walkback reaches safe target at slot 0)
                     # - Slot 4: target = 1 (begins advancing)
                     # - Slot 5: target = 2
                     # - Slot 6: target = 3
@@ -369,9 +392,14 @@ def test_attestation_target_justifiable_constraint(
                     # - Slot 8: target = 5
                     # - Slot 9: target = 6
                     # - Slot 10: target = 6 (advancement slows)
-                    attestation_target_slot=Slot(0 if i <= 3 else (i - 3 if i <= 9 else 6)),
+                    # - Slot 11: target = 6 (advancement slows)
+                    # - Slot 12: target = 9
+                    # - Slot 13: target = 9 (advancement slows)
+                    attestation_target_slot=Slot(
+                        0 if i <= 3 else (i - 3 if i <= 9 else (6 if i <= 11 else 9))
+                    ),
                 ),
             )
-            for i in range(1, 11)
+            for i in range(1, 13)
         ],
     )
