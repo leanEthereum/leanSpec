@@ -64,7 +64,8 @@ class BlockSpec(CamelModel):
     List of signed attestations to include in this block's body.
 
     These attestations will be included in block.body.attestations.
-    Can be either SignedAttestation (direct) or SignedAttestationSpec (with target_root_label support).
+    Can be either SignedAttestation (direct) or SignedAttestationSpec.
+
     If None, framework uses default behavior (empty body).
     If body is provided, this field is ignored.
     """
