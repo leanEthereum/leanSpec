@@ -900,7 +900,7 @@ def test_reorg_on_newly_justified_slot(
                 checks=StoreChecks(
                     head_slot=Slot(5),
                     latest_justified_slot=Slot(2),
-                    head_root_label="fork_b_5",  # Fork B leads because Fork B at Slot 2 is justified
+                    head_root_label="fork_b_5",  # Fork B leads as Fork B at Slot 2 is justified
                 ),
             ),
         ],
