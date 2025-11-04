@@ -19,7 +19,6 @@ from lean_spec.subspecs.containers.block.block import (
 from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.signature import Signature
-from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
@@ -276,7 +275,9 @@ class ForkChoiceTest(BaseConsensusFixture):
                 if isinstance(attestation, SignedAttestationSpec):
                     # Use the parent state's latest_justified for source checkpoint
                     parent_state = store.states[parent_root]
-                    signed_attestation = self._build_signed_attestation_from_spec(attestation, block_registry, parent_state)
+                    signed_attestation = self._build_signed_attestation_from_spec(
+                        attestation, block_registry, parent_state
+                    )
                     # Extract the Attestation message and signature
                     attestations.append(signed_attestation.message)
                     attestation_signatures.append(signed_attestation.signature)
@@ -342,7 +343,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         state: State,
     ) -> SignedAttestation:
         """
-        Resolve a SignedAttestationSpec to a SignedAttestation by resolving target and deriving other fields.
+        Build a SignedAttestation from a SignedAttestationSpec.
 
         Parameters
         ----------
@@ -353,7 +354,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         state : State
             The state to get latest_justified checkpoint from.
 
-        Returns
+        Returns:
         -------
         SignedAttestation
             The resolved signed attestation.

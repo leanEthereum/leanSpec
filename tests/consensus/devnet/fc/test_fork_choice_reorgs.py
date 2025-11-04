@@ -59,7 +59,6 @@ from consensus_testing import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import ValidatorIndex
 
-
 pytestmark = pytest.mark.valid_until("Devnet")
 
 
@@ -819,8 +818,8 @@ def test_reorg_on_newly_justified_slot(
     -----------------
     1. Fork A and Fork B initially have equal weight at Slot 2
     2. Fork A takes lead at Slot 3 and Slot 4
-    2. At Slot 5, enough attestations justified Fork B at Slot 2, renders Fork A permanently non-canonical
-    3. Fork B becomes head at Slot 5 due to Slot 2's justification even though Fork A at Slot 4 has more blocks
+    2. At Slot 5, enough attestations justified Fork B at Slot 2, Fork A permanently non-canonical
+    3. Fork B becomes head at Slot 5 due to justification of Fork B at Slot 2
 
     Why This Matters
     ----------------
@@ -883,7 +882,7 @@ def test_reorg_on_newly_justified_slot(
                     parent_label="fork_a_4",
                     label="fork_b_5",
                     attestations=[
-                        # The proposer validator_id is 5 % 4 = 1, so we're adding attestations from 2 and 3
+                        # The proposer validator_id is 5 % 4 = 1, so adding attestations for 2 and 3
                         SignedAttestationSpec(
                             validator_id=ValidatorIndex(2),
                             slot=Slot(4),
