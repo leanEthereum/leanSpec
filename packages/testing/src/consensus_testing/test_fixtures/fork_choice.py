@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import ClassVar, List
 
 from pydantic import model_validator
@@ -40,6 +41,20 @@ from ..test_types import (
 )
 from .base import BaseConsensusFixture
 
+
+@lru_cache(maxsize=1)
+def _get_shared_key_manager() -> XmssKeyManager:
+    """
+    Get or create the shared XMSS key manager for reusing keys across tests.
+    
+    Uses functools.lru_cache to create a singleton instance that's shared
+    across all test fixture generations within a session. This optimizes
+    performance by reusing keys when possible.
+    
+    Returns:
+        Shared XmssKeyManager instance with max_slot=10.
+    """
+    return XmssKeyManager(max_slot=Slot(10))
 
 class ForkChoiceTest(BaseConsensusFixture):
     """
@@ -164,9 +179,14 @@ class ForkChoiceTest(BaseConsensusFixture):
         assert self.anchor_block is not None, "anchor_block must be set before make_fixture"
         assert self.max_slot is not None, "max_slot must be set before make_fixture"
 
-        # Initialize XMSS key manager with max_slot for key generation
-        # Avoid adding excess buffer as it slows down test execution
-        key_manager = XmssKeyManager(max_slot=self.max_slot)
+        # Use shared key manager if it has sufficient capacity, otherwise create a new one
+        # This optimizes performance by reusing keys across tests when possible
+        shared_key_manager = _get_shared_key_manager()
+        if self.max_slot <= shared_key_manager.max_slot:
+            key_manager = shared_key_manager
+        else:
+            # Test needs more slots than shared manager supports, create dedicated one
+            key_manager = XmssKeyManager(max_slot=self.max_slot)
 
         # Update validator pubkeys to match key_manager's generated keys
         updated_validators = []
