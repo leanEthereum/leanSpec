@@ -1,8 +1,13 @@
 """Lightweight block specification for test definitions."""
 
+from typing import Union
+
+from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block import BlockBody
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, CamelModel, ValidatorIndex
+
+from .signed_attestation_spec import SignedAttestationSpec
 
 
 class BlockSpec(CamelModel):
@@ -49,8 +54,20 @@ class BlockSpec(CamelModel):
     """
     The block body containing attestations.
 
-    If None, framework creates empty body for state transition tests,
-    or collects attestations for fork choice tests.
+    If None, framework creates body from the attestations field.
+    If both body and attestations are None, framework creates body with empty attestations.
+    Note: If body is provided, attestations field is ignored.
+    """
+
+    attestations: list[Union[SignedAttestation, SignedAttestationSpec]] | None = None
+    """
+    List of signed attestations to include in this block's body.
+
+    These attestations will be included in block.body.attestations.
+    Can be either SignedAttestation (direct) or SignedAttestationSpec.
+
+    If None, framework uses default behavior (empty body).
+    If body is provided, this field is ignored.
     """
 
     label: str | None = None
