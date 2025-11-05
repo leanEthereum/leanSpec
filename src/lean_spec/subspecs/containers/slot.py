@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from functools import total_ordering
 
 from lean_spec.types import Uint64
@@ -44,13 +45,16 @@ class Slot(Uint64):
             # Rule 2: Slots at perfect square distances are justifiable.
             #
             # Examples: delta = 1, 4, 9, 16, 25, 36, 49, 64, ...
-            # Check: sqrt(delta) is a whole number (no fractional part)
-            or (delta**0.5) % 1 == 0
+            # Check: integer square root squared equals delta
+            or math.isqrt(delta) ** 2 == delta
             # Rule 3: Slots at pronic number distances are justifiable.
             #
             # Pronic numbers have the form n(n+1): 2, 6, 12, 20, 30, 42, 56, ...
             # Mathematical insight: For pronic delta = n(n+1), we have:
-            #   delta + 0.25 = n^2 + n + 0.25 = (n + 0.5)^2
-            #   Therefore sqrt(delta + 0.25) = n + 0.5
-            or ((delta + 0.25) ** 0.5) % 1 == 0.5
+            #   4*delta + 1 = 4n(n+1) + 1 = (2n+1)^2
+            # Check: 4*delta+1 is an odd perfect square
+            or (
+                math.isqrt(4 * delta + 1) ** 2 == 4 * delta + 1
+                and math.isqrt(4 * delta + 1) % 2 == 1
+            )
         )
