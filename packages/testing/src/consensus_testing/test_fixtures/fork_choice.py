@@ -46,15 +46,16 @@ from .base import BaseConsensusFixture
 def _get_shared_key_manager() -> XmssKeyManager:
     """
     Get or create the shared XMSS key manager for reusing keys across tests.
-    
+
     Uses functools.lru_cache to create a singleton instance that's shared
     across all test fixture generations within a session. This optimizes
     performance by reusing keys when possible.
-    
+
     Returns:
         Shared XmssKeyManager instance with max_slot=10.
     """
     return XmssKeyManager(max_slot=Slot(10))
+
 
 class ForkChoiceTest(BaseConsensusFixture):
     """
