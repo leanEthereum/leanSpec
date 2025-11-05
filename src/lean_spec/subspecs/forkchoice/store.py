@@ -263,30 +263,30 @@ class Store(Container):
 
     def _validate_block_signatures(
         self,
-        block: Block,
-        signatures: BlockSignatures,
-        proposer_attestation: Attestation,
+        signed_block_with_attestation: SignedBlockWithAttestation,
     ) -> bool:
         """
         Validate block signatures.
 
         Args:
-            block: Block to validate.
-            signatures: Block signatures to validate.
-            proposer_attestation: Attestation from the block proposer.
+            signed_block_with_attestation: Signed block with attestation to validate.
 
         Returns:
             True if block signatures are valid, False otherwise.
         """
+        block = signed_block_with_attestation.message.block
+        proposer_attestation = signed_block_with_attestation.message.proposer_attestation
+        signatures = signed_block_with_attestation.signature
+
         attestations = list(block.body.attestations)
         attestations.append(proposer_attestation)
 
-        if len(signatures) != len(attestations):
-            return False
+        assert len(signatures) == len(attestations), (
+            "Number of signatures does not match number of attestations"
+        )
 
         state = self.states.get(block.parent_root)
-        if state is None:
-            return False
+        assert state is not None, "Parent state not found"
 
         validators = state.validators
 
@@ -295,21 +295,17 @@ class Store(Container):
             signature = signatures[index]
             validator_id = attestation.validator_id.as_int()
 
-            if validator_id >= len(validators):
-                return False
-
+            assert validator_id < len(validators), "Validator index out of range"
             validator = validators[validator_id]
 
-            try:
-                pubkey = validator.get_pubkey()
-            except (ValueError, Exception):
-                return False
+            pubkey = validator.get_pubkey()
 
             message = bytes(hash_tree_root(attestation))
             epoch = attestation.data.slot.as_int()
 
-            if not signature.verify(pubkey, epoch, message):
-                return False
+            assert signature.verify(pubkey, epoch, message), (
+                "Attestation signature verification failed"
+            )
 
         return True
 
@@ -457,7 +453,7 @@ class Store(Container):
         )
 
         # Validate cryptographic signatures
-        valid_signatures = self._validate_block_signatures(block, signatures, proposer_attestation)
+        valid_signatures = self._validate_block_signatures(signed_block_with_attestation)
 
         # Execute state transition function to compute post-block state
         post_state = copy.deepcopy(parent_state).state_transition(block, valid_signatures)

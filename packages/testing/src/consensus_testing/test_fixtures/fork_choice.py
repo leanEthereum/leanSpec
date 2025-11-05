@@ -7,6 +7,7 @@ from typing import ClassVar, List
 from pydantic import model_validator
 
 from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
+from lean_spec.subspecs.containers import Signature
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
@@ -170,7 +171,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Update validator pubkeys to match key_manager's generated keys
         updated_validators = []
         for i, validator in enumerate(self.anchor_state.validators):
-            pubkey, _ = key_manager.create_key_pair(ValidatorIndex(i))
+            pubkey, _ = key_manager.create_and_store_key_pair(ValidatorIndex(i))
             pubkey_bytes = pubkey.to_bytes(DEFAULT_SIGNATURE_SCHEME.config)
             updated_validator = validator.model_copy(update={"pubkey": pubkey_bytes})
             updated_validators.append(updated_validator)

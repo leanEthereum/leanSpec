@@ -41,7 +41,9 @@ class XmssKeyManager:
         self.public_keys: dict[ValidatorIndex, PublicKey] = {}
         self.secret_keys: dict[ValidatorIndex, SecretKey] = {}
 
-    def create_key_pair(self, validator_index: ValidatorIndex) -> tuple[PublicKey, SecretKey]:
+    def create_and_store_key_pair(
+        self, validator_index: ValidatorIndex
+    ) -> tuple[PublicKey, SecretKey]:
         """
         Create an XMSS key pair for the given validator index.
 
