@@ -45,6 +45,15 @@ class StateExpectation(CamelModel):
     validator_count: int | None = None
     """Expected number of validators."""
 
+    latest_block_header_slot: Slot | None = None
+    """Expected slot of the latest block header."""
+
+    latest_block_header_state_root: Bytes32 | None = None
+    """Expected state root in the latest block header."""
+
+    historical_block_hashes_count: int | None = None
+    """Expected number of historical block hashes."""
+
     def validate_against_state(self, state: "State") -> None:
         """
         Validate this expectation against actual State.
@@ -112,5 +121,29 @@ class StateExpectation(CamelModel):
                 if actual_count != expected_value:
                     raise AssertionError(
                         f"State validation failed: validator_count = {actual_count}, "
+                        f"expected {expected_value}"
+                    )
+
+            elif field_name == "latest_block_header_slot":
+                actual_slot = state.latest_block_header.slot
+                if actual_slot != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: latest_block_header.slot = {actual_slot}, "
+                        f"expected {expected_value}"
+                    )
+
+            elif field_name == "latest_block_header_state_root":
+                actual_state_root = state.latest_block_header.state_root
+                if actual_state_root != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: latest_block_header.state_root = "
+                        f"0x{actual_state_root.hex()}, expected 0x{expected_value.hex()}"
+                    )
+
+            elif field_name == "historical_block_hashes_count":
+                actual_count = len(state.historical_block_hashes)
+                if actual_count != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: historical_block_hashes count = {actual_count}, "
                         f"expected {expected_value}"
                     )
