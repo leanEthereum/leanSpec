@@ -726,7 +726,8 @@ class Store(Container):
         ensuring the target is in a justifiable slot range:
 
         1. **Start at Head**: Begin with the current head block
-        2. **Walk Toward Safe**: Move backward (up to 3 steps) if safe target is newer
+        2. **Walk Toward Safe**: Move backward (up to `JUSTIFICATION_LOOKBACK_SLOTS` steps)
+           if safe target is newer
         3. **Ensure Justifiable**: Continue walking back until slot is justifiable
         4. **Return Checkpoint**: Create checkpoint from selected block
 
@@ -746,7 +747,7 @@ class Store(Container):
         # Start from current head
         target_block_root = self.head
 
-        # Walk back toward safe target (up to 3 steps)
+        # Walk back toward safe target (up to `JUSTIFICATION_LOOKBACK_SLOTS` steps)
         #
         # This ensures the target doesn't advance too far ahead of safe target,
         # providing a balance between liveness and safety.
