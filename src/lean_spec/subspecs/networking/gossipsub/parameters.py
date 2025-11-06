@@ -39,7 +39,7 @@ class GossipsubParameters(StrictBaseModel):
     """The number of history windows to gossip about."""
 
     seen_ttl_secs: int = (
-        DEVNET_CONFIG.second_per_slot.as_int()
+        DEVNET_CONFIG.seconds_per_slot.as_int()
         * DEVNET_CONFIG.justification_lookback_slots.as_int()
         * 2
     )
