@@ -320,51 +320,6 @@ def test_attestation_target_justifiable_constraint(
     2. delta is a perfect square (1, 4, 9, 16, 25, ...)
     3. delta is a pronic number (2, 6, 12, 20, 30, ...)
 
-    Expected Target Advancement:
-        - Slots 1-3: 3-slot walkback target = slot 0
-          delta = slot 0 (target) - slot 0 (finalized) = 0
-          Use Rule 1: delta 0 ≤ 5
-
-        - Slot 4: 3-slot walkback target = slot 1
-          delta = slot 1 (target) - slot 0 (finalized) = 1
-          Uses Rule 1: delta 1 ≤ 5
-
-        - Slot 5: 3-slot walkback target = slot 2
-          delta = slot 2 (target) - slot 0 (finalized) = 2
-          Uses Rule 1: delta 2 ≤ 5
-
-        - Slot 6: 3-slot walkback target = slot 3
-          delta = slot 3 (target) - slot 0 (finalized) = 3
-          Uses Rule 1: delta 3 ≤ 5
-
-        - Slot 7: 3-slot walkback target = slot 4
-          delta = slot 4 (target) - slot 0 (finalized) = 4
-          Uses Rule 1: delta 4 ≤ 5
-
-        - Slot 8: 3-slot walkback target = slot 5
-          delta = slot 5 (target) - slot 0 (finalized) = 5
-          Uses Rule 1: delta 5 ≤ 5
-
-        - Slot 9: 3-slot walkback target = slot 6
-          delta = slot 6 (target) - slot 0 (finalized) = 6
-          Uses Rule 3: delta 6 is pronic (2×3)
-
-        - Slot 10: 3-slot walkback target = slot 7
-          delta = slot 7 (target) - slot 0 (finalized) = 7
-          Target can't advance: delta 7 fails all rules
-
-        - Slot 11: 3-slot walkback target = slot 8
-          delta = slot 8 (target) - slot 0 (finalized) = 8
-          Target can't advance: delta 8 fails all rules
-
-        - Slot 12: 3-slot walkback target = slot 9
-          delta = slot 9 (target) - slot 0 (finalized) = 9
-          Uses Rule 2: delta 9 is a perfect square (3^2)
-
-        - Slot 13: 3-slot walkback target = slot 10
-          delta = slot 10 (target) - slot 0 (finalized) = 10
-          Target can't advance: delta 10 fails all rules
-
     Why This Matters
     ----------------
     The justifiability rules prevent long-range attacks by restricting which
@@ -381,25 +336,44 @@ def test_attestation_target_justifiable_constraint(
                 block=BlockSpec(slot=Slot(i)),
                 checks=StoreChecks(
                     head_slot=Slot(i),
-                    # Target advancement pattern:
-                    # - Slot 1: target = 0 (3-slot walkback reaches safe target at slot 0)
-                    # - Slot 2: target = 0 (3-slot walkback reaches safe target at slot 0)
-                    # - Slot 3: target = 0 (3-slot walkback reaches safe target at slot 0)
-                    # - Slot 4: target = 1 (begins advancing)
-                    # - Slot 5: target = 2
-                    # - Slot 6: target = 3
-                    # - Slot 7: target = 4
-                    # - Slot 8: target = 5
-                    # - Slot 9: target = 6
-                    # - Slot 10: target = 6 (advancement slows)
-                    # - Slot 11: target = 6 (advancement slows)
-                    # - Slot 12: target = 9
-                    # - Slot 13: target = 9 (advancement slows)
                     attestation_target_slot=Slot(
-                        0 if i <= 3 else (i - 3 if i <= 9 else (6 if i <= 11 else 9))
+                        # Mapping of current slot -> expected target slot
+                        # where delta = current_slot - JUSTIFICATION_LOOKBACK_SLOTS (3) - finalized_slot (0)
+                        {
+                            1: 0, # 3-slot walkback reaches safe target at slot 0
+                            2: 0, # 3-slot walkback reaches safe target at slot 0
+                            3: 0, # 3-slot walkback reaches safe target at slot 0
+                            4: 1, # delta = 4 - 3 - 0 = 1, Rule 1: delta 1 ≤ 5
+                            5: 2, # delta = 5 - 3 - 0 = 2, Rule 1: delta 2 ≤ 5
+                            6: 3, # delta = 6 - 3 - 0 = 3, Rule 1: delta 3 ≤ 5
+                            7: 4, # delta = 7 - 3 - 0 = 4, Rule 1: delta 4 ≤ 5
+                            8: 5, # delta = 8 - 3 - 0 = 5, Rule 1: delta 5 ≤ 5
+                            9: 6, # delta = 6 - 0 = 6, Rule 3: pronic number (2*3)
+                            10: 6, # delta = 10 - 3 - 0 = 7
+                            11: 6, # delta = 11 - 3 - 0 = 8
+                            12: 9, # delta = 9 - 0 = 9, Rule 2: perfect square (3^2)
+                            13: 9, # delta = 13 - 3 - 0 = 10
+                            14: 9, # delta = 14 - 3 - 0 = 11
+                            15: 12, # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
+                            16: 12, # delta = 16 - 3 - 0 = 13
+                            17: 12, # delta = 17 - 3 - 0 = 14
+                            18: 12, # delta = 18 - 3 - 0 = 15
+                            19: 16, # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
+                            20: 16, # delta = 20 - 3 - 0 = 17
+                            21: 16, # delta = 21 - 3 - 0 = 18
+                            22: 16, # delta = 22 - 3 - 0 = 19
+                            23: 20, # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
+                            24: 20, # delta = 24 - 3 - 0 = 21
+                            25: 20, # delta = 25 - 3 - 0 = 22
+                            26: 20, # delta = 26 - 3 - 0 = 23
+                            27: 20, # delta = 27 - 3 - 0 = 24
+                            28: 25, # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
+                            29: 25, # delta = 29 - 3 - 0 = 26
+                            30: 25, # delta = 30 - 3 - 0 = 27
+                        }[i]
                     ),
                 ),
             )
-            for i in range(1, 13)
+            for i in range(1, 31)
         ],
     )
