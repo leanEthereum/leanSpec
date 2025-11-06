@@ -143,7 +143,7 @@ class ForkChoiceTest(BaseConsensusFixture):
             try:
                 if isinstance(step, TickStep):
                     # Advance time (immutable)
-                    store = store.advance_time(Uint64(step.time), has_proposal=False)
+                    store = store.on_tick(Uint64(step.time), has_proposal=False)
 
                 elif isinstance(step, BlockStep):
                     # Build SignedBlockWithAttestation from BlockSpec
@@ -166,7 +166,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                     # Automatically advance time to block's slot before processing (immutable)
                     block_time = store.config.genesis_time + block.slot * Uint64(SECONDS_PER_SLOT)
-                    store = store.advance_time(block_time, has_proposal=True)
+                    store = store.on_tick(block_time, has_proposal=True)
 
                     # Process the block (immutable)
                     store = store.on_block(signed_block)

@@ -645,7 +645,7 @@ class Store(Container):
 
         return store
 
-    def advance_time(self, time: Uint64, has_proposal: bool) -> "Store":
+    def on_tick(self, time: Uint64, has_proposal: bool) -> "Store":
         """
         Advance forkchoice store time to given timestamp.
 
@@ -663,7 +663,7 @@ class Store(Container):
         Example:
             >>> # Advance from slot 0 to slot 5
             >>> slot_5_time = config.genesis_time + 5 * SECONDS_PER_SLOT
-            >>> store = store.advance_time(slot_5_time, has_proposal=True)
+            >>> store = store.on_tick(slot_5_time, has_proposal=True)
         """
         # Calculate target time in intervals
         tick_interval_time = (time - self.config.genesis_time) // SECONDS_PER_INTERVAL
@@ -704,7 +704,7 @@ class Store(Container):
         slot_time = self.config.genesis_time + slot * SECONDS_PER_SLOT
 
         # Advance time to current slot (ticking intervals)
-        store = self.advance_time(slot_time, True)
+        store = self.on_tick(slot_time, True)
 
         # Process any pending attestations before proposal
         store = store.accept_new_attestations()
