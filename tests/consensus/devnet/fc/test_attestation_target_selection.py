@@ -338,7 +338,8 @@ def test_attestation_target_justifiable_constraint(
                     head_slot=Slot(i),
                     attestation_target_slot=Slot(
                         # Mapping of current slot -> expected target slot
-                        # where delta = current_slot - JUSTIFICATION_LOOKBACK_SLOTS (3) - finalized_slot (0)
+                        # delta = current_slot - JUSTIFICATION_LOOKBACK_SLOTS - finalized_slot
+                        # delta = current_slot - 3 - 0
                         {
                             1: 0, # 3-slot walkback reaches safe target at slot 0
                             2: 0, # 3-slot walkback reaches safe target at slot 0
