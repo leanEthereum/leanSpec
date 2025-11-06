@@ -16,6 +16,7 @@ from typing import Dict
 
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
+    JUSTIFICATION_LOOKBACK_SLOTS,
     SECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
 )
@@ -749,7 +750,7 @@ class Store(Container):
         #
         # This ensures the target doesn't advance too far ahead of safe target,
         # providing a balance between liveness and safety.
-        for _ in range(3):
+        for _ in range(JUSTIFICATION_LOOKBACK_SLOTS):
             if self.blocks[target_block_root].slot > self.blocks[self.safe_target].slot:
                 target_block_root = self.blocks[target_block_root].parent_root
 

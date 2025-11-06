@@ -313,7 +313,7 @@ def test_attestation_target_justifiable_constraint(
     Justifiability Rules (see Slot.is_justifiable_after)
     -----------------------------------------------------
 
-    The target starts from current head and walks back at most 3 slots towards safe target.
+    The target starts from current head and looks back at most 3 slots towards safe target.
 
     Then, a slot is deemed justifiable at distance delta from finalization if:
     1. delta ≤ 5
