@@ -341,36 +341,36 @@ def test_attestation_target_justifiable_constraint(
                         # delta = current_slot - JUSTIFICATION_LOOKBACK_SLOTS - finalized_slot
                         # delta = current_slot - 3 - 0
                         {
-                            1: 0, # 3-slot walkback reaches safe target at slot 0
-                            2: 0, # 3-slot walkback reaches safe target at slot 0
-                            3: 0, # 3-slot walkback reaches safe target at slot 0
-                            4: 1, # delta = 4 - 3 - 0 = 1, Rule 1: delta 1 ≤ 5
-                            5: 2, # delta = 5 - 3 - 0 = 2, Rule 1: delta 2 ≤ 5
-                            6: 3, # delta = 6 - 3 - 0 = 3, Rule 1: delta 3 ≤ 5
-                            7: 4, # delta = 7 - 3 - 0 = 4, Rule 1: delta 4 ≤ 5
-                            8: 5, # delta = 8 - 3 - 0 = 5, Rule 1: delta 5 ≤ 5
-                            9: 6, # delta = 6 - 0 = 6, Rule 3: pronic number (2*3)
-                            10: 6, # delta = 10 - 3 - 0 = 7
-                            11: 6, # delta = 11 - 3 - 0 = 8
-                            12: 9, # delta = 9 - 0 = 9, Rule 2: perfect square (3^2)
-                            13: 9, # delta = 13 - 3 - 0 = 10
-                            14: 9, # delta = 14 - 3 - 0 = 11
-                            15: 12, # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
-                            16: 12, # delta = 16 - 3 - 0 = 13
-                            17: 12, # delta = 17 - 3 - 0 = 14
-                            18: 12, # delta = 18 - 3 - 0 = 15
-                            19: 16, # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
-                            20: 16, # delta = 20 - 3 - 0 = 17
-                            21: 16, # delta = 21 - 3 - 0 = 18
-                            22: 16, # delta = 22 - 3 - 0 = 19
-                            23: 20, # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
-                            24: 20, # delta = 24 - 3 - 0 = 21
-                            25: 20, # delta = 25 - 3 - 0 = 22
-                            26: 20, # delta = 26 - 3 - 0 = 23
-                            27: 20, # delta = 27 - 3 - 0 = 24
-                            28: 25, # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
-                            29: 25, # delta = 29 - 3 - 0 = 26
-                            30: 25, # delta = 30 - 3 - 0 = 27
+                            1: 0,  # 3-slot walkback reaches safe target at slot 0
+                            2: 0,  # 3-slot walkback reaches safe target at slot 0
+                            3: 0,  # 3-slot walkback reaches safe target at slot 0
+                            4: 1,  # delta = 4 - 3 - 0 = 1, Rule 1: delta 1 ≤ 5
+                            5: 2,  # delta = 5 - 3 - 0 = 2, Rule 1: delta 2 ≤ 5
+                            6: 3,  # delta = 6 - 3 - 0 = 3, Rule 1: delta 3 ≤ 5
+                            7: 4,  # delta = 7 - 3 - 0 = 4, Rule 1: delta 4 ≤ 5
+                            8: 5,  # delta = 8 - 3 - 0 = 5, Rule 1: delta 5 ≤ 5
+                            9: 6,  # delta = 6 - 0 = 6, Rule 3: pronic number (2*3)
+                            10: 6,  # delta = 10 - 3 - 0 = 7
+                            11: 6,  # delta = 11 - 3 - 0 = 8
+                            12: 9,  # delta = 9 - 0 = 9, Rule 2: perfect square (3^2)
+                            13: 9,  # delta = 13 - 3 - 0 = 10
+                            14: 9,  # delta = 14 - 3 - 0 = 11
+                            15: 12,  # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
+                            16: 12,  # delta = 16 - 3 - 0 = 13
+                            17: 12,  # delta = 17 - 3 - 0 = 14
+                            18: 12,  # delta = 18 - 3 - 0 = 15
+                            19: 16,  # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
+                            20: 16,  # delta = 20 - 3 - 0 = 17
+                            21: 16,  # delta = 21 - 3 - 0 = 18
+                            22: 16,  # delta = 22 - 3 - 0 = 19
+                            23: 20,  # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
+                            24: 20,  # delta = 24 - 3 - 0 = 21
+                            25: 20,  # delta = 25 - 3 - 0 = 22
+                            26: 20,  # delta = 26 - 3 - 0 = 23
+                            27: 20,  # delta = 27 - 3 - 0 = 24
+                            28: 25,  # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
+                            29: 25,  # delta = 29 - 3 - 0 = 26
+                            30: 25,  # delta = 30 - 3 - 0 = 27
                         }[i]
                     ),
                 ),
