@@ -126,7 +126,7 @@ class Store(Container):
         anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
 
         return cls(
-            time=Uint64(anchor_slot * INTERVALS_PER_SLOT),
+            time=Uint64(anchor_slot * SECONDS_PER_SLOT),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
@@ -168,7 +168,7 @@ class Store(Container):
         assert target_block.slot == data.target.slot, "Target checkpoint slot mismatch"
 
         # Validate attestation is not too far in the future
-        current_slot = Slot(self.time // INTERVALS_PER_SLOT)
+        current_slot = Slot(self.time // SECONDS_PER_SLOT)
         assert data.slot <= Slot(current_slot + Slot(1)), "Attestation too far in future"
 
     def on_attestation(
@@ -246,7 +246,7 @@ class Store(Container):
             #   contributing to fork choice weights.
 
             # Ensure forkchoice is current before processing gossip
-            time_slots = self.time // INTERVALS_PER_SLOT
+            time_slots = self.time // SECONDS_PER_SLOT
             assert attestation_slot <= time_slots, "Attestation from future slot"
 
             # Update new attestations if this is latest from validator
@@ -630,7 +630,7 @@ class Store(Container):
         """
         # Advance time by one interval
         store = self.model_copy(update={"time": self.time + Uint64(1)})
-        current_interval = store.time % INTERVALS_PER_SLOT
+        current_interval = store.time % SECONDS_PER_SLOT % INTERVALS_PER_SLOT
 
         if current_interval == Uint64(0):
             # Start of slot - process attestations if proposal exists
