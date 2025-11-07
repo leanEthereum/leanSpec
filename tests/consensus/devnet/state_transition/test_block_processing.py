@@ -349,3 +349,81 @@ def test_block_extends_deep_chain(
         blocks=blocks,
         post=StateExpectation(slot=Slot(20)),
     )
+
+def test_empty_blocks_in_the_middle(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test processing blocks with empty body (no attestations).
+
+    Scenario
+#     --------
+#     Build chain of blocks with empty body:
+#     - Slot 1: Block, Empty body
+#     - Slot 2: Block, Empty body
+#     - Slot 3: BLock, Empty body
+#     - Slot 4: Block, Empty body
+#     - Slot 5: Block, Empty body
+#     - Slot 6: Block, Empty body
+
+#     Expected Behavior
+#     -----------------
+#     1. Blocks process as expected
+#     2. State advances to slot 6
+
+    """
+    state_transition_test(
+            pre=generate_pre_state(),
+            blocks=[
+                BlockSpec(slot=Slot(1), body=None, label="block_1"),                            # empty block body
+                BlockSpec(slot=Slot(2), body=None, parent_label="block_1", label="block_2"),    # empty block body
+                BlockSpec(slot=Slot(3), body=None, parent_label="block_2", label="block_3"),    # empty block body
+                BlockSpec(slot=Slot(4), body=None, parent_label="block_3", label="block_4"),    # empty block body
+                BlockSpec(slot=Slot(5), body=None, parent_label="block_4", label="block_5"),    # empty block body
+                BlockSpec(slot=Slot(6), body=None, parent_label="block_5", label="block_6"),    # empty block body
+            ],
+            post=StateExpectation(
+                slot=Slot(6),
+                latest_block_header_slot=Slot(6),
+                historical_block_hashes_count=6
+            ),
+        )
+
+def test_empty_blocks_with_missed_slots(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test processing blocks with empty body (no attestations) combined with missed slots.
+
+    Scenario
+#     --------
+#     Build chain of blocks with empty body + missed slot:
+#     - Slot 1: Block
+#     - Slot 2: Block, Empty body
+#     - Slot 3: BLock, Empty body
+#     - Slot 4: Missed
+#     - Slot 5: Block, Empty body
+#     - Slot 6: Block
+
+#     Expected Behavior
+#     -----------------
+#     1. Blocks process at specified slots
+#     2. Empty slots handled automatically
+#     3. State advances to slot 6
+
+    """
+    state_transition_test(
+            pre=generate_pre_state(),
+            blocks=[
+                BlockSpec(slot=Slot(1), label="block_1"),
+                BlockSpec(slot=Slot(2), body=None, parent_label="block_1", label="block_2"),
+                BlockSpec(slot=Slot(3), body=None, parent_label="block_2", label="block_3"),
+                BlockSpec(slot=Slot(5), body=None, parent_label="block_3", label="block_5"),     # slot = 4 missed
+                BlockSpec(slot=Slot(6), parent_label="block_5", label="block_6"),
+            ],
+            post=StateExpectation(
+                slot=Slot(6),
+                latest_block_header_slot=Slot(6),
+                historical_block_hashes_count=6
+            ),
+        )
