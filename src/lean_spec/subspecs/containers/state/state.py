@@ -149,30 +149,21 @@ class State(Container):
         Dict[Bytes32, List[Boolean]]
             A mapping from justified block root to the list of validator votes.
         """
-        # Initialize an empty result.
-        justifications: Dict[Bytes32, List[Boolean]] = {}
-
-        # If there are no justified roots, return immediately.
+        # No justified roots means no justifications to reconstruct.
         if not self.justifications_roots:
-            return justifications
+            return {}
 
-        # Compute the length of each validator vote slice.
+        # Each root has exactly validator_count votes in the flat encoding.
         validator_count = self.validators.count
 
-        # Extract vote slices for each justified root.
+        # Extract the flattened validator votes.
         flat_votes = list(self.justifications_validators)
-        for i, root in enumerate(self.justifications_roots):
-            # Ensure root is Bytes32 type
-            root = Bytes32(root) if not isinstance(root, Bytes32) else root
-            # Calculate the slice boundaries for this root.
-            start_index = i * validator_count
-            end_index = start_index + validator_count
 
-            # Extract the vote slice and associate it with the root.
-            vote_slice = flat_votes[start_index:end_index]
-            justifications[root] = vote_slice
-
-        return justifications
+        # Reconstruct the map: each root gets its corresponding vote slice.
+        return {
+            root: flat_votes[i * validator_count : (i + 1) * validator_count]
+            for i, root in enumerate(self.justifications_roots)
+        }
 
     def with_justifications(
         self,
@@ -209,15 +200,11 @@ class State(Container):
             # Extend the flattened list with the votes for this root.
             votes_list.extend(votes)
 
-        # Create immutable SSZList instances
-        new_roots = JustificationRoots(data=roots_list)
-        flat_votes = JustificationValidators(data=votes_list)
-
         # Return a new state object with the updated fields.
         return self.model_copy(
             update={
-                "justifications_roots": new_roots,
-                "justifications_validators": flat_votes,
+                "justifications_roots": JustificationRoots(data=roots_list),
+                "justifications_validators": JustificationValidators(data=votes_list),
             }
         )
 
@@ -234,23 +221,23 @@ class State(Container):
         State
             A new state with latest_block_header.state_root set if needed.
         """
+        # If the latest block header already has a state root, no action is needed.
+        if self.latest_block_header.state_root != Bytes32.zero():
+            return self
+
         # If the latest block header has no state root, fill it now.
         #
         # This occurs on the first slot after a block.
-        if self.latest_block_header.state_root == Bytes32.zero():
-            # Compute the root of the current (pre-block) state.
-            previous_state_root = hash_tree_root(self)
-
-            # Copy the header and set its state_root to the computed value.
-            new_header = self.latest_block_header.model_copy(
-                update={"state_root": previous_state_root}
-            )
-
-            # Return a new state with the updated header in place.
-            return self.model_copy(update={"latest_block_header": new_header})
-
-        # Nothing to do for this slot. Return the state unchanged.
-        return self
+        # - We compute the root of the current (pre-block) state.
+        # - We copy the header and set its state_root to the computed value.
+        # - We return a new state with the updated header in place.
+        return self.model_copy(
+            update={
+                "latest_block_header": self.latest_block_header.model_copy(
+                    update={"state_root": hash_tree_root(self)}
+                )
+            }
+        )
 
     def process_slots(self, target_slot: Slot) -> "State":
         """

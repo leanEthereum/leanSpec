@@ -365,3 +365,6 @@ TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(
     TEST_RAND,
 )
 """A lightweight instance for test environments."""
+
+DEFAULT_SIGNATURE_SCHEME = PROD_SIGNATURE_SCHEME
+"""The default signature scheme to use."""

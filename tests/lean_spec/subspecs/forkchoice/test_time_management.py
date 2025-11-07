@@ -60,46 +60,46 @@ def sample_store(sample_config: Config) -> Store:
     )
 
 
-class TestTimeAdvancement:
-    """Test Store time advancement functionality."""
+class TestOnTick:
+    """Test Store on_tick functionality."""
 
-    def test_advance_time_basic(self, sample_store: Store) -> None:
-        """Test basic time advancement."""
+    def test_on_tick_basic(self, sample_store: Store) -> None:
+        """Test basic on_tick."""
         initial_time = sample_store.time
         target_time = sample_store.config.genesis_time + Uint64(200)  # Much later time
 
-        sample_store = sample_store.advance_time(target_time, has_proposal=True)
+        sample_store = sample_store.on_tick(target_time, has_proposal=True)
 
         # Time should advance
         assert sample_store.time > initial_time
 
-    def test_advance_time_no_proposal(self, sample_store: Store) -> None:
-        """Test time advancement without proposal."""
+    def test_on_tick_no_proposal(self, sample_store: Store) -> None:
+        """Test on_tick without proposal."""
         initial_time = sample_store.time
         target_time = sample_store.config.genesis_time + Uint64(100)
 
-        sample_store = sample_store.advance_time(target_time, has_proposal=False)
+        sample_store = sample_store.on_tick(target_time, has_proposal=False)
 
         # Time should still advance
         assert sample_store.time >= initial_time
 
-    def test_advance_time_already_current(self, sample_store: Store) -> None:
-        """Test advance_time when already at target time."""
+    def test_on_tick_already_current(self, sample_store: Store) -> None:
+        """Test on_tick when already at target time."""
         initial_time = sample_store.time
         current_target = sample_store.config.genesis_time + initial_time
 
         # Try to advance to current time (should be no-op)
-        sample_store = sample_store.advance_time(current_target, has_proposal=True)
+        sample_store = sample_store.on_tick(current_target, has_proposal=True)
 
         # Should not change significantly
         assert abs(sample_store.time.as_int() - initial_time.as_int()) <= 10  # small tolerance
 
-    def test_advance_time_small_increment(self, sample_store: Store) -> None:
-        """Test advance_time with small time increment."""
+    def test_on_tick_small_increment(self, sample_store: Store) -> None:
+        """Test on_tick with small time increment."""
         initial_time = sample_store.time
         target_time = sample_store.config.genesis_time + initial_time + Uint64(1)
 
-        sample_store = sample_store.advance_time(target_time, has_proposal=False)
+        sample_store = sample_store.on_tick(target_time, has_proposal=False)
 
         # Should advance by small amount
         assert sample_store.time >= initial_time

@@ -41,21 +41,24 @@ uv run pytest
 
 ```
 ├── src/
-│   ├── lean_spec/             # Main specifications
-│   │   ├── __init__.py
-│   │   └── ...
-│   └── subspecs/              # Sub-specifications
-│       ├── poseidon2/
-│       │   ├── __init__.py
-│       │   ├── poseidon2.py
-│       │   └── ...
-│       ├── ...
-│       └── ...
-├── tests/                     # Test suite
-│   ├── lean_spec/             # Tests for main specs
-│   └── subspecs/              # Tests for subspecs
-├── docs/                      # Documentation
-└── pyproject.toml             # Project configuration
+│   └── lean_spec/                      # Main specifications
+│      ├── __init__.py
+│      └── subspecs/                       # Sub-specifications
+│          ├── poseidon2/
+│          │   ├── __init__.py
+│          │   ├── poseidon2.py
+│          │   └── ...
+│          ├── ...
+│          └── ...
+├── tests/                              # Test suite
+|   ├── consensus/                      # Tests for consensus
+|   |   └── devnet/                     # Tests for devnet
+|   |       ├── fc/                     # Tests for fork-choice
+|   |       └── state_transition/       # Tests for stf
+│   └── lean_spec/                      # Tests for main specs
+│       └── subspecs/                   # Tests for subspecs
+├── docs/                               # Documentation
+└── pyproject.toml                      # Project configuration
 ```
 
 ### Workspace Commands
@@ -81,6 +84,13 @@ uv run pytest -n 4
 
 # Skip slow tests (marked with @pytest.mark.slow)
 uv run pytest -m "not slow"
+
+# Fill test vectors from pytest specs.
+# Usage: uv run fill --clean --fork=devnet [--output=<dir>]
+#   --clean  Overwrite existing fixtures
+#   --fork   Target fork (default: devnet)
+#   --output Optional directory for filled fixtures
+uv run fill --clean --fork=devnet
 ```
 
 ### Code Quality

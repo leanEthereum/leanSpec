@@ -76,4 +76,4 @@ jobs:
         run: uv sync --no-progress
 
       - name: Fill test fixtures
-        run: uv run fill --fork=Devnet --clean
+        run: uv run fill --fork=Devnet --clean -n auto

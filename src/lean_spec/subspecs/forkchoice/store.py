@@ -16,6 +16,7 @@ from typing import Dict
 
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
+    JUSTIFICATION_LOOKBACK_SLOTS,
     SECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
 )
@@ -126,7 +127,7 @@ class Store(Container):
         anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
 
         return cls(
-            time=Uint64(anchor_slot * INTERVALS_PER_SLOT),
+            time=Uint64(anchor_slot * SECONDS_PER_SLOT),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
@@ -168,7 +169,7 @@ class Store(Container):
         assert target_block.slot == data.target.slot, "Target checkpoint slot mismatch"
 
         # Validate attestation is not too far in the future
-        current_slot = Slot(self.time // INTERVALS_PER_SLOT)
+        current_slot = Slot(self.time // SECONDS_PER_SLOT)
         assert data.slot <= Slot(current_slot + Slot(1)), "Attestation too far in future"
 
     def on_attestation(
@@ -246,7 +247,7 @@ class Store(Container):
             #   contributing to fork choice weights.
 
             # Ensure forkchoice is current before processing gossip
-            time_slots = self.time // INTERVALS_PER_SLOT
+            time_slots = self.time // SECONDS_PER_SLOT
             assert attestation_slot <= time_slots, "Attestation from future slot"
 
             # Update new attestations if this is latest from validator
@@ -261,23 +262,90 @@ class Store(Container):
             }
         )
 
-    def _validate_block_signatures(self, block: Block, signatures: BlockSignatures) -> bool:
+    def _validate_block_signatures(
+        self,
+        signed_block_with_attestation: SignedBlockWithAttestation,
+    ) -> bool:
         """
-        Validate block signatures.
+        Verify all XMSS signatures in a signed block.
 
-        Temporary stub for aggregated signature validation.
+        This method ensures that every attestation included in the block
+        (both on-chain attestations from the block body and the proposer's
+        own attestation) is properly signed by the claimed validator using
+        their registered XMSS public key.
 
         Args:
-            block: Block to validate.
-            signatures: Block signatures to validate.
+            signed_block_with_attestation: Complete signed block containing:
+                - Block body with included attestations
+                - Proposer's attestation for this block
+                - XMSS signatures for all attestations (ordered)
 
         Returns:
-            True if all signatures are valid.
+            True if all signatures are cryptographically valid.
 
-        Note:
-            TODO: Integrate actual aggregated signature verification.
+        Raises:
+            AssertionError: If signature verification fails, including:
+                - Signature count mismatch
+                - Parent state not found in store
+                - Validator index out of range
+                - XMSS signature verification failure
         """
-        return all(Signature.is_valid(signature) for signature in signatures)
+        # Unpack the signed block components
+        message = signed_block_with_attestation.message
+        block = message.block
+        signatures = signed_block_with_attestation.signature
+
+        # Combine all attestations that need verification
+        #
+        # This creates a single list containing both:
+        # 1. Block body attestations (from other validators)
+        # 2. Proposer attestation (from the block producer)
+        all_attestations = list(block.body.attestations) + [message.proposer_attestation]
+
+        # Verify signature count matches attestation count
+        #
+        # Each attestation must have exactly one corresponding signature.
+        #
+        # The ordering must be preserved:
+        # 1. Block body attestations,
+        # 2. The proposer attestation.
+        assert len(signatures) == len(all_attestations), (
+            "Number of signatures does not match number of attestations"
+        )
+
+        # Retrieve parent state to access validator public keys
+        #
+        # We use the parent state because:
+        # - Validator set is determined at the parent block
+        # - Public keys must be registered before signing
+        # - State root is committed in the block header
+        parent_state = self.states.get(block.parent_root)
+        assert parent_state is not None, "Parent state not found"
+
+        validators = parent_state.validators
+
+        # Verify each attestation signature
+        for attestation, signature in zip(all_attestations, signatures, strict=True):
+            # Identify the validator who created this attestation
+            validator_id = attestation.validator_id.as_int()
+
+            # Ensure validator exists in the active set
+            assert validator_id < len(validators), "Validator index out of range"
+            validator = validators[validator_id]
+
+            # Verify the XMSS signature
+            #
+            # This cryptographically proves that:
+            # - The validator possesses the secret key for their public key
+            # - The attestation has not been tampered with
+            # - The signature was created at the correct epoch (slot)
+            assert signature.verify(
+                validator.get_pubkey(),
+                attestation.data.slot.as_int(),
+                bytes(hash_tree_root(attestation)),
+            ), "Attestation signature verification failed"
+
+        return True
 
     def _process_block_body_attestations(
         self, block: Block, signatures: BlockSignatures
@@ -423,7 +491,7 @@ class Store(Container):
         )
 
         # Validate cryptographic signatures
-        valid_signatures = self._validate_block_signatures(block, signatures)
+        valid_signatures = self._validate_block_signatures(signed_block_with_attestation)
 
         # Execute state transition function to compute post-block state
         post_state = copy.deepcopy(parent_state).state_transition(block, valid_signatures)
@@ -630,7 +698,7 @@ class Store(Container):
         """
         # Advance time by one interval
         store = self.model_copy(update={"time": self.time + Uint64(1)})
-        current_interval = store.time % INTERVALS_PER_SLOT
+        current_interval = store.time % SECONDS_PER_SLOT % INTERVALS_PER_SLOT
 
         if current_interval == Uint64(0):
             # Start of slot - process attestations if proposal exists
@@ -645,7 +713,7 @@ class Store(Container):
 
         return store
 
-    def advance_time(self, time: Uint64, has_proposal: bool) -> "Store":
+    def on_tick(self, time: Uint64, has_proposal: bool) -> "Store":
         """
         Advance forkchoice store time to given timestamp.
 
@@ -663,7 +731,7 @@ class Store(Container):
         Example:
             >>> # Advance from slot 0 to slot 5
             >>> slot_5_time = config.genesis_time + 5 * SECONDS_PER_SLOT
-            >>> store = store.advance_time(slot_5_time, has_proposal=True)
+            >>> store = store.on_tick(slot_5_time, has_proposal=True)
         """
         # Calculate target time in intervals
         tick_interval_time = (time - self.config.genesis_time) // SECONDS_PER_INTERVAL
@@ -704,7 +772,7 @@ class Store(Container):
         slot_time = self.config.genesis_time + slot * SECONDS_PER_SLOT
 
         # Advance time to current slot (ticking intervals)
-        store = self.advance_time(slot_time, True)
+        store = self.on_tick(slot_time, True)
 
         # Process any pending attestations before proposal
         store = store.accept_new_attestations()
@@ -725,7 +793,8 @@ class Store(Container):
         ensuring the target is in a justifiable slot range:
 
         1. **Start at Head**: Begin with the current head block
-        2. **Walk Toward Safe**: Move backward (up to 3 steps) if safe target is newer
+        2. **Walk Toward Safe**: Move backward (up to `JUSTIFICATION_LOOKBACK_SLOTS` steps)
+           if safe target is newer
         3. **Ensure Justifiable**: Continue walking back until slot is justifiable
         4. **Return Checkpoint**: Create checkpoint from selected block
 
@@ -745,11 +814,11 @@ class Store(Container):
         # Start from current head
         target_block_root = self.head
 
-        # Walk back toward safe target (up to 3 steps)
+        # Walk back toward safe target (up to `JUSTIFICATION_LOOKBACK_SLOTS` steps)
         #
         # This ensures the target doesn't advance too far ahead of safe target,
         # providing a balance between liveness and safety.
-        for _ in range(3):
+        for _ in range(JUSTIFICATION_LOOKBACK_SLOTS):
             if self.blocks[target_block_root].slot > self.blocks[self.safe_target].slot:
                 target_block_root = self.blocks[target_block_root].parent_root
 

@@ -16,15 +16,17 @@ subspecifications that the Lean Ethereum protocol relies on.
 ## Development Workflow
 
 ### Running Tests
+
 ```bash
 uv sync                           # Install dependencies
 uv run pytest                     # Run unit tests
-uv run fill --fork=devnet --clean # Generate test vectors
+uv run fill --fork=devnet --clean -n auto # Generate test vectors
 # Note: execution layer support is planned for future, infrastructure is ready
 # for now, `--layer=consensus` is default and the only value used.
 ```
 
 ### Code Quality
+
 ```bash
 uv run ruff format src tests packages      # Format code
 uv run ruff check --fix src tests packages # Lint and fix
@@ -34,6 +36,7 @@ uvx tox                                    # Everything (checks + tests + docs)
 ```
 
 ### Common Tasks
+
 - **Main specs**: `src/lean_spec/`
 - **Subspecs**: `src/lean_spec/subspecs/{subspec}/`
 - **Unit tests**: `tests/lean_spec/` (mirrors source structure)
@@ -41,6 +44,7 @@ uvx tox                                    # Everything (checks + tests + docs)
 - **Execution spec tests**: `tests/execution/` (future - infrastructure ready)
 
 ## Code Style
+
 - Line length: 100 characters, type hints everywhere
 - Google docstring style (no docstrings for `__init__`)
 - Test files/functions must start with `test_`
@@ -54,15 +58,17 @@ uvx tox                                    # Everything (checks + tests + docs)
    - *Note: `tests/execution/` infrastructure is ready for future execution layer work*
 
 **Test Filling Framework:**
+
 - Layer-agnostic pytest plugin in `packages/testing/src/framework/pytest_plugins/filler.py`
 - Layer-specific packages: `consensus_testing` (active) and `execution_testing` (future)
 - Write consensus spec tests using `state_transition_test` or `fork_choice_test` fixtures
 - These fixtures are type aliases that create test vectors when called
-- Run `uv run fill --fork=Devnet --clean` to generate consensus fixtures
+- Run `uv run fill --fork=Devnet --clean -n auto` to generate consensus fixtures
 - Use `--layer=execution` flag when execution layer is implemented
 - Output goes to `fixtures/{layer}/{format}/{test_path}/...`
 
 **Example spec test:**
+
 ```python
 def test_block(state_transition_test: StateTransitionTestFiller) -> None:
     state_transition_test(
@@ -73,6 +79,7 @@ def test_block(state_transition_test: StateTransitionTestFiller) -> None:
 ```
 
 **How it works:**
+
 1. Test function receives a fixture class (not instance) as parameter
 2. Calling it creates a `FixtureWrapper` that runs `make_fixture()`
 3. `make_fixture()` executes the spec code (state transitions, fork choice steps)
@@ -81,12 +88,14 @@ def test_block(state_transition_test: StateTransitionTestFiller) -> None:
 6. Writes fixtures at session end to `fixtures/{layer}/{format}/{test_path}/...`
 
 **Layer-specific architecture:**
+
 - `framework/` - Shared infrastructure (base classes, pytest plugin, CLI)
 - `consensus_testing/` - Consensus layer fixtures, forks, builders
 - `execution_testing/` - Execution layer fixtures, forks, builders
 - Regular pytest runs (`uv run pytest`) ignore spec tests - they only run via `fill` command
 
 **Serialization requirements:**
+
 - All spec types (State, Block, Uint64, etc.) must be Pydantic models
 - Custom types need `@field_serializer` or `model_serializer` for JSON output
 - SSZ types typically serialize to hex strings (e.g., `"0x1234..."`)
@@ -97,6 +106,7 @@ def test_block(state_transition_test: StateTransitionTestFiller) -> None:
 - Test the serialization: `fixture.model_dump(mode="json")` must produce valid JSON
 
 **Key fixture types:**
+
 - `StateTransitionTest` - Tests state transitions with blocks
 - `ForkChoiceTest` - Tests fork choice with steps (tick/block/attestation)
 - Selective validation via `StateExpectation` and `StoreChecks` (only validates fields you specify)
@@ -113,6 +123,7 @@ def test_block(state_transition_test: StateTransitionTestFiller) -> None:
 When creating SSZ types, follow these established patterns:
 
 ### Domain-Specific Types (Preferred)
+
 - Use meaningful names that describe the purpose: `JustificationValidators`, `HistoricalBlockHashes`, `Attestations`
 - Define domain-specific types in modular structure (see Architecture section below)
 - Avoid generic names with numbers like `Bitlist68719476736` or `SignedAttestationList4096`
@@ -120,11 +131,13 @@ When creating SSZ types, follow these established patterns:
 ### SSZType vs SSZModel Design Decision
 
 **SSZType (IS-A pattern)**: Use for types that *are* data
+
 - Primitive scalars: `Uint64`, `Boolean`, `Bytes32`
 - These inherit directly from their underlying Python types
 - Example: `Uint64(42)` *is* the integer 42 with SSZ serialization
 
 **SSZModel (HAS-A pattern)**: Use for types that *have* data
+
 - Collections: `SSZList`, `SSZVector`, bitfields
 - Containers: `State`, `Block`, etc.
 - These use Pydantic models with a `data` field for contents
@@ -150,6 +163,7 @@ src/lean_spec/subspecs/containers/
 ```
 
 **Key principles:**
+
 - **Base types** (BaseBitlist, SSZList, etc.) stay in general scope (`src/lean_spec/types/`)
 - **Spec-specific types** go in their respective modules (`state/types.py`, `block/types.py`)
 - **Public API** exposed through `__init__.py` files for backward compatibility
@@ -158,6 +172,7 @@ src/lean_spec/subspecs/containers/
 ### Examples
 
 **Good domain-specific types:**
+
 ```python
 # In state/types.py
 HISTORICAL_ROOTS_LIMIT = 262144
@@ -174,6 +189,7 @@ class Attestations(SSZList):
 ```
 
 **Avoid generic types:**
+
 ```python
 # Don't do this:
 class Bitlist68719476736(BaseBitlist): ...
@@ -183,5 +199,6 @@ class SignedAttestationList4096(SSZList): ...
 ### API Compatibility
 
 When refactoring, maintain backward compatibility:
+
 - Keep existing import paths working through `__init__.py` exports
 - Preserve method signatures and behavior

@@ -1,45 +1,4 @@
-"""
-Fork Choice Head Selection (LMD-GHOST Algorithm)
-=================================================
-
-Overview
---------
-Tests the core fork choice algorithm that determines which block should be
-considered the canonical chain head. This implements the LMD-GHOST algorithm.
-
-The LMD-GHOST Algorithm
------------------------
-LMD-GHOST selects the canonical head by:
-
-1. **Start at a checkpoint**: Begin at a justified or finalized checkpoint.
-2. **Walk down the tree**: At each fork, choose the child with the most weight.
-3. **Weight from attestations**: Each validator's latest attestation adds weight.
-4. **Tie-breaking**: When weights are equal, choose lexicographically highest hash.
-5. **Walk to leaf**: Continue until reaching a leaf block (no children).
-
-Key Concepts
-------------
-
-**Head**:
-    - The canonical chain tip selected by fork choice.
-    - All operations (attestation, block proposal) use this as the reference point.
-
-**Attestation Weight**:
-    - Each validator's latest attestation adds 1 unit of weight to a block
-    and all its ancestors. Heavier subtrees are preferred.
-
-**Fork Choice Rule**:
-    - At each decision point: choose the child with highest weight.
-    - If tied: choose the child with lexicographically highest block root.
-
-**Latest Message**:
-    - Only the most recent attestation from each validator counts.
-    - Earlier attestations are superseded.
-
-**Proposer Attestations**:
-    - When a validator proposes a block, they implicitly attest to it.
-    - This creates weight that influences fork choice for subsequent blocks.
-"""
+"""Fork Choice Head Selection (LMD-GHOST Algorithm)"""
 
 import pytest
 from consensus_testing import (

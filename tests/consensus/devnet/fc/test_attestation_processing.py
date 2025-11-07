@@ -1,34 +1,4 @@
-"""
-Attestation Processing Through Block Proposer Mechanism
-========================================================
-
-Overview
---------
-Tests proposer attestations in the devnet fork.
-Each block's proposer creates an attestation that flows through a two-stage pipeline.
-
-The Attestation Pipeline
--------------------------
-Attestations flow through two dictionaries, both keyed by validator index:
-
-**Stage 1: latest_new_attestations**
-    - New attestations enter here immediately after block processing.
-    - Holds the current slot's proposer attestation.
-
-**Stage 2: latest_known_attestations**
-    - Accepted attestations that contribute to fork choice weights.
-    - Updated by the interval tick system between slots.
-
-Key Behaviors
--------------
-**Migration**: Between blocks, attestations move from new → known via interval ticks.
-
-**Superseding**:
-    - Newer attestation from the same validator replaces older one.
-    - Only the most recent attestation per validator is retained.
-
-**Accumulation**: Attestations from different validators coexist across both dictionaries.
-"""
+"""Attestation Processing Through Block Proposer Mechanism"""
 
 import pytest
 from consensus_testing import (

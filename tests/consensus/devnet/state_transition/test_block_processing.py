@@ -1,48 +1,4 @@
-"""
-State Transition: Block Processing
-===================================
-
-Overview
---------
-Tests for block header validation and block processing through the state transition
-function. Block processing is the core mechanism by which the blockchain state evolves,
-incorporating new transactions, attestations, and consensus decisions into the canonical state.
-
-What is Block Processing?
---------------------------
-Block processing validates and integrates a proposed block into the chain's state:
-
-1. **Header Validation**: Verify block structure, proposer, parent linkage
-2. **State Transition**: Execute block operations on current state
-3. **Root Verification**: Validate state root commitment
-4. **Attestation Processing**: Handle included attestations
-5. **State Finalization**: Produce new post-block state
-
-Block Processing Phases
-------------------------
-
-**Phase 1: Slot Advancement**
-   If `block.slot > state.slot`, advance state through empty slots
-   to reach the block's slot. This ensures time moves forward.
-
-**Phase 2: Header Processing**
-   Validate block header fields:
-   - Slot matches state slot
-   - Proposer index matches expected proposer for slot
-   - Parent root matches hash of latest block header
-   - Signatures are valid (if signatures enabled)
-
-**Phase 3: Body Processing**
-   Execute block body operations:
-   - Process attestations included in block
-   - Update justification/finalization
-   - Apply any other block operations
-
-**Phase 4: Root Verification**
-   Compute post-state root and verify it matches block state root.
-   This cryptographic commitment proves the state transition was
-   executed correctly.
-"""
+"""State Transition: Block Processing"""
 
 import pytest
 from consensus_testing import (
