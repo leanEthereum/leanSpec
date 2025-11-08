@@ -307,35 +307,40 @@ def test_block_extends_deep_chain(
     )
 
 
-def test_empty_blocks_in_the_middle(
+def test_empty_blocks(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-        Test processing blocks with empty body (no attestations).
+    Test processing blocks with empty body (no attestations).
 
-        Scenario
-    #     --------
-    #     Build chain of blocks with empty body:
-    #     - Slot 1: Block, Empty body
-    #     - Slot 2: Block, Empty body
-    #     - Slot 3: BLock, Empty body
-    #     - Slot 4: Block, Empty body
-    #     - Slot 5: Block, Empty body
-    #     - Slot 6: Block, Empty body
+    Scenario
+    --------
+    Build chain of blocks with empty body:
+    - Slot 1: Block, Empty body
+    - Slot 2: Block, Empty body
+    - Slot 3: Block, Empty body
+    - Slot 4: Block, Empty body
+    - Slot 5: Block, Empty body
+    - Slot 6: Block, Empty body
 
-    #     Expected Behavior
-    #     -----------------
-    #     1. Blocks process as expected
-    #     2. State advances to slot 6
+    Expected Behavior
+    -----------------
+    1. Blocks process as expected
+    2. State advances to slot 6
 
     """
-    blocks = [BlockSpec(slot=Slot(1), body=None, label="block_1")]
-    blocks.extend(
-        [
-            BlockSpec(slot=Slot(i), body=None, parent_label=f"block_{i - 1}", label=f"block_{i}")
-            for i in range(2, 7)
-        ]
-    )
+    blocks = [
+        BlockSpec(slot=Slot(1), body=None, label="block_1"),
+        *[
+            BlockSpec(
+                slot=Slot(slot),
+                body=None,
+                parent_label=f"block_{slot - 1}",
+                label=f"block_{slot}",
+            )
+            for slot in range(2, 7)
+        ],
+    ]
 
     state_transition_test(
         pre=generate_pre_state(),
@@ -350,23 +355,23 @@ def test_empty_blocks_with_missed_slots(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-        Test processing blocks with empty body (no attestations) combined with missed slots.
+    Test processing blocks with empty body (no attestations) combined with missed slots.
 
-        Scenario
-    #     --------
-    #     Build chain of blocks with empty body + missed slot:
-    #     - Slot 1: Block
-    #     - Slot 2: Block, Empty body
-    #     - Slot 3: BLock, Empty body
-    #     - Slot 4: Missed
-    #     - Slot 5: Block, Empty body
-    #     - Slot 6: Block
+    Scenario
+     --------
+     Build chain of blocks with empty body + missed slot:
+     - Slot 1: Block
+     - Slot 2: Block, Empty body
+     - Slot 3: BLock, Empty body
+     - Slot 4: Missed
+     - Slot 5: Block, Empty body
+     - Slot 6: Block
 
-    #     Expected Behavior
-    #     -----------------
-    #     1. Blocks process at specified slots
-    #     2. Empty slots handled automatically
-    #     3. State advances to slot 6
+     Expected Behavior
+     -----------------
+     1. Blocks process at specified slots
+     2. Empty slots handled automatically
+     3. State advances to slot 6
 
     """
     state_transition_test(
