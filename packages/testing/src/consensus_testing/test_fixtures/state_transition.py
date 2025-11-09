@@ -197,25 +197,18 @@ class StateTransitionTest(BaseConsensusFixture):
         Block
             A complete block ready for state_transition.
         """
-        is_correct_proposer_index = True
         # Use provided proposer_index or compute it
         if spec.proposer_index is not None:
             proposer_index = spec.proposer_index
-            is_correct_proposer_index = spec.proposer_index == ValidatorIndex(
-                int(spec.slot) % int(state.validators.count)
-            )
         else:
             proposer_index = ValidatorIndex(int(spec.slot) % int(state.validators.count))
 
-        is_corect_parent_root = True
-        temp_state = state.process_slots(spec.slot)
-        computed_parent_root = hash_tree_root(temp_state.latest_block_header)
         # Use provided parent_root or compute it
         if spec.parent_root is not None:
             parent_root = spec.parent_root
-            is_corect_parent_root = parent_root == computed_parent_root
         else:
-            parent_root = computed_parent_root
+            temp_state = state.process_slots(spec.slot)
+            parent_root = hash_tree_root(temp_state.latest_block_header)
 
         # Use provided body or create empty one
         if spec.body is not None:
@@ -236,11 +229,11 @@ class StateTransitionTest(BaseConsensusFixture):
                 state_root=Bytes32.zero(),
                 body=body,
             )
-            # If we are testing an invalid proposer index or incorrect parent root,
+            # If we are expecting an exception,
             #  then return the temp_block without running process_block.
             #  This is because process_block will reject the block and
             # the generated vector will have missing data.
-            if not is_correct_proposer_index or not is_corect_parent_root:
+            if self.expect_exception is not None:
                 return temp_block
 
             post_state = temp_state.process_block(temp_block)
