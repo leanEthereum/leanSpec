@@ -62,9 +62,7 @@ class BaseFixture(CamelModel):
 
         Excludes the `info` field and converts snake_case to camelCase.
         """
-        return self.model_dump(
-            mode="json",
-            by_alias=True,
+        return self.to_json(
             exclude_none=True,
             exclude={"info"},
         )

@@ -108,7 +108,7 @@ class BlockStep(BaseForkChoiceStep):
                 "Block not filled yet - make_fixture() must be called before serialization. "
                 "This BlockStep should only be serialized after the fixture has been processed."
             )
-        return self._filled_block.model_dump(mode="json", by_alias=True)
+        return self._filled_block.to_json()
 
 
 class AttestationStep(BaseForkChoiceStep):

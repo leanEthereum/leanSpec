@@ -94,7 +94,7 @@ class StateTransitionTest(BaseConsensusFixture):
             The serialized Blocks.
         """
         del value
-        return [block.model_dump(mode="json", by_alias=True) for block in self._filled_blocks]
+        return [block.to_json() for block in self._filled_blocks]
 
     @field_serializer("expect_exception", when_used="json")
     def serialize_exception(self, value: type[Exception] | None) -> str | None:
