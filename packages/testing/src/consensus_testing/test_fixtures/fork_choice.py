@@ -27,7 +27,7 @@ from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.subspecs.xmss.interface import DEFAULT_SIGNATURE_SCHEME
+from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME
 from lean_spec.types import Bytes32, Uint64, ValidatorIndex
 
 from ..keys import XmssKeyManager
@@ -186,7 +186,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         key_manager = (
             shared_key_manager
             if self.max_slot <= shared_key_manager.max_slot
-            else XmssKeyManager(max_slot=self.max_slot)
+            else XmssKeyManager(max_slot=self.max_slot, scheme=TEST_SIGNATURE_SCHEME)
         )
 
         # Update validator pubkeys to match key_manager's generated keys
@@ -194,7 +194,7 @@ class ForkChoiceTest(BaseConsensusFixture):
             validator.model_copy(
                 update={
                     "pubkey": key_manager[ValidatorIndex(i)].public.to_bytes(
-                        DEFAULT_SIGNATURE_SCHEME.config
+                        key_manager.scheme.config
                     )
                 }
             )
