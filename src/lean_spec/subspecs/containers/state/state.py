@@ -409,7 +409,7 @@ class State(Container):
                 # Finalization: if the target is the next valid justifiable
                 # hash after the source
                 if not any(
-                    slot.is_justifiable_after(self.latest_finalized.slot)
+                    Slot(slot).is_justifiable_after(self.latest_finalized.slot)
                     for slot in range(source_slot + 1, target_slot)
                 ):
                     latest_finalized = source
