@@ -336,61 +336,90 @@ class State(Container):
         State
             A new state with updated justification/finalization.
         """
-        # Start with current justifications and finalization state.
-        justified_slots = list(self.justified_slots)
+        # Get justifications, justified slots and historical block hashes are already up to
+        # date as per the processing in process_block_header
+        justifications = self.get_justifications()
+
+        # Track state changes to be applied at the end
         latest_justified = self.latest_justified
         latest_finalized = self.latest_finalized
+        justified_slots = list(self.justified_slots)
 
-        # Process each attestation in the block.
+        # From 3sf-mini/consensus.py - apply attestations
         for attestation in attestations:
             attestation_data = attestation.data
             source = attestation_data.source
             target = attestation_data.target
 
-            # Validate that this is a reasonable attestation (source comes before target).
-            if source.slot.as_int() >= target.slot.as_int():
-                continue  # Skip invalid attestation
+            # Ignore attestations whose source is not already justified,
+            # or whose target is not in the history, or whose target is not a
+            # valid justifiable slot
+            source_slot = source.slot.as_int()
+            target_slot = target.slot.as_int()
 
-            # Check if source checkpoint is justified.
-            source_slot_int = source.slot.as_int()
-            target_slot_int = target.slot.as_int()
+            # Source slot must be justified
+            if not justified_slots[source_slot]:
+                continue
 
-            # Ensure we have enough justified slots history.
-            if source_slot_int < len(justified_slots):
-                source_is_justified = justified_slots[source_slot_int]
-            else:
-                continue  # Source is too far in the past
+            # Target slot must not be already justified
+            # This condition is missing in 3sf mini but has been added here because
+            # we don't want to re-introduce the target again for remaining votes if
+            # the slot is already justified and its tracking already cleared out
+            # from justifications map
+            if justified_slots[target_slot]:
+                continue
 
-            # If source is justified, consider justifying the target.
-            if (
-                source_is_justified
-                and target_slot_int < len(justified_slots)
-                and justified_slots[target_slot_int]
-            ):
-                # Target is already justified, check for finalization.
-                if (
-                    source.slot.as_int() + 1 == target.slot.as_int()
-                    and latest_justified.slot.as_int() < target.slot.as_int()
+            # Source root must match the state's historical block hashes
+            if source.root != self.historical_block_hashes[source_slot]:
+                continue
+
+            # Target root must match the state's historical block hashes
+            if target.root != self.historical_block_hashes[target_slot]:
+                continue
+
+            # Target slot must be after source slot
+            if target.slot <= source.slot:
+                continue
+
+            # Target slot must be justifiable after the latest finalized slot
+            if not target.slot.is_justifiable_after(self.latest_finalized.slot):
+                continue
+
+            # Track attempts to justify new hashes
+            if target.root not in justifications:
+                justifications[target.root] = [False] * self.validators.count
+
+            validator_id = attestation.validator_id.as_int()
+            if not justifications[target.root][validator_id]:
+                justifications[target.root][validator_id] = True
+
+            count = sum(justifications[target.root])
+
+            # If 2/3 attested to the same new valid hash to justify
+            # in 3sf mini this is strict equality, but we have updated it to >=
+            # also have modified it from count >= (2 * state.config.num_validators) // 3
+            # to prevent integer division which could lead to less than 2/3 of validators
+            # justifying specially if the num_validators is low in testing scenarios
+            if 3 * count >= (2 * self.validators.count):
+                latest_justified = target
+                justified_slots[target_slot] = True
+                del justifications[target.root]
+
+                # Finalization: if the target is the next valid justifiable
+                # hash after the source
+                if not any(
+                    slot.is_justifiable_after(self.latest_finalized.slot)
+                    for slot in range(source_slot + 1, target_slot)
                 ):
-                    # Consecutive justified checkpoints -> finalize the source.
                     latest_finalized = source
-                    latest_justified = target
 
-            else:
-                # Try to justify the target if source is justified.
-                if source_is_justified:
-                    # Ensure justified_slots is long enough, then mark the target slot.
-                    while len(justified_slots) <= target_slot_int:
-                        justified_slots.append(Boolean(False))
-                    justified_slots[target_slot_int] = Boolean(True)
+        # Flatten and set updated justifications back to the state
+        state_with_new_justifications = self.set_justifications(justifications)
 
-                    # Update latest_justified if this target is newer.
-                    if target.slot.as_int() > latest_justified.slot.as_int():
-                        latest_justified = target
-
-        # Return the updated state.
+        # Return the updated state with all changes
         return self.model_copy(
             update={
+                "justifications_roots": state_with_new_justifications.justifications_roots,
                 "justified_slots": self.justified_slots.__class__(data=justified_slots),
                 "latest_justified": latest_justified,
                 "latest_finalized": latest_finalized,
