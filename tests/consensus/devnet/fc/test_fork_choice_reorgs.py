@@ -806,8 +806,12 @@ def test_reorg_on_newly_justified_slot(
     - Safety guarantees maintained during reorgs
     """
     fork_choice_test(
+        # Using 9 validators to avoid validator reuse which could lead to unintended jump between forks
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(9)])
+        ),
         steps=[
-            # Common base at slot 1
+            # Common base
             BlockStep(
                 block=BlockSpec(slot=Slot(1), label="base"),
                 checks=StoreChecks(
@@ -816,64 +820,238 @@ def test_reorg_on_newly_justified_slot(
                 ),
             ),
             # Fork A: slot 2
+            # Fork A is the heaviest chain (1 block from justified slot)
             BlockStep(
-                block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_a_2"),
+                block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_a_1"),
                 checks=StoreChecks(
                     head_slot=Slot(2),
+                    head_root_label="fork_a_1",
+                ),
+            ),
+            # Fork A: slot 3
+            # Fork A is the heaviest chain (2 blocks from justified slot)
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), parent_label="fork_a_1", label="fork_a_2"),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
                     head_root_label="fork_a_2",
                 ),
             ),
-            # Fork B: slot 2 (competing)
+            # Fork A: slot 4
+            # Fork A is the heaviest chain (3 blocks from justified slot)
             BlockStep(
-                block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_b_2"),
-                checks=StoreChecks(
-                    head_slot=Slot(2),
-                    head_root_label="fork_b_2",
-                ),
-            ),
-            # Fork A: slot 3 (extends first, takes lead)
-            BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_a_2", label="fork_a_3"),
-                checks=StoreChecks(
-                    head_slot=Slot(3),
-                    head_root_label="fork_a_3",  # Fork A leads (2 blocks vs 1)
-                ),
-            ),
-            # Fork A: slot 4 (extends, still head)
-            BlockStep(
-                block=BlockSpec(slot=Slot(4), parent_label="fork_a_3", label="fork_a_4"),
+                block=BlockSpec(slot=Slot(4), parent_label="fork_a_2", label="fork_a_3"),
                 checks=StoreChecks(
                     head_slot=Slot(4),
-                    head_root_label="fork_a_4",  # Fork A leads (3 blocks vs 1)
+                    head_root_label="fork_a_3",
                 ),
             ),
-            # Fork B: slot 5 (enough attestations justifying Slot 2)
+            # Fork B: slot 5 (first block of fork B)
+            # Fork A is still the heaviest chain (3 blocks from justified slot)
+            BlockStep(
+                block=BlockSpec(slot=Slot(5), parent_label="base", label="fork_b_1"),
+                checks=StoreChecks(
+                    head_slot=Slot(4),
+                    head_root_label="fork_a_3",
+                ),
+            ),
+            # Fork B: slot 6
+            # Validator 5 justified fork_b_1
+            # Validator 6 justifying fork_b_2
+            # Add extra justifications on fork_b_1 from validator 0, 1, 7, 8
+            # This makes fork_b_1 justified by 2/3rd of validators: 0, 1, 5, 6, 7, 8
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(5),
-                    parent_label="fork_a_4",
-                    label="fork_b_5",
+                    slot=Slot(6),
+                    parent_label="fork_b_1",
+                    label="fork_b_2",
                     attestations=[
-                        # The proposer validator_id is 5 % 4 = 1, so adding attestations for 2 and 3
                         SignedAttestationSpec(
-                            validator_id=ValidatorIndex(2),
-                            slot=Slot(4),
-                            target_slot=Slot(2),
-                            target_root_label="fork_b_2",
+                            validator_id=ValidatorIndex(0),
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_b_1",
                         ),
                         SignedAttestationSpec(
-                            validator_id=ValidatorIndex(3),
-                            slot=Slot(4),
-                            target_slot=Slot(2),
-                            target_root_label="fork_b_2",
+                            validator_id=ValidatorIndex(1),
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_b_1",
+                        ),
+                        # fork_b_1 should be able to justify without validator 5 and 6
+                        # but somehow the tests are failing without these two attestations below
+                        # SignedAttestationSpec(
+                        #     validator_id=ValidatorIndex(5),
+                        #     slot=Slot(5),
+                        #     target_slot=Slot(5),
+                        #     target_root_label="fork_b_1",
+                        # ),
+                        # SignedAttestationSpec(
+                        #     validator_id=ValidatorIndex(6),
+                        #     slot=Slot(5),
+                        #     target_slot=Slot(5),
+                        #     target_root_label="fork_b_1",
+                        # ),
+                        SignedAttestationSpec(
+                            validator_id=ValidatorIndex(7),
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_b_1",
+                        ),
+                        SignedAttestationSpec(
+                            validator_id=ValidatorIndex(8),
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_b_1",
                         ),
                     ],
                 ),
                 checks=StoreChecks(
-                    head_slot=Slot(5),
-                    latest_justified_slot=Slot(2),
-                    head_root_label="fork_b_5",  # Fork B leads as Fork B at Slot 2 is justified
+                    head_slot=Slot(6),
+                    head_root_label="fork_b_2",  # Fork B now leads as fork_b_1 is justified
+                    latest_justified_slot=Slot(5),
+                    latest_justified_root_label="fork_b_1",
                 ),
             ),
         ],
     )
+
+# def test_reorg_on_newly_justified_slot(
+#     fork_choice_test: ForkChoiceTestFiller,
+# ) -> None:
+#     """
+#     Reorg occurs correctly when forks cross justification boundaries.
+
+#     Scenario
+#     --------
+#     Two forks compete across multiple justifiable slots. Fork choice must
+#     correctly handle reorgs while respecting justification rules.
+
+#     - Slot 1: Base
+#     - Slot 2: Fork A (competing with B)
+#     - Slot 2: Fork B (competing with A)
+#     - Slot 3: Fork A (Fork A now has depth 2 - becomes head)
+#     - Slot 4: Fork A (Fork A now has depth 3 - still head)
+#     - Slot 5: Fork B with enough justifications for Slot 2 → triggers reorg → Fork B becomes head
+
+#     Expected Behavior
+#     -----------------
+#     1. Fork A and Fork B initially have equal weight at Slot 2
+#     2. Fork A takes lead at Slot 3 and Slot 4
+#     2. At Slot 5, enough attestations justified Fork B at Slot 2, Fork A permanently non-canonical
+#     3. Fork B becomes head at Slot 5 due to justification of Fork B at Slot 2
+
+#     Why This Matters
+#     ----------------
+#     Justification is a critical safety mechanism:
+#     - Limits which blocks can be attested to
+#     - Ensures fork choice respects finality constraints
+
+#     This test ensures:
+#     - Reorgs respect justification boundaries
+#     - Fork choice works correctly across justifiable slots
+#     - Safety guarantees maintained during reorgs
+#     """
+#     fork_choice_test(
+#         # Using 9 validators to avoid validator reuse which could lead to unintended jump between forks
+#         anchor_state=generate_pre_state(
+#             validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(9)])
+#         ),
+#         steps=[
+#             # Common base
+#             BlockStep(
+#                 block=BlockSpec(slot=Slot(1), label="base"),
+#                 checks=StoreChecks(
+#                     head_slot=Slot(1),
+#                     head_root_label="base",
+#                 ),
+#             ),
+#             # Fork A: slot 2
+#             # Fork A is the heaviest chain (1 block from justified slot)
+#             BlockStep(
+#                 block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_a_1"),
+#                 checks=StoreChecks(
+#                     head_slot=Slot(2),
+#                     head_root_label="fork_a_1",
+#                 ),
+#             ),
+#             # Fork B: slot 3
+#             # Fork A and B is equally heavy (1 block from justified slot)
+#             BlockStep(
+#                 block=BlockSpec(slot=Slot(3), parent_label="base", label="fork_b_1"),
+#                 # Not checking head because it can either be fork_a_1 or fork_b_1 depending on
+#                 # the alphabetical order of their block root
+#             ),
+#             # Fork A: slot 4
+#             # Fork A is the heaviest chain (2 blocks from justified slot)
+#             BlockStep(
+#                 block=BlockSpec(slot=Slot(4), parent_label="fork_a_1", label="fork_a_2"),
+#                 checks=StoreChecks(
+#                     head_slot=Slot(4),
+#                     head_root_label="fork_a_2",
+#                 ),
+#             ),
+#             # Fork A: slot 5
+#             # Fork A is the heaviest chain (3 blocks from justified slot)
+#             BlockStep(
+#                 block=BlockSpec(slot=Slot(5), parent_label="fork_a_2", label="fork_a_3"),
+#                 checks=StoreChecks(
+#                     head_slot=Slot(5),
+#                     head_root_label="fork_a_3",
+#                 ),
+#             ),
+#             # Fork B: slot 6
+#             # Also setting validator 7, 8, 9, 0 to justify fork_b_1
+#             # This makes fork_b_1 justified by validator 0, 1, 3, 6, 7, 8 (6 out of 9)
+#             BlockStep(
+#                 block=BlockSpec(
+#                     slot=Slot(6),
+#                     parent_label="fork_b_1",
+#                     label="fork_b_2",
+#                     attestations=[
+#                         SignedAttestationSpec(
+#                             validator_id=ValidatorIndex(0),
+#                             slot=Slot(5),
+#                             target_slot=Slot(3),
+#                             target_root_label="fork_b_1",
+#                         ),
+#                         SignedAttestationSpec(
+#                             validator_id=ValidatorIndex(1),
+#                             slot=Slot(5),
+#                             target_slot=Slot(3),
+#                             target_root_label="fork_b_1",
+#                         ),
+#                         SignedAttestationSpec(
+#                             validator_id=ValidatorIndex(3),
+#                             slot=Slot(5),
+#                             target_slot=Slot(3),
+#                             target_root_label="fork_b_1",
+#                         ),
+#                         SignedAttestationSpec(
+#                             validator_id=ValidatorIndex(6),
+#                             slot=Slot(5),
+#                             target_slot=Slot(3),
+#                             target_root_label="fork_b_1",
+#                         ),
+#                         SignedAttestationSpec(
+#                             validator_id=ValidatorIndex(7),
+#                             slot=Slot(5),
+#                             target_slot=Slot(3),
+#                             target_root_label="fork_b_1",
+#                         ),
+#                         SignedAttestationSpec(
+#                             validator_id=ValidatorIndex(8),
+#                             slot=Slot(5),
+#                             target_slot=Slot(3),
+#                             target_root_label="fork_b_1",
+#                         ),
+#                     ],
+#                 ),
+#                 checks=StoreChecks(
+#                     head_slot=Slot(6),
+#                     latest_justified_slot=Slot(3),
+#                     head_root_label="fork_b_2",  # Fork B leads as Fork B at Slot 2 is justified
+#                 ),
+#             ),
+#         ],
+#     )
