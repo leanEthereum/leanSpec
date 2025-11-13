@@ -258,15 +258,15 @@ class StoreChecks(CamelModel):
                 # Resolve label to root
                 if block_registry is None:
                     raise ValueError(
-                        f"Step {step_index}: latest_justified_root_label='{expected_value}' specified "
-                        f"but block_registry not provided to validate_against_store()"
+                        f"Step {step_index}: latest_justified_root_label='{expected_value}' "
+                        f"specified but block_registry not provided to validate_against_store()"
                     )
 
                 if expected_value not in block_registry:
                     available = list(block_registry.keys())
                     raise ValueError(
-                        f"Step {step_index}: latest_justified_root_label='{expected_value}' not found "
-                        f"in block registry. Available labels: {available}"
+                        f"Step {step_index}: latest_justified_root_label='{expected_value}' "
+                        f"not found in block registry. Available labels: {available}"
                     )
 
                 # Import hash_tree_root locally to avoid circular import
