@@ -8,6 +8,7 @@ from lean_spec.subspecs.containers.state.types import (
 )
 from lean_spec.types import Boolean, Bytes32
 
+
 def get_justifications_map(
     justifications_roots: JustificationRoots,
     justifications_validators: JustificationValidators,
