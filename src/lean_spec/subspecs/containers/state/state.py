@@ -208,43 +208,12 @@ class State(Container):
             }
         )
 
-    def process_slot(self) -> "State":
-        """
-        Perform per-slot maintenance tasks.
-
-        If we are on the slot immediately after a block, the latest block header
-        has an empty state_root. In that case, cache the pre-block state root into
-        that header. Otherwise, no change is required.
-
-        Returns:
-        -------
-        State
-            A new state with latest_block_header.state_root set if needed.
-        """
-        # If the latest block header already has a state root, no action is needed.
-        if self.latest_block_header.state_root != Bytes32.zero():
-            return self
-
-        # If the latest block header has no state root, fill it now.
-        #
-        # This occurs on the first slot after a block.
-        # - We compute the root of the current (pre-block) state.
-        # - We copy the header and set its state_root to the computed value.
-        # - We return a new state with the updated header in place.
-        return self.model_copy(
-            update={
-                "latest_block_header": self.latest_block_header.model_copy(
-                    update={"state_root": hash_tree_root(self)}
-                )
-            }
-        )
-
     def process_slots(self, target_slot: Slot) -> "State":
         """
         Advance the state through empty slots up to, but not including, target_slot.
 
         The loop:
-          - Calls process_slot once per missing slot.
+          - Performs per-slot maintenance (e.g., state root caching).
           - Increments the slot counter after each call.
         The function returns a new state with slot == target_slot.
 
@@ -271,10 +240,41 @@ class State(Container):
 
         # Step through each missing slot:
         while state.slot < target_slot:
-            # Perform per-slot housekeeping (e.g., cache the state root).
-            state = state.process_slot()
-            # Increase the slot number by one for the next iteration.
-            state = state.model_copy(update={"slot": Slot(state.slot + Slot(1))})
+            # Per-Slot Housekeeping & Slot Increment
+            #
+            # This single statement performs two tasks for each empty slot
+            # in a single, immutable update:
+            #
+            # 1. State Root Caching (Conditional):
+            #    It checks if the latest block header has an empty state root.
+            #    This is true only for the *first* empty slot immediately
+            #    following a block.
+            #
+            #    - If it is empty, we must cache the pre-block state root
+            #    (the hash of the state *before* this slot increment) into that
+            #    header. We do this by:
+            #    a) Computing the root of the current (pre-block) state.
+            #    b) Creating a *new* header object with this computed state root
+            #       to be included in the update.
+            #
+            #    - If the state root is *not* empty, it means we are in a
+            #    sequence of empty slots, and we simply use the existing header.
+            #
+            # 2. Slot Increment:
+            #    It always increments the slot number by one.
+            #
+            state = state.model_copy(
+                update={
+                    "latest_block_header": (
+                        state.latest_block_header.model_copy(
+                            update={"state_root": hash_tree_root(state)}
+                        )
+                        if state.latest_block_header.state_root == Bytes32.zero()
+                        else state.latest_block_header
+                    ),
+                    "slot": Slot(state.slot + Slot(1)),
+                }
+            )
 
         # Reached the target slot. Return the advanced state.
         return state
@@ -359,7 +359,7 @@ class State(Container):
 
         # Construct the new latest block header.
         #
-        # Leave state_root empty; it will be filled on the next process_slot call.
+        # Leave state_root empty; it will be filled by the next slot processing.
         new_header = BlockHeader(
             slot=block.slot,
             proposer_index=block.proposer_index,
