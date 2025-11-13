@@ -36,19 +36,19 @@ def get_justifications_map(
     if not justifications_roots:
         return {}
 
-    # # Extract the flattened validator justifications.
-    # flat_justifications = list(justifications_validators)
+    # Extract the flattened validator justifications.
+    flat_justifications = list(justifications_validators)
 
     # Reconstruct the map: each root gets its corresponding justification slice.
     return {
-        root: justifications_validators[i * validator_count : (i + 1) * validator_count]
+        root: flat_justifications[i * validator_count : (i + 1) * validator_count]
         for i, root in enumerate(justifications_roots)
     }
 
 
 def flatten_justifications_map(
     justifications_map: Dict[Bytes32, List[Boolean]], validator_count: int
-) -> (JustificationRoots, JustificationValidators):
+) -> tuple[JustificationRoots, JustificationValidators]:
     """
     Flatten a map of validator justifications into the state's flat data structures
     for SSZ compatibility.
