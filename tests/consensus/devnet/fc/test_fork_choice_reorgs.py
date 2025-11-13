@@ -54,6 +54,9 @@ def test_simple_one_block_reorg(
     Tests the fundamental property: extending a fork makes it heavier.
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+        ),
         steps=[
             # Common ancestor at slot 1
             BlockStep(
@@ -146,6 +149,9 @@ def test_two_block_reorg_progressive_building(
     - Network temporarily favored one fork but consensus shifted
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+        ),
         steps=[
             # Common ancestor
             BlockStep(
@@ -247,6 +253,9 @@ def test_three_block_deep_reorg(
     about chain history, ensuring safety and liveness even in adversarial scenarios.
     """
     fork_choice_test(
+        # anchor_state=generate_pre_state(
+        #     validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+        # ),
         steps=[
             # Common base
             BlockStep(
@@ -476,6 +485,9 @@ def test_three_way_fork_competition(
     - Final winner is objectively the heaviest fork
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+        ),
         steps=[
             # Common base
             BlockStep(
@@ -700,6 +712,9 @@ def test_back_and_forth_reorg_oscillation(
     convergence.
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+        ),
         steps=[
             # Common base
             BlockStep(
@@ -806,6 +821,9 @@ def test_reorg_on_newly_justified_slot(
     - Safety guarantees maintained during reorgs
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(
+            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+        ),
         steps=[
             # Common base at slot 1
             BlockStep(
