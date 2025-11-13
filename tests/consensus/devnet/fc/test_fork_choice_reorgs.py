@@ -806,7 +806,7 @@ def test_reorg_on_newly_justified_slot(
     - Safety guarantees maintained during reorgs
     """
     fork_choice_test(
-        # Using 9 validators to avoid validator reuse which could lead to unintended jump between forks
+        # Using 9 validators: 3 for Fork A and 6 for Fork B to achieve 2/3rd for Fork B
         anchor_state=generate_pre_state(
             validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(9)])
         ),
