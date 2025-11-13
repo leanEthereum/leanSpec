@@ -8,7 +8,7 @@ from lean_spec.subspecs.containers.state.types import (
 )
 from lean_spec.types import Boolean, Bytes32
 
-def unflatten_justifications(
+def get_justifications_map(
     justifications_roots: JustificationRoots,
     justifications_validators: JustificationValidators,
     validator_count: int
@@ -44,7 +44,7 @@ def unflatten_justifications(
         for i, root in enumerate(justifications_roots)
     }
 
-def flatten_justifications(
+def flatten_justifications_map(
     justifications_map: Dict[Bytes32, List[Boolean]], validator_count: int
 ) -> (JustificationRoots, JustificationValidators):
     """
