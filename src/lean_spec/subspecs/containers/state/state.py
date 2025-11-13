@@ -6,8 +6,6 @@ recent blocks, and validator attestations. State also records which blocks are
 justified and finalized.
 """
 
-from typing import Dict, List
-
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
@@ -135,77 +133,6 @@ class State(Container):
             validator_index=validator_index,
             slot=self.slot,
             num_validators=Uint64(self.validators.count),
-        )
-
-    def get_justifications(self) -> Dict[Bytes32, List[Boolean]]:
-        """
-        Reconstruct a map from justified block roots to validator vote lists.
-
-        This method takes the flat state encoding and rebuilds the associative
-        structure for easier processing.
-
-        Returns:
-        -------
-        Dict[Bytes32, List[Boolean]]
-            A mapping from justified block root to the list of validator votes.
-        """
-        # No justified roots means no justifications to reconstruct.
-        if not self.justifications_roots:
-            return {}
-
-        # Each root has exactly validator_count votes in the flat encoding.
-        validator_count = self.validators.count
-
-        # Extract the flattened validator votes.
-        flat_votes = list(self.justifications_validators)
-
-        # Reconstruct the map: each root gets its corresponding vote slice.
-        return {
-            root: flat_votes[i * validator_count : (i + 1) * validator_count]
-            for i, root in enumerate(self.justifications_roots)
-        }
-
-    def with_justifications(
-        self,
-        justifications: Dict[Bytes32, List[Boolean]],
-    ) -> "State":
-        """
-        Update the state with a new set of justifications.
-
-        This method flattens the justifications map into the state's flat
-        encoding for SSZ compatibility.
-
-        Parameters
-        ----------
-        justifications : Dict[Bytes32, List[Boolean]]
-            A mapping from justified block root to validator vote lists.
-
-        Returns:
-        -------
-        State
-            A new state with updated justification data.
-        """
-        # Build the flattened lists from the map, with sorted keys for deterministic order.
-        roots_list = []
-        votes_list = []
-        for root in sorted(justifications.keys()):
-            votes = justifications[root]
-            # Validate that the vote list has the expected length.
-            expected_len = self.validators.count
-            if len(votes) != expected_len:
-                raise AssertionError(f"Vote list for root {root.hex()} has incorrect length")
-
-            # Add the root to the roots list.
-            roots_list.append(root)
-            # Extend the flattened list with the votes for this root.
-            votes_list.extend(votes)
-
-        # Return a new state object with the updated fields.
-        return self.model_copy(
-            update={
-                "justifications_roots": JustificationRoots(data=roots_list),
-                "justifications_validators": JustificationValidators(data=votes_list),
-            }
         )
 
     def process_slot(self) -> "State":
