@@ -22,7 +22,7 @@ from ..block.types import Attestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
-from .helpers import get_justifications_map, flatten_justifications_map
+from .helpers import flatten_justifications_map, get_justifications_map
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -339,7 +339,11 @@ class State(Container):
         """
         # Get justifications, justified slots and historical block hashes are already up to
         # date as per the processing in process_block_header
-        justifications = get_justifications_map(self.justifications_roots, self.justifications_validators, self.validators.count)
+        justifications = get_justifications_map(
+            justifications_roots=self.justifications_roots,
+            justifications_validators=self.justifications_validators,
+            validator_count=self.validators.count,
+        )
 
         # Track state changes to be applied at the end
         latest_justified = self.latest_justified
