@@ -12,7 +12,7 @@ from lean_spec.types import Boolean, Bytes32
 def get_justifications_map(
     justifications_roots: JustificationRoots,
     justifications_validators: JustificationValidators,
-    validator_count: int
+    validator_count: int,
 ) -> Dict[Bytes32, List[Boolean]]:
     """
     Reconstruct the justifications map from the state's flat data structures.
@@ -44,6 +44,7 @@ def get_justifications_map(
         root: justifications_validators[i * validator_count : (i + 1) * validator_count]
         for i, root in enumerate(justifications_roots)
     }
+
 
 def flatten_justifications_map(
     justifications_map: Dict[Bytes32, List[Boolean]], validator_count: int
