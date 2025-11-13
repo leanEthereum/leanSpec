@@ -22,6 +22,7 @@ from ..block.types import Attestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
+from .helpers import flatten_justifications, unflatten_justifications
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -338,7 +339,7 @@ class State(Container):
         """
         # Get justifications, justified slots and historical block hashes are already up to
         # date as per the processing in process_block_header
-        justifications = self.get_justifications()
+        justifications = unflatten_justifications(self.justifications_roots, self.justifications_validators, self.validators.count)
 
         # Track state changes to be applied at the end
         latest_justified = self.latest_justified
@@ -414,12 +415,15 @@ class State(Container):
                     latest_finalized = source
 
         # Flatten and set updated justifications back to the state
-        state_with_new_justifications = self.set_justifications(justifications)
+        justifications_roots, justifications_validators = (
+            flatten_justifications(justifications, self.validators.count)
+        )
 
         # Return the updated state with all changes
         return self.model_copy(
             update={
-                "justifications_roots": state_with_new_justifications.justifications_roots,
+                "justifications_roots": justifications_roots,
+                "justifications_validators": justifications_validators,
                 "justified_slots": self.justified_slots.__class__(data=justified_slots),
                 "latest_justified": latest_justified,
                 "latest_finalized": latest_finalized,
