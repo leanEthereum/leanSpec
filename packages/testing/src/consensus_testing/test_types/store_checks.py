@@ -131,6 +131,15 @@ class StoreChecks(CamelModel):
     latest_finalized_slot: Slot | None = None
     """Expected latest finalized checkpoint slot."""
 
+    latest_justified_root_label: str | None = None
+    """
+    Expected latest justified checkpoint root by label reference.
+
+    Alternative to latest_justified_root that uses the block label system.
+    The framework will resolve this label to the actual block root
+    and validate the latest justified checkpointroot matches.
+    """
+
     latest_finalized_root: Bytes32 | None = None
     """Expected latest finalized checkpoint root."""
 
@@ -243,6 +252,35 @@ class StoreChecks(CamelModel):
                     raise AssertionError(
                         f"Step {step_index}: latest_justified.root = 0x{actual_root.hex()}, "
                         f"expected 0x{expected_value.hex()}"
+                    )
+
+            elif field_name == "latest_justified_root_label":
+                # Resolve label to root
+                if block_registry is None:
+                    raise ValueError(
+                        f"Step {step_index}: latest_justified_root_label='{expected_value}' specified "
+                        f"but block_registry not provided to validate_against_store()"
+                    )
+
+                if expected_value not in block_registry:
+                    available = list(block_registry.keys())
+                    raise ValueError(
+                        f"Step {step_index}: latest_justified_root_label='{expected_value}' not found "
+                        f"in block registry. Available labels: {available}"
+                    )
+
+                # Import hash_tree_root locally to avoid circular import
+                from lean_spec.subspecs.ssz import hash_tree_root
+
+                expected_block = block_registry[expected_value]
+                expected_root = hash_tree_root(expected_block)
+                actual_root = store.latest_justified.root
+
+                if actual_root != expected_root:
+                    raise AssertionError(
+                        f"Step {step_index}: latest_justified.root = 0x{actual_root.hex()}, "
+                        f"expected 0x{expected_root.hex()} "
+                        f"(label '{expected_value}')"
                     )
 
             elif field_name == "latest_finalized_slot":
