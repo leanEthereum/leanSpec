@@ -103,6 +103,84 @@ def test_simple_one_block_reorg(
     )
 
 
+def test_equal_weight_forks_use_lexicographic_tiebreaker(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Fork choice selects lexicographically higher branch when fork weights tie.
+
+    Scenario
+    --------
+    - Slot 1: Build common ancestor.
+    - Slots 2-3: Build fork A out to depth 2 (slots 2 & 3).
+    - Slots 2-3: Build fork B with identical depths/attestations.
+
+    Expected Behavior
+    -----------------
+    The competing forks have identical attestation weight. The head is chosen
+    purely via the lexicographic ordering of the block roots, ensuring a
+    deterministic selection even when weights tie.
+    """
+    fork_choice_test(
+        steps=[
+            # Common ancestor at slot 1
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="tie_base"),
+                checks=StoreChecks(
+                    head_slot=Slot(1),
+                    head_root_label="tie_base",
+                ),
+            ),
+            # Fork A extends to slot 3
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(2),
+                    parent_label="tie_base",
+                    label="fork_a_2",
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    head_root_label="fork_a_2",
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="fork_a_2",
+                    label="fork_a_3",
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    head_root_label="fork_a_3",
+                ),
+            ),
+            # Fork B builds identical depth (same total weight as fork A)
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(2),
+                    parent_label="tie_base",
+                    label="fork_b_2",
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    head_root_label="fork_a_3",
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="fork_b_2",
+                    label="fork_b_3",
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    head_root_label="fork_b_3",
+                ),
+            ),
+        ],
+    )
+
+
 def test_two_block_reorg_progressive_building(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
