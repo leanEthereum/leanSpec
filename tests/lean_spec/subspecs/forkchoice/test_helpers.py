@@ -57,6 +57,22 @@ def sample_blocks() -> Dict[Bytes32, Block]:
     }
 
 
+def _byte32(fill: int) -> Bytes32:
+    """Create a Bytes32 filled with the provided byte."""
+    return Bytes32(bytes([fill]) * 32)
+
+
+def _make_block(slot: int, parent_root: Bytes32, state_fill: int) -> Block:
+    """Create a simple empty block for helper tests."""
+    return Block(
+        slot=Slot(slot),
+        proposer_index=Uint64(slot),
+        parent_root=parent_root,
+        state_root=_byte32(state_fill),
+        body=BlockBody(attestations=Attestations(data=[])),
+    )
+
+
 class TestForkChoiceHeadFunction:
     """Test the pure get_fork_choice_head helper function."""
 
@@ -142,6 +158,59 @@ class TestForkChoiceHeadFunction:
         )
 
         assert head == target_hash
+
+    def test_get_fork_choice_head_prefers_lexicographically_larger_child(self) -> None:
+        """Test tie-breaking picks lexicographically largest child when weights equal."""
+        root_hash = _byte32(0)
+        low_child_hash = _byte32(1)
+        high_child_hash = _byte32(2)
+
+        blocks = {
+            root_hash: _make_block(slot=0, parent_root=Bytes32.zero(), state_fill=10),
+            low_child_hash: _make_block(slot=1, parent_root=root_hash, state_fill=11),
+            high_child_hash: _make_block(slot=1, parent_root=root_hash, state_fill=12),
+        }
+
+        head = get_fork_choice_head(
+            blocks=blocks,
+            root=root_hash,
+            latest_attestations={},
+            min_score=0,
+        )
+
+        assert head == high_child_hash
+
+    def test_get_fork_choice_head_breaks_ties_for_equal_weight_forks(self) -> None:
+        """Test tie-breaking prefers lexicographically larger fork when weights tie."""
+        root_hash = _byte32(10)
+        fork_a_2_hash = _byte32(20)
+        fork_b_2_hash = _byte32(200)
+
+        blocks = {
+            root_hash: _make_block(slot=0, parent_root=Bytes32.zero(), state_fill=30),
+            fork_a_2_hash: _make_block(slot=2, parent_root=root_hash, state_fill=31),
+            fork_b_2_hash: _make_block(slot=2, parent_root=root_hash, state_fill=32),
+        }
+
+        attestations = {
+            ValidatorIndex(0): build_signed_attestation(
+                ValidatorIndex(0),
+                Checkpoint(root=fork_a_2_hash, slot=Slot(2)),
+            ),
+            ValidatorIndex(1): build_signed_attestation(
+                ValidatorIndex(1),
+                Checkpoint(root=fork_b_2_hash, slot=Slot(2)),
+            ),
+        }
+
+        head = get_fork_choice_head(
+            blocks=blocks,
+            root=root_hash,
+            latest_attestations=attestations,
+            min_score=0,
+        )
+
+        assert head == fork_b_2_hash
 
 
 class TestLatestJustifiedFunction:
