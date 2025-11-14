@@ -114,27 +114,6 @@ class State(Container):
             justifications_validators=JustificationValidators(data=[]),
         )
 
-    def is_proposer(self, validator_index: ValidatorIndex) -> bool:
-        """
-        Check if a validator is the proposer for the current slot.
-
-        Parameters
-        ----------
-        validator_index : ValidatorIndex
-            The index of the validator to check.
-
-        Returns:
-        -------
-        bool
-            True if the validator is the proposer for the current slot.
-        """
-        # Forward to the global proposer function with state context.
-        return is_proposer(
-            validator_index=validator_index,
-            slot=self.slot,
-            num_validators=Uint64(self.validators.count),
-        )
-
     def process_slot(self) -> "State":
         """
         Perform per-slot maintenance tasks.
@@ -249,7 +228,11 @@ class State(Container):
         assert block.slot > parent_header.slot, "Block is older than latest header"
 
         # The proposer must be the expected validator for this slot.
-        assert self.is_proposer(block.proposer_index), "Incorrect block proposer"
+        assert is_proposer(
+            validator_index=block.proposer_index,
+            slot=self.slot,
+            num_validators=Uint64(self.validators.count),
+        ), "Incorrect block proposer"
 
         # The declared parent must match the hash of the latest block header.
         assert block.parent_root == parent_root, "Block parent root mismatch"

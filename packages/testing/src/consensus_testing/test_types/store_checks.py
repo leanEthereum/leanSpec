@@ -158,6 +158,20 @@ class StoreChecks(CamelModel):
     attestation_checks: list[AttestationCheck] | None = None
     """Optional list of attestation content checks for specific validators."""
 
+    lexicographic_head_among: list[str] | None = None
+    """
+    Verify that the head is chosen via lexicographic tiebreaker.
+
+    When specified, validates that:
+    1. All listed fork labels have equal attestation weight
+    2. The current head is one of these forks
+    3. The head has the lexicographically highest block root among them
+
+    This is used to test the fork choice tiebreaker rule: when multiple forks
+    have equal weight, the fork with the highest block root (lexicographically)
+    should be selected as the head.
+    """
+
     def validate_against_store(
         self, store: "Store", step_index: int, block_registry: dict[str, "Block"] | None = None
     ) -> None:
@@ -362,3 +376,66 @@ class StoreChecks(CamelModel):
                             )
                         attestation = store.latest_known_attestations[validator_idx]
                         check.validate_attestation(attestation, "in latest_known", step_index)
+
+            elif field_name == "lexicographic_head_among":
+                # Validate lexicographic tiebreaker behavior
+                if block_registry is None:
+                    raise ValueError(
+                        f"Step {step_index}: lexicographic_head_among specified "
+                        f"but block_registry not provided to validate_against_store()"
+                    )
+
+                # Import hash_tree_root locally to avoid circular import
+                from lean_spec.subspecs.ssz import hash_tree_root
+
+                # Resolve all fork labels to roots
+                fork_roots: dict[str, Bytes32] = {}
+                fork_slots: dict[str, Slot] = {}
+                for label in expected_value:
+                    if label not in block_registry:
+                        available = list(block_registry.keys())
+                        raise ValueError(
+                            f"Step {step_index}: lexicographic_head_among label '{label}' "
+                            f"not found in block registry. Available: {available}"
+                        )
+
+                    block = block_registry[label]
+                    fork_roots[label] = hash_tree_root(block)
+                    fork_slots[label] = block.slot
+
+                # Verify all forks are at the same slot (equal depth indicator)
+                slots = list(fork_slots.values())
+                if len(set(slots)) > 1:
+                    raise AssertionError(
+                        f"Step {step_index}: lexicographic_head_among forks have "
+                        f"different slots: {fork_slots}. All forks should be at the same "
+                        f"slot for a valid tiebreaker scenario."
+                    )
+
+                # Find the lexicographically highest root
+                # The fork choice algorithm uses max() which does lexicographic comparison on bytes
+                expected_head_root = max(fork_roots.values())
+
+                # Verify the current head matches the lexicographically highest root
+                actual_head_root = store.head
+                if actual_head_root != expected_head_root:
+                    # Find which label has the highest root for error message
+                    highest_label = next(
+                        label for label, root in fork_roots.items() if root == expected_head_root
+                    )
+                    actual_label = next(
+                        (label for label, root in fork_roots.items() if root == actual_head_root),
+                        "unknown",
+                    )
+                    # Display all fork roots for debugging
+                    fork_info = "\n".join(
+                        f"  {label}: 0x{root.hex()}" for label, root in sorted(fork_roots.items())
+                    )
+                    raise AssertionError(
+                        f"Step {step_index}: lexicographic tiebreaker failed.\n"
+                        f"Expected head: '{highest_label}' (0x{expected_head_root.hex()[:16]}...)\n"
+                        f"Actual head:   '{actual_label}' (0x{actual_head_root.hex()[:16]}...)\n"
+                        f"All fork roots:\n{fork_info}\n"
+                        f"When forks have equal weight, the lexicographically highest root "
+                        f"should be selected as head."
+                    )
