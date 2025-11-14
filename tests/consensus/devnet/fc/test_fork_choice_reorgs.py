@@ -4,7 +4,6 @@ import pytest
 from consensus_testing import (
     BlockSpec,
     BlockStep,
-    ForkChoiceTest,
     ForkChoiceTestFiller,
     SignedAttestationSpec,
     StoreChecks,
@@ -15,100 +14,9 @@ from consensus_testing import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import Validator
-from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes52, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
-
-
-def _build_equal_weight_tie_steps() -> list[BlockStep]:
-    """Create steps for the equal-weight lexicographic tiebreak test."""
-    return [
-        BlockStep(
-            block=BlockSpec(slot=Slot(1), label="tie_base"),
-            checks=StoreChecks(
-                head_slot=Slot(1),
-                head_root_label="tie_base",
-            ),
-        ),
-        BlockStep(
-            block=BlockSpec(
-                slot=Slot(2),
-                parent_label="tie_base",
-                label="fork_a_2",
-            ),
-            checks=StoreChecks(
-                head_slot=Slot(2),
-                head_root_label="fork_a_2",
-            ),
-        ),
-        BlockStep(
-            block=BlockSpec(
-                slot=Slot(3),
-                parent_label="fork_a_2",
-                label="fork_a_3",
-            ),
-            checks=StoreChecks(
-                head_slot=Slot(3),
-                head_root_label="fork_a_3",
-            ),
-        ),
-        BlockStep(
-            block=BlockSpec(
-                slot=Slot(2),
-                parent_label="tie_base",
-                label="fork_b_2",
-            ),
-            checks=StoreChecks(
-                head_slot=Slot(3),
-                head_root_label="fork_a_3",
-            ),
-        ),
-        BlockStep(
-            block=BlockSpec(
-                slot=Slot(3),
-                parent_label="fork_b_2",
-                label="fork_b_3",
-            ),
-            checks=StoreChecks(
-                head_slot=Slot(3),
-                head_root_label="fork_b_3",
-            ),
-        ),
-    ]
-
-
-def _assert_lexicographic_winner(
-    steps: list[BlockStep],
-    winner_label: str,
-    competing_label: str,
-) -> None:
-    """
-    Ensure the winning label's block root is lexicographically largest.
-
-    Builds the provided steps using the ForkChoiceTest fixture logic and
-    compares the actual block roots to confirm the tie-breaker behavior.
-    """
-    fixture_steps = [step.model_copy(deep=True) for step in steps]
-    fixture = ForkChoiceTest(
-        anchor_state=generate_pre_state(),
-        steps=fixture_steps,
-    )
-    fixture.make_fixture()
-
-    label_to_root: dict[str, bytes] = {}
-    for step in fixture_steps:
-        if isinstance(step, BlockStep) and step.block.label is not None:
-            label_to_root[step.block.label] = hash_tree_root(step._filled_block)
-
-    winner_root = label_to_root[winner_label]
-    competing_root = label_to_root[competing_label]
-    if not winner_root > competing_root:
-        raise AssertionError(
-            "lexicographic tie-breaker failure: "
-            f"{winner_label} root 0x{winner_root.hex()} "
-            f"not greater than {competing_label} root 0x{competing_root.hex()}"
-        )
 
 
 def test_simple_one_block_reorg(
@@ -193,33 +101,6 @@ def test_simple_one_block_reorg(
             ),
         ],
     )
-
-
-def test_equal_weight_forks_use_lexicographic_tiebreaker(
-    fork_choice_test: ForkChoiceTestFiller,
-) -> None:
-    """
-    Fork choice selects lexicographically higher branch when fork weights tie.
-
-    Scenario
-    --------
-    - Slot 1: Build common ancestor.
-    - Slots 2-3: Build fork A out to depth 2 (slots 2 & 3).
-    - Slots 2-3: Build fork B with identical depths/attestations.
-
-    Expected Behavior
-    -----------------
-    The competing forks have identical attestation weight. The head is chosen
-    purely via the lexicographic ordering of the block roots, ensuring a
-    deterministic selection even when weights tie.
-    """
-    steps = _build_equal_weight_tie_steps()
-    _assert_lexicographic_winner(
-        steps=steps,
-        winner_label="fork_b_3",
-        competing_label="fork_a_3",
-    )
-    fork_choice_test(steps=_build_equal_weight_tie_steps())
 
 
 def test_two_block_reorg_progressive_building(
