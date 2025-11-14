@@ -173,7 +173,8 @@ class StateTransitionTest(BaseConsensusFixture):
 
     def fill_block_from_spec(self, spec: BlockSpec, state: State) -> Block:
         """
-        Fills the created block from `State.produce_block()` based on fields in the spec for state transition tests.
+        Fills the created block from `State.produce_block()`
+        based on fields in the spec for state transition tests.
 
         Parameters
         ----------
