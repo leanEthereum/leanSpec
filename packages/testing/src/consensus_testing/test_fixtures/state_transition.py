@@ -4,11 +4,8 @@ from typing import Any, ClassVar, List
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
-from lean_spec.subspecs.containers.block.block import Block, BlockBody
-from lean_spec.subspecs.containers.block.types import Attestations
+from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.subspecs.containers.state.state import State
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, ValidatorIndex
 
 from ..test_types import BlockSpec, StateExpectation
 from .base import BaseConsensusFixture
@@ -132,7 +129,7 @@ class StateTransitionTest(BaseConsensusFixture):
 
             for block_spec in self.blocks:
                 # Fill Block from BlockSpec
-                block = self._build_block_from_spec(block_spec, state)
+                block = self.fill_block_from_spec(block_spec, state)
 
                 # Store the filled Block for serialization
                 filled_blocks.append(block)
@@ -174,16 +171,9 @@ class StateTransitionTest(BaseConsensusFixture):
         # Return self (fixture is already complete)
         return self
 
-    def _build_block_from_spec(self, spec: BlockSpec, state: State) -> Block:
+    def fill_block_from_spec(self, spec: BlockSpec, state: State) -> Block:
         """
-        Build a Block from a BlockSpec for state transition tests.
-
-        Uses provided fields from spec, computes any missing fields.
-        This mimics what a local block builder would do.
-
-        TODO: If the spec implements a State.produce_block() method in the future,
-        we should use that instead of manually computing fields here. Until then,
-        this manual approach is necessary.
+        Fills the created block from `State.produce_block()` based on fields in the spec for state transition tests.
 
         Parameters
         ----------
@@ -197,53 +187,25 @@ class StateTransitionTest(BaseConsensusFixture):
         Block
             A complete block ready for state_transition.
         """
+        if self.expect_exception:
+            temp_block = state.produce_block(spec.slot, True)
+        else:
+            temp_block = state.produce_block(spec.slot, False)
+
         # Use provided proposer_index or compute it
         if spec.proposer_index is not None:
-            proposer_index = spec.proposer_index
-        else:
-            proposer_index = ValidatorIndex(int(spec.slot) % int(state.validators.count))
+            temp_block.model_copy(update={"proposer_index": spec.proposer_index})
 
         # Use provided parent_root or compute it
         if spec.parent_root is not None:
-            parent_root = spec.parent_root
-        else:
-            temp_state = state.process_slots(spec.slot)
-            parent_root = hash_tree_root(temp_state.latest_block_header)
+            temp_block.model_copy(update={"parent_root": spec.parent_root})
 
         # Use provided body or create empty one
         if spec.body is not None:
-            body = spec.body
-        else:
-            body = BlockBody(attestations=Attestations(data=[]))
+            temp_block.model_copy(update={"body": spec.body})
 
         # Use provided state_root or compute it via dry-run
         if spec.state_root is not None:
-            state_root = spec.state_root
-        else:
-            # Need to dry-run to compute state_root
-            temp_state = state.process_slots(spec.slot)
-            temp_block = Block(
-                slot=spec.slot,
-                proposer_index=proposer_index,
-                parent_root=parent_root,
-                state_root=Bytes32.zero(),
-                body=body,
-            )
-            # If we are expecting an exception,
-            #  then return the temp_block without running process_block.
-            #  This is because process_block will reject the block and
-            # the generated vector will have missing data.
-            if self.expect_exception is not None:
-                return temp_block
+            temp_block.model_copy(update={"state_root": spec.state_root})
 
-            post_state = temp_state.process_block(temp_block)
-            state_root = hash_tree_root(post_state)
-
-        # Create final block with all fields
-        return Block(
-            slot=spec.slot,
-            proposer_index=proposer_index,
-            parent_root=parent_root,
-            state_root=state_root,
-            body=body,
-        )
+        return temp_block

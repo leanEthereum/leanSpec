@@ -440,3 +440,54 @@ class State(Container):
             raise AssertionError("Invalid block state root")
 
         return new_state
+
+    def produce_block(self, target_slot: Slot, is_empty: bool = False) -> Block:
+        """
+        Build a Block for a given target slot and optionally return empty block.
+
+        This method represents the full state transition function:
+        1. Get the state before the target slot
+        2. Build the initial block header (empty body, zero state_root)
+            2.a. Optionally return the initial block if `is_empty` is true
+        3. Process the state with the block to get the final state_root
+        4. Return the final, block (which is block with updated state_root)
+
+        Parameters
+        ----------
+        target_slot : Slot
+            The Slot to build a Block for.
+        is_empty : bool, optional
+            Whether to return initial empty Block.
+
+        Returns:
+        -------
+        Block
+            A new Block build for the target slot
+        """
+        # 1. Get the state before the target slot
+        pre_state = self.process_slots(target_slot)
+
+        # 2. Build the initial block header (empty body, zero state_root)
+        block = Block(
+            slot=target_slot,
+            proposer_index=int(target_slot) % len(self.validators),
+            parent_root=hash_tree_root(pre_state.latest_block_header),
+            state_root=Bytes32.zero(),
+            body=BlockBody(attestations=Attestations(data=[])),
+        )
+
+        if is_empty:
+            return block
+
+        # 3. Process the state with the block to get the final state_root
+        post_state = pre_state.process_block(block)
+        state_root = hash_tree_root(post_state)
+
+        # 4. Return the final, block with non-zero state root
+        return Block(
+            slot=block.slot,
+            proposer_index=block.proposer_index,
+            parent_root=block.parent_root,
+            state_root=state_root,
+            body=block.body,
+        )
