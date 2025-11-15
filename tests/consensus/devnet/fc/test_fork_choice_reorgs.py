@@ -811,7 +811,7 @@ def test_reorg_on_newly_justified_slot(
             validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(9)])
         ),
         steps=[
-            # Common base
+            # Common base at slot 1
             BlockStep(
                 block=BlockSpec(slot=Slot(1), label="base"),
                 checks=StoreChecks(
@@ -856,8 +856,8 @@ def test_reorg_on_newly_justified_slot(
                 ),
             ),
             # Fork B: slot 6
-            # Validator 5 justified fork_b_1
-            # Validator 6 justifying fork_b_2
+            # Validator 5 justified fork_b_1 in slot 5
+            # Validator 6 justifying fork_b_2 in slot 6
             # Add extra justifications on fork_b_1 from validator 0, 1, 7, 8
             # This makes fork_b_1 justified by 2/3rd of validators: 0, 1, 5, 6, 7, 8
             BlockStep(

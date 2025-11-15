@@ -423,7 +423,7 @@ class State(Container):
             flatten_justifications_map(justifications, self.validators.count)
         )
 
-        # Return the updated state with all changes
+        # Return the updated state.
         return self.model_copy(
             update={
                 "justifications_roots": justifications_roots,
