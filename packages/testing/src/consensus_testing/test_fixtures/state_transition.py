@@ -60,8 +60,8 @@ class StateTransitionTest(BaseConsensusFixture):
     """
     The filled Blocks, processed through the specs.
 
-    This is a private attribute not part of the model schema.
-    Tests cannot set this. The framework populates it during make_fixture().
+    This is a private attribute not part of the model schema. Tests cannot set
+    this. The framework populates it during make_fixture().
     """
 
     post: StateExpectation | None = None
@@ -113,8 +113,7 @@ class StateTransitionTest(BaseConsensusFixture):
         """
         Generate the fixture by running the spec.
 
-        Builds blocks from BlockSpec if needed, then processes them through
-        state_transition.
+        Builds blocks from BlockSpec if needed, then processes them through state_transition.
 
         Returns:
         -------
@@ -194,9 +193,9 @@ class StateTransitionTest(BaseConsensusFixture):
         Uses provided fields from spec, computes any missing fields.
         This mimics what a local block builder would do.
 
-        TODO: If the spec implements a State.produce_block() method in the
-        future, we should use that instead of manually computing fields here.
-        Until then, this manual approach is necessary.
+        TODO: If the spec implements a State.produce_block() method in the future, we
+        should use that instead of manually computing fields here. Until then, this
+        manual approach is necessary.
 
         Parameters
         ----------
