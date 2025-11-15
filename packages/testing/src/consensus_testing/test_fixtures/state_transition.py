@@ -60,8 +60,8 @@ class StateTransitionTest(BaseConsensusFixture):
     """
     The filled Blocks, processed through the specs.
 
-    This is a private attribute not part of the model schema. Tests cannot set this.
-    The framework populates it during make_fixture().
+    This is a private attribute not part of the model schema. Tests cannot set
+    this. The framework populates it during make_fixture().
     """
 
     post: StateExpectation | None = None
@@ -74,6 +74,9 @@ class StateTransitionTest(BaseConsensusFixture):
 
     expect_exception: type[Exception] | None = None
     """Expected exception type for invalid tests."""
+
+    expect_exception_message: str | None = None
+    """Expected exception message for invalid tests."""
 
     @field_serializer("blocks", when_used="json")
     def serialize_blocks(self, value: List[BlockSpec]) -> List[dict[str, Any]]:
@@ -138,10 +141,13 @@ class StateTransitionTest(BaseConsensusFixture):
                 filled_blocks.append(block)
 
                 # Process block through state transition
-                state = state.state_transition(
-                    block=block,
-                    valid_signatures=True,
-                )
+                if getattr(block_spec, "skip_slot_processing", False):
+                    state = state.process_block(block)
+                else:
+                    state = state.state_transition(
+                        block=block,
+                        valid_signatures=True,
+                    )
 
             actual_post_state = state
         except (AssertionError, ValueError) as e:
@@ -166,6 +172,12 @@ class StateTransitionTest(BaseConsensusFixture):
                     f"Expected {self.expect_exception.__name__} "
                     f"but got {type(exception_raised).__name__}: {exception_raised}"
                 )
+            if self.expect_exception_message is not None:
+                if str(exception_raised) != self.expect_exception_message:
+                    raise AssertionError(
+                        f"Expected exception message '{self.expect_exception_message}' "
+                        f"but got '{exception_raised}'"
+                    )
 
         # Validate post-state expectations if provided
         if self.post is not None and actual_post_state is not None:
@@ -181,9 +193,9 @@ class StateTransitionTest(BaseConsensusFixture):
         Uses provided fields from spec, computes any missing fields.
         This mimics what a local block builder would do.
 
-        TODO: If the spec implements a State.produce_block() method in the future,
-        we should use that instead of manually computing fields here. Until then,
-        this manual approach is necessary.
+        TODO: If the spec implements a State.produce_block() method in the future, we
+        should use that instead of manually computing fields here. Until then, this
+        manual approach is necessary.
 
         Parameters
         ----------
@@ -203,12 +215,17 @@ class StateTransitionTest(BaseConsensusFixture):
         else:
             proposer_index = ValidatorIndex(int(spec.slot) % int(state.validators.count))
 
+        # Optionally advance a temporary state to the block's slot
+        temp_state: State | None = None
+        if not spec.skip_slot_processing:
+            temp_state = state.process_slots(spec.slot)
+
         # Use provided parent_root or compute it
         if spec.parent_root is not None:
             parent_root = spec.parent_root
         else:
-            temp_state = state.process_slots(spec.slot)
-            parent_root = hash_tree_root(temp_state.latest_block_header)
+            source_state = temp_state if temp_state is not None else state
+            parent_root = hash_tree_root(source_state.latest_block_header)
 
         # Use provided body or create empty one
         if spec.body is not None:
@@ -220,8 +237,6 @@ class StateTransitionTest(BaseConsensusFixture):
         if spec.state_root is not None:
             state_root = spec.state_root
         else:
-            # Need to dry-run to compute state_root
-            temp_state = state.process_slots(spec.slot)
             temp_block = Block(
                 slot=spec.slot,
                 proposer_index=proposer_index,
@@ -229,12 +244,13 @@ class StateTransitionTest(BaseConsensusFixture):
                 state_root=Bytes32.zero(),
                 body=body,
             )
-            # If we are expecting an exception,
-            #  then return the temp_block without running process_block.
-            #  This is because process_block will reject the block and
-            # the generated vector will have missing data.
-            if self.expect_exception is not None:
+            # If we are expecting an exception or skipping slot advancement,
+            # return the partially-filled block without running the transition.
+            if self.expect_exception is not None or spec.skip_slot_processing:
                 return temp_block
+
+            if temp_state is None:
+                temp_state = state.process_slots(spec.slot)
 
             post_state = temp_state.process_block(temp_block)
             state_root = hash_tree_root(post_state)

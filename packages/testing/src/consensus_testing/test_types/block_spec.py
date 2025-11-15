@@ -97,3 +97,10 @@ class BlockSpec(CamelModel):
     If None, parent is determined by the current canonical head.
     If specified, parent_root is computed from the labeled block.
     """
+
+    skip_slot_processing: bool = False
+    """
+    If True, the state transition fixture skips automatic slot advancement before
+    processing this block. Useful for tests that intentionally exercise slot
+    mismatch failures.
+    """
