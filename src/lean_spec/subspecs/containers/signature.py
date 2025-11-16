@@ -28,3 +28,22 @@ class Signature(Bytes3100):
             return scheme.verify(public_key, epoch, message, signature)
         except Exception:
             return False
+
+    @classmethod
+    def from_xmss(
+        cls, xmss_signature: XmssSignature, scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME
+    ) -> "Signature":
+        """
+        Create a consensus `Signature` container from an XMSS signature object.
+
+        Handles padding to the fixed 3100-byte length required by the consensus layer,
+        delegating all encoding details to the XMSS container itself.
+        """
+        raw = xmss_signature.to_bytes(scheme.config)
+        if len(raw) > cls.LENGTH:
+            raise ValueError(
+                f"XMSS signature length {len(raw)} exceeds container size {cls.LENGTH}"
+            )
+
+        # Pad on the right to the fixed-length container expected by consensus.
+        return cls(raw.ljust(cls.LENGTH, b"\x00"))
