@@ -419,8 +419,8 @@ class State(Container):
                     latest_finalized = source
 
         # Flatten and set updated justifications back to the state
-        justifications_roots, justifications_validators = (
-            flatten_justifications_map(justifications, self.validators.count)
+        justifications_roots, justifications_validators = flatten_justifications_map(
+            justifications, self.validators.count
         )
 
         # Return the updated state.
