@@ -392,11 +392,11 @@ class State(Container):
 
             # Track attempts to justify new hashes
             if target.root not in justifications:
-                justifications[target.root] = [False] * self.validators.count
+                justifications[target.root] = [Boolean(False)] * self.validators.count
 
             validator_id = attestation.validator_id.as_int()
             if not justifications[target.root][validator_id]:
-                justifications[target.root][validator_id] = True
+                justifications[target.root][validator_id] = Boolean(True)
 
             count = sum(justifications[target.root])
 
