@@ -878,20 +878,22 @@ def test_reorg_on_newly_justified_slot(
                             target_slot=Slot(5),
                             target_root_label="fork_b_1",
                         ),
-                        # fork_b_1 should be able to justify without validator 5 and 6
-                        # but somehow the tests are failing without these two attestations below
-                        # SignedAttestationSpec(
-                        #     validator_id=ValidatorIndex(5),
-                        #     slot=Slot(5),
-                        #     target_slot=Slot(5),
-                        #     target_root_label="fork_b_1",
-                        # ),
-                        # SignedAttestationSpec(
-                        #     validator_id=ValidatorIndex(6),
-                        #     slot=Slot(5),
-                        #     target_slot=Slot(5),
-                        #     target_root_label="fork_b_1",
-                        # ),
+                        # fork_b_1 should be able to justify without extra attestations
+                        # from validator 5 and 6 but the test is failing without these
+                        # two attestations below because block proposer's attestations
+                        # are not being counted towards justification
+                        SignedAttestationSpec(
+                            validator_id=ValidatorIndex(5),
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_b_1",
+                        ),
+                        SignedAttestationSpec(
+                            validator_id=ValidatorIndex(6),
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_b_1",
+                        ),
                         SignedAttestationSpec(
                             validator_id=ValidatorIndex(7),
                             slot=Slot(5),

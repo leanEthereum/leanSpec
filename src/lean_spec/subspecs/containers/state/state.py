@@ -350,7 +350,7 @@ class State(Container):
         latest_finalized = self.latest_finalized
         justified_slots = list(self.justified_slots)
 
-        # From 3sf-mini/consensus.py - apply attestations
+        # Process each attestation in the block.
         for attestation in attestations:
             attestation_data = attestation.data
             source = attestation_data.source
