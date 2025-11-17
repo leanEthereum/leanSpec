@@ -398,7 +398,7 @@ class State(Container):
             if not justifications[target.root][validator_id]:
                 justifications[target.root][validator_id] = Boolean(True)
 
-            count = sum(justifications[target.root])
+            count = sum(bool(justified) for justified in justifications[target.root])
 
             # If 2/3 attested to the same new valid hash to justify
             # in 3sf mini this is strict equality, but we have updated it to >=
