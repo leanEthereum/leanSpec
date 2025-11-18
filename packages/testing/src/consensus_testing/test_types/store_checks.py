@@ -147,9 +147,9 @@ class StoreChecks(CamelModel):
     """
     Expected latest finalized checkpoint root by label reference.
 
-    Alternative to latest_justified_root that uses the block label system.
+    Alternative to `latest_justified_root` that uses the block label system.
     The framework will resolve this label to the actual block root
-    and validate the latest finalized checkpointroot matches.
+    and validate the latest finalized checkpoint root matches.
     """
 
     safe_target: Bytes32 | None = None
