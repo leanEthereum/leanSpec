@@ -163,15 +163,14 @@ class Store(Container):
 
         # Topology Check
         #
-        # History is linear and monotonic. Source must be an ancestor of Target.
-        source_block = self.blocks[data.source.root]
-        target_block = self.blocks[data.target.root]
-
-        assert source_block.slot <= target_block.slot, "Source slot must not exceed target"
+        # History is linear and monotonic. Source must be an older than Target.
+        assert data.source.slot <= data.target.slot, "Source checkpoint slot must not exceed target"
 
         # Consistency Check
         #
         # Validate checkpoint slots match block slots
+        source_block = self.blocks[data.source.root]
+        target_block = self.blocks[data.target.root]
         assert source_block.slot == data.source.slot, "Source checkpoint slot mismatch"
         assert target_block.slot == data.target.slot, "Target checkpoint slot mismatch"
 
