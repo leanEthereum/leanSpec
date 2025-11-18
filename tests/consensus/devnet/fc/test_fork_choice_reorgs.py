@@ -777,22 +777,25 @@ def test_reorg_on_newly_justified_slot(
 
     Scenario
     --------
-    Two forks compete across multiple justifiable slots. Fork choice must
-    correctly handle reorgs while respecting justification rules.
+    Two forks compete. Fork A is heavier and longer, but Fork B manages to
+    become Justified. Fork choice must switch to the justified fork regardless
+    of weight/length.
 
     - Slot 1: Base
-    - Slot 2: Fork A (competing with B)
-    - Slot 2: Fork B (competing with A)
-    - Slot 3: Fork A (Fork A now has depth 2 - becomes head)
-    - Slot 4: Fork A (Fork A now has depth 3 - still head)
-    - Slot 5: Fork B with enough justifications for Slot 2 → triggers reorg → Fork B becomes head
+    - Slots 2-4: Fork A extends (becomes head with depth 3)
+    - Slot 5: Fork B appears (descending from Base, skipping slots 2-4)
+    - Slot 6: Fork B extends. This block contains enough attestations to
+              justify Fork B at Slot 5.
 
     Expected Behavior
     -----------------
-    1. Fork A and Fork B initially have equal weight at Slot 2
-    2. Fork A takes lead at Slot 3 and Slot 4
-    2. At Slot 5, enough attestations justified Fork B at Slot 2, Fork A permanently non-canonical
-    3. Fork B becomes head at Slot 5 due to justification of Fork B at Slot 2
+    1. Fork A takes the lead initially (Slots 2-4) as the heaviest chain.
+    2. Fork B appears at Slot 5 but is initially lighter.
+    3. At Slot 6, the new block includes attestations that justify Fork B at Slot 5.
+    4. The justified checkpoint updates to Slot 5 (fork_b_1).
+    5. Fork A is immediately discarded because it does not descend from the new
+       justified checkpoint (Fork A is on a branch from Slot 1).
+    6. Fork B becomes the canonical head.
 
     Why This Matters
     ----------------
