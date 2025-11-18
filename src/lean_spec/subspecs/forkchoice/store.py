@@ -163,7 +163,7 @@ class Store(Container):
 
         # Topology Check
         #
-        # History is linear and monotonic. Source must be an older than Target.
+        # History is linear and monotonic. Source must be older than Target.
         assert data.source.slot <= data.target.slot, "Source checkpoint slot must not exceed target"
 
         # Consistency Check
