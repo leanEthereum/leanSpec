@@ -778,7 +778,7 @@ def test_reorg_on_newly_justified_slot(
     Scenario
     --------
     Two forks compete. Fork A is heavier and longer, but Fork B manages to
-    become Justified. Fork choice must switch to the justified fork regardless
+    become justified. Fork choice must switch to the justified fork regardless
     of weight/length.
 
     - Slot 1: Base
