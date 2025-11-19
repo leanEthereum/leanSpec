@@ -7,7 +7,6 @@ from typing import Any, NamedTuple, Optional
 from lean_spec.subspecs.containers import Attestation, Signature
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.constants import XmssConfig
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey
 from lean_spec.subspecs.xmss.interface import (
     TEST_SIGNATURE_SCHEME,
@@ -39,13 +38,13 @@ class XmssKeyManager:
 
     DEFAULT_MAX_SLOT = Slot(100)
     """Default maximum slot horizon if not specified."""
-    DEFAULT_ACTIVATION_EPOCH = 0
+    DEFAULT_ACTIVATION_EPOCH = Uint64(0)
 
     def __init__(
         self,
         max_slot: Optional[Slot] = None,
         scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME,
-        default_activation_epoch: Uint64 = Uint64(DEFAULT_ACTIVATION_EPOCH),
+        default_activation_epoch: Optional[Uint64] = None,
     ) -> None:
         """
         Initialize the key manager.
@@ -61,14 +60,18 @@ class XmssKeyManager:
         default_activation_epoch : Uint64, optional
             Activation epoch used when none is provided for key generation.
 
-        Notes
+        Notes:
         -----
         Internally, keys are stored in a single dictionary:
         `{ValidatorIndex → KeyPair}`.
         """
         self.max_slot = max_slot if max_slot is not None else self.DEFAULT_MAX_SLOT
         self.scheme = scheme
-        self.default_activation_epoch = default_activation_epoch
+        self.default_activation_epoch = (
+            default_activation_epoch
+            if default_activation_epoch is not None
+            else self.DEFAULT_ACTIVATION_EPOCH
+        )
         self._key_pairs: dict[ValidatorIndex, KeyPair] = {}
         self._key_metadata: dict[ValidatorIndex, dict[str, Any]] = {}
 
@@ -76,8 +79,6 @@ class XmssKeyManager:
     def default_num_active_epochs(self) -> int:
         """Default lifetime derived from the configured max_slot."""
         return self.max_slot.as_int() + 1
-
-
 
     def create_and_store_key_pair(
         self,
@@ -99,8 +100,14 @@ class XmssKeyManager:
             Number of consecutive epochs the key should remain active.
             Defaults to `max_slot + 1` (to include genesis).
         """
-        activation_epoch_val = activation_epoch if activation_epoch is not None else self.default_activation_epoch
-        num_active_epochs_val = num_active_epochs if num_active_epochs is not None else Uint64(self.default_num_active_epochs)
+        activation_epoch_val = (
+            activation_epoch if activation_epoch is not None else self.default_activation_epoch
+        )
+        num_active_epochs_val = (
+            num_active_epochs
+            if num_active_epochs is not None
+            else Uint64(self.default_num_active_epochs)
+        )
 
         cache_key = (
             int(validator_index),
@@ -174,8 +181,6 @@ class XmssKeyManager:
         key_pair = self[validator_id]
         # Get the current secret key
         sk = key_pair.secret
-
-
 
         # Map the attestation slot to an XMSS epoch.
         #
