@@ -39,6 +39,7 @@ class XmssKeyManager:
     DEFAULT_MAX_SLOT = Slot(100)
     """Default maximum slot horizon if not specified."""
     DEFAULT_ACTIVATION_EPOCH = Uint64(0)
+    """Default activation epoch if not specified"""
 
     def __init__(
         self,
