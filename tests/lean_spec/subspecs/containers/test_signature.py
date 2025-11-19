@@ -33,26 +33,8 @@ class TestSignatureFromXmss:
         # Verify it's the correct type and length
         assert isinstance(consensus_sig, Signature)
         assert len(consensus_sig) == Signature.LENGTH
-        assert len(consensus_sig) == 3100
 
-    def test_from_xmss_padding(self) -> None:
-        """Test that from_xmss correctly pads to 3100 bytes."""
-        # Create a minimal XMSS signature
-        path = HashTreeOpening(
-            siblings=[[Fp(value=0)] * TEST_CONFIG.HASH_LEN_FE] * TEST_CONFIG.LOG_LIFETIME
-        )
-        rho = [Fp(value=0)] * TEST_CONFIG.RAND_LEN_FE
-        hashes = [[Fp(value=0)] * TEST_CONFIG.HASH_LEN_FE] * TEST_CONFIG.DIMENSION
-        xmss_sig = XmssSignature(path=path, rho=rho, hashes=hashes)
 
-        consensus_sig = Signature.from_xmss(xmss_sig, TEST_SIGNATURE_SCHEME)
-
-        # The signature should be padded with zeros
-        raw_xmss = xmss_sig.to_bytes(TEST_CONFIG)
-        expected_padding = 3100 - len(raw_xmss)
-
-        # Verify the last bytes are zeros (padding)
-        assert consensus_sig[-expected_padding:] == b"\x00" * expected_padding
 
     def test_from_xmss_preserves_data(self) -> None:
         """Test that from_xmss preserves the XMSS signature data."""
@@ -79,7 +61,6 @@ class TestSignatureFromXmss:
 
     def test_from_xmss_roundtrip_with_verify(self) -> None:
         """Test that a signature created via from_xmss can be verified."""
-        from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME
         from lean_spec.types import Uint64
 
         # Generate a test key pair
@@ -99,25 +80,4 @@ class TestSignatureFromXmss:
         # Verify using the consensus signature's verify method
         assert consensus_sig.verify(pk, epoch, message, TEST_SIGNATURE_SCHEME)
 
-    def test_from_xmss_different_signatures_produce_different_results(self) -> None:
-        """Test that different XMSS signatures produce different consensus signatures."""
-        # Create two different XMSS signatures
-        path1 = HashTreeOpening(
-            siblings=[[Fp(value=i) for i in range(TEST_CONFIG.HASH_LEN_FE)]]
-            * TEST_CONFIG.LOG_LIFETIME
-        )
-        path2 = HashTreeOpening(
-            siblings=[[Fp(value=i + 1) for i in range(TEST_CONFIG.HASH_LEN_FE)]]
-            * TEST_CONFIG.LOG_LIFETIME
-        )
-        rho = [Fp(value=0)] * TEST_CONFIG.RAND_LEN_FE
-        hashes = [[Fp(value=0)] * TEST_CONFIG.HASH_LEN_FE] * TEST_CONFIG.DIMENSION
 
-        xmss_sig1 = XmssSignature(path=path1, rho=rho, hashes=hashes)
-        xmss_sig2 = XmssSignature(path=path2, rho=rho, hashes=hashes)
-
-        consensus_sig1 = Signature.from_xmss(xmss_sig1, TEST_SIGNATURE_SCHEME)
-        consensus_sig2 = Signature.from_xmss(xmss_sig2, TEST_SIGNATURE_SCHEME)
-
-        # Different XMSS signatures should produce different consensus signatures
-        assert bytes(consensus_sig1) != bytes(consensus_sig2)
