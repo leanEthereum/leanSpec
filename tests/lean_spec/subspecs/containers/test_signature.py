@@ -34,8 +34,6 @@ class TestSignatureFromXmss:
         assert isinstance(consensus_sig, Signature)
         assert len(consensus_sig) == Signature.LENGTH
 
-
-
     def test_from_xmss_preserves_data(self) -> None:
         """Test that from_xmss preserves the XMSS signature data."""
         # Create an XMSS signature with distinct values
@@ -79,5 +77,3 @@ class TestSignatureFromXmss:
 
         # Verify using the consensus signature's verify method
         assert consensus_sig.verify(pk, epoch, message, TEST_SIGNATURE_SCHEME)
-
-
