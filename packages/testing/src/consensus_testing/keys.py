@@ -36,10 +36,10 @@ Key: (validator_index, activation_epoch, num_active_epochs) -> KeyPair
 class XmssKeyManager:
     """Lazy key manager for test validators using XMSS signatures."""
 
+
     DEFAULT_MAX_SLOT = Slot(100)
     """Default maximum slot horizon if not specified."""
-    DEFAULT_ACTIVATION_EPOCH = Uint64(0)
-    """Default activation epoch if not specified"""
+
 
     def __init__(
         self,
@@ -65,19 +65,22 @@ class XmssKeyManager:
         -----
         Internally, keys are stored in a single dictionary:
         `{ValidatorIndex → KeyPair}`.
+
+        This class manages stateful XMSS keys for testing, handling the complexity of
+        epoch updates and key evolution that stateless helpers cannot provide.
         """
         self.max_slot = max_slot if max_slot is not None else self.DEFAULT_MAX_SLOT
         self.scheme = scheme
         self.default_activation_epoch = (
             default_activation_epoch
             if default_activation_epoch is not None
-            else self.DEFAULT_ACTIVATION_EPOCH
+            else Uint64(0)
         )
         self._key_pairs: dict[ValidatorIndex, KeyPair] = {}
         self._key_metadata: dict[ValidatorIndex, dict[str, Any]] = {}
 
     @property
-    def default_num_active_epochs(self) -> int:
+    def default_max_epoch(self) -> int:
         """Default lifetime derived from the configured max_slot."""
         return self.max_slot.as_int() + 1
 
@@ -107,7 +110,7 @@ class XmssKeyManager:
         num_active_epochs_val = (
             num_active_epochs
             if num_active_epochs is not None
-            else Uint64(self.default_num_active_epochs)
+            else Uint64(self.default_max_epoch)
         )
 
         cache_key = (

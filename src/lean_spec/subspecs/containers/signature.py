@@ -32,7 +32,7 @@ class Signature(Bytes3100):
     @classmethod
     def from_xmss(
         cls, xmss_signature: XmssSignature, scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME
-    ) -> "Signature":
+    ) -> Signature:
         """
         Create a consensus `Signature` container from an XMSS signature object.
 
