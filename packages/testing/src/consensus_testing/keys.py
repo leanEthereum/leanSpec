@@ -36,10 +36,8 @@ Key: (validator_index, activation_epoch, num_active_epochs) -> KeyPair
 class XmssKeyManager:
     """Lazy key manager for test validators using XMSS signatures."""
 
-
     DEFAULT_MAX_SLOT = Slot(100)
     """Default maximum slot horizon if not specified."""
-
 
     def __init__(
         self,
@@ -72,9 +70,7 @@ class XmssKeyManager:
         self.max_slot = max_slot if max_slot is not None else self.DEFAULT_MAX_SLOT
         self.scheme = scheme
         self.default_activation_epoch = (
-            default_activation_epoch
-            if default_activation_epoch is not None
-            else Uint64(0)
+            default_activation_epoch if default_activation_epoch is not None else Uint64(0)
         )
         self._key_pairs: dict[ValidatorIndex, KeyPair] = {}
         self._key_metadata: dict[ValidatorIndex, dict[str, Any]] = {}
@@ -108,9 +104,7 @@ class XmssKeyManager:
             activation_epoch if activation_epoch is not None else self.default_activation_epoch
         )
         num_active_epochs_val = (
-            num_active_epochs
-            if num_active_epochs is not None
-            else Uint64(self.default_max_epoch)
+            num_active_epochs if num_active_epochs is not None else Uint64(self.default_max_epoch)
         )
 
         cache_key = (
