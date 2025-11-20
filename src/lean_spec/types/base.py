@@ -28,6 +28,7 @@ class CamelModel(BaseModel):
         return self.__class__(**(self.model_dump(exclude_unset=True) | kwargs))
 
     def to_json(self, **kwargs: Any) -> Dict[str, Any]:
+        """Return json encodable representation of this model"""
         # remove these if user tries to pass them
         kwargs.pop("mode", None)
         kwargs.pop("by_alias", None)
