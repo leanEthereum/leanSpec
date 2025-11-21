@@ -181,6 +181,15 @@ class StoreChecks(CamelModel):
     should be selected as the head.
     """
 
+    def fill_hash_from_label(self, block_registry: dict[str, "Block"]):
+        from lean_spec.subspecs.ssz import hash_tree_root
+        if self.head_root is None and self.head_root_label is not None:
+            self.head_root = hash_tree_root(block_registry[self.head_root_label])
+        if self.latest_justified_root is None and self.latest_justified_root_label is not None:
+            self.latest_justified_root = hash_tree_root(block_registry[self.latest_justified_root_label])
+        if self.latest_finalized_root is None and self.latest_finalized_root_label is not None:
+            self.latest_finalized_root = hash_tree_root(block_registry[self.latest_finalized_root_label])
+
     def validate_against_store(
         self, store: "Store", step_index: int, block_registry: dict[str, "Block"] | None = None
     ) -> None:

@@ -260,6 +260,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                 # Validate checks if provided
                 if step.checks is not None:
+                    step.checks.fill_hash_from_label(self._block_registry)
                     step.checks.validate_against_store(
                         store, step_index=i, block_registry=self._block_registry
                     )
