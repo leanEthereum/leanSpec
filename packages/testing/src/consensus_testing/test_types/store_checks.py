@@ -182,6 +182,7 @@ class StoreChecks(CamelModel):
     """
 
     def fill_hash_from_label(self, block_registry: dict[str, "Block"]):
+        """Convert label to hash for head, latest justified and latest finalized"""
         from lean_spec.subspecs.ssz import hash_tree_root
         if self.head_root is None and self.head_root_label is not None:
             self.head_root = hash_tree_root(block_registry[self.head_root_label])
