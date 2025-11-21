@@ -287,6 +287,27 @@ class TestList:
         with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
             BooleanList4(data=[True, False, True, False, True])
 
+    def test_add_with_list(self) -> None:
+        """Tests concatenating an SSZList with a regular list."""
+        list1 = Uint8List10(data=[1, 2, 3])
+        result = list1 + [4, 5]
+        assert list(result) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4), Uint8(5)]
+        assert isinstance(result, Uint8List10)
+
+    def test_add_with_sszlist(self) -> None:
+        """Tests concatenating two SSZLists of the same type."""
+        list1 = Uint8List10(data=[1, 2])
+        list2 = Uint8List10(data=[3, 4])
+        result = list1 + list2
+        assert list(result) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4)]
+        assert isinstance(result, Uint8List10)
+
+    def test_add_exceeding_limit_raises_error(self) -> None:
+        """Tests that concatenating beyond the limit raises an error."""
+        list1 = Uint8List4(data=[1, 2, 3])
+        with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
+            list1 + [4, 5]
+
 
 class TestSSZVectorSerialization:
     """Tests SSZ serialization and deserialization for the SSZVector type."""

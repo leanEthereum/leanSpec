@@ -145,7 +145,7 @@ class SignedBlockWithAttestation(Container):
         # This creates a single list containing both:
         # 1. Block body attestations (from other validators)
         # 2. Proposer attestation (from the block producer)
-        all_attestations = list(block.body.attestations) + [self.message.proposer_attestation]
+        all_attestations = block.body.attestations + [self.message.proposer_attestation]
 
         # Verify signature count matches attestation count
         #

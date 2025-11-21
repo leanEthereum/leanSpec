@@ -227,6 +227,16 @@ class SSZList(SSZModel):
 
         return tuple(typed_values)
 
+    def __add__(self, other: Any) -> Self:
+        """Concatenate this list with another sequence."""
+        if isinstance(other, SSZList):
+            new_data = self.data + other.data
+        elif isinstance(other, (list, tuple)):
+            new_data = self.data + tuple(other)
+        else:
+            return NotImplemented
+        return type(self)(data=new_data)
+
     @classmethod
     def is_fixed_size(cls) -> bool:
         """An SSZList is never fixed-size (length varies from 0 to LIMIT)."""
