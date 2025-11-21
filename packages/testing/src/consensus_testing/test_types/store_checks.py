@@ -181,7 +181,7 @@ class StoreChecks(CamelModel):
     should be selected as the head.
     """
 
-    def fill_hash_from_label(self, block_registry: dict[str, "Block"]):
+    def fill_hash_from_label(self, block_registry: dict[str, "Block"]) -> None:
         """Convert label to hash for head, latest justified and latest finalized"""
         from lean_spec.subspecs.ssz import hash_tree_root
 
