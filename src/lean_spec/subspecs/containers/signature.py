@@ -36,8 +36,8 @@ class Signature(Bytes3100):
         """
         Create a consensus `Signature` container from an XMSS signature object.
 
-        Handles padding to the fixed 3100-byte length required by the consensus layer,
-        delegating all encoding details to the XMSS container itself.
+        Applies the consensus-layer fixed-length padding, delegating all encoding
+        details to the XMSS container itself.
         """
         raw = xmss_signature.to_bytes(scheme.config)
         if len(raw) > cls.LENGTH:

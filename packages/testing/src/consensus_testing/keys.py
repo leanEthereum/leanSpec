@@ -41,23 +41,23 @@ class XmssKeyManager:
 
     def __init__(
         self,
+        activation_epoch: Optional[Uint64] = None,
         max_slot: Optional[Slot] = None,
         scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME,
-        default_activation_epoch: Optional[Uint64] = None,
     ) -> None:
         """
         Initialize the key manager.
 
         Parameters
         ----------
+        activation_epoch : Uint64, optional
+            Activation epoch used when none is provided for key generation.
         max_slot : Slot, optional
             Highest slot number for which keys must remain valid.
             Defaults to `Slot(100)`.
         scheme : GeneralizedXmssScheme, optional
             The XMSS scheme to use.
             Defaults to `TEST_SIGNATURE_SCHEME`.
-        default_activation_epoch : Uint64, optional
-            Activation epoch used when none is provided for key generation.
 
         Notes:
         -----
@@ -69,16 +69,14 @@ class XmssKeyManager:
         """
         self.max_slot = max_slot if max_slot is not None else self.DEFAULT_MAX_SLOT
         self.scheme = scheme
-        self.default_activation_epoch = (
-            default_activation_epoch if default_activation_epoch is not None else Uint64(0)
-        )
+        self.activation_epoch = activation_epoch if activation_epoch is not None else Uint64(0)
         self._key_pairs: dict[ValidatorIndex, KeyPair] = {}
         self._key_metadata: dict[ValidatorIndex, dict[str, Any]] = {}
 
     @property
     def default_max_epoch(self) -> int:
-        """Default lifetime derived from the configured max_slot."""
-        return self.max_slot.as_int() + 1
+        """Default lifetime derived from the class default max_slot."""
+        return self.DEFAULT_MAX_SLOT.as_int() + 1
 
     def create_and_store_key_pair(
         self,
@@ -95,13 +93,14 @@ class XmssKeyManager:
         validator_index : ValidatorIndex
             The validator for whom a key pair should be generated.
         activation_epoch : Uint64, optional
-            First epoch for which the key is valid. Defaults to `default_activation_epoch`.
+            First epoch for which the key is valid. Defaults to the manager's
+            configured `activation_epoch`.
         num_active_epochs : Uint64, optional
             Number of consecutive epochs the key should remain active.
-            Defaults to `max_slot + 1` (to include genesis).
+            Defaults to `default_max_epoch` (derived from `DEFAULT_MAX_SLOT` to include genesis).
         """
         activation_epoch_val = (
-            activation_epoch if activation_epoch is not None else self.default_activation_epoch
+            activation_epoch if activation_epoch is not None else self.activation_epoch
         )
         num_active_epochs_val = (
             num_active_epochs if num_active_epochs is not None else Uint64(self.default_max_epoch)
@@ -125,6 +124,7 @@ class XmssKeyManager:
             "activation_epoch": int(activation_epoch_val),
             "num_active_epochs": int(num_active_epochs_val),
         }
+        # TODO: support multiple keys per validator keyed by activation_epoch.
         return key_pair
 
     def __getitem__(self, validator_index: ValidatorIndex) -> KeyPair:
@@ -145,7 +145,7 @@ class XmssKeyManager:
         -----
         - Generates a new key if none exists.
         - Keys are deterministic for testing (`seed=0`).
-        - Lifetime = `max_slot + 1` to include the genesis slot.
+        - Lifetime defaults to `default_max_epoch` to include the genesis slot.
         """
         if validator_index in self._key_pairs:
             return self._key_pairs[validator_index]
@@ -254,29 +254,3 @@ class XmssKeyManager:
     def __len__(self) -> int:
         """Return the number of validators with generated keys."""
         return len(self._key_pairs)
-
-    def export_test_vectors(self, include_private_keys: bool = False) -> list[dict[str, Any]]:
-        """
-        Export generated keys in a JSON-serializable structure for downstream clients.
-
-        Parameters
-        ----------
-        include_private_keys : bool
-            When True, include the full secret key dump; otherwise only public data.
-        """
-        vectors: list[dict[str, Any]] = []
-        for validator_index, key_pair in self._key_pairs.items():
-            meta = self._key_metadata.get(validator_index, {})
-            entry: dict[str, Any] = {
-                "validator_index": int(validator_index),
-                "activation_epoch": meta.get("activation_epoch"),
-                "num_active_epochs": meta.get("num_active_epochs"),
-                "public_key": key_pair.public.to_bytes(self.scheme.config).hex(),
-            }
-            if include_private_keys:
-                # Pydantic models are JSON-serializable; keep the raw dump for full fidelity.
-                entry["secret_key"] = key_pair.secret.model_dump(mode="json")
-
-            vectors.append(entry)
-
-        return vectors
