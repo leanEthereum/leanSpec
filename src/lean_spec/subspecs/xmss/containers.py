@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, List
+from typing import TYPE_CHECKING, Annotated, List, Tuple
 
 from pydantic import Field
 
 from ...types import StrictBaseModel
 from ..koalabear import P_BYTES, Fp
+from . import bincode
 from .constants import PRF_KEY_LENGTH
 
 if TYPE_CHECKING:
@@ -230,6 +231,63 @@ class PublicKey(StrictBaseModel):
 
         return cls(root=root, parameter=parameter)
 
+    def to_bincode_bytes(self, config: XmssConfig) -> bytes:
+        """
+        Serialize the public key to bincode-compatible bytes.
+
+        This method produces bytes compatible with Rust's bincode serialization format.
+
+        Args:
+            config: The XMSS configuration for validation.
+
+        Returns:
+            Bincode-compatible binary representation.
+
+        Raises:
+            ValueError: If field lengths don't match configuration.
+        """
+        if len(self.root) != config.HASH_LEN_FE:
+            raise ValueError(f"Invalid root length: {len(self.root)}")
+        if len(self.parameter) != config.PARAMETER_LEN:
+            raise ValueError(f"Invalid parameter length: {len(self.parameter)}")
+
+        # Both fields are fixed arrays with varint-encoded field elements
+        root_bytes = Fp.serialize_fixed_array_bincode(self.root)
+        param_bytes = Fp.serialize_fixed_array_bincode(self.parameter)
+        return root_bytes + param_bytes
+
+    @classmethod
+    def from_bincode_bytes(cls, data: bytes, config: XmssConfig) -> PublicKey:
+        """
+        Deserialize a public key from bincode-compatible bytes.
+
+        This method can read bytes produced by Rust's bincode serialization.
+
+        Args:
+            data: Bincode binary representation of a public key.
+            config: The XMSS configuration defining field lengths.
+
+        Returns:
+            Deserialized PublicKey instance.
+
+        Raises:
+            ValueError: If the data has incorrect format.
+        """
+        offset = 0
+
+        # 1. root: [F; HASH_LEN] - fixed array with varint-encoded Fp
+        root, consumed = Fp.deserialize_fixed_array_bincode(data, offset, config.HASH_LEN_FE)
+        offset += consumed
+
+        # 2. parameter: [F; PARAMETER_LEN] - fixed array with varint-encoded Fp
+        parameter, consumed = Fp.deserialize_fixed_array_bincode(data, offset, config.PARAMETER_LEN)
+        offset += consumed
+
+        if offset != len(data):
+            raise ValueError(f"Extra bytes in bincode data: {len(data) - offset}")
+
+        return cls(root=root, parameter=parameter)
+
 
 class Signature(StrictBaseModel):
     """
@@ -354,6 +412,123 @@ class Signature(StrictBaseModel):
             count=config.DIMENSION,
             elements_per_digest=config.HASH_LEN_FE,
         )
+
+        return cls(
+            path=HashTreeOpening(siblings=siblings),
+            rho=rho,
+            hashes=hashes,
+        )
+
+    def to_bincode_bytes(self, config: XmssConfig) -> bytes:
+        """
+        Serialize the signature to bincode-compatible bytes.
+
+        Args:
+            config: The XMSS configuration defining field lengths.
+
+        Returns:
+            Bincode-compatible binary representation.
+
+        Raises:
+            ValueError: If any component has incorrect length.
+        """
+        # Validate (same as to_bytes)
+        if len(self.path.siblings) != config.LOG_LIFETIME:
+            raise ValueError(
+                f"Invalid path length: expected {config.LOG_LIFETIME} siblings, "
+                f"got {len(self.path.siblings)}"
+            )
+
+        for i, sibling in enumerate(self.path.siblings):
+            if len(sibling) != config.HASH_LEN_FE:
+                raise ValueError(
+                    f"Invalid sibling {i} length: expected {config.HASH_LEN_FE} elements, "
+                    f"got {len(sibling)}"
+                )
+
+        if len(self.rho) != config.RAND_LEN_FE:
+            raise ValueError(
+                f"Invalid rho length: expected {config.RAND_LEN_FE} elements, got {len(self.rho)}"
+            )
+
+        if len(self.hashes) != config.DIMENSION:
+            raise ValueError(
+                f"Invalid hashes length: expected {config.DIMENSION} hashes, got {len(self.hashes)}"
+            )
+
+        for i, hash_digest in enumerate(self.hashes):
+            if len(hash_digest) != config.HASH_LEN_FE:
+                raise ValueError(
+                    f"Invalid hash {i} length: expected {config.HASH_LEN_FE} elements, "
+                    f"got {len(hash_digest)}"
+                )
+
+        # Serialize with bincode format:
+        # 1. path.siblings: Vec<[F; HASH_LEN]> - varint length + varint-encoded arrays
+        path_bytes = bincode.serialize_vec(self.path.siblings, Fp.serialize_fixed_array_bincode)
+
+        # 2. rho: [F; RAND_LEN] - fixed-size array with varint-encoded Fp, no length prefix
+        rho_bytes = Fp.serialize_fixed_array_bincode(self.rho)
+
+        # 3. hashes: Vec<[F; HASH_LEN]> - varint length + varint-encoded arrays
+        hashes_bytes = bincode.serialize_vec(self.hashes, Fp.serialize_fixed_array_bincode)
+
+        return path_bytes + rho_bytes + hashes_bytes
+
+    @classmethod
+    def from_bincode_bytes(cls, data: bytes, config: XmssConfig) -> Signature:
+        """
+        Deserialize a signature from bincode-compatible bytes.
+
+        This method can read bytes produced by Rust's bincode serialization.
+
+        Args:
+            data: Bincode binary representation of a signature.
+            config: The XMSS configuration defining field lengths.
+
+        Returns:
+            Deserialized Signature instance.
+
+        Raises:
+            ValueError: If the data has incorrect format.
+        """
+        offset = 0
+
+        # Helper to deserialize [F; HASH_LEN] with varint-encoded Fp
+        def deserialize_digest_fixed(data: bytes, offset: int) -> Tuple[List[Fp], int]:
+            return Fp.deserialize_fixed_array_bincode(data, offset, config.HASH_LEN_FE)
+
+        # 1. Deserialize path.siblings: Vec<[F; HASH_LEN]>
+        siblings, siblings_consumed = bincode.deserialize_vec(
+            data, offset, deserialize_digest_fixed
+        )
+        offset += siblings_consumed
+
+        # Validate siblings count
+        if len(siblings) != config.LOG_LIFETIME:
+            raise ValueError(
+                f"Invalid path length: expected {config.LOG_LIFETIME} siblings, got {len(siblings)}"
+            )
+
+        # 2. Deserialize rho: [F; RAND_LEN] (fixed-size array with varint Fp, no length prefix)
+        rho, consumed = Fp.deserialize_fixed_array_bincode(data, offset, config.RAND_LEN_FE)
+        offset += consumed
+
+        # 3. Deserialize hashes: Vec<[F; HASH_LEN]>
+        hashes, hashes_consumed = bincode.deserialize_vec(data, offset, deserialize_digest_fixed)
+        offset += hashes_consumed
+
+        # Validate hashes count
+        if len(hashes) != config.DIMENSION:
+            raise ValueError(
+                f"Invalid hashes length: expected {config.DIMENSION} hashes, got {len(hashes)}"
+            )
+
+        # Validate we consumed all data
+        if offset != len(data):
+            raise ValueError(
+                f"Signature has extra bytes: consumed {offset} bytes, got {len(data)} bytes"
+            )
 
         return cls(
             path=HashTreeOpening(siblings=siblings),

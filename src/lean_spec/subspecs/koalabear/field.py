@@ -4,6 +4,7 @@ from typing import Self
 
 from pydantic import Field, field_validator
 
+from lean_spec.subspecs.xmss import bincode
 from lean_spec.types import StrictBaseModel
 
 # =================================================================
@@ -234,3 +235,112 @@ class Fp(StrictBaseModel):
             raise ValueError(f"Expected {expected_len} bytes for {count} elements, got {len(data)}")
 
         return [cls.from_bytes(data[i : i + P_BYTES]) for i in range(0, len(data), P_BYTES)]
+
+    def to_bincode_bytes(self) -> bytes:
+        """
+        Serialize this Fp to bincode format using varint encoding.
+
+        Note: This serializes the canonical form value. Plonky3 `MontyField31`
+        serializes the internal Montgomery representation, so when
+        interoperating with Rust, ensure you're comparing the same forms.
+
+        Returns:
+            Bincode-encoded bytes of this field element.
+
+        Example:
+            >>> fp = Fp(value=42)
+            >>> data = fp.to_bincode_bytes()
+            >>> recovered, _ = Fp.from_bincode_bytes(data)
+            >>> recovered == fp
+            True
+        """
+        return bincode.encode_varint_u64(self.value)
+
+    @classmethod
+    def from_bincode_bytes(cls, data: bytes, offset: int = 0) -> tuple[Self, int]:
+        """
+        Deserialize an Fp from bincode format.
+
+        Args:
+            data: Raw bytes to deserialize.
+            offset: Starting position in the byte array (default: 0).
+
+        Returns:
+            Tuple of (deserialized field element, bytes consumed).
+
+        Raises:
+            ValueError: If deserialization fails or value is invalid.
+
+        Example:
+            >>> fp = Fp(value=42)
+            >>> data = fp.to_bincode_bytes()
+            >>> recovered, consumed = Fp.from_bincode_bytes(data)
+            >>> recovered == fp and consumed == len(data)
+            True
+        """
+        val, consumed = bincode.decode_varint_u64(data, offset)
+        return cls(value=val), consumed
+
+    @staticmethod
+    def serialize_fixed_array_bincode(elements: list["Fp"]) -> bytes:
+        """
+        Serialize a fixed-size array of Fp elements in bincode format.
+
+        Note: In Rust, fixed-size arrays [F; N] do NOT have a length prefix
+        in bincode serialization. Each element is varint-encoded sequentially.
+
+        Args:
+            elements: List of field elements to serialize.
+
+        Returns:
+            Concatenated bincode bytes of all elements.
+
+        Example:
+            >>> elements = [Fp(value=1), Fp(value=2), Fp(value=3)]
+            >>> data = Fp.serialize_fixed_array_bincode(elements)
+            >>> # Deserialize manually
+            >>> offset = 0
+            >>> recovered = []
+            >>> for _ in range(len(elements)):
+            ...     fp, consumed = Fp.from_bincode_bytes(data, offset)
+            ...     recovered.append(fp)
+            ...     offset += consumed
+            >>> recovered == elements
+            True
+        """
+        return b"".join(fp.to_bincode_bytes() for fp in elements)
+
+    @staticmethod
+    def deserialize_fixed_array_bincode(
+        data: bytes, offset: int, count: int
+    ) -> tuple[list["Fp"], int]:
+        """
+        Deserialize a fixed-size array [F; N] from bincode format.
+
+        Each field element is varint-encoded sequentially without a length prefix.
+
+        Args:
+            data: Raw bytes to deserialize.
+            offset: Starting position in the byte array.
+            count: Number of field elements to deserialize.
+
+        Returns:
+            Tuple of (list of deserialized field elements, bytes consumed).
+
+        Raises:
+            ValueError: If deserialization fails.
+
+        Example:
+            >>> elements = [Fp(value=1), Fp(value=2), Fp(value=3)]
+            >>> data = Fp.serialize_fixed_array_bincode(elements)
+            >>> recovered, consumed = Fp.deserialize_fixed_array_bincode(data, 0, 3)
+            >>> recovered == elements and consumed == len(data)
+            True
+        """
+        elements = []
+        current_offset = offset
+        for _ in range(count):
+            fp, consumed = Fp.from_bincode_bytes(data, current_offset)
+            elements.append(fp)
+            current_offset += consumed
+        return elements, current_offset - offset
