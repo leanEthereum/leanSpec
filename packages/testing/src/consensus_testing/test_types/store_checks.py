@@ -182,19 +182,22 @@ class StoreChecks(CamelModel):
     """
 
     def fill_hash_from_label(self, block_registry: dict[str, "Block"]) -> None:
-        """Convert label to hash for head, latest justified and latest finalized"""
+        """
+        Resolves block labels to root hashes for head, justified, and finalized checkpoints.
+        """
         from lean_spec.subspecs.ssz import hash_tree_root
 
-        if self.head_root is None and self.head_root_label is not None:
-            self.head_root = hash_tree_root(block_registry[self.head_root_label])
-        if self.latest_justified_root is None and self.latest_justified_root_label is not None:
-            self.latest_justified_root = hash_tree_root(
-                block_registry[self.latest_justified_root_label]
-            )
-        if self.latest_finalized_root is None and self.latest_finalized_root_label is not None:
-            self.latest_finalized_root = hash_tree_root(
-                block_registry[self.latest_finalized_root_label]
-            )
+        # Mapping of {target_field: source_label_field}
+        checkpoints = {
+            "head_root": "head_root_label",
+            "latest_justified_root": "latest_justified_root_label",
+            "latest_finalized_root": "latest_finalized_root_label",
+        }
+
+        for root_attr, label_attr in checkpoints.items():
+            # If root is missing but label exists, resolve it
+            if getattr(self, root_attr) is None and (label := getattr(self, label_attr)):
+                setattr(self, root_attr, hash_tree_root(block_registry[label]))
 
     def validate_against_store(
         self,
