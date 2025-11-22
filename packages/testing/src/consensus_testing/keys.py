@@ -1,6 +1,8 @@
 """XMSS key management utilities for testing."""
 
-from typing import NamedTuple, Optional
+from __future__ import annotations
+
+from typing import Any, NamedTuple, Optional
 
 from lean_spec.subspecs.containers import Attestation, Signature
 from lean_spec.subspecs.containers.slot import Slot
@@ -10,7 +12,7 @@ from lean_spec.subspecs.xmss.interface import (
     TEST_SIGNATURE_SCHEME,
     GeneralizedXmssScheme,
 )
-from lean_spec.types import ValidatorIndex
+from lean_spec.types import Uint64, ValidatorIndex
 
 
 class KeyPair(NamedTuple):
@@ -23,11 +25,11 @@ class KeyPair(NamedTuple):
     """The validator's secret key (used for signing)."""
 
 
-_KEY_CACHE: dict[tuple[int, int], KeyPair] = {}
+_KEY_CACHE: dict[tuple[int, int, int], KeyPair] = {}
 """
 Cache keys across tests to avoid regenerating them for the same validator/lifetime combo.
 
-Key: (validator_index, num_active_epochs) -> KeyPair
+Key: (validator_index, activation_epoch, num_active_epochs) -> KeyPair
 """
 
 
@@ -39,6 +41,7 @@ class XmssKeyManager:
 
     def __init__(
         self,
+        activation_epoch: Optional[Uint64] = None,
         max_slot: Optional[Slot] = None,
         scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME,
     ) -> None:
@@ -47,6 +50,8 @@ class XmssKeyManager:
 
         Parameters
         ----------
+        activation_epoch : Uint64, optional
+            Activation epoch used when none is provided for key generation.
         max_slot : Slot, optional
             Highest slot number for which keys must remain valid.
             Defaults to `Slot(100)`.
@@ -58,10 +63,69 @@ class XmssKeyManager:
         -----
         Internally, keys are stored in a single dictionary:
         `{ValidatorIndex → KeyPair}`.
+
+        This class manages stateful XMSS keys for testing, handling the complexity of
+        epoch updates and key evolution that stateless helpers cannot provide.
         """
         self.max_slot = max_slot if max_slot is not None else self.DEFAULT_MAX_SLOT
         self.scheme = scheme
+        self.activation_epoch = activation_epoch if activation_epoch is not None else Uint64(0)
         self._key_pairs: dict[ValidatorIndex, KeyPair] = {}
+        self._key_metadata: dict[ValidatorIndex, dict[str, Any]] = {}
+
+    @property
+    def default_max_epoch(self) -> int:
+        """Default lifetime derived from the class default max_slot."""
+        return self.DEFAULT_MAX_SLOT.as_int() + 1
+
+    def create_and_store_key_pair(
+        self,
+        validator_index: ValidatorIndex,
+        *,
+        activation_epoch: Optional[Uint64] = None,
+        num_active_epochs: Optional[Uint64] = None,
+    ) -> KeyPair:
+        """
+        Generate and store a key pair with explicit control over key generation.
+
+        Parameters
+        ----------
+        validator_index : ValidatorIndex
+            The validator for whom a key pair should be generated.
+        activation_epoch : Uint64, optional
+            First epoch for which the key is valid. Defaults to the manager's
+            configured `activation_epoch`.
+        num_active_epochs : Uint64, optional
+            Number of consecutive epochs the key should remain active.
+            Defaults to `default_max_epoch` (derived from `DEFAULT_MAX_SLOT` to include genesis).
+        """
+        activation_epoch_val = (
+            activation_epoch if activation_epoch is not None else self.activation_epoch
+        )
+        num_active_epochs_val = (
+            num_active_epochs if num_active_epochs is not None else Uint64(self.default_max_epoch)
+        )
+
+        cache_key = (
+            int(validator_index),
+            int(activation_epoch_val),
+            int(num_active_epochs_val),
+        )
+
+        if cache_key in _KEY_CACHE:
+            key_pair = _KEY_CACHE[cache_key]
+        else:
+            pk, sk = self.scheme.key_gen(activation_epoch_val, num_active_epochs_val)
+            key_pair = KeyPair(public=pk, secret=sk)
+            _KEY_CACHE[cache_key] = key_pair
+
+        self._key_pairs[validator_index] = key_pair
+        self._key_metadata[validator_index] = {
+            "activation_epoch": int(activation_epoch_val),
+            "num_active_epochs": int(num_active_epochs_val),
+        }
+        # TODO: support multiple keys per validator keyed by activation_epoch.
+        return key_pair
 
     def __getitem__(self, validator_index: ValidatorIndex) -> KeyPair:
         """
@@ -81,39 +145,12 @@ class XmssKeyManager:
         -----
         - Generates a new key if none exists.
         - Keys are deterministic for testing (`seed=0`).
-        - Lifetime = `max_slot + 1` to include the genesis slot.
+        - Lifetime defaults to `default_max_epoch` to include the genesis slot.
         """
-        # Return cached keys if they exist.
         if validator_index in self._key_pairs:
             return self._key_pairs[validator_index]
 
-        # Generate New Key Pair
-        #
-        # XMSS requires knowing the total number of signatures in advance.
-        # We use max_slot + 1 as the lifetime since:
-        # - Validators may sign once per slot (attestations)
-        # - We include slot 0 (genesis) in the count
-        num_active_epochs = self.max_slot.as_int() + 1
-
-        # Check global cache first (keys are reused across tests)
-        cache_key = (int(validator_index), num_active_epochs)
-        if cache_key in _KEY_CACHE:
-            key_pair = _KEY_CACHE[cache_key]
-            self._key_pairs[validator_index] = key_pair
-            return key_pair
-
-        # Generate the key pair using the default XMSS scheme.
-        #
-        # The seed is set to 0 for deterministic test keys.
-        from lean_spec.types import Uint64
-
-        pk, sk = self.scheme.key_gen(Uint64(0), Uint64(num_active_epochs))
-
-        # Store as a cohesive unit and return.
-        key_pair = KeyPair(public=pk, secret=sk)
-        _KEY_CACHE[cache_key] = key_pair  # Cache globally for reuse across tests
-        self._key_pairs[validator_index] = key_pair
-        return key_pair
+        return self.create_and_store_key_pair(validator_index)
 
     def sign_attestation(self, attestation: Attestation) -> Signature:
         """
@@ -177,16 +214,8 @@ class XmssKeyManager:
         # Generate the XMSS signature using the validator's (now prepared) secret key.
         xmss_sig = self.scheme.sign(sk, epoch, message)
 
-        # Convert the signature to the wire format (byte array).
-        signature_bytes = xmss_sig.to_bytes(self.scheme.config)
-
-        # Ensure the signature meets the consensus spec length (3100 bytes).
-        #
-        # This is necessary when using TEST_CONFIG (796 bytes) vs PROD_CONFIG.
-        # Padding with zeros on the right maintains compatibility.
-        padded_bytes = signature_bytes.ljust(Signature.LENGTH, b"\x00")
-
-        return Signature(padded_bytes)
+        # Convert to the consensus Signature container (handles padding internally).
+        return Signature.from_xmss(xmss_sig, self.scheme)
 
     def get_public_key(self, validator_index: ValidatorIndex) -> PublicKey:
         """
