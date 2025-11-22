@@ -233,7 +233,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                     # Store the filled Block for serialization
                     block = signed_block.message.block
-                    step._filled_block = block
+                    step._filled_block = signed_block.message
 
                     # Register block if it has a label
                     if step.block.label is not None:
@@ -260,6 +260,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                 # Validate checks if provided
                 if step.checks is not None:
+                    step.checks.fill_hash_from_label(self._block_registry)
                     step.checks.validate_against_store(
                         store, step_index=i, block_registry=self._block_registry
                     )

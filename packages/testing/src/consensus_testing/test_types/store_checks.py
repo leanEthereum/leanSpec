@@ -181,8 +181,29 @@ class StoreChecks(CamelModel):
     should be selected as the head.
     """
 
+    def fill_hash_from_label(self, block_registry: dict[str, "Block"]) -> None:
+        """
+        Resolves block labels to root hashes for head, justified, and finalized checkpoints.
+        """
+        from lean_spec.subspecs.ssz import hash_tree_root
+
+        # Mapping of {target_field: source_label_field}
+        checkpoints = {
+            "head_root": "head_root_label",
+            "latest_justified_root": "latest_justified_root_label",
+            "latest_finalized_root": "latest_finalized_root_label",
+        }
+
+        for root_attr, label_attr in checkpoints.items():
+            # If root is missing but label exists, resolve it
+            if getattr(self, root_attr) is None and (label := getattr(self, label_attr)):
+                setattr(self, root_attr, hash_tree_root(block_registry[label]))
+
     def validate_against_store(
-        self, store: "Store", step_index: int, block_registry: dict[str, "Block"] | None = None
+        self,
+        store: "Store",
+        step_index: int,
+        block_registry: dict[str, "Block"] | None = None,
     ) -> None:
         """
         Validate these checks against actual Store state.

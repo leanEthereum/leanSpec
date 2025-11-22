@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import ConfigDict, Field, PrivateAttr, field_serializer
 
 from lean_spec.subspecs.containers import SignedAttestation
-from lean_spec.subspecs.containers.block.block import Block
+from lean_spec.subspecs.containers.block.block import BlockWithAttestation
 from lean_spec.types import CamelModel
 
 from .block_spec import BlockSpec
@@ -76,7 +76,7 @@ class BlockStep(BaseForkChoiceStep):
 
     # TODO: We should figure out a configuration to raise if a private attr is
     #  attempted to be set during model initialization.
-    _filled_block: Block | None = PrivateAttr(default=None)
+    _filled_block: BlockWithAttestation | None = PrivateAttr(default=None)
     """The filled Block, processed through the spec."""
 
     @field_serializer("block", when_used="json")
