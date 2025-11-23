@@ -28,6 +28,8 @@ class Status(StrictBaseModel):
     the peer-to-peer handshake. It allows nodes to verify compatibility and
     determine if they are on the same chain.
 
+    For devnet 2, we include the following changes
+
     The dialing client MUST send a `Status` request upon connection.
 
     The request/response MUST be encoded as an SSZ-container.
