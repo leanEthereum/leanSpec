@@ -180,7 +180,7 @@ class XmssKeyManager:
         # Convert the signature to the wire format (byte array).
         signature_bytes = xmss_sig.to_bytes(self.scheme.config)
 
-        # Ensure the signature meets the consensus spec length (3100 bytes).
+        # Ensure the signature meets the consensus spec length (3116 bytes).
         #
         # This is necessary when using TEST_CONFIG (796 bytes) vs PROD_CONFIG.
         # Padding with zeros on the right maintains compatibility.

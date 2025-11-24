@@ -50,8 +50,18 @@ class Store(Container):
     """
     Forkchoice store tracking chain state and validator attestations.
 
-    Maintains all data needed for LMD GHOST fork choice algorithm including
-    blocks, states, checkpoints, and validator attestation records.
+    This is the "local view" that a node uses to run LMD GHOST. It contains:
+
+    - which blocks and states are known,
+    - which checkpoints are justified and finalized,
+    - which block is currently considered the head,
+    - and, for each validator, their latest attestation that should influence fork choice.
+
+    The `Store` is updated whenever:
+    - a new block is processed,
+    - an attestation is received (via a block or gossip),
+    - an interval tick occurs (activating new attestations),
+    - or when the head is recomputed.
     """
 
     time: Uint64
@@ -61,22 +71,56 @@ class Store(Container):
     """Chain configuration parameters."""
 
     head: Bytes32
-    """Root of the current canonical chain head block."""
+    """
+    Root of the current canonical chain head block.
+
+    This is the result of running the fork choice algorithm on the current contents of the `Store`.
+    """
 
     safe_target: Bytes32
-    """Root of the current safe target for attestation."""
+    """
+    Root of the current safe target for attestation.
+
+    This can be used by higher-level logic to restrict which blocks are
+    considered safe to attest to, based on additional safety conditions.
+    """
 
     latest_justified: Checkpoint
-    """Highest slot justified checkpoint known to the store."""
+    """
+    Highest slot justified checkpoint known to the store.
+
+    LMD GHOST starts from this checkpoint when computing the head.
+
+    Only descendants of this checkpoint are considered viable.
+    """
 
     latest_finalized: Checkpoint
-    """Highest slot finalized checkpoint known to the store."""
+    """
+    Highest slot finalized checkpoint known to the store.
+
+    Everything strictly before this checkpoint can be considered immutable.
+
+    Fork choice will never revert finalized history.
+    """
 
     blocks: Dict[Bytes32, Block] = {}
-    """Mapping from block root to Block objects."""
+    """
+    Mapping from block root to Block objects.
 
-    states: Dict[Bytes32, "State"] = {}
-    """Mapping from state root to State objects."""
+    This is the set of blocks that the node currently knows about.
+
+    Every block that might participate in fork choice must appear here.
+    """
+
+    states: Dict[Bytes32, State] = {}
+    """
+    Mapping from state root to State objects.
+
+    For each known block, we keep its post-state.
+
+    These states carry justified and finalized checkpoints that we use to update the
+    `Store`'s latest justified and latest finalized checkpoints.
+    """
 
     latest_known_attestations: Dict[ValidatorIndex, SignedAttestation] = {}
     """
@@ -100,30 +144,49 @@ class Store(Container):
         """
         Initialize forkchoice store from an anchor state and block.
 
-        The anchor serves as a trusted starting point for the forkchoice. This
-        class method acts as a factory for creating a new Store instance.
+        The anchor block and its state form the starting point for fork choice.
+        We treat this anchor as both justified and finalized.
 
         Args:
-            state: The trusted state object to initialize the store from.
-            anchor_block: The trusted block corresponding to the state.
+            state:
+                The trusted post-state corresponding to the anchor block.
+            anchor_block:
+                The trusted block acting as the initial chain root.
 
         Returns:
-            A new, initialized Store object.
+            A new Store instance, ready to accept blocks and attestations.
 
         Raises:
-            AssertionError: If the anchor block's state root does not match the
-                            hash of the anchor state.
+            AssertionError:
+                If the anchor block's state root does not match the hash
+                of the provided state.
         """
-        # Validate that the anchor block corresponds to the anchor state
-        assert anchor_block.state_root == hash_tree_root(state), (
+        # Compute the SSZ root of the given state.
+        #
+        # This is the canonical hash that should appear in the block's state root.
+        computed_state_root = hash_tree_root(state)
+
+        # Check that the block actually points to this state.
+        #
+        # If this fails, the caller has supplied inconsistent inputs.
+        assert anchor_block.state_root == computed_state_root, (
             "Anchor block state root must match anchor state hash"
         )
 
+        # Compute the SSZ root of the anchor block itself.
+        #
+        # This root will be used as:
+        # - the key in the blocks/states maps,
+        # - the initial head,
+        # - the root of the initial checkpoints.
         anchor_root = hash_tree_root(anchor_block)
+
+        # Read the slot at which the anchor block was proposed.
         anchor_slot = anchor_block.slot
 
-        # Create checkpoint from anchor block
-        # The anchor block becomes the initial justified and finalized checkpoint
+        # Build an initial checkpoint using the anchor block.
+        #
+        # Both the root and the slot come directly from the anchor.
         anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
 
         return cls(
@@ -187,49 +250,67 @@ class Store(Container):
         is_from_block: bool = False,
     ) -> "Store":
         """
-        Handles attestations from blocks or network gossip, updating attestation tracking
-        according to timing and precedence rules.
+        Process a new attestation and place it into the correct attestation stage.
+
+        Attestations can come from:
+        - a block body (on-chain, `is_from_block=True`), or
+        - the gossip network (off-chain, `is_from_block=False`).
 
         The Attestation Pipeline
         -------------------------
-        Attestations flow through two dictionaries, both keyed by validator index:
+        Attestations always live in exactly one of two dictionaries:
 
-        **Stage 1: `latest_new_attestations`**
-            - New attestations enter here immediately after block processing
-            - Holds the current slot's proposer attestation
-            - Do not contribute to fork choice weights yet
+        Stage 1: latest new attestations
+            - Holds *pending* attestations that are not yet counted in fork choice.
+            - Includes the proposer's attestation for the block they just produced.
+            - Await activation by an interval tick before they influence weights.
 
-        **Stage 2: `latest_known_attestations`**
-            - Accepted attestations that contribute to fork choice weights
-            - Updated by the interval tick system between slots
-            - Directly influence the head selection algorithm
+        Stage 2: latest known attestations
+            - Contains all *active* attestations used by LMD-GHOST.
+            - Updated during interval ticks, which promote new → known.
+            - Directly contributes to fork-choice subtree weights.
 
         Key Behaviors
         --------------
-        **Migration**: Between blocks, attestations move from new → known via interval ticks.
+        Migration:
+            - Attestations always move forward (new → known), never backwards.
 
-        **Superseding**:
-            - Newer attestation from the same validator replaces older one
-            - Only the most recent attestation per validator is retained
+        Superseding:
+            - For each validator, only the attestation from the highest slot is kept.
+            - A newer attestation overwrites an older one in either dictionary.
 
-        **Accumulation**: Attestations from different validators coexist across both dictionaries.
+        Accumulation:
+            - Attestations from different validators accumulate independently.
+            - Only same-validator comparisons result in replacement.
 
         Args:
-            signed_attestation: Attestation from block or network.
-            is_from_block: True if attestation came from block, False if from network.
+            signed_attestation:
+                The attestation message to ingest.
+            is_from_block:
+                - True if embedded in a block body (on-chain),
+                - False if from gossip.
 
         Returns:
-            New Store with updated attestations.
+            A new Store with updated attestation sets.
         """
-        # Validate attestation structure and constraints
+        # First, ensure the attestation is structurally and temporally valid.
         self.validate_attestation(signed_attestation)
 
+        # Extract the validator index that produced this attestation.
         validator_id = ValidatorIndex(signed_attestation.message.validator_id)
+
+        # Extract the attestation's slot:
+        # - used to decide if this attestation is "newer" than a previous one.
         attestation_slot = signed_attestation.message.data.slot
 
-        # Create copies for immutable update
-        new_known = dict(self.latest_known_attestations)
-        new_new = dict(self.latest_new_attestations)
+        # Copy the known attestation map:
+        # - we build a new Store immutably,
+        # - changes are applied on this local copy.
+        new_known = self.latest_known_attestations
+
+        # Copy the new attestation map:
+        # - holds pending attestations that are not yet active.
+        new_new = self.latest_new_attestations
 
         if is_from_block:
             # On-chain attestation processing
@@ -238,15 +319,25 @@ class Store(Container):
             # - They are processed immediately as "known" attestations,
             # - They contribute to fork choice weights.
 
-            # Update known attestations if this is the latest from validator
+            # Fetch the currently known attestation for this validator, if any.
             latest_known = new_known.get(validator_id)
+
+            # Update the known attestation for this validator if:
+            # - there is no known attestation yet, or
+            # - this attestation is from a later slot than the known one.
             if latest_known is None or latest_known.message.data.slot < attestation_slot:
                 new_known[validator_id] = signed_attestation
 
-            # Remove from new attestations if this supersedes it
-            if validator_id in new_new:
-                if new_new[validator_id].message.data.slot <= attestation_slot:
-                    del new_new[validator_id]
+            # Fetch any pending ("new") attestation for this validator.
+            existing_new = new_new.get(validator_id)
+
+            # Remove the pending attestation if:
+            # - it exists, and
+            # - it is from an equal or earlier slot than this on-chain attestation.
+            #
+            # In that case, the on-chain attestation supersedes it.
+            if existing_new is not None and existing_new.message.data.slot <= attestation_slot:
+                del new_new[validator_id]
         else:
             # Network gossip attestation processing
             #
@@ -255,15 +346,23 @@ class Store(Container):
             # - They must wait for interval tick acceptance before
             #   contributing to fork choice weights.
 
-            # Ensure forkchoice is current before processing gossip
+            # Convert Store time to slots to check for "future" attestations.
             time_slots = self.time // SECONDS_PER_SLOT
+
+            # Reject the attestation if:
+            # - its slot is strictly greater than our current slot.
             assert attestation_slot <= time_slots, "Attestation from future slot"
 
-            # Update new attestations if this is latest from validator
+            # Fetch the previously stored "new" attestation for this validator.
             latest_new = new_new.get(validator_id)
+
+            # Update the pending attestation for this validator if:
+            # - there is no pending attestation yet, or
+            # - this one is from a later slot than the pending one.
             if latest_new is None or latest_new.message.data.slot < attestation_slot:
                 new_new[validator_id] = signed_attestation
 
+        # Return a new Store with updated "known" and "new" attestation maps.
         return self.model_copy(
             update={
                 "latest_known_attestations": new_known,
