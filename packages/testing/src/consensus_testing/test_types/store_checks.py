@@ -182,9 +182,7 @@ class StoreChecks(CamelModel):
     """
 
     def fill_hash_from_label(self, block_registry: dict[str, "Block"]) -> None:
-        """
-        Resolves block labels to root hashes for head, justified, and finalized checkpoints.
-        """
+        """Resolves block labels to root hashes for head, justified, and finalized checkpoints."""
         from lean_spec.subspecs.ssz import hash_tree_root
 
         # Mapping of {target_field: source_label_field}
