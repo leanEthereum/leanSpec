@@ -25,11 +25,11 @@ class KeyPair(NamedTuple):
     """The validator's secret key (used for signing)."""
 
 
-_KEY_CACHE: dict[tuple[int, int, int], KeyPair] = {}
+_KEY_CACHE: dict[tuple[int, int, int, int], KeyPair] = {}
 """
 Cache keys across tests to avoid regenerating them for the same validator/lifetime combo.
 
-Key: (validator_index, activation_epoch, num_active_epochs) -> KeyPair
+Key: (validator_index, activation_epoch, num_active_epochs, seed) -> KeyPair
 """
 
 
@@ -38,10 +38,17 @@ class XmssKeyManager:
 
     DEFAULT_MAX_SLOT = Slot(100)
     """Default maximum slot horizon if not specified."""
+    DEFAULT_ACTIVATION_EPOCH = Uint64(0)
+    """Default activation epoch when none is provided."""
+    DEFAULT_SEED = 0
+    """Default deterministic seed when none is provided."""
 
     def __init__(
         self,
-        activation_epoch: Optional[Uint64] = None,
+        activation_epoch: Optional[Uint64 | Slot | int] = None,
+        *,
+        default_activation_epoch: Optional[Uint64 | Slot | int] = None,
+        default_seed: Optional[int] = None,
         max_slot: Optional[Slot] = None,
         scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME,
     ) -> None:
@@ -50,8 +57,12 @@ class XmssKeyManager:
 
         Parameters
         ----------
-        activation_epoch : Uint64, optional
+        activation_epoch : Uint64 | Slot | int, optional
+            Deprecated alias for `default_activation_epoch`.
+        default_activation_epoch : Uint64 | Slot | int, optional
             Activation epoch used when none is provided for key generation.
+        default_seed : int, optional
+            Seed value used when none is provided for key generation.
         max_slot : Slot, optional
             Highest slot number for which keys must remain valid.
             Defaults to `Slot(100)`.
@@ -69,21 +80,57 @@ class XmssKeyManager:
         """
         self.max_slot = max_slot if max_slot is not None else self.DEFAULT_MAX_SLOT
         self.scheme = scheme
-        self.activation_epoch = activation_epoch if activation_epoch is not None else Uint64(0)
+        if activation_epoch is not None and default_activation_epoch is not None:
+            raise ValueError("Use either activation_epoch or default_activation_epoch, not both.")
+        effective_activation = (
+            default_activation_epoch if default_activation_epoch is not None else activation_epoch
+        )
+        activation_value = (
+            self.DEFAULT_ACTIVATION_EPOCH
+            if effective_activation is None
+            else self._coerce_uint64(effective_activation)
+        )
+        self._default_activation_epoch = activation_value
+        self._default_seed = int(default_seed) if default_seed is not None else self.DEFAULT_SEED
         self._key_pairs: dict[ValidatorIndex, KeyPair] = {}
         self._key_metadata: dict[ValidatorIndex, dict[str, Any]] = {}
 
+    @staticmethod
+    def _coerce_uint64(value: Uint64 | Slot | int) -> Uint64:
+        """Convert supported numeric inputs to Uint64."""
+        if isinstance(value, Uint64):
+            return Uint64(int(value))
+        if isinstance(value, Slot):
+            return Uint64(value.as_int())
+        return Uint64(int(value))
+
     @property
     def default_max_epoch(self) -> int:
-        """Default lifetime derived from the class default max_slot."""
-        return self.DEFAULT_MAX_SLOT.as_int() + 1
+        """Default lifetime derived from the manager's configured max_slot."""
+        return self.default_num_active_epochs
+
+    @property
+    def default_num_active_epochs(self) -> int:
+        """Number of epochs keys stay active when not overridden."""
+        return self.max_slot.as_int() + 1
+
+    @property
+    def default_activation_epoch(self) -> int:
+        """Default activation epoch as an int."""
+        return int(self._default_activation_epoch)
+
+    @property
+    def default_seed(self) -> int:
+        """Default seed used when none is provided."""
+        return self._default_seed
 
     def create_and_store_key_pair(
         self,
         validator_index: ValidatorIndex,
         *,
-        activation_epoch: Optional[Uint64] = None,
-        num_active_epochs: Optional[Uint64] = None,
+        activation_epoch: Optional[Uint64 | Slot | int] = None,
+        num_active_epochs: Optional[Uint64 | Slot | int] = None,
+        seed: Optional[int] = None,
     ) -> KeyPair:
         """
         Generate and store a key pair with explicit control over key generation.
@@ -92,24 +139,32 @@ class XmssKeyManager:
         ----------
         validator_index : ValidatorIndex
             The validator for whom a key pair should be generated.
-        activation_epoch : Uint64, optional
+        activation_epoch : Uint64 | Slot | int, optional
             First epoch for which the key is valid. Defaults to the manager's
-            configured `activation_epoch`.
-        num_active_epochs : Uint64, optional
+            configured `default_activation_epoch`.
+        num_active_epochs : Uint64 | Slot | int, optional
             Number of consecutive epochs the key should remain active.
-            Defaults to `default_max_epoch` (derived from `DEFAULT_MAX_SLOT` to include genesis).
+            Defaults to `default_num_active_epochs` (derived from `max_slot` to include genesis).
+        seed : int, optional
+            Deterministic seed for caching/reuse. Defaults to manager's `default_seed`.
         """
         activation_epoch_val = (
-            activation_epoch if activation_epoch is not None else self.activation_epoch
+            self._coerce_uint64(activation_epoch)
+            if activation_epoch is not None
+            else self._default_activation_epoch
         )
         num_active_epochs_val = (
-            num_active_epochs if num_active_epochs is not None else Uint64(self.default_max_epoch)
+            self._coerce_uint64(num_active_epochs)
+            if num_active_epochs is not None
+            else self._coerce_uint64(self.default_num_active_epochs)
         )
+        seed_val = int(seed) if seed is not None else self.default_seed
 
         cache_key = (
             int(validator_index),
             int(activation_epoch_val),
             int(num_active_epochs_val),
+            seed_val,
         )
 
         if cache_key in _KEY_CACHE:
@@ -123,6 +178,7 @@ class XmssKeyManager:
         self._key_metadata[validator_index] = {
             "activation_epoch": int(activation_epoch_val),
             "num_active_epochs": int(num_active_epochs_val),
+            "seed": seed_val,
         }
         # TODO: support multiple keys per validator keyed by activation_epoch.
         return key_pair
@@ -145,7 +201,7 @@ class XmssKeyManager:
         -----
         - Generates a new key if none exists.
         - Keys are deterministic for testing (`seed=0`).
-        - Lifetime defaults to `default_max_epoch` to include the genesis slot.
+        - Lifetime defaults to `default_num_active_epochs` to include the genesis slot.
         """
         if validator_index in self._key_pairs:
             return self._key_pairs[validator_index]
@@ -216,6 +272,38 @@ class XmssKeyManager:
 
         # Convert to the consensus Signature container (handles padding internally).
         return Signature.from_xmss(xmss_sig, self.scheme)
+
+    def export_test_vectors(self, include_private_keys: bool = False) -> list[dict[str, Any]]:
+        """
+        Export generated keys as dictionaries suitable for JSON test vectors.
+
+        Parameters
+        ----------
+        include_private_keys : bool, optional
+            When True, include SecretKey contents for debugging fixtures.
+
+        Returns:
+        -------
+        list[dict[str, Any]]
+            A list of entries keyed by validator_index with metadata and hex keys.
+        """
+        vectors: list[dict[str, Any]] = []
+        for validator_index in sorted(self._key_pairs.keys(), key=int):
+            key_pair = self._key_pairs[validator_index]
+            metadata = self._key_metadata.get(validator_index, {})
+            entry: dict[str, Any] = {
+                "validator_index": int(validator_index),
+                "activation_epoch": metadata.get("activation_epoch", self.default_activation_epoch),
+                "num_active_epochs": metadata.get(
+                    "num_active_epochs", self.default_num_active_epochs
+                ),
+                "seed": metadata.get("seed", self.default_seed),
+                "public_key": key_pair.public.to_bytes(self.scheme.config).hex(),
+            }
+            if include_private_keys:
+                entry["secret_key"] = key_pair.secret.model_dump()
+            vectors.append(entry)
+        return vectors
 
     def get_public_key(self, validator_index: ValidatorIndex) -> PublicKey:
         """
