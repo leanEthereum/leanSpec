@@ -112,6 +112,20 @@ class ForkChoiceTest(BaseConsensusFixture):
     valid up to the highest slot used in any block or attestation.
     """
 
+    key_manager_seed: int | None = None
+    """
+    Optional deterministic seed to pass to the XMSS key manager.
+
+    When set, validators' keys and signatures become reproducible across runs.
+    """
+
+    key_manager_activation_epoch: Slot | None = None
+    """
+    Optional activation epoch to use when generating keys.
+
+    Defaults to the key manager's own default (0) when unset.
+    """
+
     @model_validator(mode="after")
     def set_anchor_block_default(self) -> ForkChoiceTest:
         """
@@ -183,10 +197,24 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Use shared key manager if it has sufficient capacity, otherwise create a new one
         # This optimizes performance by reusing keys across tests when possible
         shared_key_manager = _get_shared_key_manager()
+        use_shared = (
+            self.key_manager_seed is None
+            and self.key_manager_activation_epoch is None
+            and self.max_slot <= shared_key_manager.max_slot
+        )
         key_manager = (
             shared_key_manager
-            if self.max_slot <= shared_key_manager.max_slot
-            else XmssKeyManager(max_slot=self.max_slot, scheme=TEST_SIGNATURE_SCHEME)
+            if use_shared
+            else XmssKeyManager(
+                max_slot=self.max_slot,
+                scheme=TEST_SIGNATURE_SCHEME,
+                default_seed=self.key_manager_seed,
+                default_activation_epoch=(
+                    self.key_manager_activation_epoch
+                    if self.key_manager_activation_epoch is not None
+                    else XmssKeyManager.DEFAULT_ACTIVATION_EPOCH
+                ),
+            )
         )
 
         # Update validator pubkeys to match key_manager's generated keys
