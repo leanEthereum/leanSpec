@@ -185,7 +185,7 @@ class XmssKeyManager:
 
     def __getitem__(self, validator_index: ValidatorIndex) -> KeyPair:
         """
-        Retrieve or lazily generate a validator’s key pair.
+        Retrieve or lazily generate a validator's key pair.
 
         Parameters
         ----------
@@ -195,7 +195,7 @@ class XmssKeyManager:
         Returns:
         -------
         KeyPair
-            The validator’s XMSS key pair.
+            The validator's XMSS key pair.
 
         Notes:
         -----
@@ -313,7 +313,7 @@ class XmssKeyManager:
         Returns:
         -------
         PublicKey
-            The validator’s public key.
+            The validator's public key.
         """
         return self[validator_index].public
 
