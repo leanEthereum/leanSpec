@@ -128,9 +128,6 @@ class StoreChecks(CamelModel):
     latest_justified_root: Bytes32 | None = None
     """Expected latest justified checkpoint root."""
 
-    latest_finalized_slot: Slot | None = None
-    """Expected latest finalized checkpoint slot."""
-
     latest_justified_root_label: str | None = None
     """
     Expected latest justified checkpoint root by label reference.
@@ -140,8 +137,20 @@ class StoreChecks(CamelModel):
     and validate the latest justified checkpointroot matches.
     """
 
+    latest_finalized_slot: Slot | None = None
+    """Expected latest finalized checkpoint slot."""
+
     latest_finalized_root: Bytes32 | None = None
     """Expected latest finalized checkpoint root."""
+
+    latest_finalized_root_label: str | None = None
+    """
+    Expected latest finalized checkpoint root by label reference.
+
+    Alternative to `latest_justified_root` that uses the block label system.
+    The framework will resolve this label to the actual block root
+    and validate the latest finalized checkpoint root matches.
+    """
 
     safe_target: Bytes32 | None = None
     """Expected safe target root."""

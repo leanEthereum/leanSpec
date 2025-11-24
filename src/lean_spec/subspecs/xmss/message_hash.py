@@ -31,12 +31,14 @@ from __future__ import annotations
 
 from typing import List
 
+from pydantic import model_validator
+
 from lean_spec.subspecs.xmss.poseidon import (
     PROD_POSEIDON,
     TEST_POSEIDON,
     PoseidonXmss,
 )
-from lean_spec.types import Uint64
+from lean_spec.types import StrictBaseModel, Uint64
 
 from ..koalabear import Fp, P
 from .constants import (
@@ -54,13 +56,26 @@ from .hypercube import (
 from .utils import int_to_base_p
 
 
-class MessageHasher:
+class MessageHasher(StrictBaseModel):
     """An instance of the "Top Level" message hasher for a given config."""
 
-    def __init__(self, config: XmssConfig, poseidon_hasher: PoseidonXmss):
-        """Initializes the hasher with a specific parameter set."""
-        self.config = config
-        self.poseidon = poseidon_hasher
+    config: XmssConfig
+    """Configuration parameters for the hasher."""
+
+    poseidon: PoseidonXmss
+    """Poseidon hash engine."""
+
+    @model_validator(mode="after")
+    def enforce_strict_types(self) -> "MessageHasher":
+        """Validates that only exact approved types are used (rejects subclasses)."""
+        checks = {"config": XmssConfig, "poseidon": PoseidonXmss}
+        for field, expected in checks.items():
+            if type(getattr(self, field)) is not expected:
+                raise TypeError(
+                    f"{field} must be exactly {expected.__name__}, "
+                    f"got {type(getattr(self, field)).__name__}"
+                )
+        return self
 
     def encode_message(self, message: bytes) -> List[Fp]:
         """
@@ -187,8 +202,8 @@ class MessageHasher:
         return self._map_into_hypercube_part(poseidon_outputs)
 
 
-PROD_MESSAGE_HASHER = MessageHasher(PROD_CONFIG, PROD_POSEIDON)
+PROD_MESSAGE_HASHER = MessageHasher(config=PROD_CONFIG, poseidon=PROD_POSEIDON)
 """An instance configured for production-level parameters."""
 
-TEST_MESSAGE_HASHER = MessageHasher(TEST_CONFIG, TEST_POSEIDON)
+TEST_MESSAGE_HASHER = MessageHasher(config=TEST_CONFIG, poseidon=TEST_POSEIDON)
 """A lightweight instance for test environments."""

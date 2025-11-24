@@ -32,7 +32,9 @@ from __future__ import annotations
 
 from typing import List
 
-from lean_spec.types import Uint64
+from pydantic import model_validator
+
+from lean_spec.types import StrictBaseModel, Uint64
 
 from .constants import (
     PROD_CONFIG,
@@ -46,23 +48,38 @@ from .containers import (
     HashTreeOpening,
     Parameter,
 )
+from .rand import PROD_RAND, TEST_RAND, Rand
 from .tweak_hash import (
     PROD_TWEAK_HASHER,
     TEST_TWEAK_HASHER,
     TreeTweak,
     TweakHasher,
 )
-from .utils import PROD_RAND, TEST_RAND, Rand
 
 
-class MerkleTree:
+class MerkleTree(StrictBaseModel):
     """An instance of the Merkle Tree handler for a given config."""
 
-    def __init__(self, config: XmssConfig, hasher: TweakHasher, rand: Rand):
-        """Initializes with a config, a hasher, and a random generator."""
-        self.config = config
-        self.hasher = hasher
-        self.rand = rand
+    config: XmssConfig
+    """Configuration parameters for the Merkle tree."""
+
+    hasher: TweakHasher
+    """Hash function for hashing tree nodes."""
+
+    rand: Rand
+    """Random generator for padding."""
+
+    @model_validator(mode="after")
+    def enforce_strict_types(self) -> "MerkleTree":
+        """Validates that only exact approved types are used (rejects subclasses)."""
+        checks = {"config": XmssConfig, "hasher": TweakHasher, "rand": Rand}
+        for field, expected in checks.items():
+            if type(getattr(self, field)) is not expected:
+                raise TypeError(
+                    f"{field} must be exactly {expected.__name__}, "
+                    f"got {type(getattr(self, field)).__name__}"
+                )
+        return self
 
     def _get_padded_layer(self, nodes: List[HashDigest], start_index: int) -> HashTreeLayer:
         """
@@ -320,8 +337,8 @@ class MerkleTree:
         return current_node == root
 
 
-PROD_MERKLE_TREE = MerkleTree(PROD_CONFIG, PROD_TWEAK_HASHER, PROD_RAND)
+PROD_MERKLE_TREE = MerkleTree(config=PROD_CONFIG, hasher=PROD_TWEAK_HASHER, rand=PROD_RAND)
 """An instance configured for production-level parameters."""
 
-TEST_MERKLE_TREE = MerkleTree(TEST_CONFIG, TEST_TWEAK_HASHER, TEST_RAND)
+TEST_MERKLE_TREE = MerkleTree(config=TEST_CONFIG, hasher=TEST_TWEAK_HASHER, rand=TEST_RAND)
 """A lightweight instance for test environments."""

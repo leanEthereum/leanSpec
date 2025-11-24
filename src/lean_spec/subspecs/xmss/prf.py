@@ -13,8 +13,10 @@ import hashlib
 import os
 from typing import List
 
+from pydantic import model_validator
+
 from lean_spec.subspecs.koalabear import Fp
-from lean_spec.types.uint import Uint64
+from lean_spec.types import StrictBaseModel, Uint64
 
 from .constants import (
     PRF_KEY_LENGTH,
@@ -79,12 +81,18 @@ random.
 """
 
 
-class Prf:
+class Prf(StrictBaseModel):
     """An instance of the SHAKE128-based PRF for a given config."""
 
-    def __init__(self, config: XmssConfig):
-        """Initializes the PRF with a specific parameter set."""
-        self.config = config
+    config: XmssConfig
+    """Configuration parameters for the PRF."""
+
+    @model_validator(mode="after")
+    def enforce_strict_types(self) -> "Prf":
+        """Validates that only exact approved types are used (rejects subclasses)."""
+        if type(self.config) is not XmssConfig:
+            raise TypeError(f"config must be exactly XmssConfig, got {type(self.config).__name__}")
+        return self
 
     def key_gen(self) -> PRFKey:
         """
@@ -228,8 +236,8 @@ class Prf:
         ]
 
 
-PROD_PRF = Prf(PROD_CONFIG)
+PROD_PRF = Prf(config=PROD_CONFIG)
 """An instance configured for production-level parameters."""
 
-TEST_PRF = Prf(TEST_CONFIG)
+TEST_PRF = Prf(config=TEST_CONFIG)
 """A lightweight instance for test environments."""

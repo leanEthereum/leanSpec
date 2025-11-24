@@ -8,7 +8,9 @@ top of the message hash output.
 
 from typing import List, Optional
 
-from lean_spec.types import Uint64
+from pydantic import model_validator
+
+from lean_spec.types import StrictBaseModel, Uint64
 
 from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
 from .containers import Parameter, Randomness
@@ -19,7 +21,7 @@ from .message_hash import (
 )
 
 
-class TargetSumEncoder:
+class TargetSumEncoder(StrictBaseModel):
     """
     An instance of the Target Sum encoder for a given configuration.
 
@@ -27,10 +29,23 @@ class TargetSumEncoder:
     scheme's target sum constraint.
     """
 
-    def __init__(self, config: XmssConfig, message_hasher: MessageHasher):
-        """Initializes the encoder with a specific parameter set."""
-        self.config = config
-        self.message_hasher = message_hasher
+    config: XmssConfig
+    """Configuration parameters for the encoder."""
+
+    message_hasher: MessageHasher
+    """Message hasher for encoding."""
+
+    @model_validator(mode="after")
+    def enforce_strict_types(self) -> "TargetSumEncoder":
+        """Validates that only exact approved types are used (rejects subclasses)."""
+        checks = {"config": XmssConfig, "message_hasher": MessageHasher}
+        for field, expected in checks.items():
+            if type(getattr(self, field)) is not expected:
+                raise TypeError(
+                    f"{field} must be exactly {expected.__name__}, "
+                    f"got {type(getattr(self, field)).__name__}"
+                )
+        return self
 
     def encode(
         self, parameter: Parameter, message: bytes, rho: Randomness, epoch: Uint64
@@ -80,8 +95,8 @@ class TargetSumEncoder:
             return None
 
 
-PROD_TARGET_SUM_ENCODER = TargetSumEncoder(PROD_CONFIG, PROD_MESSAGE_HASHER)
+PROD_TARGET_SUM_ENCODER = TargetSumEncoder(config=PROD_CONFIG, message_hasher=PROD_MESSAGE_HASHER)
 """An instance configured for production-level parameters."""
 
-TEST_TARGET_SUM_ENCODER = TargetSumEncoder(TEST_CONFIG, TEST_MESSAGE_HASHER)
+TEST_TARGET_SUM_ENCODER = TargetSumEncoder(config=TEST_CONFIG, message_hasher=TEST_MESSAGE_HASHER)
 """A lightweight instance for test environments."""

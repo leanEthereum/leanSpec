@@ -4,13 +4,11 @@ Core forkchoice algorithms.
 Pure functions implementing the LMD GHOST forkchoice rule and related utilities.
 """
 
-from typing import Dict, Optional
+from typing import Dict
 
 from lean_spec.subspecs.containers import (
     Block,
-    Checkpoint,
     SignedAttestation,
-    State,
 )
 from lean_spec.types import Bytes32, ValidatorIndex
 
@@ -69,23 +67,3 @@ def get_fork_choice_head(
 
         # Choose best child: most attestations, then lexicographically highest hash
         current = max(children, key=lambda x: (attestation_weights.get(x, 0), x))
-
-
-def get_latest_justified(states: Dict[Bytes32, "State"]) -> Optional[Checkpoint]:
-    """
-    Find the justified checkpoint with the highest slot.
-
-    Args:
-        states: All known states indexed by hash.
-
-    Returns:
-        Latest justified checkpoint, or None if no states.
-    """
-    if not states:
-        return None
-
-    # Find state with maximum justified slot
-    latest_state = max(states.values(), key=lambda s: s.latest_justified.slot)
-
-    # Return latest justified checkpoint from that state
-    return latest_state.latest_justified
