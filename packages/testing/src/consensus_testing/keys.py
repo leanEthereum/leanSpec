@@ -195,7 +195,7 @@ class XmssKeyManager:
         Returns:
         -------
         KeyPair
-            The validator's XMSS key pair.
+            XMSS key pair associated with the validator.
 
         Notes:
         -----
@@ -273,11 +273,14 @@ class XmssKeyManager:
         # Convert to the consensus Signature container (handles padding internally).
         return Signature.from_xmss(xmss_sig, self.scheme)
 
-        # Ensure the signature meets the consensus spec length (3116 bytes).
-        #
-        # This is necessary when using TEST_CONFIG (796 bytes) vs PROD_CONFIG.
-        # Padding with zeros on the right maintains compatibility.
-        padded_bytes = signature_bytes.ljust(Signature.LENGTH, b"\x00")
+    def export_test_vectors(self, include_private_keys: bool = False) -> list[dict[str, Any]]:
+        """
+        Export generated keys as dictionaries suitable for JSON test vectors.
+
+        Parameters
+        ----------
+        include_private_keys : bool, optional
+            When True, include SecretKey contents for debugging fixtures.
 
         Returns:
         -------
@@ -313,7 +316,7 @@ class XmssKeyManager:
         Returns:
         -------
         PublicKey
-            The validator's public key.
+            Public key for the validator.
         """
         return self[validator_index].public
 
