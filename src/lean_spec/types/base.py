@@ -1,6 +1,6 @@
 """Reusable, strict base models for the specification."""
 
-from typing import Any, Self
+from typing import Any, Dict, Self
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -26,6 +26,18 @@ class CamelModel(BaseModel):
     def copy(self: Self, **kwargs: Any) -> Self:
         """Create a copy of the model with the updated fields that are validated."""
         return self.__class__(**(self.model_dump(exclude_unset=True) | kwargs))
+
+    def to_json(self, **kwargs: Any) -> Dict[str, Any]:
+        """Return json encodable representation of this model"""
+        # remove these if user tries to pass them
+        kwargs.pop("mode", None)
+        kwargs.pop("by_alias", None)
+
+        return self.model_dump(
+            mode="json",
+            by_alias=True,
+            **kwargs,
+        )
 
 
 class StrictBaseModel(CamelModel):
