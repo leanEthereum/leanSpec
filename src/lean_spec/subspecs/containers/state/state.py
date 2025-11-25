@@ -6,9 +6,9 @@ recent blocks, and validator attestations. State also records which blocks are
 justified and finalized.
 """
 
-from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
+    ZERO_HASH,
     Boolean,
     Bytes32,
     Container,

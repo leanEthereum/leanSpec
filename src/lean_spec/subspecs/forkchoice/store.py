@@ -36,14 +36,13 @@ from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
+    ZERO_HASH,
     Bytes32,
     Uint64,
     ValidatorIndex,
     is_proposer,
 )
 from lean_spec.types.container import Container
-
-from .helpers import get_fork_choice_head
 
 
 class Store(Container):
@@ -485,6 +484,69 @@ class Store(Container):
 
         return store
 
+    def _compute_lmd_ghost_head(
+        self,
+        start_root: Bytes32,
+        attestations: Dict[ValidatorIndex, SignedAttestation],
+        min_score: int = 0,
+    ) -> Bytes32:
+        """
+        Internal implementation of LMD GHOST fork choice algorithm.
+
+        Navigates the block tree from `start_root` by choosing the heaviest child
+        at each fork, based on the provided `attestations`.
+
+        This is the core fork choice logic. It walks down the tree from a given
+        starting point (typically the latest justified checkpoint), choosing at
+        each fork the child with the most attestation weight. When there is a tie,
+        it breaks it lexicographically by hash.
+
+        Args:
+            start_root: Starting point root (usually latest justified).
+            attestations: Attestations to consider for fork choice weights.
+            min_score: Minimum attestation count for block inclusion.
+
+        Returns:
+            Hash of the chosen head block.
+        """
+        # Start at genesis if root is zero hash
+        if start_root == ZERO_HASH:
+            start_root = min(
+                self.blocks.keys(), key=lambda block_hash: self.blocks[block_hash].slot
+            )
+
+        # Count attestations for each block (attestations for descendants count for ancestors)
+        attestation_weights: Dict[Bytes32, int] = {}
+
+        for attestation in attestations.values():
+            head = attestation.message.data.head
+            if head.root in self.blocks:
+                # Walk up from attestation target, incrementing ancestor weights
+                block_hash = head.root
+                while self.blocks[block_hash].slot > self.blocks[start_root].slot:
+                    attestation_weights[block_hash] = attestation_weights.get(block_hash, 0) + 1
+                    block_hash = self.blocks[block_hash].parent_root
+
+        # Build children mapping for ALL blocks (not just those above min_score)
+        #
+        # This ensures fork choice works even when there are no attestations
+        children_map: Dict[Bytes32, list[Bytes32]] = {}
+        for block_hash, block in self.blocks.items():
+            if block.parent_root:
+                # Only include blocks that have enough attestations OR when min_score is 0
+                if min_score == 0 or attestation_weights.get(block_hash, 0) >= min_score:
+                    children_map.setdefault(block.parent_root, []).append(block_hash)
+
+        # Walk down tree, choosing child with most attestations (tiebreak by lexicographic hash)
+        current = start_root
+        while True:
+            children = children_map.get(current, [])
+            if not children:
+                return current
+
+            # Choose best child: most attestations, then lexicographically highest hash
+            current = max(children, key=lambda x: (attestation_weights.get(x, 0), x))
+
     def update_head(self) -> "Store":
         """
         Compute updated store with new canonical head.
@@ -532,10 +594,9 @@ class Store(Container):
         #
         # Selects canonical head by walking the tree from the justified root,
         # choosing the heaviest child at each fork based on attestation weights.
-        new_head = get_fork_choice_head(
-            self.blocks,
-            latest_justified.root,
-            self.latest_known_attestations,
+        new_head = self._compute_lmd_ghost_head(
+            start_root=latest_justified.root,
+            attestations=self.latest_known_attestations,
         )
 
         # Extract finalized checkpoint from head state
@@ -619,10 +680,9 @@ class Store(Container):
         min_target_score = -(-num_validators * 2 // 3)
 
         # Find head with minimum attestation threshold
-        safe_target = get_fork_choice_head(
-            self.blocks,
-            self.latest_justified.root,
-            self.latest_new_attestations,
+        safe_target = self._compute_lmd_ghost_head(
+            start_root=self.latest_justified.root,
+            attestations=self.latest_new_attestations,
             min_score=min_target_score,
         )
 
@@ -791,6 +851,8 @@ class Store(Container):
         for _ in range(JUSTIFICATION_LOOKBACK_SLOTS):
             if self.blocks[target_block_root].slot > self.blocks[self.safe_target].slot:
                 target_block_root = self.blocks[target_block_root].parent_root
+            else:
+                break
 
         # Ensure target is in justifiable slot range
         #
@@ -804,6 +866,43 @@ class Store(Container):
         # Create checkpoint from selected target block
         target_block = self.blocks[target_block_root]
         return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
+
+    def produce_attestation_data(self, slot: Slot) -> AttestationData:
+        """
+        Produce attestation data for the given slot.
+
+        This method constructs an AttestationData object according to the lean protocol
+        specification. The attestation data represents the chain state view including
+        head, target, and source checkpoints.
+
+        The algorithm:
+        1. Get the current head block
+        2. Calculate the appropriate attestation target using current forkchoice state
+        3. Use the store's latest justified checkpoint as the attestation source
+        4. Construct and return the complete AttestationData object
+
+        Args:
+            slot: The slot for which to produce the attestation data.
+
+        Returns:
+            A fully constructed AttestationData object.
+        """
+        # Get the head block the validator sees for this slot
+        head_checkpoint = Checkpoint(
+            root=self.head,
+            slot=self.blocks[self.head].slot,
+        )
+
+        # Calculate the target checkpoint for this attestation
+        target_checkpoint = self.get_attestation_target()
+
+        # Construct attestation data
+        return AttestationData(
+            slot=slot,
+            head=head_checkpoint,
+            target=target_checkpoint,
+            source=self.latest_justified,
+        )
 
     def produce_block_with_signatures(
         self,
@@ -934,56 +1033,3 @@ class Store(Container):
         )
 
         return store, finalized_block, signatures
-
-    def produce_attestation(
-        self,
-        slot: Slot,
-        validator_index: ValidatorIndex,
-    ) -> Attestation:
-        """
-        Produce an attestation for the given slot and validator.
-
-        This method constructs an Attestation object according to the lean protocol
-        specification for attestation. The attestation represents the
-        validator's view of the chain state and their choice for the
-        next justified checkpoint.
-
-        The algorithm:
-        1. Get the current head
-        2. Calculate the appropriate attestation target using current forkchoice state
-        3. Use the store's latest justified checkpoint as the attestation source
-        4. Construct and return the complete Attestation object
-
-        Args:
-            slot: The slot for which to produce the attestation.
-            validator_index: The validator index producing the attestation.
-
-        Returns:
-            A fully constructed Attestation object ready for signing and broadcast.
-        """
-        # Get the head block the validator sees for this slot
-        head_checkpoint = Checkpoint(
-            root=self.head,
-            slot=self.blocks[self.head].slot,
-        )
-
-        # Calculate the target checkpoint for this attestation
-        #
-        # This uses the store's current forkchoice state to determine
-        # the appropriate attestation target, balancing between head
-        # advancement and safety guarantees.
-        target_checkpoint = self.get_attestation_target()
-
-        # Construct attestation data
-        attestation_data = AttestationData(
-            slot=slot,
-            head=head_checkpoint,
-            target=target_checkpoint,
-            source=self.latest_justified,
-        )
-
-        # Create the attestation using current forkchoice state
-        return Attestation(
-            validator_id=validator_index,
-            data=attestation_data,
-        )

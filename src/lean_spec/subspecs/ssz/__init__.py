@@ -1,6 +1,7 @@
 """SSZ (Simple Serialize) implementation."""
 
-from .constants import ZERO_HASH
+from lean_spec.types import ZERO_HASH
+
 from .hash import HashTreeRoot, hash_tree_root
 
 __all__ = [

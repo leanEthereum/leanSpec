@@ -2,8 +2,8 @@
 
 from typing import List, Sequence
 
-from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.utils import get_power_of_two_ceil, hash_nodes
+from lean_spec.types import ZERO_HASH
 from lean_spec.types.byte_arrays import Bytes32
 
 

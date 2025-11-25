@@ -213,6 +213,10 @@ class Bytes32(BaseBytes):
     LENGTH = 32
 
 
+ZERO_HASH: Bytes32 = Bytes32.zero()
+"""All-zero hash (32 bytes of zeros)."""
+
+
 class Bytes48(BaseBytes):
     """Fixed-size byte array of exactly 48 bytes."""
 

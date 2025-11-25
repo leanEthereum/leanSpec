@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.merkleization import Merkle
 from lean_spec.subspecs.ssz.utils import hash_nodes
+from lean_spec.types import ZERO_HASH
 from lean_spec.types.byte_arrays import Bytes32
 
 
