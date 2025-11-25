@@ -39,6 +39,7 @@ class CamelModel(BaseModel):
             **kwargs,
         )
 
+
 class StrictBaseModel(CamelModel):
     """A strict, immutable pydantic base model."""
 
