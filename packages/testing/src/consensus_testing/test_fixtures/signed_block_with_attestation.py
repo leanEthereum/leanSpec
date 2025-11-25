@@ -106,11 +106,12 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
         """
         # Get default serialization
         data = serializer(self)
+        signed_block = self.signed_block_with_attestation
 
         if self.anchor_state is not None:
             # Collect attester pubkeys for all attestations in the block body
             attester_pubkeys = []
-            for attestation in self.signed_block_with_attestation.message.block.body.attestations:
+            for attestation in signed_block.message.block.body.attestations:
                 validator_index = ValidatorIndex(int(attestation.validator_id))
                 validator = self.anchor_state.validators[int(validator_index)]
                 attester_pubkeys.append(
@@ -120,18 +121,16 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
                 )
 
             # Get proposer pubkey
-            proposer_index = ValidatorIndex(int(self.signed_block_with_attestation.message.block.proposer_index))
+            proposer_index = ValidatorIndex(int(signed_block.message.block.proposer_index))
             proposer = self.anchor_state.validators[int(proposer_index)]
             proposer_pubkey = (
-                proposer.pubkey.hex()
-                if isinstance(proposer.pubkey, bytes)
-                else proposer.pubkey
+                proposer.pubkey.hex() if isinstance(proposer.pubkey, bytes) else proposer.pubkey
             )
 
-            data["blockWithAttestation"] = self.signed_block_with_attestation.message.model_dump(mode="json")
+            data["blockWithAttestation"] = signed_block.message.model_dump(mode="json")
             data["attester_pubkeys"] = attester_pubkeys
             data["proposer_pubkey"] = proposer_pubkey
-            data["signedBlockWithAttestation"] = self.signed_block_with_attestation.model_dump(mode="json")
+            data["signedBlockWithAttestation"] = signed_block.model_dump(mode="json")
             data.pop("container", None)
             data.pop("anchorState", None)
 
@@ -161,12 +160,12 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
         4. Verifying signatures against validator public keys
         5. Checking that valid/invalid expectation is met
 
-        Returns
+        Returns:
         -------
         SignedBlockWithAttestationTest
             The validated fixture with properly signed block.
 
-        Raises
+        Raises:
         ------
         AssertionError
             If signature verification doesn't match expected validity.
@@ -200,11 +199,12 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
         )
 
         # Build signed block with correct signatures
-        signed_block = self._build_signed_block(self.signed_block_with_attestation.message, key_manager)
-        self.signed_block_with_attestation = signed_block
+        self.signed_block_with_attestation = self._build_signed_block(
+            self.signed_block_with_attestation.message, key_manager
+        )
 
         # Verify all signatures in the block
-        is_valid = signed_block.verify_signatures(self.anchor_state)
+        is_valid = self.signed_block_with_attestation.verify_signatures(self.anchor_state)
 
         if self.valid and not is_valid:
             raise AssertionError(
@@ -234,7 +234,7 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
         key_manager : XmssKeyManager
             Key manager for generating XMSS signatures.
 
-        Returns
+        Returns:
         -------
         SignedBlockWithAttestation
             The block with valid XMSS signatures.

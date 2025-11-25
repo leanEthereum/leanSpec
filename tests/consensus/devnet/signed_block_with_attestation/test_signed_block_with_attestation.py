@@ -135,5 +135,3 @@ def test_signed_block_with_single_attestation(
         signed_block_with_attestation=signed_block_with_attestation,
         valid=True,
     )
-
-
