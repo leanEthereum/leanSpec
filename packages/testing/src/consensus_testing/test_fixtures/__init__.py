@@ -2,10 +2,12 @@
 
 from .base import BaseConsensusFixture
 from .fork_choice import ForkChoiceTest
+from .signed_block_with_attestation import SignedBlockWithAttestationTest
 from .state_transition import StateTransitionTest
 
 __all__ = [
     "BaseConsensusFixture",
     "StateTransitionTest",
     "ForkChoiceTest",
+    "SignedBlockWithAttestationTest",
 ]
