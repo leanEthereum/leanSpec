@@ -22,6 +22,7 @@ from typing import (
     Any,
     ClassVar,
     Tuple,
+    overload,
 )
 
 from pydantic import Field, field_validator
@@ -157,9 +158,33 @@ class BaseBitlist(SSZModel):
         except Exception as e:
             raise ValueError(f"Cannot convert elements to Boolean: {e}") from e
 
-    def __getitem__(self, key: int | slice) -> Boolean | tuple[Boolean, ...]:
+    @overload
+    def __getitem__(self, key: int) -> Boolean: ...
+
+    @overload
+    def __getitem__(self, key: slice) -> list[Boolean]: ...
+
+    def __getitem__(self, key: int | slice) -> Boolean | list[Boolean]:
         """Get a bit by index or slice."""
+        if isinstance(key, slice):
+            return list(self.data[key])
         return self.data[key]
+
+    def __setitem__(self, key: int, value: bool | Boolean) -> None:
+        """Set a bit by index."""
+        new_data = list(self.data)
+        new_data[key] = Boolean(value)
+        object.__setattr__(self, "data", tuple(new_data))
+
+    def __add__(self, other: Any) -> Self:
+        """Concatenate this bitlist with another sequence."""
+        if isinstance(other, BaseBitlist):
+            new_data = self.data + other.data
+        elif isinstance(other, (list, tuple)):
+            new_data = self.data + tuple(Boolean(b) for b in other)
+        else:
+            return NotImplemented
+        return type(self)(data=new_data)
 
     @classmethod
     def is_fixed_size(cls) -> bool:

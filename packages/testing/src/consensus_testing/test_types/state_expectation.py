@@ -3,6 +3,12 @@
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state.types import (
+    HistoricalBlockHashes,
+    JustificationRoots,
+    JustificationValidators,
+    JustifiedSlots,
+)
 from lean_spec.types import Bytes32, CamelModel
 
 if TYPE_CHECKING:
@@ -45,14 +51,38 @@ class StateExpectation(CamelModel):
     validator_count: int | None = None
     """Expected number of validators."""
 
+    config_genesis_time: int | None = None
+    """Expected genesis time in the config."""
+
     latest_block_header_slot: Slot | None = None
     """Expected slot of the latest block header."""
+
+    latest_block_header_proposer_index: int | None = None
+    """Expected proposer index in the latest block header."""
+
+    latest_block_header_parent_root: Bytes32 | None = None
+    """Expected parent root in the latest block header."""
 
     latest_block_header_state_root: Bytes32 | None = None
     """Expected state root in the latest block header."""
 
+    latest_block_header_body_root: Bytes32 | None = None
+    """Expected body root in the latest block header."""
+
     historical_block_hashes_count: int | None = None
     """Expected number of historical block hashes."""
+
+    historical_block_hashes: HistoricalBlockHashes | None = None
+    """Expected historical block hashes collection."""
+
+    justified_slots: JustifiedSlots | None = None
+    """Expected justified slots bitlist."""
+
+    justifications_roots: JustificationRoots | None = None
+    """Expected justifications roots collection."""
+
+    justifications_validators: JustificationValidators | None = None
+    """Expected justifications validators bitlist."""
 
     def validate_against_state(self, state: "State") -> None:
         """
@@ -124,12 +154,36 @@ class StateExpectation(CamelModel):
                         f"expected {expected_value}"
                     )
 
+            elif field_name == "config_genesis_time":
+                actual_time = int(state.config.genesis_time)
+                if actual_time != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: config.genesis_time = {actual_time}, "
+                        f"expected {expected_value}"
+                    )
+
             elif field_name == "latest_block_header_slot":
                 actual_slot = state.latest_block_header.slot
                 if actual_slot != expected_value:
                     raise AssertionError(
                         f"State validation failed: latest_block_header.slot = {actual_slot}, "
                         f"expected {expected_value}"
+                    )
+
+            elif field_name == "latest_block_header_proposer_index":
+                actual_proposer = int(state.latest_block_header.proposer_index)
+                if actual_proposer != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: latest_block_header.proposer_index = "
+                        f"{actual_proposer}, expected {expected_value}"
+                    )
+
+            elif field_name == "latest_block_header_parent_root":
+                actual_parent_root = state.latest_block_header.parent_root
+                if actual_parent_root != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: latest_block_header.parent_root = "
+                        f"0x{actual_parent_root.hex()}, expected 0x{expected_value.hex()}"
                     )
 
             elif field_name == "latest_block_header_state_root":
@@ -140,10 +194,46 @@ class StateExpectation(CamelModel):
                         f"0x{actual_state_root.hex()}, expected 0x{expected_value.hex()}"
                     )
 
+            elif field_name == "latest_block_header_body_root":
+                actual_body_root = state.latest_block_header.body_root
+                if actual_body_root != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: latest_block_header.body_root = "
+                        f"0x{actual_body_root.hex()}, expected 0x{expected_value.hex()}"
+                    )
+
             elif field_name == "historical_block_hashes_count":
                 actual_count = len(state.historical_block_hashes)
                 if actual_count != expected_value:
                     raise AssertionError(
                         f"State validation failed: historical_block_hashes count = {actual_count}, "
                         f"expected {expected_value}"
+                    )
+
+            elif field_name == "historical_block_hashes":
+                if state.historical_block_hashes != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: historical_block_hashes = "
+                        f"{state.historical_block_hashes}, expected {expected_value}"
+                    )
+
+            elif field_name == "justified_slots":
+                if state.justified_slots != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: justified_slots = "
+                        f"{state.justified_slots}, expected {expected_value}"
+                    )
+
+            elif field_name == "justifications_roots":
+                if state.justifications_roots != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: justifications_roots = "
+                        f"{state.justifications_roots}, expected {expected_value}"
+                    )
+
+            elif field_name == "justifications_validators":
+                if state.justifications_validators != expected_value:
+                    raise AssertionError(
+                        f"State validation failed: justifications_validators = "
+                        f"{state.justifications_validators}, expected {expected_value}"
                     )

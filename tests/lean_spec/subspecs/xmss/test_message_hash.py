@@ -10,7 +10,8 @@ from lean_spec.subspecs.xmss.constants import (
 from lean_spec.subspecs.xmss.message_hash import (
     TEST_MESSAGE_HASHER,
 )
-from lean_spec.subspecs.xmss.utils import TEST_RAND, int_to_base_p
+from lean_spec.subspecs.xmss.rand import TEST_RAND
+from lean_spec.subspecs.xmss.utils import int_to_base_p
 from lean_spec.types import Uint64
 
 

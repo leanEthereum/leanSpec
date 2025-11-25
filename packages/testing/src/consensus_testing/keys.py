@@ -7,7 +7,8 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey
 from lean_spec.subspecs.xmss.interface import (
-    TEST_SIGNATURE_SCHEME as DEFAULT_SIGNATURE_SCHEME,
+    TEST_SIGNATURE_SCHEME,
+    GeneralizedXmssScheme,
 )
 from lean_spec.types import ValidatorIndex
 
@@ -36,7 +37,11 @@ class XmssKeyManager:
     DEFAULT_MAX_SLOT = Slot(100)
     """Default maximum slot horizon if not specified."""
 
-    def __init__(self, max_slot: Optional[Slot] = None) -> None:
+    def __init__(
+        self,
+        max_slot: Optional[Slot] = None,
+        scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME,
+    ) -> None:
         """
         Initialize the key manager.
 
@@ -45,6 +50,9 @@ class XmssKeyManager:
         max_slot : Slot, optional
             Highest slot number for which keys must remain valid.
             Defaults to `Slot(100)`.
+        scheme : GeneralizedXmssScheme, optional
+            The XMSS scheme to use.
+            Defaults to `TEST_SIGNATURE_SCHEME`.
 
         Notes:
         -----
@@ -52,6 +60,7 @@ class XmssKeyManager:
         `{ValidatorIndex → KeyPair}`.
         """
         self.max_slot = max_slot if max_slot is not None else self.DEFAULT_MAX_SLOT
+        self.scheme = scheme
         self._key_pairs: dict[ValidatorIndex, KeyPair] = {}
 
     def __getitem__(self, validator_index: ValidatorIndex) -> KeyPair:
@@ -98,7 +107,7 @@ class XmssKeyManager:
         # The seed is set to 0 for deterministic test keys.
         from lean_spec.types import Uint64
 
-        pk, sk = DEFAULT_SIGNATURE_SCHEME.key_gen(Uint64(0), Uint64(num_active_epochs))
+        pk, sk = self.scheme.key_gen(Uint64(0), Uint64(num_active_epochs))
 
         # Store as a cohesive unit and return.
         key_pair = KeyPair(public=pk, secret=sk)
@@ -139,16 +148,11 @@ class XmssKeyManager:
         # Each slot gets its own epoch to avoid key reuse.
         epoch = attestation.data.slot
 
-        # Advance the key's prepared window until it covers the target epoch.
-        #
-        # We use the scheme that the key was generated with.
-        scheme = DEFAULT_SIGNATURE_SCHEME
-
         # Loop until the epoch is inside the prepared interval
-        prepared_interval = scheme.get_prepared_interval(sk)
+        prepared_interval = self.scheme.get_prepared_interval(sk)
         while int(epoch) not in prepared_interval:
             # Check if we're advancing past the key's total lifetime
-            activation_interval = scheme.get_activation_interval(sk)
+            activation_interval = self.scheme.get_activation_interval(sk)
             if prepared_interval.stop >= activation_interval.stop:
                 raise ValueError(
                     f"Cannot sign for epoch {epoch}: "
@@ -156,10 +160,10 @@ class XmssKeyManager:
                 )
 
             # Advance the key and get the new key object
-            sk = scheme.advance_preparation(sk)
+            sk = self.scheme.advance_preparation(sk)
 
             # Update the prepared interval for the next loop check
-            prepared_interval = scheme.get_prepared_interval(sk)
+            prepared_interval = self.scheme.get_prepared_interval(sk)
 
         # Update the cached key pair with the new, advanced secret key.
         # This ensures the *next* call to sign() uses the advanced state.
@@ -171,12 +175,12 @@ class XmssKeyManager:
         message = bytes(hash_tree_root(attestation))
 
         # Generate the XMSS signature using the validator's (now prepared) secret key.
-        xmss_sig = scheme.sign(sk, epoch, message)
+        xmss_sig = self.scheme.sign(sk, epoch, message)
 
         # Convert the signature to the wire format (byte array).
-        signature_bytes = xmss_sig.to_bytes(scheme.config)
+        signature_bytes = xmss_sig.to_bytes(self.scheme.config)
 
-        # Ensure the signature meets the consensus spec length (3100 bytes).
+        # Ensure the signature meets the consensus spec length (3116 bytes).
         #
         # This is necessary when using TEST_CONFIG (796 bytes) vs PROD_CONFIG.
         # Padding with zeros on the right maintains compatibility.

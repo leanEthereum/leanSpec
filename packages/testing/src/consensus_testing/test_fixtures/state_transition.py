@@ -127,21 +127,21 @@ class StateTransitionTest(BaseConsensusFixture):
 
         # Initialize filled_blocks list that will be populated as we process blocks
         filled_blocks: list[Block] = []
-
         try:
             state = self.pre
 
             for block_spec in self.blocks:
-                # Fill Block from BlockSpec
-                block = self._build_block_from_spec(block_spec, state)
+                # Build block and optionally get cached post-state to avoid redundant transitions
+                block, cached_state = self._build_block_from_spec(block_spec, state)
 
                 # Store the filled Block for serialization
                 filled_blocks.append(block)
 
-                # Process block through state transition
-                state = state.state_transition(
-                    block=block,
-                    valid_signatures=True,
+                # Use cached state if available, otherwise run state transition
+                state = (
+                    cached_state
+                    if cached_state is not None
+                    else state.state_transition(block=block, valid_signatures=True)
                 )
 
             actual_post_state = state
@@ -175,12 +175,12 @@ class StateTransitionTest(BaseConsensusFixture):
         # Return self (fixture is already complete)
         return self
 
-    def _build_block_from_spec(self, spec: BlockSpec, state: State) -> Block:
+    def _build_block_from_spec(self, spec: BlockSpec, state: State) -> tuple[Block, State | None]:
         """
-        Build a Block from a BlockSpec for state transition tests.
+        Build a Block from a BlockSpec, optionally caching the post-state.
 
-        Uses provided fields from spec, computes any missing fields.
-        This mimics what a local block builder would do.
+        Returns both the block and the cached post-state (if computed) to avoid
+        redundant state transitions.
 
         TODO: If the spec implements a State.produce_block() method in the future,
         we should use that instead of manually computing fields here. Until then,
@@ -189,14 +189,14 @@ class StateTransitionTest(BaseConsensusFixture):
         Parameters
         ----------
         spec : BlockSpec
-            The block specification with optional field overrides.
+            Block specification with optional field overrides.
         state : State
-            The current state to build against.
+            Current state to build against.
 
         Returns:
         -------
-        Block
-            A complete block ready for state_transition.
+        tuple[Block, State | None]
+            Block and cached post-state (None if not computed).
         """
         # Use provided proposer_index or compute it
         if spec.proposer_index is not None:
@@ -217,11 +217,14 @@ class StateTransitionTest(BaseConsensusFixture):
         else:
             body = BlockBody(attestations=Attestations(data=[]))
 
-        # Use provided state_root or compute it via dry-run
+        # Compute state_root and cache post-state
+        cached_post_state: State | None = None
+
         if spec.state_root is not None:
+            # Explicit override: use provided state root, no caching possible
             state_root = spec.state_root
         else:
-            # Need to dry-run to compute state_root
+            # Compute state_root via dry-run state transition
             temp_state = state.process_slots(spec.slot)
             temp_block = Block(
                 slot=spec.slot,
@@ -230,14 +233,21 @@ class StateTransitionTest(BaseConsensusFixture):
                 state_root=Bytes32.zero(),
                 body=body,
             )
-            post_state = temp_state.process_block(temp_block)
-            state_root = hash_tree_root(post_state)
 
-        # Create final block with all fields
-        return Block(
+            # For invalid tests, return incomplete block without processing
+            if self.expect_exception is not None:
+                return temp_block, None
+
+            # Run state transition once and cache result
+            cached_post_state = temp_state.process_block(temp_block)
+            state_root = hash_tree_root(cached_post_state)
+
+        # Return final block with cached post-state
+        block = Block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
             state_root=state_root,
             body=body,
         )
+        return block, cached_post_state

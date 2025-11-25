@@ -3,7 +3,7 @@
 from .base import CamelModel, StrictBaseModel
 from .basispt import BasisPoint
 from .boolean import Boolean
-from .byte_arrays import Bytes32, Bytes52, Bytes3100
+from .byte_arrays import Bytes32, Bytes52, Bytes3116
 from .collections import SSZList, SSZVector
 from .container import Container
 from .uint import Uint64
@@ -14,7 +14,7 @@ __all__ = [
     "BasisPoint",
     "Bytes32",
     "Bytes52",
-    "Bytes3100",
+    "Bytes3116",
     "CamelModel",
     "StrictBaseModel",
     "ValidatorIndex",

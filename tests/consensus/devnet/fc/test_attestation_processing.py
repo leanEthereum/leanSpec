@@ -3,19 +3,12 @@
 import pytest
 from consensus_testing import (
     AttestationCheck,
-    AttestationStep,
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
     StoreChecks,
 )
 
-from lean_spec.subspecs.containers import (
-    Attestation,
-    AttestationData,
-    Checkpoint,
-    SignedAttestation,
-)
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import ValidatorIndex
 

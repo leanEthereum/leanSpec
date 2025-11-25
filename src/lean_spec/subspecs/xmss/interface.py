@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
+from pydantic import model_validator
+
 from lean_spec.subspecs.xmss.target_sum import (
     PROD_TARGET_SUM_ENCODER,
     TEST_TARGET_SUM_ENCODER,
     TargetSumEncoder,
 )
-from lean_spec.types.uint import Uint64
+from lean_spec.types import StrictBaseModel, Uint64
 
 from .constants import (
     PROD_CONFIG,
@@ -29,39 +31,60 @@ from .merkle_tree import (
     MerkleTree,
 )
 from .prf import PROD_PRF, TEST_PRF, Prf
+from .rand import PROD_RAND, TEST_RAND, Rand
 from .tweak_hash import (
     PROD_TWEAK_HASHER,
     TEST_TWEAK_HASHER,
     TweakHasher,
 )
-from .utils import (
-    PROD_RAND,
-    TEST_RAND,
-    Rand,
-    bottom_tree_from_prf_key,
-    expand_activation_time,
-)
+from .utils import bottom_tree_from_prf_key, expand_activation_time
 
 
-class GeneralizedXmssScheme:
-    """Instance of the Generalized XMSS signature scheme for a given config."""
+class GeneralizedXmssScheme(StrictBaseModel):
+    """
+    Instance of the Generalized XMSS signature scheme for a given config.
 
-    def __init__(
-        self,
-        config: XmssConfig,
-        prf: Prf,
-        hasher: TweakHasher,
-        merkle_tree: MerkleTree,
-        encoder: TargetSumEncoder,
-        rand: Rand,
-    ):
-        """Initializes the scheme with a specific parameter set."""
-        self.config = config
-        self.prf = prf
-        self.hasher = hasher
-        self.merkle_tree = merkle_tree
-        self.encoder = encoder
-        self.rand = rand
+    This class enforces strict type checking to ensure only approved component
+    implementations are used. Subclasses of the base component types (such as
+    SeededPrf or SeededRand) are explicitly rejected.
+    """
+
+    config: XmssConfig
+    """Configuration parameters for the XMSS scheme."""
+
+    prf: Prf
+    """Pseudorandom function for deriving secret values."""
+
+    hasher: TweakHasher
+    """Hash function with tweakable domain separation."""
+
+    merkle_tree: MerkleTree
+    """Merkle tree implementation for authentication paths."""
+
+    encoder: TargetSumEncoder
+    """Message encoder that produces valid codewords."""
+
+    rand: Rand
+    """Random data generator for key generation."""
+
+    @model_validator(mode="after")
+    def enforce_strict_types(self) -> "GeneralizedXmssScheme":
+        """Validates that only exact approved types are used (rejects subclasses)."""
+        checks = {
+            "config": XmssConfig,
+            "prf": Prf,
+            "hasher": TweakHasher,
+            "merkle_tree": MerkleTree,
+            "encoder": TargetSumEncoder,
+            "rand": Rand,
+        }
+        for field, expected in checks.items():
+            if type(getattr(self, field)) is not expected:
+                raise TypeError(
+                    f"{field} must be exactly {expected.__name__}, "
+                    f"got {type(getattr(self, field)).__name__}"
+                )
+        return self
 
     def key_gen(
         self, activation_epoch: Uint64, num_active_epochs: Uint64
@@ -571,24 +594,21 @@ class GeneralizedXmssScheme:
 
 
 PROD_SIGNATURE_SCHEME = GeneralizedXmssScheme(
-    PROD_CONFIG,
-    PROD_PRF,
-    PROD_TWEAK_HASHER,
-    PROD_MERKLE_TREE,
-    PROD_TARGET_SUM_ENCODER,
-    PROD_RAND,
+    config=PROD_CONFIG,
+    prf=PROD_PRF,
+    hasher=PROD_TWEAK_HASHER,
+    merkle_tree=PROD_MERKLE_TREE,
+    encoder=PROD_TARGET_SUM_ENCODER,
+    rand=PROD_RAND,
 )
 """An instance configured for production-level parameters."""
 
 TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(
-    TEST_CONFIG,
-    TEST_PRF,
-    TEST_TWEAK_HASHER,
-    TEST_MERKLE_TREE,
-    TEST_TARGET_SUM_ENCODER,
-    TEST_RAND,
+    config=TEST_CONFIG,
+    prf=TEST_PRF,
+    hasher=TEST_TWEAK_HASHER,
+    merkle_tree=TEST_MERKLE_TREE,
+    encoder=TEST_TARGET_SUM_ENCODER,
+    rand=TEST_RAND,
 )
 """A lightweight instance for test environments."""
-
-DEFAULT_SIGNATURE_SCHEME = PROD_SIGNATURE_SCHEME
-"""The default signature scheme to use."""

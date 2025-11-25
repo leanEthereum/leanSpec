@@ -29,7 +29,7 @@ from __future__ import annotations
 from itertools import chain
 from typing import List, Union
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from lean_spec.types import StrictBaseModel, Uint64
 
@@ -79,18 +79,30 @@ class ChainTweak(StrictBaseModel):
     step: int = Field(ge=0, description="The step number within the chain (from 1 to BASE-1).")
 
 
-class TweakHasher:
+class TweakHasher(StrictBaseModel):
     """An instance of the Tweakable Hasher for a given config."""
 
-    def __init__(self, config: XmssConfig, poseidon_hasher: PoseidonXmss):
-        """Initializes the hasher with a specific parameter set."""
-        self.config = config
-        self.poseidon = poseidon_hasher
+    config: XmssConfig
+    """Configuration parameters for the hasher."""
 
-    Tweak = Union[TreeTweak, ChainTweak]
-    """A type alias representing any valid tweak structure."""
+    poseidon: PoseidonXmss
+    """Poseidon permutation instance for hashing."""
 
-    def _encode_tweak(self, tweak: Tweak, length: int) -> List[Fp]:
+    @model_validator(mode="after")
+    def enforce_strict_types(self) -> "TweakHasher":
+        """Validates that only exact approved types are used (rejects subclasses)."""
+        from .poseidon import PoseidonXmss
+
+        checks = {"config": XmssConfig, "poseidon": PoseidonXmss}
+        for field, expected in checks.items():
+            if type(getattr(self, field)) is not expected:
+                raise TypeError(
+                    f"{field} must be exactly {expected.__name__}, "
+                    f"got {type(getattr(self, field)).__name__}"
+                )
+        return self
+
+    def _encode_tweak(self, tweak: Union[TreeTweak, ChainTweak], length: int) -> List[Fp]:
         """
         Encodes a structured tweak object into a list of field elements.
 
@@ -137,7 +149,7 @@ class TweakHasher:
     def apply(
         self,
         parameter: Parameter,
-        tweak: Tweak,
+        tweak: Union[TreeTweak, ChainTweak],
         message_parts: List[HashDigest],
     ) -> HashDigest:
         """
@@ -246,8 +258,8 @@ class TweakHasher:
         return current_digest
 
 
-PROD_TWEAK_HASHER = TweakHasher(PROD_CONFIG, PROD_POSEIDON)
+PROD_TWEAK_HASHER = TweakHasher(config=PROD_CONFIG, poseidon=PROD_POSEIDON)
 """An instance configured for production-level parameters."""
 
-TEST_TWEAK_HASHER = TweakHasher(TEST_CONFIG, TEST_POSEIDON)
+TEST_TWEAK_HASHER = TweakHasher(config=TEST_CONFIG, poseidon=TEST_POSEIDON)
 """A lightweight instance for test environments."""

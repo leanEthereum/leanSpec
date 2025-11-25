@@ -6,8 +6,6 @@ recent blocks, and validator attestations. State also records which blocks are
 justified and finalized.
 """
 
-from typing import Dict, List
-
 from lean_spec.subspecs.ssz.constants import ZERO_HASH
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
@@ -116,135 +114,12 @@ class State(Container):
             justifications_validators=JustificationValidators(data=[]),
         )
 
-    def is_proposer(self, validator_index: ValidatorIndex) -> bool:
-        """
-        Check if a validator is the proposer for the current slot.
-
-        Parameters
-        ----------
-        validator_index : ValidatorIndex
-            The index of the validator to check.
-
-        Returns:
-        -------
-        bool
-            True if the validator is the proposer for the current slot.
-        """
-        # Forward to the global proposer function with state context.
-        return is_proposer(
-            validator_index=validator_index,
-            slot=self.slot,
-            num_validators=Uint64(self.validators.count),
-        )
-
-    def get_justifications(self) -> Dict[Bytes32, List[Boolean]]:
-        """
-        Reconstruct a map from justified block roots to validator vote lists.
-
-        This method takes the flat state encoding and rebuilds the associative
-        structure for easier processing.
-
-        Returns:
-        -------
-        Dict[Bytes32, List[Boolean]]
-            A mapping from justified block root to the list of validator votes.
-        """
-        # No justified roots means no justifications to reconstruct.
-        if not self.justifications_roots:
-            return {}
-
-        # Each root has exactly validator_count votes in the flat encoding.
-        validator_count = self.validators.count
-
-        # Extract the flattened validator votes.
-        flat_votes = list(self.justifications_validators)
-
-        # Reconstruct the map: each root gets its corresponding vote slice.
-        return {
-            root: flat_votes[i * validator_count : (i + 1) * validator_count]
-            for i, root in enumerate(self.justifications_roots)
-        }
-
-    def with_justifications(
-        self,
-        justifications: Dict[Bytes32, List[Boolean]],
-    ) -> "State":
-        """
-        Update the state with a new set of justifications.
-
-        This method flattens the justifications map into the state's flat
-        encoding for SSZ compatibility.
-
-        Parameters
-        ----------
-        justifications : Dict[Bytes32, List[Boolean]]
-            A mapping from justified block root to validator vote lists.
-
-        Returns:
-        -------
-        State
-            A new state with updated justification data.
-        """
-        # Build the flattened lists from the map, with sorted keys for deterministic order.
-        roots_list = []
-        votes_list = []
-        for root in sorted(justifications.keys()):
-            votes = justifications[root]
-            # Validate that the vote list has the expected length.
-            expected_len = self.validators.count
-            if len(votes) != expected_len:
-                raise AssertionError(f"Vote list for root {root.hex()} has incorrect length")
-
-            # Add the root to the roots list.
-            roots_list.append(root)
-            # Extend the flattened list with the votes for this root.
-            votes_list.extend(votes)
-
-        # Return a new state object with the updated fields.
-        return self.model_copy(
-            update={
-                "justifications_roots": JustificationRoots(data=roots_list),
-                "justifications_validators": JustificationValidators(data=votes_list),
-            }
-        )
-
-    def process_slot(self) -> "State":
-        """
-        Perform per-slot maintenance tasks.
-
-        If we are on the slot immediately after a block, the latest block header
-        has an empty state_root. In that case, cache the pre-block state root into
-        that header. Otherwise, no change is required.
-
-        Returns:
-        -------
-        State
-            A new state with latest_block_header.state_root set if needed.
-        """
-        # If the latest block header already has a state root, no action is needed.
-        if self.latest_block_header.state_root != Bytes32.zero():
-            return self
-
-        # If the latest block header has no state root, fill it now.
-        #
-        # This occurs on the first slot after a block.
-        # - We compute the root of the current (pre-block) state.
-        # - We copy the header and set its state_root to the computed value.
-        # - We return a new state with the updated header in place.
-        return self.model_copy(
-            update={
-                "latest_block_header": self.latest_block_header.model_copy(
-                    update={"state_root": hash_tree_root(self)}
-                )
-            }
-        )
-
     def process_slots(self, target_slot: Slot) -> "State":
         """
         Advance the state through empty slots up to, but not including, target_slot.
 
         The loop:
-          - Calls process_slot once per missing slot.
+          - Performs per-slot maintenance (e.g., state root caching).
           - Increments the slot counter after each call.
         The function returns a new state with slot == target_slot.
 
@@ -271,10 +146,41 @@ class State(Container):
 
         # Step through each missing slot:
         while state.slot < target_slot:
-            # Perform per-slot housekeeping (e.g., cache the state root).
-            state = state.process_slot()
-            # Increase the slot number by one for the next iteration.
-            state = state.model_copy(update={"slot": Slot(state.slot + Slot(1))})
+            # Per-Slot Housekeeping & Slot Increment
+            #
+            # This single statement performs two tasks for each empty slot
+            # in a single, immutable update:
+            #
+            # 1. State Root Caching (Conditional):
+            #    It checks if the latest block header has an empty state root.
+            #    This is true only for the *first* empty slot immediately
+            #    following a block.
+            #
+            #    - If it is empty, we must cache the pre-block state root
+            #    (the hash of the state *before* this slot increment) into that
+            #    header. We do this by:
+            #    a) Computing the root of the current (pre-block) state.
+            #    b) Creating a *new* header object with this computed state root
+            #       to be included in the update.
+            #
+            #    - If the state root is *not* empty, it means we are in a
+            #    sequence of empty slots, and we simply use the existing header.
+            #
+            # 2. Slot Increment:
+            #    It always increments the slot number by one.
+            #
+            state = state.model_copy(
+                update={
+                    "latest_block_header": (
+                        state.latest_block_header.model_copy(
+                            update={"state_root": hash_tree_root(state)}
+                        )
+                        if state.latest_block_header.state_root == Bytes32.zero()
+                        else state.latest_block_header
+                    ),
+                    "slot": Slot(state.slot + Slot(1)),
+                }
+            )
 
         # Reached the target slot. Return the advanced state.
         return state
@@ -322,7 +228,11 @@ class State(Container):
         assert block.slot > parent_header.slot, "Block is older than latest header"
 
         # The proposer must be the expected validator for this slot.
-        assert self.is_proposer(block.proposer_index), "Incorrect block proposer"
+        assert is_proposer(
+            validator_index=block.proposer_index,
+            slot=self.slot,
+            num_validators=Uint64(self.validators.count),
+        ), "Incorrect block proposer"
 
         # The declared parent must match the hash of the latest block header.
         assert block.parent_root == parent_root, "Block parent root mismatch"
@@ -347,12 +257,12 @@ class State(Container):
 
         # Build new historical hashes list
         new_historical_hashes_data = (
-            list(self.historical_block_hashes) + [parent_root] + ([ZERO_HASH] * num_empty_slots)
+            self.historical_block_hashes + [parent_root] + ([ZERO_HASH] * num_empty_slots)
         )
 
         # Build new justified slots list
         new_justified_slots_data = (
-            list(self.justified_slots)
+            self.justified_slots
             + [Boolean(is_genesis_parent)]
             + ([Boolean(False)] * num_empty_slots)
         )
@@ -426,10 +336,39 @@ class State(Container):
         State
             A new state with updated justification/finalization.
         """
-        # Start with current justifications and finalization state.
-        justified_slots = list(self.justified_slots)
+        # NOTE:
+        # The state already contains three pieces of data:
+        #   1. A list of block roots that have received justification votes.
+        #   2. A long sequence of boolean entries representing all validator votes,
+        #      flattened into a single list.
+        #   3. The total number of validators.
+        #
+        # The flattened vote list is organized so that votes from all validators for
+        # each block root appear together, and those groups are simply placed back-to-back.
+        #
+        # To work with attestations, we must rebuild the intuitive structure:
+        #   “for each block root, here is the list of validator votes for it”.
+        #
+        # Reconstructing this is done by cutting the long vote list into consecutive
+        # segments, where:
+        #   - each segment corresponds to one block root,
+        #   - each segment has length equal to the number of validators,
+        #   - and the ordering of block roots is preserved.
+        justifications = (
+            {
+                root: self.justifications_validators[
+                    i * self.validators.count : (i + 1) * self.validators.count
+                ]
+                for i, root in enumerate(self.justifications_roots)
+            }
+            if self.justifications_roots
+            else {}
+        )
+
+        # Track state changes to be applied at the end
         latest_justified = self.latest_justified
         latest_finalized = self.latest_finalized
+        justified_slots = self.justified_slots
 
         # Process each attestation in the block.
         for attestation in attestations:
@@ -437,50 +376,97 @@ class State(Container):
             source = attestation_data.source
             target = attestation_data.target
 
-            # Validate that this is a reasonable attestation (source comes before target).
-            if source.slot.as_int() >= target.slot.as_int():
-                continue  # Skip invalid attestation
+            # Ignore attestations whose source is not already justified,
+            # or whose target is not in the history, or whose target is not a
+            # valid justifiable slot
+            source_slot = source.slot.as_int()
+            target_slot = target.slot.as_int()
 
-            # Check if source checkpoint is justified.
-            source_slot_int = source.slot.as_int()
-            target_slot_int = target.slot.as_int()
+            # Source slot must be justified
+            if not justified_slots[source_slot]:
+                continue
 
-            # Ensure we have enough justified slots history.
-            if source_slot_int < len(justified_slots):
-                source_is_justified = justified_slots[source_slot_int]
-            else:
-                continue  # Source is too far in the past
+            # Target slot must not be already justified
+            # This condition is missing in 3sf mini but has been added here because
+            # we don't want to re-introduce the target again for remaining votes if
+            # the slot is already justified and its tracking already cleared out
+            # from justifications map
+            if justified_slots[target_slot]:
+                continue
 
-            # If source is justified, consider justifying the target.
-            if (
-                source_is_justified
-                and target_slot_int < len(justified_slots)
-                and justified_slots[target_slot_int]
-            ):
-                # Target is already justified, check for finalization.
-                if (
-                    source.slot.as_int() + 1 == target.slot.as_int()
-                    and latest_justified.slot.as_int() < target.slot.as_int()
+            # Source root must match the state's historical block hashes
+            if source.root != self.historical_block_hashes[source_slot]:
+                continue
+
+            # Target root must match the state's historical block hashes
+            if target.root != self.historical_block_hashes[target_slot]:
+                continue
+
+            # Target slot must be after source slot
+            if target.slot <= source.slot:
+                continue
+
+            # Target slot must be justifiable after the latest finalized slot
+            if not target.slot.is_justifiable_after(self.latest_finalized.slot):
+                continue
+
+            # Track attempts to justify new hashes
+            if target.root not in justifications:
+                justifications[target.root] = [Boolean(False)] * self.validators.count
+
+            validator_id = attestation.validator_id.as_int()
+            if not justifications[target.root][validator_id]:
+                justifications[target.root][validator_id] = Boolean(True)
+
+            count = sum(bool(justified) for justified in justifications[target.root])
+
+            # If 2/3 attested to the same new valid hash to justify
+            # in 3sf mini this is strict equality, but we have updated it to >=
+            # also have modified it from count >= (2 * state.config.num_validators) // 3
+            # to prevent integer division which could lead to less than 2/3 of validators
+            # justifying specially if the num_validators is low in testing scenarios
+            if 3 * count >= (2 * self.validators.count):
+                latest_justified = target
+                justified_slots[target_slot] = True
+                del justifications[target.root]
+
+                # Finalization: if the target is the next valid justifiable
+                # hash after the source
+                if not any(
+                    Slot(slot).is_justifiable_after(self.latest_finalized.slot)
+                    for slot in range(source_slot + 1, target_slot)
                 ):
-                    # Consecutive justified checkpoints -> finalize the source.
                     latest_finalized = source
-                    latest_justified = target
 
-            else:
-                # Try to justify the target if source is justified.
-                if source_is_justified:
-                    # Ensure justified_slots is long enough, then mark the target slot.
-                    while len(justified_slots) <= target_slot_int:
-                        justified_slots.append(Boolean(False))
-                    justified_slots[target_slot_int] = Boolean(True)
+        # Converting the justification map into SSZ form
+        #
+        # The justification data has been maintained as a convenient map from
+        # block roots to lists of validator votes. Before storing it in the
+        # consensus state, it must be transformed into the strict SSZ layout.
+        #
+        # This requires two steps:
+        #
+        #   1. Order all block roots deterministically.
+        #      This ensures every node produces the same state representation.
+        #
+        #   2. Produce a single list of votes by taking, in that order,
+        #      the complete vote list for each block root and placing them
+        #      back-to-back without nesting.
+        #
+        # The result is a list of ordered roots and one flat sequence of votes,
+        # matching the exact structure expected by SSZ.
+        sorted_roots = sorted(justifications.keys())
 
-                    # Update latest_justified if this target is newer.
-                    if target.slot.as_int() > latest_justified.slot.as_int():
-                        latest_justified = target
+        justifications_roots = JustificationRoots(data=sorted_roots)
+        justifications_validators = JustificationValidators(
+            data=[vote for root in sorted_roots for vote in justifications[root]]
+        )
 
         # Return the updated state.
         return self.model_copy(
             update={
+                "justifications_roots": justifications_roots,
+                "justifications_validators": justifications_validators,
                 "justified_slots": self.justified_slots.__class__(data=justified_slots),
                 "latest_justified": latest_justified,
                 "latest_finalized": latest_finalized,

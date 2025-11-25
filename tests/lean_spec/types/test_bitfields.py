@@ -166,6 +166,41 @@ class TestBitlist:
         with pytest.raises(ValidationError):
             model(value=invalid_value)
 
+    def test_add_with_list(self) -> None:
+        """Tests concatenating a Bitlist with a regular list."""
+
+        class Bitlist8(BaseBitlist):
+            LIMIT = 8
+
+        bitlist = Bitlist8(data=[True, False, True])
+        result = bitlist + [False, True]
+        assert len(result) == 5
+        assert list(result.data) == [True, False, True, False, True]
+        assert isinstance(result, Bitlist8)
+
+    def test_add_with_bitlist(self) -> None:
+        """Tests concatenating two Bitlists of the same type."""
+
+        class Bitlist8(BaseBitlist):
+            LIMIT = 8
+
+        bitlist1 = Bitlist8(data=[True, False])
+        bitlist2 = Bitlist8(data=[True, True])
+        result = bitlist1 + bitlist2
+        assert len(result) == 4
+        assert list(result.data) == [True, False, True, True]
+        assert isinstance(result, Bitlist8)
+
+    def test_add_exceeding_limit_raises_error(self) -> None:
+        """Tests that concatenating beyond the limit raises an error."""
+
+        class Bitlist4(BaseBitlist):
+            LIMIT = 4
+
+        bitlist = Bitlist4(data=[True, False, True])
+        with pytest.raises(ValueError, match="cannot contain more than 4 bits"):
+            bitlist + [False, True]
+
 
 class TestBitfieldSerialization:
     """Tests the `encode_bytes` and `decode_bytes` methods for bitfields."""

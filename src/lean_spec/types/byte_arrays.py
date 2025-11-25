@@ -231,10 +231,10 @@ class Bytes96(BaseBytes):
     LENGTH = 96
 
 
-class Bytes3100(BaseBytes):
-    """Fixed-size byte array of exactly 3100 bytes."""
+class Bytes3116(BaseBytes):
+    """Fixed-size byte array of exactly 3116 bytes."""
 
-    LENGTH = 3100
+    LENGTH = 3116
 
 
 class BaseByteList(SSZModel):

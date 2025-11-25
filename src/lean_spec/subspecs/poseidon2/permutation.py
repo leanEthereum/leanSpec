@@ -211,26 +211,17 @@ def internal_linear_layer(state: List[Fp], params: Poseidon2Params) -> List[Fp]:
     width = params.width
     diag_vector = params.internal_diag_vectors
 
-    # Construct the M_I matrix explicitly.
+    # Compute M_I * state = (J + D) * state = J*state + D*state
     #
-    # It has dimensions width x width.
-    m_i = [[Fp(value=1) for _ in range(width)] for _ in range(width)]
+    # J*state is a vector where each element is the sum of all elements in state.
+    # D*state is element-wise multiplication of diagonal with state.
 
-    # Add the diagonal part (D) to the all-ones matrix (J)
-    #
-    # The result is M_I = J + D.
-    for i in range(width):
-        m_i[i][i] += diag_vector[i]
+    # Calculate the sum of all state elements once (for J*state)
+    state_sum = sum(state, Fp(value=0))
 
-    # Perform standard matrix-vector multiplication: new_state = m_i * state
-    #
-    # Initialize the result vector with zeros.
-    new_state = [Fp(value=0)] * width
-
-    # For each row in the matrix, calculate the dot product of that row with the state vector.
-    for i in range(width):
-        for j in range(width):
-            new_state[i] += m_i[i][j] * state[j]
+    # Compute new_state[i] = state_sum + diag_vector[i] * state[i]
+    # This is equivalent to (J + D) * state but much faster.
+    new_state = [state_sum + diag_vector[i] * state[i] for i in range(width)]
 
     return new_state
 

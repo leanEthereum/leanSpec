@@ -15,8 +15,8 @@ from .containers import HashDigest, HashTreeLayer, HashTreeOpening, Parameter
 from .tweak_hash import TreeTweak
 
 if TYPE_CHECKING:
+    from .rand import Rand
     from .tweak_hash import TweakHasher
-    from .utils import Rand
 
 
 def _get_padded_layer(rand: Rand, nodes: List[HashDigest], start_index: int) -> HashTreeLayer:

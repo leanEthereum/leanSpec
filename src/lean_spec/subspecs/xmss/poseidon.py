@@ -24,6 +24,10 @@ from __future__ import annotations
 
 from typing import List
 
+from pydantic import model_validator
+
+from lean_spec.types import StrictBaseModel
+
 from ..koalabear import Fp
 from ..poseidon2.permutation import (
     PARAMS_16,
@@ -35,13 +39,26 @@ from .containers import HashDigest
 from .utils import int_to_base_p
 
 
-class PoseidonXmss:
+class PoseidonXmss(StrictBaseModel):
     """An instance of the Poseidon2 hash engine for the XMSS scheme."""
 
-    def __init__(self, params16: Poseidon2Params, params24: Poseidon2Params):
-        """Initializes the hasher with specific Poseidon2 permutations."""
-        self.params16 = params16
-        self.params24 = params24
+    params16: Poseidon2Params
+    """Poseidon2 parameters for 16-width permutation."""
+
+    params24: Poseidon2Params
+    """Poseidon2 parameters for 24-width permutation."""
+
+    @model_validator(mode="after")
+    def enforce_strict_types(self) -> "PoseidonXmss":
+        """Validates that only exact approved types are used (rejects subclasses)."""
+        checks = {"params16": Poseidon2Params, "params24": Poseidon2Params}
+        for field, expected in checks.items():
+            if type(getattr(self, field)) is not expected:
+                raise TypeError(
+                    f"{field} must be exactly {expected.__name__}, "
+                    f"got {type(getattr(self, field)).__name__}"
+                )
+        return self
 
     def compress(self, input_vec: List[Fp], width: int, output_len: int) -> HashDigest:
         """
@@ -198,8 +215,8 @@ class PoseidonXmss:
         return output[:output_len]
 
 
-# An instance configured for production-level parameters.
-PROD_POSEIDON: PoseidonXmss = PoseidonXmss(PARAMS_16, PARAMS_24)
+PROD_POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
+"""An instance configured for production-level parameters."""
 
-# A lightweight instance for test environments.
-TEST_POSEIDON: PoseidonXmss = PoseidonXmss(PARAMS_16, PARAMS_24)
+TEST_POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
+"""A lightweight instance for test environments."""
