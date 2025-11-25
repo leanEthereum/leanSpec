@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, ClassVar, Dict
+from typing import Any, ClassVar, Dict, cast
 
 from pydantic import model_serializer, model_validator
 
@@ -105,7 +105,7 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
         - signedBlockWithAttestation: The complete signed block with signatures
         """
         # Get default serialization
-        data = serializer(self)
+        data = cast(Dict[str, Any], serializer(self))
         signed_block = self.signed_block_with_attestation
 
         if self.anchor_state is not None:
