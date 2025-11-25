@@ -99,8 +99,8 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
 
         Outputs:
         - blockWithAttestation: The unsigned block with proposer attestation
-        - attester_pubkeys: Array of public keys for attestations in block body (in order)
-        - proposer_pubkey: The proposer's public key
+        - attesterPubkeys: Array of public keys for attestations in block body (in order)
+        - proposerPubkey: The proposer's public key
         - maxSlot: Maximum slot value
         - signedBlockWithAttestation: The complete signed block with signatures
         """
@@ -127,10 +127,10 @@ class SignedBlockWithAttestationTest(BaseConsensusFixture):
                 proposer.pubkey.hex() if isinstance(proposer.pubkey, bytes) else proposer.pubkey
             )
 
-            data["blockWithAttestation"] = signed_block.message.model_dump(mode="json")
-            data["attester_pubkeys"] = attester_pubkeys
-            data["proposer_pubkey"] = proposer_pubkey
-            data["signedBlockWithAttestation"] = signed_block.model_dump(mode="json")
+            data["blockWithAttestation"] = signed_block.message.to_json()
+            data["attesterPubkeys"] = attester_pubkeys
+            data["proposerPubkey"] = proposer_pubkey
+            data["signedBlockWithAttestation"] = signed_block.to_json()
             data.pop("container", None)
             data.pop("anchorState", None)
 
