@@ -437,11 +437,27 @@ class Store(Container):
         # Execute state transition function to compute post-block state
         post_state = copy.deepcopy(parent_state).state_transition(block, valid_signatures)
 
+        # If the new post-state has a higher justified checkpoint, update the store's latest justified checkpoint.
+        latest_justified = (
+            post_state.latest_justified
+            if post_state.latest_justified.slot > self.latest_justified.slot
+            else self.latest_justified
+        )
+
+        # If the new post-state has a higher finalized checkpoint, update the store's latest finalized checkpoint.
+        latest_finalized = (
+            post_state.latest_finalized
+            if post_state.latest_finalized.slot > self.latest_finalized.slot
+            else self.latest_finalized
+        )
+
         # Create new store with block and state
         store = self.model_copy(
             update={
                 "blocks": self.blocks | {block_root: block},
                 "states": self.states | {block_root: post_state},
+                "latest_justified": latest_justified,
+                "latest_finalized": latest_finalized,
             }
         )
 
@@ -589,64 +605,26 @@ class Store(Container):
 
         Algorithm
         ---------
-        1. **Justification**: Scan all states to find highest justified checkpoint
-        2. **Fork Choice**: Run LMD-GHOST from justified root using attestation weights
-        3. **Finalization**: Extract finalized checkpoint from selected head state
-        4. **Return**: New Store instance with updated checkpoints and head
+        1. **Fork Choice**: Run LMD-GHOST from justified root using attestation weights
+        2. **Return**: New Store instance with updated head
 
         Returns:
-            New Store with updated head, latest_justified, and latest_finalized.
+            New Store with updated head.
 
         """
-        # Find the Latest Justified Checkpoint
-        #
-        # We must first determine the anchor point for our fork choice algorithm.
-        # This anchor is the justified checkpoint (a block root and slot) with the
-        # highest slot number known across *all* known states.
-        #
-        # We find this by:
-        # a) Scanning all known states.
-        # b) Finding the state that contains the justified checkpoint with the
-        #    highest slot number.
-        # c) Extracting that specific checkpoint object to use as our anchor.
-        #
-        # If there are no states to scan (e.g., at initialization), the
-        # operation would fail. In this case, we fall back to using the
-        # store's currently recorded justified checkpoint, preserving the
-        # last known good anchor.
-        latest_justified = (
-            max(self.states.values(), key=lambda s: s.latest_justified.slot).latest_justified
-            if self.states
-            else self.latest_justified
-        )
-
         # Run LMD-GHOST fork choice algorithm
         #
         # Selects canonical head by walking the tree from the justified root,
         # choosing the heaviest child at each fork based on attestation weights.
         new_head = self._compute_lmd_ghost_head(
-            start_root=latest_justified.root,
+            start_root=self.latest_justified.root,
             attestations=self.latest_known_attestations,
-        )
-
-        # Extract finalized checkpoint from head state
-        #
-        # The head state tracks the highest finalized checkpoint. If the
-        # head changed, we may have a new finalized checkpoint.
-        #
-        # Fallback to current finalized if head state unavailable (defensive).
-        latest_finalized = (
-            self.states[new_head].latest_finalized
-            if new_head in self.states
-            else self.latest_finalized
         )
 
         # Return new Store instance with updated values (immutable update)
         return self.model_copy(
             update={
                 "head": new_head,
-                "latest_justified": latest_justified,
-                "latest_finalized": latest_finalized,
             }
         )
 
