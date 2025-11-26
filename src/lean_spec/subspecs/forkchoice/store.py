@@ -437,21 +437,21 @@ class Store(Container):
         # Execute state transition function to compute post-block state
         post_state = copy.deepcopy(parent_state).state_transition(block, valid_signatures)
 
-        # If the new post-state has a higher justified checkpoint, update the store's latest justified checkpoint.
+        # If post-state has a higher justified checkpoint, update it to the store.
         latest_justified = (
             post_state.latest_justified
             if post_state.latest_justified.slot > self.latest_justified.slot
             else self.latest_justified
         )
 
-        # If the new post-state has a higher finalized checkpoint, update the store's latest finalized checkpoint.
+        # If post-state has a higher finalized checkpoint, update it to the store.
         latest_finalized = (
             post_state.latest_finalized
             if post_state.latest_finalized.slot > self.latest_finalized.slot
             else self.latest_finalized
         )
 
-        # Create new store with block and state
+        # Create new store with the computed data.
         store = self.model_copy(
             update={
                 "blocks": self.blocks | {block_root: block},
