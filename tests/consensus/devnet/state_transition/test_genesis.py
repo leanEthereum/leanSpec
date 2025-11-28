@@ -161,7 +161,9 @@ def test_genesis_block_hash_comparison() -> None:
     # Create first genesis state with 3 validators
     # Fill pubkeys with different values (1, 2, 3)
     pubkeys1 = [Bytes52(bytes([i + 1] * 52)) for i in range(3)]
-    validators1 = Validators(data=[Validator(pubkey=pubkey) for pubkey in pubkeys1])
+    validators1 = Validators(
+        data=[Validator(pubkey=pubkey, index=i) for i, pubkey in enumerate(pubkeys1)]
+    )
 
     genesis_state1 = State.generate_genesis(
         genesis_time=Uint64(1000),
@@ -202,7 +204,9 @@ def test_genesis_block_hash_comparison() -> None:
     # Create second genesis state with different validators
     # Fill pubkeys with different values (10, 11, 12)
     pubkeys2 = [Bytes52(bytes([i + 10] * 52)) for i in range(3)]
-    validators2 = Validators(data=[Validator(pubkey=pubkey) for pubkey in pubkeys2])
+    validators2 = Validators(
+        data=[Validator(pubkey=pubkey, index=i) for i, pubkey in enumerate(pubkeys2)]
+    )
 
     genesis_state2 = State.generate_genesis(
         genesis_time=Uint64(1000),  # Same genesis_time but different validators
@@ -225,7 +229,9 @@ def test_genesis_block_hash_comparison() -> None:
     # Create third genesis state with same validators but different genesis_time
     # Same as pubkeys1
     pubkeys3 = [Bytes52(bytes([i + 1] * 52)) for i in range(3)]
-    validators3 = Validators(data=[Validator(pubkey=pubkey) for pubkey in pubkeys3])
+    validators3 = Validators(
+        data=[Validator(pubkey=pubkey, index=i) for i, pubkey in enumerate(pubkeys3)]
+    )
 
     genesis_state3 = State.generate_genesis(
         genesis_time=Uint64(2000),  # Different genesis_time but same validators
@@ -247,10 +253,10 @@ def test_genesis_block_hash_comparison() -> None:
 
     # Compare genesis block hashes with expected hex values
     hash1_hex = f"0x{genesis_block_hash1.hex()}"
-    assert hash1_hex == "0x4c0bcc4750b71818224a826cd59f8bcb75ae2920eb3e75b4097b818be6d1049a"
+    assert hash1_hex == "0xcc03f11dd80dd79a4add86265fad0a141d0a553812d43b8f2c03aa43e4b002e3"
 
     hash2_hex = f"0x{genesis_block_hash2.hex()}"
-    assert hash2_hex == "0x639b6162e6b432653a77a64b678717e7634428eda88ad6ccb1862e6397c0c47b"
+    assert hash2_hex == "0x6bd5347aa1397c63ed8558079fdd3042112a5f4258066e3a659a659ff75ba14f"
 
     hash3_hex = f"0x{genesis_block_hash3.hex()}"
-    assert hash3_hex == "0x6593976e31c915b5d534e2ee6172652aed7690be24777947de39c726aa2af59e"
+    assert hash3_hex == "0xce48a709189aa2b23b6858800996176dc13eb49c0c95d717c39e60042de1ac91"
