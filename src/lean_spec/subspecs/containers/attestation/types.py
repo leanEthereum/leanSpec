@@ -4,7 +4,7 @@ from lean_spec.types import SSZList
 from lean_spec.types.bitfields import BaseBitlist
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
-from ..signature import Signature
+from ...xmss.containers import Signature
 
 
 class AggregationBits(BaseBitlist):

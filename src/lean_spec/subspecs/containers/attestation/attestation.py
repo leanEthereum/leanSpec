@@ -15,8 +15,8 @@ doesn't do this yet.
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Container, Uint64
 
+from ...xmss.containers import Signature
 from ..checkpoint import Checkpoint
-from ..signature import Signature
 from .types import AggregatedSignatures, AggregationBits
 
 

@@ -10,7 +10,6 @@ from lean_spec.subspecs.containers import (
     BlockHeader,
     Checkpoint,
     Config,
-    Signature,
     SignedAttestation,
     State,
     Validator,
@@ -25,7 +24,15 @@ from lean_spec.subspecs.containers.state import (
     Validators,
 )
 from lean_spec.subspecs.forkchoice import Store
+from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.xmss.constants import PROD_CONFIG
+from lean_spec.subspecs.xmss.containers import (
+    HashDigestList,
+    HashTreeOpening,
+    Randomness,
+    Signature,
+)
 from lean_spec.types import Bytes32, Bytes52, Uint64, ValidatorIndex
 from lean_spec.types.validator import is_proposer
 
@@ -135,7 +142,11 @@ def build_signed_attestation(
     )
     return SignedAttestation(
         message=message,
-        signature=Signature.zero(),
+        signature=Signature(
+            path=HashTreeOpening(siblings=HashDigestList(data=[])),
+            rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+            hashes=HashDigestList(data=[]),
+        ),
     )
 
 

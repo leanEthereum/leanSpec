@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterator, List, Tuple, cast
 
-from lean_spec.types import StrictBaseModel, Uint64
+from lean_spec.types import Uint64
+from lean_spec.types.container import Container
 
 from ..koalabear import Fp
 from .containers import (
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
     from .tweak_hash import TweakHasher
 
 
-class HashSubTree(StrictBaseModel):
+class HashSubTree(Container):
     """
     Represents a subtree of a sparse Merkle tree.
 
@@ -52,6 +53,13 @@ class HashSubTree(StrictBaseModel):
     The secret key maintains:
     - The full top tree (sparse, only active roots)
     - Two consecutive bottom trees (sliding window)
+
+    SSZ Container with fields:
+    - depth: uint64
+    - lowest_layer: uint64
+    - layers: List[HashTreeLayer, LAYERS_LIMIT]
+
+    Serialization is handled automatically by SSZ.
     """
 
     depth: Uint64

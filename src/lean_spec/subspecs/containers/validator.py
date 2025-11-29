@@ -20,7 +20,7 @@ class Validator(Container):
 
     def get_pubkey(self, scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME) -> PublicKey:
         """Get the XMSS public key from this validator."""
-        return PublicKey.from_bytes(bytes(self.pubkey), scheme.config)
+        return PublicKey.decode_bytes(bytes(self.pubkey))
 
     def produce_attestation(self, data: AttestationData) -> Attestation:
         """

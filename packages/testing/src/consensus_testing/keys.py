@@ -2,10 +2,10 @@
 
 from typing import NamedTuple, Optional
 
-from lean_spec.subspecs.containers import Attestation, Signature
+from lean_spec.subspecs.containers import Attestation
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey
+from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import (
     TEST_SIGNATURE_SCHEME,
     GeneralizedXmssScheme,
@@ -174,19 +174,9 @@ class XmssKeyManager:
         # This produces a cryptographic hash of the entire attestation structure.
         message = bytes(hash_tree_root(attestation))
 
-        # Generate the XMSS signature using the validator's (now prepared) secret key.
-        xmss_sig = self.scheme.sign(sk, epoch, message)
-
-        # Convert the signature to the wire format (byte array).
-        signature_bytes = xmss_sig.to_bytes(self.scheme.config)
-
-        # Ensure the signature meets the consensus spec length (3116 bytes).
-        #
-        # This is necessary when using TEST_CONFIG (796 bytes) vs PROD_CONFIG.
-        # Padding with zeros on the right maintains compatibility.
-        padded_bytes = signature_bytes.ljust(Signature.LENGTH, b"\x00")
-
-        return Signature(padded_bytes)
+        # Generate and return the XMSS signature using the validator's (now prepared) secret key.
+        # With SSZ everywhere, we can just return the signature directly - no padding needed!
+        return self.scheme.sign(sk, epoch, message)
 
     def get_public_key(self, validator_index: ValidatorIndex) -> PublicKey:
         """

@@ -26,7 +26,6 @@ from .block import (
 )
 from .checkpoint import Checkpoint
 from .config import Config
-from .signature import Signature
 from .state import State
 from .validator import Validator
 
@@ -45,7 +44,6 @@ __all__ = [
     "Checkpoint",
     "Config",
     "SignedBlockWithAttestation",
-    "Signature",
     "Validator",
     "State",
 ]

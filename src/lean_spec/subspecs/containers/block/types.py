@@ -3,8 +3,8 @@
 from lean_spec.types import SSZList
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
+from ...xmss.containers import Signature
 from ..attestation import Attestation
-from ..signature import Signature
 
 
 class Attestations(SSZList):
