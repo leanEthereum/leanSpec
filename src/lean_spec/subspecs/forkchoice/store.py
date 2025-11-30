@@ -949,6 +949,7 @@ class Store(Container):
         # Get parent block and state to build upon
         store, head_root = self.get_proposal_head(slot)
         head_state = store.states[head_root]
+        post_state = head_state
 
         # Validate proposer authorization for this slot
         num_validators = Uint64(head_state.validators.count)
@@ -1008,28 +1009,21 @@ class Store(Container):
             signatures.extend(new_signatures)
 
         # Create final block with all collected attestations
-        final_state = head_state.process_slots(slot)
         final_block = Block(
             slot=slot,
             proposer_index=validator_index,
             parent_root=head_root,
-            state_root=Bytes32.zero(),  # Will be updated with computed hash
+            state_root=hash_tree_root(post_state),
             body=BlockBody(attestations=Attestations(data=attestations)),
         )
 
-        # Apply state transition to get final post-state and compute state root
-        final_post_state = final_state.process_block(final_block)
-        finalized_block = final_block.model_copy(
-            update={"state_root": hash_tree_root(final_post_state)}
-        )
-
         # Store block and state immutably
-        block_hash = hash_tree_root(finalized_block)
+        block_hash = hash_tree_root(final_block)
         store = store.model_copy(
             update={
-                "blocks": {**store.blocks, block_hash: finalized_block},
-                "states": {**store.states, block_hash: final_post_state},
+                "blocks": {**store.blocks, block_hash: final_block},
+                "states": {**store.states, block_hash: post_state},
             }
         )
 
-        return store, finalized_block, signatures
+        return store, final_block, signatures
