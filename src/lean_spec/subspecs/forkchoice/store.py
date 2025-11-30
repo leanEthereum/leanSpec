@@ -904,7 +904,7 @@ class Store(Container):
             source=self.latest_justified,
         )
 
-    def produce_block_with_signatures(
+    def produce_and_store_block_with_signatures(
         self,
         slot: Slot,
         validator_index: ValidatorIndex,
@@ -942,6 +942,32 @@ class Store(Container):
 
         Returns:
             Tuple of (new Store with block stored, finalized Block, signature list).
+
+        Raises:
+            AssertionError: If validator lacks proposer authorization for slot.
+        """
+        # Produce the block and get its post-state
+        post_state, block, signatures = self._produce_block_with_signatures(slot, validator_index)
+
+        # Store the block and its post-state
+        store = self._store_block(block)
+
+        return store, block, signatures
+
+    def _produce_block_with_signatures(
+        self,
+        slot: Slot,
+        validator_index: ValidatorIndex,
+    ) -> tuple["Store", Block, list[Signature]]:
+        """
+        Internal method to produce a block without storing it.
+
+        Args:
+            slot: Target slot number for block production.
+            validator_index: Index of validator authorized to propose this block.
+
+        Returns:
+            Tuple of ( post-state after block, finalized Block, signature list).
 
         Raises:
             AssertionError: If validator lacks proposer authorization for slot.
@@ -1023,13 +1049,34 @@ class Store(Container):
             update={"state_root": hash_tree_root(final_post_state)}
         )
 
+        return store, finalized_block, signatures
+
+    def _store_block(
+        self,
+        block: Block,
+    ) -> "Store":
+        """
+        Store a block and its post-state in the store.
+
+        Args:
+            block: The block to store.
+            post_state: The state after processing this block.
+
+        Returns:
+            Updated Store with the block and state added.
+        """
+        # Get parent state to compute post-state
+        parent_state = self.states[block.parent_root]
+
+        # Apply state transition to get post-state
+        advanced_state = parent_state.process_slots(block.slot)
+        post_state = advanced_state.process_block(block)
+
         # Store block and state immutably
-        block_hash = hash_tree_root(finalized_block)
-        store = store.model_copy(
+        block_hash = hash_tree_root(block)
+        return self.model_copy(
             update={
-                "blocks": {**store.blocks, block_hash: finalized_block},
-                "states": {**store.states, block_hash: final_post_state},
+                "blocks": {**self.blocks, block_hash: block},
+                "states": {**self.states, block_hash: post_state},
             }
         )
-
-        return store, finalized_block, signatures
