@@ -59,7 +59,9 @@ def sample_state(config: Config) -> State:
     temp_finalized = Checkpoint(root=Bytes32(b"genesis" + b"\x00" * 25), slot=Slot(0))
 
     # Create validators list with 10 validators for testing
-    validators = Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)])
+    validators = Validators(
+        data=[Validator(pubkey=Bytes52.zero(), index=ValidatorIndex(i)) for i in range(10)]
+    )
 
     return State(
         config=config,
@@ -523,7 +525,9 @@ class TestValidatorIntegration:
         genesis_body = BlockBody(attestations=Attestations(data=[]))
 
         # Create validators list with 3 validators
-        validators = Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(3)])
+        validators = Validators(
+            data=[Validator(pubkey=Bytes52.zero(), index=ValidatorIndex(i)) for i in range(3)]
+        )
 
         # Create minimal state with temporary header
         checkpoint = Checkpoint.default()

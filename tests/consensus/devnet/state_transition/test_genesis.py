@@ -128,7 +128,9 @@ def test_genesis_custom_validator_set(
     maintaining all other genesis properties.
     """
     # Create 8 validators with unique pubkeys
-    validators = Validators(data=[Validator(pubkey=Bytes52(bytes([i] * 52))) for i in range(8)])
+    validators = Validators(
+        data=[Validator(pubkey=Bytes52(bytes([i] * 52)), index=ValidatorIndex(i)) for i in range(8)]
+    )
 
     state_transition_test(
         pre=generate_pre_state(validators=validators),

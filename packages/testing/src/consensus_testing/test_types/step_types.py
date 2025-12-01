@@ -102,13 +102,15 @@ class BlockStep(BaseForkChoiceStep):
         ValueError
             If _filled_block is None (make_fixture not called yet).
         """
-        del value
         if self._filled_block is None:
             raise ValueError(
                 "Block not filled yet - make_fixture() must be called before serialization. "
                 "This BlockStep should only be serialized after the fixture has been processed."
             )
-        return self._filled_block.to_json()
+        result = self._filled_block.to_json()
+        if value.label:
+            result["blockRootLabel"] = value.label
+        return result
 
 
 class AttestationStep(BaseForkChoiceStep):

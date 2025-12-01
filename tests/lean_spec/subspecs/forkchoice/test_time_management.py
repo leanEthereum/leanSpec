@@ -42,7 +42,9 @@ def sample_store(sample_config: Config) -> Store:
     checkpoint = Checkpoint(root=genesis_hash, slot=Slot(0))
 
     # Create genesis state with 10 validators for testing
-    validators = Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)])
+    validators = Validators(
+        data=[Validator(pubkey=Bytes52.zero(), index=ValidatorIndex(i)) for i in range(10)]
+    )
     state = State.generate_genesis(
         genesis_time=sample_config.genesis_time,
         validators=validators,

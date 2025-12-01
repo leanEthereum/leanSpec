@@ -362,7 +362,9 @@ def test_reorg_with_slot_gaps(
     """
     fork_choice_test(
         anchor_state=generate_pre_state(
-            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(10)]),
+            validators=Validators(
+                data=[Validator(pubkey=Bytes52.zero(), index=ValidatorIndex(i)) for i in range(10)]
+            ),
         ),
         steps=[
             # Base at slot 1
@@ -576,7 +578,9 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
     """
     fork_choice_test(
         anchor_state=generate_pre_state(
-            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(12)])
+            validators=Validators(
+                data=[Validator(pubkey=Bytes52.zero(), index=ValidatorIndex(i)) for i in range(12)]
+            )
         ),
         steps=[
             # Common base
@@ -811,7 +815,9 @@ def test_reorg_on_newly_justified_slot(
     fork_choice_test(
         # Using 9 validators: 3 for Fork A and 6 for Fork B to achieve 2/3rd for Fork B
         anchor_state=generate_pre_state(
-            validators=Validators(data=[Validator(pubkey=Bytes52.zero()) for _ in range(9)])
+            validators=Validators(
+                data=[Validator(pubkey=Bytes52.zero(), index=ValidatorIndex(i)) for i in range(9)]
+            )
         ),
         steps=[
             # Common base at slot 1
