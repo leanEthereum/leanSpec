@@ -212,10 +212,16 @@ class VerifySignatureTest(BaseConsensusFixture):
         attestations = []
         attestation_signatures = []
         if spec.attestations is not None:
-            for attestation_spec in spec.attestations:
-                signed_attestation = self._build_signed_attestation_from_spec(
-                    attestation_spec, state, key_manager
-                )
+            for attestation_item in spec.attestations:
+                # Handle both SignedAttestation and SignedAttestationSpec
+                if isinstance(attestation_item, SignedAttestation):
+                    # Already a SignedAttestation, use it directly
+                    signed_attestation = attestation_item
+                else:
+                    # It's a SignedAttestationSpec, build it
+                    signed_attestation = self._build_signed_attestation_from_spec(
+                        attestation_item, state, key_manager
+                    )
                 # Extract the Attestation message and signature
                 attestations.append(signed_attestation.message)
                 attestation_signatures.append(signed_attestation.signature)
