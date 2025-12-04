@@ -6,7 +6,7 @@ from typing import Any
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State, Validators
 from lean_spec.subspecs.containers.validator import Validator
-from lean_spec.types import Bytes52, Uint64
+from lean_spec.types import Uint64
 
 from ..keys import XmssKeyManager
 
