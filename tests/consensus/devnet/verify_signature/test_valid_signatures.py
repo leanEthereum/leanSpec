@@ -1,0 +1,98 @@
+"""Valid signature verification tests"""
+
+import pytest
+from consensus_testing import (
+    BlockSpec,
+    VerifySignatureTestFiller,
+    SignedAttestationSpec,
+    generate_pre_state,
+)
+
+from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.types import Uint64
+
+pytestmark = pytest.mark.valid_until("Devnet")
+
+
+def test_proposer_signature(
+    verify_signature_test: VerifySignatureTestFiller,
+) -> None:
+    """
+    Test valid proposer signature in SignedBlockWithAttestation.
+
+    Scenario
+    --------
+    - Single block at slot 1
+    - No additional attestations (only proposer attestation)
+
+    Expected Behavior
+    -----------------
+    1. Proposer's signature in SignedBlockWithAttestation can be verified against
+       the validator's pubkey in the state
+
+    Why This Matters
+    ----------------
+    This is the most basic signature generation test. It verifies:
+    - XMSS key generation works
+    - Block building produces correct structure (TODO: use the spec's block building function)
+    - Proposer attestation is created properly
+    - Signature aggregation includes proposer signature
+    - Output serialization works for test vectors
+    """
+    verify_signature_test(
+        anchor_state=generate_pre_state(num_validators=1),
+        block=BlockSpec(
+            slot=Slot(1),
+            attestations=[],
+        ),
+    )
+
+
+def test_proposer_and_attester_signatures(
+    verify_signature_test: VerifySignatureTestFiller,
+) -> None:
+    """
+    Test valid proposer and attester signatures in SignedBlockWithAttestation.
+
+    Scenario
+    --------
+    - Single block at slot 1
+    - 3 validators in the genesis state
+    - 2 additional attestations from validators 0 and 2 (in addition to proposer)
+    - Verifies that all signatures are generated correctly
+
+    Expected Behavior
+    -----------------
+    1. Proposer's signature in SignedBlockWithAttestation can be verified against
+       the validator's pubkey in the state
+    2. Attester's signatures in SignedBlockWithAttestation can be verified against
+       the validator's pubkey in the state
+
+    Why This Matters
+    ----------------
+    This test verifies multi-validator signature scenarios:
+    - Multiple XMSS keys are generated for different validators
+    - Attestations from non-proposer validators are correctly verified
+    - Signature aggregation works with multiple attestations (signature positions are correct)
+    """
+    verify_signature_test(
+        anchor_state=generate_pre_state(num_validators=3),
+        block=BlockSpec(
+            slot=Slot(1),
+            attestations=[
+                SignedAttestationSpec(
+                    validator_id=Uint64(0),
+                    slot=Slot(1),
+                    target_slot=Slot(0),
+                    target_root_label="genesis",
+                ),
+                SignedAttestationSpec(
+                    validator_id=Uint64(2),
+                    slot=Slot(1),
+                    target_slot=Slot(0),
+                    target_root_label="genesis",
+                ),
+            ],
+        ),
+    )
+

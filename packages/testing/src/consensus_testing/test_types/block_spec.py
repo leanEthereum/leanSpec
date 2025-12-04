@@ -100,12 +100,13 @@ class BlockSpec(CamelModel):
 
     valid_signature: bool = True
     """
-    If False, the proposer attestation will be given a dummy/invalid signature.
+    Flag whether the proposer's signature in generated block should be valid.
 
     Used for testing that verification properly rejects invalid block signatures.
     When False, a structurally valid but cryptographically invalid signature
     (all zeros) will be generated for the proposer attestation instead of a
     proper XMSS signature.
 
-    Default is True (valid signatures).
+    Defaults to True (valid signature).
+    If False, the proposer attestation will be given a dummy/invalid signature.
     """

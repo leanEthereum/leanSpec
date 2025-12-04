@@ -105,29 +105,28 @@ class Fp(SSZType):
         cls, source_type: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
         """
-        Hook into Pydantic's validation system.
+        Hook into Pydantic's validation system for strict field element validation.
 
-        This schema defines how to handle the Fp field element type:
-        1. If the input is already an Fp instance, accept it.
-        2. Otherwise, validate the input as an integer within [0, P)
-            and then instantiate Fp.
-        3. For serialization (e.g., to JSON), convert to a plain int.
+        This schema ensures that only values in the range [0, P) are accepted
+        during Pydantic model validation.
         """
         # Validator that takes an integer and returns an Fp instance
         from_int_validator = core_schema.no_info_plain_validator_function(cls)
 
-        # Schema that first validates the input as an int, then calls our validator
+        # Schema that first validates the input as an int in the range [0, P),
+        # then calls our validator
         python_schema = core_schema.chain_schema(
             [core_schema.int_schema(ge=0, lt=P, strict=True), from_int_validator]
         )
 
         return core_schema.union_schema(
             [
-                # Case 1: The value is already the correct type
+                # Case 1: The value is already our field element type
                 core_schema.is_instance_schema(cls),
-                # Case 2: The value needs to be parsed and validated
+                # Case 2: The value is a standard int and needs to be parsed and validated
                 python_schema,
             ],
+            # For serialization (e.g., to JSON), convert the instance back to a plain int.
             serialization=core_schema.plain_serializer_function_ser_schema(
                 lambda x: x.value, return_schema=core_schema.int_schema()
             ),
