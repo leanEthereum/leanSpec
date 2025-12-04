@@ -25,6 +25,7 @@ def _get_shared_key_manager() -> XmssKeyManager:
     """
     return XmssKeyManager(max_slot=Slot(10))
 
+
 def generate_pre_state(**kwargs: Any) -> State:
     """
     Generate a default pre-state for consensus tests.
@@ -42,10 +43,10 @@ def generate_pre_state(**kwargs: Any) -> State:
     key_manager = _get_shared_key_manager()
 
     validators = Validators(
-        data=[Validator(
-            pubkey=key_manager[Uint64(i)].public.encode_bytes(),
-            index=Uint64(i)
-        ) for i in range(num_validators)]
+        data=[
+            Validator(pubkey=key_manager[Uint64(i)].public.encode_bytes(), index=Uint64(i))
+            for i in range(num_validators)
+        ]
     )
 
     return State.generate_genesis(genesis_time=genesis_time, validators=validators)
