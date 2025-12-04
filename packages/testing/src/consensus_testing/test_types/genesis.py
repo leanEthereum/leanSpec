@@ -1,11 +1,29 @@
 """Consensus layer pre-state generation."""
 
+from functools import lru_cache
 from typing import Any
 
+from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State, Validators
 from lean_spec.subspecs.containers.validator import Validator
 from lean_spec.types import Bytes52, Uint64
 
+from ..keys import XmssKeyManager
+
+
+@lru_cache(maxsize=1)
+def _get_shared_key_manager() -> XmssKeyManager:
+    """
+    Get or create the shared XMSS key manager for reusing keys across tests.
+
+    Uses functools.lru_cache to create a singleton instance that's shared
+    across all test fixture generations within a session. This optimizes
+    performance by reusing keys when possible.
+
+    Returns:
+        Shared XmssKeyManager instance with max_slot=10.
+    """
+    return XmssKeyManager(max_slot=Slot(10))
 
 def generate_pre_state(**kwargs: Any) -> State:
     """
@@ -14,20 +32,20 @@ def generate_pre_state(**kwargs: Any) -> State:
     Args:
         **kwargs: Optional keyword arguments:
             - genesis_time: The genesis timestamp (defaults to Uint64(0)).
-            - validators: Validators list (defaults to 4 validators with dummy pubkeys).
+            - num_validators: Number of validators (defaults to 4 validators).
 
     Returns:
         State: A properly initialized consensus state.
     """
     genesis_time = kwargs.get("genesis_time", Uint64(0))
+    num_validators = kwargs.get("num_validators", 4)
+    key_manager = _get_shared_key_manager()
 
-    # If validators not provided, create a default set of 4 validators with dummy pubkeys
-    # TODO: Set an appropriate default here for test fixtures
-    if "validators" not in kwargs:
-        validators = Validators(
-            data=[Validator(pubkey=Bytes52.zero(), index=Uint64(i)) for i in range(4)]
-        )
-    else:
-        validators = kwargs["validators"]
+    validators = Validators(
+        data=[Validator(
+            pubkey=key_manager[Uint64(i)].public.encode_bytes(),
+            index=Uint64(i)
+        ) for i in range(num_validators)]
+    )
 
     return State.generate_genesis(genesis_time=genesis_time, validators=validators)

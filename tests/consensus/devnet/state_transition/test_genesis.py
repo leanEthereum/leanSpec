@@ -127,13 +127,8 @@ def test_genesis_custom_validator_set(
     Genesis state should contain exactly 8 validators while
     maintaining all other genesis properties.
     """
-    # Create 8 validators with unique pubkeys
-    validators = Validators(
-        data=[Validator(pubkey=Bytes52(bytes([i] * 52)), index=Uint64(i)) for i in range(8)]
-    )
-
     state_transition_test(
-        pre=generate_pre_state(validators=validators),
+        pre=generate_pre_state(num_validators=8),
         blocks=[],
         post=StateExpectation(
             slot=Slot(0),
