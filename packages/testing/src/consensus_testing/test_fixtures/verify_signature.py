@@ -116,7 +116,7 @@ class VerifySignatureTest(BaseConsensusFixture):
         # as in execution-spec-tests - e.g., "StateTransitionException.INVALID_SLOT"
         return value.__name__
 
-    def make_fixture(self) -> SignatureTest:
+    def make_fixture(self) -> VerifySignatureTest:
         """
         Generate the fixture by creating a signed block with attestations.
 

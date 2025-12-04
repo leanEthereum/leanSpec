@@ -3,8 +3,8 @@
 import pytest
 from consensus_testing import (
     BlockSpec,
-    VerifySignatureTestFiller,
     SignedAttestationSpec,
+    VerifySignatureTestFiller,
     generate_pre_state,
 )
 
@@ -95,4 +95,3 @@ def test_proposer_and_attester_signatures(
             ],
         ),
     )
-

@@ -6,8 +6,8 @@ from . import forks
 from .test_fixtures import (
     BaseConsensusFixture,
     ForkChoiceTest,
-    VerifySignatureTest,
     StateTransitionTest,
+    VerifySignatureTest,
 )
 from .test_types import (
     AttestationCheck,

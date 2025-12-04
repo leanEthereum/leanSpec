@@ -3,8 +3,8 @@
 import pytest
 from consensus_testing import (
     BlockSpec,
-    VerifySignatureTestFiller,
     SignedAttestationSpec,
+    VerifySignatureTestFiller,
     generate_pre_state,
 )
 
@@ -46,6 +46,7 @@ def test_invalid_signature(
         ),
         expect_exception=AssertionError,
     )
+
 
 def test_mixed_valid_invalid_signatures(
     verify_signature_test: VerifySignatureTestFiller,

@@ -2,8 +2,8 @@
 
 from .base import BaseConsensusFixture
 from .fork_choice import ForkChoiceTest
-from .verify_signature import VerifySignatureTest
 from .state_transition import StateTransitionTest
+from .verify_signature import VerifySignatureTest
 
 __all__ = [
     "BaseConsensusFixture",
