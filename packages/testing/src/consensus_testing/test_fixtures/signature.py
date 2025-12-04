@@ -63,8 +63,7 @@ class SignatureTest(BaseConsensusFixture):
         signed_block_with_attestation: The generated SignedBlockWithAttestation
 
     Input Fields (excluded from output):
-        block: Block specification (used to generate the output)
-        attestations: List of attestation specifications (used to generate the output)
+        block: Block specification including attestations (used to generate the output)
     """
 
     format_name: ClassVar[str] = "signature_test"
@@ -81,18 +80,10 @@ class SignatureTest(BaseConsensusFixture):
     """
     Block specification to generate signatures for.
 
-    This defines the block parameters. The framework will build a complete
-    signed block with all necessary signatures.
+    This defines the block parameters including attestations. The framework will
+    build a complete signed block with all necessary signatures.
 
-    Note: This field is excluded from the output test vector JSON.
-    """
-
-    attestations: list[SignedAttestationSpec] | None = Field(default=None, exclude=True)
-    """
-    List of attestation specifications to include in the block.
-
-    These attestations will be signed and included in the block body.
-    If None, only the proposer attestation will be included.
+    Attestations should be specified via block.attestations as SignedAttestationSpec objects.
 
     Note: This field is excluded from the output test vector JSON.
     """
@@ -197,8 +188,8 @@ class SignatureTest(BaseConsensusFixture):
         # Prepare attestations from spec if provided
         attestations = []
         attestation_signatures = []
-        if self.attestations is not None:
-            for attestation_spec in self.attestations:
+        if spec.attestations is not None:
+            for attestation_spec in spec.attestations:
                 signed_attestation = self._build_signed_attestation_from_spec(
                     attestation_spec, state, key_manager
                 )
@@ -243,10 +234,8 @@ class SignatureTest(BaseConsensusFixture):
             ),
         )
 
-        # Sign all attestations and the proposer attestation
-        signature_list = []
-        for attestation in final_block.body.attestations:
-            signature_list.append(key_manager.sign_attestation(attestation))
+        # Collect all signatures: attestations first, then proposer attestation
+        signature_list = attestation_signatures.copy()
         proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
         signature_list.append(proposer_attestation_signature)
 
