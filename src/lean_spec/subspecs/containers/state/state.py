@@ -6,6 +6,8 @@ recent blocks, and validator attestations. State also records which blocks are
 justified and finalized.
 """
 
+from typing import TYPE_CHECKING, AbstractSet, Iterable
+
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import (
     ZERO_HASH,
@@ -16,6 +18,10 @@ from lean_spec.types import (
     is_proposer,
 )
 
+from ..attestation import Attestation, SignedAttestation
+
+if TYPE_CHECKING:
+    from lean_spec.subspecs.xmss.containers import Signature
 from ..block import Block, BlockBody, BlockHeader
 from ..block.types import Attestations
 from ..checkpoint import Checkpoint
@@ -515,3 +521,92 @@ class State(Container):
             raise AssertionError("Invalid block state root")
 
         return new_state
+
+    def build_block(
+        self,
+        slot: Slot,
+        proposer_index: Uint64,
+        parent_root: Bytes32,
+        attestations: list[Attestation] | None = None,
+        available_signed_attestations: Iterable[SignedAttestation] | None = None,
+        known_block_roots: AbstractSet[Bytes32] | None = None,
+    ) -> tuple[Block, "State", list[Attestation], list["Signature"]]:
+        """
+        Build a valid block on top of this state.
+
+        Computes the post-state and creates a block with the correct state root.
+
+        If `available_signed_attestations` and `known_block_roots` are provided,
+        performs fixed-point attestation collection: iteratively adds valid
+        attestations until no more can be included. This is necessary because
+        processing attestations may update the justified checkpoint, which may
+        make additional attestations valid.
+
+        Args:
+            slot: Target slot for the block.
+            proposer_index: Validator index of the proposer.
+            parent_root: Root of the parent block.
+            attestations: Initial attestations to include.
+            available_signed_attestations: Pool of attestations to collect from.
+            known_block_roots: Set of known block roots for attestation validation.
+
+        Returns:
+            Tuple of (Block, post-State, collected attestations, signatures).
+        """
+        # Initialize empty attestation set for iterative collection
+        attestations = list(attestations or [])
+        signatures: list[Signature] = []
+
+        # Iteratively collect valid attestations using fixed-point algorithm
+        #
+        # Continue until no new attestations can be added to the block.
+        # This ensures we include the maximal valid attestation set.
+        while True:
+            # Create candidate block with current attestation set
+            candidate_block = Block(
+                slot=slot,
+                proposer_index=proposer_index,
+                parent_root=parent_root,
+                state_root=Bytes32.zero(),
+                body=BlockBody(attestations=Attestations(data=attestations)),
+            )
+
+            # Apply state transition to get the post-block state
+            post_state = self.process_slots(slot).process_block(candidate_block)
+
+            # No attestation source provided: done after computing post_state
+            if available_signed_attestations is None or known_block_roots is None:
+                break
+
+            # Find new valid attestations matching post-state justification
+            new_attestations: list[Attestation] = []
+            new_signatures: list[Signature] = []
+
+            for signed_attestation in available_signed_attestations:
+                data = signed_attestation.message.data
+
+                # Skip if target block is unknown
+                if data.head.root not in known_block_roots:
+                    continue
+
+                # Skip if attestation source does not match post-state's latest justified
+                if data.source != post_state.latest_justified:
+                    continue
+
+                # Add attestation if not already included
+                if signed_attestation.message not in attestations:
+                    new_attestations.append(signed_attestation.message)
+                    new_signatures.append(signed_attestation.signature)
+
+            # Fixed point reached: no new attestations found
+            if not new_attestations:
+                break
+
+            # Add new attestations and continue iteration
+            attestations.extend(new_attestations)
+            signatures.extend(new_signatures)
+
+        # Store the post state root in the block
+        final_block = candidate_block.model_copy(update={"state_root": hash_tree_root(post_state)})
+
+        return final_block, post_state, attestations, signatures

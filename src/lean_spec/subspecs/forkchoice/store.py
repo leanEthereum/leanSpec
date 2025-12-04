@@ -22,17 +22,14 @@ from lean_spec.subspecs.chain.config import (
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
-    Attestation,
     AttestationData,
     Block,
-    BlockBody,
     Checkpoint,
     Config,
     SignedAttestation,
     SignedBlockWithAttestation,
     State,
 )
-from lean_spec.subspecs.containers.block import Attestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import Signature
@@ -927,10 +924,10 @@ class Store(Container):
         1. **Validate Authorization**: Verify proposer is authorized for slot
         2. **Get Proposal Head**: Retrieve current chain head as parent
         3. **Iteratively Build Attestation Set**:
-           - Create candidate block with current attestations
-           - Apply state transition (slot advancement + block processing)
-           - Find new valid attestations matching post-state requirements
-           - Continue until no new attestations can be added (fixed point)
+            - Create candidate block with current attestations
+            - Apply state transition (slot advancement + block processing)
+            - Find new valid attestations matching post-state requirements
+            - Continue until no new attestations can be added (fixed point)
         4. **Finalize Block**: Compute state root and store block
 
         The Fixed-Point Algorithm
@@ -963,66 +960,21 @@ class Store(Container):
             f"Validator {validator_index} is not the proposer for slot {slot}"
         )
 
-        # Initialize empty attestation set for iterative collection
-        attestations: list[Attestation] = []
-        signatures: list[Signature] = []
-
-        # Iteratively collect valid attestations using fixed-point algorithm
-        #
-        # Continue until no new attestations can be added to the block.
-        # This ensures we include the maximal valid attestation set.
-        while True:
-            # Create candidate block with current attestation set
-            candidate_block = Block(
-                slot=slot,
-                proposer_index=validator_index,
-                parent_root=head_root,
-                state_root=Bytes32.zero(),  # Temporary; updated after state computation
-                body=BlockBody(attestations=Attestations(data=attestations)),
-            )
-
-            # Apply state transition to get the post-block state
-            # First advance state to target slot, then process the block
-            advanced_state = head_state.process_slots(slot)
-            post_state = advanced_state.process_block(candidate_block)
-
-            # Find new valid attestations matching post-state justification
-            new_attestations: list[Attestation] = []
-            new_signatures: list[Signature] = []
-
-            for signed_attestation in store.latest_known_attestations.values():
-                data = signed_attestation.message.data
-
-                # Skip if target block is unknown in our store
-                if data.head.root not in store.blocks:
-                    continue
-
-                # Skip if attestation source does not match post-state's latest justified
-                if data.source != post_state.latest_justified:
-                    continue
-
-                # Add attestation if not already included
-                if signed_attestation.message not in attestations:
-                    new_attestations.append(signed_attestation.message)
-                    new_signatures.append(signed_attestation.signature)
-
-            # Fixed point reached: no new attestations found
-            if not new_attestations:
-                break
-
-            # Add new attestations and continue iteration
-            attestations.extend(new_attestations)
-            signatures.extend(new_signatures)
-
-        # Store the post state root in the block
-        final_block = candidate_block.model_copy(update={"state_root": hash_tree_root(post_state)})
+        # Build block with fixed-point attestation collection
+        final_block, final_post_state, _, signatures = head_state.build_block(
+            slot=slot,
+            proposer_index=validator_index,
+            parent_root=head_root,
+            available_signed_attestations=store.latest_known_attestations.values(),
+            known_block_roots=set(store.blocks.keys()),
+        )
 
         # Store block and state immutably
         block_hash = hash_tree_root(final_block)
         store = store.model_copy(
             update={
                 "blocks": {**store.blocks, block_hash: final_block},
-                "states": {**store.states, block_hash: post_state},
+                "states": {**store.states, block_hash: final_post_state},
             }
         )
 
