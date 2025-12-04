@@ -46,66 +46,64 @@ def _get_shared_key_manager() -> XmssKeyManager:
     return XmssKeyManager(max_slot=Slot(10))
 
 
-class SignatureTest(BaseConsensusFixture):
+class VerifySignatureTest(BaseConsensusFixture):
     """
-    Test fixture for signature generation with blocks and attestations.
+    Test fixture for verifying signatures on SignedBlockWithAttestation.
 
     The fixture takes a BlockSpec and optional SignedAttestationSpec inputs and generates
-    a complete SignedBlockWithAttestation as the test output. This fixture
-    is useful for testing cryptographic signature verification.
+    a complete SignedBlockWithAttestation as the test output.
 
     To execute test vectors produced by this fixture, simply pass the vector's
     `signed_block_with_attestation` and `anchor_state` through the client's
     `SignedBlockWithAttestation.verify_signatures()`. The test case is expected to fail
     if `expect_exception` is set.
 
-    Output Structure (in JSON):
+    Structure:
         anchor_state: Initial trusted consensus state
         signed_block_with_attestation: The generated SignedBlockWithAttestation
-
-    Input Fields (excluded from output):
-        block: Block specification including attestations (used to generate the output)
+        expect_exception: Expected exception for invalid tests
     """
 
-    format_name: ClassVar[str] = "signature_test"
-    description: ClassVar[str] = "Tests signature generation for blocks with attestations"
+    format_name: ClassVar[str] = "verify_signature_test"
+    description: ClassVar[str] = (
+        "Tests signature verification for blocks with attestations through"
+        "SignedBlockWithAttestation.verify_signatures()"
+    )
 
     anchor_state: State | None = None
     """
-    The initial trusted consensus state.
+    The initial consensus state before processing.
 
-    If not provided, the framework will use the genesis fixture from pytest.
+    If not provided, the framework will use the genesis fixture.
     """
 
     block: BlockSpec = Field(exclude=True)
     """
-    Block specification to generate signatures for.
+    Block specifications to generate signatures for.
 
     This defines the block parameters including attestations. The framework will
     build a complete signed block with all necessary signatures.
 
     Attestations should be specified via block.attestations as SignedAttestationSpec objects.
     Use block.valid_signature to control proposer attestation signature validity.
+    Use block.attestations.valid_signature to control attester signature validity.
 
-    Note: This field is excluded from the output test vector JSON.
+    Note: This field is excluded from the output test vector. Use signed_block_with_attestation.
     """
 
     signed_block_with_attestation: SignedBlockWithAttestation | None = None
     """
     The generated signed block with attestation.
 
-    This is populated by make_fixture() and contains the complete
-    cryptographically signed block ready for verification.
+    This is populated by make_fixture() and contains the complete signed block
+    ready for verification.
     """
 
     expect_exception: type[Exception] | None = None
     """
     Expected exception type for invalid tests.
 
-    If provided, the fixture will expect an exception of this type during
-    signature verification. This is used internally for validation.
-
-    Note: This field is excluded from the output test vector JSON.
+    If provided, an exception of this type is expected during signature verification.
     """
 
     @field_serializer("expect_exception", when_used="json")
@@ -122,24 +120,17 @@ class SignatureTest(BaseConsensusFixture):
         """
         Generate the fixture by creating a signed block with attestations.
 
-        This:
-        1. Sets up XMSS keys for validators
-        2. Builds a complete block from the BlockSpec
-        3. Creates and signs attestations
-        4. Generates the proposer attestation
-        5. Collects all signatures
-        6. Verifies all signatures against the anchor state
+        Builds a block from BlockSpec, generates the relevant signatures to produce
+        SignedBlockWithAttestation, then verifies that the signatures are valid.
 
         Returns:
         -------
         SignatureTest
-            The validated fixture with populated output field and verified signatures.
+            The validated fixture.
 
         Raises:
         ------
         AssertionError
-            If any required field is missing or generation fails.
-        Exception
             If signature verification fails.
         """
         # Ensure anchor_state is set
@@ -160,14 +151,13 @@ class SignatureTest(BaseConsensusFixture):
             signed_block.verify_signatures(self.anchor_state)
         except AssertionError as e:
             exception_raised = e
-
             # If we expect an exception, this is fine
             if self.expect_exception is None:
                 # Unexpected failure
                 raise AssertionError(f"Unexpected error verifying block signature(s): {e}") from e
         finally:
-            # Always store filled blocks for serialization, even if an exception occurred
-            # This ensures the test fixture contains the signed block to test with
+            # Always store filled block for serialization, even if an exception occurred
+            # This ensures the test fixture contains the signed block that consumer can test with
             self.signed_block_with_attestation = signed_block
 
         # Validate exception expectations

@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import (
     BlockSpec,
-    SignatureTestFiller,
+    VerifySignatureTestFiller,
     SignedAttestationSpec,
     generate_pre_state,
 )
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.valid_until("Devnet")
 
 
 def test_proposer_signature(
-    signature_test: SignatureTestFiller,
+    verify_signature_test: VerifySignatureTestFiller,
 ) -> None:
     """
     Test basic signature generation for a block with only the proposer attestation.
@@ -40,7 +40,7 @@ def test_proposer_signature(
 
     This serves as a foundation test for the signature fixture.
     """
-    signature_test(
+    verify_signature_test(
         anchor_state=generate_pre_state(num_validators=1),
         block=BlockSpec(
             slot=Slot(1),
@@ -50,7 +50,7 @@ def test_proposer_signature(
 
 
 def test_proposer_and_attester_signatures(
-    signature_test: SignatureTestFiller,
+    verify_signature_test: VerifySignatureTestFiller,
 ) -> None:
     """
     Test signature generation for a block with proposer and attester signatures.
@@ -82,7 +82,7 @@ def test_proposer_and_attester_signatures(
     This is crucial for testing realistic blocks where multiple validators
     attest to the same block, which is the common case in consensus.
     """
-    signature_test(
+    verify_signature_test(
         anchor_state=generate_pre_state(num_validators=3),
         block=BlockSpec(
             slot=Slot(1),
@@ -105,7 +105,7 @@ def test_proposer_and_attester_signatures(
 
 
 def test_invalid_signature(
-    signature_test: SignatureTestFiller,
+    verify_signature_test: VerifySignatureTestFiller,
 ) -> None:
     """
     Test that invalid signatures are properly rejected during verification.
@@ -134,19 +134,18 @@ def test_invalid_signature(
     This is crucial for security - verification must reject invalid signatures,
     not just check structural correctness.
     """
-    signature_test(
+    verify_signature_test(
         anchor_state=generate_pre_state(num_validators=1),
         block=BlockSpec(
             slot=Slot(1),
             attestations=[],
-            valid_signature=False,  # Proposer attestation signature is invalid
+            valid_signature=False,
         ),
         expect_exception=AssertionError,
     )
 
-
 def test_mixed_valid_invalid_signatures(
-    signature_test: SignatureTestFiller,
+    verify_signature_test: VerifySignatureTestFiller,
 ) -> None:
     """
     Test that signature verification catches invalid signatures among valid ones.
@@ -178,7 +177,7 @@ def test_mixed_valid_invalid_signatures(
     This ensures that clients cannot accidentally accept partially invalid
     blocks by only checking a subset of signatures.
     """
-    signature_test(
+    verify_signature_test(
         anchor_state=generate_pre_state(num_validators=3),
         block=BlockSpec(
             slot=Slot(1),
