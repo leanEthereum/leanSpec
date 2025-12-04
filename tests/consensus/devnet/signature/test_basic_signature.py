@@ -8,8 +8,21 @@ from consensus_testing import (
     generate_pre_state,
 )
 
+from lean_spec.subspecs.containers.attestation import Attestation, AttestationData
+from lean_spec.subspecs.containers.block.block import (
+    Block,
+    BlockBody,
+    BlockWithAttestation,
+    SignedBlockWithAttestation,
+)
+from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
+from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Uint64
+from lean_spec.subspecs.koalabear import Fp
+from lean_spec.subspecs.xmss.constants import PROD_CONFIG
+from lean_spec.subspecs.xmss.containers import Signature
+from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
+from lean_spec.types import Bytes32, Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -100,4 +113,51 @@ def test_proposer_and_attester_signatures(
                 ),
             ],
         ),
+    )
+
+def test_invalid_signature(
+    signature_test: SignatureTestFiller,
+) -> None:
+    """
+    Test that invalid signatures are properly rejected during verification.
+
+    Scenario
+    --------
+    - Single block at slot 1
+    - Override the signature with an invalid dummy signature
+    - Verification should fail
+
+    Expected Behavior
+    -----------------
+    1. Block is created with correct slot
+    2. Signature is overridden with an invalid one
+    3. verify_signatures() catches the invalid signature
+    4. No output is written (since valid=False)
+
+    Why This Matters
+    ----------------
+    This test verifies the negative case:
+    - Signature verification actually validates cryptographic correctness
+    - Invalid signatures are caught, not silently accepted
+    - The verification process has real security value
+    - Clients can trust that passing verification means valid signatures
+
+    This is crucial for security - verification must reject invalid signatures,
+    not just check structural correctness.
+    """
+
+    invalid_signature = Signature(
+        path=HashTreeOpening(siblings=HashDigestList(data=[])),
+        rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+        hashes=HashDigestList(data=[]),
+    )
+
+    signature_test(
+        anchor_state=generate_pre_state(num_validators=1),
+        block=BlockSpec(
+            slot=Slot(1),
+            attestations=[],
+        ),
+        override_signature=BlockSignatures(data=[invalid_signature]),
+        expect_exception=AssertionError,
     )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import ClassVar
 
-from pydantic import Field
+from pydantic import Field, field_serializer
 
 from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
@@ -56,7 +56,8 @@ class SignatureTest(BaseConsensusFixture):
 
     To execute test vectors produced by this fixture, simply pass the vector's
     `signed_block_with_attestation` and `anchor_state` through the client's
-    `SignedBlockWithAttestation.verify_signatures()`
+    `SignedBlockWithAttestation.verify_signatures()`. The test case is expected to fail
+    if `expect_exception` is set.
 
     Output Structure (in JSON):
         anchor_state: Initial trusted consensus state
@@ -88,6 +89,18 @@ class SignatureTest(BaseConsensusFixture):
     Note: This field is excluded from the output test vector JSON.
     """
 
+    override_signature: BlockSignatures | None = Field(default=None, exclude=True)
+    """
+    Optional signature override for testing invalid signatures.
+
+    If provided, this signature will be used instead of the correctly generated one.
+    This allows testing that signature verification properly rejects invalid signatures.
+
+    Typically used with valid=False to test negative cases.
+
+    Note: This field is excluded from the output test vector JSON.
+    """
+
     signed_block_with_attestation: SignedBlockWithAttestation | None = None
     """
     The generated signed block with attestation.
@@ -95,6 +108,26 @@ class SignatureTest(BaseConsensusFixture):
     This is populated by make_fixture() and contains the complete
     cryptographically signed block ready for verification.
     """
+
+    expect_exception: type[Exception] | None = None
+    """
+    Expected exception type for invalid tests.
+
+    If provided, the fixture will expect an exception of this type during
+    signature verification. This is used internally for validation.
+
+    Note: This field is excluded from the output test vector JSON.
+    """
+
+    @field_serializer("expect_exception", when_used="json")
+    def serialize_exception(self, value: type[Exception] | None) -> str | None:
+        """Serialize exception type to string."""
+        if value is None:
+            return None
+        # Format: "ExceptionClassName" (just the class name for now)
+        # TODO: This can be used to map exceptions to expected exceptions from clients
+        # as in execution-spec-tests - e.g., "StateTransitionException.INVALID_SLOT"
+        return value.__name__
 
     def make_fixture(self) -> SignatureTest:
         """
@@ -123,37 +156,46 @@ class SignatureTest(BaseConsensusFixture):
         # Ensure anchor_state is set
         assert self.anchor_state is not None, "anchor_state must be set before make_fixture"
 
-        # Determine max_slot from block spec
-        max_slot = self.block.slot
-
-        # Use shared key manager if it has sufficient capacity, otherwise create a new one
-        shared_key_manager = _get_shared_key_manager()
-        key_manager = (
-            shared_key_manager
-            if max_slot <= shared_key_manager.max_slot
-            else XmssKeyManager(max_slot=max_slot)
-        )
-
-        # Update validator pubkeys to match key_manager's generated keys
-        updated_validators = [
-            validator.model_copy(update={"pubkey": key_manager[Uint64(i)].public.encode_bytes()})
-            for i, validator in enumerate(self.anchor_state.validators)
-        ]
-
-        self.anchor_state = self.anchor_state.model_copy(
-            update={"validators": Validators(data=updated_validators)}
-        )
+        # Use shared key manager
+        key_manager = _get_shared_key_manager()
 
         # Build the signed block with attestation
         signed_block = self._build_signed_block_from_spec(
             self.block, self.anchor_state, key_manager
         )
 
-        # Verify signatures before outputting
-        signed_block.verify_signatures(self.anchor_state)
+        # Override signature if provided
+        if self.override_signature is not None:
+            signed_block = signed_block.model_copy(update={"signature": self.override_signature})
 
-        # Store the output
-        self.signed_block_with_attestation = signed_block
+        exception_raised: Exception | None = None
+
+        # Verify signatures
+        try:
+            signed_block.verify_signatures(self.anchor_state)
+        except AssertionError as e:
+            exception_raised = e
+
+            # If we expect an exception, this is fine
+            if self.expect_exception is None:
+                # Unexpected failure
+                raise AssertionError(f"Unexpected error verifying block signature(s): {e}") from e
+        finally:
+            # Always store filled blocks for serialization, even if an exception occurred
+            # This ensures the test fixture contains the signed block to test with
+            self.signed_block_with_attestation = signed_block
+
+        # Validate exception expectations
+        if self.expect_exception is not None:
+            if exception_raised is None:
+                raise AssertionError(
+                    f"Expected exception {self.expect_exception.__name__} but processing succeeded"
+                )
+            if not isinstance(exception_raised, self.expect_exception):
+                raise AssertionError(
+                    f"Expected {self.expect_exception.__name__} "
+                    f"but got {type(exception_raised).__name__}: {exception_raised}"
+                )
 
         return self
 
