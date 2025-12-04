@@ -61,6 +61,7 @@ def test_proposer_signature(
         ),
     )
 
+
 def test_proposer_and_attester_signatures(
     signature_test: SignatureTestFiller,
 ) -> None:
@@ -115,6 +116,7 @@ def test_proposer_and_attester_signatures(
         ),
     )
 
+
 def test_invalid_signature(
     signature_test: SignatureTestFiller,
 ) -> None:
@@ -159,5 +161,62 @@ def test_invalid_signature(
             attestations=[],
         ),
         override_signature=BlockSignatures(data=[invalid_signature]),
+        expect_exception=AssertionError,
+    )
+
+
+def test_mixed_valid_invalid_signatures(
+    signature_test: SignatureTestFiller,
+) -> None:
+    """
+    Test that signature verification catches invalid signatures among valid ones.
+
+    Scenario
+    --------
+    - Block at slot 1 with 3 validators
+    - 2 attestations from validators 0 and 2
+    - Middle attestation (validator 2) has an invalid signature
+    - Plus the proposer attestation (validator 1)
+    - Total: 3 signatures, middle one invalid
+
+    Expected Behavior
+    -----------------
+    1. Block is created with correct slot
+    2. Three attestations are created (validator 0, 2, and proposer 1)
+    3. Validator 2's attestation gets an invalid dummy signature
+    4. verify_signatures() catches the invalid signature
+    5. SignedBlockWithAttestation is still output for testing
+
+    Why This Matters
+    ----------------
+    This test verifies that signature verification:
+    - Checks every signature individually, not just the first or last
+    - Cannot be bypassed by surrounding invalid signatures with valid ones
+    - Properly fails even when some signatures are valid
+    - Validates all attestations in the block
+
+    This ensures that clients cannot accidentally accept partially invalid
+    blocks by only checking a subset of signatures.
+    """
+    signature_test(
+        anchor_state=generate_pre_state(num_validators=3),
+        block=BlockSpec(
+            slot=Slot(1),
+            attestations=[
+                SignedAttestationSpec(
+                    validator_id=Uint64(0),
+                    slot=Slot(1),
+                    target_slot=Slot(0),
+                    target_root_label="genesis",
+                ),
+                SignedAttestationSpec(
+                    validator_id=Uint64(2),
+                    slot=Slot(1),
+                    target_slot=Slot(0),
+                    target_root_label="genesis",
+                    valid_signature=False,
+                ),
+            ],
+        ),
         expect_exception=AssertionError,
     )

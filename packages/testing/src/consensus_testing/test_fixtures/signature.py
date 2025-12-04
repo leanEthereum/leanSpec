@@ -7,10 +7,10 @@ from typing import ClassVar
 
 from pydantic import Field, field_serializer
 
-from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
+    SignedAttestation,
 )
 from lean_spec.subspecs.containers.block.block import (
     Block,
@@ -21,8 +21,8 @@ from lean_spec.subspecs.containers.block.block import (
 from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
 
@@ -300,7 +300,7 @@ class SignatureTest(BaseConsensusFixture):
         spec: SignedAttestationSpec,
         state: State,
         key_manager: XmssKeyManager,
-    ) -> "SignedAttestation":
+    ) -> SignedAttestation:
         """
         Build a SignedAttestation from a SignedAttestationSpec.
 
@@ -318,8 +318,6 @@ class SignatureTest(BaseConsensusFixture):
         SignedAttestation
             The resolved signed attestation.
         """
-        from lean_spec.subspecs.containers.attestation import SignedAttestation
-
         # For this test, we use a dummy target since we're just testing signature generation
         # In a real test, you would resolve target_root_label from a block registry
         target_root = Bytes32.zero()
@@ -342,8 +340,21 @@ class SignatureTest(BaseConsensusFixture):
             ),
         )
 
-        # Sign the attestation using the key manager
-        signature = key_manager.sign_attestation(attestation)
+        # Sign the attestation - use dummy signature if expecting invalid signature
+        if spec.valid_signature:
+            # Generate valid signature using key manager
+            signature = key_manager.sign_attestation(attestation)
+        else:
+            # Generate an invalid dummy signature (all zeros)
+            from lean_spec.subspecs.xmss.constants import PROD_CONFIG
+            from lean_spec.subspecs.xmss.containers import Signature
+            from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
+
+            signature = Signature(
+                path=HashTreeOpening(siblings=HashDigestList(data=[])),
+                rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+                hashes=HashDigestList(data=[]),
+            )
 
         # Create signed attestation
         return SignedAttestation(

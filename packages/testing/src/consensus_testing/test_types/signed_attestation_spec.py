@@ -35,3 +35,12 @@ class SignedAttestationSpec(CamelModel):
 
     If None, uses an empty signature for testing.
     """
+
+    valid_signature: bool = True
+    """
+    If False, this attestation will be given a dummy/invalid signature.
+
+    Used for testing that verification properly rejects invalid signatures.
+    When False, a structurally valid but cryptographically invalid signature
+    (all zeros) will be generated instead of a proper XMSS signature.
+    """
