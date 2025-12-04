@@ -23,22 +23,17 @@ def test_proposer_signature(
     Scenario
     --------
     - Single block at slot 1
-    - 10 validators in the genesis state
     - No additional attestations (only proposer attestation)
-    - Verifies that signatures are generated correctly
 
     Expected Behavior
     -----------------
-    1. Block is created with correct slot
-    2. Proposer attestation is generated
-    3. All signatures are properly created
-    4. Output contains a valid SignedBlockWithAttestation
+    1. Proposer's signature in SignedBlockWithAttestation can be verified successfully
 
     Why This Matters
     ----------------
     This is the most basic signature generation test. It verifies:
     - XMSS key generation works
-    - Block building produces correct structure
+    - Block building produces correct structure (TODO: use the spec's block building function)
     - Proposer attestation is created properly
     - Signature aggregation includes proposer signature
     - Output serialization works for test vectors

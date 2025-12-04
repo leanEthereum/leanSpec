@@ -106,16 +106,19 @@ class SignatureTest(BaseConsensusFixture):
         3. Creates and signs attestations
         4. Generates the proposer attestation
         5. Collects all signatures
+        6. Verifies all signatures against the anchor state
 
         Returns:
         -------
         SignatureTest
-            The validated fixture with populated output field.
+            The validated fixture with populated output field and verified signatures.
 
         Raises:
         ------
         AssertionError
             If any required field is missing or generation fails.
+        Exception
+            If signature verification fails.
         """
         # Ensure anchor_state is set
         assert self.anchor_state is not None, "anchor_state must be set before make_fixture"
@@ -145,6 +148,9 @@ class SignatureTest(BaseConsensusFixture):
         signed_block = self._build_signed_block_from_spec(
             self.block, self.anchor_state, key_manager
         )
+
+        # Verify signatures before outputting
+        signed_block.verify_signatures(self.anchor_state)
 
         # Store the output
         self.signed_block_with_attestation = signed_block
