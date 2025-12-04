@@ -85,18 +85,7 @@ class SignatureTest(BaseConsensusFixture):
     build a complete signed block with all necessary signatures.
 
     Attestations should be specified via block.attestations as SignedAttestationSpec objects.
-
-    Note: This field is excluded from the output test vector JSON.
-    """
-
-    override_signature: BlockSignatures | None = Field(default=None, exclude=True)
-    """
-    Optional signature override for testing invalid signatures.
-
-    If provided, this signature will be used instead of the correctly generated one.
-    This allows testing that signature verification properly rejects invalid signatures.
-
-    Typically used with valid=False to test negative cases.
+    Use block.valid_signature to control proposer attestation signature validity.
 
     Note: This field is excluded from the output test vector JSON.
     """
@@ -163,10 +152,6 @@ class SignatureTest(BaseConsensusFixture):
         signed_block = self._build_signed_block_from_spec(
             self.block, self.anchor_state, key_manager
         )
-
-        # Override signature if provided
-        if self.override_signature is not None:
-            signed_block = signed_block.model_copy(update={"signature": self.override_signature})
 
         exception_raised: Exception | None = None
 
@@ -284,7 +269,23 @@ class SignatureTest(BaseConsensusFixture):
 
         # Collect all signatures: attestations first, then proposer attestation
         signature_list = attestation_signatures.copy()
-        proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
+
+        # Sign proposer attestation - use dummy signature if marked invalid
+        if spec.valid_signature:
+            # Generate valid signature using key manager
+            proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
+        else:
+            # Generate an invalid dummy signature (all zeros)
+            from lean_spec.subspecs.xmss.constants import PROD_CONFIG
+            from lean_spec.subspecs.xmss.containers import Signature
+            from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
+
+            proposer_attestation_signature = Signature(
+                path=HashTreeOpening(siblings=HashDigestList(data=[])),
+                rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+                hashes=HashDigestList(data=[]),
+            )
+
         signature_list.append(proposer_attestation_signature)
 
         return SignedBlockWithAttestation(

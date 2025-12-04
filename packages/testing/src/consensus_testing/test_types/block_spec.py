@@ -97,3 +97,15 @@ class BlockSpec(CamelModel):
     If None, parent is determined by the current canonical head.
     If specified, parent_root is computed from the labeled block.
     """
+
+    valid_signature: bool = True
+    """
+    If False, the proposer attestation will be given a dummy/invalid signature.
+
+    Used for testing that verification properly rejects invalid block signatures.
+    When False, a structurally valid but cryptographically invalid signature
+    (all zeros) will be generated for the proposer attestation instead of a
+    proper XMSS signature.
+
+    Default is True (valid signatures).
+    """
