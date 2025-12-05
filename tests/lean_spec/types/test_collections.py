@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError, create_model
 from typing_extensions import Type
 
+from lean_spec.subspecs.koalabear import Fp
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
@@ -149,6 +150,13 @@ class Uint8Vector2(SSZVector):
     LENGTH = 2
 
 
+class FpVector8(SSZVector):
+    """A vector of exactly 8 Fp values."""
+
+    ELEMENT_TYPE = Fp
+    LENGTH = 8
+
+
 # Additional List classes for tests
 class Uint8List32(SSZList):
     """A list with up to 32 Uint8 values."""
@@ -176,6 +184,13 @@ class BooleanList4(SSZList):
 
     ELEMENT_TYPE = Boolean
     LIMIT = 4
+
+
+class FpList8(SSZList):
+    """A list with up to 8 Fp values."""
+
+    ELEMENT_TYPE = Fp
+    LIMIT = 8
 
 
 # Test data for the 'sig' vector test case
@@ -335,6 +350,12 @@ class TestSSZVectorSerialization:
                 (FixedContainer(a=Uint8(1), b=Uint16(2)), FixedContainer(a=Uint8(3), b=Uint16(4))),
                 "010200030400",  # 010200 for first element, 030400 for second
             ),
+            (
+                FpVector8,
+                (10, 20, 30, 40, 50, 60, 70, 80),
+                "0a000000140000001e0000002800000032000000"
+                "3c0000004600000050000000",
+            ),
         ],
     )
     def test_fixed_size_element_vector_serialization(
@@ -372,7 +393,7 @@ class TestSSZVectorSerialization:
         assert decoded == instance
 
 
-class TestListSerialization:
+class TestSSZListSerialization:
     """Tests SSZ serialization and deserialization for the List type."""
 
     @pytest.mark.parametrize(
@@ -396,6 +417,11 @@ class TestListSerialization:
                 Uint256List128,
                 tuple(range(1, 20)),
                 "".join(i.to_bytes(32, "little").hex() for i in range(1, 20)),
+            ),
+            (
+                FpList8,
+                (10, 20, 30),
+                "0a000000140000001e000000",
             ),
         ],
     )
