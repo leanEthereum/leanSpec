@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import Field, field_serializer
 
@@ -263,7 +263,7 @@ class VerifySignatureTest(BaseConsensusFixture):
         spec: BlockSpec,
         state: State,
         key_manager: XmssKeyManager,
-    ) -> tuple[list[Attestation], list]:
+    ) -> tuple[list[Attestation], list[Any]]:
         """Build attestations list from BlockSpec."""
         if spec.attestations is None:
             return [], []
