@@ -206,7 +206,7 @@ class VerifySignatureTest(BaseConsensusFixture):
         parent_root = hash_tree_root(parent_state.latest_block_header)
 
         # Build attestations from spec
-        attestations, attestation_signatures = self._build_attestations_from_spec(
+        attestations, signatures = self._build_attestations_from_spec(
             spec, state, key_manager
         )
 
@@ -230,9 +230,6 @@ class VerifySignatureTest(BaseConsensusFixture):
             ),
         )
 
-        # Collect all signatures: attestations first, then proposer attestation
-        signature_list = attestation_signatures.copy()
-
         # Sign proposer attestation - use valid or dummy signature based on spec
         if spec.valid_signature:
             proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
@@ -248,14 +245,14 @@ class VerifySignatureTest(BaseConsensusFixture):
                 hashes=HashDigestList(data=[]),
             )
 
-        signature_list.append(proposer_attestation_signature)
+        signatures.append(proposer_attestation_signature)
 
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,
                 proposer_attestation=proposer_attestation,
             ),
-            signature=BlockSignatures(data=signature_list),
+            signature=BlockSignatures(data=signatures),
         )
 
     def _build_attestations_from_spec(
@@ -272,18 +269,15 @@ class VerifySignatureTest(BaseConsensusFixture):
         attestation_signatures = []
 
         for attestation_item in spec.attestations:
-            # Handle both SignedAttestation and SignedAttestationSpec
-            if isinstance(attestation_item, SignedAttestation):
-                # Already a SignedAttestation, use it directly
-                attestations.append(attestation_item.message)
-                attestation_signatures.append(attestation_item.signature)
-            else:
-                # It's a SignedAttestationSpec, build it
+            if isinstance(attestation_item, SignedAttestationSpec):
                 signed_attestation = self._build_signed_attestation_from_spec(
                     attestation_item, state, key_manager
                 )
                 attestations.append(signed_attestation.message)
                 attestation_signatures.append(signed_attestation.signature)
+            else:
+                attestations.append(attestation_item.message)
+                attestation_signatures.append(attestation_item.signature)
 
         return attestations, attestation_signatures
 
