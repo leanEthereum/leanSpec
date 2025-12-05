@@ -34,13 +34,10 @@ def test_proposer_signature(
     ----------------
     This is the most basic signature generation test. It verifies:
     - XMSS key generation works
-    - Block building produces correct structure (TODO: use the spec's block building function)
-    - Proposer attestation is created properly
     - Signature aggregation includes proposer signature
-    - Output serialization works for test vectors
     """
     verify_signature_test(
-        anchor_state=generate_pre_state(num_validators=1),
+        anchor_state=generate_pre_state(num_validators=2),
         block=BlockSpec(
             slot=Slot(1),
             attestations=[],

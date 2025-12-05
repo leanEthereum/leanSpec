@@ -202,7 +202,8 @@ class VerifySignatureTest(BaseConsensusFixture):
         proposer_index = spec.proposer_index or Uint64(int(spec.slot) % int(state.validators.count))
 
         # Resolve parent root
-        parent_root, parent_state = self._resolve_parent_root(spec, state)
+        parent_state = state.process_slots(spec.slot)
+        parent_root = hash_tree_root(parent_state.latest_block_header)
 
         # Build attestations from spec
         attestations, attestation_signatures = self._build_attestations_from_spec(
@@ -256,34 +257,6 @@ class VerifySignatureTest(BaseConsensusFixture):
             ),
             signature=BlockSignatures(data=signature_list),
         )
-
-    def _resolve_parent_root(
-        self,
-        spec: BlockSpec,
-        state: State,
-    ) -> tuple[Bytes32, State]:
-        """
-        Resolve parent root from BlockSpec.
-
-        For verify_signature tests, we always compute the parent root by
-        advancing the state to the block's slot.
-
-        Parameters
-        ----------
-        spec : BlockSpec
-            The block specification.
-        state : State
-            The anchor state to build against.
-
-        Returns:
-        -------
-        tuple[Bytes32, State]
-            Tuple of (parent_root, state_at_slot).
-        """
-        # Advance state to the block's slot
-        state_at_slot = state.process_slots(spec.slot)
-        parent_root = hash_tree_root(state_at_slot.latest_block_header)
-        return parent_root, state_at_slot
 
     def _build_attestations_from_spec(
         self,
