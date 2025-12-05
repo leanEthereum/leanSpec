@@ -46,7 +46,7 @@ class SSZVector(SSZModel):
     """The immutable data stored in the vector."""
 
     @field_serializer("data", when_used="json")
-    def _serialize_vector_data(self, value: Tuple[SSZType, ...]) -> list[Any]:
+    def _serialize_data(self, value: Tuple[SSZType, ...]) -> list[Any]:
         """Serialize vector elements to JSON, preserving custom type serialization."""
         from lean_spec.subspecs.koalabear import Fp
 
