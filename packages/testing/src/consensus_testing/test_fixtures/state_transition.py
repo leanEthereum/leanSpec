@@ -182,10 +182,6 @@ class StateTransitionTest(BaseConsensusFixture):
         Returns both the block and the cached post-state (if computed) to avoid
         redundant state transitions.
 
-        TODO: If the spec implements a State.produce_block() method in the future,
-        we should use that instead of manually computing fields here. Until then,
-        this manual approach is necessary.
-
         Parameters
         ----------
         spec : BlockSpec
@@ -198,56 +194,46 @@ class StateTransitionTest(BaseConsensusFixture):
         tuple[Block, State | None]
             Block and cached post-state (None if not computed).
         """
-        # Use provided proposer_index or compute it
-        if spec.proposer_index is not None:
-            proposer_index = spec.proposer_index
-        else:
-            proposer_index = Uint64(int(spec.slot) % int(state.validators.count))
+        # Use provided proposer index or compute it
+        proposer_index = spec.proposer_index or Uint64(int(spec.slot) % int(state.validators.count))
 
-        # Use provided parent_root or compute it
+        # Use provided parent root or compute it
         if spec.parent_root is not None:
             parent_root = spec.parent_root
         else:
             temp_state = state.process_slots(spec.slot)
             parent_root = hash_tree_root(temp_state.latest_block_header)
 
-        # Use provided body or create empty one
-        if spec.body is not None:
-            body = spec.body
-        else:
-            body = BlockBody(attestations=Attestations(data=[]))
+        # Extract attestations from body if provided
+        attestations = list(spec.body.attestations) if spec.body else []
 
-        # Compute state_root and cache post-state
-        cached_post_state: State | None = None
-
+        # Handle explicit state root override
         if spec.state_root is not None:
-            # Explicit override: use provided state root, no caching possible
-            state_root = spec.state_root
-        else:
-            # Compute state_root via dry-run state transition
-            temp_state = state.process_slots(spec.slot)
-            temp_block = Block(
+            block = Block(
+                slot=spec.slot,
+                proposer_index=proposer_index,
+                parent_root=parent_root,
+                state_root=spec.state_root,
+                body=spec.body or BlockBody(attestations=Attestations(data=[])),
+            )
+            return block, None
+
+        # For invalid tests, return incomplete block without processing
+        if self.expect_exception is not None:
+            block = Block(
                 slot=spec.slot,
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=Bytes32.zero(),
-                body=body,
+                body=spec.body or BlockBody(attestations=Attestations(data=attestations)),
             )
+            return block, None
 
-            # For invalid tests, return incomplete block without processing
-            if self.expect_exception is not None:
-                return temp_block, None
-
-            # Run state transition once and cache result
-            cached_post_state = temp_state.process_block(temp_block)
-            state_root = hash_tree_root(cached_post_state)
-
-        # Return final block with cached post-state
-        block = Block(
+        # Build the block using the state for standard case
+        block, post_state, _, _ = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            state_root=state_root,
-            body=body,
+            attestations=attestations,
         )
-        return block, cached_post_state
+        return block, post_state

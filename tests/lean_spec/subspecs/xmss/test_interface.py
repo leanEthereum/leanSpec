@@ -47,8 +47,27 @@ def _test_correctness_roundtrip(
     #
     # Verification must fail if the message is tampered with.
     tampered_message = b"\x43" * scheme.config.MESSAGE_LENGTH
-    is_invalid_msg = scheme.verify(pk, test_epoch, tampered_message, signature)
-    assert not is_invalid_msg, "Verification succeeded for a tampered message"
+
+    # With small test parameters (test configuration), there's a small chance that
+    # the tampered message produces the same codeword as the original due to
+    # modular reduction collision.
+    #
+    # In that case, verification will succeed, which is expected behavior for identical codewords.
+    #
+    # We detect this by checking if both messages encode to the same codeword.
+    original_codeword = scheme.encoder.encode(pk.parameter, message, signature.rho, test_epoch)
+    tampered_codeword = scheme.encoder.encode(
+        pk.parameter, tampered_message, signature.rho, test_epoch
+    )
+
+    if tampered_codeword != original_codeword:
+        # Different codewords: verification must fail
+        is_invalid_msg = scheme.verify(pk, test_epoch, tampered_message, signature)
+        assert not is_invalid_msg, "Verification succeeded for a tampered message"
+    else:
+        # Codeword collision: verification succeeds (expected with small test parameters)
+        is_collision_valid = scheme.verify(pk, test_epoch, tampered_message, signature)
+        assert is_collision_valid, "Verification failed despite identical codewords"
 
     # Verification must fail if the epoch is incorrect.
     if num_active_epochs > 1:
