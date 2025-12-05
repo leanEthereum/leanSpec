@@ -45,6 +45,25 @@ class SSZVector(SSZModel):
     data: Tuple[SSZType, ...] = Field(default_factory=tuple)
     """The immutable data stored in the vector."""
 
+    @field_serializer("data", when_used="json")
+    def _serialize_vector_data(self, value: Tuple[SSZType, ...]) -> list[Any]:
+        """Serialize vector elements to JSON, preserving custom type serialization."""
+        from lean_spec.subspecs.koalabear import Fp
+
+        result: list[Any] = []
+        for item in value:
+            # For BaseBytes subclasses, manually add 0x prefix
+            if isinstance(item, BaseBytes):
+                result.append("0x" + item.hex())
+            # For Fp field elements, extract the value attribute
+            elif isinstance(item, Fp):
+                result.append(item.value)
+            else:
+                # For other types (Uint, etc.), convert to int
+                # BaseUint inherits from int, so this cast is safe
+                result.append(item)
+        return result
+
     @field_validator("data", mode="before")
     @classmethod
     def _validate_vector_data(cls, v: Any) -> Tuple[SSZType, ...]:
@@ -188,11 +207,16 @@ class SSZList(SSZModel):
     @field_serializer("data", when_used="json")
     def _serialize_data(self, value: Tuple[SSZType, ...]) -> list[Any]:
         """Serialize list elements to JSON, preserving custom type serialization."""
+        from lean_spec.subspecs.koalabear import Fp
+
         result: list[Any] = []
         for item in value:
             # For BaseBytes subclasses, manually add 0x prefix
             if isinstance(item, BaseBytes):
                 result.append("0x" + item.hex())
+            # For Fp field elements, extract the value attribute
+            elif isinstance(item, Fp):
+                result.append(item.value)
             else:
                 # For other types (Uint, etc.), convert to int
                 # BaseUint inherits from int, so this cast is safe
