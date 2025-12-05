@@ -1,0 +1,1 @@
+"""Signature generation tests."""
