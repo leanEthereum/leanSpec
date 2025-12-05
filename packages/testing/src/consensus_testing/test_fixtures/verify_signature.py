@@ -13,12 +13,10 @@ from lean_spec.subspecs.containers.attestation import (
     SignedAttestation,
 )
 from lean_spec.subspecs.containers.block.block import (
-    Block,
-    BlockBody,
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
+from lean_spec.subspecs.containers.block.types import BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
@@ -140,9 +138,7 @@ class VerifySignatureTest(BaseConsensusFixture):
         key_manager = _get_shared_key_manager()
 
         # Build the signed block with attestation
-        signed_block = self._build_signed_block_from_spec(
-            self.block, self.anchor_state, key_manager
-        )
+        signed_block = self._build_block_from_spec(self.block, self.anchor_state, key_manager)
 
         exception_raised: Exception | None = None
 
@@ -174,7 +170,7 @@ class VerifySignatureTest(BaseConsensusFixture):
 
         return self
 
-    def _build_signed_block_from_spec(
+    def _build_block_from_spec(
         self,
         spec: BlockSpec,
         state: State,
@@ -182,6 +178,11 @@ class VerifySignatureTest(BaseConsensusFixture):
     ) -> SignedBlockWithAttestation:
         """
         Build a complete SignedBlockWithAttestation from a BlockSpec.
+
+        This method combines:
+            - spec logic (via the state block building logic),
+            - test-specific logic (signing),
+        to produce a complete signed block.
 
         Parameters
         ----------
@@ -197,58 +198,23 @@ class VerifySignatureTest(BaseConsensusFixture):
         SignedBlockWithAttestation
             A complete signed block with all attestations.
         """
-        # Determine proposer
-        if spec.proposer_index is None:
-            validator_count = state.validators.count
-            proposer_index = Uint64(int(spec.slot) % int(validator_count))
-        else:
-            proposer_index = spec.proposer_index
+        # Determine proposer index
+        proposer_index = spec.proposer_index or Uint64(int(spec.slot) % int(state.validators.count))
 
-        # Process state to the block's slot
-        temp_state = state.process_slots(spec.slot)
-        parent_root = hash_tree_root(temp_state.latest_block_header)
+        # Resolve parent root
+        parent_root, parent_state = self._resolve_parent_root(spec, state)
 
-        # Prepare attestations from spec if provided
-        attestations = []
-        attestation_signatures = []
-        if spec.attestations is not None:
-            for attestation_item in spec.attestations:
-                # Handle both SignedAttestation and SignedAttestationSpec
-                if isinstance(attestation_item, SignedAttestation):
-                    # Already a SignedAttestation, use it directly
-                    signed_attestation = attestation_item
-                else:
-                    # It's a SignedAttestationSpec, build it
-                    signed_attestation = self._build_signed_attestation_from_spec(
-                        attestation_item, state, key_manager
-                    )
-                # Extract the Attestation message and signature
-                attestations.append(signed_attestation.message)
-                attestation_signatures.append(signed_attestation.signature)
-
-        # Build block body with collected attestations
-        body = BlockBody(attestations=Attestations(data=attestations))
-
-        # Create temporary block for dry-run
-        temp_block = Block(
-            slot=spec.slot,
-            proposer_index=proposer_index,
-            parent_root=parent_root,
-            state_root=Bytes32.zero(),
-            body=body,
+        # Build attestations from spec
+        attestations, attestation_signatures = self._build_attestations_from_spec(
+            spec, state, key_manager
         )
 
-        # Process to get correct state root
-        post_state = temp_state.process_block(temp_block)
-        correct_state_root = hash_tree_root(post_state)
-
-        # Create final block
-        final_block = Block(
+        # Use State.build_block for core block building (pure spec logic)
+        final_block, _, _, _ = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            state_root=correct_state_root,
-            body=body,
+            attestations=attestations,
         )
 
         # Create proposer attestation for this block
@@ -259,16 +225,15 @@ class VerifySignatureTest(BaseConsensusFixture):
                 slot=spec.slot,
                 head=Checkpoint(root=block_root, slot=spec.slot),
                 target=Checkpoint(root=block_root, slot=spec.slot),
-                source=Checkpoint(root=parent_root, slot=temp_state.latest_block_header.slot),
+                source=Checkpoint(root=parent_root, slot=parent_state.latest_block_header.slot),
             ),
         )
 
         # Collect all signatures: attestations first, then proposer attestation
         signature_list = attestation_signatures.copy()
 
-        # Sign proposer attestation - use dummy signature if marked invalid
+        # Sign proposer attestation - use valid or dummy signature based on spec
         if spec.valid_signature:
-            # Generate valid signature using key manager
             proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
         else:
             # Generate an invalid dummy signature (all zeros)
@@ -291,6 +256,63 @@ class VerifySignatureTest(BaseConsensusFixture):
             ),
             signature=BlockSignatures(data=signature_list),
         )
+
+    def _resolve_parent_root(
+        self,
+        spec: BlockSpec,
+        state: State,
+    ) -> tuple[Bytes32, State]:
+        """
+        Resolve parent root from BlockSpec.
+
+        For verify_signature tests, we always compute the parent root by
+        advancing the state to the block's slot.
+
+        Parameters
+        ----------
+        spec : BlockSpec
+            The block specification.
+        state : State
+            The anchor state to build against.
+
+        Returns:
+        -------
+        tuple[Bytes32, State]
+            Tuple of (parent_root, state_at_slot).
+        """
+        # Advance state to the block's slot
+        state_at_slot = state.process_slots(spec.slot)
+        parent_root = hash_tree_root(state_at_slot.latest_block_header)
+        return parent_root, state_at_slot
+
+    def _build_attestations_from_spec(
+        self,
+        spec: BlockSpec,
+        state: State,
+        key_manager: XmssKeyManager,
+    ) -> tuple[list[Attestation], list]:
+        """Build attestations list from BlockSpec."""
+        if spec.attestations is None:
+            return [], []
+
+        attestations = []
+        attestation_signatures = []
+
+        for attestation_item in spec.attestations:
+            # Handle both SignedAttestation and SignedAttestationSpec
+            if isinstance(attestation_item, SignedAttestation):
+                # Already a SignedAttestation, use it directly
+                attestations.append(attestation_item.message)
+                attestation_signatures.append(attestation_item.signature)
+            else:
+                # It's a SignedAttestationSpec, build it
+                signed_attestation = self._build_signed_attestation_from_spec(
+                    attestation_item, state, key_manager
+                )
+                attestations.append(signed_attestation.message)
+                attestation_signatures.append(signed_attestation.signature)
+
+        return attestations, attestation_signatures
 
     def _build_signed_attestation_from_spec(
         self,
