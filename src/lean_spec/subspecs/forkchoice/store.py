@@ -732,7 +732,7 @@ class Store(Container):
         """
         # Advance time by one interval
         store = self.model_copy(update={"time": self.time + Uint64(1)})
-        current_interval = store.time % SECONDS_PER_SLOT % INTERVALS_PER_SLOT
+        current_interval = store.time % INTERVALS_PER_SLOT
 
         if current_interval == Uint64(0):
             # Start of slot - process attestations if proposal exists
