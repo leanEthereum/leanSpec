@@ -1,9 +1,6 @@
 """Core definition of the KoalaBear prime field Fp."""
 
-from typing import IO, Any, Self
-
-from pydantic.annotated_handlers import GetCoreSchemaHandler
-from pydantic_core import core_schema
+from typing import IO, Self
 
 from lean_spec.types import SSZType
 
