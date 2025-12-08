@@ -968,6 +968,15 @@ class Store(Container):
         attestations: list[Attestation] = []
         signatures: list[Signature] = []
 
+        advanced_state = head_state.process_slots(slot)
+
+        # Cache known attestations if it is in our store
+        candidate_attestations = [
+            attestations
+            for attestations in store.latest_known_attestations.values()
+            if attestations.message.data.head.root in store.blocks
+        ]
+
         # Iteratively collect valid attestations using fixed-point algorithm
         #
         # Continue until no new attestations can be added to the block.
@@ -984,19 +993,14 @@ class Store(Container):
 
             # Apply state transition to get the post-block state
             # First advance state to target slot, then process the block
-            advanced_state = head_state.process_slots(slot)
             post_state = advanced_state.process_block(candidate_block)
 
             # Find new valid attestations matching post-state justification
             new_attestations: list[Attestation] = []
             new_signatures: list[Signature] = []
 
-            for signed_attestation in store.latest_known_attestations.values():
+            for signed_attestation in candidate_attestations:
                 data = signed_attestation.message.data
-
-                # Skip if target block is unknown in our store
-                if data.head.root not in store.blocks:
-                    continue
 
                 # Skip if attestation source does not match post-state's latest justified
                 if data.source != post_state.latest_justified:
