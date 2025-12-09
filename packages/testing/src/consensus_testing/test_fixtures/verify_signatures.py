@@ -42,7 +42,7 @@ def _get_shared_prod_key_manager() -> XmssKeyManager:
     Returns:
         Shared XmssKeyManager instance with max_slot=10.
     """
-    return XmssKeyManager(max_slot=Slot(10), scheme=PROD_SIGNATURE_SCHEME)
+    return XmssKeyManager(max_slot=Slot(10))
 
 
 class VerifySignaturesTest(BaseConsensusFixture):
@@ -145,7 +145,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Verify signatures
         try:
-            signed_block.verify_signatures(self.anchor_state, scheme=PROD_SIGNATURE_SCHEME)
+            signed_block.verify_signatures(self.anchor_state)
         except AssertionError as e:
             exception_raised = e
             # If we expect an exception, this is fine
@@ -236,13 +236,13 @@ class VerifySignaturesTest(BaseConsensusFixture):
             proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
         else:
             # Generate an invalid dummy signature (all zeros)
-            from lean_spec.subspecs.xmss.constants import PROD_CONFIG
+            from lean_spec.subspecs.xmss.constants import TEST_CONFIG
             from lean_spec.subspecs.xmss.containers import Signature
             from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 
             proposer_attestation_signature = Signature(
                 path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+                rho=Randomness(data=[Fp(0) for _ in range(TEST_CONFIG.RAND_LEN_FE)]),
                 hashes=HashDigestList(data=[]),
             )
 
@@ -333,13 +333,13 @@ class VerifySignaturesTest(BaseConsensusFixture):
             signature = key_manager.sign_attestation(attestation)
         else:
             # Generate an invalid dummy signature (all zeros)
-            from lean_spec.subspecs.xmss.constants import PROD_CONFIG
+            from lean_spec.subspecs.xmss.constants import TEST_CONFIG
             from lean_spec.subspecs.xmss.containers import Signature
             from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 
             signature = Signature(
                 path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+                rho=Randomness(data=[Fp(0) for _ in range(TEST_CONFIG.RAND_LEN_FE)]),
                 hashes=HashDigestList(data=[]),
             )
 
