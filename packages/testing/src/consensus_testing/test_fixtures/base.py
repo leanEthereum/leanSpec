@@ -17,6 +17,10 @@ class BaseConsensusFixture(BaseFixture):
     # Override parent's formats to maintain a separate registry
     formats: ClassVar[dict[str, type["BaseConsensusFixture"]]] = {}  # type: ignore[assignment]
 
+    # Consensus-specific instance fields
+    signature_scheme: str = "test"
+    """The XMSS signature scheme to use ('test' or 'prod')."""
+
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         """

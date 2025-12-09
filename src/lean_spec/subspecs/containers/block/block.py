@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme, PROD_SIGNATURE_SCHEME
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
@@ -115,7 +116,9 @@ class SignedBlockWithAttestation(Container):
     aggregation of all signatures).
     """
 
-    def verify_signatures(self, parent_state: "State") -> bool:
+    def verify_signatures(
+        self, parent_state: "State", scheme: GeneralizedXmssScheme = PROD_SIGNATURE_SCHEME
+    ) -> bool:
         """
         Verify all XMSS signatures in this signed block.
 
@@ -127,6 +130,7 @@ class SignedBlockWithAttestation(Container):
         Args:
             parent_state: The state at the parent block, used to retrieve
                 validator public keys and verify signatures.
+            scheme: The XMSS signature scheme to use for verification.
 
         Returns:
             True if all signatures are cryptographically valid.
@@ -179,6 +183,7 @@ class SignedBlockWithAttestation(Container):
                 validator.get_pubkey(),
                 attestation.data.slot,
                 bytes(hash_tree_root(attestation)),
+                scheme=scheme,
             ), "Attestation signature verification failed"
 
         return True

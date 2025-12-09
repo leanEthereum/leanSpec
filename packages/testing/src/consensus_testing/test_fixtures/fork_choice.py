@@ -29,11 +29,11 @@ from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.subspecs.xmss.constants import PROD_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 from lean_spec.types import Bytes32, Uint64
 
-from ..keys import XmssKeyManager
+from ..keys import XmssKeyManager, get_shared_key_manager
+from ..signature_schemes import get_current_scheme, get_scheme_by_name
 from ..test_types import (
     AttestationStep,
     BlockSpec,
@@ -43,21 +43,6 @@ from ..test_types import (
     TickStep,
 )
 from .base import BaseConsensusFixture
-
-
-@lru_cache(maxsize=1)
-def _get_shared_key_manager() -> XmssKeyManager:
-    """
-    Get or create the shared XMSS key manager for reusing keys across tests.
-
-    Uses functools.lru_cache to create a singleton instance that's shared
-    across all test fixture generations within a session. This optimizes
-    performance by reusing keys when possible.
-
-    Returns:
-        Shared XmssKeyManager instance with max_slot=10.
-    """
-    return XmssKeyManager(max_slot=Slot(10))
 
 
 class ForkChoiceTest(BaseConsensusFixture):
@@ -185,11 +170,12 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         # Use shared key manager if it has sufficient capacity, otherwise create a new one
         # This optimizes performance by reusing keys across tests when possible
-        shared_key_manager = _get_shared_key_manager()
+        shared_key_manager = get_shared_key_manager()
+        scheme = get_current_scheme()
         key_manager = (
             shared_key_manager
             if self.max_slot <= shared_key_manager.max_slot
-            else XmssKeyManager(max_slot=self.max_slot, scheme=TEST_SIGNATURE_SCHEME)
+            else XmssKeyManager(max_slot=self.max_slot, scheme=scheme)
         )
 
         # Update validator pubkeys to match key_manager's generated keys
@@ -246,7 +232,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                     store = store.on_tick(block_time, has_proposal=True)
 
                     # Process the block (immutable)
-                    store = store.on_block(signed_block)
+                    store = store.on_block(signed_block, scheme)
 
                 elif isinstance(step, AttestationStep):
                     # Process attestation from gossip (immutable)

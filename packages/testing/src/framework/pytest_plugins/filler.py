@@ -147,6 +147,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Clean output directory before generating",
     )
+    group.addoption(
+        "--scheme",
+        action="store",
+        default="test",
+        choices=["test", "prod"],
+        help="XMSS signature scheme to use (default: test)",
+    )
 
 
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
@@ -231,6 +238,7 @@ def pytest_configure(config: pytest.Config) -> None:
     output_dir = Path(config.getoption("--output"))
     fork_name = config.getoption("--fork")
     clean = config.getoption("--clean")
+    scheme_name = config.getoption("--scheme")
 
     # Get available forks from layer-specific module
     get_forks = layer_module.forks.get_forks
@@ -259,6 +267,28 @@ def pytest_configure(config: pytest.Config) -> None:
             file=sys.stderr,
         )
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
+
+    # Get available signature scehemes from layer-specific module
+    get_scheme_by_name = layer_module.signature_schemes.get_scheme_by_name
+    available_signature_schemes = layer_module.signature_schemes.get_schemes()
+    signature_scheme = get_scheme_by_name(scheme_name)
+
+    if signature_scheme is None:
+        print(
+            f"Error: Unsupported signature scheme for {layer} layer: {scheme_name}\n",
+            file=sys.stderr,
+        )
+        print(
+            f"Available {layer} signature schemes: {', '.join(available_signature_schemes)}",
+            file=sys.stderr,
+        )
+        pytest.exit("Invalid signature scheme specified.", returncode=pytest.ExitCode.USAGE_ERROR)
+
+    # Store scheme name for later use
+    config.target_signature_scheme = scheme_name  # type: ignore[attr-defined]
+
+    # Set the current scheme for the session
+    layer_module.signature_schemes.set_current_scheme(signature_scheme)
 
     # Check output directory
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -461,6 +491,10 @@ def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
             """Wrapper class that auto-fills and collects fixtures on instantiation."""
 
             def __init__(self, **kwargs: Any) -> None:
+                # Extract and inject signature scheme if not provided by test
+                if "signature_scheme" not in kwargs:
+                    kwargs["signature_scheme"] = getattr(request.config, "target_signature_scheme")
+
                 # Auto-inject pre-state if not provided by test
                 if "pre" not in kwargs and "anchor_state" not in kwargs:
                     # Determine which field to inject based on fixture type

@@ -72,14 +72,9 @@ class Signature(Container):
         public_key: PublicKey,
         epoch: "Uint64",
         message: bytes,
-        scheme: "GeneralizedXmssScheme | None" = None,
+        scheme: GeneralizedXmssScheme,
     ) -> bool:
         """Verify the signature using XMSS verification algorithm."""
-        from .interface import TEST_SIGNATURE_SCHEME
-
-        if scheme is None:
-            scheme = TEST_SIGNATURE_SCHEME
-
         try:
             return scheme.verify(public_key, epoch, message, self)
         except Exception:

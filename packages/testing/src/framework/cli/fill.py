@@ -37,6 +37,12 @@ import pytest
     is_flag=True,
     help="Clean output directory before generating",
 )
+@click.option(
+    "--scheme",
+    type=click.Choice(["test", "prod"], case_sensitive=False),
+    default="test",
+    help="XMSS signature scheme to use (default: test)",
+)
 @click.pass_context
 def fill(
     ctx: click.Context,
@@ -45,6 +51,7 @@ def fill(
     fork: str,
     layer: str,
     clean: bool,
+    scheme: str,
 ) -> None:
     """
     Generate Ethereum test fixtures from test specifications.
@@ -81,6 +88,7 @@ def fill(
         f"--output={output}",
         f"--fork={fork}",
         f"--layer={layer}",
+        f"--scheme={scheme}",
     ]
 
     if clean:

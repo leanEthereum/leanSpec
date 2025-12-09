@@ -2,7 +2,7 @@
 
 from typing import Type
 
-from . import forks
+from . import forks, signature_schemes
 from .test_fixtures import (
     BaseConsensusFixture,
     ForkChoiceTest,
@@ -31,6 +31,7 @@ __all__ = [
     "SignedAttestationSpec",
     "forks",
     "generate_pre_state",
+    "signature_schemes",
     # Base types
     # Fixture classes
     "BaseConsensusFixture",

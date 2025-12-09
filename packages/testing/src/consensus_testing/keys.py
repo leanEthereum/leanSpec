@@ -22,10 +22,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
+import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, lru_cache, partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Self
 
@@ -36,12 +38,10 @@ from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Uint64
 
+from .signature_schemes import get_current_scheme, get_name_by_scheme, get_scheme_by_name, get_schemes
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-
-KEYS_FILE = Path(__file__).parent / "test_keys.json"
-"""Path to the pre-generated keys file."""
 
 NUM_VALIDATORS = 12
 """Default number of validator key pairs."""
@@ -52,6 +52,23 @@ DEFAULT_MAX_SLOT = Slot(100)
 NUM_ACTIVE_EPOCHS = int(DEFAULT_MAX_SLOT) + 1
 """Key lifetime in epochs (derived from DEFAULT_MAX_SLOT)."""
 
+
+@lru_cache(maxsize=1)
+def get_shared_key_manager() -> XmssKeyManager:
+    """
+    Get or create the shared XMSS key manager for reusing keys across tests.
+
+    Uses functools.lru_cache to create a singleton instance that's shared
+    across all test fixture generations within a session. This optimizes
+    performance by reusing keys when possible.
+
+    The scheme is determined by get_current_scheme(), set once at session start.
+
+    Returns:
+        Shared XmssKeyManager instance with max_slot=10 for the current scheme.
+    """
+    scheme = get_current_scheme()
+    return XmssKeyManager(max_slot=Slot(10), scheme=scheme)
 
 @dataclass(frozen=True, slots=True)
 class KeyPair:
@@ -86,10 +103,17 @@ class KeyPair:
         return KeyPair(public=self.public, secret=secret)
 
 
+def _get_keys_file(scheme_name: str) -> Path:
+    """Get the keys file path for the given scheme."""
+    return Path(__file__).parent / f"{scheme_name}_keys.json"
+
 @cache
-def load_keys() -> dict[Uint64, KeyPair]:
+def load_keys(scheme_name: str) -> dict[Uint64, KeyPair]:
     """
     Load pre-generated keys from disk (cached after first call).
+
+    Args:
+        scheme_name: Name of the signature scheme.
 
     Returns:
         Mapping from validator index to key pair.
@@ -97,11 +121,13 @@ def load_keys() -> dict[Uint64, KeyPair]:
     Raises:
         FileNotFoundError: If keys file is missing.
     """
-    if not KEYS_FILE.exists():
+    keys_file = _get_keys_file(scheme_name)
+
+    if not keys_file.exists():
         raise FileNotFoundError(
-            f"Keys not found: {KEYS_FILE}\nRun: python -m consensus_testing.keys"
+            f"Keys not found: {keys_file}\nRun: python -m consensus_testing.keys"
         )
-    data = json.loads(KEYS_FILE.read_text())
+    data = json.loads(keys_file.read_text())
     return {Uint64(i): KeyPair.from_dict(kp) for i, kp in enumerate(data)}
 
 
@@ -114,8 +140,8 @@ class XmssKeyManager:
     Keys are lazily loaded from disk on first access.
 
     Args:
-        max_slot: Maximum slot for signatures. Defaults to DEFAULT_MAX_SLOT.
-        scheme: XMSS scheme instance. Defaults to TEST_SIGNATURE_SCHEME.
+        max_slot: Maximum slot for signatures.
+        scheme: XMSS scheme instance.
 
     Examples:
         >>> mgr = XmssKeyManager()
@@ -126,18 +152,19 @@ class XmssKeyManager:
 
     def __init__(
         self,
-        max_slot: Slot | None = None,
-        scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME,
+        max_slot: Slot,
+        scheme: GeneralizedXmssScheme,
     ) -> None:
         """Initialize the manager with optional custom configuration."""
-        self.max_slot = max_slot or DEFAULT_MAX_SLOT
+        self.max_slot = max_slot
         self.scheme = scheme
         self._state: dict[Uint64, KeyPair] = {}
 
     @property
     def keys(self) -> dict[Uint64, KeyPair]:
         """Lazy access to immutable base keys."""
-        return load_keys()
+        scheme_name = get_name_by_scheme(self.scheme)
+        return load_keys(scheme_name)
 
     def __getitem__(self, idx: Uint64) -> KeyPair:
         """Get key pair, returning advanced state if available."""
@@ -205,13 +232,12 @@ class XmssKeyManager:
         return self.scheme.sign(sk, epoch, message)
 
 
-def _generate_single_keypair(num_epochs: int) -> dict[str, str]:
+def _generate_single_keypair(scheme: GeneralizedXmssScheme, num_epochs: int, _idx: int) -> dict[str, str]:
     """Generate one key pair (module-level for pickling in ProcessPoolExecutor)."""
-    pk, sk = TEST_SIGNATURE_SCHEME.key_gen(Uint64(0), Uint64(num_epochs))
+    pk, sk = scheme.key_gen(Uint64(0), Uint64(num_epochs))
     return KeyPair(public=pk, secret=sk).to_dict()
 
-
-def generate_keys(count: int = NUM_VALIDATORS, max_slot: int = int(DEFAULT_MAX_SLOT)) -> None:
+def _generate_keys(scheme_name: str, count: int, max_slot: int) -> None:
     """
     Generate XMSS key pairs in parallel and save atomically.
 
@@ -219,31 +245,38 @@ def generate_keys(count: int = NUM_VALIDATORS, max_slot: int = int(DEFAULT_MAX_S
     Writes to a temp file then renames for crash safety.
 
     Args:
+        scheme_name: Name of the XMSS signature scheme to use (e.g. "test" or "prod").
         count: Number of validators.
         max_slot: Maximum slot (key lifetime = max_slot + 1 epochs).
     """
+    scheme = get_scheme_by_name(scheme_name)
+    keys_file = _get_keys_file(scheme_name)
     num_epochs = max_slot + 1
     num_workers = os.cpu_count() or 1
 
-    print(f"Generating {count} XMSS key pairs ({num_epochs} epochs) using {num_workers} cores...")
+    print(
+        f"Generating {count} XMSS key pairs for {scheme_name} scheme "
+        f"({num_epochs} epochs) using {num_workers} cores..."
+    )
 
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        key_pairs = list(executor.map(_generate_single_keypair, [num_epochs] * count))
+        worker_func = partial(_generate_single_keypair, scheme, num_epochs)
+        key_pairs = list(executor.map(worker_func, range(count)))
 
     # Atomic write: temp file -> rename
-    fd, temp_path = tempfile.mkstemp(suffix=".json", dir=KEYS_FILE.parent)
+    fd, temp_path = tempfile.mkstemp(suffix=".json", dir=keys_file.parent)
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(key_pairs, f, indent=2)
-        Path(temp_path).replace(KEYS_FILE)
+        Path(temp_path).replace(keys_file)
     except Exception:
         Path(temp_path).unlink(missing_ok=True)
         raise
 
-    print(f"Saved {len(key_pairs)} key pairs to {KEYS_FILE}")
+    print(f"Saved {len(key_pairs)} key pairs to {keys_file}")
 
     # Clear cache so new keys are loaded
-    load_keys.cache_clear()
+    load_keys.clear()
 
 
 def main() -> None:
@@ -251,6 +284,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate XMSS key pairs for consensus testing",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--scheme",
+        choices=list(get_schemes()),
+        default=TEST_SIGNATURE_SCHEME,
+        help="XMSS scheme to use",
     )
     parser.add_argument(
         "--count",
@@ -266,7 +305,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    generate_keys(count=args.count, max_slot=args.max_slot)
+    _generate_keys(scheme_name=args.scheme, count=args.count, max_slot=args.max_slot)
 
 
 if __name__ == "__main__":
