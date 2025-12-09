@@ -31,7 +31,7 @@ from .base import BaseConsensusFixture
 
 
 @lru_cache(maxsize=1)
-def _get_shared_prod_key_manager() -> XmssKeyManager:
+def _get_shared_key_manager() -> XmssKeyManager:
     """
     Get or create the shared XMSS key manager for reusing keys across tests.
 
@@ -136,7 +136,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         assert self.anchor_state is not None, "anchor_state must be set before make_fixture"
 
         # Use shared key manager
-        key_manager = _get_shared_prod_key_manager()
+        key_manager = _get_shared_key_manager()
 
         # Build the signed block with attestation
         signed_block = self._build_block_from_spec(self.block, self.anchor_state, key_manager)
