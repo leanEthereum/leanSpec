@@ -17,7 +17,7 @@ Mapping from short name to scheme objects. This mapping is useful for:
 - Caching key managers in test fixtures
 """
 
-CURRENT_SIGNATURE_SCHEME: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME
+CURRENT_SIGNATURE_SCHEME: GeneralizedXmssScheme
 """
 Current signature scheme for the session.
 
