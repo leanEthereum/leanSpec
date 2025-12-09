@@ -63,7 +63,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         expect_exception: Expected exception for invalid tests
     """
 
-    format_name: ClassVar[str] = "verify_signature_test"
+    format_name: ClassVar[str] = "verify_signatures_test"
     description: ClassVar[str] = (
         "Tests signature verification for blocks with attestations through"
         "SignedBlockWithAttestation.verify_signatures()"
