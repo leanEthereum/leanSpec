@@ -284,10 +284,10 @@ def pytest_configure(config: pytest.Config) -> None:
         )
         pytest.exit("Invalid signature scheme specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
-    # Store scheme name for later use
-    config.target_signature_scheme = scheme_name  # type: ignore[attr-defined]
+    # Store scheme name for later use by the filler (to output scheme name in the test vector)
+    config.signature_scheme = scheme_name  # type: ignore[attr-defined]
 
-    # Set the current scheme for the session
+    # Set the signature scheme for the current test session (used by fixtures and tests)
     layer_module.signature_schemes.set_current_signature_scheme(signature_scheme)
 
     # Check output directory
@@ -493,7 +493,7 @@ def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
             def __init__(self, **kwargs: Any) -> None:
                 # Extract and inject signature scheme if not provided by test
                 if "signature_scheme" not in kwargs:
-                    scheme = request.config.target_signature_scheme # type: ignore[attr-defined]
+                    scheme = request.config.signature_scheme # type: ignore[attr-defined]
                     kwargs["signature_scheme"] = scheme
 
                 # Auto-inject pre-state if not provided by test
