@@ -130,7 +130,7 @@ def load_keys(scheme_name: str) -> dict[Uint64, KeyPair]:
     if not keys_file.exists():
         raise FileNotFoundError(
             f"Keys not found: {keys_file} - ",
-            f"Run: python -m consensus_testing.keys --scheme {scheme_name}"
+            f"Run: python -m consensus_testing.keys --scheme {scheme_name}",
         )
     data = json.loads(keys_file.read_text())
     return {Uint64(i): KeyPair.from_dict(kp) for i, kp in enumerate(data)}

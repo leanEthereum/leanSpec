@@ -493,7 +493,7 @@ def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
             def __init__(self, **kwargs: Any) -> None:
                 # Extract and inject signature scheme if not provided by test
                 if "signature_scheme" not in kwargs:
-                    scheme = request.config.signature_scheme # type: ignore[attr-defined]
+                    scheme = request.config.signature_scheme  # type: ignore[attr-defined]
                     kwargs["signature_scheme"] = scheme
 
                 # Auto-inject pre-state if not provided by test
