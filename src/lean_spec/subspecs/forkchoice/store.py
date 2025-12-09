@@ -33,7 +33,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme, PROD_SIGNATURE_SCHEME
+from lean_spec.subspecs.xmss.interface import PROD_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import (
     ZERO_HASH,
     Bytes32,

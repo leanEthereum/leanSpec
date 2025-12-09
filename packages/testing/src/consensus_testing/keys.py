@@ -22,12 +22,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import tempfile
-import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from functools import cache, lru_cache, partial
+from functools import cache, partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Self
 
@@ -35,10 +33,14 @@ from lean_spec.subspecs.containers import Attestation
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
-from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME, GeneralizedXmssScheme
+from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme
 from lean_spec.types import Uint64
 
-from .signature_schemes import get_current_scheme, get_name_by_scheme, get_scheme_by_name, get_schemes
+from .signature_schemes import (
+    SIGNATURE_SCHEMES,
+    get_current_signature_scheme,
+    get_name_by_signature_scheme,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -53,22 +55,23 @@ NUM_ACTIVE_EPOCHS = int(DEFAULT_MAX_SLOT) + 1
 """Key lifetime in epochs (derived from DEFAULT_MAX_SLOT)."""
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_shared_key_manager() -> XmssKeyManager:
     """
     Get or create the shared XMSS key manager for reusing keys across tests.
 
-    Uses functools.lru_cache to create a singleton instance that's shared
+    Uses functools.cache to create a singleton instance that's shared
     across all test fixture generations within a session. This optimizes
     performance by reusing keys when possible.
 
-    The scheme is determined by get_current_scheme(), set once at session start.
+    The scheme is determined by get_current_signature_scheme(), set once at session start.
 
     Returns:
         Shared XmssKeyManager instance with max_slot=10 for the current scheme.
     """
-    scheme = get_current_scheme()
+    scheme = get_current_signature_scheme()
     return XmssKeyManager(max_slot=Slot(10), scheme=scheme)
+
 
 @dataclass(frozen=True, slots=True)
 class KeyPair:
@@ -106,6 +109,7 @@ class KeyPair:
 def _get_keys_file(scheme_name: str) -> Path:
     """Get the keys file path for the given scheme."""
     return Path(__file__).parent / f"{scheme_name}_keys.json"
+
 
 @cache
 def load_keys(scheme_name: str) -> dict[Uint64, KeyPair]:
@@ -163,7 +167,7 @@ class XmssKeyManager:
     @property
     def keys(self) -> dict[Uint64, KeyPair]:
         """Lazy access to immutable base keys."""
-        scheme_name = get_name_by_scheme(self.scheme)
+        scheme_name = get_name_by_signature_scheme(self.scheme)
         return load_keys(scheme_name)
 
     def __getitem__(self, idx: Uint64) -> KeyPair:
@@ -232,10 +236,13 @@ class XmssKeyManager:
         return self.scheme.sign(sk, epoch, message)
 
 
-def _generate_single_keypair(scheme: GeneralizedXmssScheme, num_epochs: int, _idx: int) -> dict[str, str]:
+def _generate_single_keypair(
+    scheme: GeneralizedXmssScheme, num_epochs: int, _idx: int
+) -> dict[str, str]:
     """Generate one key pair (module-level for pickling in ProcessPoolExecutor)."""
     pk, sk = scheme.key_gen(Uint64(0), Uint64(num_epochs))
     return KeyPair(public=pk, secret=sk).to_dict()
+
 
 def _generate_keys(scheme_name: str, count: int, max_slot: int) -> None:
     """
@@ -249,7 +256,7 @@ def _generate_keys(scheme_name: str, count: int, max_slot: int) -> None:
         count: Number of validators.
         max_slot: Maximum slot (key lifetime = max_slot + 1 epochs).
     """
-    scheme = get_scheme_by_name(scheme_name)
+    scheme = SIGNATURE_SCHEMES[scheme_name]
     keys_file = _get_keys_file(scheme_name)
     num_epochs = max_slot + 1
     num_workers = os.cpu_count() or 1
@@ -276,7 +283,7 @@ def _generate_keys(scheme_name: str, count: int, max_slot: int) -> None:
     print(f"Saved {len(key_pairs)} key pairs to {keys_file}")
 
     # Clear cache so new keys are loaded
-    load_keys.clear()
+    load_keys.cache_clear()
 
 
 def main() -> None:
@@ -287,8 +294,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--scheme",
-        choices=list(get_schemes()),
-        default=TEST_SIGNATURE_SCHEME,
+        choices=SIGNATURE_SCHEMES.keys(),
+        default="test",
         help="XMSS scheme to use",
     )
     parser.add_argument(

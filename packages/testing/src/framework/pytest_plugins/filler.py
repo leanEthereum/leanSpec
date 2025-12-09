@@ -269,9 +269,9 @@ def pytest_configure(config: pytest.Config) -> None:
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
     # Get available signature scehemes from layer-specific module
-    get_scheme_by_name = layer_module.signature_schemes.get_scheme_by_name
-    available_signature_schemes = layer_module.signature_schemes.get_schemes()
-    signature_scheme = get_scheme_by_name(scheme_name)
+    signature_schemes = layer_module.signature_schemes.SIGNATURE_SCHEMES
+    available_signature_schemes = layer_module.signature_schemes.SIGNATURE_SCHEMES.keys()
+    signature_scheme = signature_schemes.get(scheme_name)
 
     if signature_scheme is None:
         print(
@@ -288,7 +288,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.target_signature_scheme = scheme_name  # type: ignore[attr-defined]
 
     # Set the current scheme for the session
-    layer_module.signature_schemes.set_current_scheme(signature_scheme)
+    layer_module.signature_schemes.set_current_signature_scheme(signature_scheme)
 
     # Check output directory
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -493,7 +493,8 @@ def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
             def __init__(self, **kwargs: Any) -> None:
                 # Extract and inject signature scheme if not provided by test
                 if "signature_scheme" not in kwargs:
-                    kwargs["signature_scheme"] = getattr(request.config, "target_signature_scheme")
+                    scheme = request.config.target_signature_scheme # type: ignore[attr-defined]
+                    kwargs["signature_scheme"] = scheme
 
                 # Auto-inject pre-state if not provided by test
                 if "pre" not in kwargs and "anchor_state" not in kwargs:

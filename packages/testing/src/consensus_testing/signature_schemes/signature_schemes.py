@@ -25,17 +25,18 @@ This is set once at session start via CLI and never changes during the session.
 """
 
 
-def set_current_scheme(scheme: GeneralizedXmssScheme) -> None:
+def set_current_signature_scheme(scheme: GeneralizedXmssScheme) -> None:
     """
     Set the current signature scheme for the test session.
 
     Args:
-        scheme_name: The scheme identifier (e.g. "test" or "prod").
+        scheme: The signature scheme to be set.
     """
     global CURRENT_SIGNATURE_SCHEME
     CURRENT_SIGNATURE_SCHEME = scheme
 
-def get_current_scheme() -> GeneralizedXmssScheme:
+
+def get_current_signature_scheme() -> GeneralizedXmssScheme:
     """
     Get the current signature scheme name.
 
@@ -44,28 +45,8 @@ def get_current_scheme() -> GeneralizedXmssScheme:
     """
     return CURRENT_SIGNATURE_SCHEME
 
-def get_schemes() -> set[str]:
-    """
-    Return all available signature scheme names.
 
-    Returns:
-        Set of signature scheme names (e.g., {"test", "prod"}).
-    """
-    return set(SIGNATURE_SCHEMES.keys())
-
-def get_scheme_by_name(scheme_name: str) -> GeneralizedXmssScheme | None:
-    """
-    Get a signature scheme by its name.
-
-    Args:
-        scheme_name: Name of the scheme (case-insensitive, e.g., "test" or "prod").
-
-    Returns:
-        The signature scheme object, or None if not found.
-    """
-    return SIGNATURE_SCHEMES.get(scheme_name)
-
-def get_name_by_scheme(scheme: GeneralizedXmssScheme) -> str:
+def get_name_by_signature_scheme(scheme: GeneralizedXmssScheme) -> str:
     """
     Get the scheme name for a given scheme object.
 

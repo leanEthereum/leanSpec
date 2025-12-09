@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import ClassVar, List
 
 from pydantic import model_validator
@@ -33,7 +32,7 @@ from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Rando
 from lean_spec.types import Bytes32, Uint64
 
 from ..keys import XmssKeyManager, get_shared_key_manager
-from ..signature_schemes import get_current_scheme, get_scheme_by_name
+from ..signature_schemes import get_current_signature_scheme
 from ..test_types import (
     AttestationStep,
     BlockSpec,
@@ -171,7 +170,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Use shared key manager if it has sufficient capacity, otherwise create a new one
         # This optimizes performance by reusing keys across tests when possible
         shared_key_manager = get_shared_key_manager()
-        scheme = get_current_scheme()
+        scheme = get_current_signature_scheme()
         key_manager = (
             shared_key_manager
             if self.max_slot <= shared_key_manager.max_slot

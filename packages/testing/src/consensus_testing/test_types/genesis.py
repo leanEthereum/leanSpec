@@ -2,12 +2,12 @@
 
 from typing import Any
 
-from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State, Validators
 from lean_spec.subspecs.containers.validator import Validator
 from lean_spec.types import Uint64
 
 from ..keys import get_shared_key_manager
+
 
 def generate_pre_state(**kwargs: Any) -> State:
     """
@@ -27,8 +27,8 @@ def generate_pre_state(**kwargs: Any) -> State:
     available_keys = len(key_manager)
 
     assert num_validators <= available_keys, (
-        f"Not enough keys to generate state",
-        f"Expecting {num_validators} validators but the key manager has only {available_keys} keys"
+        "Not enough keys to generate state",
+        f"Expecting {num_validators} validators but the key manager has only {available_keys} keys",
     )
 
     validators = Validators(
