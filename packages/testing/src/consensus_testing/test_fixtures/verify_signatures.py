@@ -22,7 +22,6 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.subspecs.xmss.interface import PROD_SIGNATURE_SCHEME
 from lean_spec.types import Bytes32, Uint64
 
 from ..keys import XmssKeyManager
@@ -207,9 +206,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         parent_root = hash_tree_root(parent_state.latest_block_header)
 
         # Build attestations from spec
-        attestations, signatures = self._build_attestations_from_spec(
-            spec, state, key_manager
-        )
+        attestations, signatures = self._build_attestations_from_spec(spec, state, key_manager)
 
         # Use State.build_block for core block building (pure spec logic)
         final_block, _, _, _ = state.build_block(
