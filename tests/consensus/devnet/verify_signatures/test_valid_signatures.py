@@ -9,7 +9,6 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.xmss.interface import PROD_SIGNATURE_SCHEME
 from lean_spec.types import Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
@@ -38,7 +37,7 @@ def test_proposer_signature(
     - Signature aggregation includes proposer signature
     """
     verify_signatures_test(
-        anchor_state=generate_pre_state(num_validators=2, scheme=PROD_SIGNATURE_SCHEME),
+        anchor_state=generate_pre_state(num_validators=2),
         block=BlockSpec(
             slot=Slot(1),
             attestations=[],
@@ -74,7 +73,7 @@ def test_proposer_and_attester_signatures(
     - Signature aggregation works with multiple attestations (signature positions are correct)
     """
     verify_signatures_test(
-        anchor_state=generate_pre_state(num_validators=3, scheme=PROD_SIGNATURE_SCHEME),
+        anchor_state=generate_pre_state(num_validators=3),
         block=BlockSpec(
             slot=Slot(1),
             attestations=[

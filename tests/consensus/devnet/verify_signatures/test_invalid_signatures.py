@@ -9,7 +9,6 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.xmss.interface import PROD_SIGNATURE_SCHEME
 from lean_spec.types import Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
@@ -39,7 +38,7 @@ def test_invalid_signature(
     - Invalid signatures are caught, not silently accepted
     """
     verify_signatures_test(
-        anchor_state=generate_pre_state(num_validators=1, scheme=PROD_SIGNATURE_SCHEME),
+        anchor_state=generate_pre_state(num_validators=1),
         block=BlockSpec(
             slot=Slot(1),
             attestations=[],
@@ -75,7 +74,7 @@ def test_mixed_valid_invalid_signatures(
     - Validates all attestations in the block
     """
     verify_signatures_test(
-        anchor_state=generate_pre_state(num_validators=3, scheme=PROD_SIGNATURE_SCHEME),
+        anchor_state=generate_pre_state(num_validators=3),
         block=BlockSpec(
             slot=Slot(1),
             attestations=[
