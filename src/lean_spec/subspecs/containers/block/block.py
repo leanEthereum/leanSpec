@@ -16,9 +16,10 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
+from ...xmss.containers import Signature as XmssSignature
 from ..attestation import Attestation
 from ..validator import Validator
-from .types import Attestations, BlockSignatures
+from .types import AggregatedAttestationsList, AttestationSignatures
 
 if TYPE_CHECKING:
     from ..state import State
@@ -32,7 +33,7 @@ class BlockBody(Container):
     packaged into blocks.
     """
 
-    attestations: Attestations
+    attestations: AggregatedAttestationsList
     """Plain validator attestations carried in the block body.
 
     Individual signatures live in the aggregated block signature list, so
@@ -95,6 +96,21 @@ class BlockWithAttestation(Container):
 
     proposer_attestation: Attestation
     """The proposer's attestation corresponding to this block."""
+
+class BlockSignatures(Container):
+    """Signature payload for the block."""
+
+    attestation_signatures: AttestationSignatures
+    """Signatures for the attestations in the block body.
+    
+    Contains a naive list of signatures for the attestations in the block body.
+
+    TODO:
+    - this will be replaced by a BytesArray in next PR to include leanVM aggregated sproof.
+    """
+
+    proposer_signature: XmssSignature
+    """Signature for the proposer's attestation."""
 
 
 class SignedBlockWithAttestation(Container):

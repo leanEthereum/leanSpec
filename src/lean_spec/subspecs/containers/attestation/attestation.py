@@ -49,7 +49,10 @@ class Attestation(Container):
 class SignedAttestation(Container):
     """Validator attestation bundled with its signature."""
 
-    message: Attestation
+    validator_id: Uint64
+    """The index of the validator making the attestation."""
+
+    message: AttestationData
     """The attestation message signed by the validator."""
 
     signature: Signature
@@ -82,5 +85,8 @@ class SignedAggregatedAttestations(Container):
     Stores a naive list of validator signatures that mirrors the attestation
     order.
 
-    TODO: this will be replaced by a SNARK in future devnets.
+    TODO:
+    - signatures will be replaced by MegaBytes in next PR to include leanVM proof.
+    - this will be replaced by a SNARK in future devnets.
+    - this will be aggregated by aggregators in future devnets.
     """
