@@ -33,17 +33,27 @@ from lean_spec.subspecs.containers import Attestation
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
-from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme
-from lean_spec.types import Uint64
-
-from .signature_schemes import (
-    SIGNATURE_SCHEMES,
-    get_current_signature_scheme,
-    get_name_by_signature_scheme,
+from lean_spec.subspecs.xmss.interface import (
+    PROD_SIGNATURE_SCHEME,
+    TEST_SIGNATURE_SCHEME,
+    GeneralizedXmssScheme,
 )
+from lean_spec.types import Uint64
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+# Signature scheme definitions
+SIGNATURE_SCHEMES = {
+    "test": TEST_SIGNATURE_SCHEME,
+    "prod": PROD_SIGNATURE_SCHEME,
+}
+"""
+Mapping from short name to scheme objects. This mapping is useful for:
+- The CLI argument for choosing the signature scheme to generate
+- Deriving the file name for the cached keys
+- Caching key managers in test fixtures
+"""
 
 NUM_VALIDATORS = 12
 """Default number of validator key pairs."""
@@ -55,6 +65,44 @@ NUM_ACTIVE_EPOCHS = int(DEFAULT_MAX_SLOT) + 1
 """Key lifetime in epochs (derived from DEFAULT_MAX_SLOT)."""
 
 
+def get_current_signature_scheme() -> GeneralizedXmssScheme:
+    """
+    Get the current signature scheme from SIGNATURE_SCHEME environment variable.
+
+    Returns:
+        The current signature scheme for the test session (defaults to "test").
+
+    Raises:
+        ValueError: If SIGNATURE_SCHEME env var contains an invalid scheme name.
+    """
+    scheme_name = os.environ.get("SIGNATURE_SCHEME", "test").lower()
+    scheme = SIGNATURE_SCHEMES.get(scheme_name)
+    if scheme is None:
+        raise ValueError(
+            f"Invalid SIGNATURE_SCHEME: {scheme_name}. "
+            f"Available signature schemes: {', '.join(SIGNATURE_SCHEMES.keys())}"
+        )
+    return scheme
+
+
+def get_name_by_signature_scheme(scheme: GeneralizedXmssScheme) -> str:
+    """
+    Get the scheme name for a given scheme object.
+
+    Args:
+        scheme: The XMSS signature scheme.
+
+    Returns:
+        The scheme name string (e.g. "test" or "prod").
+
+    Raises:
+        ValueError: If the scheme is not recognized.
+    """
+    for scheme_name, scheme_obj in SIGNATURE_SCHEMES.items():
+        if scheme_obj is scheme:
+            return scheme_name
+    raise ValueError(f"Unknown scheme: {scheme}")
+
 @cache
 def get_shared_key_manager() -> XmssKeyManager:
     """
@@ -64,7 +112,7 @@ def get_shared_key_manager() -> XmssKeyManager:
     across all test fixture generations within a session. This optimizes
     performance by reusing keys when possible.
 
-    The scheme is determined by get_current_signature_scheme(), set once at session start.
+    The scheme is determined by the SIGNATURE_SCHEME environment variable.
 
     Returns:
         Shared XmssKeyManager instance with max_slot=10 for the current scheme.

@@ -262,12 +262,11 @@ def pytest_configure(config: pytest.Config) -> None:
         )
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
-    # Get available signature scehemes from layer-specific module
-    signature_schemes = layer_module.signature_schemes.SIGNATURE_SCHEMES
-    available_signature_schemes = layer_module.signature_schemes.SIGNATURE_SCHEMES.keys()
-    signature_scheme = signature_schemes.get(scheme_name)
+    # Sanity check that the provided signature scheme is valid
+    signature_schemes = layer_module.keys.SIGNATURE_SCHEMES
 
-    if signature_scheme is None:
+    if signature_schemes.get(scheme_name) is None:
+        available_signature_schemes = layer_module.keys.SIGNATURE_SCHEMES.keys()
         print(
             f"Error: Unsupported signature scheme for {layer} layer: {scheme_name}",
             file=sys.stderr,
@@ -280,9 +279,6 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Store scheme name for later use by the filler (to output scheme name in the test vector)
     config.signature_scheme = scheme_name  # type: ignore[attr-defined]
-
-    # Set the signature scheme for the current test session (used by fixtures and tests)
-    layer_module.signature_schemes.set_current_signature_scheme(signature_scheme)
 
     # Check output directory
     if output_dir.exists() and any(output_dir.iterdir()):

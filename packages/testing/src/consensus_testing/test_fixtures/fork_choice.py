@@ -31,8 +31,7 @@ from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 from lean_spec.types import Bytes32, Uint64
 
-from ..keys import XmssKeyManager, get_shared_key_manager
-from ..signature_schemes import get_current_signature_scheme
+from ..keys import XmssKeyManager, get_current_signature_scheme, get_shared_key_manager
 from ..test_types import (
     AttestationStep,
     BlockSpec,
