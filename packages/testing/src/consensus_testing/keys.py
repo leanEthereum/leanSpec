@@ -65,45 +65,6 @@ NUM_ACTIVE_EPOCHS = int(DEFAULT_MAX_SLOT) + 1
 """Key lifetime in epochs (derived from DEFAULT_MAX_SLOT)."""
 
 
-def get_current_signature_scheme() -> GeneralizedXmssScheme:
-    """
-    Get the current signature scheme from SIGNATURE_SCHEME environment variable.
-
-    Returns:
-        The current signature scheme for the test session (defaults to "test").
-
-    Raises:
-        ValueError: If SIGNATURE_SCHEME env var contains an invalid scheme name.
-    """
-    scheme_name = os.environ.get("SIGNATURE_SCHEME", "test").lower()
-    scheme = SIGNATURE_SCHEMES.get(scheme_name)
-    if scheme is None:
-        raise ValueError(
-            f"Invalid SIGNATURE_SCHEME: {scheme_name}. "
-            f"Available signature schemes: {', '.join(SIGNATURE_SCHEMES.keys())}"
-        )
-    return scheme
-
-
-def get_name_by_signature_scheme(scheme: GeneralizedXmssScheme) -> str:
-    """
-    Get the scheme name for a given scheme object.
-
-    Args:
-        scheme: The XMSS signature scheme.
-
-    Returns:
-        The scheme name string (e.g. "test" or "prod").
-
-    Raises:
-        ValueError: If the scheme is not recognized.
-    """
-    for scheme_name, scheme_obj in SIGNATURE_SCHEMES.items():
-        if scheme_obj is scheme:
-            return scheme_name
-    raise ValueError(f"Unknown scheme: {scheme}")
-
-
 @cache
 def get_shared_key_manager() -> XmssKeyManager:
     """
@@ -118,7 +79,14 @@ def get_shared_key_manager() -> XmssKeyManager:
     Returns:
         Shared XmssKeyManager instance with max_slot=10 for the current scheme.
     """
-    scheme = get_current_signature_scheme()
+    scheme_name = os.environ.get("SIGNATURE_SCHEME", "test").lower()
+    scheme = SIGNATURE_SCHEMES.get(scheme_name)
+    if scheme is None:
+        raise ValueError(
+            f"Invalid SIGNATURE_SCHEME: {scheme_name}. "
+            f"Available signature schemes: {', '.join(SIGNATURE_SCHEMES.keys())}"
+        )
+
     return XmssKeyManager(max_slot=Slot(10), scheme=scheme)
 
 
@@ -214,11 +182,14 @@ class XmssKeyManager:
         self.scheme = scheme
         self._state: dict[Uint64, KeyPair] = {}
 
+        for scheme_name, scheme_obj in SIGNATURE_SCHEMES.items():
+            if scheme_obj is scheme:
+                self.scheme_name = scheme_name
+
     @property
     def keys(self) -> dict[Uint64, KeyPair]:
         """Lazy access to immutable base keys."""
-        scheme_name = get_name_by_signature_scheme(self.scheme)
-        return load_keys(scheme_name)
+        return load_keys(self.scheme_name)
 
     def __getitem__(self, idx: Uint64) -> KeyPair:
         """Get key pair, returning advanced state if available."""

@@ -31,7 +31,11 @@ from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 from lean_spec.types import Bytes32, Uint64
 
-from ..keys import XmssKeyManager, get_current_signature_scheme, get_shared_key_manager
+from ..keys import (
+    SIGNATURE_SCHEMES,
+    XmssKeyManager,
+    get_shared_key_manager,
+)
 from ..test_types import (
     AttestationStep,
     BlockSpec,
@@ -169,7 +173,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Use shared key manager if it has sufficient capacity, otherwise create a new one
         # This optimizes performance by reusing keys across tests when possible
         shared_key_manager = get_shared_key_manager()
-        scheme = get_current_signature_scheme()
+        scheme = SIGNATURE_SCHEMES[self.signature_scheme]
         key_manager = (
             shared_key_manager
             if self.max_slot <= shared_key_manager.max_slot
