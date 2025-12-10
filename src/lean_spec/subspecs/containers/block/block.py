@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme, XMSS_SIGNATURE_SCHEME
+from lean_spec.subspecs.xmss.interface import XMSS_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 

@@ -8,7 +8,7 @@ from ...types import Uint64
 from ...types.byte_arrays import BaseBytes
 from ...types.collections import SSZList, SSZVector
 from ...types.container import Container
-from .constants import PRF_KEY_LENGTH, ENV_CONFIG
+from .constants import ENV_CONFIG, PRF_KEY_LENGTH
 
 
 class PRFKey(BaseBytes):
