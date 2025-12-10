@@ -132,7 +132,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
             If signature verification fails.
         """
         # Ensure anchor_state is set
-        assert self.anchor_state is not None, "anchor_state must be set before make_fixture"
+        assert self.anchor_state is not None, "anchor state must be set before making the fixture"
 
         # Use shared key manager
         key_manager = _get_shared_key_manager()
