@@ -7,6 +7,7 @@ from .test_fixtures import (
     BaseConsensusFixture,
     ForkChoiceTest,
     StateTransitionTest,
+    VerifySignaturesTest,
 )
 from .test_types import (
     AttestationCheck,
@@ -24,6 +25,7 @@ from .test_types import (
 
 StateTransitionTestFiller = Type[StateTransitionTest]
 ForkChoiceTestFiller = Type[ForkChoiceTest]
+VerifySignaturesTestFiller = Type[VerifySignaturesTest]
 
 __all__ = [
     # Public API
@@ -36,6 +38,7 @@ __all__ = [
     "BaseConsensusFixture",
     "StateTransitionTest",
     "ForkChoiceTest",
+    "VerifySignaturesTest",
     # Test types
     "BaseForkChoiceStep",
     "TickStep",
@@ -48,4 +51,5 @@ __all__ = [
     # Type aliases for test function signatures
     "StateTransitionTestFiller",
     "ForkChoiceTestFiller",
+    "VerifySignaturesTestFiller",
 ]
