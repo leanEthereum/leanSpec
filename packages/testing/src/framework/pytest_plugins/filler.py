@@ -262,7 +262,7 @@ def pytest_configure(config: pytest.Config) -> None:
         )
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
-    # Sanity check that the provided signature scheme is valid
+    # Quick sanity check that the provided SIGNATURE_SCHEME env var is valid
     signature_schemes = layer_module.keys.SIGNATURE_SCHEMES
 
     if signature_schemes.get(scheme_name) is None:
@@ -276,9 +276,6 @@ def pytest_configure(config: pytest.Config) -> None:
             file=sys.stderr,
         )
         pytest.exit("Invalid signature scheme specified.", returncode=pytest.ExitCode.USAGE_ERROR)
-
-    # Store scheme name for later use by the filler (to output scheme name in the test vector)
-    config.signature_scheme = scheme_name  # type: ignore[attr-defined]
 
     # Check output directory
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -481,11 +478,6 @@ def base_spec_filler_parametrizer(fixture_class: Any) -> Any:
             """Wrapper class that auto-fills and collects fixtures on instantiation."""
 
             def __init__(self, **kwargs: Any) -> None:
-                # Extract and inject signature scheme if not provided by test
-                if "signature_scheme" not in kwargs:
-                    scheme = request.config.signature_scheme  # type: ignore[attr-defined]
-                    kwargs["signature_scheme"] = scheme
-
                 # Auto-inject pre-state if not provided by test
                 if "pre" not in kwargs and "anchor_state" not in kwargs:
                     # Determine which field to inject based on fixture type

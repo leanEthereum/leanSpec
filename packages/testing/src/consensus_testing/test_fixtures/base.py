@@ -1,8 +1,15 @@
 """Base fixture definitions for consensus test formats."""
 
+import os
+import pytest
+
+from functools import cached_property
+from pydantic import computed_field
 from typing import Any, ClassVar
 
 from framework.test_fixtures import BaseFixture
+
+from ..keys import SIGNATURE_SCHEMES, get_current_signature_scheme
 
 
 class BaseConsensusFixture(BaseFixture):
@@ -17,9 +24,11 @@ class BaseConsensusFixture(BaseFixture):
     # Override parent's formats to maintain a separate registry
     formats: ClassVar[dict[str, type["BaseConsensusFixture"]]] = {}  # type: ignore[assignment]
 
-    # Consensus-specific instance fields
-    signature_scheme: str = "test"
-    """The XMSS signature scheme to use (e.g. 'test' or 'prod')."""
+    @computed_field
+    @cached_property
+    def signature_scheme(self) -> str:
+        """The XMSS signature scheme being used (e.g. 'test' or 'prod'). Defaults to 'test'."""
+        return os.environ.get("SIGNATURE_SCHEME", "test").lower()
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
