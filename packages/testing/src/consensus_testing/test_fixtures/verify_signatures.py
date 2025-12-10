@@ -51,10 +51,8 @@ class VerifySignaturesTest(BaseConsensusFixture):
     The fixture takes a BlockSpec and optional SignedAttestationSpec inputs and generates
     a complete SignedBlockWithAttestation as the test output.
 
-    To execute test vectors produced by this fixture, simply pass the vector's
-    `signed_block_with_attestation` and `anchor_state` through the client's
-    `SignedBlockWithAttestation.verify_signatures()`. The test case is expected to fail
-    if `expect_exception` is set.
+    Use the generated test vectors to test that client implementation can verify signatures
+    of the generated signed block with attestation..
 
     Structure:
         anchor_state: Initial trusted consensus state
@@ -79,21 +77,12 @@ class VerifySignaturesTest(BaseConsensusFixture):
     Block specifications to generate signatures for.
 
     This defines the block parameters including attestations. The framework will
-    build a complete signed block with all necessary signatures.
-
-    Attestations should be specified via block.attestations as SignedAttestationSpec objects.
-    Use block.valid_signature to control proposer attestation signature validity.
-    Use block.attestations.valid_signature to control attester signature validity.
-
-    Note: This field is excluded from the output test vector. Use signed_block_with_attestation.
+    build a complete signed block with attestation with all necessary signatures.
     """
 
     signed_block_with_attestation: SignedBlockWithAttestation | None = None
     """
     The generated signed block with attestation.
-
-    This is populated by make_fixture() and contains the complete signed block
-    ready for verification.
     """
 
     expect_exception: type[Exception] | None = None
