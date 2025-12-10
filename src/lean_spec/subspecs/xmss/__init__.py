@@ -7,7 +7,7 @@ It exposes the core data structures and the main interface functions.
 
 from .constants import ENV_CONFIG, LEAN_ENV, PROD_CONFIG, TEST_CONFIG
 from .containers import PublicKey, SecretKey, Signature
-from .interface import XMSS_SIGNATURE_SCHEME, GeneralizedXmssScheme
+from .interface import ENV_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from .types import HashTreeOpening
 
 __all__ = [
@@ -20,5 +20,5 @@ __all__ = [
     "TEST_CONFIG",
     "LEAN_ENV",
     "ENV_CONFIG",
-    "XMSS_SIGNATURE_SCHEME",
+    "ENV_SIGNATURE_SCHEME",
 ]
