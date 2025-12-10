@@ -14,7 +14,7 @@ from lean_spec.subspecs.containers import (
     State,
     Validator,
 )
-from lean_spec.subspecs.containers.block import Attestations
+from lean_spec.subspecs.containers.block import AggregatedAttestationsList
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import (
     HistoricalBlockHashes,
@@ -82,7 +82,7 @@ def sample_store(config: Config, sample_state: State) -> Store:
         proposer_index=Uint64(0),
         parent_root=Bytes32.zero(),
         state_root=hash_tree_root(sample_state),
-        body=BlockBody(attestations=Attestations(data=[])),
+        body=BlockBody(attestations=AggregatedAttestationsList(data=[])),
     )
     genesis_hash = hash_tree_root(genesis_block)
 
@@ -134,12 +134,9 @@ def build_signed_attestation(
         target=target,
         source=source,
     )
-    message = Attestation(
-        validator_id=validator,
-        data=data,
-    )
     return SignedAttestation(
-        message=message,
+        validator_id=validator,
+        message=data,
         signature=Signature(
             path=HashTreeOpening(siblings=HashDigestList(data=[])),
             rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
@@ -518,7 +515,7 @@ class TestValidatorIntegration:
         config = Config(genesis_time=Uint64(1000))
 
         # Create minimal genesis block first
-        genesis_body = BlockBody(attestations=Attestations(data=[]))
+        genesis_body = BlockBody(attestations=AggregatedAttestationsList(data=[]))
 
         # Create validators list with 3 validators
         validators = Validators(

@@ -17,7 +17,7 @@ from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
 from ...xmss.containers import Signature as XmssSignature
-from ..attestation import Attestation
+from ..attestation import Attestation, aggregation_bits_to_validator_index
 from ..validator import Validator
 from .types import AggregatedAttestationsList, AttestationSignatures
 
@@ -97,12 +97,13 @@ class BlockWithAttestation(Container):
     proposer_attestation: Attestation
     """The proposer's attestation corresponding to this block."""
 
+
 class BlockSignatures(Container):
     """Signature payload for the block."""
 
     attestation_signatures: AttestationSignatures
     """Signatures for the attestations in the block body.
-    
+
     Contains a naive list of signatures for the attestations in the block body.
 
     TODO:
@@ -153,48 +154,48 @@ class SignedBlockWithAttestation(Container):
                 - Validator index out of range
                 - XMSS signature verification failure
         """
-        # Unpack the signed block components
         block = self.message.block
         signatures = self.signature
+        block_attestations = block.body.attestations
+        attestation_signatures = signatures.attestation_signatures
 
-        # Combine all attestations that need verification
-        #
-        # This creates a single list containing both:
-        # 1. Block body attestations (from other validators)
-        # 2. Proposer attestation (from the block producer)
-        all_attestations = block.body.attestations + [self.message.proposer_attestation]
-
-        # Verify signature count matches attestation count
-        #
-        # Each attestation must have exactly one corresponding signature.
-        #
-        # The ordering must be preserved:
-        # 1. Block body attestations,
-        # 2. The proposer attestation.
-        assert len(signatures) == len(all_attestations), (
-            "Number of signatures does not match number of attestations"
+        # Verify signature count matches attestation count.
+        assert len(attestation_signatures) == len(block_attestations), (
+            "Number of attestation signatures does not match attestation count"
         )
 
         validators = parent_state.validators
 
-        # Verify each attestation signature
-        for attestation, signature in zip(all_attestations, signatures, strict=True):
-            # Ensure validator exists in the active set
-            assert attestation.validator_id < Uint64(len(validators)), (
-                "Validator index out of range"
+        # Verify each block body attestation signature
+        for aggregated_attestation, signature in zip(
+            block_attestations, attestation_signatures, strict=True
+        ):
+            validator_id = aggregation_bits_to_validator_index(
+                aggregated_attestation.aggregation_bits
             )
-            validator = cast(Validator, validators[attestation.validator_id])
 
-            # Verify the XMSS signature
-            #
-            # This cryptographically proves that:
-            # - The validator possesses the secret key for their public key
-            # - The attestation has not been tampered with
-            # - The signature was created at the correct epoch (slot)
+            # Ensure validator exists in the active set
+            assert validator_id < Uint64(len(validators)), "Validator index out of range"
+            validator = cast(Validator, validators[validator_id])
+
             assert signature.verify(
                 validator.get_pubkey(),
-                attestation.data.slot,
-                bytes(hash_tree_root(attestation)),
+                aggregated_attestation.data.slot,
+                bytes(hash_tree_root(aggregated_attestation.data)),
             ), "Attestation signature verification failed"
+
+        # Verify proposer attestation signature
+        proposer_attestation = self.message.proposer_attestation
+        proposer_signature = signatures.proposer_signature
+        assert proposer_attestation.validator_id < Uint64(len(validators)), (
+            "Proposer index out of range"
+        )
+        proposer = cast(Validator, validators[proposer_attestation.validator_id])
+
+        assert proposer_signature.verify(
+            proposer.get_pubkey(),
+            proposer_attestation.data.slot,
+            bytes(hash_tree_root(proposer_attestation.data)),
+        ), "Proposer signature verification failed"
 
         return True

@@ -90,3 +90,39 @@ class SignedAggregatedAttestations(Container):
     - this will be replaced by a SNARK in future devnets.
     - this will be aggregated by aggregators in future devnets.
     """
+
+
+def _aggregation_bits_to_validator_index(bits: AggregationBits) -> Uint64:
+    """
+    Extract the single validator index encoded in aggregation bits.
+
+    Current devnets only support naive aggregation where every attestation
+    includes exactly one participant. The bitlist therefore acts as a compact
+    encoding of the validator index.
+    """
+    participants = [index for index, bit in enumerate(bits) if bool(bit)]
+    if len(participants) != 1:
+        raise AssertionError("Aggregated attestation must reference exactly one validator")
+    return Uint64(participants[0])
+
+
+def aggregation_bits_to_validator_index(bits: AggregationBits) -> Uint64:
+    """Public helper wrapper for extracting the validator index from bits."""
+    return _aggregation_bits_to_validator_index(bits)
+
+
+def aggregated_attestation_to_plain(aggregated: AggregatedAttestations) -> Attestation:
+    """Convert aggregated attestation data to the plain Attestation container."""
+    validator_index = _aggregation_bits_to_validator_index(aggregated.aggregation_bits)
+    return Attestation(validator_id=validator_index, data=aggregated.data)
+
+
+def attestation_to_aggregated(attestation: Attestation) -> AggregatedAttestations:
+    """Convert a plain Attestation into the aggregated representation."""
+    validator_index = int(attestation.validator_id)
+    bits = [False] * (validator_index + 1)
+    bits[validator_index] = True
+    return AggregatedAttestations(
+        aggregation_bits=AggregationBits(data=bits),
+        data=attestation.data,
+    )

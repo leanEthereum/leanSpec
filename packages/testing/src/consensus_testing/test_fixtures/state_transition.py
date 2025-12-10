@@ -4,8 +4,12 @@ from typing import Any, ClassVar, List
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
+from lean_spec.subspecs.containers.attestation import (
+    aggregated_attestation_to_plain,
+    attestation_to_aggregated,
+)
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
-from lean_spec.subspecs.containers.block.types import Attestations
+from lean_spec.subspecs.containers.block.types import AggregatedAttestationsList
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
@@ -204,8 +208,12 @@ class StateTransitionTest(BaseConsensusFixture):
             temp_state = state.process_slots(spec.slot)
             parent_root = hash_tree_root(temp_state.latest_block_header)
 
-        # Extract attestations from body if provided
-        attestations = list(spec.body.attestations) if spec.body else []
+        # Extract attestations from body if provided, converting from aggregated form
+        attestations = (
+            [aggregated_attestation_to_plain(att) for att in spec.body.attestations]
+            if spec.body
+            else []
+        )
 
         # Handle explicit state root override
         if spec.state_root is not None:
@@ -214,7 +222,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=spec.state_root,
-                body=spec.body or BlockBody(attestations=Attestations(data=[])),
+                body=spec.body or BlockBody(attestations=AggregatedAttestationsList(data=[])),
             )
             return block, None
 
@@ -225,7 +233,12 @@ class StateTransitionTest(BaseConsensusFixture):
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=Bytes32.zero(),
-                body=spec.body or BlockBody(attestations=Attestations(data=attestations)),
+                body=spec.body
+                or BlockBody(
+                    attestations=AggregatedAttestationsList(
+                        data=[attestation_to_aggregated(att) for att in attestations]
+                    )
+                ),
             )
             return block, None
 

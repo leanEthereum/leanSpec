@@ -12,12 +12,17 @@ from lean_spec.types import (
     is_proposer,
 )
 
-from ..attestation import Attestation, SignedAttestation
+from ..attestation import (
+    Attestation,
+    SignedAttestation,
+    aggregated_attestation_to_plain,
+    attestation_to_aggregated,
+)
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.xmss.containers import Signature
 from ..block import Block, BlockBody, BlockHeader
-from ..block.types import Attestations
+from ..block.types import AggregatedAttestationsList
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
@@ -96,7 +101,7 @@ class State(Container):
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
+            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestationsList(data=[]))),
         )
 
         # Assemble and return the full genesis state.
@@ -356,12 +361,13 @@ class State(Container):
         # First process the block header.
         state = self.process_block_header(block)
 
-        # Process justification attestations.
-        return state.process_attestations(block.body.attestations)
+        # Process justification attestations by converting aggregated payloads
+        attestations = [aggregated_attestation_to_plain(att) for att in block.body.attestations]
+        return state.process_attestations(attestations)
 
     def process_attestations(
         self,
-        attestations: Attestations,
+        attestations: Iterable[Attestation],
     ) -> "State":
         """
         Apply attestations and update justification/finalization
@@ -374,8 +380,8 @@ class State(Container):
 
         Parameters
         ----------
-        attestations : Attestations
-            The list of attestations to process.
+        attestations : Iterable[Attestation]
+            The attestations to process.
 
         Returns:
         -------
@@ -649,7 +655,11 @@ class State(Container):
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=Bytes32.zero(),
-                body=BlockBody(attestations=Attestations(data=attestations)),
+                body=BlockBody(
+                    attestations=AggregatedAttestationsList(
+                        data=[attestation_to_aggregated(att) for att in attestations]
+                    )
+                ),
             )
 
             # Apply state transition to get the post-block state
@@ -664,7 +674,11 @@ class State(Container):
             new_signatures: list[Signature] = []
 
             for signed_attestation in available_signed_attestations:
-                data = signed_attestation.message.data
+                data = signed_attestation.message
+                attestation = Attestation(
+                    validator_id=signed_attestation.validator_id,
+                    data=data,
+                )
 
                 # Skip if target block is unknown
                 if data.head.root not in known_block_roots:
@@ -675,8 +689,8 @@ class State(Container):
                     continue
 
                 # Add attestation if not already included
-                if signed_attestation.message not in attestations:
-                    new_attestations.append(signed_attestation.message)
+                if attestation not in attestations:
+                    new_attestations.append(attestation)
                     new_signatures.append(signed_attestation.signature)
 
             # Fixed point reached: no new attestations found

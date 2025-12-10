@@ -6,6 +6,9 @@ from .attestation import (
     AttestationData,
     SignedAggregatedAttestations,
     SignedAttestation,
+    aggregated_attestation_to_plain,
+    aggregation_bits_to_validator_index,
+    attestation_to_aggregated,
 )
 from .types import AggregatedSignatures, AggregationBits
 
@@ -17,4 +20,7 @@ __all__ = [
     "AggregatedAttestations",
     "AggregatedSignatures",
     "AggregationBits",
+    "aggregation_bits_to_validator_index",
+    "aggregated_attestation_to_plain",
+    "attestation_to_aggregated",
 ]

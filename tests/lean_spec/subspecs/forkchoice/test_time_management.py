@@ -10,7 +10,7 @@ from lean_spec.subspecs.containers import (
     State,
     Validator,
 )
-from lean_spec.subspecs.containers.block import Attestations
+from lean_spec.subspecs.containers.block import AggregatedAttestationsList
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.forkchoice import Store
@@ -35,7 +35,7 @@ def sample_store(sample_config: Config) -> Store:
         proposer_index=Uint64(0),
         parent_root=Bytes32.zero(),
         state_root=Bytes32(b"state" + b"\x00" * 27),
-        body=BlockBody(attestations=Attestations(data=[])),
+        body=BlockBody(attestations=AggregatedAttestationsList(data=[])),
     )
     genesis_hash = hash_tree_root(genesis_block)
 
@@ -281,7 +281,7 @@ class TestAttestationProcessingTiming:
         # Verify correct mapping
         for i, checkpoint in enumerate(checkpoints):
             stored = sample_store.latest_known_attestations[Uint64(i)]
-            assert stored.message.data.target == checkpoint
+            assert stored.message.target == checkpoint
 
     def test_accept_new_attestations_empty(self, sample_store: Store) -> None:
         """Test accepting new attestations when there are none."""
@@ -306,7 +306,7 @@ class TestProposalHeadTiming:
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32(b"genesis" + b"\x00" * 25),
-            body=BlockBody(attestations=Attestations(data=[])),
+            body=BlockBody(attestations=AggregatedAttestationsList(data=[])),
         )
         genesis_hash = hash_tree_root(genesis_block)
 
@@ -353,7 +353,7 @@ class TestProposalHeadTiming:
         assert Uint64(10) not in store.latest_new_attestations
         assert Uint64(10) in store.latest_known_attestations
         stored = store.latest_known_attestations[Uint64(10)]
-        assert stored.message.data.target == checkpoint
+        assert stored.message.target == checkpoint
 
 
 class TestTimeConstants:
