@@ -12,6 +12,8 @@ Attestations can be aggregated to save space, but the current specification
 doesn't do this yet.
 """
 
+from collections import defaultdict
+
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Container, Uint64
 
@@ -92,29 +94,45 @@ class SignedAggregatedAttestations(Container):
     """
 
 
-def _aggregation_bits_to_validator_index(bits: AggregationBits) -> Uint64:
+def aggregation_bits_to_validator_indices(bits: AggregationBits) -> list[Uint64]:
     """
-    Extract the single validator index encoded in aggregation bits.
+    Extract all validator indices encoded in aggregation bits.
 
-    Current devnets only support naive aggregation where every attestation
-    includes exactly one participant. The bitlist therefore acts as a compact
-    encoding of the validator index.
+    Returns the list of all validators who participated in the aggregation,
+    sorted by validator index.
+
+    Args:
+        bits: Aggregation bitlist with participating validators.
+
+    Returns:
+        List of validator indices, sorted in ascending order.
     """
-    participants = [index for index, bit in enumerate(bits) if bool(bit)]
-    if len(participants) != 1:
-        raise AssertionError("Aggregated attestation must reference exactly one validator")
-    return Uint64(participants[0])
+    validator_indices = [Uint64(index) for index, bit in enumerate(bits) if bool(bit)]
+    if not validator_indices:
+        raise AssertionError("Aggregated attestation must reference at least one validator")
+    return validator_indices
 
 
-def aggregation_bits_to_validator_index(bits: AggregationBits) -> Uint64:
-    """Public helper wrapper for extracting the validator index from bits."""
-    return _aggregation_bits_to_validator_index(bits)
+def aggregated_attestations_to_plain(
+    aggregated: AggregatedAttestations,
+) -> list[Attestation]:
+    """
+    Convert aggregated attestation to a list of plain Attestation containers.
 
+    Extracts all participating validator indices from the aggregation bits
+    and creates individual Attestation objects for each validator.
 
-def aggregated_attestation_to_plain(aggregated: AggregatedAttestations) -> Attestation:
-    """Convert aggregated attestation data to the plain Attestation container."""
-    validator_index = _aggregation_bits_to_validator_index(aggregated.aggregation_bits)
-    return Attestation(validator_id=validator_index, data=aggregated.data)
+    Args:
+        aggregated: Aggregated attestation with one or more participating validators.
+
+    Returns:
+        List of plain attestations, one per participating validator.
+    """
+    validator_indices = aggregation_bits_to_validator_indices(aggregated.aggregation_bits)
+    return [
+        Attestation(validator_id=validator_id, data=aggregated.data)
+        for validator_id in validator_indices
+    ]
 
 
 def attestation_to_aggregated(attestation: Attestation) -> AggregatedAttestations:
@@ -126,3 +144,46 @@ def attestation_to_aggregated(attestation: Attestation) -> AggregatedAttestation
         aggregation_bits=AggregationBits(data=bits),
         data=attestation.data,
     )
+
+
+def aggregate_attestations_by_data(
+    attestations: list[Attestation],
+) -> list[AggregatedAttestations]:
+    """
+    Aggregate attestations with common attestation data.
+
+    Groups attestations by their AttestationData and creates one AggregatedAttestations
+    per unique data, with all participating validator bits set.
+
+    Args:
+        attestations: List of attestations to aggregate.
+
+    Returns:
+        List of aggregated attestations with proper bit aggregation.
+    """
+    # Group validator IDs by attestation data (avoids intermediate objects)
+    data_to_validator_ids: dict[AttestationData, list[int]] = defaultdict(list)
+
+    for attestation in attestations:
+        data_to_validator_ids[attestation.data].append(int(attestation.validator_id))
+
+    # Create aggregated attestations with all relevant bits set
+    result: list[AggregatedAttestations] = []
+
+    for data, validator_ids in data_to_validator_ids.items():
+        # Find the maximum validator index to determine bitlist size
+        max_validator_id = max(validator_ids)
+
+        # Create bitlist with all participating validators set to True
+        bits = [False] * (max_validator_id + 1)
+        for validator_id in validator_ids:
+            bits[validator_id] = True
+
+        result.append(
+            AggregatedAttestations(
+                aggregation_bits=AggregationBits(data=bits),
+                data=data,
+            )
+        )
+
+    return result

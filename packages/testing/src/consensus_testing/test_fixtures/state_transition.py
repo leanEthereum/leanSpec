@@ -5,7 +5,7 @@ from typing import Any, ClassVar, List
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
 from lean_spec.subspecs.containers.attestation import (
-    aggregated_attestation_to_plain,
+    aggregated_attestations_to_plain,
     attestation_to_aggregated,
 )
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
@@ -209,8 +209,13 @@ class StateTransitionTest(BaseConsensusFixture):
             parent_root = hash_tree_root(temp_state.latest_block_header)
 
         # Extract attestations from body if provided, converting from aggregated form
+        # Flatten all plain attestations from all aggregated attestations
         attestations = (
-            [aggregated_attestation_to_plain(att) for att in spec.body.attestations]
+            [
+                plain_att
+                for att in spec.body.attestations
+                for plain_att in aggregated_attestations_to_plain(att)
+            ]
             if spec.body
             else []
         )

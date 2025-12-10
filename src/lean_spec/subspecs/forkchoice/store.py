@@ -30,7 +30,7 @@ from lean_spec.subspecs.containers import (
     SignedBlockWithAttestation,
     State,
 )
-from lean_spec.subspecs.containers.attestation import aggregation_bits_to_validator_index
+from lean_spec.subspecs.containers.attestation import aggregated_attestations_to_plain
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import Signature
@@ -461,21 +461,25 @@ class Store(Container):
         block_attestations = signed_block_with_attestation.message.block.body.attestations
         attestation_signatures = signed_block_with_attestation.signature.attestation_signatures
 
-        assert len(block_attestations) == len(attestation_signatures), (
-            "Attestation signature list must align with block attestations"
+        # Expand aggregated attestations into individual validator attestations
+        plain_attestations = [
+            plain_att
+            for aggregated_att in block_attestations
+            for plain_att in aggregated_attestations_to_plain(aggregated_att)
+        ]
+
+        # Sort attestations by validator_id to align with signature order
+        plain_attestations.sort(key=lambda att: att.validator_id)
+
+        assert len(plain_attestations) == len(attestation_signatures), (
+            "Attestation signature list must align with validator attestations"
         )
 
-        for aggregated_attestation, signature in zip(
-            block_attestations, attestation_signatures, strict=True
-        ):
-            validator_id = aggregation_bits_to_validator_index(
-                aggregated_attestation.aggregation_bits
-            )
-
+        for attestation, signature in zip(plain_attestations, attestation_signatures, strict=True):
             store = store.on_attestation(
                 signed_attestation=SignedAttestation(
-                    validator_id=validator_id,
-                    message=aggregated_attestation.data,
+                    validator_id=attestation.validator_id,
+                    message=attestation.data,
                     signature=signature,
                 ),
                 is_from_block=True,
