@@ -12,11 +12,12 @@ from lean_spec.subspecs.containers.attestation import (
     AttestationData,
     SignedAttestation,
 )
-from lean_spec.subspecs.containers.block.block import (
+from lean_spec.subspecs.containers.block import (
+    BlockSignatures,
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from lean_spec.subspecs.containers.block.types import BlockSignatures
+from lean_spec.subspecs.containers.block.types import AttestationSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
@@ -216,7 +217,10 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Sign proposer attestation - use valid or dummy signature based on spec
         if spec.valid_signature:
-            proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
+            proposer_attestation_signature = key_manager.sign_attestation_data(
+                proposer_attestation.validator_id,
+                proposer_attestation.data,
+            )
         else:
             # Generate an invalid dummy signature (all zeros)
             from lean_spec.subspecs.xmss.constants import TEST_CONFIG
@@ -229,14 +233,15 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 hashes=HashDigestList(data=[]),
             )
 
-        signatures.append(proposer_attestation_signature)
-
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,
                 proposer_attestation=proposer_attestation,
             ),
-            signature=BlockSignatures(data=signatures),
+            signature=BlockSignatures(
+                attestation_signatures=AttestationSignatures(data=signatures),
+                proposer_signature=proposer_attestation_signature,
+            ),
         )
 
     def _build_attestations_from_spec(
@@ -257,10 +262,22 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 signed_attestation = self._build_signed_attestation_from_spec(
                     attestation_item, state, key_manager
                 )
-                attestations.append(signed_attestation.message)
+                # Reconstruct Attestation from SignedAttestation components
+                attestations.append(
+                    Attestation(
+                        validator_id=signed_attestation.validator_id,
+                        data=signed_attestation.message,
+                    )
+                )
                 attestation_signatures.append(signed_attestation.signature)
             else:
-                attestations.append(attestation_item.message)
+                # Reconstruct Attestation from existing SignedAttestation
+                attestations.append(
+                    Attestation(
+                        validator_id=attestation_item.validator_id,
+                        data=attestation_item.message,
+                    )
+                )
                 attestation_signatures.append(attestation_item.signature)
 
         return attestations, attestation_signatures
@@ -313,7 +330,10 @@ class VerifySignaturesTest(BaseConsensusFixture):
         # Sign the attestation - use dummy signature if expecting invalid signature
         if spec.valid_signature:
             # Generate valid signature using key manager
-            signature = key_manager.sign_attestation(attestation)
+            signature = key_manager.sign_attestation_data(
+                attestation.validator_id,
+                attestation.data,
+            )
         else:
             # Generate an invalid dummy signature (all zeros)
             from lean_spec.subspecs.xmss.constants import TEST_CONFIG
@@ -328,6 +348,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Create signed attestation
         return SignedAttestation(
-            message=attestation,
+            validator_id=attestation.validator_id,
+            message=attestation.data,
             signature=signature,
         )
