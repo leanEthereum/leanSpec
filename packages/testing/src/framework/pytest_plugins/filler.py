@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import os
 import shutil
 import sys
 from collections import defaultdict
@@ -147,13 +148,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Clean output directory before generating",
     )
-    group.addoption(
-        "--scheme",
-        action="store",
-        default="test",
-        choices=["test", "prod"],
-        help="XMSS signature scheme to use (default: test)",
-    )
 
 
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
@@ -238,7 +232,7 @@ def pytest_configure(config: pytest.Config) -> None:
     output_dir = Path(config.getoption("--output"))
     fork_name = config.getoption("--fork")
     clean = config.getoption("--clean")
-    scheme_name = config.getoption("--scheme")
+    scheme_name = os.environ.get("SIGNATURE_SCHEME", "test").lower()
 
     # Get available forks from layer-specific module
     get_forks = layer_module.forks.get_forks
@@ -275,7 +269,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     if signature_scheme is None:
         print(
-            f"Error: Unsupported signature scheme for {layer} layer: {scheme_name}\n",
+            f"Error: Unsupported signature scheme for {layer} layer: {scheme_name}",
             file=sys.stderr,
         )
         print(
