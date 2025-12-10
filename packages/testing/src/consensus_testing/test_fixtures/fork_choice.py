@@ -32,7 +32,7 @@ from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Rando
 from lean_spec.types import Bytes32, Uint64
 
 from ..keys import (
-    SIGNATURE_SCHEMES,
+    LEAN_ENV_TO_SCHEMES,
     XmssKeyManager,
     get_shared_key_manager,
 )
@@ -173,7 +173,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Use shared key manager if it has sufficient capacity, otherwise create a new one
         # This optimizes performance by reusing keys across tests when possible
         shared_key_manager = get_shared_key_manager()
-        scheme = SIGNATURE_SCHEMES[self.signature_scheme]
+        scheme = LEAN_ENV_TO_SCHEMES[self.lean_env]
         key_manager = (
             shared_key_manager
             if self.max_slot <= shared_key_manager.max_slot

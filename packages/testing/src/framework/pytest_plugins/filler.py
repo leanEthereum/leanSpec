@@ -232,7 +232,7 @@ def pytest_configure(config: pytest.Config) -> None:
     output_dir = Path(config.getoption("--output"))
     fork_name = config.getoption("--fork")
     clean = config.getoption("--clean")
-    scheme_name = os.environ.get("SIGNATURE_SCHEME", "test").lower()
+    lean_env = os.environ.get("LEAN_ENV", "test").lower()
 
     # Get available forks from layer-specific module
     get_forks = layer_module.forks.get_forks
@@ -262,20 +262,20 @@ def pytest_configure(config: pytest.Config) -> None:
         )
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
-    # Quick sanity check that the provided SIGNATURE_SCHEME env var is valid
-    signature_schemes = layer_module.keys.SIGNATURE_SCHEMES
+    # Quick sanity check that the provided LEAN_ENV env var is valid
+    lean_environments = layer_module.keys.LEAN_ENV_TO_SCHEMES
 
-    if signature_schemes.get(scheme_name) is None:
-        available_signature_schemes = layer_module.keys.SIGNATURE_SCHEMES.keys()
+    if lean_environments.get(lean_env) is None:
+        available_lean_environments = layer_module.keys.LEAN_ENV.keys()
         print(
-            f"Error: Unsupported signature scheme for {layer} layer: {scheme_name}",
+            f"Error: Unsupported environment for {layer} layer: {lean_env}",
             file=sys.stderr,
         )
         print(
-            f"Available {layer} signature schemes: {', '.join(available_signature_schemes)}",
+            f"Available {layer} environments: {', '.join(available_lean_environments)}",
             file=sys.stderr,
         )
-        pytest.exit("Invalid signature scheme specified.", returncode=pytest.ExitCode.USAGE_ERROR)
+        pytest.exit("Invalid environment specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
     # Check output directory
     if output_dir.exists() and any(output_dir.iterdir()):

@@ -8,7 +8,7 @@ from ...types import Uint64
 from ...types.byte_arrays import BaseBytes
 from ...types.collections import SSZList, SSZVector
 from ...types.container import Container
-from .constants import PRF_KEY_LENGTH, PROD_CONFIG
+from .constants import PRF_KEY_LENGTH, XMSS_CONFIG
 
 
 class PRFKey(BaseBytes):
@@ -22,30 +22,26 @@ class PRFKey(BaseBytes):
     LENGTH = PRF_KEY_LENGTH
 
 
-HASH_DIGEST_LENGTH = PROD_CONFIG.HASH_LEN_FE
+HASH_DIGEST_LENGTH = XMSS_CONFIG.HASH_LEN_FE
 """
 The fixed length of a hash digest in field elements.
 
-Derived from `PROD_CONFIG.HASH_LEN_FE`. This corresponds to the output length
+Derived from `XMSS_CONFIG.HASH_LEN_FE`. This corresponds to the output length
 of the Poseidon2 hash function used in the XMSS scheme.
-
-TODO: Make the configuration generic and don't hardcode `PROD_CONFIG`.
 """
 
 # Calculate the maximum number of nodes in a sparse Merkle tree layer:
 # - A bottom tree has at most 2^(LOG_LIFETIME/2) leaves
 # - With padding, we may add up to 2 additional nodes
 # - To be generous and future-proof, we use 2^(LOG_LIFETIME/2 + 1)
-NODE_LIST_LIMIT = 1 << (PROD_CONFIG.LOG_LIFETIME // 2 + 1)
+NODE_LIST_LIMIT = 1 << (XMSS_CONFIG.LOG_LIFETIME // 2 + 1)
 """
 The maximum number of nodes that can be stored in a sparse Merkle tree layer.
 
-Calculated as `2^(LOG_LIFETIME/2 + 1)` from PROD_CONFIG to accommodate:
+Calculated as `2^(LOG_LIFETIME/2 + 1)` from XMSS_CONFIG to accommodate:
 - Bottom trees with up to `2^(LOG_LIFETIME/2)` nodes
 - Padding overhead (up to 2 additional nodes)
 - Future-proofing with 2x margin
-
-TODO: Make the configuration generic and don't hardcode `PROD_CONFIG`.
 """
 
 
@@ -93,12 +89,10 @@ class Parameter(SSZVector):
     This is a unique, randomly generated value associated with a single key pair. It
     is mixed into every hash computation to "personalize" the hash function, preventing
     certain cross-key attacks. It is public knowledge.
-
-    TODO: Make the configuration generic and don't hardcode `PROD_CONFIG`.
     """
 
     ELEMENT_TYPE = Fp
-    LENGTH = PROD_CONFIG.PARAMETER_LEN
+    LENGTH = XMSS_CONFIG.PARAMETER_LEN
 
     @property
     def elements(self) -> List[Fp]:
@@ -115,12 +109,10 @@ class Randomness(SSZVector):
     the final signature for the verifier to reproduce the same hash.
 
     SSZ notation: `Vector[Fp, RAND_LEN_FE]`
-
-    TODO: Make the configuration generic and don't hardcode `PROD_CONFIG`.
     """
 
     ELEMENT_TYPE = Fp
-    LENGTH = PROD_CONFIG.RAND_LEN_FE
+    LENGTH = XMSS_CONFIG.RAND_LEN_FE
 
 
 class HashTreeOpening(Container):
@@ -153,14 +145,12 @@ class HashTreeLayer(Container):
     """SSZ-compliant list of hash digests stored for this layer."""
 
 
-LAYERS_LIMIT = PROD_CONFIG.LOG_LIFETIME + 1
+LAYERS_LIMIT = XMSS_CONFIG.LOG_LIFETIME + 1
 """
 The maximum number of layers in a subtree.
 
 This is `LOG_LIFETIME + 1` to accommodate all layers from 0 (leaves) to LOG_LIFETIME (root),
-inclusive. For PROD_CONFIG with LOG_LIFETIME=32, this allows up to 33 layers.
-
-TODO: Make the configuration generic and don't hardcode `PROD_CONFIG`.
+inclusive. For example, with LOG_LIFETIME=32, this allows up to 33 layers.
 """
 
 

@@ -33,7 +33,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.subspecs.xmss.interface import PROD_SIGNATURE_SCHEME, GeneralizedXmssScheme
+from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme, XMSS_SIGNATURE_SCHEME
 from lean_spec.types import (
     ZERO_HASH,
     Bytes32,
@@ -370,7 +370,7 @@ class Store(Container):
     def on_block(
         self,
         signed_block_with_attestation: SignedBlockWithAttestation,
-        scheme: GeneralizedXmssScheme = PROD_SIGNATURE_SCHEME,
+        scheme: GeneralizedXmssScheme = XMSS_SIGNATURE_SCHEME,
     ) -> "Store":
         """
         Process a new block and update the forkchoice state.

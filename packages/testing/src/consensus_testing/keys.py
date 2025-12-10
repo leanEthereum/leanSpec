@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 # Signature scheme definitions
-SIGNATURE_SCHEMES = {
+LEAN_ENV_TO_SCHEMES = {
     "test": TEST_SIGNATURE_SCHEME,
     "prod": PROD_SIGNATURE_SCHEME,
 }
@@ -74,17 +74,17 @@ def get_shared_key_manager() -> XmssKeyManager:
     across all test fixture generations within a session. This optimizes
     performance by reusing keys when possible.
 
-    The scheme is determined by the SIGNATURE_SCHEME environment variable.
+    The scheme is determined by the LEAN_ENV environment variable.
 
     Returns:
         Shared XmssKeyManager instance with max_slot=10 for the current scheme.
     """
-    scheme_name = os.environ.get("SIGNATURE_SCHEME", "test").lower()
-    scheme = SIGNATURE_SCHEMES.get(scheme_name)
+    lean_env = os.environ.get("LEAN_ENV", "test").lower()
+    scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
     if scheme is None:
         raise ValueError(
-            f"Invalid SIGNATURE_SCHEME: {scheme_name}. "
-            f"Available signature schemes: {', '.join(SIGNATURE_SCHEMES.keys())}"
+            f"Invalid LEAN_ENV: {lean_env}. "
+            f"Available lean environments: {', '.join(LEAN_ENV_TO_SCHEMES.keys())}"
         )
 
     return XmssKeyManager(max_slot=Slot(10), scheme=scheme)
@@ -182,7 +182,7 @@ class XmssKeyManager:
         self.scheme = scheme
         self._state: dict[Uint64, KeyPair] = {}
 
-        for scheme_name, scheme_obj in SIGNATURE_SCHEMES.items():
+        for scheme_name, scheme_obj in LEAN_ENV_TO_SCHEMES.items():
             if scheme_obj is scheme:
                 self.scheme_name = scheme_name
 
@@ -265,7 +265,7 @@ def _generate_single_keypair(
     return KeyPair(public=pk, secret=sk).to_dict()
 
 
-def _generate_keys(scheme_name: str, count: int, max_slot: int) -> None:
+def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
     """
     Generate XMSS key pairs in parallel and save atomically.
 
@@ -273,17 +273,17 @@ def _generate_keys(scheme_name: str, count: int, max_slot: int) -> None:
     Writes to a temp file then renames for crash safety.
 
     Args:
-        scheme_name: Name of the XMSS signature scheme to use (e.g. "test" or "prod").
+        lean_env: Name of the XMSS signature scheme to use (e.g. "test" or "prod").
         count: Number of validators.
         max_slot: Maximum slot (key lifetime = max_slot + 1 epochs).
     """
-    scheme = SIGNATURE_SCHEMES[scheme_name]
-    keys_file = _get_keys_file(scheme_name)
+    scheme = LEAN_ENV_TO_SCHEMES[lean_env]
+    keys_file = _get_keys_file(lean_env)
     num_epochs = max_slot + 1
     num_workers = os.cpu_count() or 1
 
     print(
-        f"Generating {count} XMSS key pairs for {scheme_name} scheme "
+        f"Generating {count} XMSS key pairs for {lean_env} environment "
         f"({num_epochs} epochs) using {num_workers} cores..."
     )
 
@@ -315,7 +315,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--scheme",
-        choices=SIGNATURE_SCHEMES.keys(),
+        choices=LEAN_ENV_TO_SCHEMES.keys(),
         default="test",
         help="XMSS scheme to use",
     )
@@ -333,7 +333,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    _generate_keys(scheme_name=args.scheme, count=args.count, max_slot=args.max_slot)
+    _generate_keys(lean_env=args.scheme, count=args.count, max_slot=args.max_slot)
 
 
 if __name__ == "__main__":

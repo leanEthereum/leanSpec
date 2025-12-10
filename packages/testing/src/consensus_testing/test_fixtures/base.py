@@ -22,9 +22,9 @@ class BaseConsensusFixture(BaseFixture):
 
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
-    def signature_scheme(self) -> str:
-        """The XMSS signature scheme being used (e.g. 'test' or 'prod'). Defaults to 'test'."""
-        return os.environ.get("SIGNATURE_SCHEME", "test").lower()
+    def lean_env(self) -> str:
+        """The lean environment being used (e.g. 'test' or 'prod'). Defaults to 'test'."""
+        return os.environ.get("LEAN_ENV", "test").lower()
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:

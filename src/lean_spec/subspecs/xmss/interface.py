@@ -591,3 +591,11 @@ TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(
     rand=TEST_RAND,
 )
 """A lightweight instance for test environments."""
+
+# Select active signature scheme based on LEAN_ENV environment variable
+from .constants import LEAN_ENV
+
+XMSS_SIGNATURE_SCHEME = (
+    TEST_SIGNATURE_SCHEME if LEAN_ENV == "test" else PROD_SIGNATURE_SCHEME
+)
+"""The active XMSS signature scheme based on LEAN_ENV environment variable."""
