@@ -103,6 +103,7 @@ def get_name_by_signature_scheme(scheme: GeneralizedXmssScheme) -> str:
             return scheme_name
     raise ValueError(f"Unknown scheme: {scheme}")
 
+
 @cache
 def get_shared_key_manager() -> XmssKeyManager:
     """

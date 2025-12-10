@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any, ClassVar
 
 from pydantic import Field, field_serializer
@@ -18,30 +17,14 @@ from lean_spec.subspecs.containers.block.block import (
 )
 from lean_spec.subspecs.containers.block.types import BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
 
-from ..keys import XmssKeyManager
+from ..keys import XmssKeyManager, get_shared_key_manager
 from ..test_types import BlockSpec, SignedAttestationSpec
 from .base import BaseConsensusFixture
-
-
-@lru_cache(maxsize=1)
-def _get_shared_key_manager() -> XmssKeyManager:
-    """
-    Get or create the shared XMSS key manager for reusing keys across tests.
-
-    Uses functools.lru_cache to create a singleton instance that's shared
-    across all test fixture generations within a session. This optimizes
-    performance by reusing keys when possible.
-
-    Returns:
-        Shared XmssKeyManager instance with max_slot=10.
-    """
-    return XmssKeyManager(max_slot=Slot(10))
 
 
 class VerifySignaturesTest(BaseConsensusFixture):
@@ -121,7 +104,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         assert self.anchor_state is not None, "anchor state must be set before making the fixture"
 
         # Use shared key manager
-        key_manager = _get_shared_key_manager()
+        key_manager = get_shared_key_manager()
 
         # Build the signed block with attestation
         signed_block = self._build_block_from_spec(self.block, self.anchor_state, key_manager)
