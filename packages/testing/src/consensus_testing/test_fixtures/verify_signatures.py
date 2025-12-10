@@ -64,8 +64,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
     format_name: ClassVar[str] = "verify_signatures_test"
     description: ClassVar[str] = (
-        "Tests signature verification for blocks with attestations through"
-        "SignedBlockWithAttestation.verify_signatures()"
+        "Tests signature verification for blocks with attestations."
     )
 
     anchor_state: State | None = None
