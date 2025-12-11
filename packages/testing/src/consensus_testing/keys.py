@@ -55,6 +55,53 @@ Mapping from short name to scheme objects. This mapping is useful for:
 - Caching key managers in test fixtures
 """
 
+# Cache for key managers: {(scheme_name, max_slot): XmssKeyManager}
+_KEY_MANAGER_CACHE: dict[tuple[str, Slot], XmssKeyManager] = {}
+
+
+@cache
+def get_target_signauture_scheme() -> tuple[str, str]:
+    lean_env = os.environ.get("LEAN_ENV", "test").lower()
+    scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
+
+    if scheme is None:
+        raise ValueError(
+            f"Invalid LEAN_ENV: {lean_env}. "
+            f"Available lean environments: {', '.join(LEAN_ENV_TO_SCHEMES.keys())}"
+        )
+
+    # Currently assuming the scheme name is the env var value
+    scheme_name = lean_env
+    return scheme_name, scheme
+
+def get_shared_key_manager(max_slot: Slot = Slot(10)) -> XmssKeyManager:
+    """
+    Get a shared XMSS key manager for reusing keys across tests.
+
+    Implements caching that reuses key managers with sufficient capacity.
+    If a cached key manager exists with max slot >= the requested max slot, it will
+    be reused instead of creating a new one.
+
+    Args:
+        max_slot: Maximum slot for which XMSS keys should be valid.
+                  Defaults to 10 slots.
+
+    Returns:
+        Shared XmssKeyManager instance for the current scheme that supports at least max slot.
+    """
+    scheme_name, scheme = get_target_signauture_scheme()
+
+    # Check if we have a cached key manager with sufficient capacity
+    for (cached_scheme, cached_max_slot), manager in _KEY_MANAGER_CACHE.items():
+        if cached_scheme == scheme_name and cached_max_slot >= max_slot:
+            return manager
+
+    # No suitable cached manager found, create a new one
+    manager = XmssKeyManager(max_slot=max_slot, scheme=scheme)
+    _KEY_MANAGER_CACHE[(scheme_name, max_slot)] = manager
+    return manager
+
+
 NUM_VALIDATORS = 12
 """Default number of validator key pairs."""
 
@@ -63,31 +110,6 @@ DEFAULT_MAX_SLOT = Slot(100)
 
 NUM_ACTIVE_EPOCHS = int(DEFAULT_MAX_SLOT) + 1
 """Key lifetime in epochs (derived from DEFAULT_MAX_SLOT)."""
-
-
-@cache
-def get_shared_key_manager() -> XmssKeyManager:
-    """
-    Get or create the shared XMSS key manager for reusing keys across tests.
-
-    Uses functools.cache to create a singleton instance that's shared
-    across all test fixture generations within a session. This optimizes
-    performance by reusing keys when possible.
-
-    The scheme is determined by the LEAN_ENV environment variable.
-
-    Returns:
-        Shared XmssKeyManager instance with max_slot=10 for the current scheme.
-    """
-    lean_env = os.environ.get("LEAN_ENV", "test").lower()
-    scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
-    if scheme is None:
-        raise ValueError(
-            f"Invalid LEAN_ENV: {lean_env}. "
-            f"Available lean environments: {', '.join(LEAN_ENV_TO_SCHEMES.keys())}"
-        )
-
-    return XmssKeyManager(max_slot=Slot(10), scheme=scheme)
 
 
 @dataclass(frozen=True, slots=True)

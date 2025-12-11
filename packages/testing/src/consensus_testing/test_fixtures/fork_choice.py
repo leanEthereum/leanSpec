@@ -31,11 +31,7 @@ from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 from lean_spec.types import Bytes32, Uint64
 
-from ..keys import (
-    LEAN_ENV_TO_SCHEMES,
-    XmssKeyManager,
-    get_shared_key_manager,
-)
+from ..keys import LEAN_ENV_TO_SCHEMES, XmssKeyManager, get_shared_key_manager
 from ..test_types import (
     AttestationStep,
     BlockSpec,
@@ -170,15 +166,9 @@ class ForkChoiceTest(BaseConsensusFixture):
         assert self.anchor_block is not None, "anchor_block must be set before make_fixture"
         assert self.max_slot is not None, "max_slot must be set before make_fixture"
 
-        # Use shared key manager if it has sufficient capacity, otherwise create a new one
-        # This optimizes performance by reusing keys across tests when possible
-        shared_key_manager = get_shared_key_manager()
-        scheme = LEAN_ENV_TO_SCHEMES[self.lean_env]
-        key_manager = (
-            shared_key_manager
-            if self.max_slot <= shared_key_manager.max_slot
-            else XmssKeyManager(max_slot=self.max_slot, scheme=scheme)
-        )
+        # Get shared key manager with the required max_slot
+        # This optimizes performance by reusing keys across tests with the same max_slot
+        key_manager = get_shared_key_manager(max_slot=self.max_slot)
 
         # Update validator pubkeys to match key_manager's generated keys
         updated_validators = [
@@ -234,7 +224,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                     store = store.on_tick(block_time, has_proposal=True)
 
                     # Process the block (immutable)
-                    store = store.on_block(signed_block, scheme)
+                    store = store.on_block(signed_block, LEAN_ENV_TO_SCHEMES[self.lean_env])
 
                 elif isinstance(step, AttestationStep):
                     # Process attestation from gossip (immutable)
