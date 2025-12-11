@@ -61,7 +61,7 @@ class SignedAttestation(Container):
     """Signature aggregation produced by the leanVM (SNARKs in the future)."""
 
 
-class AggregatedAttestations(Container):
+class AggregatedAttestation(Container):
     """Aggregated attestation consisting of participation bits and message."""
 
     aggregation_bits: AggregationBits
@@ -78,7 +78,7 @@ class AggregatedAttestations(Container):
 class SignedAggregatedAttestations(Container):
     """Aggregated attestation bundled with aggregated signatures."""
 
-    message: AggregatedAttestations
+    message: AggregatedAttestation
     """Aggregated attestation data."""
 
     signature: AggregatedSignatures
@@ -114,7 +114,7 @@ def aggregation_bits_to_validator_indices(bits: AggregationBits) -> list[Uint64]
 
 
 def aggregated_attestations_to_plain(
-    aggregated: AggregatedAttestations,
+    aggregated: AggregatedAttestation,
 ) -> list[Attestation]:
     """
     Convert aggregated attestation to a list of plain Attestation containers.
@@ -135,12 +135,12 @@ def aggregated_attestations_to_plain(
     ]
 
 
-def attestation_to_aggregated(attestation: Attestation) -> AggregatedAttestations:
+def attestation_to_aggregated(attestation: Attestation) -> AggregatedAttestation:
     """Convert a plain Attestation into the aggregated representation."""
     validator_index = int(attestation.validator_id)
     bits = [False] * (validator_index + 1)
     bits[validator_index] = True
-    return AggregatedAttestations(
+    return AggregatedAttestation(
         aggregation_bits=AggregationBits(data=bits),
         data=attestation.data,
     )
@@ -148,11 +148,11 @@ def attestation_to_aggregated(attestation: Attestation) -> AggregatedAttestation
 
 def aggregate_attestations_by_data(
     attestations: list[Attestation],
-) -> list[AggregatedAttestations]:
+) -> list[AggregatedAttestation]:
     """
     Aggregate attestations with common attestation data.
 
-    Groups attestations by their AttestationData and creates one AggregatedAttestations
+    Groups attestations by their AttestationData and creates one AggregatedAttestation
     per unique data, with all participating validator bits set.
 
     Args:
@@ -168,7 +168,7 @@ def aggregate_attestations_by_data(
         data_to_validator_ids[attestation.data].append(int(attestation.validator_id))
 
     # Create aggregated attestations with all relevant bits set
-    result: list[AggregatedAttestations] = []
+    result: list[AggregatedAttestation] = []
 
     for data, validator_ids in data_to_validator_ids.items():
         # Find the maximum validator index to determine bitlist size
@@ -180,7 +180,7 @@ def aggregate_attestations_by_data(
             bits[validator_id] = True
 
         result.append(
-            AggregatedAttestations(
+            AggregatedAttestation(
                 aggregation_bits=AggregationBits(data=bits),
                 data=data,
             )

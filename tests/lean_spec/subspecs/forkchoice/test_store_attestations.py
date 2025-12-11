@@ -16,7 +16,7 @@ from lean_spec.subspecs.containers.block import (
     SignedBlockWithAttestation,
 )
 from lean_spec.subspecs.containers.block.types import (
-    AggregatedAttestationsList,
+    AggregatedAttestationList,
     AttestationSignatures,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
@@ -43,7 +43,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
         proposer_index=Uint64(0),
         parent_root=Bytes32.zero(),
         state_root=hash_tree_root(genesis_state),
-        body=BlockBody(attestations=AggregatedAttestationsList(data=[])),
+        body=BlockBody(attestations=AggregatedAttestationList(data=[])),
     )
 
     base_store = Store.get_forkchoice_store(genesis_state, genesis_block)

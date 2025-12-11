@@ -8,7 +8,7 @@ from .block import (
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from .types import AggregatedAttestationsList, AttestationSignatures
+from .types import AggregatedAttestationList, AttestationSignatures
 
 __all__ = [
     "Block",
@@ -17,6 +17,6 @@ __all__ = [
     "BlockSignatures",
     "BlockWithAttestation",
     "SignedBlockWithAttestation",
-    "AggregatedAttestationsList",
+    "AggregatedAttestationList",
     "AttestationSignatures",
 ]

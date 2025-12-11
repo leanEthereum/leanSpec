@@ -9,24 +9,9 @@ from lean_spec.subspecs.containers.attestation import (
     aggregate_attestations_by_data,
     aggregation_bits_to_validator_indices,
 )
-from lean_spec.subspecs.containers.block import (
-    Block,
-    BlockBody,
-    BlockSignatures,
-    BlockWithAttestation,
-    SignedBlockWithAttestation,
-)
-from lean_spec.subspecs.containers.block.types import (
-    AggregatedAttestationsList,
-    AttestationSignatures,
-)
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state import State
-from lean_spec.subspecs.containers.validator import Validator
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.types import Bytes32, Bytes52, Uint64
+from lean_spec.types import Bytes32, Uint64
 
 
 class TestAttestationAggregation:
@@ -138,14 +123,14 @@ class TestDuplicateAttestationDataValidation:
             source=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
         )
 
-        from lean_spec.subspecs.containers.attestation import AggregatedAttestations
+        from lean_spec.subspecs.containers.attestation import AggregatedAttestation
         from lean_spec.subspecs.containers.attestation.types import AggregationBits
 
-        agg1 = AggregatedAttestations(
+        agg1 = AggregatedAttestation(
             aggregation_bits=AggregationBits(data=[False, True]),
             data=att_data,
         )
-        agg2 = AggregatedAttestations(
+        agg2 = AggregatedAttestation(
             aggregation_bits=AggregationBits(data=[False, True, True]),
             data=att_data,
         )

@@ -1,7 +1,7 @@
 """Attestation containers and related types for the Lean spec."""
 
 from .attestation import (
-    AggregatedAttestations,
+    AggregatedAttestation,
     Attestation,
     AttestationData,
     SignedAggregatedAttestations,
@@ -18,7 +18,7 @@ __all__ = [
     "Attestation",
     "SignedAttestation",
     "SignedAggregatedAttestations",
-    "AggregatedAttestations",
+    "AggregatedAttestation",
     "AggregatedSignatures",
     "AggregationBits",
     "aggregate_attestations_by_data",

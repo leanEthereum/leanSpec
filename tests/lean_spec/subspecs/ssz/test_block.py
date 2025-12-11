@@ -7,7 +7,7 @@ from lean_spec.subspecs.containers.block import (
     SignedBlockWithAttestation,
 )
 from lean_spec.subspecs.containers.block.types import (
-    AggregatedAttestationsList,
+    AggregatedAttestationList,
     AttestationSignatures,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
@@ -26,7 +26,7 @@ def test_encode_decode_signed_block_with_attestation_roundtrip() -> None:
                 proposer_index=Uint64(0),
                 parent_root=Bytes32.zero(),
                 state_root=Bytes32.zero(),
-                body=BlockBody(attestations=AggregatedAttestationsList(data=[])),
+                body=BlockBody(attestations=AggregatedAttestationList(data=[])),
             ),
             proposer_attestation=Attestation(
                 validator_id=Uint64(0),

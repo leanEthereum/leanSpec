@@ -22,7 +22,7 @@ from ..attestation import (
 if TYPE_CHECKING:
     from lean_spec.subspecs.xmss.containers import Signature
 from ..block import Block, BlockBody, BlockHeader
-from ..block.types import AggregatedAttestationsList
+from ..block.types import AggregatedAttestationList
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
@@ -101,7 +101,7 @@ class State(Container):
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestationsList(data=[]))),
+            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestationList(data=[]))),
         )
 
         # Assemble and return the full genesis state.
@@ -670,7 +670,7 @@ class State(Container):
                 parent_root=parent_root,
                 state_root=Bytes32.zero(),
                 body=BlockBody(
-                    attestations=AggregatedAttestationsList(
+                    attestations=AggregatedAttestationList(
                         data=aggregate_attestations_by_data(attestations)
                     )
                 ),

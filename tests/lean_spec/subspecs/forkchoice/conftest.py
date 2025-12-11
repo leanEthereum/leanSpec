@@ -11,7 +11,7 @@ from lean_spec.subspecs.containers import (
     SignedAttestation,
     State,
 )
-from lean_spec.subspecs.containers.block import AggregatedAttestationsList, BlockHeader
+from lean_spec.subspecs.containers.block import AggregatedAttestationList, BlockHeader
 from lean_spec.subspecs.containers.config import Config
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
@@ -44,7 +44,7 @@ class MockState(State):
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestationsList(data=[]))),
+            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestationList(data=[]))),
         )
 
         super().__init__(

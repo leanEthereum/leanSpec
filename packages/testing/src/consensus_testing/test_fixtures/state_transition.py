@@ -9,7 +9,7 @@ from lean_spec.subspecs.containers.attestation import (
     attestation_to_aggregated,
 )
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
-from lean_spec.subspecs.containers.block.types import AggregatedAttestationsList
+from lean_spec.subspecs.containers.block.types import AggregatedAttestationList
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
@@ -227,7 +227,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=spec.state_root,
-                body=spec.body or BlockBody(attestations=AggregatedAttestationsList(data=[])),
+                body=spec.body or BlockBody(attestations=AggregatedAttestationList(data=[])),
             )
             return block, None
 
@@ -240,7 +240,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 state_root=Bytes32.zero(),
                 body=spec.body
                 or BlockBody(
-                    attestations=AggregatedAttestationsList(
+                    attestations=AggregatedAttestationList(
                         data=[attestation_to_aggregated(att) for att in attestations]
                     )
                 ),
