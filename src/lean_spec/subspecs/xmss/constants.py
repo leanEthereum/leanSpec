@@ -171,5 +171,5 @@ if lean_env_to_config.get(LEAN_ENV) is None:
         f"Available schemes: {lean_env_to_config.keys()}"
     )
 
-ENV_CONFIG: Final = lean_env_to_config[LEAN_ENV]
+TARGET_CONFIG: Final = lean_env_to_config[LEAN_ENV]
 """The active XMSS configuration based on LEAN_ENV environment variable."""

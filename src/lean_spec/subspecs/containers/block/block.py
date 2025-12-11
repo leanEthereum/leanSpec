@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.interface import ENV_SIGNATURE_SCHEME, GeneralizedXmssScheme
+from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
@@ -117,7 +117,7 @@ class SignedBlockWithAttestation(Container):
     """
 
     def verify_signatures(
-        self, parent_state: "State", scheme: GeneralizedXmssScheme = ENV_SIGNATURE_SCHEME
+        self, parent_state: "State", scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME
     ) -> bool:
         """
         Verify all XMSS signatures in this signed block.

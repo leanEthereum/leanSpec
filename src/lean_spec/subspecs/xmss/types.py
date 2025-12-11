@@ -8,7 +8,7 @@ from ...types import Uint64
 from ...types.byte_arrays import BaseBytes
 from ...types.collections import SSZList, SSZVector
 from ...types.container import Container
-from .constants import ENV_CONFIG, PRF_KEY_LENGTH
+from .constants import TARGET_CONFIG, PRF_KEY_LENGTH
 
 
 class PRFKey(BaseBytes):
@@ -22,11 +22,11 @@ class PRFKey(BaseBytes):
     LENGTH = PRF_KEY_LENGTH
 
 
-HASH_DIGEST_LENGTH = ENV_CONFIG.HASH_LEN_FE
+HASH_DIGEST_LENGTH = TARGET_CONFIG.HASH_LEN_FE
 """
 The fixed length of a hash digest in field elements.
 
-Derived from `ENV_CONFIG.HASH_LEN_FE`. This corresponds to the output length
+Derived from `TARGET_CONFIG.HASH_LEN_FE`. This corresponds to the output length
 of the Poseidon2 hash function used in the XMSS scheme.
 """
 
@@ -34,11 +34,11 @@ of the Poseidon2 hash function used in the XMSS scheme.
 # - A bottom tree has at most 2^(LOG_LIFETIME/2) leaves
 # - With padding, we may add up to 2 additional nodes
 # - To be generous and future-proof, we use 2^(LOG_LIFETIME/2 + 1)
-NODE_LIST_LIMIT = 1 << (ENV_CONFIG.LOG_LIFETIME // 2 + 1)
+NODE_LIST_LIMIT = 1 << (TARGET_CONFIG.LOG_LIFETIME // 2 + 1)
 """
 The maximum number of nodes that can be stored in a sparse Merkle tree layer.
 
-Calculated as `2^(LOG_LIFETIME/2 + 1)` from ENV_CONFIG to accommodate:
+Calculated as `2^(LOG_LIFETIME/2 + 1)` from TARGET_CONFIG to accommodate:
 - Bottom trees with up to `2^(LOG_LIFETIME/2)` nodes
 - Padding overhead (up to 2 additional nodes)
 - Future-proofing with 2x margin
@@ -92,7 +92,7 @@ class Parameter(SSZVector):
     """
 
     ELEMENT_TYPE = Fp
-    LENGTH = ENV_CONFIG.PARAMETER_LEN
+    LENGTH = TARGET_CONFIG.PARAMETER_LEN
 
     @property
     def elements(self) -> List[Fp]:
@@ -112,7 +112,7 @@ class Randomness(SSZVector):
     """
 
     ELEMENT_TYPE = Fp
-    LENGTH = ENV_CONFIG.RAND_LEN_FE
+    LENGTH = TARGET_CONFIG.RAND_LEN_FE
 
 
 class HashTreeOpening(Container):
@@ -145,7 +145,7 @@ class HashTreeLayer(Container):
     """SSZ-compliant list of hash digests stored for this layer."""
 
 
-LAYERS_LIMIT = ENV_CONFIG.LOG_LIFETIME + 1
+LAYERS_LIMIT = TARGET_CONFIG.LOG_LIFETIME + 1
 """
 The maximum number of layers in a subtree.
 

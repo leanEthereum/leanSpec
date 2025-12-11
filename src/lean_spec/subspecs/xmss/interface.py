@@ -593,5 +593,5 @@ TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(
 )
 """A lightweight instance for test environments."""
 
-ENV_SIGNATURE_SCHEME = TEST_SIGNATURE_SCHEME if LEAN_ENV == "test" else PROD_SIGNATURE_SCHEME
+TARGET_SIGNATURE_SCHEME = TEST_SIGNATURE_SCHEME if LEAN_ENV == "test" else PROD_SIGNATURE_SCHEME
 """The active XMSS signature scheme based on LEAN_ENV environment variable."""

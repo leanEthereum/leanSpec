@@ -5,9 +5,9 @@ hash-based signature scheme.
 It exposes the core data structures and the main interface functions.
 """
 
-from .constants import ENV_CONFIG, LEAN_ENV, PROD_CONFIG, TEST_CONFIG
+from .constants import TARGET_CONFIG, LEAN_ENV, PROD_CONFIG, TEST_CONFIG
 from .containers import PublicKey, SecretKey, Signature
-from .interface import ENV_SIGNATURE_SCHEME, GeneralizedXmssScheme
+from .interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from .types import HashTreeOpening
 
 __all__ = [
@@ -19,6 +19,6 @@ __all__ = [
     "PROD_CONFIG",
     "TEST_CONFIG",
     "LEAN_ENV",
-    "ENV_CONFIG",
-    "ENV_SIGNATURE_SCHEME",
+    "TARGET_CONFIG",
+    "TARGET_SIGNATURE_SCHEME",
 ]
