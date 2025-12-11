@@ -55,12 +55,28 @@ Mapping from short name to scheme objects. This mapping is useful for:
 - Caching key managers in test fixtures
 """
 
-# Cache for key managers: {(scheme_name, max_slot): XmssKeyManager}
 _KEY_MANAGER_CACHE: dict[tuple[str, Slot], XmssKeyManager] = {}
+"""Cache for key managers: {(scheme_name, max_slot): XmssKeyManager}"""
+
+_DEFAULT_MAX_SLOT = Slot(10)
+"""Default maximum slot for shared key manager."""
 
 
 @cache
-def get_target_signauture_scheme() -> tuple[str, str]:
+def get_target_signauture_scheme() -> tuple[str, GeneralizedXmssScheme]:
+    """
+    Get the target XMSS signature scheme based on the LEAN_ENV environment variable.
+
+    Reads the LEAN_ENV environment variable to determine which signature scheme
+    to use for testing. The result is cached to avoid repeated environment lookups.
+
+    Returns:
+        Tuple of (scheme_name, scheme_object) where scheme_name is the environment
+        variable value and scheme_object is the corresponding GeneralizedXmssScheme.
+
+    Raises:
+        ValueError: If LEAN_ENV contains an invalid scheme name.
+    """
     lean_env = os.environ.get("LEAN_ENV", "test").lower()
     scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
 
@@ -74,7 +90,8 @@ def get_target_signauture_scheme() -> tuple[str, str]:
     scheme_name = lean_env
     return scheme_name, scheme
 
-def get_shared_key_manager(max_slot: Slot = Slot(10)) -> XmssKeyManager:
+
+def get_shared_key_manager(max_slot: Slot = _DEFAULT_MAX_SLOT) -> XmssKeyManager:
     """
     Get a shared XMSS key manager for reusing keys across tests.
 
