@@ -17,7 +17,7 @@ from lean_spec.subspecs.containers.block import (
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from lean_spec.subspecs.containers.block.types import AttestationSignatures
+from lean_spec.subspecs.containers.block.types import NaiveAggregatedSignature
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
@@ -239,7 +239,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 proposer_attestation=proposer_attestation,
             ),
             signature=BlockSignatures(
-                attestation_signatures=AttestationSignatures(data=signatures),
+                attestation_signatures=NaiveAggregatedSignature(data=signatures),
                 proposer_signature=proposer_attestation_signature,
             ),
         )

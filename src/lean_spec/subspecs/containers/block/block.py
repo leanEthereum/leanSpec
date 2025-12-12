@@ -20,7 +20,7 @@ from lean_spec.types.container import Container
 from ...xmss.containers import Signature as XmssSignature
 from ..attestation import Attestation, AttestationData, aggregation_bits_to_validator_indices
 from ..validator import Validator
-from .types import AggregatedAttestationList, AttestationSignatures
+from .types import AggregatedAttestations, NaiveAggregatedSignature
 
 if TYPE_CHECKING:
     from ..state import State
@@ -34,7 +34,7 @@ class BlockBody(Container):
     packaged into blocks.
     """
 
-    attestations: AggregatedAttestationList
+    attestations: AggregatedAttestations
     """Plain validator attestations carried in the block body.
 
     Individual signatures live in the aggregated block signature list, so
@@ -102,7 +102,7 @@ class BlockWithAttestation(Container):
 class BlockSignatures(Container):
     """Signature payload for the block."""
 
-    attestation_signatures: AttestationSignatures
+    attestation_signatures: NaiveAggregatedSignature
     """Signatures for the attestations in the block body.
 
     Contains a naive list of signatures for the attestations in the block body.

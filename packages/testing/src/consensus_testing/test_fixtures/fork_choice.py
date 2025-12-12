@@ -21,8 +21,8 @@ from lean_spec.subspecs.containers.block import (
     SignedBlockWithAttestation,
 )
 from lean_spec.subspecs.containers.block.types import (
-    AggregatedAttestationList,
-    AttestationSignatures,
+    AggregatedAttestations,
+    NaiveAggregatedSignature,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
@@ -137,7 +137,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 proposer_index=self.anchor_state.latest_block_header.proposer_index,
                 parent_root=self.anchor_state.latest_block_header.parent_root,
                 state_root=hash_tree_root(self.anchor_state),
-                body=BlockBody(attestations=AggregatedAttestationList(data=[])),
+                body=BlockBody(attestations=AggregatedAttestations(data=[])),
             )
         return self
 
@@ -362,7 +362,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 proposer_attestation=proposer_attestation,
             ),
             signature=BlockSignatures(
-                attestation_signatures=AttestationSignatures(data=attestation_signatures),
+                attestation_signatures=NaiveAggregatedSignature(data=attestation_signatures),
                 proposer_signature=proposer_signature,
             ),
         )
