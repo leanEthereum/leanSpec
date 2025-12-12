@@ -47,3 +47,13 @@ jobs:
         env:
           LEAN_ENV: prod
         run: uv run fill --fork=Devnet --clean -n auto
+
+      - name: Create fixtures archive
+        run: tar -czf fixtures-prod-scheme.tar.gz fixtures/
+
+      - name: Upload production test fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixtures-prod-scheme
+          path: fixtures-prod-scheme.tar.gz
+          if-no-files-found: error
