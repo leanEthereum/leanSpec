@@ -9,6 +9,8 @@ instantiation from the canonical Rust implementation
 We also provide a test instantiation for testing purposes.
 """
 
+import os
+
 from typing_extensions import Final
 
 from lean_spec.types import StrictBaseModel, Uint64
@@ -154,3 +156,20 @@ TWEAK_PREFIX_MESSAGE: Final = Fp(value=0x02)
 
 PRF_KEY_LENGTH: int = 32
 """The length of the PRF secret key in bytes."""
+
+lean_env_to_config = {
+    "test": TEST_CONFIG,
+    "prod": PROD_CONFIG,
+}
+
+LEAN_ENV = os.environ.get("LEAN_ENV", "prod").lower()
+"""The active signature scheme name ('prod' or 'test')."""
+
+if lean_env_to_config.get(LEAN_ENV) is None:
+    raise ValueError(
+        f"Invalid LEAN_ENV environment variable: '{LEAN_ENV}'. "
+        f"Available schemes: {lean_env_to_config.keys()}"
+    )
+
+TARGET_CONFIG: Final = lean_env_to_config[LEAN_ENV]
+"""The active XMSS configuration based on LEAN_ENV environment variable."""

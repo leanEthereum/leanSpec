@@ -156,3 +156,6 @@ site/
 
 # Ruff
 .ruff_cache/
+
+# PQ test keys
+packages/testing/src/consensus_testing/test_keys/prod_scheme/
