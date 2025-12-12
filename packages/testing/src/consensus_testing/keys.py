@@ -322,9 +322,10 @@ class XmssKeyManager:
 
 
 def _generate_single_keypair(
-    scheme: GeneralizedXmssScheme, num_epochs: int, _idx: int
+    scheme: GeneralizedXmssScheme, num_epochs: int, index: int
 ) -> dict[str, str]:
     """Generate one key pair (module-level for pickling in ProcessPoolExecutor)."""
+    print(f"Starting key #{index} generation...")
     pk, sk = scheme.key_gen(Uint64(0), Uint64(num_epochs))
     return KeyPair(public=pk, secret=sk).to_dict()
 

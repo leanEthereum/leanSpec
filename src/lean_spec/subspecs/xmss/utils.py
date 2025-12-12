@@ -211,10 +211,21 @@ def bottom_tree_from_prf_key(
     start_epoch = bottom_tree_index * Uint64(leafs_per_bottom_tree)
     end_epoch = start_epoch + Uint64(leafs_per_bottom_tree)
 
+    print(f"Generating for epoch range: {start_epoch} to {end_epoch}...")
+
     # Generate leaf hashes for all epochs in this bottom tree.
     leaf_hashes: List[HashDigestVector] = []
 
+    total_epochs = int(end_epoch - start_epoch)
     for epoch in range(int(start_epoch), int(end_epoch)):
+        # Log every 1000 epochs
+        epoch_offset = epoch - int(start_epoch)
+        if epoch_offset % 1000 == 0:
+            print(
+                f"Generating {epoch_offset} of {total_epochs} epochs",
+                f"({epoch_offset // total_epochs * 100}%)",
+            )
+
         # For each epoch, compute the one-time public key (chain endpoints).
         chain_ends: List[HashDigestVector] = []
 

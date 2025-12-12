@@ -163,6 +163,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         actual_num_active_epochs = num_bottom_trees * leafs_per_bottom_tree
 
         # Step 2: Generate the first two bottom trees (kept in memory).
+        print(f"Generating left bottom tree (index {start_bottom_tree_index})...")
         left_bottom_tree = bottom_tree_from_prf_key(
             self.prf,
             self.hasher,
@@ -172,6 +173,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             Uint64(start_bottom_tree_index),
             parameter,
         )
+        print(f"Generating right bottom tree (index {start_bottom_tree_index + 1})...")
         right_bottom_tree = bottom_tree_from_prf_key(
             self.prf,
             self.hasher,
@@ -190,6 +192,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
 
         # Step 3: Generate remaining bottom trees (only their roots).
         for i in range(start_bottom_tree_index + 2, end_bottom_tree_index):
+            print(f"Generating remaining bottom tree {i}/{end_bottom_tree_index - 1}...")
             tree = bottom_tree_from_prf_key(
                 self.prf,
                 self.hasher,
@@ -203,6 +206,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             bottom_tree_roots.append(root)
 
         # Step 4: Build the top tree from bottom tree roots.
+        print(f"Building top tree from {len(bottom_tree_roots)} bottom tree roots...")
         from .subtree import HashSubTree
 
         top_tree = HashSubTree.new_top_tree(
