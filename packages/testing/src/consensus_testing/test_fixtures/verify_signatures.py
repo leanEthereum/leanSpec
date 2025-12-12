@@ -17,7 +17,6 @@ from lean_spec.subspecs.containers.block import (
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from lean_spec.subspecs.containers.block.types import NaiveAggregatedSignature
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
@@ -193,7 +192,9 @@ class VerifySignaturesTest(BaseConsensusFixture):
         parent_root = hash_tree_root(parent_state.latest_block_header)
 
         # Build attestations from spec
-        attestations, signatures = self._build_attestations_from_spec(spec, state, key_manager)
+        attestations, attestation_signature_inputs = self._build_attestations_from_spec(
+            spec, state, key_manager
+        )
 
         # Use State.build_block for core block building (pure spec logic)
         final_block, _, _, _ = state.build_block(
@@ -201,6 +202,21 @@ class VerifySignaturesTest(BaseConsensusFixture):
             proposer_index=proposer_index,
             parent_root=parent_root,
             attestations=attestations,
+        )
+
+        # Preserve per-attestation validity from the spec.
+        #
+        # `State.build_block()` aggregates attestations by data into
+        # `final_block.body.attestations`. For signature tests we must ensure that
+        # any intentionally-invalid signature from the input spec remains invalid
+        # in the produced `SignedBlockWithAttestation`.
+        signature_lookup: dict[tuple[int, bytes], Any] = {
+            (int(att.validator_id), bytes(hash_tree_root(att.data))): sig
+            for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
+        }
+        attestation_signatures = key_manager.build_attestation_signatures(
+            final_block.body.attestations,
+            signature_lookup=signature_lookup,
         )
 
         # Create proposer attestation for this block
@@ -239,7 +255,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 proposer_attestation=proposer_attestation,
             ),
             signature=BlockSignatures(
-                attestation_signatures=NaiveAggregatedSignature(data=signatures),
+                attestation_signatures=attestation_signatures,
                 proposer_signature=proposer_attestation_signature,
             ),
         )

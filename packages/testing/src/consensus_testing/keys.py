@@ -30,6 +30,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Self
 
 from lean_spec.subspecs.containers import AttestationData
+from lean_spec.subspecs.containers.block.types import (
+    AggregatedAttestations,
+    AttestationSignatures,
+    NaiveAggregatedSignatures,
+)
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
@@ -207,6 +212,59 @@ class XmssKeyManager:
         # Sign hash tree root of the attestation data
         message = bytes(hash_tree_root(attestation_data))
         return self.scheme.sign(sk, epoch, message)
+
+    def build_attestation_signatures(
+        self,
+        aggregated_attestations: AggregatedAttestations,
+        signature_lookup: "Mapping[tuple[int, bytes], Signature] | None" = None,
+    ) -> AttestationSignatures:
+        """
+        Build `AttestationSignatures` for already-aggregated attestations.
+
+        This is a convenience helper for tests/fixtures that need to produce
+        `BlockSignatures.attestation_signatures` for a block.
+
+        Args:
+            aggregated_attestations: Iterable of aggregated attestation containers.
+                Each item is expected to have:
+                - `.data` (AttestationData)
+                - `.aggregation_bits.to_validator_indices()` (Iterable[Uint64])
+            signature_lookup: Optional override map keyed by
+                `(int(validator_id), bytes(hash_tree_root(attestation_data))) -> signature`.
+                When provided and a key exists, that signature is used instead of signing.
+
+        Returns:
+            AttestationSignatures matching the ordering of `aggregated_attestations`
+            and per-attestation validator index ordering.
+        """
+        attestation_data_roots: dict[int, bytes] = {}
+
+        def _data_root_bytes(attestation_data: AttestationData) -> bytes:
+            key = id(attestation_data)
+            if key not in attestation_data_roots:
+                attestation_data_roots[key] = bytes(hash_tree_root(attestation_data))
+            return attestation_data_roots[key]
+
+        return AttestationSignatures(
+            data=[
+                NaiveAggregatedSignatures(
+                    data=[
+                        (
+                            signature_lookup.get(
+                                (int(validator_id), _data_root_bytes(aggregated_attestation.data))
+                            )
+                            if signature_lookup is not None
+                            else None
+                        )
+                        or self.sign_attestation_data(validator_id, aggregated_attestation.data)
+                        for validator_id in (
+                            aggregated_attestation.aggregation_bits.to_validator_indices()
+                        )
+                    ]
+                )
+                for aggregated_attestation in aggregated_attestations
+            ]
+        )
 
 
 def _generate_single_keypair(num_epochs: int) -> dict[str, str]:

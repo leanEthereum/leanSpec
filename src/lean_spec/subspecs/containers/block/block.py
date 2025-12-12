@@ -9,7 +9,6 @@ Each block has a proposer who created it. The slot determines which validator
 can propose.
 """
 
-from itertools import pairwise
 from typing import TYPE_CHECKING, cast
 
 from lean_spec.subspecs.containers.slot import Slot
@@ -18,9 +17,12 @@ from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
 from ...xmss.containers import Signature as XmssSignature
-from ..attestation import Attestation, AttestationData, aggregation_bits_to_validator_indices
+from ..attestation import Attestation
 from ..validator import Validator
-from .types import AggregatedAttestations, NaiveAggregatedSignature
+from .types import (
+    AggregatedAttestations,
+    AttestationSignatures,
+)
 
 if TYPE_CHECKING:
     from ..state import State
@@ -102,13 +104,15 @@ class BlockWithAttestation(Container):
 class BlockSignatures(Container):
     """Signature payload for the block."""
 
-    attestation_signatures: NaiveAggregatedSignature
-    """Signatures for the attestations in the block body.
+    attestation_signatures: AttestationSignatures
+    """Attestation signatures for the aggregated attestations in the block body.
 
-    Contains a naive list of signatures for the attestations in the block body.
+    Each entry corresponds to an aggregated attestation from the block body and
+    contains all XMSS signatures from the participating validators.
 
     TODO:
-    - this will be replaced by a BytesArray in next PR to include leanVM aggregated sproof.
+    - Currently, this is list of lists of signatures.
+    - The list of signatures will be replaced by a BytesArray to include leanVM aggregated proof.
     """
 
     proposer_signature: XmssSignature
@@ -157,50 +161,37 @@ class SignedBlockWithAttestation(Container):
         """
         block = self.message.block
         signatures = self.signature
-        block_attestations = block.body.attestations
+        aggregated_attestations = block.body.attestations
         attestation_signatures = signatures.attestation_signatures
+
+        assert len(aggregated_attestations) == len(attestation_signatures), (
+            "Attestation signature groups must align with block body attestations"
+        )
 
         validators = parent_state.validators
 
-        # Collect all validator IDs and their corresponding attestation data
-        # from the aggregated attestations
-        validator_attestations: list[tuple[Uint64, AttestationData]] = []
-
-        for aggregated_attestation in block_attestations:
-            validator_ids = aggregation_bits_to_validator_indices(
-                aggregated_attestation.aggregation_bits
-            )
-            for validator_id in validator_ids:
-                validator_attestations.append((validator_id, aggregated_attestation.data))
-
-        # Sort by validator_id to match the sorted signature order
-        validator_attestations.sort(key=lambda x: x[0])
-
-        # Verify signature count matches total validator count
-        assert len(attestation_signatures) == len(validator_attestations), (
-            "Number of attestation signatures does not match validator count"
-        )
-
-        # Verify signatures are in strictly ascending order by validator_id
-        # This ensures the block builder properly sorted the signatures
-        assert all(prev[0] < curr[0] for prev, curr in pairwise(validator_attestations)), (
-            "Attestation signatures must be in strictly ascending order by validator_id. "
-            f"Found: {[vid for vid, _ in validator_attestations]}"
-        )
-
-        # Verify each validator's attestation signature
-        for (validator_id, attestation_data), signature in zip(
-            validator_attestations, attestation_signatures, strict=True
+        for aggregated_attestation, aggregated_signature in zip(
+            aggregated_attestations, attestation_signatures, strict=True
         ):
-            # Ensure validator exists in the active set
-            assert validator_id < Uint64(len(validators)), "Validator index out of range"
-            validator = cast(Validator, validators[validator_id])
+            validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
 
-            assert signature.verify(
-                validator.get_pubkey(),
-                attestation_data.slot,
-                bytes(hash_tree_root(attestation_data)),
-            ), "Attestation signature verification failed"
+            assert len(aggregated_signature) == len(validator_ids), (
+                "Aggregated attestation signature count mismatch"
+            )
+
+            attestation_root = bytes(hash_tree_root(aggregated_attestation.data))
+
+            # Verify each validator's attestation signature
+            for validator_id, signature in zip(validator_ids, aggregated_signature, strict=True):
+                # Ensure validator exists in the active set
+                assert validator_id < Uint64(len(validators)), "Validator index out of range"
+                validator = cast(Validator, validators[validator_id])
+
+                assert signature.verify(
+                    validator.get_pubkey(),
+                    aggregated_attestation.data.slot,
+                    attestation_root,
+                ), "Attestation signature verification failed"
 
         # Verify proposer attestation signature
         proposer_attestation = self.message.proposer_attestation

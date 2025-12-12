@@ -4,10 +4,6 @@ from typing import Any, ClassVar, List
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
-from lean_spec.subspecs.containers.attestation import (
-    aggregated_attestations_to_plain,
-    attestation_to_aggregated,
-)
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.state.state import State
@@ -211,11 +207,7 @@ class StateTransitionTest(BaseConsensusFixture):
         # Extract attestations from body if provided, converting from aggregated form
         # Flatten all plain attestations from all aggregated attestations
         attestations = (
-            [
-                plain_att
-                for att in spec.body.attestations
-                for plain_att in aggregated_attestations_to_plain(att)
-            ]
+            [plain_att for att in spec.body.attestations for plain_att in att.to_plain()]
             if spec.body
             else []
         )
@@ -241,7 +233,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 body=spec.body
                 or BlockBody(
                     attestations=AggregatedAttestations(
-                        data=[attestation_to_aggregated(att) for att in attestations]
+                        data=[att.to_aggregated() for att in attestations]
                     )
                 ),
             )

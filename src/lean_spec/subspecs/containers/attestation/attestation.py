@@ -12,6 +12,8 @@ Attestations can be aggregated to save space, but the current specification
 doesn't do this yet.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 
 from lean_spec.subspecs.containers.slot import Slot
@@ -47,6 +49,16 @@ class Attestation(Container):
     data: AttestationData
     """The attestation data produced by the validator."""
 
+    def to_aggregated(self) -> AggregatedAttestation:
+        """Convert this plain Attestation into the aggregated representation."""
+        validator_index = int(self.validator_id)
+        bits = [False] * (validator_index + 1)
+        bits[validator_index] = True
+        return AggregatedAttestation(
+            aggregation_bits=AggregationBits(data=bits),
+            data=self.data,
+        )
+
 
 class SignedAttestation(Container):
     """Validator attestation bundled with its signature."""
@@ -74,6 +86,47 @@ class AggregatedAttestation(Container):
     committee assignments.
     """
 
+    def to_plain(self) -> list[Attestation]:
+        """
+        Expand this aggregated attestation into plain per-validator attestations.
+
+        Returns:
+            One `Attestation` per participating validator index, all sharing the same
+            `AttestationData`.
+        """
+        validator_indices = self.aggregation_bits.to_validator_indices()
+        return [
+            Attestation(validator_id=validator_id, data=self.data)
+            for validator_id in validator_indices
+        ]
+
+    @classmethod
+    def aggregate_by_data(
+        cls,
+        attestations: list[Attestation],
+    ) -> list[AggregatedAttestation]:
+        """
+        Aggregate plain per-validator attestations by their shared AttestationData.
+
+        Args:
+            attestations: Attestations to aggregate.
+
+        Returns:
+            One AggregatedAttestation per unique AttestationData, with aggregation
+            bits set for all participating validators.
+        """
+        data_to_validator_ids: dict[AttestationData, list[Uint64]] = defaultdict(list)
+        for attestation in attestations:
+            data_to_validator_ids[attestation.data].append(attestation.validator_id)
+
+        return [
+            cls(
+                aggregation_bits=AggregationBits.from_validator_indices(validator_ids),
+                data=data,
+            )
+            for data, validator_ids in data_to_validator_ids.items()
+        ]
+
 
 class SignedAggregatedAttestations(Container):
     """Aggregated attestation bundled with aggregated signatures."""
@@ -92,98 +145,3 @@ class SignedAggregatedAttestations(Container):
     - this will be replaced by a SNARK in future devnets.
     - this will be aggregated by aggregators in future devnets.
     """
-
-
-def aggregation_bits_to_validator_indices(bits: AggregationBits) -> list[Uint64]:
-    """
-    Extract all validator indices encoded in aggregation bits.
-
-    Returns the list of all validators who participated in the aggregation,
-    sorted by validator index.
-
-    Args:
-        bits: Aggregation bitlist with participating validators.
-
-    Returns:
-        List of validator indices, sorted in ascending order.
-    """
-    validator_indices = [Uint64(index) for index, bit in enumerate(bits) if bool(bit)]
-    if not validator_indices:
-        raise AssertionError("Aggregated attestation must reference at least one validator")
-    return validator_indices
-
-
-def aggregated_attestations_to_plain(
-    aggregated: AggregatedAttestation,
-) -> list[Attestation]:
-    """
-    Convert aggregated attestation to a list of plain Attestation containers.
-
-    Extracts all participating validator indices from the aggregation bits
-    and creates individual Attestation objects for each validator.
-
-    Args:
-        aggregated: Aggregated attestation with one or more participating validators.
-
-    Returns:
-        List of plain attestations, one per participating validator.
-    """
-    validator_indices = aggregation_bits_to_validator_indices(aggregated.aggregation_bits)
-    return [
-        Attestation(validator_id=validator_id, data=aggregated.data)
-        for validator_id in validator_indices
-    ]
-
-
-def attestation_to_aggregated(attestation: Attestation) -> AggregatedAttestation:
-    """Convert a plain Attestation into the aggregated representation."""
-    validator_index = int(attestation.validator_id)
-    bits = [False] * (validator_index + 1)
-    bits[validator_index] = True
-    return AggregatedAttestation(
-        aggregation_bits=AggregationBits(data=bits),
-        data=attestation.data,
-    )
-
-
-def aggregate_attestations_by_data(
-    attestations: list[Attestation],
-) -> list[AggregatedAttestation]:
-    """
-    Aggregate attestations with common attestation data.
-
-    Groups attestations by their AttestationData and creates one AggregatedAttestation
-    per unique data, with all participating validator bits set.
-
-    Args:
-        attestations: List of attestations to aggregate.
-
-    Returns:
-        List of aggregated attestations with proper bit aggregation.
-    """
-    # Group validator IDs by attestation data (avoids intermediate objects)
-    data_to_validator_ids: dict[AttestationData, list[int]] = defaultdict(list)
-
-    for attestation in attestations:
-        data_to_validator_ids[attestation.data].append(int(attestation.validator_id))
-
-    # Create aggregated attestations with all relevant bits set
-    result: list[AggregatedAttestation] = []
-
-    for data, validator_ids in data_to_validator_ids.items():
-        # Find the maximum validator index to determine bitlist size
-        max_validator_id = max(validator_ids)
-
-        # Create bitlist with all participating validators set to True
-        bits = [False] * (max_validator_id + 1)
-        for validator_id in validator_ids:
-            bits[validator_id] = True
-
-        result.append(
-            AggregatedAttestation(
-                aggregation_bits=AggregationBits(data=bits),
-                data=data,
-            )
-        )
-
-    return result

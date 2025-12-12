@@ -30,7 +30,6 @@ from lean_spec.subspecs.containers import (
     SignedBlockWithAttestation,
     State,
 )
-from lean_spec.subspecs.containers.attestation import aggregated_attestations_to_plain
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import Signature
@@ -458,32 +457,33 @@ class Store(Container):
         )
 
         # Process block body attestations.
-        block_attestations = signed_block_with_attestation.message.block.body.attestations
+        aggregated_attestations = signed_block_with_attestation.message.block.body.attestations
         attestation_signatures = signed_block_with_attestation.signature.attestation_signatures
 
-        # Expand aggregated attestations into individual validator attestations
-        plain_attestations = [
-            plain_att
-            for aggregated_att in block_attestations
-            for plain_att in aggregated_attestations_to_plain(aggregated_att)
-        ]
-
-        # Sort attestations by validator_id to align with signature order
-        plain_attestations.sort(key=lambda att: att.validator_id)
-
-        assert len(plain_attestations) == len(attestation_signatures), (
-            "Attestation signature list must align with validator attestations"
+        assert len(aggregated_attestations) == len(attestation_signatures), (
+            "Attestation signature groups must match aggregated attestations"
         )
 
-        for attestation, signature in zip(plain_attestations, attestation_signatures, strict=True):
-            store = store.on_attestation(
-                signed_attestation=SignedAttestation(
-                    validator_id=attestation.validator_id,
-                    message=attestation.data,
-                    signature=signature,
-                ),
-                is_from_block=True,
+        for aggregated_attestation, aggregated_signature in zip(
+            aggregated_attestations, attestation_signatures, strict=True
+        ):
+            plain_attestations = aggregated_attestation.to_plain()
+
+            assert len(plain_attestations) == len(aggregated_signature), (
+                "Aggregated attestation signature count mismatch"
             )
+
+            for attestation, signature in zip(
+                plain_attestations, aggregated_signature, strict=True
+            ):
+                store = store.on_attestation(
+                    signed_attestation=SignedAttestation(
+                        validator_id=attestation.validator_id,
+                        message=attestation.data,
+                        signature=signature,
+                    ),
+                    is_from_block=True,
+                )
 
         # Update forkchoice head based on new block and attestations
         #

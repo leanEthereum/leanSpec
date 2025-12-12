@@ -22,7 +22,6 @@ from lean_spec.subspecs.containers.block import (
 )
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
-    NaiveAggregatedSignature,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
@@ -348,9 +347,10 @@ class ForkChoiceTest(BaseConsensusFixture):
         )
 
         # Sign all attestations and the proposer attestation
-        attestation_signatures = [
-            key_manager.sign_attestation_data(att.validator_id, att.data) for att in attestations
-        ]
+        attestation_signatures = key_manager.build_attestation_signatures(
+            final_block.body.attestations
+        )
+
         proposer_signature = key_manager.sign_attestation_data(
             proposer_attestation.validator_id,
             proposer_attestation.data,
@@ -362,7 +362,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 proposer_attestation=proposer_attestation,
             ),
             signature=BlockSignatures(
-                attestation_signatures=NaiveAggregatedSignature(data=attestation_signatures),
+                attestation_signatures=attestation_signatures,
                 proposer_signature=proposer_signature,
             ),
         )

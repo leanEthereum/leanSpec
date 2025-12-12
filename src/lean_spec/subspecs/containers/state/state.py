@@ -13,10 +13,9 @@ from lean_spec.types import (
 )
 
 from ..attestation import (
+    AggregatedAttestation,
     Attestation,
     SignedAttestation,
-    aggregate_attestations_by_data,
-    aggregated_attestations_to_plain,
 )
 
 if TYPE_CHECKING:
@@ -375,13 +374,13 @@ class State(Container):
                 raise AssertionError("Block contains duplicate AttestationData")
 
             attestations_data.add(aggregated_att.data)
-            attestations.extend(aggregated_attestations_to_plain(aggregated_att))
+            attestations.extend(aggregated_att.to_plain())
 
         return state.process_attestations(attestations)
 
     def process_attestations(
         self,
-        attestations: Iterable[Attestation],
+        attestations: list[Attestation],
     ) -> "State":
         """
         Apply attestations and update justification/finalization
@@ -671,7 +670,7 @@ class State(Container):
                 state_root=Bytes32.zero(),
                 body=BlockBody(
                     attestations=AggregatedAttestations(
-                        data=aggregate_attestations_by_data(attestations)
+                        data=AggregatedAttestation.aggregate_by_data(attestations)
                     )
                 ),
             )
@@ -715,20 +714,7 @@ class State(Container):
             attestations.extend(new_attestations)
             signatures.extend(new_signatures)
 
-        # Sort attestations and signatures by validator_id to ensure
-        # consistent ordering for signature validation.
-        # Only sort if we have signatures (i.e., attestation collection was performed)
-        if signatures:
-            attestations_with_sigs = sorted(
-                zip(attestations, signatures, strict=True), key=lambda x: x[0].validator_id
-            )
-            sorted_attestations = [att for att, _ in attestations_with_sigs]
-            sorted_signatures = [sig for _, sig in attestations_with_sigs]
-        else:
-            sorted_attestations = attestations
-            sorted_signatures = signatures
-
         # Store the post state root in the block
         final_block = candidate_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
-        return final_block, post_state, sorted_attestations, sorted_signatures
+        return final_block, post_state, attestations, signatures

@@ -3,11 +3,10 @@
 import pytest
 
 from lean_spec.subspecs.containers.attestation import (
+    AggregatedAttestation,
     AggregationBits,
     Attestation,
     AttestationData,
-    aggregate_attestations_by_data,
-    aggregation_bits_to_validator_indices,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
@@ -21,7 +20,7 @@ class TestAttestationAggregation:
         """Validate aggregated attestation must include at least one validator."""
         bits = AggregationBits(data=[False, False, False])
         with pytest.raises(AssertionError, match="at least one validator"):
-            aggregation_bits_to_validator_indices(bits)
+            bits.to_validator_indices()
 
     def test_aggregate_attestations_by_common_data(self) -> None:
         """Test that attestations with same data are properly aggregated."""
@@ -45,21 +44,21 @@ class TestAttestationAggregation:
             Attestation(validator_id=Uint64(5), data=att_data2),
         ]
 
-        aggregated = aggregate_attestations_by_data(attestations)
+        aggregated = AggregatedAttestation.aggregate_by_data(attestations)
 
         # Should have 2 aggregated attestations (one per unique data)
         assert len(aggregated) == 2
 
         # Find the aggregated attestation with att_data1
         agg1 = next(agg for agg in aggregated if agg.data == att_data1)
-        validator_ids1 = aggregation_bits_to_validator_indices(agg1.aggregation_bits)
+        validator_ids1 = agg1.aggregation_bits.to_validator_indices()
 
         # Should contain validators 1 and 3
         assert set(validator_ids1) == {Uint64(1), Uint64(3)}
 
         # Find the aggregated attestation with att_data2
         agg2 = next(agg for agg in aggregated if agg.data == att_data2)
-        validator_ids2 = aggregation_bits_to_validator_indices(agg2.aggregation_bits)
+        validator_ids2 = agg2.aggregation_bits.to_validator_indices()
 
         # Should contain only validator 5
         assert set(validator_ids2) == {Uint64(5)}
@@ -79,10 +78,10 @@ class TestAttestationAggregation:
             Attestation(validator_id=Uint64(10), data=att_data),
         ]
 
-        aggregated = aggregate_attestations_by_data(attestations)
+        aggregated = AggregatedAttestation.aggregate_by_data(attestations)
 
         assert len(aggregated) == 1
-        validator_ids = aggregation_bits_to_validator_indices(aggregated[0].aggregation_bits)
+        validator_ids = aggregated[0].aggregation_bits.to_validator_indices()
 
         # Should have all three validators
         assert len(validator_ids) == 3
@@ -90,7 +89,7 @@ class TestAttestationAggregation:
 
     def test_aggregate_empty_attestations(self) -> None:
         """Test aggregation with no attestations."""
-        aggregated = aggregate_attestations_by_data([])
+        aggregated = AggregatedAttestation.aggregate_by_data([])
         assert len(aggregated) == 0
 
     def test_aggregate_single_attestation(self) -> None:
@@ -104,10 +103,10 @@ class TestAttestationAggregation:
 
         attestations = [Attestation(validator_id=Uint64(5), data=att_data)]
 
-        aggregated = aggregate_attestations_by_data(attestations)
+        aggregated = AggregatedAttestation.aggregate_by_data(attestations)
 
         assert len(aggregated) == 1
-        validator_ids = aggregation_bits_to_validator_indices(aggregated[0].aggregation_bits)
+        validator_ids = aggregated[0].aggregation_bits.to_validator_indices()
         assert validator_ids == [Uint64(5)]
 
 
@@ -135,13 +134,7 @@ class TestDuplicateAttestationDataValidation:
             data=att_data,
         )
 
-        from lean_spec.subspecs.containers.attestation import aggregated_attestations_to_plain
-
-        plain = [
-            plain_att
-            for aggregated in (agg1, agg2)
-            for plain_att in aggregated_attestations_to_plain(aggregated)
-        ]
+        plain = [plain_att for aggregated in (agg1, agg2) for plain_att in aggregated.to_plain()]
 
         # Expect 2 plain attestations (because validator 1 is common in agg1 and agg2)
         # validator 1 and validator 2 are the only unique validators in the attestations

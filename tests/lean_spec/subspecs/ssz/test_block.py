@@ -8,7 +8,7 @@ from lean_spec.subspecs.containers.block import (
 )
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
-    NaiveAggregatedSignature,
+    AttestationSignatures,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.koalabear import Fp
@@ -39,7 +39,7 @@ def test_encode_decode_signed_block_with_attestation_roundtrip() -> None:
             ),
         ),
         signature=BlockSignatures(
-            attestation_signatures=NaiveAggregatedSignature(data=[]),
+            attestation_signatures=AttestationSignatures(data=[]),
             proposer_signature=Signature(
                 path=HashTreeOpening(siblings=HashDigestList(data=[])),
                 rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),

@@ -17,7 +17,6 @@ from lean_spec.subspecs.containers.block import (
 )
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
-    NaiveAggregatedSignature,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
@@ -66,7 +65,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
 
     # For slot 1 with 3 validators: 1 % 3 == 1, so validator 1 is the proposer
     proposer_index = Uint64(1)
-    _, block, attestation_signatures = producer_store.produce_block_with_signatures(
+    _, block, _ = producer_store.produce_block_with_signatures(
         attestation_slot,
         proposer_index,
     )
@@ -87,13 +86,15 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
         proposer_attestation.data,
     )
 
+    attestation_signatures = key_manager.build_attestation_signatures(block.body.attestations)
+
     signed_block = SignedBlockWithAttestation(
         message=BlockWithAttestation(
             block=block,
             proposer_attestation=proposer_attestation,
         ),
         signature=BlockSignatures(
-            attestation_signatures=NaiveAggregatedSignature(data=attestation_signatures),
+            attestation_signatures=attestation_signatures,
             proposer_signature=proposer_signature,
         ),
     )
