@@ -13,8 +13,9 @@ Regenerating Keys:
     python -m consensus_testing.keys --max-slot 200    # longer lifetime
 
 File Format:
-    Keys are stored as hex-encoded SSZ in JSON:
-    [{"public": "0a1b...", "secret": "2c3d..."}, ...]
+    Each key pair is stored in a separate JSON file with hex-encoded SSZ.
+    Directory structure: test_keys/{scheme}_scheme/{index}.json
+    Each file contains: {"public": "0a1b...", "secret": "2c3d..."}
 """
 
 from __future__ import annotations
@@ -22,7 +23,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import tarfile
 import tempfile
+import urllib.request
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from functools import cache, partial
@@ -42,6 +46,13 @@ from lean_spec.types import Uint64
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+# Pre-generated key download URLs
+KEY_DOWNLOAD_URLS = {
+    "test": "https://github.com/unnawut/leansig-test-keys/releases/download/leanSpec-d6cec9b/test_scheme.tar.gz",
+    "prod": "https://github.com/unnawut/leansig-test-keys/releases/download/leanSpec-d6cec9b/prod_scheme.tar.gz",
+}
+"""URLs for downloading pre-generated keys."""
 
 # Signature scheme definitions
 LEAN_ENV_TO_SCHEMES = {
@@ -162,9 +173,9 @@ class KeyPair:
         return KeyPair(public=self.public, secret=secret)
 
 
-def _get_keys_file(scheme_name: str) -> Path:
-    """Get the keys file path for the given scheme."""
-    return Path(__file__).parent / f"{scheme_name}_keys.json"
+def _get_keys_dir(scheme_name: str) -> Path:
+    """Get the keys directory path for the given scheme."""
+    return Path(__file__).parent / "test_keys" / f"{scheme_name}_scheme"
 
 
 @cache
@@ -179,17 +190,31 @@ def load_keys(scheme_name: str) -> dict[Uint64, KeyPair]:
         Mapping from validator index to key pair.
 
     Raises:
-        FileNotFoundError: If keys file is missing.
+        FileNotFoundError: If keys directory is missing.
     """
-    keys_file = _get_keys_file(scheme_name)
+    keys_dir = _get_keys_dir(scheme_name)
 
-    if not keys_file.exists():
+    if not keys_dir.exists():
         raise FileNotFoundError(
-            f"Keys not found: {keys_file} - ",
-            f"Run: python -m consensus_testing.keys --scheme {scheme_name}",
+            f"Keys directory not found: {keys_dir} - "
+            f"Run: python -m consensus_testing.keys --scheme {scheme_name}"
         )
-    data = json.loads(keys_file.read_text())
-    return {Uint64(i): KeyPair.from_dict(kp) for i, kp in enumerate(data)}
+
+    # Load all keypair files from the directory
+    result = {}
+    for key_file in sorted(keys_dir.glob("*.json")):
+        # Extract validator index from filename (e.g., "0.json" -> 0)
+        validator_idx = Uint64(int(key_file.stem))
+        data = json.loads(key_file.read_text())
+        result[validator_idx] = KeyPair.from_dict(data)
+
+    if not result:
+        raise FileNotFoundError(
+            f"No key files found in: {keys_dir} - "
+            f"Run: python -m consensus_testing.keys --scheme {scheme_name}"
+        )
+
+    return result
 
 
 class XmssKeyManager:
@@ -306,10 +331,10 @@ def _generate_single_keypair(
 
 def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
     """
-    Generate XMSS key pairs in parallel and save atomically.
+    Generate XMSS key pairs in parallel and save to individual files.
 
     Uses ProcessPoolExecutor to saturate CPU cores for faster generation.
-    Writes to a temp file then renames for crash safety.
+    Each keypair is saved to a separate file for better manageability.
 
     Args:
         lean_env: Name of the XMSS signature scheme to use (e.g. "test" or "prod").
@@ -317,7 +342,7 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
         max_slot: Maximum slot (key lifetime = max_slot + 1 epochs).
     """
     scheme = LEAN_ENV_TO_SCHEMES[lean_env]
-    keys_file = _get_keys_file(lean_env)
+    keys_dir = _get_keys_dir(lean_env)
     num_epochs = max_slot + 1
     num_workers = os.cpu_count() or 1
 
@@ -330,20 +355,74 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
         worker_func = partial(_generate_single_keypair, scheme, num_epochs)
         key_pairs = list(executor.map(worker_func, range(count)))
 
-    # Atomic write: temp file -> rename
-    fd, temp_path = tempfile.mkstemp(suffix=".json", dir=keys_file.parent)
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(key_pairs, f, indent=2)
-        Path(temp_path).replace(keys_file)
-    except Exception:
-        Path(temp_path).unlink(missing_ok=True)
-        raise
+    # Create keys directory (remove old one if it exists)
+    if keys_dir.exists():
+        shutil.rmtree(keys_dir)
+    keys_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Saved {len(key_pairs)} key pairs to {keys_file}")
+    # Save each keypair to a separate file
+    for idx, key_pair in enumerate(key_pairs):
+        key_file = keys_dir / f"{idx}.json"
+        with open(key_file, "w") as f:
+            json.dump(key_pair, f, indent=2)
+
+    print(f"Saved {len(key_pairs)} key pairs to {keys_dir}/")
 
     # Clear cache so new keys are loaded
     load_keys.cache_clear()
+
+
+def _download_keys(scheme: str) -> None:
+    """
+    Download pre-generated XMSS key pairs from GitHub releases.
+
+    Downloads and extracts tar.gz archive for the specified scheme
+    into its respective directory.
+
+    Args:
+        scheme: Scheme name to download (e.g., 'test' or 'prod').
+    """
+    base_dir = Path(__file__).parent / "test_keys"
+    url = KEY_DOWNLOAD_URLS[scheme]
+
+    print(f"Downloading {scheme} keys from {url}...")
+
+    # Download to a temporary file
+    with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
+        try:
+            with urllib.request.urlopen(url) as response:
+                tmp_file.write(response.read())
+            tmp_path = tmp_file.name
+        except Exception as e:
+            print(f"Failed to download {scheme} keys: {e}")
+            return
+
+    # Extract the archive
+    try:
+        target_dir = base_dir / f"{scheme}_scheme"
+
+        # Remove existing directory if present
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+
+        # Create parent directory
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extract tar.gz
+        with tarfile.open(tmp_path, "r:gz") as tar:
+            tar.extractall(path=base_dir)
+
+        print(f"Extracted {scheme} keys to {target_dir}/")
+
+    except Exception as e:
+        print(f"Failed to extract {scheme} keys: {e}")
+    finally:
+        # Clean up temporary file
+        os.unlink(tmp_path)
+
+    # Clear cache so new keys are loaded
+    load_keys.cache_clear()
+    print("Download complete!")
 
 
 def main() -> None:
@@ -351,6 +430,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate XMSS key pairs for consensus testing",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Download pre-generated keys from a GitHub release",
     )
     parser.add_argument(
         "--scheme",
@@ -371,6 +455,11 @@ def main() -> None:
         help="Maximum slot (key lifetime = max_slot + 1)",
     )
     args = parser.parse_args()
+
+    # Download keys instead of generating if specified
+    if args.download:
+        _download_keys(scheme=args.scheme)
+        return
 
     _generate_keys(lean_env=args.scheme, count=args.count, max_slot=args.max_slot)
 
