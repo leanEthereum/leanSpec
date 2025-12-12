@@ -223,7 +223,7 @@ def bottom_tree_from_prf_key(
         if epoch_offset % 1000 == 0:
             print(
                 f"Generating {epoch_offset} of {total_epochs} epochs",
-                f"({epoch_offset // total_epochs * 100}%)",
+                f"({epoch_offset * 100 // total_epochs}%)",
             )
 
         # For each epoch, compute the one-time public key (chain endpoints).
