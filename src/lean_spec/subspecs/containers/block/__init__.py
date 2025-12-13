@@ -11,7 +11,6 @@ from .block import (
 from .types import (
     AggregatedAttestations,
     AttestationSignatures,
-    NaiveAggregatedSignature,
 )
 
 __all__ = [
@@ -22,6 +21,5 @@ __all__ = [
     "BlockWithAttestation",
     "SignedBlockWithAttestation",
     "AggregatedAttestations",
-    "NaiveAggregatedSignature",
     "AttestationSignatures",
 ]

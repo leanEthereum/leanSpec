@@ -30,10 +30,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Self
 
 from lean_spec.subspecs.containers import AttestationData
+from lean_spec.subspecs.containers.attestation.types import NaiveAggregatedSignature
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
     AttestationSignatures,
-    NaiveAggregatedSignature,
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root

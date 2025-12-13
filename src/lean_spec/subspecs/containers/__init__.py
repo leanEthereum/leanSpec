@@ -10,10 +10,10 @@ SHA256. Later devnets will switch to Poseidon2 for better SNARK compatibility.
 
 from .attestation import (
     AggregatedAttestation,
-    AggregatedSignatures,
     AggregationBits,
     Attestation,
     AttestationData,
+    NaiveAggregatedSignature,
     SignedAggregatedAttestation,
     SignedAttestation,
 )
@@ -31,7 +31,7 @@ from .validator import Validator
 
 __all__ = [
     "AggregatedAttestation",
-    "AggregatedSignatures",
+    "NaiveAggregatedSignature",
     "AggregationBits",
     "AttestationData",
     "Attestation",

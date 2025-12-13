@@ -22,7 +22,7 @@ from lean_spec.types import Container, Uint64
 
 from ...xmss.containers import Signature
 from ..checkpoint import Checkpoint
-from .types import AggregatedSignatures, AggregationBits
+from .types import AggregationBits, NaiveAggregatedSignature
 
 
 class AttestationData(Container):
@@ -129,7 +129,7 @@ class SignedAggregatedAttestation(Container):
     message: AggregatedAttestation
     """Aggregated attestation data."""
 
-    signature: AggregatedSignatures
+    signature: NaiveAggregatedSignature
     """Aggregated attestation plus its combined signature.
 
     Stores a naive list of validator signatures that mirrors the attestation

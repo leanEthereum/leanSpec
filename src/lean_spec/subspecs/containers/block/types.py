@@ -3,21 +3,13 @@
 from lean_spec.types import SSZList
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
-from ...xmss.containers import Signature as XmssSignature
-from ..attestation import AggregatedAttestation
+from ..attestation import AggregatedAttestation, NaiveAggregatedSignature
 
 
 class AggregatedAttestations(SSZList):
     """List of aggregated attestations included in a block."""
 
     ELEMENT_TYPE = AggregatedAttestation
-    LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
-
-
-class NaiveAggregatedSignature(SSZList):
-    """Aggregated signature list included alongside the block proposer's attestation."""
-
-    ELEMENT_TYPE = XmssSignature
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
 
 
