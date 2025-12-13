@@ -206,12 +206,11 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Preserve per-attestation validity from the spec.
         #
-        # `State.build_block()` aggregates attestations by data into
-        # `final_block.body.attestations`. For signature tests we must ensure that
-        # any intentionally-invalid signature from the input spec remains invalid
+        # For signature tests we must ensure that the signatures in the input spec are used
+        # for any intentionally-invalid signature from the input spec remains invalid
         # in the produced `SignedBlockWithAttestation`.
-        signature_lookup: dict[tuple[int, bytes], Any] = {
-            (int(att.validator_id), bytes(hash_tree_root(att.data))): sig
+        signature_lookup: dict[tuple[Uint64, bytes], Signature] = {
+            (att.validator_id, bytes(hash_tree_root(att.data))): sig
             for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
         }
         attestation_signatures = key_manager.build_attestation_signatures(

@@ -216,7 +216,7 @@ class XmssKeyManager:
     def build_attestation_signatures(
         self,
         aggregated_attestations: AggregatedAttestations,
-        signature_lookup: "Mapping[tuple[int, bytes], Signature] | None" = None,
+        signature_lookup: Mapping[tuple[Uint64, bytes], Signature] | None = None,
     ) -> AttestationSignatures:
         """
         Build `AttestationSignatures` for already-aggregated attestations.
@@ -230,28 +230,20 @@ class XmssKeyManager:
                 - `.data` (AttestationData)
                 - `.aggregation_bits.to_validator_indices()` (Iterable[Uint64])
             signature_lookup: Optional override map keyed by
-                `(int(validator_id), bytes(hash_tree_root(attestation_data))) -> signature`.
+                `(validator_id, bytes(hash_tree_root(attestation_data))) -> signature`.
                 When provided and a key exists, that signature is used instead of signing.
 
         Returns:
             AttestationSignatures matching the ordering of `aggregated_attestations`
             and per-attestation validator index ordering.
         """
-        attestation_data_roots: dict[int, bytes] = {}
-
-        def _data_root_bytes(attestation_data: AttestationData) -> bytes:
-            key = id(attestation_data)
-            if key not in attestation_data_roots:
-                attestation_data_roots[key] = bytes(hash_tree_root(attestation_data))
-            return attestation_data_roots[key]
-
         return AttestationSignatures(
             data=[
                 NaiveAggregatedSignatures(
                     data=[
                         (
                             signature_lookup.get(
-                                (int(validator_id), _data_root_bytes(aggregated_attestation.data))
+                                (validator_id, aggregated_attestation.data.data_root_bytes())
                             )
                             if signature_lookup is not None
                             else None

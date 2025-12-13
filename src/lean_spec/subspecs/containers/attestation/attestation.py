@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Container, Uint64
 
 from ...xmss.containers import Signature
@@ -38,6 +39,10 @@ class AttestationData(Container):
 
     source: Checkpoint
     """The checkpoint representing the source block as observed by the validator."""
+
+    def data_root_bytes(self) -> bytes:
+        """The root of the attestation data."""
+        return bytes(hash_tree_root(self))
 
 
 class Attestation(Container):

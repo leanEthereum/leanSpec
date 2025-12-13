@@ -393,8 +393,8 @@ class State(Container):
 
         Parameters
         ----------
-        attestations : Iterable[Attestation]
-            The attestations to process.
+        attestations : Attestations
+            The list of attestations to process.
 
         Returns:
         -------

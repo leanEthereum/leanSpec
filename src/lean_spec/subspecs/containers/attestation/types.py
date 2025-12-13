@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from lean_spec.types import SSZList, Uint64
 from lean_spec.types.bitfields import BaseBitlist
 
@@ -17,7 +15,7 @@ class AggregationBits(BaseBitlist):
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
 
     @classmethod
-    def from_validator_indices(cls, indices: Iterable[Uint64 | int]) -> "AggregationBits":
+    def from_validator_indices(cls, indices: list[Uint64]) -> AggregationBits:
         """
         Construct aggregation bits from a set of validator indices.
 

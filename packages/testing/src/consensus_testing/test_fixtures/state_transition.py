@@ -204,12 +204,9 @@ class StateTransitionTest(BaseConsensusFixture):
             temp_state = state.process_slots(spec.slot)
             parent_root = hash_tree_root(temp_state.latest_block_header)
 
-        # Extract attestations from body if provided, converting from aggregated form
-        # Flatten all plain attestations from all aggregated attestations
-        attestations = (
-            [plain_att for att in spec.body.attestations for plain_att in att.to_plain()]
-            if spec.body
-            else []
+        # Extract attestations from body if provided
+        aggregated_attestations = (
+            spec.body.attestations if spec.body else AggregatedAttestations(data=[])
         )
 
         # Handle explicit state root override
@@ -219,7 +216,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=spec.state_root,
-                body=spec.body or BlockBody(attestations=AggregatedAttestations(data=[])),
+                body=spec.body or BlockBody(attestations=aggregated_attestations),
             )
             return block, None
 
@@ -230,12 +227,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=Bytes32.zero(),
-                body=spec.body
-                or BlockBody(
-                    attestations=AggregatedAttestations(
-                        data=[att.to_aggregated() for att in attestations]
-                    )
-                ),
+                body=spec.body or BlockBody(attestations=aggregated_attestations),
             )
             return block, None
 
@@ -244,6 +236,10 @@ class StateTransitionTest(BaseConsensusFixture):
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            attestations=attestations,
+            attestations=[
+                attestation
+                for aggregated_attestation in aggregated_attestations
+                for attestation in aggregated_attestation.to_plain()
+            ],
         )
         return block, post_state
