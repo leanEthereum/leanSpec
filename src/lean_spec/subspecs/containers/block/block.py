@@ -12,7 +12,6 @@ can propose.
 from typing import TYPE_CHECKING, cast
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
@@ -179,7 +178,7 @@ class SignedBlockWithAttestation(Container):
                 "Aggregated attestation signature count mismatch"
             )
 
-            attestation_root = bytes(hash_tree_root(aggregated_attestation.data))
+            attestation_root = aggregated_attestation.data.data_root_bytes()
 
             # Verify each validator's attestation signature
             for validator_id, signature in zip(validator_ids, aggregated_signature, strict=True):
@@ -204,7 +203,7 @@ class SignedBlockWithAttestation(Container):
         assert proposer_signature.verify(
             proposer.get_pubkey(),
             proposer_attestation.data.slot,
-            bytes(hash_tree_root(proposer_attestation.data)),
+            proposer_attestation.data.data_root_bytes(),
         ), "Proposer signature verification failed"
 
         return True

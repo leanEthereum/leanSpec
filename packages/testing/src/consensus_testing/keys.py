@@ -36,7 +36,6 @@ from lean_spec.subspecs.containers.block.types import (
     AttestationSignatures,
 )
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Uint64
@@ -210,7 +209,7 @@ class XmssKeyManager:
         self._state[validator_id] = kp.with_secret(sk)
 
         # Sign hash tree root of the attestation data
-        message = bytes(hash_tree_root(attestation_data))
+        message = attestation_data.data_root_bytes()
         return self.scheme.sign(sk, epoch, message)
 
     def build_attestation_signatures(
@@ -218,43 +217,20 @@ class XmssKeyManager:
         aggregated_attestations: AggregatedAttestations,
         signature_lookup: Mapping[tuple[Uint64, bytes], Signature] | None = None,
     ) -> AttestationSignatures:
-        """
-        Build `AttestationSignatures` for already-aggregated attestations.
-
-        This is a convenience helper for tests/fixtures that need to produce
-        `BlockSignatures.attestation_signatures` for a block.
-
-        Args:
-            aggregated_attestations: Iterable of aggregated attestation containers.
-                Each item is expected to have:
-                - `.data` (AttestationData)
-                - `.aggregation_bits.to_validator_indices()` (Iterable[Uint64])
-            signature_lookup: Optional override map keyed by
-                `(validator_id, bytes(hash_tree_root(attestation_data))) -> signature`.
-                When provided and a key exists, that signature is used instead of signing.
-
-        Returns:
-            AttestationSignatures matching the ordering of `aggregated_attestations`
-            and per-attestation validator index ordering.
-        """
+        """Build `AttestationSignatures` for already-aggregated attestations."""
+        lookup = signature_lookup or {}
         return AttestationSignatures(
             data=[
                 NaiveAggregatedSignature(
                     data=[
                         (
-                            signature_lookup.get(
-                                (validator_id, aggregated_attestation.data.data_root_bytes())
-                            )
-                            if signature_lookup is not None
-                            else None
+                            lookup.get((vid, agg.data.data_root_bytes()))
+                            or self.sign_attestation_data(vid, agg.data)
                         )
-                        or self.sign_attestation_data(validator_id, aggregated_attestation.data)
-                        for validator_id in (
-                            aggregated_attestation.aggregation_bits.to_validator_indices()
-                        )
+                        for vid in agg.aggregation_bits.to_validator_indices()
                     ]
                 )
-                for aggregated_attestation in aggregated_attestations
+                for agg in aggregated_attestations
             ]
         )
 

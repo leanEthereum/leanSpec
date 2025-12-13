@@ -210,7 +210,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         # for any intentionally-invalid signature from the input spec remains invalid
         # in the produced `SignedBlockWithAttestation`.
         signature_lookup: dict[tuple[Uint64, bytes], Signature] = {
-            (att.validator_id, bytes(hash_tree_root(att.data))): sig
+            (att.validator_id, att.data.data_root_bytes()): sig
             for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
         }
         attestation_signatures = key_manager.build_attestation_signatures(
