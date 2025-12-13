@@ -1,20 +1,20 @@
 """Attestation containers and related types for the Lean spec."""
 
 from .attestation import (
-    AggregatedAttestations,
+    AggregatedAttestation,
     Attestation,
     AttestationData,
-    SignedAggregatedAttestations,
+    SignedAggregatedAttestation,
     SignedAttestation,
 )
-from .types import AggregatedSignatures, AggregationBits
+from .types import AggregationBits, NaiveAggregatedSignature
 
 __all__ = [
     "AttestationData",
     "Attestation",
     "SignedAttestation",
-    "SignedAggregatedAttestations",
-    "AggregatedAttestations",
-    "AggregatedSignatures",
+    "SignedAggregatedAttestation",
+    "AggregatedAttestation",
+    "NaiveAggregatedSignature",
     "AggregationBits",
 ]

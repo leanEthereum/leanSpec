@@ -4,17 +4,22 @@ from .block import (
     Block,
     BlockBody,
     BlockHeader,
+    BlockSignatures,
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from .types import Attestations, BlockSignatures
+from .types import (
+    AggregatedAttestations,
+    AttestationSignatures,
+)
 
 __all__ = [
     "Block",
     "BlockBody",
     "BlockHeader",
+    "BlockSignatures",
     "BlockWithAttestation",
     "SignedBlockWithAttestation",
-    "Attestations",
-    "BlockSignatures",
+    "AggregatedAttestations",
+    "AttestationSignatures",
 ]

@@ -29,7 +29,12 @@ from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Self
 
-from lean_spec.subspecs.containers import Attestation
+from lean_spec.subspecs.containers import AttestationData
+from lean_spec.subspecs.containers.attestation.types import NaiveAggregatedSignature
+from lean_spec.subspecs.containers.block.types import (
+    AggregatedAttestations,
+    AttestationSignatures,
+)
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
@@ -121,7 +126,7 @@ class XmssKeyManager:
         >>> mgr = XmssKeyManager()
         >>> mgr[Uint64(0)]  # Get key pair
         >>> mgr.get_public_key(Uint64(1))  # Get public key only
-        >>> mgr.sign_attestation(attestation)  # Sign with auto-advancement
+        >>> mgr.sign_attestation_data(validator_id, attestation_data)  # Sign with auto-advancement
     """
 
     def __init__(
@@ -167,15 +172,20 @@ class XmssKeyManager:
         """Get all public keys (from base keys, not advanced state)."""
         return {idx: kp.public for idx, kp in self.keys.items()}
 
-    def sign_attestation(self, attestation: Attestation) -> Signature:
+    def sign_attestation_data(
+        self,
+        validator_id: Uint64,
+        attestation_data: AttestationData,
+    ) -> Signature:
         """
-        Sign an attestation with automatic key state advancement.
+        Sign an attestation data with automatic key state advancement.
 
         XMSS is stateful: signing advances the internal key state.
         This method handles advancement transparently.
 
         Args:
-            attestation: The attestation to sign.
+            validator_id: The validator index to sign the attestation data for.
+            attestation_data: The attestation data to sign.
 
         Returns:
             XMSS signature.
@@ -183,9 +193,8 @@ class XmssKeyManager:
         Raises:
             ValueError: If slot exceeds key lifetime.
         """
-        idx = attestation.validator_id
-        epoch = attestation.data.slot
-        kp = self[idx]
+        epoch = attestation_data.slot
+        kp = self[validator_id]
         sk = kp.secret
 
         # Advance key state until epoch is in prepared interval
@@ -198,11 +207,56 @@ class XmssKeyManager:
             prepared = self.scheme.get_prepared_interval(sk)
 
         # Cache advanced state
-        self._state[idx] = kp.with_secret(sk)
+        self._state[validator_id] = kp.with_secret(sk)
 
-        # Sign hash tree root
-        message = bytes(hash_tree_root(attestation))
+        # Sign hash tree root of the attestation data
+        message = bytes(hash_tree_root(attestation_data))
         return self.scheme.sign(sk, epoch, message)
+
+    def build_attestation_signatures(
+        self,
+        aggregated_attestations: AggregatedAttestations,
+        signature_lookup: Mapping[tuple[Uint64, bytes], Signature] | None = None,
+    ) -> AttestationSignatures:
+        """
+        Build `AttestationSignatures` for already-aggregated attestations.
+
+        This is a convenience helper for tests/fixtures that need to produce
+        `BlockSignatures.attestation_signatures` for a block.
+
+        Args:
+            aggregated_attestations: Iterable of aggregated attestation containers.
+                Each item is expected to have:
+                - `.data` (AttestationData)
+                - `.aggregation_bits.to_validator_indices()` (Iterable[Uint64])
+            signature_lookup: Optional override map keyed by
+                `(validator_id, bytes(hash_tree_root(attestation_data))) -> signature`.
+                When provided and a key exists, that signature is used instead of signing.
+
+        Returns:
+            AttestationSignatures matching the ordering of `aggregated_attestations`
+            and per-attestation validator index ordering.
+        """
+        return AttestationSignatures(
+            data=[
+                NaiveAggregatedSignature(
+                    data=[
+                        (
+                            signature_lookup.get(
+                                (validator_id, aggregated_attestation.data.data_root_bytes())
+                            )
+                            if signature_lookup is not None
+                            else None
+                        )
+                        or self.sign_attestation_data(validator_id, aggregated_attestation.data)
+                        for validator_id in (
+                            aggregated_attestation.aggregation_bits.to_validator_indices()
+                        )
+                    ]
+                )
+                for aggregated_attestation in aggregated_attestations
+            ]
+        )
 
 
 def _generate_single_keypair(num_epochs: int) -> dict[str, str]:

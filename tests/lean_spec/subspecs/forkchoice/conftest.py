@@ -5,14 +5,13 @@ from typing import Type
 import pytest
 
 from lean_spec.subspecs.containers import (
-    Attestation,
     AttestationData,
     BlockBody,
     Checkpoint,
     SignedAttestation,
     State,
 )
-from lean_spec.subspecs.containers.block import Attestations, BlockHeader
+from lean_spec.subspecs.containers.block import AggregatedAttestations, BlockHeader
 from lean_spec.subspecs.containers.config import Config
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
@@ -45,7 +44,7 @@ class MockState(State):
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
+            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestations(data=[]))),
         )
 
         super().__init__(
@@ -76,12 +75,9 @@ def build_signed_attestation(
         target=target,
         source=source_checkpoint,
     )
-    message = Attestation(
-        validator_id=validator,
-        data=attestation_data,
-    )
     return SignedAttestation(
-        message=message,
+        validator_id=validator,
+        message=attestation_data,
         signature=Signature(
             path=HashTreeOpening(siblings=HashDigestList(data=[])),
             rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),

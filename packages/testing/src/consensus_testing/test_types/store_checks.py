@@ -51,7 +51,7 @@ class AttestationCheck(CamelModel):
             expected = getattr(self, field_name)
 
             if field_name == "attestation_slot":
-                actual = attestation.message.data.slot
+                actual = attestation.message.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -59,7 +59,7 @@ class AttestationCheck(CamelModel):
                     )
 
             elif field_name == "head_slot":
-                actual = attestation.message.data.head.slot
+                actual = attestation.message.head.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -67,7 +67,7 @@ class AttestationCheck(CamelModel):
                     )
 
             elif field_name == "source_slot":
-                actual = attestation.message.data.source.slot
+                actual = attestation.message.source.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -75,7 +75,7 @@ class AttestationCheck(CamelModel):
                     )
 
             elif field_name == "target_slot":
-                actual = attestation.message.data.target.slot
+                actual = attestation.message.target.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -442,7 +442,7 @@ class StoreChecks(CamelModel):
                     # An attestation votes for this fork if its head is this block or a descendant
                     weight = 0
                     for attestation in store.latest_known_attestations.values():
-                        att_head_root = attestation.message.data.head.root
+                        att_head_root = attestation.message.head.root
                         # Check if attestation head is this block or a descendant
                         if att_head_root == root:
                             weight += 1
