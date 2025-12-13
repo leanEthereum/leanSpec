@@ -14,7 +14,7 @@ class AggregatedAttestations(SSZList):
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
 
 
-class NaiveAggregatedSignatures(SSZList):
+class NaiveAggregatedSignature(SSZList):
     """Aggregated signature list included alongside the block proposer's attestation."""
 
     ELEMENT_TYPE = XmssSignature
@@ -24,5 +24,5 @@ class NaiveAggregatedSignatures(SSZList):
 class AttestationSignatures(SSZList):
     """List of per-attestation naive signature lists aligned with block body attestations."""
 
-    ELEMENT_TYPE = NaiveAggregatedSignatures
+    ELEMENT_TYPE = NaiveAggregatedSignature
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

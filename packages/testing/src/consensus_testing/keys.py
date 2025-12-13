@@ -33,7 +33,7 @@ from lean_spec.subspecs.containers import AttestationData
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
     AttestationSignatures,
-    NaiveAggregatedSignatures,
+    NaiveAggregatedSignature,
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -239,7 +239,7 @@ class XmssKeyManager:
         """
         return AttestationSignatures(
             data=[
-                NaiveAggregatedSignatures(
+                NaiveAggregatedSignature(
                     data=[
                         (
                             signature_lookup.get(
