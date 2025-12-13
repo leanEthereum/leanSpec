@@ -14,7 +14,7 @@ from .attestation import (
     AggregationBits,
     Attestation,
     AttestationData,
-    SignedAggregatedAttestations,
+    SignedAggregatedAttestation,
     SignedAttestation,
 )
 from .block import (
@@ -36,7 +36,7 @@ __all__ = [
     "AttestationData",
     "Attestation",
     "SignedAttestation",
-    "SignedAggregatedAttestations",
+    "SignedAggregatedAttestation",
     "Block",
     "BlockWithAttestation",
     "BlockBody",

@@ -4,7 +4,7 @@ from .attestation import (
     AggregatedAttestation,
     Attestation,
     AttestationData,
-    SignedAggregatedAttestations,
+    SignedAggregatedAttestation,
     SignedAttestation,
 )
 from .types import AggregatedSignatures, AggregationBits
@@ -13,7 +13,7 @@ __all__ = [
     "AttestationData",
     "Attestation",
     "SignedAttestation",
-    "SignedAggregatedAttestations",
+    "SignedAggregatedAttestation",
     "AggregatedAttestation",
     "AggregatedSignatures",
     "AggregationBits",

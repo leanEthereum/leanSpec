@@ -54,16 +54,6 @@ class Attestation(Container):
     data: AttestationData
     """The attestation data produced by the validator."""
 
-    def to_aggregated(self) -> AggregatedAttestation:
-        """Convert this plain Attestation into the aggregated representation."""
-        validator_index = int(self.validator_id)
-        bits = [False] * (validator_index + 1)
-        bits[validator_index] = True
-        return AggregatedAttestation(
-            aggregation_bits=AggregationBits(data=bits),
-            data=self.data,
-        )
-
 
 class SignedAttestation(Container):
     """Validator attestation bundled with its signature."""
@@ -133,7 +123,7 @@ class AggregatedAttestation(Container):
         ]
 
 
-class SignedAggregatedAttestations(Container):
+class SignedAggregatedAttestation(Container):
     """Aggregated attestation bundled with aggregated signatures."""
 
     message: AggregatedAttestation
