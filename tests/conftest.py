@@ -1,6 +1,7 @@
 """Pytest configuration and shared fixtures."""
 
 import os
+
 from hypothesis import settings
 
 # Set LEAN_ENV=test before importing any modules that depend on it

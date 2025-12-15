@@ -78,8 +78,11 @@ Mapping from short name to scheme objects. This mapping is useful for:
 _KEY_MANAGER_CACHE: dict[tuple[str, Slot], XmssKeyManager] = {}
 """Cache for key managers: {(scheme_name, max_slot): XmssKeyManager}"""
 
+_DEFAULT_MAX_SLOT: Slot = Slot(10)
+"""Default number of max slots that the shared key manager is generated with"""
 
-def get_shared_key_manager(lean_env: str, max_slot: Slot = Slot(10)) -> XmssKeyManager:
+
+def get_shared_key_manager(lean_env: str, max_slot: Slot = _DEFAULT_MAX_SLOT) -> XmssKeyManager:
     """
     Get a shared XMSS key manager for reusing keys across tests.
 
@@ -93,8 +96,13 @@ def get_shared_key_manager(lean_env: str, max_slot: Slot = Slot(10)) -> XmssKeyM
 
     Returns:
         Shared XmssKeyManager instance for the target scheme that supports at least max slot.
+
+    Raises:
+        ValueError: If lean_env is not a valid scheme name.
     """
     scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
+    if scheme is None:
+        raise ValueError(f"Invalid environment while creating shared key manager: {lean_env}.")
 
     # Check if we have a cached key manager with sufficient capacity
     for (cached_lean_env, cached_max_slot), manager in _KEY_MANAGER_CACHE.items():
@@ -216,7 +224,7 @@ class XmssKeyManager:
     def __init__(
         self,
         max_slot: Slot,
-        scheme: GeneralizedXmssScheme,
+        scheme: GeneralizedXmssScheme = TEST_SIGNATURE_SCHEME,
     ) -> None:
         """Initialize the manager with optional custom configuration."""
         self.max_slot = max_slot

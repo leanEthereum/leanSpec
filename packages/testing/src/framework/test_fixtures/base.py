@@ -14,6 +14,7 @@ from lean_spec.types import CamelModel
 AVAILABLE_LEAN_ENVS: Final[List[str]] = ["test", "prod"]
 """The supported LEAN_ENV values. Currently support 'test' and 'prod'."""
 
+
 class BaseFixture(CamelModel):
     """
     Base class for all Ethereum test fixtures (consensus and execution layers).
@@ -66,8 +67,8 @@ class BaseFixture(CamelModel):
 
         if lean_env not in AVAILABLE_LEAN_ENVS:
             raise ValueError(
-                f"Error: Unsupported lean environment: {lean_env} - "
-                f"Available {layer} environments: {', '.join(AVAILABLE_LEAN_ENVS.keys())}"
+                f"Error: Unsupported LEAN_ENV value: {lean_env} - "
+                f"Supported values: {', '.join(AVAILABLE_LEAN_ENVS)}"
             )
 
         return lean_env
