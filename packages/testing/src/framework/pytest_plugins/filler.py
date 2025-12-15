@@ -232,7 +232,6 @@ def pytest_configure(config: pytest.Config) -> None:
     output_dir = Path(config.getoption("--output"))
     fork_name = config.getoption("--fork")
     clean = config.getoption("--clean")
-    lean_env = os.environ.get("LEAN_ENV", "test").lower()
 
     # Get available forks from layer-specific module
     get_forks = layer_module.forks.get_forks
@@ -261,21 +260,6 @@ def pytest_configure(config: pytest.Config) -> None:
             file=sys.stderr,
         )
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
-
-    # Quick sanity check that the provided LEAN_ENV env var is valid
-    lean_environments = layer_module.keys.LEAN_ENV_TO_SCHEMES
-
-    if lean_environments.get(lean_env) is None:
-        available_lean_environments = layer_module.keys.LEAN_ENV.keys()
-        print(
-            f"Error: Unsupported environment for {layer} layer: {lean_env}",
-            file=sys.stderr,
-        )
-        print(
-            f"Available {layer} environments: {', '.join(available_lean_environments)}",
-            file=sys.stderr,
-        )
-        pytest.exit("Invalid environment specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
     # Check output directory
     if output_dir.exists() and any(output_dir.iterdir()):

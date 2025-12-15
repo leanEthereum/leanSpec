@@ -61,13 +61,13 @@ class BaseFixture(CamelModel):
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def lean_env(self) -> str:
-        """The lean environment being used (e.g. 'test' or 'prod'). Defaults to 'test'."""
-        lean_env = os.environ.get("LEAN_ENV", "test").lower()
+        """The target lean environment (e.g. 'test' or 'prod')."""
+        lean_env = os.environ.get("LEAN_ENV", "").lower()
 
         if lean_env not in AVAILABLE_LEAN_ENVS:
             raise ValueError(
-                f"Invalid LEAN_ENV: {lean_env}. "
-                f"Available lean environments: {', '.join(AVAILABLE_LEAN_ENVS)}"
+                f"Error: Unsupported lean environment: {lean_env} - "
+                f"Available {layer} environments: {', '.join(AVAILABLE_LEAN_ENVS.keys())}"
             )
 
         return lean_env

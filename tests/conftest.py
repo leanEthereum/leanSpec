@@ -1,12 +1,11 @@
 """Pytest configuration and shared fixtures."""
 
 import os
+from hypothesis import settings
 
 # Set LEAN_ENV=test before importing any modules that depend on it
 if "LEAN_ENV" not in os.environ:
     os.environ["LEAN_ENV"] = "test"
-
-from hypothesis import settings
 
 import lean_spec.subspecs.xmss as xmss
 

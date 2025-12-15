@@ -157,7 +157,7 @@ TWEAK_PREFIX_MESSAGE: Final = Fp(value=0x02)
 PRF_KEY_LENGTH: int = 32
 """The length of the PRF secret key in bytes."""
 
-lean_env_to_config = {
+_LEAN_ENV_TO_CONFIG = {
     "test": TEST_CONFIG,
     "prod": PROD_CONFIG,
 }
@@ -165,11 +165,11 @@ lean_env_to_config = {
 LEAN_ENV = os.environ.get("LEAN_ENV", "prod").lower()
 """The active signature scheme name ('prod' or 'test')."""
 
-if lean_env_to_config.get(LEAN_ENV) is None:
+if _LEAN_ENV_TO_CONFIG.get(LEAN_ENV) is None:
     raise ValueError(
         f"Invalid LEAN_ENV environment variable: '{LEAN_ENV}'. "
-        f"Available schemes: {lean_env_to_config.keys()}"
+        f"Available schemes: {_LEAN_ENV_TO_CONFIG.keys()}"
     )
 
-TARGET_CONFIG: Final = lean_env_to_config[LEAN_ENV]
+TARGET_CONFIG: Final = _LEAN_ENV_TO_CONFIG[LEAN_ENV]
 """The active XMSS configuration based on LEAN_ENV environment variable."""

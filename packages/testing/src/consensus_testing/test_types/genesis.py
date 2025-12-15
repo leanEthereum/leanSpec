@@ -1,5 +1,6 @@
 """Consensus layer pre-state generation."""
 
+import os
 from typing import Any
 
 from lean_spec.subspecs.containers.state import State, Validators
@@ -23,7 +24,9 @@ def generate_pre_state(**kwargs: Any) -> State:
     """
     genesis_time = kwargs.get("genesis_time", Uint64(0))
     num_validators = kwargs.get("num_validators", 4)
-    key_manager = get_shared_key_manager()
+
+    lean_env = os.environ.get("LEAN_ENV", "test").lower()
+    key_manager = get_shared_key_manager(lean_env)
     available_keys = len(key_manager)
 
     assert num_validators <= available_keys, (
