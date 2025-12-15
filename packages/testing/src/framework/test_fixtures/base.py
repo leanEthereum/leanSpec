@@ -2,14 +2,17 @@
 
 import hashlib
 import json
+import os
 from functools import cached_property
-from typing import Any, ClassVar, Dict, Type
+from typing import Any, ClassVar, Dict, Final, List, Type
 
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from framework.forks import BaseFork
 from lean_spec.types import CamelModel
 
+AVAILABLE_LEAN_ENVS: Final[List[str]] = ["test", "prod"]
+"""The supported LEAN_ENV values. Currently support 'test' and 'prod'."""
 
 class BaseFixture(CamelModel):
     """
@@ -54,6 +57,20 @@ class BaseFixture(CamelModel):
         super().__pydantic_init_subclass__(**kwargs)
         if cls.format_name:
             BaseFixture.formats[cls.format_name] = cls
+
+    @computed_field  # type: ignore[prop-decorator]
+    @cached_property
+    def lean_env(self) -> str:
+        """The lean environment being used (e.g. 'test' or 'prod'). Defaults to 'test'."""
+        lean_env = os.environ.get("LEAN_ENV", "test").lower()
+
+        if lean_env not in AVAILABLE_LEAN_ENVS:
+            raise ValueError(
+                f"Invalid LEAN_ENV: {lean_env}. "
+                f"Available lean environments: {', '.join(AVAILABLE_LEAN_ENVS)}"
+            )
+
+        return lean_env
 
     @cached_property
     def json_dict(self) -> Dict[str, Any]:

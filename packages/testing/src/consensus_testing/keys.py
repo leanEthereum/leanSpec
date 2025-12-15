@@ -6,6 +6,11 @@ Management of XMSS key pairs for test validators.
 
 Keys are pre-generated and cached on disk to avoid expensive generation during tests.
 
+Downloading Pre-generated Keys:
+
+    python -m consensus_testing.keys --download --scheme test    # test scheme
+    python -m consensus_testing.keys --download --scheme prod    # prod scheme
+
 Regenerating Keys:
 
     python -m consensus_testing.keys                   # defaults
@@ -73,35 +78,6 @@ _DEFAULT_MAX_SLOT = Slot(10)
 """Default maximum slot for shared key manager."""
 
 
-@cache
-def get_target_signauture_scheme() -> tuple[str, GeneralizedXmssScheme]:
-    """
-    Get the target XMSS signature scheme based on the LEAN_ENV environment variable.
-
-    Reads the LEAN_ENV environment variable to determine which signature scheme
-    to use for testing. The result is cached to avoid repeated environment lookups.
-
-    Returns:
-        Tuple of (scheme_name, scheme_object) where scheme_name is the environment
-        variable value and scheme_object is the corresponding GeneralizedXmssScheme.
-
-    Raises:
-        ValueError: If LEAN_ENV contains an invalid scheme name.
-    """
-    lean_env = os.environ.get("LEAN_ENV", "test").lower()
-    scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
-
-    if scheme is None:
-        raise ValueError(
-            f"Invalid LEAN_ENV: {lean_env}. "
-            f"Available lean environments: {', '.join(LEAN_ENV_TO_SCHEMES.keys())}"
-        )
-
-    # Currently assuming the scheme name is the env var value
-    scheme_name = lean_env
-    return scheme_name, scheme
-
-
 def get_shared_key_manager(max_slot: Slot = _DEFAULT_MAX_SLOT) -> XmssKeyManager:
     """
     Get a shared XMSS key manager for reusing keys across tests.
@@ -117,16 +93,17 @@ def get_shared_key_manager(max_slot: Slot = _DEFAULT_MAX_SLOT) -> XmssKeyManager
     Returns:
         Shared XmssKeyManager instance for the current scheme that supports at least max slot.
     """
-    scheme_name, scheme = get_target_signauture_scheme()
+    lean_env = os.environ.get("LEAN_ENV", "test").lower()
+    scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
 
     # Check if we have a cached key manager with sufficient capacity
-    for (cached_scheme, cached_max_slot), manager in _KEY_MANAGER_CACHE.items():
-        if cached_scheme == scheme_name and cached_max_slot >= max_slot:
+    for (cached_lean_env, cached_max_slot), manager in _KEY_MANAGER_CACHE.items():
+        if cached_lean_env == lean_env and cached_max_slot >= max_slot:
             return manager
 
     # No suitable cached manager found, create a new one
     manager = XmssKeyManager(max_slot=max_slot, scheme=scheme)
-    _KEY_MANAGER_CACHE[(scheme_name, max_slot)] = manager
+    _KEY_MANAGER_CACHE[(lean_env, max_slot)] = manager
     return manager
 
 
@@ -335,7 +312,8 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
     Generate XMSS key pairs in parallel and save to individual files.
 
     Uses ProcessPoolExecutor to saturate CPU cores for faster generation.
-    Each keypair is saved to a separate file for better manageability.
+    Each keypair is saved to a separate file to avoid the keyfile being
+    very large for production keys.
 
     Args:
         lean_env: Name of the XMSS signature scheme to use (e.g. "test" or "prod").

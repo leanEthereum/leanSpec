@@ -1,11 +1,8 @@
 """Base fixture definitions for consensus test formats."""
 
-import os
-from functools import cached_property
 from typing import Any, ClassVar
 
 from framework.test_fixtures import BaseFixture
-from pydantic import computed_field
 
 
 class BaseConsensusFixture(BaseFixture):
@@ -19,12 +16,6 @@ class BaseConsensusFixture(BaseFixture):
     # Class-level registry of all consensus fixture formats
     # Override parent's formats to maintain a separate registry
     formats: ClassVar[dict[str, type["BaseConsensusFixture"]]] = {}  # type: ignore[assignment]
-
-    @computed_field  # type: ignore[prop-decorator]
-    @cached_property
-    def lean_env(self) -> str:
-        """The lean environment being used (e.g. 'test' or 'prod'). Defaults to 'test'."""
-        return os.environ.get("LEAN_ENV", "test").lower()
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
