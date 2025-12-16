@@ -1,5 +1,6 @@
 """Unified CLI command for generating Ethereum test fixtures across all layers."""
 
+import os
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -37,6 +38,12 @@ import pytest
     is_flag=True,
     help="Clean output directory before generating",
 )
+@click.option(
+    "--scheme",
+    type=click.Choice(["test", "prod"], case_sensitive=False),
+    default="test",
+    help="XMSS signature scheme (default: test)",
+)
 @click.pass_context
 def fill(
     ctx: click.Context,
@@ -45,6 +52,7 @@ def fill(
     fork: str,
     layer: str,
     clean: bool,
+    scheme: str,
 ) -> None:
     """
     Generate Ethereum test fixtures from test specifications.
@@ -61,7 +69,15 @@ def fill(
 
         # Default layer is consensus
         fill tests/spec_tests/devnet --fork=Devnet --clean -v
+
+        # Use specific XMSS scheme (overrides LEAN_ENV env var)
+        fill --fork=Devnet --scheme=prod --clean -v
     """
+    # Note: It's important to never import any leanSpec modules in this file, so the
+    # `LEAN_ENV` variable can be set before the config loads its value from the
+    # environment.
+    os.environ["LEAN_ENV"] = scheme.lower()
+
     config_path = Path(__file__).parent / "pytest_ini_files" / "pytest-fill.ini"
     # Find project root by looking for pyproject.toml with [tool.uv.workspace]
     project_root = Path.cwd()
