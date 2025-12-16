@@ -164,16 +164,16 @@ class ForkChoiceTest(BaseConsensusFixture):
         AssertionError
             If any step fails unexpectedly or checks don't match Store state.
         """
-        # Ensure anchor_state and anchor_block are set
+        # Ensure anchor state and anchor block are set
         assert self.anchor_state is not None, "anchor_state must be set before make_fixture"
         assert self.anchor_block is not None, "anchor_block must be set before make_fixture"
         assert self.max_slot is not None, "max_slot must be set before make_fixture"
 
-        # Get shared key manager with the required max_slot
-        # This optimizes performance by reusing keys across tests with the same max_slot
+        # Get shared key manager with the required maximum slot
+        # This reuses keys across tests that require the same or lower maximum slot
         key_manager = get_shared_key_manager(lean_env=self.lean_env, max_slot=self.max_slot)
 
-        # Update validator pubkeys to match key_manager's generated keys
+        # Update validator pubkeys to match key manager's generated keys
         updated_validators = [
             validator.model_copy(update={"pubkey": key_manager[Uint64(i)].public.encode_bytes()})
             for i, validator in enumerate(self.anchor_state.validators)
