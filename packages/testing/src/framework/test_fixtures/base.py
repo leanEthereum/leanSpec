@@ -63,7 +63,7 @@ class BaseFixture(CamelModel):
     @cached_property
     def lean_env(self) -> str:
         """The target lean environment (e.g. 'test' or 'prod')."""
-        lean_env = os.environ.get("LEAN_ENV", "").lower()
+        lean_env = os.environ.get("LEAN_ENV", "test").lower()
 
         if lean_env not in AVAILABLE_LEAN_ENVS:
             raise ValueError(
