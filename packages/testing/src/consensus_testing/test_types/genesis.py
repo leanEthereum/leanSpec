@@ -31,7 +31,7 @@ def generate_pre_state(**kwargs: Any) -> State:
 
     assert num_validators <= available_keys, (
         "Not enough keys to generate state",
-        f"Expecting {num_validators} validators but the key manager has only {available_keys} keys",
+        f"Expecting a minimum of {num_validators} validators but the key manager has only {available_keys} keys",
     )
 
     validators = Validators(
