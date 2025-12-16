@@ -171,7 +171,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         # Get shared key manager with the required maximum slot
         # This reuses keys across tests that require the same or lower maximum slot
-        key_manager = get_shared_key_manager(lean_env=self.lean_env, max_slot=self.max_slot)
+        key_manager = get_shared_key_manager(max_slot=self.max_slot)
 
         # Update validator pubkeys to match key manager's generated keys
         updated_validators = [

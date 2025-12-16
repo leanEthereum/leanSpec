@@ -9,10 +9,9 @@ instantiation from the canonical Rust implementation
 We also provide a test instantiation for testing purposes.
 """
 
-import os
-
 from typing_extensions import Final
 
+from lean_spec.config import LEAN_ENV
 from lean_spec.types import StrictBaseModel, Uint64
 
 from ..koalabear import P_BYTES, Fp
@@ -161,15 +160,6 @@ _LEAN_ENV_TO_CONFIG = {
     "test": TEST_CONFIG,
     "prod": PROD_CONFIG,
 }
-
-LEAN_ENV = os.environ.get("LEAN_ENV", "prod").lower()
-"""The active signature scheme name ('prod' or 'test')."""
-
-if _LEAN_ENV_TO_CONFIG.get(LEAN_ENV) is None:
-    raise ValueError(
-        f"Invalid LEAN_ENV environment variable: '{LEAN_ENV}'. "
-        f"Available schemes: {_LEAN_ENV_TO_CONFIG.keys()}"
-    )
 
 TARGET_CONFIG: Final = _LEAN_ENV_TO_CONFIG[LEAN_ENV]
 """The active XMSS configuration based on LEAN_ENV environment variable."""

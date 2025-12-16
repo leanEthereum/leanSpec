@@ -104,7 +104,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         assert self.anchor_state is not None, "anchor state must be set before making the fixture"
 
         # Use shared key manager
-        key_manager = get_shared_key_manager(self.lean_env)
+        key_manager = get_shared_key_manager()
 
         # Build the signed block with attestation
         signed_block = self._build_block_from_spec(self.block, self.anchor_state, key_manager)

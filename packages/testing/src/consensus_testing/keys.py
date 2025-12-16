@@ -38,6 +38,7 @@ from functools import cache, partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Self
 
+from lean_spec.config import LEAN_ENV
 from lean_spec.subspecs.containers import AttestationData
 from lean_spec.subspecs.containers.attestation.types import NaiveAggregatedSignature
 from lean_spec.subspecs.containers.block.types import (
@@ -82,7 +83,7 @@ _DEFAULT_MAX_SLOT: Slot = Slot(10)
 """Default number of max slots that the shared key manager is generated with"""
 
 
-def get_shared_key_manager(lean_env: str, max_slot: Slot = _DEFAULT_MAX_SLOT) -> XmssKeyManager:
+def get_shared_key_manager(max_slot: Slot = _DEFAULT_MAX_SLOT) -> XmssKeyManager:
     """
     Get a shared XMSS key manager for reusing keys across tests.
 
@@ -91,27 +92,21 @@ def get_shared_key_manager(lean_env: str, max_slot: Slot = _DEFAULT_MAX_SLOT) ->
     be reused instead of creating a new one.
 
     Args:
-        lean_env: The lean environment to determine the target signature scheme
         max_slot: Maximum slot for which XMSS keys should be valid. Defaults to 10 slots.
 
     Returns:
         Shared XmssKeyManager instance for the target scheme that supports at least max slot.
-
-    Raises:
-        ValueError: If lean_env is not a valid scheme name.
     """
-    scheme = LEAN_ENV_TO_SCHEMES.get(lean_env)
-    if scheme is None:
-        raise ValueError(f"Invalid environment while creating shared key manager: {lean_env}.")
+    scheme = LEAN_ENV_TO_SCHEMES[LEAN_ENV]
 
     # Check if we have a cached key manager with sufficient capacity
     for (cached_lean_env, cached_max_slot), manager in _KEY_MANAGER_CACHE.items():
-        if cached_lean_env == lean_env and cached_max_slot >= max_slot:
+        if cached_lean_env == LEAN_ENV and cached_max_slot >= max_slot:
             return manager
 
     # No suitable cached manager found, create a new one
     manager = XmssKeyManager(max_slot=max_slot, scheme=scheme)
-    _KEY_MANAGER_CACHE[(lean_env, max_slot)] = manager
+    _KEY_MANAGER_CACHE[(LEAN_ENV, max_slot)] = manager
     return manager
 
 

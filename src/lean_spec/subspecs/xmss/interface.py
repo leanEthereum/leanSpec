@@ -12,6 +12,7 @@ from typing import List, Tuple
 
 from pydantic import model_validator
 
+from lean_spec.config import LEAN_ENV
 from lean_spec.subspecs.xmss.target_sum import (
     PROD_TARGET_SUM_ENCODER,
     TEST_TARGET_SUM_ENCODER,
@@ -20,7 +21,6 @@ from lean_spec.subspecs.xmss.target_sum import (
 from lean_spec.types import StrictBaseModel, Uint64
 
 from .constants import (
-    LEAN_ENV,
     PROD_CONFIG,
     TEST_CONFIG,
     XmssConfig,
@@ -591,5 +591,10 @@ TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(
 )
 """A lightweight instance for test environments."""
 
-TARGET_SIGNATURE_SCHEME = TEST_SIGNATURE_SCHEME if LEAN_ENV == "test" else PROD_SIGNATURE_SCHEME
+_LEAN_ENV_TO_SCHEME = {
+    "test": TEST_SIGNATURE_SCHEME,
+    "prod": PROD_SIGNATURE_SCHEME,
+}
+
+TARGET_SIGNATURE_SCHEME = _LEAN_ENV_TO_SCHEME[LEAN_ENV]
 """The active XMSS signature scheme based on LEAN_ENV environment variable."""
