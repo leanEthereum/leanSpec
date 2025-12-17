@@ -82,6 +82,7 @@ def fill(
     if layer.lower() == "consensus":
         # Import here to avoid loading leanSpec modules before LEAN_ENV is set
         from consensus_testing.keys import _download_keys, _get_keys_dir
+
         keys_dir = _get_keys_dir(scheme.lower())
 
         # Check if keys already exist, if not, download them
