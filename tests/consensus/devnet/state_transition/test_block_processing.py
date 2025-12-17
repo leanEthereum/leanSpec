@@ -273,6 +273,44 @@ def test_block_with_invalid_state_root(
     )
 
 
+def test_block_with_wrong_slot(state_transition_test: StateTransitionTestFiller) -> None:
+    """
+    Test that blocks with mismatched slot are rejected.
+
+    Scenario
+    --------
+    Attempt to process a block at slot 1, but the block claims to be
+    at slot 2.
+
+    Expected Behavior
+    -----------------
+    Block processing fails with AssertionError: "Block slot mismatch"
+
+    Why This Matters
+    ----------------
+    Ensures temporal consistency:
+    - Blocks can't lie about their slot
+    - Prevents time manipulation attacks
+    - Maintains protocol timing integrity
+    - Essential for slot-based consensus
+    """
+    pre_state = generate_pre_state()
+    pre_state = pre_state.process_slots(Slot(1))
+
+    state_transition_test(
+        pre=pre_state,
+        blocks=[
+            BlockSpec(
+                slot=Slot(2),
+                skip_slot_processing=True,
+            ),
+        ],
+        post=None,
+        expect_exception=AssertionError,
+        expect_exception_message="Block slot mismatch",
+    )
+
+
 def test_block_extends_deep_chain(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:

@@ -147,7 +147,7 @@ class StateExpectation(CamelModel):
                     )
 
             elif field_name == "validator_count":
-                actual_count = state.validators.count
+                actual_count = len(state.validators)
                 if actual_count != expected_value:
                     raise AssertionError(
                         f"State validation failed: validator_count = {actual_count}, "

@@ -9,17 +9,18 @@ Each block has a proposer who created it. The slot determines which validator
 can propose.
 """
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
+from ...xmss.containers import Signature as XmssSignature
 from ..attestation import Attestation
-from ..validator import Validator
-from .types import Attestations, BlockSignatures
+from .types import (
+    AggregatedAttestations,
+    AttestationSignatures,
+)
 
 if TYPE_CHECKING:
     from ..state import State
@@ -33,7 +34,7 @@ class BlockBody(Container):
     packaged into blocks.
     """
 
-    attestations: Attestations
+    attestations: AggregatedAttestations
     """Plain validator attestations carried in the block body.
 
     Individual signatures live in the aggregated block signature list, so
@@ -98,6 +99,24 @@ class BlockWithAttestation(Container):
     """The proposer's attestation corresponding to this block."""
 
 
+class BlockSignatures(Container):
+    """Signature payload for the block."""
+
+    attestation_signatures: AttestationSignatures
+    """Attestation signatures for the aggregated attestations in the block body.
+
+    Each entry corresponds to an aggregated attestation from the block body and
+    contains all XMSS signatures from the participating validators.
+
+    TODO:
+    - Currently, this is list of lists of signatures.
+    - The list of signatures will be replaced by a BytesArray to include leanVM aggregated proof.
+    """
+
+    proposer_signature: XmssSignature
+    """Signature for the proposer's attestation."""
+
+
 class SignedBlockWithAttestation(Container):
     """Envelope carrying a block, an attestation from proposer, and aggregated signatures."""
 
@@ -141,49 +160,52 @@ class SignedBlockWithAttestation(Container):
                 - Validator index out of range
                 - XMSS signature verification failure
         """
-        # Unpack the signed block components
         block = self.message.block
         signatures = self.signature
+        aggregated_attestations = block.body.attestations
+        attestation_signatures = signatures.attestation_signatures
 
-        # Combine all attestations that need verification
-        #
-        # This creates a single list containing both:
-        # 1. Block body attestations (from other validators)
-        # 2. Proposer attestation (from the block producer)
-        all_attestations = block.body.attestations + [self.message.proposer_attestation]
-
-        # Verify signature count matches attestation count
-        #
-        # Each attestation must have exactly one corresponding signature.
-        #
-        # The ordering must be preserved:
-        # 1. Block body attestations,
-        # 2. The proposer attestation.
-        assert len(signatures) == len(all_attestations), (
-            "Number of signatures does not match number of attestations"
+        assert len(aggregated_attestations) == len(attestation_signatures), (
+            "Attestation signature groups must align with block body attestations"
         )
 
         validators = parent_state.validators
 
-        # Verify each attestation signature
-        for attestation, signature in zip(all_attestations, signatures, strict=True):
-            # Ensure validator exists in the active set
-            assert attestation.validator_id < Uint64(len(validators)), (
-                "Validator index out of range"
-            )
-            validator = cast(Validator, validators[attestation.validator_id])
+        for aggregated_attestation, aggregated_signature in zip(
+            aggregated_attestations, attestation_signatures, strict=True
+        ):
+            validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
 
-            # Verify the XMSS signature
-            #
-            # This cryptographically proves that:
-            # - The validator possesses the secret key for their public key
-            # - The attestation has not been tampered with
-            # - The signature was created at the correct epoch (slot)
-            assert signature.verify(
-                validator.get_pubkey(),
-                attestation.data.slot,
-                bytes(hash_tree_root(attestation)),
-                scheme=scheme,
-            ), "Attestation signature verification failed"
+            assert len(aggregated_signature) == len(validator_ids), (
+                "Aggregated attestation signature count mismatch"
+            )
+
+            attestation_root = aggregated_attestation.data.data_root_bytes()
+
+            # Verify each validator's attestation signature
+            for validator_id, signature in zip(validator_ids, aggregated_signature, strict=True):
+                # Ensure validator exists in the active set
+                assert validator_id < Uint64(len(validators)), "Validator index out of range"
+                validator = validators[validator_id]
+
+                assert signature.verify(
+                    validator.get_pubkey(),
+                    aggregated_attestation.data.slot,
+                    attestation_root,
+                ), "Attestation signature verification failed"
+
+        # Verify proposer attestation signature
+        proposer_attestation = self.message.proposer_attestation
+        proposer_signature = signatures.proposer_signature
+        assert proposer_attestation.validator_id < Uint64(len(validators)), (
+            "Proposer index out of range"
+        )
+        proposer = validators[proposer_attestation.validator_id]
+
+        assert proposer_signature.verify(
+            proposer.get_pubkey(),
+            proposer_attestation.data.slot,
+            proposer_attestation.data.data_root_bytes(),
+        ), "Proposer signature verification failed"
 
         return True

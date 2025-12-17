@@ -6,6 +6,7 @@ from lean_spec.subspecs.containers.block.block import (
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.config import Config
+from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -18,16 +19,16 @@ from lean_spec.types import Bytes32, Uint64
 
 def test_encode_decode_state_roundtrip() -> None:
     block_header = BlockHeader(
-        slot=0,
+        slot=Slot(0),
         proposer_index=Uint64(0),
         parent_root=Bytes32.zero(),
         state_root=Bytes32.zero(),
         body_root=Bytes32.zero(),
     )
-    temp_finalized = Checkpoint(root=Bytes32.zero(), slot=0)
+    temp_finalized = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
     state = State(
         config=Config(genesis_time=Uint64(1000)),
-        slot=0,
+        slot=Slot(0),
         latest_block_header=block_header,
         latest_justified=temp_finalized,
         latest_finalized=temp_finalized,

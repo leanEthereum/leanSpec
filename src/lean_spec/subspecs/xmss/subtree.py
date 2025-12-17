@@ -20,10 +20,13 @@ from .types import (
     HashTreeLayers,
     HashTreeOpening,
     Parameter,
+    PRFKey,
 )
 from .utils import get_padded_layer
 
 if TYPE_CHECKING:
+    from .constants import XmssConfig
+    from .prf import Prf
     from .rand import Rand
     from .tweak_hash import TweakHasher
 
@@ -163,7 +166,7 @@ class HashSubTree(Container):
             parents = [
                 hasher.apply(
                     parameter,
-                    TreeTweak(level=level + 1, index=int(parent_start) + i),
+                    TreeTweak(level=level + 1, index=Uint64(int(parent_start) + i)),
                     [current.nodes[2 * i], current.nodes[2 * i + 1]],
                 )
                 for i in range(len(current.nodes) // 2)
@@ -318,6 +321,93 @@ class HashSubTree(Container):
             layers=HashTreeLayers(data=truncated + [root_layer]),
         )
 
+    @classmethod
+    def from_prf_key(
+        cls,
+        prf: "Prf",
+        hasher: "TweakHasher",
+        rand: "Rand",
+        config: "XmssConfig",
+        prf_key: PRFKey,
+        bottom_tree_index: Uint64,
+        parameter: Parameter,
+    ) -> "HashSubTree":
+        """
+        Generates a single bottom tree on-demand from the PRF key.
+
+        This is a key component of the top-bottom tree approach: instead of storing all
+        one-time secret keys, we regenerate them on-demand using the PRF. This enables
+        O(sqrt(LIFETIME)) memory usage.
+
+        ### Algorithm
+
+        1.  **Determine epoch range**: Bottom tree `i` covers epochs
+            `[i * sqrt(LIFETIME), (i+1) * sqrt(LIFETIME))`
+
+        2.  **Generate leaves**: For each epoch in parallel:
+            - For each chain (0 to DIMENSION-1):
+              - Derive secret start: `PRF(prf_key, epoch, chain_index)`
+              - Compute public end: hash chain for `BASE - 1` steps
+            - Hash all chain ends to get the leaf
+
+        3.  **Build bottom tree**: Construct the bottom tree from the leaves
+
+        Args:
+            prf: The PRF instance for key derivation.
+            hasher: The tweakable hash instance.
+            rand: Random generator for padding values.
+            config: The XMSS configuration.
+            prf_key: The master PRF secret key.
+            bottom_tree_index: The index of the bottom tree to generate (0, 1, 2, ...).
+            parameter: The public parameter `P` for the hash function.
+
+        Returns:
+            A `HashSubTree` representing the requested bottom tree.
+        """
+        # Calculate the number of leaves per bottom tree: sqrt(LIFETIME).
+        leafs_per_bottom_tree = 1 << (config.LOG_LIFETIME // 2)
+
+        # Determine the epoch range for this bottom tree.
+        start_epoch = bottom_tree_index * Uint64(leafs_per_bottom_tree)
+        end_epoch = start_epoch + Uint64(leafs_per_bottom_tree)
+
+        # Generate leaf hashes for all epochs in this bottom tree.
+        leaf_hashes: List[HashDigestVector] = []
+
+        for epoch in range(int(start_epoch), int(end_epoch)):
+            # For each epoch, compute the one-time public key (chain endpoints).
+            chain_ends: List[HashDigestVector] = []
+
+            for chain_index in range(config.DIMENSION):
+                # Derive the secret start of the chain from the PRF key.
+                start_digest = prf.apply(prf_key, Uint64(epoch), Uint64(chain_index))
+
+                # Compute the public end by hashing BASE - 1 times.
+                end_digest = hasher.hash_chain(
+                    parameter=parameter,
+                    epoch=Uint64(epoch),
+                    chain_index=chain_index,
+                    start_step=0,
+                    num_steps=config.BASE - 1,
+                    start_digest=start_digest,
+                )
+                chain_ends.append(end_digest)
+
+            # Hash the chain ends to get the leaf for this epoch.
+            leaf_tweak = TreeTweak(level=0, index=Uint64(epoch))
+            leaf_hash = hasher.apply(parameter, leaf_tweak, chain_ends)
+            leaf_hashes.append(leaf_hash)
+
+        # Build the bottom tree from the leaf hashes.
+        return cls.new_bottom_tree(
+            hasher=hasher,
+            rand=rand,
+            depth=config.LOG_LIFETIME,
+            bottom_tree_index=bottom_tree_index,
+            parameter=parameter,
+            leaves=leaf_hashes,
+        )
+
     def root(self) -> HashDigestVector:
         """
         Extracts the root digest from this subtree.
@@ -447,7 +537,7 @@ def combined_path(
     # Concatenate: bottom path + top path.
     bottom_path = bottom_tree.path(position)
     top_path = top_tree.path(position // leafs_per_tree)
-    combined = bottom_path.siblings.data + top_path.siblings.data
+    combined = tuple(bottom_path.siblings.data) + tuple(top_path.siblings.data)
 
     return HashTreeOpening(siblings=HashDigestList(data=combined))
 
@@ -510,7 +600,7 @@ def verify_path(
     # Start: hash leaf parts to get leaf node.
     current = hasher.apply(
         parameter,
-        TreeTweak(level=0, index=int(position)),
+        TreeTweak(level=0, index=Uint64(position)),
         leaf_parts,
     )
     pos = int(position)
@@ -526,7 +616,7 @@ def verify_path(
         pos //= 2  # Parent position.
         current = hasher.apply(
             parameter,
-            TreeTweak(level=level + 1, index=pos),
+            TreeTweak(level=level + 1, index=Uint64(pos)),
             [left, right],
         )
 

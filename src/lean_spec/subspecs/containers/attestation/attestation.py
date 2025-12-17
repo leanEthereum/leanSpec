@@ -12,12 +12,17 @@ Attestations can be aggregated to save space, but the current specification
 doesn't do this yet.
 """
 
+from __future__ import annotations
+
+from collections import defaultdict
+
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Container, Uint64
 
 from ...xmss.containers import Signature
 from ..checkpoint import Checkpoint
-from .types import AggregatedSignatures, AggregationBits
+from .types import AggregationBits, NaiveAggregatedSignature
 
 
 class AttestationData(Container):
@@ -35,6 +40,10 @@ class AttestationData(Container):
     source: Checkpoint
     """The checkpoint representing the source block as observed by the validator."""
 
+    def data_root_bytes(self) -> bytes:
+        """The root of the attestation data."""
+        return bytes(hash_tree_root(self))
+
 
 class Attestation(Container):
     """Validator specific attestation wrapping shared attestation data."""
@@ -49,14 +58,17 @@ class Attestation(Container):
 class SignedAttestation(Container):
     """Validator attestation bundled with its signature."""
 
-    message: Attestation
+    validator_id: Uint64
+    """The index of the validator making the attestation."""
+
+    message: AttestationData
     """The attestation message signed by the validator."""
 
     signature: Signature
     """Signature aggregation produced by the leanVM (SNARKs in the future)."""
 
 
-class AggregatedAttestations(Container):
+class AggregatedAttestation(Container):
     """Aggregated attestation consisting of participation bits and message."""
 
     aggregation_bits: AggregationBits
@@ -69,18 +81,48 @@ class AggregatedAttestations(Container):
     committee assignments.
     """
 
+    @classmethod
+    def aggregate_by_data(
+        cls,
+        attestations: list[Attestation],
+    ) -> list[AggregatedAttestation]:
+        """
+        Aggregate plain per-validator attestations by their shared AttestationData.
 
-class SignedAggregatedAttestations(Container):
+        Args:
+            attestations: Attestations to aggregate.
+
+        Returns:
+            One AggregatedAttestation per unique AttestationData, with aggregation
+            bits set for all participating validators.
+        """
+        data_to_validator_ids: dict[AttestationData, list[Uint64]] = defaultdict(list)
+        for attestation in attestations:
+            data_to_validator_ids[attestation.data].append(attestation.validator_id)
+
+        return [
+            cls(
+                aggregation_bits=AggregationBits.from_validator_indices(validator_ids),
+                data=data,
+            )
+            for data, validator_ids in data_to_validator_ids.items()
+        ]
+
+
+class SignedAggregatedAttestation(Container):
     """Aggregated attestation bundled with aggregated signatures."""
 
-    message: AggregatedAttestations
+    message: AggregatedAttestation
     """Aggregated attestation data."""
 
-    signature: AggregatedSignatures
+    signature: NaiveAggregatedSignature
     """Aggregated attestation plus its combined signature.
 
     Stores a naive list of validator signatures that mirrors the attestation
     order.
 
-    TODO: this will be replaced by a SNARK in future devnets.
+    TODO:
+    - signatures will be replaced by MegaBytes in next PR to include leanVM proof.
+    - this will be replaced by a SNARK in future devnets.
+    - this will be aggregated by aggregators in future devnets.
     """

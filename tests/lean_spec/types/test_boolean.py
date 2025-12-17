@@ -4,16 +4,21 @@ import io
 from typing import Any, Callable
 
 import pytest
-from pydantic import ValidationError, create_model
+from pydantic import BaseModel, ValidationError
 
 from lean_spec.types.boolean import Boolean
+
+
+class BooleanModel(BaseModel):
+    """Model for testing Pydantic validation of Boolean."""
+
+    value: Boolean
 
 
 @pytest.mark.parametrize("valid_value", [True, False])
 def test_pydantic_validation_accepts_valid_bool(valid_value: bool) -> None:
     """Tests that Pydantic validation correctly accepts a valid boolean."""
-    model = create_model("Model", value=(Boolean, ...))
-    instance: Any = model(value=valid_value)
+    instance = BooleanModel(value=valid_value)  # type: ignore[arg-type]
     assert isinstance(instance.value, Boolean)
     assert instance.value == Boolean(valid_value)
 
@@ -21,9 +26,8 @@ def test_pydantic_validation_accepts_valid_bool(valid_value: bool) -> None:
 @pytest.mark.parametrize("invalid_value", [1, 0, 1.0, "True"])
 def test_pydantic_strict_mode_rejects_invalid_types(invalid_value: Any) -> None:
     """Tests that Pydantic's strict mode rejects types that are not `bool`."""
-    model = create_model("Model", value=(Boolean, ...))
     with pytest.raises(ValidationError):
-        model(value=invalid_value)
+        BooleanModel(value=invalid_value)
 
 
 @pytest.mark.parametrize("valid_value", [True, False, 1, 0])

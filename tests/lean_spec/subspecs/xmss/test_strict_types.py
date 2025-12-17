@@ -45,7 +45,7 @@ class TestPrfStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            Prf(config=RandomClass())
+            Prf(config=RandomClass())  # type: ignore[arg-type]
 
     def test_prf_frozen(self) -> None:
         """Prf is immutable (frozen)."""
@@ -80,7 +80,7 @@ class TestRandStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            Rand(config=RandomClass())
+            Rand(config=RandomClass())  # type: ignore[arg-type]
 
     def test_rand_frozen(self) -> None:
         """Rand is immutable (frozen)."""
@@ -127,7 +127,7 @@ class TestTweakHasherStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            TweakHasher(config=RandomClass(), poseidon=PROD_POSEIDON)
+            TweakHasher(config=RandomClass(), poseidon=PROD_POSEIDON)  # type: ignore[arg-type]
 
     def test_tweak_hasher_rejects_wrong_type_poseidon(self) -> None:
         """TweakHasher rejects completely wrong type for poseidon."""
@@ -136,7 +136,7 @@ class TestTweakHasherStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            TweakHasher(config=PROD_CONFIG, poseidon=RandomClass())
+            TweakHasher(config=PROD_CONFIG, poseidon=RandomClass())  # type: ignore[arg-type]
 
     def test_tweak_hasher_frozen(self) -> None:
         """TweakHasher is immutable (frozen)."""
@@ -183,7 +183,7 @@ class TestTargetSumEncoderStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            TargetSumEncoder(config=RandomClass(), message_hasher=PROD_MESSAGE_HASHER)
+            TargetSumEncoder(config=RandomClass(), message_hasher=PROD_MESSAGE_HASHER)  # type: ignore[arg-type]
 
     def test_encoder_rejects_wrong_type_message_hasher(self) -> None:
         """TargetSumEncoder rejects completely wrong type for message_hasher."""
@@ -192,7 +192,7 @@ class TestTargetSumEncoderStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            TargetSumEncoder(config=PROD_CONFIG, message_hasher=RandomClass())
+            TargetSumEncoder(config=PROD_CONFIG, message_hasher=RandomClass())  # type: ignore[arg-type]
 
     def test_encoder_frozen(self) -> None:
         """TargetSumEncoder is immutable (frozen)."""
@@ -313,7 +313,7 @@ class TestGeneralizedXmssSchemeStrictTypes:
                 hasher=PROD_TWEAK_HASHER,
                 encoder=PROD_TARGET_SUM_ENCODER,
                 rand=PROD_RAND,
-                extra_field="should_fail",
+                extra_field="should_fail",  # type: ignore[unknown-argument]
             )
 
 
@@ -358,7 +358,7 @@ class TestPoseidonXmssStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            PoseidonXmss(params16=RandomClass(), params24=PROD_POSEIDON.params24)
+            PoseidonXmss(params16=RandomClass(), params24=PROD_POSEIDON.params24)  # type: ignore[arg-type]
 
     def test_poseidon_rejects_wrong_type_params24(self) -> None:
         """PoseidonXmss rejects completely wrong type for params24."""
@@ -367,7 +367,7 @@ class TestPoseidonXmssStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            PoseidonXmss(params16=PROD_POSEIDON.params16, params24=RandomClass())
+            PoseidonXmss(params16=PROD_POSEIDON.params16, params24=RandomClass())  # type: ignore[arg-type]
 
     def test_poseidon_frozen(self) -> None:
         """PoseidonXmss is immutable (frozen)."""
@@ -414,7 +414,7 @@ class TestMessageHasherStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            MessageHasher(config=RandomClass(), poseidon=PROD_POSEIDON)
+            MessageHasher(config=RandomClass(), poseidon=PROD_POSEIDON)  # type: ignore[arg-type]
 
     def test_message_hasher_rejects_wrong_type_poseidon(self) -> None:
         """MessageHasher rejects completely wrong type for poseidon."""
@@ -423,7 +423,7 @@ class TestMessageHasherStrictTypes:
             pass
 
         with pytest.raises((TypeError, ValidationError)):
-            MessageHasher(config=PROD_CONFIG, poseidon=RandomClass())
+            MessageHasher(config=PROD_CONFIG, poseidon=RandomClass())  # type: ignore[arg-type]
 
     def test_message_hasher_frozen(self) -> None:
         """MessageHasher is immutable (frozen)."""

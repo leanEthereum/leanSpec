@@ -12,12 +12,12 @@ from lean_spec.types import (
     is_proposer,
 )
 
-from ..attestation import Attestation, SignedAttestation
+from ..attestation import AggregatedAttestation, Attestation, SignedAttestation
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.xmss.containers import Signature
 from ..block import Block, BlockBody, BlockHeader
-from ..block.types import Attestations
+from ..block.types import AggregatedAttestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
@@ -96,7 +96,7 @@ class State(Container):
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=Attestations(data=[]))),
+            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestations(data=[]))),
         )
 
         # Assemble and return the full genesis state.
@@ -238,7 +238,7 @@ class State(Container):
         assert is_proposer(
             validator_index=block.proposer_index,
             slot=self.slot,
-            num_validators=Uint64(self.validators.count),
+            num_validators=Uint64(len(self.validators)),
         ), "Incorrect block proposer"
 
         # Verify the chain link.
@@ -333,8 +333,8 @@ class State(Container):
             update={
                 "latest_justified": new_latest_justified,
                 "latest_finalized": new_latest_finalized,
-                "historical_block_hashes": HistoricalBlockHashes(data=new_historical_hashes_data),
-                "justified_slots": JustifiedSlots(data=new_justified_slots_data),
+                "historical_block_hashes": new_historical_hashes_data,
+                "justified_slots": new_justified_slots_data,
                 "latest_block_header": new_header,
             }
         )
@@ -352,16 +352,32 @@ class State(Container):
         -------
         State
             A new state with the processed block.
+
+        Raises:
+        ------
+        AssertionError
+            If block contains duplicate AttestationData.
         """
         # First process the block header.
         state = self.process_block_header(block)
 
-        # Process justification attestations.
+        # Reject blocks with duplicate attestation data
+        #
+        # Each aggregated attestation in a block must refer to a unique AttestationData.
+        # Duplicates would allow the same vote to be counted multiple times, breaking
+        # the integrity of the justification tally.
+        #
+        # This is a protocol-level invariant: honest proposers never include duplicates,
+        # and validators must reject blocks that violate this rule.
+        assert not block.body.attestations.has_duplicate_data(), (
+            "Block contains duplicate AttestationData"
+        )
+
         return state.process_attestations(block.body.attestations)
 
     def process_attestations(
         self,
-        attestations: Attestations,
+        attestations: Iterable[AggregatedAttestation],
     ) -> "State":
         """
         Apply attestations and update justification/finalization
@@ -374,8 +390,8 @@ class State(Container):
 
         Parameters
         ----------
-        attestations : Attestations
-            The list of attestations to process.
+        attestations : Iterable[AggregatedAttestation]
+            The aggregated attestations to process.
 
         Returns:
         -------
@@ -407,7 +423,7 @@ class State(Container):
         justifications = (
             {
                 root: self.justifications_validators[
-                    i * self.validators.count : (i + 1) * self.validators.count
+                    i * len(self.validators) : (i + 1) * len(self.validators)
                 ]
                 for i, root in enumerate(self.justifications_roots)
             }
@@ -486,14 +502,15 @@ class State(Container):
             # If this is the first vote for the target block, create a fresh tally sheet:
             # - one boolean per validator, all initially False.
             if target.root not in justifications:
-                justifications[target.root] = [Boolean(False)] * self.validators.count
+                justifications[target.root] = [Boolean(False)] * len(self.validators)
 
-            # Mark that this validator has voted for the target.
+            # Mark that each validator in this aggregation has voted for the target.
             #
             # A vote is represented as a boolean flag.
             # If it was previously absent, flip it to True.
-            if not justifications[target.root][attestation.validator_id]:
-                justifications[target.root][attestation.validator_id] = Boolean(True)
+            for validator_id in attestation.aggregation_bits.to_validator_indices():
+                if not justifications[target.root][validator_id]:
+                    justifications[target.root][validator_id] = Boolean(True)
 
             # Check whether the vote count crosses the supermajority threshold
             #
@@ -505,7 +522,7 @@ class State(Container):
             # 3 * (number of votes) ≥ 2 * (total validators)
             count = sum(bool(justified) for justified in justifications[target.root])
 
-            if 3 * count >= (2 * self.validators.count):
+            if 3 * count >= (2 * len(self.validators)):
                 # The block becomes justified
                 #
                 # The chain now considers this block part of its safe head.
@@ -553,7 +570,7 @@ class State(Container):
                 "justifications_validators": JustificationValidators(
                     data=[vote for root in sorted_roots for vote in justifications[root]]
                 ),
-                "justified_slots": JustifiedSlots(data=justified_slots),
+                "justified_slots": justified_slots,
                 "latest_justified": latest_justified,
                 "latest_finalized": latest_finalized,
             }
@@ -649,7 +666,11 @@ class State(Container):
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=Bytes32.zero(),
-                body=BlockBody(attestations=Attestations(data=attestations)),
+                body=BlockBody(
+                    attestations=AggregatedAttestations(
+                        data=AggregatedAttestation.aggregate_by_data(attestations)
+                    )
+                ),
             )
 
             # Apply state transition to get the post-block state
@@ -664,7 +685,11 @@ class State(Container):
             new_signatures: list[Signature] = []
 
             for signed_attestation in available_signed_attestations:
-                data = signed_attestation.message.data
+                data = signed_attestation.message
+                attestation = Attestation(
+                    validator_id=signed_attestation.validator_id,
+                    data=data,
+                )
 
                 # Skip if target block is unknown
                 if data.head.root not in known_block_roots:
@@ -675,8 +700,8 @@ class State(Container):
                     continue
 
                 # Add attestation if not already included
-                if signed_attestation.message not in attestations:
-                    new_attestations.append(signed_attestation.message)
+                if attestation not in attestations:
+                    new_attestations.append(attestation)
                     new_signatures.append(signed_attestation.signature)
 
             # Fixed point reached: no new attestations found

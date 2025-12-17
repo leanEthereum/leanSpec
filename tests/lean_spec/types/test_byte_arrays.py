@@ -250,15 +250,15 @@ def test_pydantic_accepts_various_inputs_for_vectors() -> None:
 
 def test_pydantic_validates_vector_lengths() -> None:
     with pytest.raises(ValueError):
-        ModelVectors(root=b"\x11" * 31, key=b"\x00\x01\x02\x03")  # too short
+        ModelVectors(root=Bytes32(b"\x11" * 31), key=Bytes4(b"\x00\x01\x02\x03"))  # too short
     with pytest.raises(ValueError):
-        ModelVectors(root=b"\x11" * 33, key=b"\x00\x01\x02\x03")  # too long
+        ModelVectors(root=Bytes32(b"\x11" * 33), key=Bytes4(b"\x00\x01\x02\x03"))  # too long
     with pytest.raises(ValueError):
-        ModelVectors(root=b"\x11" * 32, key=b"\x00\x01\x02")  # key too short
+        ModelVectors(root=Bytes32(b"\x11" * 32), key=Bytes4(b"\x00\x01\x02"))  # key too short
 
 
 def test_pydantic_accepts_and_serializes_bytelist() -> None:
-    m = ModelLists(payload=ByteList16(data="0x000102030405060708090a0b0c0d0e0f"))
+    m = ModelLists(payload=ByteList16(data=bytes.fromhex("000102030405060708090a0b0c0d0e0f")))
 
     assert isinstance(m.payload, ByteList16)
     assert m.payload.encode_bytes() == bytes(range(16))
@@ -278,7 +278,7 @@ def test_pydantic_accepts_and_serializes_bytelist() -> None:
 
 def test_pydantic_bytelist_limit_enforced() -> None:
     with pytest.raises(ValueError):
-        ModelLists(payload=bytes(range(17)))  # over limit
+        ModelLists(payload=ByteList16(data=bytes(range(17))))  # over limit
 
 
 def test_add_repr_equality_hash_do_not_crash_on_aliases() -> None:
@@ -321,8 +321,8 @@ def test_bytelist_hex_and_concat_behaviour_like_vector() -> None:
     class ByteList8(BaseByteList):
         LIMIT = 8
 
-    x = ByteList8(data="0x00010203")
-    y = ByteList8(data=[4, 5])
+    x = ByteList8(data=bytes.fromhex("00010203"))
+    y = ByteList8(data=bytes([4, 5]))
     # __add__ returns bytes
     conc = x + y
     assert conc == b"\x00\x01\x02\x03\x04\x05"

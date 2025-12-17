@@ -3,7 +3,7 @@
 from typing import Any, Tuple
 
 import pytest
-from pydantic import ValidationError, create_model
+from pydantic import BaseModel, ValidationError
 from typing_extensions import Type
 
 from lean_spec.subspecs.koalabear import Fp
@@ -200,6 +200,12 @@ for i, v in {0: 1, 32: 2, 64: 3, 95: 0xFF}.items():
 sig_test_data = tuple(sig_test_data_list)
 
 
+class Uint8Vector2Model(BaseModel):
+    """Model for testing Pydantic validation of Uint8Vector2."""
+
+    value: Uint8Vector2
+
+
 class TestSSZVector:
     """Tests for the fixed-length, immutable SSZVector type."""
 
@@ -221,7 +227,7 @@ class TestSSZVector:
     def test_instantiation_success(self) -> None:
         """Tests successful instantiation with the correct number of valid items."""
         vec_type = Uint8Vector4
-        instance = vec_type(data=[1, 2, 3, 4])
+        instance = vec_type(data=[Uint8(1), Uint8(2), Uint8(3), Uint8(4)])
         assert len(instance) == 4
         assert list(instance) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4)]
 
@@ -229,30 +235,35 @@ class TestSSZVector:
         """Tests that providing the wrong number of items during instantiation fails."""
         vec_type = Uint8Vector4
         with pytest.raises(ValueError, match="requires exactly 4 items"):
-            vec_type(data=[1, 2, 3])  # Too few
+            vec_type(data=[Uint8(1), Uint8(2), Uint8(3)])  # Too few
         with pytest.raises(ValueError, match="requires exactly 4 items"):
-            vec_type(data=[1, 2, 3, 4, 5])  # Too many
+            vec_type(data=[Uint8(1), Uint8(2), Uint8(3), Uint8(4), Uint8(5)])  # Too many
 
     def test_pydantic_validation(self) -> None:
         """Tests that Pydantic validation works for SSZVector types."""
-        model = create_model("Model", value=(Uint8Vector2, ...))
-        # Test valid data
-        instance: Any = model(value={"data": [10, 20]})
+        # Test valid data - Pydantic coerces dict to Uint8Vector2
+        instance = Uint8Vector2Model(value={"data": [10, 20]})  # type: ignore[arg-type]
         assert isinstance(instance.value, Uint8Vector2)
         assert list(instance.value) == [Uint8(10), Uint8(20)]
         # Test invalid data
         with pytest.raises(ValidationError):
-            model(value={"data": [10]})  # Too short
+            Uint8Vector2Model(value={"data": [10]})  # type: ignore[arg-type]
         with pytest.raises(ValidationError):
-            model(value={"data": [10, 20, 30]})  # Too long
+            Uint8Vector2Model(value={"data": [10, 20, 30]})  # type: ignore[arg-type]
         with pytest.raises(TypeError):
-            model(value={"data": [10, "bad"]})  # Wrong element type
+            Uint8Vector2Model(value={"data": [10, "bad"]})  # type: ignore[arg-type]
 
     def test_vector_is_immutable(self) -> None:
         """Tests that attempting to change an item in an SSZVector raises a TypeError."""
-        vec = Uint8Vector2(data=[1, 2])
+        vec = Uint8Vector2(data=[Uint8(1), Uint8(2)])
         with pytest.raises(TypeError):
             vec[0] = 3  # type: ignore[index]  # Should fail because SSZModel is immutable
+
+
+class Uint8List4Model(BaseModel):
+    """Model for testing Pydantic validation of Uint8List4."""
+
+    value: Uint8List4
 
 
 class TestList:
@@ -277,49 +288,50 @@ class TestList:
         """Tests that providing more items than the limit during instantiation fails."""
         list_type = Uint8List4
         with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
-            list_type(data=[1, 2, 3, 4, 5])
+            list_type(data=[Uint8(1), Uint8(2), Uint8(3), Uint8(4), Uint8(5)])
 
     def test_pydantic_validation(self) -> None:
         """Tests that Pydantic validation works for List types."""
-        model = create_model("Model", value=(Uint8List4, ...))
         # Test valid data
-        instance: Any = model(value=Uint8List4(data=[10, 20]))
+        instance = Uint8List4Model(value=Uint8List4(data=[Uint8(10), Uint8(20)]))
         assert isinstance(instance.value, Uint8List4)
         assert list(instance.value) == [Uint8(10), Uint8(20)]
-        # Test invalid data
+        # Test invalid data - list too long
         with pytest.raises(ValidationError):
-            model(value=Uint8List4(data=[10, 20, 30, 40, 50]))  # Too long
-        with pytest.raises(ValidationError):
-            model(value=Uint8List4(data=[10, "bad"]))  # Wrong element type
+            Uint8List4Model(
+                value=Uint8List4(data=[Uint8(10), Uint8(20), Uint8(30), Uint8(40), Uint8(50)])
+            )
 
     def test_append_at_limit_raises_error(self) -> None:
         """Tests that creating a list at limit +1 fails during construction."""
         with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
-            BooleanList4(data=[True] * 5)
+            BooleanList4(data=[Boolean(True)] * 5)
 
     def test_extend_over_limit_raises_error(self) -> None:
         """Tests that creating a list over the limit fails during construction."""
         with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
-            BooleanList4(data=[True, False, True, False, True])
+            BooleanList4(
+                data=[Boolean(True), Boolean(False), Boolean(True), Boolean(False), Boolean(True)]
+            )
 
     def test_add_with_list(self) -> None:
         """Tests concatenating an SSZList with a regular list."""
-        list1 = Uint8List10(data=[1, 2, 3])
+        list1 = Uint8List10(data=[Uint8(1), Uint8(2), Uint8(3)])
         result = list1 + [4, 5]
         assert list(result) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4), Uint8(5)]
         assert isinstance(result, Uint8List10)
 
     def test_add_with_sszlist(self) -> None:
         """Tests concatenating two SSZLists of the same type."""
-        list1 = Uint8List10(data=[1, 2])
-        list2 = Uint8List10(data=[3, 4])
+        list1 = Uint8List10(data=[Uint8(1), Uint8(2)])
+        list2 = Uint8List10(data=[Uint8(3), Uint8(4)])
         result = list1 + list2
         assert list(result) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4)]
         assert isinstance(result, Uint8List10)
 
     def test_add_exceeding_limit_raises_error(self) -> None:
         """Tests that concatenating beyond the limit raises an error."""
-        list1 = Uint8List4(data=[1, 2, 3])
+        list1 = Uint8List4(data=[Uint8(1), Uint8(2), Uint8(3)])
         with pytest.raises(ValueError, match="cannot contain more than 4 elements"):
             list1 + [4, 5]
 

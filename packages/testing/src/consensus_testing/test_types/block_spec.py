@@ -110,3 +110,11 @@ class BlockSpec(CamelModel):
     Defaults to True (valid signature).
     If False, the proposer attestation will be given a dummy/invalid signature.
     """
+
+    skip_slot_processing: bool = False
+    """
+    If True, the state transition fixture skips automatic slot advancement
+    before processing this block.
+
+    Useful for tests that intentionally exercise slot mismatch failures.
+    """

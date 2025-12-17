@@ -7,9 +7,13 @@ from typing import (
     IO,
     Any,
     ClassVar,
-    Tuple,
+    Generic,
+    Iterator,
+    Sequence,
     Type,
+    TypeVar,
     cast,
+    overload,
 )
 
 from pydantic import Field, field_serializer, field_validator
@@ -21,53 +25,83 @@ from .byte_arrays import BaseBytes
 from .ssz_base import SSZModel, SSZType
 from .uint import Uint32
 
+T = TypeVar("T", bound=SSZType)
+"""
+Generic type parameter for SSZ collection elements.
 
-class SSZVector(SSZModel):
+This TypeVar enables proper static typing for collection access:
+
+- Bound to `SSZType` to ensure elements are valid SSZ types
+- Used with `Generic[T]` to parameterize `SSZVector` and `SSZList`
+- Allows type checkers to infer correct return types for `__getitem__`
+
+Example:
+    class Uint64Vector4(SSZVector[Uint64]):
+        ELEMENT_TYPE = Uint64
+        LENGTH = 4
+
+    vec = Uint64Vector4(data=[...])
+    x = vec[0]  # Type checker infers `x: Uint64`
+"""
+
+
+class SSZVector(SSZModel, Generic[T]):
     """
-    Base class for SSZ Vector types: fixed-length, immutable sequences.
+    Fixed-length, immutable SSZ sequence.
 
-    To create a specific vector type, inherit from this class and set:
-    - ELEMENT_TYPE: The SSZ type of elements
-    - LENGTH: The exact number of elements
+    An SSZ Vector contains exactly `LENGTH` elements of type `ELEMENT_TYPE`.
+    The length is fixed at the type level and cannot change at runtime.
+
+    Subclasses must define:
+        ELEMENT_TYPE: The SSZ type of each element
+        LENGTH: The exact number of elements
 
     Example:
-        class Uint16Vector2(SSZVector):
+        class Uint16Vector2(SSZVector[Uint16]):
             ELEMENT_TYPE = Uint16
             LENGTH = 2
+
+        vec = Uint16Vector2(data=[Uint16(1), Uint16(2)])
+        assert len(vec) == 2
+        assert vec[0] == Uint16(1)  # Properly typed as Uint16
+
+    SSZ Encoding:
+        - Fixed-size elements: Serialized back-to-back
+        - Variable-size elements: Offset table followed by element data
     """
 
     ELEMENT_TYPE: ClassVar[Type[SSZType]]
-    """The SSZ type of the elements in the vector."""
+    """The SSZ type of elements in this vector."""
 
     LENGTH: ClassVar[int]
-    """The exact number of elements in the vector."""
+    """The exact number of elements (fixed at the type level)."""
 
-    data: Tuple[SSZType, ...] = Field(default_factory=tuple)
-    """The immutable data stored in the vector."""
+    data: Sequence[T] = Field(default_factory=tuple)
+    """
+    The immutable sequence of elements.
+
+    Accepts lists or tuples on input; stored as a tuple after validation.
+    """
 
     @field_serializer("data", when_used="json")
-    def _serialize_data(self, value: Tuple[SSZType, ...]) -> list[Any]:
-        """Serialize vector elements to JSON, preserving custom type serialization."""
+    def _serialize_data(self, value: Sequence[T]) -> list[Any]:
+        """Serialize vector elements to JSON."""
         from lean_spec.subspecs.koalabear import Fp
 
         result: list[Any] = []
         for item in value:
-            # For BaseBytes subclasses, manually add 0x prefix
             if isinstance(item, BaseBytes):
                 result.append("0x" + item.hex())
-            # For Fp field elements, extract the value attribute
             elif isinstance(item, Fp):
                 result.append(item.value)
             else:
-                # For other types (Uint, etc.), convert to int
-                # BaseUint inherits from int, so this cast is safe
                 result.append(item)
         return result
 
     @field_validator("data", mode="before")
     @classmethod
-    def _validate_vector_data(cls, v: Any) -> Tuple[SSZType, ...]:
-        """Validate and convert input data to typed tuple."""
+    def _validate_vector_data(cls, v: Any) -> tuple[SSZType, ...]:
+        """Validate and convert input to a typed tuple of exactly LENGTH elements."""
         if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LENGTH"):
             raise TypeError(f"{cls.__name__} must define ELEMENT_TYPE and LENGTH")
 
@@ -171,42 +205,74 @@ class SSZVector(SSZModel):
         """Return the number of elements in the vector."""
         return len(self.data)
 
-    def __getitem__(self, index: int) -> SSZType:
-        """Access an element by index."""
+    def __iter__(self) -> Iterator[T]:  # type: ignore[override]
+        """Iterate over vector elements."""
+        return iter(self.data)
+
+    @overload
+    def __getitem__(self, index: int) -> T: ...
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[T]: ...
+
+    def __getitem__(self, index: int | slice) -> T | Sequence[T]:
+        """
+        Access element(s) by index or slice.
+
+        Returns properly typed results:
+
+        - `vec[0]` returns `T`
+        - `vec[0:2]` returns `Sequence[T]`
+        """
         return self.data[index]
 
+    @property
+    def elements(self) -> list[T]:
+        """Return the elements as a typed list."""
+        return list(self.data)
 
-class SSZList(SSZModel):
+
+class SSZList(SSZModel, Generic[T]):
     """
-    Base class for SSZ List types - variable-length homogeneous collections.
+    Variable-length SSZ sequence with a maximum capacity.
 
-    An SSZ List is a sequence that can contain between 0 and LIMIT elements,
-    where all elements must be of the same SSZ type.
+    An SSZ List contains between 0 and `LIMIT` elements of type `ELEMENT_TYPE`.
+    Unlike Vector, the length can vary at runtime.
 
     Subclasses must define:
-    - ELEMENT_TYPE: The SSZ type of elements in the list
-    - LIMIT: Maximum number of elements allowed
+        ELEMENT_TYPE: The SSZ type of each element
+        LIMIT: The maximum number of elements allowed
 
-    Example usage:
-        class Uint64List32(SSZList):
+    Example:
+        class Uint64List32(SSZList[Uint64]):
             ELEMENT_TYPE = Uint64
             LIMIT = 32
 
-        my_list = Uint64List32(data=[1, 2, 3])
+        my_list = Uint64List32(data=[Uint64(1), Uint64(2)])
+        assert len(my_list) == 2
+        assert my_list[0] == Uint64(1)  # Properly typed as Uint64
+
+    SSZ Encoding:
+        - Fixed-size elements: Serialized back-to-back
+        - Variable-size elements: Offset table followed by element data
+        - Hash tree root includes the element count (mixed-in)
     """
 
     ELEMENT_TYPE: ClassVar[Type[SSZType]]
     """The SSZ type of elements in this list."""
 
     LIMIT: ClassVar[int]
-    """Maximum number of elements this list can contain."""
+    """The maximum number of elements allowed."""
 
-    data: Tuple[SSZType, ...] = Field(default_factory=tuple)
-    """The elements in this list, stored as an immutable tuple."""
+    data: Sequence[T] = Field(default_factory=tuple)
+    """
+    The immutable sequence of elements.
+
+    Accepts lists or tuples on input; stored as a tuple after validation.
+    """
 
     @field_serializer("data", when_used="json")
-    def _serialize_data(self, value: Tuple[SSZType, ...]) -> list[Any]:
-        """Serialize list elements to JSON, preserving custom type serialization."""
+    def _serialize_data(self, value: Sequence[T]) -> list[Any]:
+        """Serialize list elements to JSON."""
         from lean_spec.subspecs.koalabear import Fp
 
         result: list[Any] = []
@@ -225,7 +291,7 @@ class SSZList(SSZModel):
 
     @field_validator("data", mode="before")
     @classmethod
-    def _validate_list_data(cls, v: Any) -> Tuple[SSZType, ...]:
+    def _validate_list_data(cls, v: Any) -> tuple[SSZType, ...]:
         """Validate and convert input to a tuple of SSZType elements."""
         if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LIMIT"):
             raise TypeError(f"{cls.__name__} must define ELEMENT_TYPE and LIMIT")
@@ -264,7 +330,7 @@ class SSZList(SSZModel):
         if isinstance(other, SSZList):
             new_data = self.data + other.data
         elif isinstance(other, (list, tuple)):
-            new_data = self.data + tuple(other)
+            new_data = tuple(self.data) + tuple(other)
         else:
             return NotImplemented
         return type(self)(data=new_data)
@@ -366,6 +432,27 @@ class SSZList(SSZModel):
         """Return the number of elements in the list."""
         return len(self.data)
 
-    def __getitem__(self, index: int) -> SSZType:
-        """Access an element by index."""
+    def __iter__(self) -> Iterator[T]:  # type: ignore[override]
+        """Iterate over list elements."""
+        return iter(self.data)
+
+    @overload
+    def __getitem__(self, index: int) -> T: ...
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[T]: ...
+
+    def __getitem__(self, index: int | slice) -> T | Sequence[T]:
+        """
+        Access element(s) by index or slice.
+
+        Returns properly typed results:
+
+        - `lst[0]` returns `T`
+        - `lst[0:2]` returns `Sequence[T]`
+        """
         return self.data[index]
+
+    @property
+    def elements(self) -> list[T]:
+        """Return the elements as a typed list."""
+        return list(self.data)

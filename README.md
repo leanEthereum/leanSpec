@@ -97,16 +97,16 @@ uv run fill --clean --fork=devnet
 
 ```bash
 # Check code style and errors
-uv run ruff check src tests packages
+uv run ruff check
 
 # Auto-fix issues
-uv run ruff check --fix src tests packages
+uv run ruff check --fix
 
 # Format code
-uv run ruff format src tests packages
+uv run ruff format
 
 # Type checking
-uv run mypy src tests packages
+uv run ty check
 ```
 
 ### Using Tox for Comprehensive Checks
@@ -179,24 +179,24 @@ def test_withdrawal_amount_above_uint64_max():
 - **pytest**: Testing framework - just name test files `test_*.py` and functions `test_*`
 - **uv**: Fast Python package manager - like npm/yarn but for Python
 - **ruff**: Linter and formatter
-- **mypy**: Type checker that works with Pydantic models
+- **ty**: Type checker
 - **tox**: Automation tool for running tests across multiple environments (used via `uvx`)
 - **mkdocs**: Documentation generator - write docs in Markdown, serve them locally
 
 ## Common Commands Reference
 
-| Task                                          | Command                                      |
-|-----------------------------------------------|----------------------------------------------|
-| Install and sync project and dev dependencies | `uv sync`                                    |
-| Run tests                                     | `uv run pytest ...`                          |
-| Format code                                   | `uv run ruff format src tests packages`      |
-| Lint code                                     | `uv run ruff check src tests packages`       |
-| Fix lint errors                               | `uv run ruff check --fix src tests packages` |
-| Type check                                    | `uv run mypy src tests packages`             |
-| Build docs                                    | `uv run mkdocs build`                        |
-| Serve docs                                    | `uv run mkdocs serve`                        |
-| Run everything (checks + tests + docs)        | `uvx tox`                                    |
-| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                      |
+| Task                                          | Command                   |
+|-----------------------------------------------|---------------------------|
+| Install and sync project and dev dependencies | `uv sync`                 |
+| Run tests                                     | `uv run pytest ...`       |
+| Format code                                   | `uv run ruff format`      |
+| Lint code                                     | `uv run ruff check`       |
+| Fix lint errors                               | `uv run ruff check --fix` |
+| Type check                                    | `uv run ty check`         |
+| Build docs                                    | `uv run mkdocs build`     |
+| Serve docs                                    | `uv run mkdocs serve`     |
+| Run everything (checks + tests + docs)        | `uvx tox`                 |
+| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`   |
 
 ## Contributing
 

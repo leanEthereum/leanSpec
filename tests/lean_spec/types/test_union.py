@@ -166,7 +166,7 @@ def test_union_serialize_matches_reference() -> None:
         (OptionalNumericUnion(selector=1, value=Uint16(43707)), "01bbaa"),
         (NumericUnion(selector=1, value=Uint32(3735928559)), "01efbeadde"),
         (ComplexUnion(selector=2, value=Uint8(170)), "02aa"),
-        (ContainerUnion(selector=1, value=SingleField(A=0xAB)), "01ab"),
+        (ContainerUnion(selector=1, value=SingleField(A=Uint8(0xAB))), "01ab"),
     ]
 
     for union_instance, expected_hex in test_cases:
@@ -177,7 +177,7 @@ def test_union_serialize_matches_reference() -> None:
 def test_union_with_nested_composites_roundtrip() -> None:
     """Test serialization roundtrip with complex nested types."""
     # Create a union with nested container
-    original = ContainerUnion(selector=0, value=SingleField(A=42))
+    original = ContainerUnion(selector=0, value=SingleField(A=Uint8(42)))
 
     # Encode and decode
     encoded = original.encode_bytes()

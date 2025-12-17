@@ -371,11 +371,12 @@ def test_hash_tree_root_bitvector(
     Its hash tree root is the Merkle root of these bytes, treated like a `ByteVector`.
     """
 
-    # Create the Bitvector instance.
+    # Create the Bitvector instance with Boolean values.
     class TestBitvector(BaseBitvector):
         LENGTH = len(bits)
 
-    bv = TestBitvector(data=bits)
+    bool_bits = tuple(Boolean(b) for b in bits)
+    bv = TestBitvector(data=bool_bits)
     # Sanity check: ensure the serialization is correct.
     assert bv.encode_bytes().hex() == expect_serial_hex
     # Verify the hash tree root.
@@ -407,11 +408,12 @@ def test_hash_tree_root_bitlist(
     part, and then mixes in the number of bits.
     """
 
-    # Create the Bitlist instance.
+    # Create the Bitlist instance with Boolean values.
     class TestBitlist(BaseBitlist):
         LIMIT = limit
 
-    bl = TestBitlist(data=bits)
+    bool_bits = tuple(Boolean(b) for b in bits)
+    bl = TestBitlist(data=bool_bits)
     # Sanity check the SSZ serialization.
     assert bl.encode_bytes().hex() == expect_serial_hex
     # Verify the hash tree root.
@@ -427,7 +429,7 @@ def test_hash_tree_root_bitvector_512_all_ones() -> None:
     class Bitvector512(BaseBitvector):
         LENGTH = 512
 
-    bv = Bitvector512(data=(1,) * 512)
+    bv = Bitvector512(data=tuple(Boolean(1) for _ in range(512)))
     # Both chunks will be all `0xff` bytes.
     left = "ff" * 32
     right = "ff" * 32
@@ -446,7 +448,7 @@ def test_hash_tree_root_bitlist_512_all_ones() -> None:
     class Bitlist512(BaseBitlist):
         LIMIT = 512
 
-    bl = Bitlist512(data=(1,) * 512)
+    bl = Bitlist512(data=tuple(Boolean(1) for _ in range(512)))
     # The data part is 512 bits (64 bytes), which forms two full chunks of `0xff`.
     # The Merkle root of the data is the hash of these two chunks.
     base = h("ff" * 32, "ff" * 32)
@@ -488,7 +490,7 @@ def test_hash_tree_root_vector_uint16_2() -> None:
     simply the serialized bytes, right-padded to 32 bytes.
     """
     # SSZVector of two Uint16 values - using our new explicit class definition
-    v = Uint16Vector2(data=[0x4567, 0x0123])
+    v = Uint16Vector2(data=[Uint16(0x4567), Uint16(0x0123)])
     # Serialization (little-endian): 0x4567 -> "6745", 0x0123 -> "2301".
     # Concatenated: "67452301". This is 4 bytes, which fits in one chunk.
     expected = chunk("67452301")
@@ -501,7 +503,7 @@ def test_hash_tree_root_list_uint16() -> None:
     Tests the hash tree root of a `List` of basic types.
     """
     # Create a list of three Uint16 elements.
-    test_list = Uint16List32(data=(0xAABB, 0xC0AD, 0xEEFF))
+    test_list = Uint16List32(data=(Uint16(0xAABB), Uint16(0xC0AD), Uint16(0xEEFF)))
     # The serialized data is "bbaaadc0ffee" (3 * 2 = 6 bytes).
     # The capacity is 32 * 2 = 64 bytes = 2 chunks.
     # The data is packed into chunks and Merkleized. Here, it's one data chunk and one zero chunk.
@@ -517,7 +519,7 @@ def test_hash_tree_root_list_uint32_large_limit() -> None:
     Tests a `List` of basic types with a large capacity, requiring padding.
     """
     # List of three Uint32s, capacity 128 elements.
-    test_list = Uint32List128(data=(0xAABB, 0xC0AD, 0xEEFF))
+    test_list = Uint32List128(data=(Uint32(0xAABB), Uint32(0xC0AD), Uint32(0xEEFF)))
     # Capacity: 128 * 4 = 512 bytes = 16 chunks. Tree depth is 4 (2^4=16).
     # Serialized data: "bbaa0000adc00000ffee0000" (3 * 4 = 12 bytes), fits in one chunk.
     # This single chunk must be Merkleized with zero hashes up to depth 4.
@@ -533,7 +535,7 @@ def test_hash_tree_root_list_uint256() -> None:
     Tests a `List` where each element is itself a 32-byte chunk.
     """
     # Create a list of three Uint256 elements.
-    test_list = Uint256List32(data=(0xAABB, 0xC0AD, 0xEEFF))
+    test_list = Uint256List32(data=(Uint256(0xAABB), Uint256(0xC0AD), Uint256(0xEEFF)))
     # Each Uint256 is a 32-byte leaf. We have 3 leaves.
     a = chunk("bbaa")  # 0xAABB
     b = chunk("adc0")  # 0xC0AD
@@ -688,7 +690,11 @@ def test_hash_tree_root_container_var_some() -> None:
     Tests a container with a populated variable-size list.
     """
     # Create a container with a list containing three elements.
-    v = Var(A=Uint16(0xABCD), B=Uint16List1024(data=(1, 2, 3)), C=Uint8(0xFF))
+    v = Var(
+        A=Uint16(0xABCD),
+        B=Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3))),
+        C=Uint8(0xFF),
+    )
     # Calculate the root of list B.
     # Data "010002000300" is padded to capacity (64 chunks, depth 6).
     base = merge(chunk("010002000300"), ZERO_HASHES[0:6])
@@ -706,10 +712,14 @@ def test_hash_tree_root_container_complex() -> None:
     # Instantiate the deeply nested container.
     v = Complex(
         A=Uint16(0xAABB),
-        B=Uint16List128(data=(0x1122, 0x3344)),
+        B=Uint16List128(data=(Uint16(0x1122), Uint16(0x3344))),
         C=Uint8(0xFF),
         D=ByteList256(data=b"foobar"),
-        E=Var(A=Uint16(0xABCD), B=Uint16List1024(data=(1, 2, 3)), C=Uint8(0xFF)),
+        E=Var(
+            A=Uint16(0xABCD),
+            B=Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3))),
+            C=Uint8(0xFF),
+        ),
         F=FixedVector4(
             data=[
                 Fixed(A=Uint8(0xCC), B=Uint64(0x4242424242424242), C=Uint32(0x13371337)),
@@ -720,8 +730,16 @@ def test_hash_tree_root_container_complex() -> None:
         ),
         G=VarVector2(
             data=[
-                Var(A=Uint16(0xDEAD), B=Uint16List1024(data=(1, 2, 3)), C=Uint8(0x11)),
-                Var(A=Uint16(0xBEEF), B=Uint16List1024(data=(4, 5, 6)), C=Uint8(0x22)),
+                Var(
+                    A=Uint16(0xDEAD),
+                    B=Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3))),
+                    C=Uint8(0x11),
+                ),
+                Var(
+                    A=Uint16(0xBEEF),
+                    B=Uint16List1024(data=(Uint16(4), Uint16(5), Uint16(6))),
+                    C=Uint8(0x22),
+                ),
             ]
         ),
     )

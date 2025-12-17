@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import io
 from abc import ABC, abstractmethod
-from typing import IO, Any
+from typing import IO, Any, Sequence
 
-from typing_extensions import Iterator, Self
+from typing_extensions import Self
 
 from .base import StrictBaseModel
 
@@ -106,46 +106,19 @@ class SSZModel(StrictBaseModel, SSZType):
     Use this for containers and complex types that can benefit from Pydantic.
 
     For simple types that need special inheritance (like int), use SSZType directly.
-
-    SSZModel provides natural iteration and indexing for collections with a 'data' field:
-    - `for item in collection` instead of `for item in collection.data`
-    - `collection[i]` instead of `collection.data[i]`
-    - `len(collection)` instead of `len(collection.data)`
     """
 
     def __len__(self) -> int:
         """Return the length of the collection's data or number of container fields."""
-        if hasattr(self, "data"):
-            return len(self.data)
-        # For containers, return number of fields
+        data: Sequence[Any] | None = getattr(self, "data", None)
+        if data is not None:
+            return len(data)
         return len(type(self).model_fields)
-
-    def __iter__(self) -> Iterator[Any]:  # type: ignore[override]
-        """
-        Iterate over the collection's data if it's a collection type,
-        otherwise iterate over container field (name, value) pairs.
-
-        For SSZ collections with 'data' field, this iterates over the data contents.
-        For container types, this iterates over (field_name, field_value) pairs.
-        """
-        if hasattr(self, "data"):
-            return iter(self.data)
-        # For containers, iterate over (field_name, field_value) pairs
-        return iter((name, getattr(self, name)) for name in type(self).model_fields.keys())
-
-    def __getitem__(self, key: Any) -> Any:
-        """Get an item from the collection's data or container field by name."""
-        if hasattr(self, "data"):
-            return self.data[key]
-        # For containers, allow field access by name
-        if isinstance(key, str) and key in type(self).model_fields:
-            return getattr(self, key)
-        raise KeyError(f"Invalid key '{key}' for {self.__class__.__name__}")
 
     def __repr__(self) -> str:
         """String representation showing the class name and data."""
-        if hasattr(self, "data"):
-            return f"{self.__class__.__name__}(data={list(self.data)!r})"
-        # For containers, show field names and values
+        data: Sequence[Any] | None = getattr(self, "data", None)
+        if data is not None:
+            return f"{self.__class__.__name__}(data={list(data)!r})"
         field_strs = [f"{name}={getattr(self, name)!r}" for name in type(self).model_fields.keys()]
         return f"{self.__class__.__name__}({' '.join(field_strs)})"

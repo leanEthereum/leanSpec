@@ -11,11 +11,11 @@ from lean_spec.subspecs.containers.attestation import (
     AttestationData,
     SignedAttestation,
 )
-from lean_spec.subspecs.containers.block.block import (
+from lean_spec.subspecs.containers.block import (
+    BlockSignatures,
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from lean_spec.subspecs.containers.block.types import BlockSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.koalabear import Fp
@@ -168,14 +168,16 @@ class VerifySignaturesTest(BaseConsensusFixture):
             A complete signed block with all attestations.
         """
         # Determine proposer index
-        proposer_index = spec.proposer_index or Uint64(int(spec.slot) % int(state.validators.count))
+        proposer_index = spec.proposer_index or Uint64(int(spec.slot) % len(state.validators))
 
         # Resolve parent root
         parent_state = state.process_slots(spec.slot)
         parent_root = hash_tree_root(parent_state.latest_block_header)
 
         # Build attestations from spec
-        attestations, signatures = self._build_attestations_from_spec(spec, state, key_manager)
+        attestations, attestation_signature_inputs = self._build_attestations_from_spec(
+            spec, state, key_manager
+        )
 
         # Use State.build_block for core block building (pure spec logic)
         final_block, _, _, _ = state.build_block(
@@ -183,6 +185,20 @@ class VerifySignaturesTest(BaseConsensusFixture):
             proposer_index=proposer_index,
             parent_root=parent_root,
             attestations=attestations,
+        )
+
+        # Preserve per-attestation validity from the spec.
+        #
+        # For signature tests we must ensure that the signatures in the input spec are used
+        # for any intentionally-invalid signature from the input spec remains invalid
+        # in the produced `SignedBlockWithAttestation`.
+        signature_lookup: dict[tuple[Uint64, bytes], Signature] = {
+            (att.validator_id, att.data.data_root_bytes()): sig
+            for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
+        }
+        attestation_signatures = key_manager.build_attestation_signatures(
+            final_block.body.attestations,
+            signature_lookup=signature_lookup,
         )
 
         # Create proposer attestation for this block
@@ -199,7 +215,10 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Sign proposer attestation - use valid or dummy signature based on spec
         if spec.valid_signature:
-            proposer_attestation_signature = key_manager.sign_attestation(proposer_attestation)
+            proposer_attestation_signature = key_manager.sign_attestation_data(
+                proposer_attestation.validator_id,
+                proposer_attestation.data,
+            )
         else:
             # Generate an invalid dummy signature (all zeros)
             from lean_spec.subspecs.xmss.constants import TEST_CONFIG
@@ -212,14 +231,15 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 hashes=HashDigestList(data=[]),
             )
 
-        signatures.append(proposer_attestation_signature)
-
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,
                 proposer_attestation=proposer_attestation,
             ),
-            signature=BlockSignatures(data=signatures),
+            signature=BlockSignatures(
+                attestation_signatures=attestation_signatures,
+                proposer_signature=proposer_attestation_signature,
+            ),
         )
 
     def _build_attestations_from_spec(
@@ -240,10 +260,22 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 signed_attestation = self._build_signed_attestation_from_spec(
                     attestation_item, state, key_manager
                 )
-                attestations.append(signed_attestation.message)
+                # Reconstruct Attestation from SignedAttestation components
+                attestations.append(
+                    Attestation(
+                        validator_id=signed_attestation.validator_id,
+                        data=signed_attestation.message,
+                    )
+                )
                 attestation_signatures.append(signed_attestation.signature)
             else:
-                attestations.append(attestation_item.message)
+                # Reconstruct Attestation from existing SignedAttestation
+                attestations.append(
+                    Attestation(
+                        validator_id=attestation_item.validator_id,
+                        data=attestation_item.message,
+                    )
+                )
                 attestation_signatures.append(attestation_item.signature)
 
         return attestations, attestation_signatures
@@ -296,7 +328,10 @@ class VerifySignaturesTest(BaseConsensusFixture):
         # Sign the attestation - use dummy signature if expecting invalid signature
         if spec.valid_signature:
             # Generate valid signature using key manager
-            signature = key_manager.sign_attestation(attestation)
+            signature = key_manager.sign_attestation_data(
+                attestation.validator_id,
+                attestation.data,
+            )
         else:
             # Generate an invalid dummy signature (all zeros)
             from lean_spec.subspecs.xmss.constants import TEST_CONFIG
@@ -311,6 +346,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Create signed attestation
         return SignedAttestation(
-            message=attestation,
+            validator_id=attestation.validator_id,
+            message=attestation.data,
             signature=signature,
         )

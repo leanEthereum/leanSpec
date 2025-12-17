@@ -212,7 +212,7 @@ class Store(Container):
         Raises:
             AssertionError: If attestation fails validation.
         """
-        data = signed_attestation.message.data
+        data = signed_attestation.message
 
         # Availability Check
         #
@@ -294,11 +294,11 @@ class Store(Container):
         self.validate_attestation(signed_attestation)
 
         # Extract the validator index that produced this attestation.
-        validator_id = Uint64(signed_attestation.message.validator_id)
+        validator_id = Uint64(signed_attestation.validator_id)
 
         # Extract the attestation's slot:
         # - used to decide if this attestation is "newer" than a previous one.
-        attestation_slot = signed_attestation.message.data.slot
+        attestation_slot = signed_attestation.message.slot
 
         # Copy the known attestation map:
         # - we build a new Store immutably,
@@ -322,7 +322,7 @@ class Store(Container):
             # Update the known attestation for this validator if:
             # - there is no known attestation yet, or
             # - this attestation is from a later slot than the known one.
-            if latest_known is None or latest_known.message.data.slot < attestation_slot:
+            if latest_known is None or latest_known.message.slot < attestation_slot:
                 new_known[validator_id] = signed_attestation
 
             # Fetch any pending ("new") attestation for this validator.
@@ -333,7 +333,7 @@ class Store(Container):
             # - it is from an equal or earlier slot than this on-chain attestation.
             #
             # In that case, the on-chain attestation supersedes it.
-            if existing_new is not None and existing_new.message.data.slot <= attestation_slot:
+            if existing_new is not None and existing_new.message.slot <= attestation_slot:
                 del new_new[validator_id]
         else:
             # Network gossip attestation processing
@@ -356,7 +356,7 @@ class Store(Container):
             # Update the pending attestation for this validator if:
             # - there is no pending attestation yet, or
             # - this one is from a later slot than the pending one.
-            if latest_new is None or latest_new.message.data.slot < attestation_slot:
+            if latest_new is None or latest_new.message.slot < attestation_slot:
                 new_new[validator_id] = signed_attestation
 
         # Return a new Store with updated "known" and "new" attestation maps.
@@ -416,7 +416,6 @@ class Store(Container):
         # Unpack block components
         block = signed_block_with_attestation.message.block
         proposer_attestation = signed_block_with_attestation.message.proposer_attestation
-        signatures = signed_block_with_attestation.signature
         block_root = hash_tree_root(block)
 
         # Skip duplicate blocks (idempotent operation)
@@ -463,22 +462,32 @@ class Store(Container):
             }
         )
 
-        # Process block body attestations
-        #
-        # Iterate over attestations and their corresponding signatures.
-        for attestation, signature in zip(
-            signed_block_with_attestation.message.block.body.attestations,
-            signed_block_with_attestation.signature,
-            strict=False,
+        # Process block body attestations.
+        aggregated_attestations = signed_block_with_attestation.message.block.body.attestations
+        attestation_signatures = signed_block_with_attestation.signature.attestation_signatures
+
+        assert len(aggregated_attestations) == len(attestation_signatures), (
+            "Attestation signature groups must match aggregated attestations"
+        )
+
+        for aggregated_attestation, aggregated_signature in zip(
+            aggregated_attestations, attestation_signatures, strict=True
         ):
-            # Process as on-chain attestation (immediately becomes "known")
-            store = store.on_attestation(
-                signed_attestation=SignedAttestation(
-                    message=attestation,
-                    signature=signature,
-                ),
-                is_from_block=True,
+            validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
+
+            assert len(validator_ids) == len(aggregated_signature), (
+                "Aggregated attestation signature count mismatch"
             )
+
+            for validator_id, signature in zip(validator_ids, aggregated_signature, strict=True):
+                store = store.on_attestation(
+                    signed_attestation=SignedAttestation(
+                        validator_id=validator_id,
+                        message=aggregated_attestation.data,
+                        signature=signature,
+                    ),
+                    is_from_block=True,
+                )
 
         # Update forkchoice head based on new block and attestations
         #
@@ -495,8 +504,9 @@ class Store(Container):
         # 3. Influence fork choice only after interval 3 (end of slot)
         store = store.on_attestation(
             signed_attestation=SignedAttestation(
-                message=proposer_attestation,
-                signature=signatures[len(block.body.attestations)],
+                validator_id=proposer_attestation.validator_id,
+                message=proposer_attestation.data,
+                signature=signed_block_with_attestation.signature.proposer_signature,
             ),
             is_from_block=False,
         )
@@ -558,7 +568,7 @@ class Store(Container):
         #
         # Each visited block accumulates one unit of weight from that validator.
         for attestation in attestations.values():
-            current_root = attestation.message.data.head.root
+            current_root = attestation.message.head.root
 
             # Climb towards the anchor while staying inside the known tree.
             #
@@ -684,7 +694,7 @@ class Store(Container):
         """
         # Get validator count from head state
         head_state = self.states[self.head]
-        num_validators = head_state.validators.count
+        num_validators = len(head_state.validators)
 
         # Calculate 2/3 majority threshold (ceiling division)
         min_target_score = -(-num_validators * 2 // 3)
@@ -961,7 +971,7 @@ class Store(Container):
         head_state = store.states[head_root]
 
         # Validate proposer authorization for this slot
-        num_validators = Uint64(head_state.validators.count)
+        num_validators = Uint64(len(head_state.validators))
         assert is_proposer(validator_index, slot, num_validators), (
             f"Validator {validator_index} is not the proposer for slot {slot}"
         )

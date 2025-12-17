@@ -49,7 +49,7 @@ def _run_commit_open_verify_roundtrip(
     leaf_hashes: list[HashDigestVector] = [
         hasher.apply(
             parameter,
-            TreeTweak(level=0, index=start_index + i),
+            TreeTweak(level=0, index=Uint64(start_index + i)),
             leaf_parts,
         )
         for i, leaf_parts in enumerate(leaves)

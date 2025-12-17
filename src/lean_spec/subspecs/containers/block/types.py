@@ -3,19 +3,27 @@
 from lean_spec.types import SSZList
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
-from ...xmss.containers import Signature
-from ..attestation import Attestation
+from ..attestation import AggregatedAttestation, AttestationData, NaiveAggregatedSignature
 
 
-class Attestations(SSZList):
-    """List of validator attestations included in a block."""
+class AggregatedAttestations(SSZList[AggregatedAttestation]):
+    """List of aggregated attestations included in a block."""
 
-    ELEMENT_TYPE = Attestation
+    ELEMENT_TYPE = AggregatedAttestation
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
 
+    def has_duplicate_data(self) -> bool:
+        """Check if any two attestations share the same AttestationData."""
+        seen: set[AttestationData] = set()
+        for attestation in self:
+            if attestation.data in seen:
+                return True
+            seen.add(attestation.data)
+        return False
 
-class BlockSignatures(SSZList):
-    """Aggregated signature list included alongside the block."""
 
-    ELEMENT_TYPE = Signature
+class AttestationSignatures(SSZList[NaiveAggregatedSignature]):
+    """List of per-attestation naive signature lists aligned with block body attestations."""
+
+    ELEMENT_TYPE = NaiveAggregatedSignature
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

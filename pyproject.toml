@@ -66,16 +66,11 @@ known-first-party = ["lean_spec"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D", "F401", "F403"]
 
-[tool.mypy]
-python_version = "3.12"
-plugins = ["pydantic.mypy"]
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-warn_unused_ignores = true
-no_implicit_reexport = true
-namespace_packages = false
-explicit_package_bases = false
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.terminal]
+error-on-warning = true
 
 [tool.pytest.ini_options]
 minversion = "8.3.3"
@@ -125,7 +120,7 @@ test = [
     "lean-ethereum-testing",
 ]
 lint = [
-    "mypy>=1.17.0,<2",
+    "ty>=0.0.1a34",
     "ruff>=0.13.2,<1",
     "codespell>=2.4.1,<3",
 ]

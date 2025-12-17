@@ -28,11 +28,11 @@ uv run fill --fork=devnet --clean -n auto # Generate test vectors
 ### Code Quality
 
 ```bash
-uv run ruff format src tests packages      # Format code
-uv run ruff check --fix src tests packages # Lint and fix
-uvx tox -e typecheck                       # Type check
-uvx tox -e all-checks                      # All quality checks
-uvx tox                                    # Everything (checks + tests + docs)
+uv run ruff format       # Format code
+uv run ruff check --fix  # Lint and fix
+uvx tox -e typecheck     # Type check
+uvx tox -e all-checks    # All quality checks
+uvx tox                  # Everything (checks + tests + docs)
 ```
 
 ### Common Tasks

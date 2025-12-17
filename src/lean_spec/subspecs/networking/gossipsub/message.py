@@ -83,8 +83,8 @@ class GossipsubMessage:
                 self.raw_data,
             )
 
-        # Compute the raw ID bytes and cast to our strict type before caching
-        self._id = MessageId(self._compute_raw_id(domain, data_for_hash))
+        # Compute the raw ID bytes and assign with proper type annotation
+        self._id: MessageId = self._compute_raw_id(domain, data_for_hash)
         return self._id
 
     def _compute_raw_id(self, domain: bytes, message_data: bytes) -> bytes:

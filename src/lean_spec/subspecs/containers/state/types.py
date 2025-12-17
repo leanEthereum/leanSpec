@@ -7,14 +7,14 @@ from lean_spec.types.bitfields import BaseBitlist
 from ..validator import Validator
 
 
-class HistoricalBlockHashes(SSZList):
+class HistoricalBlockHashes(SSZList[Bytes32]):
     """List of historical block root hashes up to historical_roots_limit."""
 
     ELEMENT_TYPE = Bytes32
     LIMIT = int(DEVNET_CONFIG.historical_roots_limit)
 
 
-class JustificationRoots(SSZList):
+class JustificationRoots(SSZList[Bytes32]):
     """List of justified block roots up to historical_roots_limit."""
 
     ELEMENT_TYPE = Bytes32
@@ -33,13 +33,8 @@ class JustificationValidators(BaseBitlist):
     LIMIT = int(DEVNET_CONFIG.historical_roots_limit) * int(DEVNET_CONFIG.validator_registry_limit)
 
 
-class Validators(SSZList):
+class Validators(SSZList[Validator]):
     """Validator registry tracked in the state."""
 
     ELEMENT_TYPE = Validator
     LIMIT = int(DEVNET_CONFIG.validator_registry_limit)
-
-    @property
-    def count(self) -> int:
-        """Return the number of validators in the registry."""
-        return len(self.data)

@@ -12,13 +12,16 @@ from lean_spec.subspecs.containers.attestation import (
     AttestationData,
     SignedAttestation,
 )
-from lean_spec.subspecs.containers.block.block import (
+from lean_spec.subspecs.containers.block import (
     Block,
     BlockBody,
+    BlockSignatures,
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from lean_spec.subspecs.containers.block.types import Attestations, BlockSignatures
+from lean_spec.subspecs.containers.block.types import (
+    AggregatedAttestations,
+)
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
@@ -116,7 +119,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 proposer_index=self.anchor_state.latest_block_header.proposer_index,
                 parent_root=self.anchor_state.latest_block_header.parent_root,
                 state_root=hash_tree_root(self.anchor_state),
-                body=BlockBody(attestations=Attestations(data=[])),
+                body=BlockBody(attestations=AggregatedAttestations(data=[])),
             )
         return self
 
@@ -136,7 +139,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 if isinstance(step, BlockStep):
                     max_slot_value = max(max_slot_value, int(step.block.slot))
                 elif isinstance(step, AttestationStep):
-                    max_slot_value = max(max_slot_value, int(step.attestation.message.data.slot))
+                    max_slot_value = max(max_slot_value, int(step.attestation.message.slot))
 
             self.max_slot = Slot(max_slot_value)
 
@@ -291,7 +294,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         """
         # Determine proposer index
         proposer_index = spec.proposer_index or Uint64(
-            int(spec.slot) % store.states[store.head].validators.count
+            int(spec.slot) % len(store.states[store.head].validators)
         )
 
         # Resolve parent root from label or default to head
@@ -322,15 +325,24 @@ class ForkChoiceTest(BaseConsensusFixture):
         )
 
         # Sign all attestations and the proposer attestation
-        signature_list = [key_manager.sign_attestation(att) for att in attestations]
-        signature_list.append(key_manager.sign_attestation(proposer_attestation))
+        attestation_signatures = key_manager.build_attestation_signatures(
+            final_block.body.attestations
+        )
+
+        proposer_signature = key_manager.sign_attestation_data(
+            proposer_attestation.validator_id,
+            proposer_attestation.data,
+        )
 
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
                 block=final_block,
                 proposer_attestation=proposer_attestation,
             ),
-            signature=BlockSignatures(data=signature_list),
+            signature=BlockSignatures(
+                attestation_signatures=attestation_signatures,
+                proposer_signature=proposer_signature,
+            ),
         )
 
     def _resolve_parent_root(
@@ -393,9 +405,13 @@ class ForkChoiceTest(BaseConsensusFixture):
                 signed_att = self._build_signed_attestation_from_spec(
                     att_spec, block_registry, parent_state
                 )
-                attestations.append(signed_att.message)
+                attestations.append(
+                    Attestation(validator_id=signed_att.validator_id, data=signed_att.message)
+                )
             else:
-                attestations.append(att_spec.message)
+                attestations.append(
+                    Attestation(validator_id=att_spec.validator_id, data=att_spec.message)
+                )
 
         return attestations
 
@@ -451,7 +467,8 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         # Create signed attestation
         return SignedAttestation(
-            message=attestation,
+            validator_id=attestation.validator_id,
+            message=attestation.data,
             signature=(
                 spec.signature
                 or Signature(

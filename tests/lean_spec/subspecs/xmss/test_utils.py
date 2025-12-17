@@ -1,7 +1,7 @@
 """Tests for the utility functions in the XMSS signature scheme."""
 
 import secrets
-from typing import List, cast
+from typing import List
 
 import pytest
 
@@ -9,10 +9,10 @@ from lean_spec.subspecs.koalabear.field import Fp, P
 from lean_spec.subspecs.xmss.constants import TEST_CONFIG
 from lean_spec.subspecs.xmss.prf import TEST_PRF
 from lean_spec.subspecs.xmss.rand import TEST_RAND
+from lean_spec.subspecs.xmss.subtree import HashSubTree
 from lean_spec.subspecs.xmss.tweak_hash import TEST_TWEAK_HASHER
-from lean_spec.subspecs.xmss.types import HashTreeLayer, Parameter
+from lean_spec.subspecs.xmss.types import Parameter
 from lean_spec.subspecs.xmss.utils import (
-    bottom_tree_from_prf_key,
     expand_activation_time,
     int_to_base_p,
 )
@@ -109,8 +109,8 @@ def test_expand_activation_time(
         assert actual_end_epoch <= lifetime
 
 
-def test_bottom_tree_from_prf_key() -> None:
-    """Tests that bottom_tree_from_prf_key generates a valid bottom tree."""
+def test_hash_subtree_from_prf_key() -> None:
+    """Tests that HashSubTree.from_prf_key generates a valid bottom tree."""
     config = TEST_CONFIG
 
     # Generate a PRF key
@@ -122,7 +122,7 @@ def test_bottom_tree_from_prf_key() -> None:
     )
 
     # Generate bottom tree 0
-    bottom_tree = bottom_tree_from_prf_key(
+    bottom_tree = HashSubTree.from_prf_key(
         prf=TEST_PRF,
         hasher=TEST_TWEAK_HASHER,
         rand=TEST_RAND,
@@ -138,17 +138,17 @@ def test_bottom_tree_from_prf_key() -> None:
     assert len(bottom_tree.layers) > 0
 
     # Verify the root layer has exactly one node
-    root_layer = cast(HashTreeLayer, bottom_tree.layers.data[-1])
+    root_layer = bottom_tree.layers.data[-1]
     assert len(root_layer.nodes) == 1
 
     # Verify the leaf layer covers the right range
     leafs_per_bottom_tree = 1 << (config.LOG_LIFETIME // 2)
-    leaf_layer = cast(HashTreeLayer, bottom_tree.layers.data[0])
+    leaf_layer = bottom_tree.layers.data[0]
     assert len(leaf_layer.nodes) == leafs_per_bottom_tree
 
 
-def test_bottom_tree_from_prf_key_deterministic() -> None:
-    """Tests that bottom_tree_from_prf_key is deterministic."""
+def test_hash_subtree_from_prf_key_deterministic() -> None:
+    """Tests that HashSubTree.from_prf_key is deterministic."""
     config = TEST_CONFIG
     prf_key = TEST_PRF.key_gen()
     parameter = Parameter(
@@ -156,7 +156,7 @@ def test_bottom_tree_from_prf_key_deterministic() -> None:
     )
 
     # Generate the same bottom tree twice
-    tree1 = bottom_tree_from_prf_key(
+    tree1 = HashSubTree.from_prf_key(
         prf=TEST_PRF,
         hasher=TEST_TWEAK_HASHER,
         rand=TEST_RAND,
@@ -166,7 +166,7 @@ def test_bottom_tree_from_prf_key_deterministic() -> None:
         parameter=parameter,
     )
 
-    tree2 = bottom_tree_from_prf_key(
+    tree2 = HashSubTree.from_prf_key(
         prf=TEST_PRF,
         hasher=TEST_TWEAK_HASHER,
         rand=TEST_RAND,
@@ -177,13 +177,10 @@ def test_bottom_tree_from_prf_key_deterministic() -> None:
     )
 
     # Verify the roots are identical
-    assert (
-        cast(HashTreeLayer, tree1.layers.data[-1]).nodes[0]
-        == cast(HashTreeLayer, tree2.layers.data[-1]).nodes[0]
-    )
+    assert tree1.layers.data[-1].nodes[0] == tree2.layers.data[-1].nodes[0]
 
 
-def test_bottom_tree_from_prf_key_different_indices() -> None:
+def test_hash_subtree_from_prf_key_different_indices() -> None:
     """Tests that different bottom tree indices produce different trees."""
     config = TEST_CONFIG
     prf_key = TEST_PRF.key_gen()
@@ -192,7 +189,7 @@ def test_bottom_tree_from_prf_key_different_indices() -> None:
     )
 
     # Generate two different bottom trees
-    tree0 = bottom_tree_from_prf_key(
+    tree0 = HashSubTree.from_prf_key(
         prf=TEST_PRF,
         hasher=TEST_TWEAK_HASHER,
         rand=TEST_RAND,
@@ -202,7 +199,7 @@ def test_bottom_tree_from_prf_key_different_indices() -> None:
         parameter=parameter,
     )
 
-    tree1 = bottom_tree_from_prf_key(
+    tree1 = HashSubTree.from_prf_key(
         prf=TEST_PRF,
         hasher=TEST_TWEAK_HASHER,
         rand=TEST_RAND,
@@ -213,7 +210,4 @@ def test_bottom_tree_from_prf_key_different_indices() -> None:
     )
 
     # Verify the roots are different
-    assert (
-        cast(HashTreeLayer, tree0.layers.data[-1]).nodes[0]
-        != cast(HashTreeLayer, tree1.layers.data[-1]).nodes[0]
-    )
+    assert tree0.layers.data[-1].nodes[0] != tree1.layers.data[-1].nodes[0]
