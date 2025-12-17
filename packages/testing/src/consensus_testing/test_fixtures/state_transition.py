@@ -141,7 +141,6 @@ class StateTransitionTest(BaseConsensusFixture):
                 # Store the filled Block for serialization
                 filled_blocks.append(block)
 
-                # Process block through state transition
                 # Use cached state if available, otherwise run state transition
                 if cached_state is not None:
                     state = cached_state
@@ -194,15 +193,8 @@ class StateTransitionTest(BaseConsensusFixture):
         """
         Build a Block from a BlockSpec, optionally caching the post-state.
 
-        Uses provided fields from spec, computes any missing fields.
-        This mimics what a local block builder would do.
-
         Returns both the block and the cached post-state (if computed) to avoid
         redundant state transitions.
-
-        TODO: If the spec implements a State.produce_block() method in the
-        future, we should use that instead of manually computing fields here.
-        Until then, this manual approach is necessary.
 
         Parameters
         ----------
@@ -219,7 +211,6 @@ class StateTransitionTest(BaseConsensusFixture):
         # Use provided proposer index or compute it
         proposer_index = spec.proposer_index or Uint64(int(spec.slot) % len(state.validators))
 
-        # Optionally advance a temporary state to the block's slot
         temp_state: State | None = None
         if not spec.skip_slot_processing:
             temp_state = state.process_slots(spec.slot)
@@ -247,7 +238,6 @@ class StateTransitionTest(BaseConsensusFixture):
             )
             return block, None
 
-        # Create temporary block with zero state root (will be computed)
         temp_block = Block(
             slot=spec.slot,
             proposer_index=proposer_index,
@@ -256,12 +246,9 @@ class StateTransitionTest(BaseConsensusFixture):
             body=spec.body or BlockBody(attestations=aggregated_attestations),
         )
 
-        # If we are expecting an exception or skipping slot advancement,
-        # return the partially-filled block without running the transition.
         if self.expect_exception is not None or spec.skip_slot_processing:
             return temp_block, None
 
-        # Build the block using the state for standard case
         # Convert aggregated attestations to plain attestations to build block
         plain_attestations = [
             Attestation(validator_id=vid, data=agg.data)
@@ -269,9 +256,7 @@ class StateTransitionTest(BaseConsensusFixture):
             for vid in agg.aggregation_bits.to_validator_indices()
         ]
 
-        # Use temp_state if available (already advanced to slot), otherwise use state
-        build_state = temp_state if temp_state is not None else state
-        block, post_state, _, _ = build_state.build_block(
+        block, post_state, _, _ = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
