@@ -44,16 +44,11 @@ jobs:
         run: uv run python -m consensus_testing.keys --download --scheme prod
 
       - name: Fill production test fixtures
-        env:
-          LEAN_ENV: prod
-        run: uv run fill --fork=Devnet --clean -n auto
-
-      - name: Create fixtures archive
-        run: tar -czf fixtures-prod-scheme.tar.gz fixtures/
+        run: uv run fill --fork=Devnet --scheme prod --clean -n auto
 
       - name: Upload production test fixtures
         uses: actions/upload-artifact@v4
         with:
           name: fixtures-prod-scheme
-          path: fixtures-prod-scheme.tar.gz
+          path: fixtures/
           if-no-files-found: error
