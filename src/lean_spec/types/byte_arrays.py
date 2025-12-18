@@ -383,3 +383,9 @@ class ByteList2048(BaseByteList):
     """Variable-length byte list with a limit of 2048 bytes."""
 
     LIMIT = 2048
+
+
+class ByteListMib(BaseByteList):
+    """Variable-length byte list with a limit of 1048576 bytes."""
+
+    LIMIT = 1024 * 1024

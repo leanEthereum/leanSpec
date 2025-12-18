@@ -1,9 +1,10 @@
 """Block-specific SSZ types for the Lean Ethereum consensus specification."""
 
 from lean_spec.types import SSZList
+from lean_spec.types.byte_arrays import ByteListMib
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
-from ..attestation import AggregatedAttestation, AttestationData, NaiveAggregatedSignature
+from ..attestation import AggregatedAttestation, AttestationData
 
 
 class AggregatedAttestations(SSZList[AggregatedAttestation]):
@@ -22,8 +23,14 @@ class AggregatedAttestations(SSZList[AggregatedAttestation]):
         return False
 
 
-class AttestationSignatures(SSZList[NaiveAggregatedSignature]):
-    """List of per-attestation naive signature lists aligned with block body attestations."""
+class AttestationSignatures(SSZList[ByteListMib]):
+    """
+    List of per-attestation aggregated signature proof blobs.
 
-    ELEMENT_TYPE = NaiveAggregatedSignature
+    Each entry corresponds to an aggregated attestation from the block body and contains
+    the raw bytes of the leanVM XMSSAggregatedSignature proof produced by
+    `xmss_aggregate_signatures`.
+    """
+
+    ELEMENT_TYPE = ByteListMib
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

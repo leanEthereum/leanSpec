@@ -26,7 +26,11 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.12.0,<3", "typing-extensions>=4.4"]
+dependencies = [
+    "pydantic>=2.12.0,<3",
+    "typing-extensions>=4.4",
+    "lean-multisig>=0.1.0",
+]
 
 [project.license]
 file = "LICENSE"
@@ -118,6 +122,7 @@ test = [
     "pytest-xdist>=3.6.1,<4",
     "hypothesis>=6.138.14",
     "lean-ethereum-testing",
+    "lean-multisig>=0.1.0",
 ]
 lint = [
     "ty>=0.0.1a34",

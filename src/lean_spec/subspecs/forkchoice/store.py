@@ -458,27 +458,20 @@ class Store(Container):
 
         # Process block body attestations.
         aggregated_attestations = signed_block_with_attestation.message.block.body.attestations
-        attestation_signatures = signed_block_with_attestation.signature.attestation_signatures
 
         assert len(aggregated_attestations) == len(attestation_signatures), (
             "Attestation signature groups must match aggregated attestations"
         )
 
-        for aggregated_attestation, aggregated_signature in zip(
-            aggregated_attestations, attestation_signatures, strict=True
-        ):
+        for aggregated_attestation in aggregated_attestations:
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
-
-            assert len(validator_ids) == len(aggregated_signature), (
-                "Aggregated attestation signature count mismatch"
-            )
-
-            for validator_id, signature in zip(validator_ids, aggregated_signature, strict=True):
+            for validator_id in validator_ids:
+                # Signature bytes are not needed for forkchoice once the block-level
+                # aggregated proof has been verified.
                 store = store.on_attestation(
                     signed_attestation=SignedAttestation(
                         validator_id=validator_id,
                         message=aggregated_attestation.data,
-                        signature=signature,
                     ),
                     is_from_block=True,
                 )
