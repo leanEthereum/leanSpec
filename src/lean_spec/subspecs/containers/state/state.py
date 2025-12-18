@@ -626,7 +626,7 @@ class State(Container):
         proposer_index: Uint64,
         parent_root: Bytes32,
         attestations: list[Attestation] | None = None,
-        available_signed_attestations: Iterable[SignedAttestation] | None = None,
+        available_attestations: Iterable[Attestation] | None = None,
         known_block_roots: AbstractSet[Bytes32] | None = None,
     ) -> tuple[Block, "State", list[Attestation], list["Signature"]]:
         """
@@ -684,12 +684,15 @@ class State(Container):
             new_attestations: list[Attestation] = []
             new_signatures: list[Signature] = []
 
-            for signed_attestation in available_signed_attestations:
-                data = signed_attestation.message
-                attestation = Attestation(
-                    validator_id=signed_attestation.validator_id,
-                    data=data,
-                )
+            for attestation in available_attestations:
+                data = attestation.message
+                validator_id = attestation.validator_id
+                # 1. check if the signature for this validator id and data is in the XMSS signature map
+                # if not then skip the attestation because we don't have recursive aggregation yet
+                # TODO: add the skip
+
+                # 2. if XMSS signature found, then get the signature
+                # TODO: signature =
 
                 # Skip if target block is unknown
                 if data.head.root not in known_block_roots:
@@ -702,7 +705,7 @@ class State(Container):
                 # Add attestation if not already included
                 if attestation not in attestations:
                     new_attestations.append(attestation)
-                    new_signatures.append(signed_attestation.signature)
+                    new_signatures.append(signature)
 
             # Fixed point reached: no new attestations found
             if not new_attestations:

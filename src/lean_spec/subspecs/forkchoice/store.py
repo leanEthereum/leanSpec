@@ -196,7 +196,7 @@ class Store(Container):
             states={anchor_root: copy.copy(state)},
         )
 
-    def validate_attestation(self, signed_attestation: SignedAttestation) -> None:
+    def validate_attestation(self, attestation: Attestation) -> None:
         """
         Validate incoming attestation before processing.
 
@@ -211,7 +211,7 @@ class Store(Container):
         Raises:
             AssertionError: If attestation fails validation.
         """
-        data = signed_attestation.message
+        data = attestation.message
 
         # Availability Check
         #
@@ -239,10 +239,30 @@ class Store(Container):
         # We allow a small margin for clock disparity (1 slot), but no further.
         current_slot = Slot(self.time // SECONDS_PER_SLOT)
         assert data.slot <= current_slot + Slot(1), "Attestation too far in future"
+    
+    def on_gossip_attestation(
+        self,
+        signed_attestation: SignedAttestation,
+    ) -> "Store":
+        # 1. Validate the xmss signature here
+        # TODO
+
+        # 2. save validator_id, data => SignedAttestation
+        # actually we only need to store the signature in the XMSS map not the SignedAttestation
+        # TODO
+
+        # 3. process attestation
+        self.on_attestation(
+         attestation = Attestation(
+            validator_id=signed_attestation.validator_id
+            message=signed_attestation.message
+        ), 
+        is_from_block= False)
+
 
     def on_attestation(
         self,
-        signed_attestation: SignedAttestation,
+        attestation: Attestation,
         is_from_block: bool = False,
     ) -> "Store":
         """
@@ -290,14 +310,14 @@ class Store(Container):
             A new Store with updated attestation sets.
         """
         # First, ensure the attestation is structurally and temporally valid.
-        self.validate_attestation(signed_attestation)
+        self.validate_attestation(attestation)
 
         # Extract the validator index that produced this attestation.
-        validator_id = Uint64(signed_attestation.validator_id)
+        validator_id = Uint64(attestation.validator_id)
 
         # Extract the attestation's slot:
         # - used to decide if this attestation is "newer" than a previous one.
-        attestation_slot = signed_attestation.message.slot
+        attestation_slot = attestation.message.slot
 
         # Copy the known attestation map:
         # - we build a new Store immutably,
@@ -322,7 +342,7 @@ class Store(Container):
             # - there is no known attestation yet, or
             # - this attestation is from a later slot than the known one.
             if latest_known is None or latest_known.message.slot < attestation_slot:
-                new_known[validator_id] = signed_attestation
+                new_known[validator_id] = attestation
 
             # Fetch any pending ("new") attestation for this validator.
             existing_new = new_new.get(validator_id)
@@ -356,7 +376,7 @@ class Store(Container):
             # - there is no pending attestation yet, or
             # - this one is from a later slot than the pending one.
             if latest_new is None or latest_new.message.slot < attestation_slot:
-                new_new[validator_id] = signed_attestation
+                new_new[validator_id] = attestation
 
         # Return a new Store with updated "known" and "new" attestation maps.
         return self.model_copy(
@@ -466,10 +486,15 @@ class Store(Container):
         for aggregated_attestation in aggregated_attestations:
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
             for validator_id in validator_ids:
-                # Signature bytes are not needed for forkchoice once the block-level
-                # aggregated proof has been verified.
-                store = store.on_attestation(
-                    signed_attestation=SignedAttestation(
+                # 1. Store the (attestation bits, signtaure) against (validator_id, data) in the LeanAggregatedSignaturesListMap
+                # its a list because same validator id with the same data can show up in multiple
+                # aggregated attestations specially when we have the aggregator roles, and this list
+                # can be recursively aggregated by the block proposer if such data is picked to be packed
+                # into the block
+
+                # 2. import just the attestation into forkchoice for latest votes
+                is_updated = store.on_attestation(
+                    attestation=Attestation(
                         validator_id=validator_id,
                         message=aggregated_attestation.data,
                     ),
@@ -968,7 +993,7 @@ class Store(Container):
             slot=slot,
             proposer_index=validator_index,
             parent_root=head_root,
-            available_signed_attestations=store.latest_known_attestations.values(),
+            available_attestations=store.latest_known_attestations.values(),
             known_block_roots=set(store.blocks.keys()),
         )
 
