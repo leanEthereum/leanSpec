@@ -80,6 +80,28 @@ random.
 """
 
 
+def _bytes_to_field_elements(data: bytes, count: int) -> list[Fp]:
+    """
+    Convert PRF output bytes into a list of field elements.
+
+    Each field element is derived from `PRF_BYTES_PER_FE` bytes,
+    interpreted as a big-endian integer and reduced modulo the field prime.
+
+    The extra bits provide statistical uniformity.
+
+    Args:
+        data: Raw bytes from SHAKE128 output. Must be exactly `count * PRF_BYTES_PER_FE` bytes.
+        count: Number of field elements to extract.
+
+    Returns:
+        List of `count` field elements.
+    """
+    return [
+        Fp(value=int.from_bytes(data[i : i + PRF_BYTES_PER_FE], "big"))
+        for i in range(0, count * PRF_BYTES_PER_FE, PRF_BYTES_PER_FE)
+    ]
+
+
 class Prf(StrictBaseModel):
     """An instance of the SHAKE128-based PRF for a given config."""
 
@@ -88,9 +110,9 @@ class Prf(StrictBaseModel):
 
     @model_validator(mode="after")
     def enforce_strict_types(self) -> "Prf":
-        """Validates that only exact approved types are used (rejects subclasses)."""
+        """Reject subclasses to prevent type confusion attacks."""
         if type(self.config) is not XmssConfig:
-            raise TypeError(f"config must be exactly XmssConfig, got {type(self.config).__name__}")
+            raise TypeError("config must be exactly XmssConfig, not a subclass")
         return self
 
     def key_gen(self) -> PRFKey:
@@ -153,22 +175,7 @@ class Prf(StrictBaseModel):
         prf_output_bytes = hashlib.shake_128(input_data).digest(num_bytes_to_read)
 
         # Convert the raw byte output into a list of field elements.
-        #
-        # For each required field element, this performs the following steps:
-        # - Slice an 8-byte (64-bit) chunk from the `prf_output_bytes`.
-        # - Convert that chunk from a big-endian byte representation to an integer.
-        # - Create a field element from the integer (the Fp constructor handles the modulo).
-        return HashDigestVector(
-            data=[
-                Fp(
-                    value=int.from_bytes(
-                        prf_output_bytes[i * PRF_BYTES_PER_FE : (i + 1) * PRF_BYTES_PER_FE],
-                        "big",
-                    )
-                )
-                for i in range(config.HASH_LEN_FE)
-            ]
-        )
+        return HashDigestVector(data=_bytes_to_field_elements(prf_output_bytes, config.HASH_LEN_FE))
 
     def get_randomness(
         self, key: PRFKey, epoch: Uint64, message: bytes, counter: Uint64
@@ -225,17 +232,7 @@ class Prf(StrictBaseModel):
         prf_output_bytes = hashlib.shake_128(input_data).digest(num_bytes_to_read)
 
         # Convert to field elements and wrap in Randomness
-        return Randomness(
-            data=[
-                Fp(
-                    value=int.from_bytes(
-                        prf_output_bytes[i * PRF_BYTES_PER_FE : (i + 1) * PRF_BYTES_PER_FE],
-                        "big",
-                    )
-                )
-                for i in range(config.RAND_LEN_FE)
-            ]
-        )
+        return Randomness(data=_bytes_to_field_elements(prf_output_bytes, config.RAND_LEN_FE))
 
 
 PROD_PRF = Prf(config=PROD_CONFIG)

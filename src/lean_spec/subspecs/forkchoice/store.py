@@ -33,6 +33,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.containers import Signature
+from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import (
     ZERO_HASH,
     Bytes32,
@@ -386,7 +387,11 @@ class Store(Container):
             }
         )
 
-    def on_block(self, signed_block_with_attestation: SignedBlockWithAttestation) -> "Store":
+    def on_block(
+        self,
+        signed_block_with_attestation: SignedBlockWithAttestation,
+        scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
+    ) -> "Store":
         """
         Process a new block and update the forkchoice state.
 
@@ -420,6 +425,7 @@ class Store(Container):
 
         Args:
             signed_block_with_attestation: Complete signed block with proposer attestation.
+            scheme: XMSS signature scheme to use for signature verification.
 
         Returns:
             New Store with block integrated and head updated.
@@ -447,7 +453,7 @@ class Store(Container):
         )
 
         # Validate cryptographic signatures
-        valid_signatures = signed_block_with_attestation.verify_signatures(parent_state)
+        valid_signatures = signed_block_with_attestation.verify_signatures(parent_state, scheme)
 
         # Execute state transition function to compute post-block state
         post_state = copy.deepcopy(parent_state).state_transition(block, valid_signatures)

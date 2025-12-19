@@ -1,7 +1,5 @@
 """Utility functions for the XMSS signature scheme."""
 
-from typing import List
-
 from ...types.uint import Uint64
 from ..koalabear import Fp, P
 from .rand import Rand
@@ -9,7 +7,7 @@ from .types import HashDigestList, HashDigestVector, HashTreeLayer
 
 
 def get_padded_layer(
-    rand: Rand, nodes: List[HashDigestVector], start_index: Uint64
+    rand: Rand, nodes: list[HashDigestVector], start_index: Uint64
 ) -> HashTreeLayer:
     """
     Pads a layer of nodes with random hashes to simplify tree construction.
@@ -28,7 +26,7 @@ def get_padded_layer(
     Returns:
         A new `HashTreeLayer` with the necessary padding applied.
     """
-    nodes_with_padding: List[HashDigestVector] = []
+    nodes_with_padding: list[HashDigestVector] = []
     end_index = start_index + Uint64(len(nodes)) - Uint64(1)
 
     # Prepend random padding if the layer starts at an odd index.
@@ -51,7 +49,7 @@ def get_padded_layer(
     )
 
 
-def int_to_base_p(value: int, num_limbs: int) -> List[Fp]:
+def int_to_base_p(value: int, num_limbs: int) -> list[Fp]:
     """
     Decomposes a large integer into a list of base-P field elements.
 
@@ -65,7 +63,7 @@ def int_to_base_p(value: int, num_limbs: int) -> List[Fp]:
     Returns:
         A list of `num_limbs` field elements representing the integer.
     """
-    limbs: List[Fp] = []
+    limbs: list[Fp] = []
     acc = value
     for _ in range(num_limbs):
         limbs.append(Fp(value=acc))

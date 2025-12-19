@@ -115,7 +115,7 @@ def test_prepare_layer_sizes_against_reference() -> None:
         for v in range(1, MAX_DIMENSION + 1):
             # Note: The reference implementation returns reversed layer sizes.
             # Layer `d` in our spec corresponds to sum `k = v*(w-1) - d`.
-            expected_sizes_reordered = list(reversed(expected_sizes_by_v[v]))
+            expected_sizes_reordered = tuple(reversed(expected_sizes_by_v[v]))
             actual_sizes = actual_info_by_v[v].sizes
             assert expected_sizes_reordered == actual_sizes
 

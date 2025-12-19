@@ -11,6 +11,7 @@ We also provide a test instantiation for testing purposes.
 
 from typing_extensions import Final
 
+from lean_spec.config import LEAN_ENV
 from lean_spec.types import StrictBaseModel, Uint64
 
 from ..koalabear import P_BYTES, Fp
@@ -154,3 +155,11 @@ TWEAK_PREFIX_MESSAGE: Final = Fp(value=0x02)
 
 PRF_KEY_LENGTH: int = 32
 """The length of the PRF secret key in bytes."""
+
+_LEAN_ENV_TO_CONFIG = {
+    "test": TEST_CONFIG,
+    "prod": PROD_CONFIG,
+}
+
+TARGET_CONFIG: Final = _LEAN_ENV_TO_CONFIG[LEAN_ENV]
+"""The active XMSS configuration based on LEAN_ENV environment variable."""

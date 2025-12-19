@@ -8,6 +8,7 @@ from typing import Any, ClassVar, Dict, Type
 from pydantic import Field
 
 from framework.forks import BaseFork
+from lean_spec.config import LEAN_ENV
 from lean_spec.types import CamelModel
 
 
@@ -38,6 +39,9 @@ class BaseFixture(CamelModel):
     # Instance fields
     network: str | None = None
     """The fork/network this fixture is valid for (e.g., 'Devnet', 'Shanghai')."""
+
+    lean_env: str = Field(default=LEAN_ENV)
+    """The target lean environment (e.g. 'test' or 'prod')."""
 
     info: Dict[str, Any] = Field(default_factory=dict, alias="_info")
     """Metadata about the test (description, fork, etc.)."""

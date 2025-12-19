@@ -1,0 +1,54 @@
+name: Production Test Vectors
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  fill-prod-vectors:
+    name: Fill production test fixtures - Python 3.14
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout leanSpec
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python 3.14
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+          python-version: "3.14"
+
+      - name: Sync dependencies
+        run: uv sync --no-progress
+
+      - name: Get production keys URL hash
+        id: prod-keys-url
+        run: |
+          URL=$(uv run python -c "from consensus_testing.keys import KEY_DOWNLOAD_URLS; print(KEY_DOWNLOAD_URLS['prod'])")
+          HASH=$(echo -n "$URL" | sha256sum | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+      - name: Cache production keys
+        id: cache-prod-keys
+        uses: actions/cache@v4
+        with:
+          path: packages/testing/src/consensus_testing/test_keys/prod_scheme
+          key: prod-keys-${{ steps.prod-keys-url.outputs.hash }}
+
+      - name: Download production keys
+        if: steps.cache-prod-keys.outputs.cache-hit != 'true'
+        run: uv run python -m consensus_testing.keys --download --scheme prod
+
+      - name: Fill production test fixtures
+        run: uv run fill --fork=Devnet --scheme prod --clean -n auto
+
+      - name: Upload production test fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixtures-prod-scheme
+          path: fixtures/
+          if-no-files-found: error

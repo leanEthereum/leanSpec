@@ -8,10 +8,9 @@ This constitutes the public API of the signature scheme.
 
 from __future__ import annotations
 
-from typing import List, Tuple
-
 from pydantic import model_validator
 
+from lean_spec.config import LEAN_ENV
 from lean_spec.subspecs.xmss.target_sum import (
     PROD_TARGET_SUM_ENCODER,
     TEST_TARGET_SUM_ENCODER,
@@ -27,13 +26,13 @@ from .constants import (
 from .containers import PublicKey, SecretKey, Signature
 from .prf import PROD_PRF, TEST_PRF, Prf
 from .rand import PROD_RAND, TEST_RAND, Rand
-from .subtree import HashSubTree
+from .subtree import HashSubTree, combined_path, verify_path
 from .tweak_hash import (
     PROD_TWEAK_HASHER,
     TEST_TWEAK_HASHER,
     TweakHasher,
 )
-from .types import HashDigestVector
+from .types import HashDigestList, HashDigestVector
 from .utils import expand_activation_time
 
 
@@ -41,9 +40,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
     """
     Instance of the Generalized XMSS signature scheme for a given config.
 
-    This class enforces strict type checking to ensure only approved component
-    implementations are used. Subclasses of the base component types (such as
-    SeededPrf or SeededRand) are explicitly rejected.
+    This class holds the configuration and component instances needed to
+    perform key generation, signing, and verification operations.
     """
 
     config: XmssConfig
@@ -63,25 +61,22 @@ class GeneralizedXmssScheme(StrictBaseModel):
 
     @model_validator(mode="after")
     def enforce_strict_types(self) -> "GeneralizedXmssScheme":
-        """Validates that only exact approved types are used (rejects subclasses)."""
-        checks = {
-            "config": XmssConfig,
-            "prf": Prf,
-            "hasher": TweakHasher,
-            "encoder": TargetSumEncoder,
-            "rand": Rand,
-        }
-        for field, expected in checks.items():
-            if type(getattr(self, field)) is not expected:
-                raise TypeError(
-                    f"{field} must be exactly {expected.__name__}, "
-                    f"got {type(getattr(self, field)).__name__}"
-                )
+        """Reject subclasses to prevent type confusion attacks."""
+        if type(self.config) is not XmssConfig:
+            raise TypeError("config must be exactly XmssConfig, not a subclass")
+        if type(self.prf) is not Prf:
+            raise TypeError("prf must be exactly Prf, not a subclass")
+        if type(self.hasher) is not TweakHasher:
+            raise TypeError("hasher must be exactly TweakHasher, not a subclass")
+        if type(self.encoder) is not TargetSumEncoder:
+            raise TypeError("encoder must be exactly TargetSumEncoder, not a subclass")
+        if type(self.rand) is not Rand:
+            raise TypeError("rand must be exactly Rand, not a subclass")
         return self
 
     def key_gen(
         self, activation_epoch: Uint64, num_active_epochs: Uint64
-    ) -> Tuple[PublicKey, SecretKey]:
+    ) -> tuple[PublicKey, SecretKey]:
         """
         Generates a new cryptographic key pair for a specified range of epochs.
 
@@ -183,7 +178,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         )
 
         # Collect roots for building the top tree.
-        bottom_tree_roots: List[HashDigestVector] = [
+        bottom_tree_roots: list[HashDigestVector] = [
             left_bottom_tree.root(),
             right_bottom_tree.root(),
         ]
@@ -276,11 +271,9 @@ class GeneralizedXmssScheme(StrictBaseModel):
         config = self.config
 
         # Verify that the secret key is currently active for the requested signing epoch.
-        # Note: range() requires int, so we convert only for the range check
+        epoch_int = int(epoch)
         activation_int = int(sk.activation_epoch)
-        num_epochs_int = int(sk.num_active_epochs)
-        active_range = range(activation_int, activation_int + num_epochs_int)
-        if int(epoch) not in active_range:
+        if not (activation_int <= epoch_int < activation_int + int(sk.num_active_epochs)):
             raise ValueError("Key is not active for the specified epoch.")
 
         # Verify that the epoch is within the prepared interval (covered by loaded bottom trees).
@@ -289,11 +282,13 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # signed without computing additional bottom trees.
         #
         # If the epoch is outside this range, we need to slide the window forward.
-        prepared_interval = self.get_prepared_interval(sk)
-        if int(epoch) not in prepared_interval:
+        leafs_per_bottom_tree = 1 << (config.LOG_LIFETIME // 2)
+        prepared_start = int(sk.left_bottom_tree_index) * leafs_per_bottom_tree
+        prepared_end = prepared_start + 2 * leafs_per_bottom_tree
+        if not (prepared_start <= epoch_int < prepared_end):
             raise ValueError(
                 f"Epoch {epoch} is outside the prepared interval "
-                f"[{prepared_interval.start}, {prepared_interval.stop}). "
+                f"[{prepared_start}, {prepared_end}). "
                 f"Call advance_preparation() to slide the window forward."
             )
 
@@ -327,7 +322,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             raise RuntimeError("Encoding is broken: returned too many or too few chunks.")
 
         # Compute the one-time signature hashes based on the codeword.
-        ots_hashes: List[HashDigestVector] = []
+        ots_hashes: list[HashDigestVector] = []
         for chain_index, steps in enumerate(codeword):
             # Derive the secret start of the current chain using the master PRF key.
             start_digest = self.prf.apply(sk.prf_key, epoch, Uint64(chain_index))
@@ -349,16 +344,9 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # With top-bottom tree traversal, we use combined_path to merge paths from
         # the bottom tree and top tree.
 
-        # Determine which bottom tree contains this epoch.
-        leafs_per_bottom_tree = 1 << (config.LOG_LIFETIME // 2)
-        boundary = (sk.left_bottom_tree_index + Uint64(1)) * Uint64(leafs_per_bottom_tree)
-
-        if epoch < boundary:
-            # Use left bottom tree
-            bottom_tree = sk.left_bottom_tree
-        else:
-            # Use right bottom tree
-            bottom_tree = sk.right_bottom_tree
+        # Determine which bottom tree contains this epoch (reuse leafs_per_bottom_tree from above).
+        boundary = (int(sk.left_bottom_tree_index) + 1) * leafs_per_bottom_tree
+        bottom_tree = sk.left_bottom_tree if epoch_int < boundary else sk.right_bottom_tree
 
         # Ensure bottom tree exists
         if bottom_tree is None:
@@ -369,16 +357,12 @@ class GeneralizedXmssScheme(StrictBaseModel):
             )
 
         # Generate the combined authentication path
-        from .subtree import combined_path
-
         path = combined_path(sk.top_tree, bottom_tree, epoch)
 
         # Assemble and return the final signature, which contains:
         # - The OTS,
         # - The Merkle path,
         # - The randomness `rho` needed for verification.
-        from .types import HashDigestList
-
         return Signature(path=path, rho=rho, hashes=HashDigestList(data=ots_hashes))
 
     def verify(self, pk: PublicKey, epoch: Uint64, message: bytes, sig: Signature) -> bool:
@@ -436,7 +420,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             return False
 
         # Reconstruct the one-time public key (the list of chain endpoints).
-        chain_ends: List[HashDigestVector] = []
+        chain_ends: list[HashDigestVector] = []
         for chain_index, xi in enumerate(codeword):
             # The signature provides `start_digest`, which is the hash value after `xi` steps.
             start_digest = sig.hashes[chain_index]
@@ -459,8 +443,6 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # - Hashes the `chain_ends` to get the leaf node for the epoch,
         # - Uses the `opening` path from the signature to compute a candidate root.
         # - It returns true if and only if this candidate root matches the public key's root.
-        from .subtree import verify_path
-
         return verify_path(
             hasher=self.hasher,
             parameter=pk.parameter,
@@ -509,9 +491,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
             ValueError: If the secret key is missing top-bottom tree structures.
         """
         leafs_per_bottom_tree = 1 << (self.config.LOG_LIFETIME // 2)
-        start = int(sk.left_bottom_tree_index * Uint64(leafs_per_bottom_tree))
-        end = start + (2 * leafs_per_bottom_tree)
-        return range(start, end)
+        start = int(sk.left_bottom_tree_index) * leafs_per_bottom_tree
+        return range(start, start + 2 * leafs_per_bottom_tree)
 
     def advance_preparation(self, sk: SecretKey) -> SecretKey:
         """
@@ -539,26 +520,23 @@ class GeneralizedXmssScheme(StrictBaseModel):
             ValueError: If advancing would exceed the activation interval.
         """
         leafs_per_bottom_tree = 1 << (self.config.LOG_LIFETIME // 2)
+        left_index = int(sk.left_bottom_tree_index)
 
         # Check if advancing would exceed the activation interval
-        next_prepared_end_epoch = int(
-            sk.left_bottom_tree_index * Uint64(leafs_per_bottom_tree)
-            + Uint64(3 * leafs_per_bottom_tree)
-        )
-        activation_interval = self.get_activation_interval(sk)
-        if next_prepared_end_epoch > activation_interval.stop:
+        next_prepared_end_epoch = (left_index + 3) * leafs_per_bottom_tree
+        activation_end = int(sk.activation_epoch) + int(sk.num_active_epochs)
+        if next_prepared_end_epoch > activation_end:
             # Nothing to do - we're already at the end of the activation interval
             return sk
 
         # Compute the next bottom tree (the one after the current right tree)
-        new_right_tree_index = sk.left_bottom_tree_index + Uint64(2)
         new_right_bottom_tree = HashSubTree.from_prf_key(
             prf=self.prf,
             hasher=self.hasher,
             rand=self.rand,
             config=self.config,
             prf_key=sk.prf_key,
-            bottom_tree_index=new_right_tree_index,
+            bottom_tree_index=Uint64(left_index + 2),
             parameter=sk.parameter,
         )
 
@@ -567,7 +545,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             update={
                 "left_bottom_tree": sk.right_bottom_tree,
                 "right_bottom_tree": new_right_bottom_tree,
-                "left_bottom_tree_index": sk.left_bottom_tree_index + Uint64(1),
+                "left_bottom_tree_index": Uint64(left_index + 1),
             }
         )
 
@@ -589,3 +567,11 @@ TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(
     rand=TEST_RAND,
 )
 """A lightweight instance for test environments."""
+
+_LEAN_ENV_TO_SCHEME = {
+    "test": TEST_SIGNATURE_SCHEME,
+    "prod": PROD_SIGNATURE_SCHEME,
+}
+
+TARGET_SIGNATURE_SCHEME = _LEAN_ENV_TO_SCHEME[LEAN_ENV]
+"""The active XMSS signature scheme based on LEAN_ENV environment variable."""

@@ -1,7 +1,6 @@
 """Random data generator for the XMSS signature scheme."""
 
 import secrets
-from typing import List
 
 from pydantic import model_validator
 
@@ -20,12 +19,12 @@ class Rand(StrictBaseModel):
 
     @model_validator(mode="after")
     def enforce_strict_types(self) -> "Rand":
-        """Validates that only exact approved types are used (rejects subclasses)."""
+        """Reject subclasses to prevent type confusion attacks."""
         if type(self.config) is not XmssConfig:
-            raise TypeError(f"config must be exactly XmssConfig, got {type(self.config).__name__}")
+            raise TypeError("config must be exactly XmssConfig, not a subclass")
         return self
 
-    def field_elements(self, length: int) -> List[Fp]:
+    def field_elements(self, length: int) -> list[Fp]:
         """Generates a random list of field elements."""
         # For each element, generate a secure random integer in the range [0, P-1].
         return [Fp(value=secrets.randbelow(P)) for _ in range(length)]

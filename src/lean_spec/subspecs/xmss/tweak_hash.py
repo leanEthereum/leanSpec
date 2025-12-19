@@ -26,8 +26,6 @@ unique across the entire scheme, we guarantee that every hash computation is
 
 from __future__ import annotations
 
-from typing import List, Union
-
 from pydantic import Field, model_validator
 
 from lean_spec.types import StrictBaseModel, Uint64
@@ -89,19 +87,14 @@ class TweakHasher(StrictBaseModel):
 
     @model_validator(mode="after")
     def enforce_strict_types(self) -> "TweakHasher":
-        """Validates that only exact approved types are used (rejects subclasses)."""
-        from .poseidon import PoseidonXmss
-
-        checks = {"config": XmssConfig, "poseidon": PoseidonXmss}
-        for field, expected in checks.items():
-            if type(getattr(self, field)) is not expected:
-                raise TypeError(
-                    f"{field} must be exactly {expected.__name__}, "
-                    f"got {type(getattr(self, field)).__name__}"
-                )
+        """Reject subclasses to prevent type confusion attacks."""
+        if type(self.config) is not XmssConfig:
+            raise TypeError("config must be exactly XmssConfig, not a subclass")
+        if type(self.poseidon) is not PoseidonXmss:
+            raise TypeError("poseidon must be exactly PoseidonXmss, not a subclass")
         return self
 
-    def _encode_tweak(self, tweak: Union[TreeTweak, ChainTweak], length: int) -> List[Fp]:
+    def _encode_tweak(self, tweak: TreeTweak | ChainTweak, length: int) -> list[Fp]:
         """
         Encodes a structured tweak object into a list of field elements.
 
@@ -148,8 +141,8 @@ class TweakHasher(StrictBaseModel):
     def apply(
         self,
         parameter: Parameter,
-        tweak: Union[TreeTweak, ChainTweak],
-        message_parts: List[HashDigestVector],
+        tweak: TreeTweak | ChainTweak,
+        message_parts: list[HashDigestVector],
     ) -> HashDigestVector:
         """
         Applies the tweakable Poseidon2 hash function to a message.
@@ -208,9 +201,7 @@ class TweakHasher(StrictBaseModel):
             #
             # We use the robust sponge mode.
             # First, flatten the list of message parts into a single vector.
-            flattened_message: List[Fp] = []
-            for part in message_parts:
-                flattened_message.extend(part.elements)
+            flattened_message = [elem for part in message_parts for elem in part.elements]
             input_vec = parameter.elements + encoded_tweak + flattened_message
 
             # Create a domain separator for the sponge mode based on the input dimensions.

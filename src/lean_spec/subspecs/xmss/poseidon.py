@@ -22,8 +22,6 @@ This file provides wrappers for the two primary ways Poseidon2 is used:
 
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import model_validator
 
 from lean_spec.types import StrictBaseModel
@@ -49,17 +47,14 @@ class PoseidonXmss(StrictBaseModel):
 
     @model_validator(mode="after")
     def enforce_strict_types(self) -> "PoseidonXmss":
-        """Validates that only exact approved types are used (rejects subclasses)."""
-        checks = {"params16": Poseidon2Params, "params24": Poseidon2Params}
-        for field, expected in checks.items():
-            if type(getattr(self, field)) is not expected:
-                raise TypeError(
-                    f"{field} must be exactly {expected.__name__}, "
-                    f"got {type(getattr(self, field)).__name__}"
-                )
+        """Reject subclasses to prevent type confusion attacks."""
+        if type(self.params16) is not Poseidon2Params:
+            raise TypeError("params16 must be exactly Poseidon2Params, not a subclass")
+        if type(self.params24) is not Poseidon2Params:
+            raise TypeError("params24 must be exactly Poseidon2Params, not a subclass")
         return self
 
-    def compress(self, input_vec: List[Fp], width: int, output_len: int) -> List[Fp]:
+    def compress(self, input_vec: list[Fp], width: int, output_len: int) -> list[Fp]:
         """
         Implements the Poseidon2 hash in **compression mode**.
 
@@ -93,9 +88,8 @@ class PoseidonXmss(StrictBaseModel):
         assert width in (16, 24), "Width must be 16 or 24"
         params = self.params16 if width == 16 else self.params24
 
-        # Create a fixed-width buffer and copy the input, padding with zeros.
-        padded_input = [Fp(value=0)] * width
-        padded_input[: len(input_vec)] = input_vec
+        # Create a padded input by extending with zeros to match the state width.
+        padded_input = list(input_vec) + [Fp(value=0)] * (width - len(input_vec))
 
         # Apply the Poseidon2 permutation.
         permuted_state = permute(padded_input, params)
@@ -106,7 +100,7 @@ class PoseidonXmss(StrictBaseModel):
         # Truncate the state to the desired output length and return.
         return final_state[:output_len]
 
-    def safe_domain_separator(self, lengths: List[int], capacity_len: int) -> List[Fp]:
+    def safe_domain_separator(self, lengths: list[int], capacity_len: int) -> list[Fp]:
         """
         Computes a unique domain separator for the sponge construction (SAFE API).
 
@@ -139,11 +133,11 @@ class PoseidonXmss(StrictBaseModel):
 
     def sponge(
         self,
-        input_vec: List[Fp],
-        capacity_value: List[Fp],
+        input_vec: list[Fp],
+        capacity_value: list[Fp],
         output_len: int,
         width: int,
-    ) -> List[Fp]:
+    ) -> list[Fp]:
         """
         Implements the Poseidon2 hash using the **sponge construction**.
 
@@ -203,7 +197,7 @@ class PoseidonXmss(StrictBaseModel):
             state = permute(state, params)
 
         # Squeeze the output until enough elements have been generated.
-        output: List[Fp] = []
+        output: list[Fp] = []
         while len(output) < output_len:
             # Extract the rate part of the state as output.
             output.extend(state[:rate])

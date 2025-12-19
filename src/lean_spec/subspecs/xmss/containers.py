@@ -72,17 +72,32 @@ class Signature(Container):
         public_key: PublicKey,
         epoch: "Uint64",
         message: bytes,
-        scheme: "GeneralizedXmssScheme | None" = None,
+        scheme: "GeneralizedXmssScheme",
     ) -> bool:
-        """Verify the signature using XMSS verification algorithm."""
-        from .interface import TEST_SIGNATURE_SCHEME
+        """
+        Verify the signature using XMSS verification algorithm.
 
-        if scheme is None:
-            scheme = TEST_SIGNATURE_SCHEME
+        This is a convenience method that delegates to `scheme.verify()`.
 
+        Invalid or malformed signatures return `False`.
+
+        Expected exceptions:
+        - `ValueError` for invalid epochs,
+        - `IndexError` for malformed signatures
+        are caught and converted to `False`.
+
+        Args:
+            public_key: The public key to verify against.
+            epoch: The epoch the signature corresponds to.
+            message: The message that was supposedly signed.
+            scheme: The XMSS scheme instance to use for verification.
+
+        Returns:
+            `True` if the signature is valid, `False` otherwise.
+        """
         try:
             return scheme.verify(public_key, epoch, message, self)
-        except Exception:
+        except (ValueError, IndexError):
             return False
 
 

@@ -1,8 +1,11 @@
 """Pytest configuration and shared fixtures."""
 
+import os
+
 from hypothesis import settings
 
-import lean_spec.subspecs.xmss as xmss
+if "LEAN_ENV" not in os.environ:
+    os.environ["LEAN_ENV"] = "test"
 
 # Create a profile named "no_deadline" with deadline disabled.
 settings.register_profile("no_deadline", deadline=None)

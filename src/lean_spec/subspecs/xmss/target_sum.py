@@ -6,8 +6,6 @@ codeword for the one-time signature part of the scheme. It acts as a filter on
 top of the message hash output.
 """
 
-from typing import List, Optional
-
 from pydantic import model_validator
 
 from lean_spec.types import StrictBaseModel, Uint64
@@ -37,19 +35,16 @@ class TargetSumEncoder(StrictBaseModel):
 
     @model_validator(mode="after")
     def enforce_strict_types(self) -> "TargetSumEncoder":
-        """Validates that only exact approved types are used (rejects subclasses)."""
-        checks = {"config": XmssConfig, "message_hasher": MessageHasher}
-        for field, expected in checks.items():
-            if type(getattr(self, field)) is not expected:
-                raise TypeError(
-                    f"{field} must be exactly {expected.__name__}, "
-                    f"got {type(getattr(self, field)).__name__}"
-                )
+        """Reject subclasses to prevent type confusion attacks."""
+        if type(self.config) is not XmssConfig:
+            raise TypeError("config must be exactly XmssConfig, not a subclass")
+        if type(self.message_hasher) is not MessageHasher:
+            raise TypeError("message_hasher must be exactly MessageHasher, not a subclass")
         return self
 
     def encode(
         self, parameter: Parameter, message: bytes, rho: Randomness, epoch: Uint64
-    ) -> Optional[List[int]]:
+    ) -> list[int] | None:
         """
         Encodes a message into a codeword if it meets the target sum criteria.
 

@@ -29,8 +29,6 @@ This process involves three main stages:
 
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import model_validator
 
 from lean_spec.subspecs.xmss.poseidon import (
@@ -67,17 +65,14 @@ class MessageHasher(StrictBaseModel):
 
     @model_validator(mode="after")
     def enforce_strict_types(self) -> "MessageHasher":
-        """Validates that only exact approved types are used (rejects subclasses)."""
-        checks = {"config": XmssConfig, "poseidon": PoseidonXmss}
-        for field, expected in checks.items():
-            if type(getattr(self, field)) is not expected:
-                raise TypeError(
-                    f"{field} must be exactly {expected.__name__}, "
-                    f"got {type(getattr(self, field)).__name__}"
-                )
+        """Reject subclasses to prevent type confusion attacks."""
+        if type(self.config) is not XmssConfig:
+            raise TypeError("config must be exactly XmssConfig, not a subclass")
+        if type(self.poseidon) is not PoseidonXmss:
+            raise TypeError("poseidon must be exactly PoseidonXmss, not a subclass")
         return self
 
-    def encode_message(self, message: bytes) -> List[Fp]:
+    def encode_message(self, message: bytes) -> list[Fp]:
         """
         Encodes a 32-byte message into a list of field elements.
 
@@ -92,7 +87,7 @@ class MessageHasher(StrictBaseModel):
         # Decompose the integer into a list of field elements (base-P).
         return int_to_base_p(acc, self.config.MSG_LEN_FE)
 
-    def encode_epoch(self, epoch: Uint64) -> List[Fp]:
+    def encode_epoch(self, epoch: Uint64) -> list[Fp]:
         """
         Encodes the epoch and a domain separator prefix into field elements.
 
@@ -106,7 +101,7 @@ class MessageHasher(StrictBaseModel):
         # Decompose the integer into its base-P representation.
         return int_to_base_p(acc, self.config.TWEAK_LEN_FE)
 
-    def _map_into_hypercube_part(self, field_elements: List[Fp]) -> List[int]:
+    def _map_into_hypercube_part(self, field_elements: list[Fp]) -> list[int]:
         """
         Maps a long, pseudorandom digest to a unique vertex within the top layers
         of the signature hypercube.
@@ -153,7 +148,7 @@ class MessageHasher(StrictBaseModel):
         epoch: Uint64,
         rho: Randomness,
         message: bytes,
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Applies the full "Top Level" message hash and mapping procedure.
 
@@ -184,21 +179,16 @@ class MessageHasher(StrictBaseModel):
         epoch_fe = self.encode_epoch(epoch)
 
         # Iteratively call Poseidon2 to generate a long hash output.
-        poseidon_outputs: List[Fp] = []
+        #
+        # The base input (rho || P || epoch || message) is reused each iteration.
+        base_input = list(rho.data) + list(parameter.data) + epoch_fe + message_fe
+        poseidon_outputs: list[Fp] = []
+        output_len = self.config.POS_OUTPUT_LEN_PER_INV_FE
         for i in range(self.config.POS_INVOCATIONS):
-            # Use the iteration number as a domain separator for each hash call.
-            iteration_separator = [Fp(value=i)]
-
-            # The input is: rho || P || epoch || message || iteration.
-            combined_input = (
-                list(rho.data) + list(parameter.data) + epoch_fe + message_fe + iteration_separator
+            # Append iteration number as domain separator and hash.
+            poseidon_outputs.extend(
+                self.poseidon.compress(base_input + [Fp(value=i)], 24, output_len)
             )
-
-            # Hash the combined input using Poseidon2 compression mode.
-            iteration_output = self.poseidon.compress(
-                combined_input, 24, self.config.POS_OUTPUT_LEN_PER_INV_FE
-            )
-            poseidon_outputs.extend(iteration_output)
 
         # Map the final aggregated list of field elements into a hypercube vertex.
         return self._map_into_hypercube_part(poseidon_outputs)
