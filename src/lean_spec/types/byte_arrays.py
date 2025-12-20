@@ -385,7 +385,7 @@ class ByteList2048(BaseByteList):
     LIMIT = 2048
 
 
-class ByteListMib(BaseByteList):
+class LeanAggregatedSignature(BaseByteList):
     """Variable-length byte list with a limit of 1048576 bytes."""
 
     LIMIT = 1024 * 1024

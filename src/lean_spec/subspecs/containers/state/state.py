@@ -12,7 +12,8 @@ from lean_spec.types import (
     is_proposer,
 )
 
-from ..attestation import AggregatedAttestation, Attestation, SignedAttestation
+from ..attestation import AggregatedAttestation, Attestation
+from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.xmss.containers import Signature
@@ -628,25 +629,32 @@ class State(Container):
         attestations: list[Attestation] | None = None,
         available_attestations: Iterable[Attestation] | None = None,
         known_block_roots: AbstractSet[Bytes32] | None = None,
+        gossip_attestation_signatures: dict[tuple[Uint64, bytes], "Signature"] | None = None,
+        block_attestation_signatures: dict[tuple[Uint64, bytes], list[LeanAggregatedSignature]] | None = None,
     ) -> tuple[Block, "State", list[Attestation], list["Signature"]]:
         """
         Build a valid block on top of this state.
 
         Computes the post-state and creates a block with the correct state root.
 
-        If `available_signed_attestations` and `known_block_roots` are provided,
+        If `available_attestations` and `known_block_roots` are provided,
         performs fixed-point attestation collection: iteratively adds valid
         attestations until no more can be included. This is necessary because
         processing attestations may update the justified checkpoint, which may
         make additional attestations valid.
+
+        Signatures are looked up from the provided signature maps using
+        (validator_id, attestation_data_root) as the key.
 
         Args:
             slot: Target slot for the block.
             proposer_index: Validator index of the proposer.
             parent_root: Root of the parent block.
             attestations: Initial attestations to include.
-            available_signed_attestations: Pool of attestations to collect from.
+            available_attestations: Pool of attestations to collect from.
             known_block_roots: Set of known block roots for attestation validation.
+            gossip_attestation_signatures: Map of (validator_id, data_root) to XMSS signatures.
+            block_attestation_signatures: Map of (validator_id, data_root) to aggregated signature payloads.
 
         Returns:
             Tuple of (Block, post-State, collected attestations, signatures).
@@ -677,7 +685,7 @@ class State(Container):
             post_state = self.process_slots(slot).process_block(candidate_block)
 
             # No attestation source provided: done after computing post_state
-            if available_signed_attestations is None or known_block_roots is None:
+            if available_attestations is None or known_block_roots is None:
                 break
 
             # Find new valid attestations matching post-state justification
@@ -685,14 +693,29 @@ class State(Container):
             new_signatures: list[Signature] = []
 
             for attestation in available_attestations:
-                data = attestation.message
+                data = attestation.data
                 validator_id = attestation.validator_id
-                # 1. check if the signature for this validator id and data is in the XMSS signature map
-                # if not then skip the attestation because we don't have recursive aggregation yet
-                # TODO: add the skip
+                data_root = data.data_root_bytes()
 
-                # 2. if XMSS signature found, then get the signature
-                # TODO: signature =
+                # Check if we have a signature for this (validator_id, data_root)
+                # First check gossip signatures, then block signatures (first entry if available)
+                signature = None
+                if gossip_attestation_signatures:
+                    signature = gossip_attestation_signatures.get((validator_id, data_root))
+
+                # If not found in gossip and block signatures available, try those
+                # Note: For now, we only use block signatures if gossip signature not found
+                # TODO: Implement recursive aggregation to combine multiple aggregated signatures
+                if signature is None and block_attestation_signatures:
+                    aggregated_sigs = block_attestation_signatures.get((validator_id, data_root))
+                    if aggregated_sigs:
+                        # For now, skip if only aggregated signatures available
+                        # because we don't have recursive aggregation yet
+                        continue
+
+                # Skip if no signature found
+                if signature is None:
+                    continue
 
                 # Skip if target block is unknown
                 if data.head.root not in known_block_roots:

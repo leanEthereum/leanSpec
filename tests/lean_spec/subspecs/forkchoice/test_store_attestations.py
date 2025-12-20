@@ -51,16 +51,25 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
     # Producer view knows about attestations from validators 1 and 2
     attestation_slot = Slot(1)
     attestation_data = base_store.produce_attestation_data(attestation_slot)
-    signed_attestations = {
-        validator_id: SignedAttestation(
-            validator_id=validator_id,
-            message=attestation_data,
-            signature=key_manager.sign_attestation_data(validator_id, attestation_data),
-        )
+
+    # Store attestation data in latest_known_attestations
+    attestation_data_map = {
+        validator_id: attestation_data
         for validator_id in (Uint64(1), Uint64(2))
     }
+
+    # Store signatures in gossip_attestation_signatures
+    data_root = attestation_data.data_root_bytes()
+    gossip_sigs = {
+        (validator_id, data_root): key_manager.sign_attestation_data(validator_id, attestation_data)
+        for validator_id in (Uint64(1), Uint64(2))
+    }
+
     producer_store = base_store.model_copy(
-        update={"latest_known_attestations": signed_attestations}
+        update={
+            "latest_known_attestations": attestation_data_map,
+            "gossip_attestation_signatures": gossip_sigs,
+        }
     )
 
     # For slot 1 with 3 validators: 1 % 3 == 1, so validator 1 is the proposer
@@ -107,5 +116,5 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
 
     assert Uint64(1) in updated_store.latest_known_attestations
     assert Uint64(2) in updated_store.latest_known_attestations
-    assert updated_store.latest_known_attestations[Uint64(1)].message == attestation_data
-    assert updated_store.latest_known_attestations[Uint64(2)].message == attestation_data
+    assert updated_store.latest_known_attestations[Uint64(1)] == attestation_data
+    assert updated_store.latest_known_attestations[Uint64(2)] == attestation_data

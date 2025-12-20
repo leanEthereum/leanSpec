@@ -48,7 +48,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.xmss.aggregation import aggregate_signatures
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME, GeneralizedXmssScheme
-from lean_spec.types.byte_arrays import ByteListMib
+from lean_spec.types.byte_arrays import LeanAggregatedSignature
 from lean_spec.subspecs.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
     TEST_SIGNATURE_SCHEME,
@@ -321,14 +321,14 @@ class XmssKeyManager:
         """
         lookup = signature_lookup or {}
 
-        proof_blobs: list[ByteListMib] = []
+        proof_blobs: list[LeanAggregatedSignature] = []
         for agg in aggregated_attestations:
             validator_ids = agg.aggregation_bits.to_validator_indices()
             message = agg.data.data_root_bytes()
             epoch = agg.data.slot
 
             if payload_lookup is not None and message in payload_lookup:
-                proof_blobs.append(ByteListMib(data=payload_lookup[message]))
+                proof_blobs.append(LeanAggregatedSignature(data=payload_lookup[message]))
                 continue
 
             public_keys: list[PublicKey] = [self.get_public_key(vid) for vid in validator_ids]
@@ -344,7 +344,7 @@ class XmssKeyManager:
                 message=message,
                 epoch=epoch,
             )
-            proof_blobs.append(ByteListMib(data=payload))
+            proof_blobs.append(LeanAggregatedSignature(data=payload))
 
         return AttestationSignatures(data=proof_blobs)
 
