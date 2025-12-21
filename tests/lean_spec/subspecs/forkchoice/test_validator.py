@@ -179,20 +179,28 @@ class TestBlockProduction:
         head_block = sample_store.blocks[sample_store.head]
 
         # Add some attestations to the store
-        sample_store.latest_known_attestations[Uint64(5)] = build_signed_attestation(
+        signed_5 = build_signed_attestation(
             validator=Uint64(5),
             slot=head_block.slot,
             head=Checkpoint(root=sample_store.head, slot=head_block.slot),
             source=sample_store.latest_justified,
             target=sample_store.get_attestation_target(),
         )
-        sample_store.latest_known_attestations[Uint64(6)] = build_signed_attestation(
+        signed_6 = build_signed_attestation(
             validator=Uint64(6),
             slot=head_block.slot,
             head=Checkpoint(root=sample_store.head, slot=head_block.slot),
             source=sample_store.latest_justified,
             target=sample_store.get_attestation_target(),
         )
+        sample_store.latest_known_attestations[Uint64(5)] = signed_5.message
+        sample_store.latest_known_attestations[Uint64(6)] = signed_6.message
+        sample_store.gossip_attestation_signatures[
+            (Uint64(5), signed_5.message.data_root_bytes())
+        ] = signed_5.signature
+        sample_store.gossip_attestation_signatures[
+            (Uint64(6), signed_6.message.data_root_bytes())
+        ] = signed_6.signature
 
         slot = Slot(2)
         validator_idx = Uint64(2)  # Proposer for slot 2
@@ -275,13 +283,17 @@ class TestBlockProduction:
 
         # Add some attestations to test state computation
         head_block = sample_store.blocks[sample_store.head]
-        sample_store.latest_known_attestations[Uint64(7)] = build_signed_attestation(
+        signed_7 = build_signed_attestation(
             validator=Uint64(7),
             slot=head_block.slot,
             head=Checkpoint(root=sample_store.head, slot=head_block.slot),
             source=sample_store.latest_justified,
             target=sample_store.get_attestation_target(),
         )
+        sample_store.latest_known_attestations[Uint64(7)] = signed_7.message
+        sample_store.gossip_attestation_signatures[
+            (Uint64(7), signed_7.message.data_root_bytes())
+        ] = signed_7.signature
 
         store, block, _signatures = sample_store.produce_block_with_signatures(
             slot,

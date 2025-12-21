@@ -47,14 +47,13 @@ from lean_spec.subspecs.containers.block.types import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.xmss.aggregation import aggregate_signatures
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
-from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME, GeneralizedXmssScheme
-from lean_spec.types.byte_arrays import LeanAggregatedSignature
 from lean_spec.subspecs.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
     TEST_SIGNATURE_SCHEME,
     GeneralizedXmssScheme,
 )
 from lean_spec.types import Uint64
+from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -337,7 +336,8 @@ class XmssKeyManager:
                 for vid in validator_ids
             ]
 
-            # If the caller supplied raw signatures and any are invalid, aggregation should fail with exception.
+            # If the caller supplied raw signatures and any are invalid,
+            # aggregation should fail with exception.
             payload = aggregate_signatures(
                 public_keys=public_keys,
                 signatures=signatures,

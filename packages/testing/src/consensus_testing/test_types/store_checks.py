@@ -6,7 +6,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, CamelModel, Uint64
 
 if TYPE_CHECKING:
-    from lean_spec.subspecs.containers import SignedAttestation
+    from lean_spec.subspecs.containers import AttestationData
     from lean_spec.subspecs.containers.block.block import Block
     from lean_spec.subspecs.forkchoice.store import Store
 
@@ -42,7 +42,7 @@ class AttestationCheck(CamelModel):
     """
 
     def validate_attestation(
-        self, attestation: "SignedAttestation", location: str, step_index: int
+        self, attestation: "AttestationData", location: str, step_index: int
     ) -> None:
         """Validate attestation properties."""
         fields_to_check = self.model_fields_set - {"validator", "location"}
@@ -51,7 +51,7 @@ class AttestationCheck(CamelModel):
             expected = getattr(self, field_name)
 
             if field_name == "attestation_slot":
-                actual = attestation.message.slot
+                actual = attestation.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -59,7 +59,7 @@ class AttestationCheck(CamelModel):
                     )
 
             elif field_name == "head_slot":
-                actual = attestation.message.head.slot
+                actual = attestation.head.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -67,7 +67,7 @@ class AttestationCheck(CamelModel):
                     )
 
             elif field_name == "source_slot":
-                actual = attestation.message.source.slot
+                actual = attestation.source.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -75,7 +75,7 @@ class AttestationCheck(CamelModel):
                     )
 
             elif field_name == "target_slot":
-                actual = attestation.message.target.slot
+                actual = attestation.target.slot
                 if actual != expected:
                     raise AssertionError(
                         f"Step {step_index}: validator {self.validator} {location} "
@@ -442,7 +442,7 @@ class StoreChecks(CamelModel):
                     # An attestation votes for this fork if its head is this block or a descendant
                     weight = 0
                     for attestation in store.latest_known_attestations.values():
-                        att_head_root = attestation.message.head.root
+                        att_head_root = attestation.head.root
                         # Check if attestation head is this block or a descendant
                         if att_head_root == root:
                             weight += 1

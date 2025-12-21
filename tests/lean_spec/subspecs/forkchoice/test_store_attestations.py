@@ -54,8 +54,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
 
     # Store attestation data in latest_known_attestations
     attestation_data_map = {
-        validator_id: attestation_data
-        for validator_id in (Uint64(1), Uint64(2))
+        validator_id: attestation_data for validator_id in (Uint64(1), Uint64(2))
     }
 
     # Store signatures in gossip_attestation_signatures

@@ -145,12 +145,15 @@ class Store(Container):
     Map of validator id and attestation root to the XMSS signature.
     """
 
-    block_attestation_signatures: Dict[tuple[Uint64, bytes], list[LeanAggregatedSignature]] = {}
+    block_attestation_signatures: Dict[
+        tuple[Uint64, bytes], list[tuple[frozenset[Uint64], LeanAggregatedSignature]]
+    ] = {}
     """
     Aggregated signature payloads for attestations from blocks.
 
     - Keyed by (validator_id, attestation_data_root).
-    - Values are lists because same (validator_id, data) can appear in multiple aggregations.
+    - Values are lists of (validator set, payload) tuples so we know exactly which
+      validators signed.
     - Used for recursive signature aggregation when building blocks.
     - Populated by on_block.
     """
@@ -259,7 +262,7 @@ class Store(Container):
         # We allow a small margin for clock disparity (1 slot), but no further.
         current_slot = Slot(self.time // SECONDS_PER_SLOT)
         assert data.slot <= current_slot + Slot(1), "Attestation too far in future"
-    
+
     def on_gossip_attestation(
         self,
         signed_attestation: SignedAttestation,
@@ -288,30 +291,34 @@ class Store(Container):
         attestation_data = signed_attestation.message
         signature = signed_attestation.signature
 
-        if self.states[attestation_data.target.root].validators[validator_id] is None:
-            raise ValueError("Validator not found in state")
-            
-        public_key = self.states[attestation_data.target.root].validators[validator_id].get_pubkey() 
+        # Validate the attestation first so unknown blocks are rejected cleanly
+        # (instead of raising a raw KeyError when state is missing).
+        attestation = Attestation(validator_id=validator_id, data=attestation_data)
+        self.validate_attestation(attestation)
 
-        assert signature.verify(public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme), "Signature verification failed"
+        key_state = self.states.get(attestation_data.target.root)
+        assert key_state is not None, (
+            f"No state available to verify attestation signature for target block "
+            f"{attestation_data.target.root.hex()}"
+        )
+        assert validator_id < len(key_state.validators), (
+            f"Validator {validator_id} not found in state {attestation_data.target.root.hex()}"
+        )
+        public_key = key_state.validators[validator_id].get_pubkey()
+
+        assert signature.verify(
+            public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
+        ), "Signature verification failed"
 
         # Store signature for later lookup during block building
-        new_gossip_sigs = self.gossip_attestation_signatures
+        new_gossip_sigs = dict(self.gossip_attestation_signatures)
         new_gossip_sigs[(validator_id, attestation_data.data_root_bytes())] = signature
 
         # Process the attestation data
-        store = self.on_attestation(
-            attestation=Attestation(
-                validator_id=validator_id,
-                data=attestation_data,
-            ),
-            is_from_block=False,
-        )
+        store = self.on_attestation(attestation=attestation, is_from_block=False)
 
         # Return store with updated signature map
-        return store.model_copy(
-            update={"gossip_attestation_signatures": new_gossip_sigs}
-        )
+        return store.model_copy(update={"gossip_attestation_signatures": new_gossip_sigs})
 
     def on_attestation(
         self,
@@ -547,7 +554,7 @@ class Store(Container):
         )
 
         # Copy the block attestation signatures map for updates
-        new_block_sigs = store.block_attestation_signatures
+        new_block_sigs = dict(store.block_attestation_signatures)
 
         for aggregated_attestation, aggregated_signature in zip(
             aggregated_attestations, attestation_signatures, strict=True
@@ -555,6 +562,7 @@ class Store(Container):
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
             attestation_data = aggregated_attestation.data
             data_root = attestation_data.data_root_bytes()
+            participant_set = frozenset(validator_ids)
 
             for validator_id in validator_ids:
                 # Store the aggregated signature payload against (validator_id, data_root)
@@ -562,9 +570,9 @@ class Store(Container):
                 # aggregated attestations, especially when we have aggregator roles.
                 # This list can be recursively aggregated by the block proposer.
                 key = (validator_id, data_root)
-                if key not in new_block_sigs:
-                    new_block_sigs[key] = []
-                new_block_sigs[key].append(bytes(aggregated_signature))
+                existing = new_block_sigs.get(key)
+                record = (participant_set, aggregated_signature)
+                new_block_sigs[key] = [record] if existing is None else (existing + [record])
 
                 # Import the attestation data into forkchoice for latest votes
                 store = store.on_attestation(
@@ -594,7 +602,7 @@ class Store(Container):
         #
         # We also store the proposer's signature for potential future block building.
         proposer_data_root = proposer_attestation.data.data_root_bytes()
-        new_gossip_sigs = store.gossip_attestation_signatures
+        new_gossip_sigs = dict(store.gossip_attestation_signatures)
         new_gossip_sigs[(proposer_attestation.validator_id, proposer_data_root)] = (
             signed_block_with_attestation.signature.proposer_signature
         )
@@ -1024,12 +1032,12 @@ class Store(Container):
         self,
         slot: Slot,
         validator_index: Uint64,
-    ) -> tuple["Store", Block, list[Signature]]:
+    ) -> tuple["Store", Block, list[LeanAggregatedSignature]]:
         """
-        Produce a block and attestation signatures for the target slot.
+        Produce a block and per-aggregated-attestation signature payloads for the target slot.
 
-        The proposer returns the block and a naive signature list so it can
-        later craft its `SignedBlockWithAttestation` with minimal extra work.
+        The proposer returns the block and `LeanAggregatedSignature` payloads aligned
+        with `block.body.attestations` so it can craft `SignedBlockWithAttestation`.
 
         Algorithm Overview
         ------------------
@@ -1057,7 +1065,7 @@ class Store(Container):
             validator_index: Index of validator authorized to propose this block.
 
         Returns:
-            Tuple of (new Store with block stored, finalized Block, signature list).
+            Tuple of (new Store with block stored, finalized Block, attestation signature payloads).
 
         Raises:
             AssertionError: If validator lacks proposer authorization for slot.

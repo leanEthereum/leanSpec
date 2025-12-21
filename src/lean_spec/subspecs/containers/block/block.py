@@ -197,7 +197,9 @@ class SignedBlockWithAttestation(Container):
                     epoch=aggregated_attestation.data.slot,
                 )
             except LeanMultisigError as exc:
-                raise AssertionError("Attestation aggregated signature verification failed") from exc
+                raise AssertionError(
+                    "Attestation aggregated signature verification failed"
+                ) from exc
 
         # Verify proposer attestation signature
         proposer_attestation = self.message.proposer_attestation

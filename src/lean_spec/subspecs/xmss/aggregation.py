@@ -32,13 +32,13 @@ class LeanMultisigAggregationError(LeanMultisigError):
 @lru_cache(maxsize=1)
 def _import_lean_multisig():
     try:
-        import lean_multisig  # type: ignore
+        import lean_multisig_py  # type: ignore
     except ModuleNotFoundError as exc:  # pragma: no cover - import is environment-specific
         raise LeanMultisigUnavailableError(
-            "lean-multisig bindings are required. Install them with `uv pip install lean-multisig` "
-            "(or your local editable install) from the leanSpec repository."
+            "lean-multisig bindings are required. Install them with "
+            "`uv pip install lean-multisig-py` (or configure `[tool.uv.sources]`)."
         ) from exc
-    return lean_multisig
+    return lean_multisig_py
 
 
 @lru_cache(maxsize=1)
@@ -94,6 +94,7 @@ def aggregate_signatures(
             sig_bytes,
             message,
             _coerce_epoch(epoch),
+            test_mode=True,
         )
         return aggregated_bytes
     except Exception as exc:
@@ -127,6 +128,7 @@ def verify_aggregated_payload(
             message,
             payload,
             _coerce_epoch(epoch),
+            test_mode=True,
         )
     except Exception as exc:
         raise LeanMultisigAggregationError(f"lean-multisig verification failed: {exc}") from exc
