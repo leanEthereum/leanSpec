@@ -12,6 +12,10 @@ can propose.
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.xmss.aggregation import (
+    LeanMultisigError,
+    verify_aggregated_payload,
+)
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
@@ -170,11 +174,6 @@ class SignedBlockWithAttestation(Container):
         )
 
         validators = parent_state.validators
-
-        from lean_spec.subspecs.xmss.aggregation import (
-            LeanMultisigError,
-            verify_aggregated_payload,
-        )
 
         for aggregated_attestation, aggregated_signature in zip(
             aggregated_attestations, attestation_signatures, strict=True

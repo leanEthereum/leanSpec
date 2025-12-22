@@ -309,7 +309,6 @@ class XmssKeyManager:
         self,
         aggregated_attestations: AggregatedAttestations,
         signature_lookup: Mapping[tuple[Uint64, bytes], Signature] | None = None,
-        payload_lookup: Mapping[bytes, bytes] | None = None,
     ) -> AttestationSignatures:
         """
         Build `AttestationSignatures` for already-aggregated attestations.
@@ -325,10 +324,6 @@ class XmssKeyManager:
             validator_ids = agg.aggregation_bits.to_validator_indices()
             message = agg.data.data_root_bytes()
             epoch = agg.data.slot
-
-            if payload_lookup is not None and message in payload_lookup:
-                proof_blobs.append(LeanAggregatedSignature(data=payload_lookup[message]))
-                continue
 
             public_keys: list[PublicKey] = [self.get_public_key(vid) for vid in validator_ids]
             signatures: list[Signature] = [

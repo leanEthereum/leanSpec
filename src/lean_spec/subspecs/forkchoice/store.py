@@ -22,6 +22,7 @@ from lean_spec.subspecs.chain.config import (
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
+    AggregationBits,
     Attestation,
     AttestationData,
     Block,
@@ -146,13 +147,13 @@ class Store(Container):
     """
 
     block_attestation_signatures: Dict[
-        tuple[Uint64, bytes], list[tuple[frozenset[Uint64], LeanAggregatedSignature]]
+        tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
     ] = {}
     """
     Aggregated signature payloads for attestations from blocks.
 
     - Keyed by (validator_id, attestation_data_root).
-    - Values are lists of (validator set, payload) tuples so we know exactly which
+    - Values are lists of (aggregation bits, payload) tuples so we know exactly which
       validators signed.
     - Used for recursive signature aggregation when building blocks.
     - Populated by on_block.
@@ -562,7 +563,7 @@ class Store(Container):
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
             attestation_data = aggregated_attestation.data
             data_root = attestation_data.data_root_bytes()
-            participant_set = frozenset(validator_ids)
+            participant_bits = AggregationBits.from_validator_indices(validator_ids)
 
             for validator_id in validator_ids:
                 # Store the aggregated signature payload against (validator_id, data_root)
@@ -571,8 +572,8 @@ class Store(Container):
                 # This list can be recursively aggregated by the block proposer.
                 key = (validator_id, data_root)
                 existing = new_block_sigs.get(key)
-                record = (participant_set, aggregated_signature)
-                new_block_sigs[key] = [record] if existing is None else (existing + [record])
+                record = (participant_bits, aggregated_signature)
+                new_block_sigs[key] = [record] if existing is None else (existing.append(record))
 
                 # Import the attestation data into forkchoice for latest votes
                 store = store.on_attestation(

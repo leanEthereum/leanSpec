@@ -15,7 +15,7 @@ from lean_spec.types import (
 )
 from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
-from ..attestation import AggregatedAttestation, Attestation
+from ..attestation import AggregatedAttestation, AggregationBits, Attestation
 from ..block import Block, BlockBody, BlockHeader
 from ..block.types import AggregatedAttestations
 from ..checkpoint import Checkpoint
@@ -653,7 +653,7 @@ class State(Container):
         validator_ids: list[Uint64],
         data_root: bytes,
         block_attestation_signatures: dict[
-            tuple[Uint64, bytes], list[tuple[frozenset[Uint64], LeanAggregatedSignature]]
+            tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
         ]
         | None = None,
     ) -> LeanAggregatedSignature | None:
@@ -661,18 +661,18 @@ class State(Container):
         if not block_attestation_signatures or not validator_ids:
             return None
 
-        target_set = frozenset(validator_ids)
+        target_bits = AggregationBits.from_validator_indices(validator_ids)
         first_records = block_attestation_signatures.get((validator_ids[0], data_root), [])
         if not first_records:
             return None
 
         for participants, payload in first_records:
-            if participants != target_set:
+            if participants != target_bits:
                 continue
             payload_bytes = bytes(payload)
             if all(
                 any(
-                    other_participants == target_set and bytes(other_payload) == payload_bytes
+                    other_participants == target_bits and bytes(other_payload) == payload_bytes
                     for other_participants, other_payload in block_attestation_signatures.get(
                         (vid, data_root), []
                     )
@@ -687,7 +687,7 @@ class State(Container):
         validator_ids: list[Uint64],
         data_root: bytes,
         block_attestation_signatures: dict[
-            tuple[Uint64, bytes], list[tuple[frozenset[Uint64], LeanAggregatedSignature]]
+            tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
         ]
         | None = None,
     ) -> list[Uint64]:
@@ -701,25 +701,25 @@ class State(Container):
             return []
 
         validator_set = frozenset(validator_ids)
-        candidates: set[frozenset[Uint64]] = set()
+
+        best_participants: set[Uint64] = set()
+        best_len = 0
         for vid in validator_ids:
-            for participants, _payload in block_attestation_signatures.get((vid, data_root), []):
-                if not participants or not participants.issubset(validator_set):
+            for participants, _payload in block_attestation_signatures.get((vid, data_root), ()):
+                if not participants or not participants.data:
                     continue
-                candidates.add(participants)
 
-        if not candidates:
-            return []
+                participant_ids = participants.to_validator_indices()
+                if not participant_ids:
+                    continue
 
-        # NOTE: `ty` currently mis-types `max(..., key=len)` as returning `Sized`.
-        # Keep this explicit loop so the result remains a `frozenset[Uint64]`.
-        best_participants: frozenset[Uint64] = frozenset()
-        best_len = -1
-        for participants in candidates:
-            participants_len = len(participants)
-            if participants_len > best_len:
-                best_len = participants_len
-                best_participants = participants
+                if len(participant_ids) <= best_len:
+                    continue
+
+                if set(participant_ids).issubset(validator_set):
+                    best_len = len(participant_ids)
+                    best_participants = set(participant_ids)
+
         return sorted(best_participants)
 
     def build_block(
@@ -732,7 +732,7 @@ class State(Container):
         known_block_roots: AbstractSet[Bytes32] | None = None,
         gossip_attestation_signatures: dict[tuple[Uint64, bytes], "Signature"] | None = None,
         block_attestation_signatures: dict[
-            tuple[Uint64, bytes], list[tuple[frozenset[Uint64], LeanAggregatedSignature]]
+            tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
         ]
         | None = None,
     ) -> tuple[Block, "State", list[Attestation], list[LeanAggregatedSignature]]:

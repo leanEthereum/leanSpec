@@ -6,7 +6,6 @@ from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
-    SignedAttestation,
 )
 from lean_spec.subspecs.containers.block import (
     Block,

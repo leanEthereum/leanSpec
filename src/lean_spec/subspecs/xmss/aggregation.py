@@ -1,17 +1,17 @@
 """
-lean-multisig aggregation helpers bridging leanSpec containers to native bindings.
+lean-multisig aggregation helpers bridging leanSpec containers to bindings.
 
-This module wraps the Python bindings exposed by the `lean-multisig` project to provide
+This module wraps the Python bindings exposed by the `leanMultisig-py` project to provide
 XMSS signature aggregation + verification.
-
-The aggregated signatures are stored as raw payload bytes produced by
-`lean_multisig.aggregate_signatures`.
 """
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Sequence
+
+from lean_multisig_py import aggregate_signatures as aggregate_signatures_py
+from lean_multisig_py import setup_prover, setup_verifier
+from lean_multisig_py import verify_aggregated_signatures as verify_aggregated_signatures_py
 
 from lean_spec.subspecs.xmss.containers import PublicKey, Signature
 from lean_spec.types import Uint64
@@ -21,50 +21,15 @@ class LeanMultisigError(RuntimeError):
     """Base exception for lean-multisig aggregation helpers."""
 
 
-class LeanMultisigUnavailableError(LeanMultisigError):
-    """Raised when the lean-multisig Python bindings cannot be imported."""
-
-
 class LeanMultisigAggregationError(LeanMultisigError):
     """Raised when lean-multisig fails to aggregate or verify signatures."""
-
-
-@lru_cache(maxsize=1)
-def _import_lean_multisig():
-    try:
-        import lean_multisig_py  # type: ignore
-    except ModuleNotFoundError as exc:  # pragma: no cover - import is environment-specific
-        raise LeanMultisigUnavailableError(
-            "lean-multisig bindings are required. Install them with "
-            "`uv pip install lean-multisig-py` (or configure `[tool.uv.sources]`)."
-        ) from exc
-    return lean_multisig_py
-
-
-@lru_cache(maxsize=1)
-def _ensure_prover_setup() -> None:
-    """Run the (expensive) prover setup routine exactly once."""
-    _import_lean_multisig().setup_prover()
-
-
-@lru_cache(maxsize=1)
-def _ensure_verifier_setup() -> None:
-    """Run the verifier setup routine exactly once."""
-    _import_lean_multisig().setup_verifier()
-
-
-def _coerce_epoch(epoch: int | Uint64) -> int:
-    value = int(epoch)
-    if value < 0 or value >= 2**32:
-        raise ValueError("epoch must fit in uint32 for lean-multisig aggregation")
-    return value
 
 
 def aggregate_signatures(
     public_keys: Sequence[PublicKey],
     signatures: Sequence[Signature],
     message: bytes,
-    epoch: int | Uint64,
+    epoch: Uint64,
 ) -> bytes:
     """
     Aggregate XMSS signatures using lean-multisig.
@@ -81,19 +46,18 @@ def aggregate_signatures(
     Raises:
         LeanMultisigError: If lean-multisig is unavailable or aggregation fails.
     """
-    lean_multisig = _import_lean_multisig()
-    _ensure_prover_setup()
+    setup_prover()
     try:
-        # `lean_multisig` expects serialized keys/signatures as raw bytes.
-        # We use leanSpec's SSZ encoding for these containers.
         pub_keys_bytes = [pk.encode_bytes() for pk in public_keys]
         sig_bytes = [sig.encode_bytes() for sig in signatures]
 
-        aggregated_bytes = lean_multisig.aggregate_signatures(
+        # In test mode, we return a single zero byte payload.
+        # TODO: Remove test mode once leanVM is supports correct signature encoding.
+        aggregated_bytes = aggregate_signatures_py(
             pub_keys_bytes,
             sig_bytes,
             message,
-            _coerce_epoch(epoch),
+            epoch,
             test_mode=True,
         )
         return aggregated_bytes
@@ -105,7 +69,7 @@ def verify_aggregated_payload(
     public_keys: Sequence[PublicKey],
     payload: bytes,
     message: bytes,
-    epoch: int | Uint64,
+    epoch: Uint64,
 ) -> None:
     """
     Verify a lean-multisig aggregated signature payload.
@@ -119,15 +83,17 @@ def verify_aggregated_payload(
     Raises:
         LeanMultisigError: If lean-multisig is unavailable or verification fails.
     """
-    lean_multisig = _import_lean_multisig()
-    _ensure_verifier_setup()
+    setup_verifier()
     try:
         pub_keys_bytes = [pk.encode_bytes() for pk in public_keys]
-        lean_multisig.verify_aggregated_signatures(
+
+        # In test mode, we allow verification of a single zero byte payload.
+        # TODO: Remove test mode once leanVM is supports correct signature encoding.
+        verify_aggregated_signatures_py(
             pub_keys_bytes,
             message,
             payload,
-            _coerce_epoch(epoch),
+            epoch,
             test_mode=True,
         )
     except Exception as exc:

@@ -124,7 +124,6 @@ test = [
     "lean-ethereum-testing",
     "lean-multisig-py>=0.1.0",
 ]
-
 lint = [
     "ty>=0.0.1a34",
     "ruff>=0.13.2,<1",

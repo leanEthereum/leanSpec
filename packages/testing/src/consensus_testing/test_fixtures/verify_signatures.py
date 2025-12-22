@@ -181,6 +181,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Provide signatures to State.build_block so it can include attestations during
         # fixed-point collection when available_attestations/known_block_roots are used.
+        # This might contain invalid signatures as we are not validating them here.
         gossip_attestation_signatures = {
             (att.validator_id, att.data.data_root_bytes()): sig
             for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
@@ -196,15 +197,9 @@ class VerifySignaturesTest(BaseConsensusFixture):
             block_attestation_signatures={},
         )
 
-        # Preserve per-attestation validity from the spec.
-        #
-        # For signature tests we must ensure that the signatures in the input spec are used
-        # for any intentionally-invalid signature from the input spec remains invalid
-        # in the produced `SignedBlockWithAttestation`.
-        signature_lookup: dict[tuple[Uint64, bytes], Signature] = gossip_attestation_signatures
         attestation_signatures = key_manager.build_attestation_signatures(
             final_block.body.attestations,
-            signature_lookup=signature_lookup,
+            signature_lookup=gossip_attestation_signatures,
         )
 
         # Create proposer attestation for this block
