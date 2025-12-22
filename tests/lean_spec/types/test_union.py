@@ -9,6 +9,7 @@ from pydantic import ValidationError, create_model
 
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
+from lean_spec.types.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from lean_spec.types.ssz_base import SSZType
 from lean_spec.types.uint import Uint8, Uint16, Uint32
 from lean_spec.types.union import SSZUnion
@@ -112,14 +113,14 @@ def test_constructor_success() -> None:
 def test_constructor_errors() -> None:
     """Test Union construction error cases."""
     # Invalid selector (out of range)
-    with pytest.raises(ValueError, match="Invalid selector"):
+    with pytest.raises(SSZValueError, match="out of range"):
         OptionalNumericUnion(selector=3, value=None)
 
     # None value for None option should work
     OptionalNumericUnion(selector=0, value=None)
 
     # Non-None value for None option should fail
-    with pytest.raises(TypeError, match="value must be None"):
+    with pytest.raises(SSZTypeError, match="Expected None"):
         OptionalNumericUnion(selector=0, value=Uint16(1))
 
 
@@ -138,22 +139,22 @@ def test_pydantic_validation_ok() -> None:
 def test_pydantic_validation_errors() -> None:
     """Test Pydantic validation error cases."""
     # Test invalid selector directly
-    with pytest.raises(ValueError, match="Invalid selector"):
+    with pytest.raises(SSZValueError, match="out of range"):
         OptionalNumericUnion(selector=9, value=0)
 
     # Test invalid value for None option directly
-    with pytest.raises(TypeError, match="value must be None"):
+    with pytest.raises(SSZTypeError, match="Expected None"):
         OptionalNumericUnion(selector=0, value=1)
 
     # Test with Pydantic model wrapper - should catch underlying errors
     model = create_model("M", v=(OptionalNumericUnion, ...))
 
     # Invalid selector in model context
-    with pytest.raises((ValidationError, ValueError)):
+    with pytest.raises((ValidationError, SSZValueError)):
         model(v={"selector": 9, "value": 0})
 
     # Invalid value for None option in model context
-    with pytest.raises((ValidationError, TypeError)):
+    with pytest.raises((ValidationError, SSZTypeError)):
         model(v={"selector": 0, "value": 1})
 
 
@@ -192,15 +193,15 @@ def test_union_with_nested_composites_roundtrip() -> None:
 def test_deserialize_errors() -> None:
     """Test deserialization error cases."""
     # Too small scope
-    with pytest.raises(ValueError, match="Scope too small"):
+    with pytest.raises(SSZSerializationError, match="scope too small"):
         SimpleUnion.deserialize(io.BytesIO(b""), 0)
 
     # Invalid selector
-    with pytest.raises(ValueError, match="out of range"):
+    with pytest.raises(SSZValueError, match="out of range"):
         SimpleUnion.deserialize(io.BytesIO(b"\x09"), 1)
 
     # None option with payload
-    with pytest.raises(ValueError, match="no payload bytes"):
+    with pytest.raises(SSZSerializationError, match="no payload bytes"):
         OptionalNumericUnion.deserialize(io.BytesIO(b"\x00\xff"), 2)
 
 
@@ -255,7 +256,7 @@ def test_is_fixed_size_helper() -> None:
 
 def test_get_byte_length_raises() -> None:
     """Test get_byte_length() raises for variable-size types."""
-    with pytest.raises(TypeError, match="variable-size"):
+    with pytest.raises(SSZTypeError, match="variable-size"):
         NumericUnion.get_byte_length()
 
 
@@ -270,7 +271,7 @@ def test_union_type_validation() -> None:
     assert instance.selector == 0
 
     # Invalid union with None not at index 0 should fail during validation
-    with pytest.raises(TypeError, match="None at index 0"):
+    with pytest.raises(SSZTypeError, match="None only allowed at index 0"):
 
         class InvalidUnion1(SSZUnion):
             OPTIONS = (Uint16, None)
@@ -281,7 +282,7 @@ def test_union_type_validation() -> None:
     class NotSSZ:
         pass
 
-    with pytest.raises(TypeError, match="takes no arguments"):
+    with pytest.raises(SSZTypeError):
 
         class InvalidUnion2(SSZUnion):
             OPTIONS = (cast(PyType[SSZType], NotSSZ),)
@@ -297,7 +298,7 @@ def test_union_boundary_cases() -> None:
     assert u.value == Uint16(42)
 
     # None-only union should fail validation
-    with pytest.raises(TypeError, match="only option"):
+    with pytest.raises(SSZTypeError, match="only option"):
 
         class NoneOnlyUnion(SSZUnion):
             OPTIONS = (None,)

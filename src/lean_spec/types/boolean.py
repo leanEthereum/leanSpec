@@ -8,6 +8,7 @@ from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 from typing_extensions import Self
 
+from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from .ssz_base import SSZType
 
 
@@ -31,14 +32,14 @@ class Boolean(int, SSZType):
         Accepts only `True`, `False`, `1`, or `0`.
 
         Raises:
-            TypeError: If `value` is not a bool or int.
-            ValueError: If `value` is an integer other than 0 or 1.
+            SSZTypeCoercionError: If `value` is not a bool or int.
+            SSZDecodeError: If `value` is an integer other than 0 or 1.
         """
         if not isinstance(value, int):
-            raise TypeError(f"Expected bool or int, got {type(value).__name__}")
+            raise SSZTypeError(f"Expected bool or int, got {type(value).__name__}")
 
         if value not in (0, 1):
-            raise ValueError(f"Boolean value must be 0 or 1, not {value}")
+            raise SSZValueError(f"Boolean value must be 0 or 1, not {value}")
 
         return super().__new__(cls, value)
 
@@ -93,9 +94,9 @@ class Boolean(int, SSZType):
     def decode_bytes(cls, data: bytes) -> Self:
         """Deserialize a single byte into a Boolean instance."""
         if len(data) != 1:
-            raise ValueError(f"Expected 1 byte for Boolean, got {len(data)}")
+            raise SSZSerializationError(f"Boolean: expected 1 byte, got {len(data)}")
         if data[0] not in (0, 1):
-            raise ValueError(f"Boolean byte must be 0x00 or 0x01, got {data[0]:#04x}")
+            raise SSZSerializationError(f"Boolean: byte must be 0x00 or 0x01, got {data[0]:#04x}")
         return cls(data[0])
 
     def serialize(self, stream: IO[bytes]) -> int:
@@ -108,10 +109,10 @@ class Boolean(int, SSZType):
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
         """Deserialize a boolean from a binary stream."""
         if scope != 1:
-            raise ValueError(f"Invalid scope for Boolean: expected 1, got {scope}")
+            raise SSZSerializationError(f"Boolean: expected scope of 1, got {scope}")
         data = stream.read(1)
         if len(data) != 1:
-            raise IOError("Stream ended prematurely while decoding Boolean")
+            raise SSZSerializationError(f"Boolean: expected 1 byte, got {len(data)}")
         return cls.decode_bytes(data)
 
     def _raise_type_error(self, other: Any, op_symbol: str) -> None:

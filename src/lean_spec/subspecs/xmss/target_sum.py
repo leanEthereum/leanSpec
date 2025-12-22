@@ -10,6 +10,7 @@ from pydantic import model_validator
 
 from lean_spec.types import StrictBaseModel, Uint64
 
+from ._validation import enforce_strict_types
 from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
 from .message_hash import (
     PROD_MESSAGE_HASHER,
@@ -34,12 +35,9 @@ class TargetSumEncoder(StrictBaseModel):
     """Message hasher for encoding."""
 
     @model_validator(mode="after")
-    def enforce_strict_types(self) -> "TargetSumEncoder":
+    def _validate_strict_types(self) -> "TargetSumEncoder":
         """Reject subclasses to prevent type confusion attacks."""
-        if type(self.config) is not XmssConfig:
-            raise TypeError("config must be exactly XmssConfig, not a subclass")
-        if type(self.message_hasher) is not MessageHasher:
-            raise TypeError("message_hasher must be exactly MessageHasher, not a subclass")
+        enforce_strict_types(self, config=XmssConfig, message_hasher=MessageHasher)
         return self
 
     def encode(

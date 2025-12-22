@@ -18,6 +18,7 @@ from lean_spec.subspecs.xmss.target_sum import (
 )
 from lean_spec.types import StrictBaseModel, Uint64
 
+from ._validation import enforce_strict_types
 from .constants import (
     PROD_CONFIG,
     TEST_CONFIG,
@@ -60,18 +61,16 @@ class GeneralizedXmssScheme(StrictBaseModel):
     """Random data generator for key generation."""
 
     @model_validator(mode="after")
-    def enforce_strict_types(self) -> "GeneralizedXmssScheme":
+    def _validate_strict_types(self) -> "GeneralizedXmssScheme":
         """Reject subclasses to prevent type confusion attacks."""
-        if type(self.config) is not XmssConfig:
-            raise TypeError("config must be exactly XmssConfig, not a subclass")
-        if type(self.prf) is not Prf:
-            raise TypeError("prf must be exactly Prf, not a subclass")
-        if type(self.hasher) is not TweakHasher:
-            raise TypeError("hasher must be exactly TweakHasher, not a subclass")
-        if type(self.encoder) is not TargetSumEncoder:
-            raise TypeError("encoder must be exactly TargetSumEncoder, not a subclass")
-        if type(self.rand) is not Rand:
-            raise TypeError("rand must be exactly Rand, not a subclass")
+        enforce_strict_types(
+            self,
+            config=XmssConfig,
+            prf=Prf,
+            hasher=TweakHasher,
+            encoder=TargetSumEncoder,
+            rand=Rand,
+        )
         return self
 
     def key_gen(

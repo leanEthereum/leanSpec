@@ -33,6 +33,7 @@ from ..poseidon2.permutation import (
     Poseidon2Params,
     permute,
 )
+from ._validation import enforce_strict_types
 from .utils import int_to_base_p
 
 
@@ -46,12 +47,9 @@ class PoseidonXmss(StrictBaseModel):
     """Poseidon2 parameters for 24-width permutation."""
 
     @model_validator(mode="after")
-    def enforce_strict_types(self) -> "PoseidonXmss":
+    def _validate_strict_types(self) -> "PoseidonXmss":
         """Reject subclasses to prevent type confusion attacks."""
-        if type(self.params16) is not Poseidon2Params:
-            raise TypeError("params16 must be exactly Poseidon2Params, not a subclass")
-        if type(self.params24) is not Poseidon2Params:
-            raise TypeError("params24 must be exactly Poseidon2Params, not a subclass")
+        enforce_strict_types(self, params16=Poseidon2Params, params24=Poseidon2Params)
         return self
 
     def compress(self, input_vec: list[Fp], width: int, output_len: int) -> list[Fp]:

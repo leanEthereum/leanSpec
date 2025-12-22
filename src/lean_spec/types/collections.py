@@ -22,6 +22,7 @@ from typing_extensions import Self
 from lean_spec.types.constants import OFFSET_BYTE_LENGTH
 
 from .byte_arrays import BaseBytes
+from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from .ssz_base import SSZModel, SSZType
 from .uint import Uint32
 
@@ -103,7 +104,7 @@ class SSZVector(SSZModel, Generic[T]):
     def _validate_vector_data(cls, v: Any) -> tuple[SSZType, ...]:
         """Validate and convert input to a typed tuple of exactly LENGTH elements."""
         if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LENGTH"):
-            raise TypeError(f"{cls.__name__} must define ELEMENT_TYPE and LENGTH")
+            raise SSZTypeError(f"{cls.__name__} must define ELEMENT_TYPE and LENGTH")
 
         if not isinstance(v, (list, tuple)):
             v = tuple(v)
@@ -115,9 +116,8 @@ class SSZVector(SSZModel, Generic[T]):
         )
 
         if len(typed_values) != cls.LENGTH:
-            raise ValueError(
-                f"{cls.__name__} requires exactly {cls.LENGTH} items, "
-                f"but {len(typed_values)} were provided."
+            raise SSZValueError(
+                f"{cls.__name__} requires exactly {cls.LENGTH} elements, got {len(typed_values)}"
             )
 
         return typed_values
@@ -131,7 +131,7 @@ class SSZVector(SSZModel, Generic[T]):
     def get_byte_length(cls) -> int:
         """Get the byte length if the SSZVector is fixed-size."""
         if not cls.is_fixed_size():
-            raise TypeError(f"{cls.__name__} is not a fixed-size type.")
+            raise SSZTypeError(f"{cls.__name__}: variable-size vector has no fixed byte length")
         return cls.ELEMENT_TYPE.get_byte_length() * cls.LENGTH
 
     def serialize(self, stream: IO[bytes]) -> int:
@@ -162,9 +162,8 @@ class SSZVector(SSZModel, Generic[T]):
         if cls.is_fixed_size():
             elem_byte_length = cls.get_byte_length() // cls.LENGTH
             if scope != cls.get_byte_length():
-                raise ValueError(
-                    f"Invalid scope for {cls.__name__}: "
-                    f"expected {cls.get_byte_length()}, got {scope}"
+                raise SSZSerializationError(
+                    f"{cls.__name__}: expected {cls.get_byte_length()} bytes, got {scope}"
                 )
             elements = [
                 cls.ELEMENT_TYPE.deserialize(stream, elem_byte_length) for _ in range(cls.LENGTH)
@@ -175,7 +174,10 @@ class SSZVector(SSZModel, Generic[T]):
             # The first offset tells us where the data starts, which must be after all offsets.
             first_offset = int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH))
             if first_offset != cls.LENGTH * OFFSET_BYTE_LENGTH:
-                raise ValueError("Invalid first offset in variable-size vector.")
+                expected = cls.LENGTH * OFFSET_BYTE_LENGTH
+                raise SSZSerializationError(
+                    f"{cls.__name__}: invalid offset {first_offset}, expected {expected}"
+                )
             # Read the remaining offsets and add the total scope as the final boundary.
             offsets = [first_offset] + [
                 int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH)) for _ in range(cls.LENGTH - 1)
@@ -185,7 +187,9 @@ class SSZVector(SSZModel, Generic[T]):
             for i in range(cls.LENGTH):
                 start, end = offsets[i], offsets[i + 1]
                 if start > end:
-                    raise ValueError(f"Invalid offsets: start {start} > end {end}")
+                    raise SSZSerializationError(
+                        f"{cls.__name__}: invalid offsets start={start} > end={end}"
+                    )
                 elements.append(cls.ELEMENT_TYPE.deserialize(stream, end - start))
             return cls(data=elements)
 
@@ -294,7 +298,7 @@ class SSZList(SSZModel, Generic[T]):
     def _validate_list_data(cls, v: Any) -> tuple[SSZType, ...]:
         """Validate and convert input to a tuple of SSZType elements."""
         if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LIMIT"):
-            raise TypeError(f"{cls.__name__} must define ELEMENT_TYPE and LIMIT")
+            raise SSZTypeError(f"{cls.__name__} must define ELEMENT_TYPE and LIMIT")
 
         # Handle various input types
         if isinstance(v, (list, tuple)):
@@ -302,25 +306,23 @@ class SSZList(SSZModel, Generic[T]):
         elif hasattr(v, "__iter__") and not isinstance(v, (str, bytes)):
             elements = list(v)
         else:
-            raise TypeError(f"List data must be iterable, got {type(v)}")
+            raise SSZTypeError(f"Expected iterable, got {type(v).__name__}")
 
         # Check limit
         if len(elements) > cls.LIMIT:
-            raise ValueError(
-                f"{cls.__name__} cannot contain more than {cls.LIMIT} elements, got {len(elements)}"
-            )
+            raise SSZValueError(f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {len(elements)}")
 
         # Convert and validate each element
         typed_values = []
-        for i, element in enumerate(elements):
+        for element in elements:
             if isinstance(element, cls.ELEMENT_TYPE):
                 typed_values.append(element)
             else:
                 try:
                     typed_values.append(cast(Any, cls.ELEMENT_TYPE)(element))
                 except Exception as e:
-                    raise ValueError(
-                        f"Element {i} cannot be converted to {cls.ELEMENT_TYPE.__name__}: {e}"
+                    raise SSZTypeError(
+                        f"Expected {cls.ELEMENT_TYPE.__name__}, got {type(element).__name__}"
                     ) from e
 
         return tuple(typed_values)
@@ -342,8 +344,8 @@ class SSZList(SSZModel, Generic[T]):
 
     @classmethod
     def get_byte_length(cls) -> int:
-        """Lists are variable-size, so this raises a TypeError."""
-        raise TypeError(f"{cls.__name__} is variable-size")
+        """Lists are variable-size, so this raises an SSZTypeError."""
+        raise SSZTypeError(f"{cls.__name__}: variable-size list has no fixed byte length")
 
     def serialize(self, stream: IO[bytes]) -> int:
         """Serialize the list to a binary stream."""
@@ -372,11 +374,15 @@ class SSZList(SSZModel, Generic[T]):
             # Fixed-size elements: read them back-to-back
             element_size = cls.ELEMENT_TYPE.get_byte_length()
             if scope % element_size != 0:
-                raise ValueError(f"Scope {scope} is not divisible by element size {element_size}")
+                raise SSZSerializationError(
+                    f"{cls.__name__}: scope {scope} not divisible by element size {element_size}"
+                )
 
             num_elements = scope // element_size
             if num_elements > cls.LIMIT:
-                raise ValueError(f"Too many elements: {num_elements} > {cls.LIMIT}")
+                raise SSZValueError(
+                    f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {num_elements}"
+                )
 
             elements = [
                 cls.ELEMENT_TYPE.deserialize(stream, element_size) for _ in range(num_elements)
@@ -389,16 +395,18 @@ class SSZList(SSZModel, Generic[T]):
                 # Empty list case
                 return cls(data=[])
             if scope < OFFSET_BYTE_LENGTH:
-                raise ValueError(f"Invalid scope for variable-size list: {scope}")
+                raise SSZSerializationError(
+                    f"{cls.__name__}: scope {scope} too small for variable-size list"
+                )
 
             # Read the first offset to determine the number of elements.
             first_offset = int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH))
             if first_offset > scope or first_offset % OFFSET_BYTE_LENGTH != 0:
-                raise ValueError("Invalid first offset in list.")
+                raise SSZSerializationError(f"{cls.__name__}: invalid offset {first_offset}")
 
             count = first_offset // OFFSET_BYTE_LENGTH
             if count > cls.LIMIT:
-                raise ValueError(f"Decoded list length {count} exceeds limit of {cls.LIMIT}")
+                raise SSZValueError(f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {count}")
 
             # Read the rest of the offsets.
             offsets = [first_offset] + [
@@ -411,7 +419,9 @@ class SSZList(SSZModel, Generic[T]):
             for i in range(count):
                 start, end = offsets[i], offsets[i + 1]
                 if start > end:
-                    raise ValueError(f"Invalid offsets: start {start} > end {end}")
+                    raise SSZSerializationError(
+                        f"{cls.__name__}: invalid offsets start={start} > end={end}"
+                    )
                 elements.append(cls.ELEMENT_TYPE.deserialize(stream, end - start))
 
             return cls(data=elements)

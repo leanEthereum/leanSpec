@@ -7,6 +7,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from lean_spec.types.boolean import Boolean
+from lean_spec.types.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 
 
 class BooleanModel(BaseModel):
@@ -39,15 +40,15 @@ def test_instantiation_from_valid_types(valid_value: bool | int) -> None:
 
 @pytest.mark.parametrize("invalid_int", [-1, 2, 100])
 def test_instantiation_from_invalid_int_raises_error(invalid_int: int) -> None:
-    """Tests that instantiating with an int other than 0 or 1 raises ValueError."""
-    with pytest.raises(ValueError, match="Boolean value must be 0 or 1"):
+    """Tests that instantiating with an int other than 0 or 1 raises SSZValueError."""
+    with pytest.raises(SSZValueError, match="Boolean value must be 0 or 1"):
         Boolean(invalid_int)
 
 
 @pytest.mark.parametrize("invalid_type", [1.0, "True", b"\x01", None])
 def test_instantiation_from_invalid_types_raises_error(invalid_type: Any) -> None:
-    """Tests that instantiating with non-bool/non-int types raises a TypeError."""
-    with pytest.raises(TypeError, match="Expected bool or int"):
+    """Tests that instantiating with non-bool/non-int types raises SSZTypeError."""
+    with pytest.raises(SSZTypeError, match="Expected bool or int"):
         Boolean(invalid_type)
 
 
@@ -210,16 +211,16 @@ class TestBooleanSSZ:
 
     def test_decode_invalid_length(self) -> None:
         """Tests that decode_bytes fails with incorrect byte length."""
-        with pytest.raises(ValueError, match="Expected 1 byte"):
+        with pytest.raises(SSZSerializationError, match="expected 1 byte"):
             Boolean.decode_bytes(b"")
-        with pytest.raises(ValueError, match="Expected 1 byte"):
+        with pytest.raises(SSZSerializationError, match="expected 1 byte"):
             Boolean.decode_bytes(b"\x00\x01")
 
     def test_decode_invalid_value(self) -> None:
         """Tests that decode_bytes fails with an invalid byte value."""
-        with pytest.raises(ValueError, match="must be 0x00 or 0x01"):
+        with pytest.raises(SSZSerializationError, match="must be 0x00 or 0x01"):
             Boolean.decode_bytes(b"\x02")
-        with pytest.raises(ValueError, match="must be 0x00 or 0x01"):
+        with pytest.raises(SSZSerializationError, match="must be 0x00 or 0x01"):
             Boolean.decode_bytes(b"\xff")
 
     @pytest.mark.parametrize("value", [True, False])
@@ -241,15 +242,15 @@ class TestBooleanSSZ:
     def test_deserialize_invalid_scope(self) -> None:
         """Tests that deserialize fails with an incorrect scope."""
         stream = io.BytesIO(b"\x01")
-        with pytest.raises(ValueError, match="Invalid scope for Boolean"):
+        with pytest.raises(SSZSerializationError, match="expected scope of 1"):
             Boolean.deserialize(stream, scope=0)
 
         stream.seek(0)
-        with pytest.raises(ValueError, match="Invalid scope for Boolean"):
+        with pytest.raises(SSZSerializationError, match="expected scope of 1"):
             Boolean.deserialize(stream, scope=2)
 
     def test_deserialize_premature_stream_end(self) -> None:
         """Tests that deserialize fails if the stream ends prematurely."""
         stream = io.BytesIO(b"")  # Empty stream
-        with pytest.raises(IOError, match="Stream ended prematurely"):
+        with pytest.raises(SSZSerializationError, match="expected 1 byte, got 0"):
             Boolean.deserialize(stream, scope=1)

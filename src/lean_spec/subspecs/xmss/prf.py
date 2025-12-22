@@ -17,6 +17,7 @@ from pydantic import model_validator
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.types import StrictBaseModel, Uint64
 
+from ._validation import enforce_strict_types
 from .constants import (
     PRF_KEY_LENGTH,
     PROD_CONFIG,
@@ -109,10 +110,9 @@ class Prf(StrictBaseModel):
     """Configuration parameters for the PRF."""
 
     @model_validator(mode="after")
-    def enforce_strict_types(self) -> "Prf":
+    def _validate_strict_types(self) -> "Prf":
         """Reject subclasses to prevent type confusion attacks."""
-        if type(self.config) is not XmssConfig:
-            raise TypeError("config must be exactly XmssConfig, not a subclass")
+        enforce_strict_types(self, config=XmssConfig)
         return self
 
     def key_gen(self) -> PRFKey:

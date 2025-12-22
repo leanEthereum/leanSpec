@@ -31,6 +31,7 @@ from pydantic import Field, model_validator
 from lean_spec.types import StrictBaseModel, Uint64
 
 from ..koalabear import Fp
+from ._validation import enforce_strict_types
 from .constants import (
     PROD_CONFIG,
     TEST_CONFIG,
@@ -86,12 +87,9 @@ class TweakHasher(StrictBaseModel):
     """Poseidon permutation instance for hashing."""
 
     @model_validator(mode="after")
-    def enforce_strict_types(self) -> "TweakHasher":
+    def _validate_strict_types(self) -> "TweakHasher":
         """Reject subclasses to prevent type confusion attacks."""
-        if type(self.config) is not XmssConfig:
-            raise TypeError("config must be exactly XmssConfig, not a subclass")
-        if type(self.poseidon) is not PoseidonXmss:
-            raise TypeError("poseidon must be exactly PoseidonXmss, not a subclass")
+        enforce_strict_types(self, config=XmssConfig, poseidon=PoseidonXmss)
         return self
 
     def _encode_tweak(self, tweak: TreeTweak | ChainTweak, length: int) -> list[Fp]:
@@ -123,17 +121,18 @@ class TweakHasher(StrictBaseModel):
         # Pack the tweak's integer fields into a single large integer.
         #
         # A hardcoded prefix is included for domain separation between tweak types.
-        if isinstance(tweak, TreeTweak):
-            # Packing scheme: (level << 40) | (index << 8) | PREFIX
-            acc = (tweak.level << 40) | (int(tweak.index) << 8) | TWEAK_PREFIX_TREE.value
-        else:
-            # Packing scheme: (epoch << 24) | (chain_index << 16) | (step << 8) | PREFIX
-            acc = (
-                (int(tweak.epoch) << 24)
-                | (tweak.chain_index << 16)
-                | (tweak.step << 8)
-                | TWEAK_PREFIX_CHAIN.value
-            )
+        match tweak:
+            case TreeTweak(level=level, index=index):
+                # Packing scheme: (level << 40) | (index << 8) | PREFIX
+                acc = (level << 40) | (int(index) << 8) | TWEAK_PREFIX_TREE.value
+            case ChainTweak(epoch=epoch, chain_index=chain_index, step=step):
+                # Packing scheme: (epoch << 24) | (chain_index << 16) | (step << 8) | PREFIX
+                acc = (
+                    (int(epoch) << 24)
+                    | (chain_index << 16)
+                    | (step << 8)
+                    | TWEAK_PREFIX_CHAIN.value
+                )
 
         # Decompose the packed integer `acc` into a list of base-P field elements.
         return int_to_base_p(acc, length)

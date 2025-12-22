@@ -8,6 +8,7 @@ from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
 from typing_extensions import Self
 
+from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from .ssz_base import SSZType
 
 
@@ -22,16 +23,17 @@ class BaseUint(int, SSZType):
         Create and validate a new Uint instance.
 
         Raises:
-            TypeError: If `value` is not an int (rejects bool, string, float).
-            OverflowError: If `value` is outside the allowed range [0, 2**BITS - 1].
+            SSZTypeCoercionError: If `value` is not an int (rejects bool, string, float).
+            SSZOverflowError: If `value` is outside the allowed range [0, 2**BITS - 1].
         """
         # We should accept only ints.
         if not isinstance(value, int) or isinstance(value, bool):
-            raise TypeError(f"Expected int, got {type(value).__name__}")
+            raise SSZTypeError(f"Expected int, got {type(value).__name__}")
 
         int_value = int(value)
-        if not (0 <= int_value < (2**cls.BITS)):
-            raise OverflowError(f"{int_value} is out of range for {cls.__name__}")
+        max_value = 2**cls.BITS - 1
+        if not (0 <= int_value <= max_value):
+            raise SSZValueError(f"{int_value} out of range for {cls.__name__} [0, {max_value}]")
         return super().__new__(cls, int_value)
 
     @classmethod
@@ -104,7 +106,7 @@ class BaseUint(int, SSZType):
             data (bytes): The SSZ byte string to deserialize.
 
         Raises:
-            ValueError: If the byte string has an incorrect length.
+            SSZDecodeError: If the byte string has an incorrect length.
 
         Returns:
             Self: A new instance of the Uint class.
@@ -112,9 +114,8 @@ class BaseUint(int, SSZType):
         # Ensure the input data has the correct number of bytes.
         expected_length = cls.get_byte_length()
         if len(data) != expected_length:
-            raise ValueError(
-                f"Invalid byte length for {cls.__name__}: "
-                f"expected {expected_length}, got {len(data)}"
+            raise SSZSerializationError(
+                f"{cls.__name__}: expected {expected_length} bytes, got {len(data)}"
             )
         # The `from_bytes` class method from `int` is used to convert the data.
         return cls(int.from_bytes(data, "little"))
@@ -146,7 +147,8 @@ class BaseUint(int, SSZType):
             scope (int): The number of bytes available to read for this object.
 
         Raises:
-            ValueError: If the scope does not match the type's byte length.
+            SSZDecodeError: If the scope does not match the type's byte length.
+            SSZStreamError: If the stream ends prematurely.
 
         Returns:
             Self: A new instance of the Uint class.
@@ -154,14 +156,16 @@ class BaseUint(int, SSZType):
         # For a fixed-size type, the scope must exactly match the byte length.
         byte_length = cls.get_byte_length()
         if scope != byte_length:
-            raise ValueError(
-                f"Invalid scope for {cls.__name__}: expected {byte_length}, got {scope}"
+            raise SSZSerializationError(
+                f"{cls.__name__}: invalid scope, expected {byte_length} bytes, got {scope}"
             )
         # Read the required number of bytes from the stream.
         data = stream.read(byte_length)
         # Ensure the correct number of bytes was read.
         if len(data) != byte_length:
-            raise IOError(f"Stream ended prematurely while decoding {cls.__name__}")
+            raise SSZSerializationError(
+                f"{cls.__name__}: expected {byte_length} bytes, got {len(data)}"
+            )
         # Decode the bytes into a new instance.
         return cls.decode_bytes(data)
 

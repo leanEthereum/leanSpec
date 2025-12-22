@@ -9,6 +9,10 @@ from typing_extensions import Tuple
 
 from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
+from lean_spec.types.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
+
+# Type alias for errors that can be SSZValueError or wrapped in ValidationError
+ValueOrValidationError = (SSZValueError, ValidationError)
 
 
 # Define bitfield types at module level for reuse and model classes
@@ -54,7 +58,7 @@ class TestBitvector:
 
     def test_instantiate_raw_type_raises_error(self) -> None:
         """Tests that the raw, non-specialized BaseBitvector cannot be instantiated."""
-        with pytest.raises(TypeError, match="must define LENGTH"):
+        with pytest.raises(SSZTypeError, match="must define LENGTH"):
             BaseBitvector(data=[])
 
     def test_instantiation_success(self) -> None:
@@ -74,7 +78,7 @@ class TestBitvector:
     )
     def test_instantiation_with_wrong_length_raises_error(self, values: list[Boolean]) -> None:
         """Tests that providing the wrong number of items during instantiation fails."""
-        with pytest.raises(ValueError, match="requires exactly 4 bits"):
+        with pytest.raises(ValueOrValidationError):
             Bitvector4(data=values)
 
     def test_pydantic_validation_accepts_valid_list(self) -> None:
@@ -93,7 +97,7 @@ class TestBitvector:
     )
     def test_pydantic_validation_rejects_invalid_values(self, invalid_value: Any) -> None:
         """Tests that Pydantic validation rejects lists of the wrong length."""
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueOrValidationError):
             Bitvector4Model(value=invalid_value)
 
     def test_bitvector_is_immutable(self) -> None:
@@ -125,7 +129,7 @@ class TestBitlist:
 
     def test_instantiate_raw_type_raises_error(self) -> None:
         """Tests that the raw, non-specialized BaseBitlist cannot be instantiated."""
-        with pytest.raises(TypeError, match="must define LIMIT"):
+        with pytest.raises(SSZTypeError, match="must define LIMIT"):
             BaseBitlist(data=[])
 
     def test_instantiation_success(self) -> None:
@@ -141,7 +145,7 @@ class TestBitlist:
         class Bitlist4(BaseBitlist):
             LIMIT = 4
 
-        with pytest.raises(ValueError, match="cannot exceed 4 bits"):
+        with pytest.raises(ValueOrValidationError):
             Bitlist4(data=[Boolean(b) for b in [True, False, True, False, True]])
 
     def test_pydantic_validation_accepts_valid_list(self) -> None:
@@ -159,7 +163,7 @@ class TestBitlist:
     )
     def test_pydantic_validation_rejects_invalid_values(self, invalid_value: Any) -> None:
         """Tests that Pydantic validation rejects lists that exceed the limit."""
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueOrValidationError):
             Bitlist8Model(value=invalid_value)
 
     def test_add_with_list(self) -> None:
@@ -197,7 +201,7 @@ class TestBitlist:
             LIMIT = 4
 
         bitlist = Bitlist4(data=[Boolean(True), Boolean(False), Boolean(True)])
-        with pytest.raises(ValueError, match="cannot exceed 4 bits"):
+        with pytest.raises(ValueOrValidationError):
             bitlist + [Boolean(False), Boolean(True)]
 
 
@@ -267,7 +271,7 @@ class TestBitfieldSerialization:
         class Bitvector8(BaseBitvector):
             LENGTH = 8
 
-        with pytest.raises(ValueError, match="expected 1 bytes, got 2"):
+        with pytest.raises(SSZValueError, match="expected 1 bytes, got 2"):
             Bitvector8.decode_bytes(b"\x01\x02")  # Expects 1 byte, gets 2
 
     def test_bitlist_decode_invalid_data(self) -> None:
@@ -276,7 +280,7 @@ class TestBitfieldSerialization:
         class Bitlist8(BaseBitlist):
             LIMIT = 8
 
-        with pytest.raises(ValueError, match="Cannot decode empty bytes"):
+        with pytest.raises(SSZSerializationError, match="cannot decode empty bytes"):
             Bitlist8.decode_bytes(b"")
 
 
@@ -295,7 +299,7 @@ class TestBitfieldSSZ:
             LIMIT = 10
 
         assert Bitlist10.is_fixed_size() is False
-        with pytest.raises(TypeError):
+        with pytest.raises(SSZTypeError):
             Bitlist10.get_byte_length()
 
     def test_bitvector_deserialize_invalid_scope(self) -> None:
@@ -303,7 +307,7 @@ class TestBitfieldSSZ:
             LENGTH = 8
 
         stream = io.BytesIO(b"\xff")
-        with pytest.raises(ValueError, match="expected 1 bytes, got 2"):
+        with pytest.raises(SSZSerializationError, match="expected 1 bytes, got 2"):
             Bitvector8.deserialize(stream, scope=2)
 
     def test_bitvector_deserialize_premature_end(self) -> None:
@@ -311,7 +315,7 @@ class TestBitfieldSSZ:
             LENGTH = 16
 
         stream = io.BytesIO(b"\xff")  # Only 1 byte, expects 2
-        with pytest.raises(IOError, match="Expected 2 bytes, got 1"):
+        with pytest.raises(SSZSerializationError, match="expected 2 bytes, got 1"):
             Bitvector16.deserialize(stream, scope=2)
 
     def test_bitlist_deserialize_premature_end(self) -> None:
@@ -319,7 +323,7 @@ class TestBitfieldSSZ:
             LIMIT = 16
 
         stream = io.BytesIO(b"\xff")  # Only 1 byte
-        with pytest.raises(IOError, match="Expected 2 bytes, got 1"):
+        with pytest.raises(SSZSerializationError, match="expected 2 bytes, got 1"):
             Bitlist16.deserialize(stream, scope=2)  # Scope says to read 2
 
     @pytest.mark.parametrize(

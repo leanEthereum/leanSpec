@@ -7,6 +7,7 @@ from pydantic import model_validator
 from lean_spec.types import StrictBaseModel
 
 from ..koalabear import Fp, P
+from ._validation import enforce_strict_types
 from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
 from .types import HashDigestVector, Parameter, Randomness
 
@@ -18,10 +19,9 @@ class Rand(StrictBaseModel):
     """Configuration parameters for the random generator."""
 
     @model_validator(mode="after")
-    def enforce_strict_types(self) -> "Rand":
+    def _validate_strict_types(self) -> "Rand":
         """Reject subclasses to prevent type confusion attacks."""
-        if type(self.config) is not XmssConfig:
-            raise TypeError("config must be exactly XmssConfig, not a subclass")
+        enforce_strict_types(self, config=XmssConfig)
         return self
 
     def field_elements(self, length: int) -> list[Fp]:

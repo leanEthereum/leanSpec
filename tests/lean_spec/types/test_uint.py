@@ -6,6 +6,7 @@ from typing import Any, Type
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from lean_spec.types.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from lean_spec.types.uint import (
     BaseUint,
     Uint8,
@@ -92,9 +93,9 @@ def test_pydantic_strict_mode_rejects_invalid_types(
 def test_instantiation_from_invalid_types_raises_error(
     uint_class: Type[BaseUint], invalid_value: Any, expected_type_name: str
 ) -> None:
-    """Tests that instantiating with non-integer types raises a TypeError."""
+    """Tests that instantiating with non-integer types raises SSZTypeError."""
     expected_msg = f"Expected int, got {expected_type_name}"
-    with pytest.raises(TypeError, match=expected_msg):
+    with pytest.raises(SSZTypeError, match=expected_msg):
         uint_class(invalid_value)
 
 
@@ -109,16 +110,16 @@ def test_instantiation_and_type(uint_class: Type[BaseUint]) -> None:
 
 @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
 def test_instantiation_negative(uint_class: Type[BaseUint]) -> None:
-    """Tests that instantiating with a negative number raises OverflowError."""
-    with pytest.raises(OverflowError):
+    """Tests that instantiating with a negative number raises SSZValueError."""
+    with pytest.raises(SSZValueError):
         uint_class(-5)
 
 
 @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
 def test_instantiation_too_large(uint_class: Type[BaseUint]) -> None:
-    """Tests that instantiating with a value >= MAX raises OverflowError."""
+    """Tests that instantiating with a value >= MAX raises SSZValueError."""
     max_value = 2**uint_class.BITS
-    with pytest.raises(OverflowError):
+    with pytest.raises(SSZValueError):
         uint_class(max_value)
 
 
@@ -140,17 +141,17 @@ def test_arithmetic_operators(uint_class: Type[BaseUint]) -> None:
 
     # Addition
     assert a + b == uint_class(a_val + b_val)
-    with pytest.raises(OverflowError):
+    with pytest.raises(SSZValueError):
         _ = max_val + b
 
     # Subtraction
     assert a - b == uint_class(a_val - b_val)
-    with pytest.raises(OverflowError):
+    with pytest.raises(SSZValueError):
         _ = b - a
 
     # Multiplication
     assert a * b == uint_class(a_val * b_val)
-    with pytest.raises(OverflowError):
+    with pytest.raises(SSZValueError):
         _ = max_val * b
 
     # Floor Division
@@ -162,7 +163,7 @@ def test_arithmetic_operators(uint_class: Type[BaseUint]) -> None:
     # Exponentiation
     assert uint_class(b_val) ** 4 == uint_class(b_val**4)
     if uint_class.BITS <= 16:  # Pow gets too big quickly
-        with pytest.raises(OverflowError):
+        with pytest.raises(SSZValueError):
             _ = a ** int(b)
 
 
@@ -399,10 +400,10 @@ class TestUintSSZ:
 
     @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
     def test_decode_bytes_invalid_length(self, uint_class: Type[BaseUint]) -> None:
-        """Tests that `decode_bytes` raises a ValueError for data of the wrong length."""
+        """Tests that `decode_bytes` raises SSZSerializationError for wrong length data."""
         # Create byte string that is one byte too short.
         invalid_data = b"\x00" * (uint_class.get_byte_length() - 1)
-        with pytest.raises(ValueError, match="Invalid byte length"):
+        with pytest.raises(SSZSerializationError, match="expected .* bytes, got"):
             uint_class.decode_bytes(invalid_data)
 
     @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
@@ -426,17 +427,17 @@ class TestUintSSZ:
 
     @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
     def test_deserialize_invalid_scope(self, uint_class: Type[BaseUint]) -> None:
-        """Tests that `deserialize` raises a ValueError if the scope is incorrect."""
+        """Tests that `deserialize` raises an SSZSerializationError if the scope is incorrect."""
         stream = io.BytesIO(b"\x00" * uint_class.get_byte_length())
         invalid_scope = uint_class.get_byte_length() - 1
-        with pytest.raises(ValueError, match="Invalid scope"):
+        with pytest.raises(SSZSerializationError, match="invalid scope"):
             uint_class.deserialize(stream, scope=invalid_scope)
 
     @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
     def test_deserialize_stream_too_short(self, uint_class: Type[BaseUint]) -> None:
-        """Tests that `deserialize` raises an IOError if the stream ends prematurely."""
+        """Tests that `deserialize` raises SSZSerializationError if stream ends prematurely."""
         byte_length = uint_class.get_byte_length()
         # Create a stream that is shorter than what the type requires.
         stream = io.BytesIO(b"\x00" * (byte_length - 1))
-        with pytest.raises(IOError, match="Stream ended prematurely"):
+        with pytest.raises(SSZSerializationError, match="expected .* bytes, got"):
             uint_class.deserialize(stream, scope=byte_length)
