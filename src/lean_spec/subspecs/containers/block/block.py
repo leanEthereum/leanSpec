@@ -162,6 +162,7 @@ class SignedBlockWithAttestation(Container):
             AssertionError: If signature verification fails, including:
                 - Signature count mismatch
                 - Validator index out of range
+                - lean-multisig aggregated signature verification failure
                 - XMSS signature verification failure
         """
         block = self.message.block
@@ -197,7 +198,7 @@ class SignedBlockWithAttestation(Container):
                 )
             except LeanMultisigError as exc:
                 raise AssertionError(
-                    "Attestation aggregated signature verification failed"
+                    f"Attestation aggregated signature verification failed: {exc}"
                 ) from exc
 
         # Verify proposer attestation signature

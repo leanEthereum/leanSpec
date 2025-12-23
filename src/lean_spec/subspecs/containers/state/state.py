@@ -847,7 +847,7 @@ class State(Container):
 
             # Try to aggregate all validators together (best case)
             payload = self._aggregate_signatures_from_gossip(
-                validator_ids, data_root, aggregated.data.slot
+                validator_ids, data_root, aggregated.data.slot, gossip_attestation_signatures
             )
             if payload is not None:
                 attestation_signatures.append(payload)

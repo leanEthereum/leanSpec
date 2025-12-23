@@ -337,7 +337,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Sign all attestations and the proposer attestation
         attestation_signatures_blob = key_manager.build_attestation_signatures(
             final_block.body.attestations,
-            signature_lookup=attestation_signatures,
+            attestation_signatures,
         )
 
         proposer_signature = key_manager.sign_attestation_data(
