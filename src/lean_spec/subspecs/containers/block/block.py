@@ -181,9 +181,9 @@ class SignedBlockWithAttestation(Container):
         ):
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
 
-            attestation_root = aggregated_attestation.data.data_root_bytes()
+            attestation_data_root = aggregated_attestation.data.data_root_bytes()
 
-            # Verify the leanVM aggregated proof for this attestation
+            # Verify the leanVM aggregated proof for this attestation data root
             for validator_id in validator_ids:
                 # Ensure validator exists in the active set
                 assert validator_id < Uint64(len(validators)), "Validator index out of range"
@@ -193,7 +193,7 @@ class SignedBlockWithAttestation(Container):
                 verify_aggregated_payload(
                     public_keys=public_keys,
                     payload=bytes(aggregated_signature),
-                    message=attestation_root,
+                    message=attestation_data_root,
                     epoch=aggregated_attestation.data.slot,
                 )
             except LeanMultisigError as exc:

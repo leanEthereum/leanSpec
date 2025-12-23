@@ -735,6 +735,7 @@ class State(Container):
             tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
         ]
         | None = None,
+        _dropped_attestation_keys: set[tuple[Uint64, bytes]] | None = None,
     ) -> tuple[Block, "State", list[Attestation], list[LeanAggregatedSignature]]:
         """
         Build a valid block on top of this state.
@@ -761,12 +762,18 @@ class State(Container):
                 signatures.
             block_attestation_signatures: Map of (validator_id, data_root) to aggregated
                 signature payloads.
+            _dropped_attestation_keys: Internal accumulator tracking (validator_id, data_root)
+                pairs that were proven unsignable during this build. Not intended for callers.
 
         Returns:
             Tuple of (Block, post-State, collected attestations, signatures).
         """
         # Initialize empty attestation set for iterative collection.
         attestations = list(attestations or [])
+        if _dropped_attestation_keys is None:
+            dropped_attestation_keys: set[tuple[Uint64, bytes]] = set()
+        else:
+            dropped_attestation_keys = _dropped_attestation_keys
 
         # Iteratively collect valid attestations using fixed-point algorithm
         #
@@ -800,21 +807,9 @@ class State(Container):
                 data = attestation.data
                 validator_id = attestation.validator_id
                 data_root = data.data_root_bytes()
+                cache_key = (validator_id, data_root)
 
-                # We can only include an attestation if we have *some* way to later provide
-                # an aggregated payload for its attestation group:
-                # - either a per-validator XMSS signature from gossip, or
-                # - at least one aggregated payload learned from a block that references
-                #   this validator+data.
-                has_gossip_sig = bool(
-                    gossip_attestation_signatures
-                    and gossip_attestation_signatures.get((validator_id, data_root)) is not None
-                )
-                has_block_payload = bool(
-                    block_attestation_signatures
-                    and block_attestation_signatures.get((validator_id, data_root))
-                )
-                if not (has_gossip_sig or has_block_payload):
+                if cache_key in dropped_attestation_keys:
                     continue
 
                 # Skip if target block is unknown
@@ -825,8 +820,25 @@ class State(Container):
                 if data.source != post_state.latest_justified:
                     continue
 
-                # Add attestation if not already included
-                if attestation not in attestations:
+                # Avoid adding duplicates of attestations already in the candidate set
+                if attestation in attestations:
+                    continue
+
+                # We can only include an attestation if we have some way to later provide
+                # an aggregated payload for its group:
+                # - either a per validator XMSS signature from gossip, or
+                # - at least one aggregated payload learned from a block that references
+                #   this validator+data.
+                has_gossip_sig = bool(
+                    gossip_attestation_signatures
+                    and gossip_attestation_signatures.get(cache_key) is not None
+                )
+
+                has_block_payload = bool(
+                    block_attestation_signatures and block_attestation_signatures.get(cache_key)
+                )
+
+                if has_gossip_sig or has_block_payload:
                     new_attestations.append(attestation)
 
             # Fixed point reached: no new attestations found
@@ -887,6 +899,14 @@ class State(Container):
                 pruned.extend(
                     [Attestation(validator_id=vid, data=aggregated.data) for vid in subset]
                 )
+                if len(subset) < len(validator_ids):
+                    subset_set = set(subset)
+                    for vid in validator_ids:
+                        if vid not in subset_set:
+                            dropped_attestation_keys.add((vid, data_root))
+            else:
+                for vid in validator_ids:
+                    dropped_attestation_keys.add((vid, data_root))
 
         # If pruning removed attestations, rerun once with the pruned set to keep
         # state_root consistent.
@@ -900,6 +920,7 @@ class State(Container):
                 known_block_roots=known_block_roots,
                 gossip_attestation_signatures=gossip_attestation_signatures,
                 block_attestation_signatures=block_attestation_signatures,
+                _dropped_attestation_keys=dropped_attestation_keys,
             )
 
         # Store the post state root in the block

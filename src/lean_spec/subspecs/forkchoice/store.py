@@ -571,9 +571,8 @@ class Store(Container):
                 # aggregated attestations, especially when we have aggregator roles.
                 # This list can be recursively aggregated by the block proposer.
                 key = (validator_id, data_root)
-                existing = new_block_sigs.get(key)
                 record = (participant_bits, aggregated_signature)
-                new_block_sigs[key] = [record] if existing is None else (existing.append(record))
+                new_block_sigs.setdefault(key, []).append(record)
 
                 # Import the attestation data into forkchoice for latest votes
                 store = store.on_attestation(

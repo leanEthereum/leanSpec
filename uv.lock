@@ -561,6 +561,7 @@ name = "lean-spec"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "lean-multisig-py" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
@@ -608,6 +609,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?branch=main" },
     { name = "pydantic", specifier = ">=2.12.0,<3" },
     { name = "typing-extensions", specifier = ">=4.4" },
 ]
