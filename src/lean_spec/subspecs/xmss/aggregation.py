@@ -13,7 +13,8 @@ from lean_multisig_py import aggregate_signatures as aggregate_signatures_py
 from lean_multisig_py import setup_prover, setup_verifier
 from lean_multisig_py import verify_aggregated_signatures as verify_aggregated_signatures_py
 
-from lean_spec.subspecs.xmss.containers import PublicKey, Signature
+from lean_spec.subspecs.xmss.containers import PublicKey
+from lean_spec.subspecs.xmss.containers import Signature as XmssSignature
 from lean_spec.types import Uint64
 
 
@@ -25,9 +26,11 @@ class LeanMultisigAggregationError(LeanMultisigError):
     """Raised when lean-multisig fails to aggregate or verify signatures."""
 
 
+# This function will change for recursive aggregation
+# which might additionally require hints.
 def aggregate_signatures(
     public_keys: Sequence[PublicKey],
-    signatures: Sequence[Signature],
+    signatures: Sequence[XmssSignature],
     message: bytes,
     epoch: Uint64,
 ) -> bytes:
@@ -65,6 +68,8 @@ def aggregate_signatures(
         raise LeanMultisigAggregationError(f"lean-multisig aggregation failed: {exc}") from exc
 
 
+# This function will change for recursive aggregation verification
+# which might additionally require hints.
 def verify_aggregated_payload(
     public_keys: Sequence[PublicKey],
     payload: bytes,
