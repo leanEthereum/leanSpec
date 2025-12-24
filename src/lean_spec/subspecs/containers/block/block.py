@@ -192,7 +192,7 @@ class SignedBlockWithAttestation(Container):
             try:
                 verify_aggregated_payload(
                     public_keys=public_keys,
-                    payload=bytes(aggregated_signature),
+                    payload=aggregated_signature,
                     message=attestation_data_root,
                     epoch=aggregated_attestation.data.slot,
                 )

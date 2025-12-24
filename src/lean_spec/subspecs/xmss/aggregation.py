@@ -16,6 +16,7 @@ from lean_multisig_py import verify_aggregated_signatures as verify_aggregated_s
 from lean_spec.subspecs.xmss.containers import PublicKey
 from lean_spec.subspecs.xmss.containers import Signature as XmssSignature
 from lean_spec.types import Uint64
+from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
 
 class LeanMultisigError(RuntimeError):
@@ -33,7 +34,7 @@ def aggregate_signatures(
     signatures: Sequence[XmssSignature],
     message: bytes,
     epoch: Uint64,
-) -> bytes:
+) -> LeanAggregatedSignature:
     """
     Aggregate XMSS signatures using lean-multisig.
 
@@ -44,7 +45,7 @@ def aggregate_signatures(
         epoch: The epoch in which the signatures were created.
 
     Returns:
-        Raw bytes of the aggregated signature payload.
+        LeanAggregatedSignature of the aggregated signature payload.
 
     Raises:
         LeanMultisigError: If lean-multisig is unavailable or aggregation fails.
@@ -63,7 +64,7 @@ def aggregate_signatures(
             epoch,
             test_mode=True,
         )
-        return aggregated_bytes
+        return LeanAggregatedSignature(data=aggregated_bytes)
     except Exception as exc:
         raise LeanMultisigAggregationError(f"lean-multisig aggregation failed: {exc}") from exc
 
@@ -72,7 +73,7 @@ def aggregate_signatures(
 # which might additionally require hints.
 def verify_aggregated_payload(
     public_keys: Sequence[PublicKey],
-    payload: bytes,
+    payload: LeanAggregatedSignature,
     message: bytes,
     epoch: Uint64,
 ) -> None:
@@ -81,7 +82,7 @@ def verify_aggregated_payload(
 
     Args:
         public_keys: Public keys of the signers, one per original signature.
-        payload: Raw bytes of the aggregated signature payload.
+        payload: LeanAggregatedSignature of the aggregated signature payload.
         message: The 32-byte message that was signed.
         epoch: The epoch in which the signatures were created.
 
@@ -97,7 +98,7 @@ def verify_aggregated_payload(
         verify_aggregated_signatures_py(
             pub_keys_bytes,
             message,
-            payload,
+            payload.encode_bytes(),
             epoch,
             test_mode=True,
         )

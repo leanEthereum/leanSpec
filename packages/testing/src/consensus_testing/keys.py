@@ -333,13 +333,13 @@ class XmssKeyManager:
 
             # If the caller supplied raw signatures and any are invalid,
             # aggregation should fail with exception.
-            payload = aggregate_signatures(
+            aggregated_signature = aggregate_signatures(
                 public_keys=public_keys,
                 signatures=signatures,
                 message=message,
                 epoch=epoch,
             )
-            proof_blobs.append(LeanAggregatedSignature(data=payload))
+            proof_blobs.append(aggregated_signature)
 
         return AttestationSignatures(data=proof_blobs)
 

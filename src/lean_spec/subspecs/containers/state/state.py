@@ -640,13 +640,13 @@ class State(Container):
             sigs.append(sig)
             pks.append(self.validators[vid].get_pubkey())
 
-        payload = aggregate_signatures(
+        aggregated_signature = aggregate_signatures(
             public_keys=pks,
             signatures=sigs,
             message=data_root,
             epoch=epoch,
         )
-        return LeanAggregatedSignature(data=payload)
+        return aggregated_signature
 
     def _common_block_payload(
         self,
@@ -666,20 +666,22 @@ class State(Container):
         if not first_records:
             return None
 
-        for participants, payload in first_records:
+        for participants, aggregated_signature in first_records:
             if participants != target_bits:
                 continue
-            payload_bytes = bytes(payload)
             if all(
                 any(
-                    other_participants == target_bits and bytes(other_payload) == payload_bytes
-                    for other_participants, other_payload in block_attestation_signatures.get(
-                        (vid, data_root), []
+                    (
+                        other_participants == target_bits
+                        and other_aggregated_signature == aggregated_signature
+                    )
+                    for other_participants, other_aggregated_signature in (
+                        block_attestation_signatures.get((vid, data_root), [])
                     )
                 )
                 for vid in validator_ids[1:]
             ):
-                return LeanAggregatedSignature(data=payload_bytes)
+                return aggregated_signature
         return None
 
     def _best_block_payload_subset(
