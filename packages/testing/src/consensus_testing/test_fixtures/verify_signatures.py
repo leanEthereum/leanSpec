@@ -183,7 +183,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         # Provide signatures to State.build_block so it can include attestations during
         # fixed-point collection when available_attestations/known_block_roots are used.
         # This might contain invalid signatures as we are not validating them here.
-        gossip_attestation_signatures = {
+        gossip_signatures = {
             (att.validator_id, att.data.data_root_bytes()): sig
             for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
         }
@@ -194,8 +194,8 @@ class VerifySignaturesTest(BaseConsensusFixture):
             proposer_index=proposer_index,
             parent_root=parent_root,
             attestations=attestations,
-            gossip_attestation_signatures=gossip_attestation_signatures,
-            block_attestation_signatures={},
+            gossip_signatures=gossip_signatures,
+            aggregated_payloads={},
         )
 
         attestation_signatures = AttestationSignatures(

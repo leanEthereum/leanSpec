@@ -45,6 +45,7 @@ from lean_spec.subspecs.containers.block.types import (
     AttestationSignatures,
 )
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state.types import AttestationSignatureKey
 from lean_spec.subspecs.xmss.aggregation import aggregate_signatures
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import (
@@ -308,7 +309,7 @@ class XmssKeyManager:
     def build_attestation_signatures(
         self,
         aggregated_attestations: AggregatedAttestations,
-        signature_lookup: Mapping[tuple[Uint64, bytes], Signature] | None = None,
+        signature_lookup: Mapping[AttestationSignatureKey, Signature] | None = None,
     ) -> AttestationSignatures:
         """
         Build `AttestationSignatures` for already-aggregated attestations.

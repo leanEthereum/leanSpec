@@ -195,12 +195,12 @@ class TestBlockProduction:
         )
         sample_store.latest_known_attestations[Uint64(5)] = signed_5.message
         sample_store.latest_known_attestations[Uint64(6)] = signed_6.message
-        sample_store.gossip_attestation_signatures[
-            (Uint64(5), signed_5.message.data_root_bytes())
-        ] = signed_5.signature
-        sample_store.gossip_attestation_signatures[
-            (Uint64(6), signed_6.message.data_root_bytes())
-        ] = signed_6.signature
+        sample_store.gossip_signatures[(Uint64(5), signed_5.message.data_root_bytes())] = (
+            signed_5.signature
+        )
+        sample_store.gossip_signatures[(Uint64(6), signed_6.message.data_root_bytes())] = (
+            signed_6.signature
+        )
 
         slot = Slot(2)
         validator_idx = Uint64(2)  # Proposer for slot 2
@@ -291,9 +291,9 @@ class TestBlockProduction:
             target=sample_store.get_attestation_target(),
         )
         sample_store.latest_known_attestations[Uint64(7)] = signed_7.message
-        sample_store.gossip_attestation_signatures[
-            (Uint64(7), signed_7.message.data_root_bytes())
-        ] = signed_7.signature
+        sample_store.gossip_signatures[(Uint64(7), signed_7.message.data_root_bytes())] = (
+            signed_7.signature
+        )
 
         store, block, _signatures = sample_store.produce_block_with_signatures(
             slot,

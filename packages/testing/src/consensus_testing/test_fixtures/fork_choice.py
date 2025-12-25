@@ -26,6 +26,7 @@ from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.containers.state.types import AttestationSignatureKey
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
@@ -308,8 +309,8 @@ class ForkChoiceTest(BaseConsensusFixture):
             spec, store, block_registry, parent_root, key_manager
         )
 
-        gossip_attestation_signatures = dict(store.gossip_attestation_signatures)
-        gossip_attestation_signatures.update(attestation_signatures)
+        gossip_signatures = dict(store.gossip_signatures)
+        gossip_signatures.update(attestation_signatures)
 
         # Use State.build_block for core block building (pure spec logic)
         parent_state = store.states[parent_root]
@@ -318,8 +319,8 @@ class ForkChoiceTest(BaseConsensusFixture):
             proposer_index=proposer_index,
             parent_root=parent_root,
             attestations=attestations,
-            gossip_attestation_signatures=gossip_attestation_signatures,
-            block_attestation_signatures=store.block_attestation_signatures,
+            gossip_signatures=gossip_signatures,
+            aggregated_payloads=store.aggregated_payloads,
         )
 
         # Create proposer attestation for this block
@@ -404,14 +405,14 @@ class ForkChoiceTest(BaseConsensusFixture):
         block_registry: dict[str, Block],
         parent_root: Bytes32,
         key_manager: XmssKeyManager,
-    ) -> tuple[list[Attestation], dict[tuple[Uint64, bytes], Signature]]:
+    ) -> tuple[list[Attestation], dict[AttestationSignatureKey, Signature]]:
         """Build attestations list from BlockSpec and their signatures."""
         if spec.attestations is None:
             return [], {}
 
         parent_state = store.states[parent_root]
         attestations = []
-        signature_lookup: dict[tuple[Uint64, bytes], Signature] = {}
+        signature_lookup: dict[AttestationSignatureKey, Signature] = {}
 
         for att_spec in spec.attestations:
             if isinstance(att_spec, SignedAttestationSpec):
