@@ -555,7 +555,8 @@ class Store(Container):
         )
 
         # Copy the block attestation signatures map for updates
-        new_block_sigs = dict(store.block_attestation_signatures)
+        # Must deep copy the lists to maintain immutability of previous store snapshots
+        new_block_sigs = {k: list(v) for k, v in store.block_attestation_signatures.items()}
 
         for aggregated_attestation, aggregated_signature in zip(
             aggregated_attestations, attestation_signatures, strict=True

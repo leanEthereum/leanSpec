@@ -356,21 +356,20 @@ class State(Container):
         Raises:
         ------
         AssertionError
-            If block contains duplicate AttestationData.
+            If block contains duplicate aggregated attestations with no unique participant.
         """
         # First process the block header.
         state = self.process_block_header(block)
 
-        # Reject blocks with duplicate attestation data
+        # Reject blocks that has same aggregated attestation data and no unique participant.
         #
-        # Each aggregated attestation in a block must refer to a unique AttestationData.
-        # Duplicates would allow the same vote to be counted multiple times, breaking
-        # the integrity of the justification tally.
+        # Multiple AggregatedAttestations may carry identical AttestationData as long as
+        # each has at least one validator that is not present in any other.
         #
         # This is a protocol-level invariant: honest proposers never include duplicates,
         # and validators must reject blocks that violate this rule.
-        assert not block.body.attestations.has_duplicate_data(), (
-            "Block contains duplicate AttestationData"
+        assert block.body.attestations.each_duplicate_attestation_has_unique_participant(), (
+            "Block contains duplicate aggregated attestations with no unique participant"
         )
 
         return state.process_attestations(block.body.attestations)
@@ -648,7 +647,7 @@ class State(Container):
         )
         return aggregated_signature
 
-    def _common_block_payload(
+    def _aggregate_signatures_from_block_payload(
         self,
         validator_ids: list[Uint64],
         data_root: bytes,
@@ -684,46 +683,6 @@ class State(Container):
                 return aggregated_signature
         return None
 
-    def _best_block_payload_subset(
-        self,
-        validator_ids: list[Uint64],
-        data_root: bytes,
-        block_attestation_signatures: dict[
-            tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
-        ]
-        | None = None,
-    ) -> list[Uint64]:
-        """
-        Find the largest subset of validators that share a cached block payload.
-
-        Returns the validator indices sorted ascending. An empty list is returned when no
-        compatible payload exists.
-        """
-        if not block_attestation_signatures or not validator_ids:
-            return []
-
-        validator_set = frozenset(validator_ids)
-
-        best_participants: set[Uint64] = set()
-        best_len = 0
-        for vid in validator_ids:
-            for participants, _payload in block_attestation_signatures.get((vid, data_root), ()):
-                if not participants or not participants.data:
-                    continue
-
-                participant_ids = participants.to_validator_indices()
-                if not participant_ids:
-                    continue
-
-                if len(participant_ids) <= best_len:
-                    continue
-
-                if set(participant_ids).issubset(validator_set):
-                    best_len = len(participant_ids)
-                    best_participants = set(participant_ids)
-
-        return sorted(best_participants)
-
     def build_block(
         self,
         slot: Slot,
@@ -737,8 +696,7 @@ class State(Container):
             tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
         ]
         | None = None,
-        _dropped_attestation_keys: set[tuple[Uint64, bytes]] | None = None,
-    ) -> tuple[Block, "State", list[Attestation], list[LeanAggregatedSignature]]:
+    ) -> tuple[Block, "State", list[AggregatedAttestation], list[LeanAggregatedSignature]]:
         """
         Build a valid block on top of this state.
 
@@ -764,18 +722,12 @@ class State(Container):
                 signatures.
             block_attestation_signatures: Map of (validator_id, data_root) to aggregated
                 signature payloads.
-            _dropped_attestation_keys: Internal accumulator tracking (validator_id, data_root)
-                pairs that were proven unsignable during this build. Not intended for callers.
 
         Returns:
             Tuple of (Block, post-State, collected attestations, signatures).
         """
         # Initialize empty attestation set for iterative collection.
         attestations = list(attestations or [])
-        if _dropped_attestation_keys is None:
-            dropped_attestation_keys: set[tuple[Uint64, bytes]] = set()
-        else:
-            dropped_attestation_keys = _dropped_attestation_keys
 
         # Iteratively collect valid attestations using fixed-point algorithm
         #
@@ -809,10 +761,7 @@ class State(Container):
                 data = attestation.data
                 validator_id = attestation.validator_id
                 data_root = data.data_root_bytes()
-                cache_key = (validator_id, data_root)
-
-                if cache_key in dropped_attestation_keys:
-                    continue
+                attestation_key = (validator_id, data_root)
 
                 # Skip if target block is unknown
                 if data.head.root not in known_block_roots:
@@ -833,11 +782,12 @@ class State(Container):
                 #   this validator+data.
                 has_gossip_sig = bool(
                     gossip_attestation_signatures
-                    and gossip_attestation_signatures.get(cache_key) is not None
+                    and gossip_attestation_signatures.get(attestation_key) is not None
                 )
 
                 has_block_payload = bool(
-                    block_attestation_signatures and block_attestation_signatures.get(cache_key)
+                    block_attestation_signatures
+                    and block_attestation_signatures.get(attestation_key)
                 )
 
                 if has_gossip_sig or has_block_payload:
@@ -850,81 +800,217 @@ class State(Container):
             # Add new attestations and continue iteration
             attestations.extend(new_attestations)
 
-        # Build aggregated signatures aligned with the block's aggregated attestations.
-        aggregated_attestations = candidate_block.body.attestations
-        attestation_signatures: list[LeanAggregatedSignature] = []
-        pruned: list[Attestation] = []
-
-        for aggregated in aggregated_attestations:
-            validator_ids = aggregated.aggregation_bits.to_validator_indices()
-            data_root = aggregated.data.data_root_bytes()
-
-            # Try to aggregate all validators together (best case)
-            payload = self._aggregate_signatures_from_gossip(
-                validator_ids, data_root, aggregated.data.slot, gossip_attestation_signatures
+        # Compute the aggregated signatures for the attestations.
+        # If the attestations cannot be aggregated, split it in a greedy way.
+        aggregated_attestations, aggregated_signatures = (
+            self.compute_aggregated_signatures_with_greedy_fallback(
+                attestations,
+                gossip_attestation_signatures,
+                block_attestation_signatures,
             )
-            if payload is not None:
-                attestation_signatures.append(payload)
-                pruned.extend(
-                    [Attestation(validator_id=vid, data=aggregated.data) for vid in validator_ids]
-                )
-                continue
+        )
 
-            payload = self._common_block_payload(
-                validator_ids, data_root, block_attestation_signatures
-            )
-            if payload is not None:
-                attestation_signatures.append(payload)
-                pruned.extend(
-                    [Attestation(validator_id=vid, data=aggregated.data) for vid in validator_ids]
-                )
-                continue
-
-            # Cannot provide a payload for the full validator set.
-            # Keep the largest subset we can sign and drop the rest. The block will be rebuilt
-            # with this reduced attestation set.
-            gossip_subset = [
-                vid
-                for vid in validator_ids
-                if gossip_attestation_signatures
-                and gossip_attestation_signatures.get((vid, data_root)) is not None
-            ]
-            block_subset = self._best_block_payload_subset(
-                validator_ids, data_root, block_attestation_signatures
-            )
-
-            subset = block_subset
-            if gossip_subset and len(gossip_subset) > len(subset):
-                subset = gossip_subset
-
-            if subset:
-                pruned.extend(
-                    [Attestation(validator_id=vid, data=aggregated.data) for vid in subset]
-                )
-                if len(subset) < len(validator_ids):
-                    subset_set = set(subset)
-                    for vid in validator_ids:
-                        if vid not in subset_set:
-                            dropped_attestation_keys.add((vid, data_root))
-            else:
-                for vid in validator_ids:
-                    dropped_attestation_keys.add((vid, data_root))
-
-        # If pruning removed attestations, rerun once with the pruned set to keep
-        # state_root consistent.
-        if len(pruned) != len(attestations):
-            return self.build_block(
-                slot=slot,
-                proposer_index=proposer_index,
-                parent_root=parent_root,
-                attestations=pruned,
-                available_attestations=available_attestations,
-                known_block_roots=known_block_roots,
-                gossip_attestation_signatures=gossip_attestation_signatures,
-                block_attestation_signatures=block_attestation_signatures,
-                _dropped_attestation_keys=dropped_attestation_keys,
-            )
+        # Update the block with the aggregated attestations
+        final_block = candidate_block.model_copy(
+            update={
+                "body": BlockBody(
+                    attestations=AggregatedAttestations(
+                        data=aggregated_attestations,
+                    ),
+                ),
+            }
+        )
 
         # Store the post state root in the block
-        final_block = candidate_block.model_copy(update={"state_root": hash_tree_root(post_state)})
-        return final_block, post_state, attestations, attestation_signatures
+        final_block = final_block.model_copy(
+            update={
+                "state_root": hash_tree_root(post_state),
+            }
+        )
+
+        return final_block, post_state, aggregated_attestations, aggregated_signatures
+
+    def compute_aggregated_signatures_with_greedy_fallback(
+        self,
+        attestations: list[Attestation],
+        gossip_attestation_signatures: dict[tuple[Uint64, bytes], "Signature"] | None = None,
+        block_attestation_signatures: dict[
+            tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
+        ]
+        | None = None,
+    ) -> tuple[list[AggregatedAttestation], list[LeanAggregatedSignature]]:
+        """
+        Compute aggregated signatures for a set of attestations.
+
+        If the aggregated signatures cannot be computed, split the attestations greedily to
+        generate the minimal number of aggregated attestations.
+
+        Args:
+            attestations: The attestations to compute aggregated signatures for.
+            gossip_attestation_signatures: Optional per-validator XMSS signatures learned from
+                gossip, keyed by `(validator_id, data_root)`.
+            block_attestation_signatures: Optional aggregated signatures learned from blocks,
+                keyed by `(validator_id, data_root)`.
+
+        Returns:
+            A tuple of `(aggregated_attestations, aggregated_signatures)`.
+        """
+        final_aggregated_attestations: list[AggregatedAttestation] = []
+        final_aggregated_signatures: list[LeanAggregatedSignature] = []
+
+        # Aggregate all the attestations into a single aggregated attestation.
+        completely_aggregated_attestations = AggregatedAttestation.aggregate_by_data(attestations)
+
+        # Try to compute the aggregated signatures for the single aggregated attestation.
+        #
+        # We will try to compute the aggregated signatures for the completely aggregated
+        # attestations.
+        #     - either we can find per validator XMSS signatures from gossip, or
+        #     - we can find at least one aggregated payload learned from a block that references
+        #       this validator+data.
+        #
+        # If the aggregated signatures cannot be computed, we will split the completely aggregated
+        # attestations in a greedy way.
+        for completely_aggregated_attestation in completely_aggregated_attestations:
+            validator_ids = (
+                completely_aggregated_attestation.aggregation_bits.to_validator_indices()
+            )
+            data_root = completely_aggregated_attestation.data.data_root_bytes()
+            slot = completely_aggregated_attestation.data.slot
+
+            # Try to find per validator XMSS signatures from gossip.
+            aggregated_signature = self._aggregate_signatures_from_gossip(
+                validator_ids,
+                data_root,
+                slot,
+                gossip_attestation_signatures,
+            )
+            if aggregated_signature is not None:
+                final_aggregated_attestations.append(completely_aggregated_attestation)
+                final_aggregated_signatures.append(aggregated_signature)
+                continue
+
+            # Try to find at least one aggregated payload learned from a block that references
+            # this validator+data.
+            aggregated_signature = self._aggregate_signatures_from_block_payload(
+                validator_ids,
+                data_root,
+                block_attestation_signatures,
+            )
+            if aggregated_signature is not None:
+                final_aggregated_attestations.append(completely_aggregated_attestation)
+                final_aggregated_signatures.append(aggregated_signature)
+                continue
+
+            # If we have not found any aggregated signatures, we will split the completely
+            # aggregated attestations in a greedy way.
+            # Such that we include all the validators with minimal splits in aggregated
+            # attestations.
+            (
+                splited_aggregated_attestations,
+                splited_aggregated_signatures,
+            ) = self.split_aggregated_attestations_greedily(
+                completely_aggregated_attestation,
+                gossip_attestation_signatures,
+                block_attestation_signatures,
+            )
+            final_aggregated_attestations.extend(splited_aggregated_attestations)
+            final_aggregated_signatures.extend(splited_aggregated_signatures)
+
+        return final_aggregated_attestations, final_aggregated_signatures
+
+    def split_aggregated_attestations_greedily(
+        self,
+        aggregated_attestation: AggregatedAttestation,
+        gossip_attestation_signatures: dict[tuple[Uint64, bytes], "Signature"] | None = None,
+        block_attestation_signatures: dict[
+            tuple[Uint64, bytes], list[tuple[AggregationBits, LeanAggregatedSignature]]
+        ]
+        | None = None,
+    ) -> tuple[list[AggregatedAttestation], list[LeanAggregatedSignature]]:
+        """
+        Split an aggregated attestation greedily to cover all validators with minimal splits.
+
+        Args:
+            aggregated_attestation: The aggregated attestation to split.
+            gossip_attestation_signatures: Optional per-validator XMSS signatures learned from
+                gossip, keyed by `(validator_id, data_root)`.
+            block_attestation_signatures: Optional aggregated signatures learned from blocks,
+                keyed by `(validator_id, data_root)`.
+
+        Returns:
+            A tuple of `(split_aggregated_attestations, split_aggregated_signatures)`.
+        """
+        validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
+        data_root = aggregated_attestation.data.data_root_bytes()
+        slot = aggregated_attestation.data.slot
+
+        split_entries: list[
+            tuple[tuple[int, ...], AggregatedAttestation, LeanAggregatedSignature]
+        ] = []
+
+        # Try to reuse any per-validator gossip signatures first.
+        gossip_validator_ids = [
+            vid
+            for vid in validator_ids
+            if gossip_attestation_signatures
+            and gossip_attestation_signatures.get((vid, data_root)) is not None
+        ]
+        if gossip_validator_ids:
+            gossip_signature = self._aggregate_signatures_from_gossip(
+                gossip_validator_ids,
+                data_root,
+                slot,
+                gossip_attestation_signatures,
+            )
+            if gossip_signature is not None:
+                gossip_att = AggregatedAttestation(
+                    aggregation_bits=AggregationBits.from_validator_indices(gossip_validator_ids),
+                    data=aggregated_attestation.data,
+                )
+                participants = tuple(
+                    int(v) for v in gossip_att.aggregation_bits.to_validator_indices()
+                )
+                split_entries.append((participants, gossip_att, gossip_signature))
+
+        # Add subsets that have block-learned aggregated payloads.
+        validator_set = set(validator_ids)
+        if block_attestation_signatures:
+            for vid in validator_ids:
+                entries = block_attestation_signatures.get((vid, data_root), ())
+                for aggregation_bits, aggregated_signature in entries:
+                    participant_ids = aggregation_bits.to_validator_indices()
+                    if set(participant_ids).issubset(validator_set):
+                        participants = tuple(int(v) for v in participant_ids)
+                        split_entries.append(
+                            (
+                                participants,
+                                AggregatedAttestation(
+                                    aggregation_bits=aggregation_bits,
+                                    data=aggregated_attestation.data,
+                                ),
+                                aggregated_signature,
+                            )
+                        )
+
+        # Greedy filtering: keep larger validator sets first and break ties deterministically.
+        split_entries.sort(key=lambda entry: (-len(entry[0]), entry[0]))
+        filtered_pairs: list[tuple[AggregatedAttestation, LeanAggregatedSignature]] = []
+        covered: set[int] = set()
+        all_participants = {int(v) for v in validator_ids}
+        for participants, att, sig in split_entries:
+            new_participants = set(participants) - covered
+            if not new_participants:
+                continue
+            filtered_pairs.append((att, sig))
+            covered.update(participants)
+
+        if covered != all_participants:
+            missing = sorted(all_participants - covered)
+            raise AssertionError(
+                f"Cannot aggregate attestations for validators {missing} without signatures"
+            )
+
+        split_aggregated_attestations = [att for att, _ in filtered_pairs]
+        split_aggregated_signatures = [sig for _, sig in filtered_pairs]
+        return split_aggregated_attestations, split_aggregated_signatures

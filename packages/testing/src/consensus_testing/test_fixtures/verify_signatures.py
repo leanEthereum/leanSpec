@@ -16,6 +16,7 @@ from lean_spec.subspecs.containers.block import (
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
+from lean_spec.subspecs.containers.block.types import AttestationSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.koalabear import Fp
@@ -188,7 +189,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         }
 
         # Use State.build_block for core block building (pure spec logic)
-        final_block, _, _, _ = state.build_block(
+        final_block, _, _, aggregated_signatures = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
@@ -197,9 +198,8 @@ class VerifySignaturesTest(BaseConsensusFixture):
             block_attestation_signatures={},
         )
 
-        attestation_signatures = key_manager.build_attestation_signatures(
-            final_block.body.attestations,
-            signature_lookup=gossip_attestation_signatures,
+        attestation_signatures = AttestationSignatures(
+            data=aggregated_signatures,
         )
 
         # Create proposer attestation for this block
