@@ -153,7 +153,7 @@ class TestIntervalTicking:
         sample_store.latest_new_attestations[Uint64(0)] = build_signed_attestation(
             Uint64(0),
             test_checkpoint,
-        )
+        ).message
 
         # Tick through a complete slot cycle
         for interval in range(INTERVALS_PER_SLOT):
@@ -239,7 +239,7 @@ class TestAttestationProcessingTiming:
         sample_store.latest_new_attestations[Uint64(0)] = build_signed_attestation(
             Uint64(0),
             checkpoint,
-        )
+        ).message
 
         initial_new_attestations = len(sample_store.latest_new_attestations)
         initial_known_attestations = len(sample_store.latest_known_attestations)
@@ -269,7 +269,7 @@ class TestAttestationProcessingTiming:
             sample_store.latest_new_attestations[Uint64(i)] = build_signed_attestation(
                 Uint64(i),
                 checkpoint,
-            )
+            ).message
 
         # Accept all new attestations
         sample_store = sample_store.accept_new_attestations()
@@ -281,7 +281,7 @@ class TestAttestationProcessingTiming:
         # Verify correct mapping
         for i, checkpoint in enumerate(checkpoints):
             stored = sample_store.latest_known_attestations[Uint64(i)]
-            assert stored.message.target == checkpoint
+            assert stored.target == checkpoint
 
     def test_accept_new_attestations_empty(self, sample_store: Store) -> None:
         """Test accepting new attestations when there are none."""
@@ -341,7 +341,7 @@ class TestProposalHeadTiming:
         new_new_attestations[Uint64(10)] = build_signed_attestation(
             Uint64(10),
             checkpoint,
-        )
+        ).message
         sample_store = sample_store.model_copy(
             update={"latest_new_attestations": new_new_attestations}
         )
@@ -353,7 +353,7 @@ class TestProposalHeadTiming:
         assert Uint64(10) not in store.latest_new_attestations
         assert Uint64(10) in store.latest_known_attestations
         stored = store.latest_known_attestations[Uint64(10)]
-        assert stored.message.target == checkpoint
+        assert stored.target == checkpoint
 
 
 class TestTimeConstants:

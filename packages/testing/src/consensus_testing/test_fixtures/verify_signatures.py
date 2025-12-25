@@ -16,6 +16,7 @@ from lean_spec.subspecs.containers.block import (
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
+from lean_spec.subspecs.containers.block.types import AttestationSignatures
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.koalabear import Fp
@@ -179,26 +180,26 @@ class VerifySignaturesTest(BaseConsensusFixture):
             spec, state, key_manager
         )
 
+        # Provide signatures to State.build_block so it can include attestations during
+        # fixed-point collection when available_attestations/known_block_roots are used.
+        # This might contain invalid signatures as we are not validating them here.
+        gossip_signatures = {
+            (att.validator_id, att.data.data_root_bytes()): sig
+            for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
+        }
+
         # Use State.build_block for core block building (pure spec logic)
-        final_block, _, _, _ = state.build_block(
+        final_block, _, _, aggregated_signatures = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
             attestations=attestations,
+            gossip_signatures=gossip_signatures,
+            aggregated_payloads={},
         )
 
-        # Preserve per-attestation validity from the spec.
-        #
-        # For signature tests we must ensure that the signatures in the input spec are used
-        # for any intentionally-invalid signature from the input spec remains invalid
-        # in the produced `SignedBlockWithAttestation`.
-        signature_lookup: dict[tuple[Uint64, bytes], Signature] = {
-            (att.validator_id, att.data.data_root_bytes()): sig
-            for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
-        }
-        attestation_signatures = key_manager.build_attestation_signatures(
-            final_block.body.attestations,
-            signature_lookup=signature_lookup,
+        attestation_signatures = AttestationSignatures(
+            data=aggregated_signatures,
         )
 
         # Create proposer attestation for this block

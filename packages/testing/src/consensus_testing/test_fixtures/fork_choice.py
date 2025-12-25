@@ -26,6 +26,7 @@ from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.containers.state.types import AttestationSignatureKey
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
@@ -231,7 +232,10 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                 elif isinstance(step, AttestationStep):
                     # Process attestation from gossip (immutable)
-                    store = store.on_attestation(step.attestation, is_from_block=False)
+                    store = store.on_gossip_attestation(
+                        step.attestation,
+                        scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
+                    )
 
                 else:
                     raise ValueError(f"Step {i}: unknown step type {type(step).__name__}")
@@ -301,7 +305,12 @@ class ForkChoiceTest(BaseConsensusFixture):
         parent_root = self._resolve_parent_root(spec, store, block_registry)
 
         # Build attestations from spec
-        attestations = self._build_attestations_from_spec(spec, store, block_registry, parent_root)
+        attestations, attestation_signatures = self._build_attestations_from_spec(
+            spec, store, block_registry, parent_root, key_manager
+        )
+
+        gossip_signatures = dict(store.gossip_signatures)
+        gossip_signatures.update(attestation_signatures)
 
         # Use State.build_block for core block building (pure spec logic)
         parent_state = store.states[parent_root]
@@ -310,6 +319,8 @@ class ForkChoiceTest(BaseConsensusFixture):
             proposer_index=proposer_index,
             parent_root=parent_root,
             attestations=attestations,
+            gossip_signatures=gossip_signatures,
+            aggregated_payloads=store.aggregated_payloads,
         )
 
         # Create proposer attestation for this block
@@ -325,8 +336,9 @@ class ForkChoiceTest(BaseConsensusFixture):
         )
 
         # Sign all attestations and the proposer attestation
-        attestation_signatures = key_manager.build_attestation_signatures(
-            final_block.body.attestations
+        attestation_signatures_blob = key_manager.build_attestation_signatures(
+            final_block.body.attestations,
+            attestation_signatures,
         )
 
         proposer_signature = key_manager.sign_attestation_data(
@@ -340,7 +352,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 proposer_attestation=proposer_attestation,
             ),
             signature=BlockSignatures(
-                attestation_signatures=attestation_signatures,
+                attestation_signatures=attestation_signatures_blob,
                 proposer_signature=proposer_signature,
             ),
         )
@@ -392,34 +404,38 @@ class ForkChoiceTest(BaseConsensusFixture):
         store: Store,
         block_registry: dict[str, Block],
         parent_root: Bytes32,
-    ) -> list[Attestation]:
-        """Build attestations list from BlockSpec."""
+        key_manager: XmssKeyManager,
+    ) -> tuple[list[Attestation], dict[AttestationSignatureKey, Signature]]:
+        """Build attestations list from BlockSpec and their signatures."""
         if spec.attestations is None:
-            return []
+            return [], {}
 
         parent_state = store.states[parent_root]
         attestations = []
+        signature_lookup: dict[AttestationSignatureKey, Signature] = {}
 
         for att_spec in spec.attestations:
             if isinstance(att_spec, SignedAttestationSpec):
                 signed_att = self._build_signed_attestation_from_spec(
-                    att_spec, block_registry, parent_state
-                )
-                attestations.append(
-                    Attestation(validator_id=signed_att.validator_id, data=signed_att.message)
+                    att_spec, block_registry, parent_state, key_manager
                 )
             else:
-                attestations.append(
-                    Attestation(validator_id=att_spec.validator_id, data=att_spec.message)
-                )
+                signed_att = att_spec
 
-        return attestations
+            attestation = Attestation(validator_id=signed_att.validator_id, data=signed_att.message)
+            attestations.append(attestation)
+            signature_lookup[(attestation.validator_id, attestation.data.data_root_bytes())] = (
+                signed_att.signature
+            )
+
+        return attestations, signature_lookup
 
     def _build_signed_attestation_from_spec(
         self,
         spec: SignedAttestationSpec,
         block_registry: dict[str, Block],
         state: State,
+        key_manager: XmssKeyManager,
     ) -> SignedAttestation:
         """
         Build a SignedAttestation from a SignedAttestationSpec.
@@ -466,15 +482,21 @@ class ForkChoiceTest(BaseConsensusFixture):
         )
 
         # Create signed attestation
+        if spec.signature is not None:
+            signature = spec.signature
+        elif spec.valid_signature:
+            signature = key_manager.sign_attestation_data(
+                attestation.validator_id, attestation.data
+            )
+        else:
+            signature = Signature(
+                path=HashTreeOpening(siblings=HashDigestList(data=[])),
+                rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+                hashes=HashDigestList(data=[]),
+            )
+
         return SignedAttestation(
             validator_id=attestation.validator_id,
             message=attestation.data,
-            signature=(
-                spec.signature
-                or Signature(
-                    path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                    rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
-                    hashes=HashDigestList(data=[]),
-                )
-            ),
+            signature=signature,
         )

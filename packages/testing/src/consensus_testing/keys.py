@@ -39,12 +39,13 @@ from typing import TYPE_CHECKING, Iterator
 
 from lean_spec.config import LEAN_ENV
 from lean_spec.subspecs.containers import AttestationData
-from lean_spec.subspecs.containers.attestation.types import NaiveAggregatedSignature
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
     AttestationSignatures,
 )
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state.types import AttestationSignatureKey
+from lean_spec.subspecs.xmss.aggregation import aggregate_signatures
 from lean_spec.subspecs.xmss.containers import KeyPair, PublicKey, Signature
 from lean_spec.subspecs.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
@@ -52,6 +53,7 @@ from lean_spec.subspecs.xmss.interface import (
     GeneralizedXmssScheme,
 )
 from lean_spec.types import Uint64
+from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -273,24 +275,40 @@ class XmssKeyManager:
     def build_attestation_signatures(
         self,
         aggregated_attestations: AggregatedAttestations,
-        signature_lookup: Mapping[tuple[Uint64, bytes], Signature] | None = None,
+        signature_lookup: Mapping[AttestationSignatureKey, Signature] | None = None,
     ) -> AttestationSignatures:
-        """Build `AttestationSignatures` for already-aggregated attestations."""
+        """
+        Build `AttestationSignatures` for already-aggregated attestations.
+
+        For each aggregated attestation, collect the participating validators' public keys and
+        signatures, then produce a single leanVM aggregated signature proof blob using
+        `xmss_aggregate_signatures` (via `aggregate_signatures`).
+        """
         lookup = signature_lookup or {}
-        return AttestationSignatures(
-            data=[
-                NaiveAggregatedSignature(
-                    data=[
-                        (
-                            lookup.get((vid, agg.data.data_root_bytes()))
-                            or self.sign_attestation_data(vid, agg.data)
-                        )
-                        for vid in agg.aggregation_bits.to_validator_indices()
-                    ]
-                )
-                for agg in aggregated_attestations
+
+        proof_blobs: list[LeanAggregatedSignature] = []
+        for agg in aggregated_attestations:
+            validator_ids = agg.aggregation_bits.to_validator_indices()
+            message = agg.data.data_root_bytes()
+            epoch = agg.data.slot
+
+            public_keys: list[PublicKey] = [self.get_public_key(vid) for vid in validator_ids]
+            signatures: list[Signature] = [
+                (lookup.get((vid, message)) or self.sign_attestation_data(vid, agg.data))
+                for vid in validator_ids
             ]
-        )
+
+            # If the caller supplied raw signatures and any are invalid,
+            # aggregation should fail with exception.
+            aggregated_signature = aggregate_signatures(
+                public_keys=public_keys,
+                signatures=signatures,
+                message=message,
+                epoch=epoch,
+            )
+            proof_blobs.append(aggregated_signature)
+
+        return AttestationSignatures(data=proof_blobs)
 
 
 def _generate_single_keypair(

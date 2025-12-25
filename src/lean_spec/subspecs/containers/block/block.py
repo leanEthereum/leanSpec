@@ -12,6 +12,10 @@ can propose.
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.xmss.aggregation import (
+    LeanMultisigError,
+    verify_aggregated_payload,
+)
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
@@ -107,11 +111,10 @@ class BlockSignatures(Container):
     """Attestation signatures for the aggregated attestations in the block body.
 
     Each entry corresponds to an aggregated attestation from the block body and
-    contains all XMSS signatures from the participating validators.
+    contains the leanVM aggregated signature proof bytes for the participating validators.
 
     TODO:
-    - Currently, this is list of lists of signatures.
-    - The list of signatures will be replaced by a BytesArray to include leanVM aggregated proof.
+    - Eventually this field will be replaced by a single SNARK aggregating *all* signatures.
     """
 
     proposer_signature: XmssSignature
@@ -159,6 +162,7 @@ class SignedBlockWithAttestation(Container):
             AssertionError: If signature verification fails, including:
                 - Signature count mismatch
                 - Validator index out of range
+                - lean-multisig aggregated signature verification failure
                 - XMSS signature verification failure
         """
         block = self.message.block
@@ -177,24 +181,25 @@ class SignedBlockWithAttestation(Container):
         ):
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
 
-            assert len(aggregated_signature) == len(validator_ids), (
-                "Aggregated attestation signature count mismatch"
-            )
+            attestation_data_root = aggregated_attestation.data.data_root_bytes()
 
-            attestation_root = aggregated_attestation.data.data_root_bytes()
-
-            # Verify each validator's attestation signature
-            for validator_id, signature in zip(validator_ids, aggregated_signature, strict=True):
+            # Verify the leanVM aggregated proof for this attestation data root
+            for validator_id in validator_ids:
                 # Ensure validator exists in the active set
                 assert validator_id < Uint64(len(validators)), "Validator index out of range"
-                validator = validators[validator_id]
 
-                assert signature.verify(
-                    validator.get_pubkey(),
-                    aggregated_attestation.data.slot,
-                    attestation_root,
-                    scheme,
-                ), "Attestation signature verification failed"
+            public_keys = [validators[vid].get_pubkey() for vid in validator_ids]
+            try:
+                verify_aggregated_payload(
+                    public_keys=public_keys,
+                    payload=aggregated_signature,
+                    message=attestation_data_root,
+                    epoch=aggregated_attestation.data.slot,
+                )
+            except LeanMultisigError as exc:
+                raise AssertionError(
+                    f"Attestation aggregated signature verification failed: {exc}"
+                ) from exc
 
         # Verify proposer attestation signature
         proposer_attestation = self.message.proposer_attestation
