@@ -24,7 +24,7 @@ from .constants import (
     TEST_CONFIG,
     XmssConfig,
 )
-from .containers import PublicKey, SecretKey, Signature
+from .containers import KeyPair, PublicKey, SecretKey, Signature
 from .prf import PROD_PRF, TEST_PRF, Prf
 from .rand import PROD_RAND, TEST_RAND, Rand
 from .subtree import HashSubTree, combined_path, verify_path
@@ -73,9 +73,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         )
         return self
 
-    def key_gen(
-        self, activation_epoch: Uint64, num_active_epochs: Uint64
-    ) -> tuple[PublicKey, SecretKey]:
+    def key_gen(self, activation_epoch: Uint64, num_active_epochs: Uint64) -> KeyPair:
         """
         Generates a new cryptographic key pair for a specified range of epochs.
 
@@ -120,7 +118,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             - Will be rounded up to at least `2 * sqrt(LIFETIME)`.
 
         Returns:
-            A tuple containing the `PublicKey` and `SecretKey`.
+            A `KeyPair` containing the public and secret keys.
 
         Note:
             The actual activation epoch and num_active_epochs in the returned SecretKey
@@ -220,7 +218,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             left_bottom_tree=left_bottom_tree,
             right_bottom_tree=right_bottom_tree,
         )
-        return pk, sk
+        return KeyPair(public=pk, secret=sk)
 
     def sign(self, sk: SecretKey, epoch: Uint64, message: bytes) -> Signature:
         """

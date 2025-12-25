@@ -7,7 +7,7 @@ Base types (HashDigestVector, Parameter, etc.) are defined in types.py.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping, NamedTuple
 
 from ...types import Uint64
 from ...types.container import Container
@@ -181,3 +181,31 @@ class SecretKey(Container):
     Together with `left_bottom_tree`, this provides a prepared interval of
     exactly `2 * sqrt(LIFETIME)` consecutive epochs.
     """
+
+
+class KeyPair(NamedTuple):
+    """
+    Immutable XMSS key pair for a validator.
+
+    Attributes:
+        public: Public key for signature verification.
+        secret: Secret key containing Merkle tree structures.
+    """
+
+    public: PublicKey
+    secret: SecretKey
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, str]) -> "KeyPair":
+        """Deserialize from JSON-compatible dict with hex-encoded SSZ."""
+        return cls(
+            public=PublicKey.decode_bytes(bytes.fromhex(data["public"])),
+            secret=SecretKey.decode_bytes(bytes.fromhex(data["secret"])),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        """Serialize to JSON-compatible dict with hex-encoded SSZ."""
+        return {
+            "public": self.public.encode_bytes().hex(),
+            "secret": self.secret.encode_bytes().hex(),
+        }

@@ -33,10 +33,9 @@ import tarfile
 import tempfile
 import urllib.request
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
 from functools import cache, partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator, Self
+from typing import TYPE_CHECKING, Iterator
 
 from lean_spec.config import LEAN_ENV
 from lean_spec.subspecs.containers import AttestationData
@@ -47,7 +46,7 @@ from lean_spec.subspecs.containers.block.types import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.types import AttestationSignatureKey
 from lean_spec.subspecs.xmss.aggregation import aggregate_signatures
-from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
+from lean_spec.subspecs.xmss.containers import KeyPair, PublicKey, Signature
 from lean_spec.subspecs.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
     TEST_SIGNATURE_SCHEME,
@@ -120,39 +119,6 @@ DEFAULT_MAX_SLOT = Slot(100)
 
 NUM_ACTIVE_EPOCHS = int(DEFAULT_MAX_SLOT) + 1
 """Key lifetime in epochs (derived from DEFAULT_MAX_SLOT)."""
-
-
-@dataclass(frozen=True, slots=True)
-class KeyPair:
-    """
-    Immutable XMSS key pair for a validator.
-
-    Attributes:
-        public: Public key for signature verification.
-        secret: Secret key containing Merkle tree structures.
-    """
-
-    public: PublicKey
-    secret: SecretKey
-
-    @classmethod
-    def from_dict(cls, data: Mapping[str, str]) -> Self:
-        """Deserialize from JSON-compatible dict with hex-encoded SSZ."""
-        return cls(
-            public=PublicKey.decode_bytes(bytes.fromhex(data["public"])),
-            secret=SecretKey.decode_bytes(bytes.fromhex(data["secret"])),
-        )
-
-    def to_dict(self) -> dict[str, str]:
-        """Serialize to JSON-compatible dict with hex-encoded SSZ."""
-        return {
-            "public": self.public.encode_bytes().hex(),
-            "secret": self.secret.encode_bytes().hex(),
-        }
-
-    def with_secret(self, secret: SecretKey) -> KeyPair:
-        """Return a new KeyPair with updated secret key (for state advancement)."""
-        return KeyPair(public=self.public, secret=secret)
 
 
 def _get_keys_dir(scheme_name: str) -> Path:
@@ -300,7 +266,7 @@ class XmssKeyManager:
             prepared = self.scheme.get_prepared_interval(sk)
 
         # Cache advanced state
-        self._state[validator_id] = kp.with_secret(sk)
+        self._state[validator_id] = kp._replace(secret=sk)
 
         # Sign hash tree root of the attestation data
         message = attestation_data.data_root_bytes()
