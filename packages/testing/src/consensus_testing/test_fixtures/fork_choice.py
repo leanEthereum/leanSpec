@@ -30,7 +30,6 @@ from lean_spec.subspecs.containers.state.types import AttestationSignatureKey
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.subspecs.xmss.constants import PROD_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 from lean_spec.types import Bytes32, Uint64
@@ -491,7 +490,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         else:
             signature = Signature(
                 path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(PROD_CONFIG.RAND_LEN_FE)]),
+                rho=Randomness(data=[Fp(0) for _ in range(Randomness.LENGTH)]),
                 hashes=HashDigestList(data=[]),
             )
 

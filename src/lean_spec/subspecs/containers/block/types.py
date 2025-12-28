@@ -2,12 +2,11 @@
 
 from collections import Counter, defaultdict
 
+from lean_spec.subspecs.xmss.aggregation import MultisigAggregatedSignature
 from lean_spec.types import SSZList
-from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
 from ...chain.config import VALIDATOR_REGISTRY_LIMIT
 from ..attestation import AggregatedAttestation
-from ..attestation.types import AggregationBits
 
 
 class AggregatedAttestations(SSZList[AggregatedAttestation]):
@@ -16,15 +15,14 @@ class AggregatedAttestations(SSZList[AggregatedAttestation]):
     ELEMENT_TYPE = AggregatedAttestation
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
 
-    def each_duplicate_attestation_has_unique_participant(self) -> bool:
+    def validate_unique_participant(self) -> bool:
         """
-        Check if each duplicate aggregated attestation has a unique participant.
+        Validate that each duplicate aggregated attestation has a unique participant.
 
         Returns:
             True if each duplicate aggregated attestation has a unique participant.
         """
-        groups: dict[bytes, list[AggregationBits]] = defaultdict(list)
-
+        groups = defaultdict(list)
         for att in self:
             groups[att.data.data_root_bytes()].append(att.aggregation_bits)
 
@@ -32,35 +30,26 @@ class AggregatedAttestations(SSZList[AggregatedAttestation]):
             if len(bits_list) <= 1:
                 continue
 
-            counts: Counter[int] = Counter()
+            # 1. Convert bitfields to sets of active indices
+            sets = [{i for i, bit in enumerate(bits.data) if bit} for bits in bits_list]
 
-            # Pass 1: count participants across the group
-            for bits in bits_list:
-                for i, bit in enumerate(bits.data):
-                    if bit:
-                        counts[i] += 1
+            # 2. Count index occurrences across the entire group
+            counts = Counter(idx for s in sets for idx in s)
 
-            # Pass 2: each attestation must have a participant that appears exactly once
-            for bits in bits_list:
-                unique = False
-                for i, bit in enumerate(bits.data):
-                    if bit and counts[i] == 1:
-                        unique = True
-                        break
-                if not unique:
-                    return False
+            # 3. Verify EVERY attestation has ANY index that appears EXACTLY once
+            if not all(any(counts[i] == 1 for i in s) for s in sets):
+                return False
 
         return True
 
 
-class AttestationSignatures(SSZList[LeanAggregatedSignature]):
+class AttestationSignatures(SSZList[MultisigAggregatedSignature]):
     """
     List of per-attestation aggregated signature proof blobs.
 
     Each entry corresponds to an aggregated attestation from the block body and contains
-    the raw bytes of the leanVM XMSSAggregatedSignature proof produced by
-    `xmss_aggregate_signatures`.
+    the raw bytes of the leanVM signature aggregation proof.
     """
 
-    ELEMENT_TYPE = LeanAggregatedSignature
+    ELEMENT_TYPE = MultisigAggregatedSignature
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

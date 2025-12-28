@@ -34,7 +34,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
     def test_empty_attestations_list(self) -> None:
         """Empty attestations list should return True."""
         attestations = AggregatedAttestations(data=[])
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_single_attestation(self) -> None:
         """Single attestation should return True (no duplicates)."""
@@ -47,7 +47,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 )
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_multiple_attestations_different_data(self) -> None:
         """Multiple attestations with different data should return True."""
@@ -65,7 +65,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_duplicates_with_all_unique_participants(self) -> None:
         """Duplicates where each has unique participant should return True."""
@@ -82,7 +82,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_duplicates_with_completely_disjoint_participants(self) -> None:
         """Duplicates with completely disjoint participants should return True."""
@@ -99,7 +99,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_duplicates_with_complete_overlap_fails(self) -> None:
         """Duplicates with complete overlap should return False."""
@@ -116,7 +116,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is False
+        assert attestations.validate_unique_participant() is False
 
     def test_duplicates_where_one_has_no_unique_participant_fails(self) -> None:
         """Duplicates where one attestation has no unique participant should return False."""
@@ -133,7 +133,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is False
+        assert attestations.validate_unique_participant() is False
 
     def test_three_duplicates_with_partial_overlap_and_unique_participants(self) -> None:
         """Three duplicates with partial overlap, each having unique participant."""
@@ -154,7 +154,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_three_duplicates_where_one_has_no_unique_participant_fails(self) -> None:
         """Three duplicates where one has no unique participant should return False."""
@@ -175,7 +175,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is False
+        assert attestations.validate_unique_participant() is False
 
     def test_single_validator_in_each_duplicate(self) -> None:
         """Duplicates where each has a single unique validator should return True."""
@@ -196,7 +196,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_multiple_attestation_data_groups_mixed_validity(self) -> None:
         """Multiple attestation data groups where one is valid, one is invalid."""
@@ -224,7 +224,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is False
+        assert attestations.validate_unique_participant() is False
 
     def test_complex_overlap_pattern_with_unique_participants(self) -> None:
         """Complex overlap pattern where all attestations have unique participants."""
@@ -249,7 +249,7 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is True
+        assert attestations.validate_unique_participant() is True
 
     def test_subset_relationship_where_subset_has_no_unique_fails(self) -> None:
         """One attestation is a strict subset of another - subset has no unique participant."""
@@ -266,4 +266,4 @@ class TestEachDuplicateAttestationHasUniqueParticipant:
                 ),
             ]
         )
-        assert attestations.each_duplicate_attestation_has_unique_participant() is False
+        assert attestations.validate_unique_participant() is False

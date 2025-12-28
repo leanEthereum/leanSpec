@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.chain.config import DEVNET_CONFIG
+from lean_spec.subspecs.xmss.aggregation import MultisigAggregatedSignature
 from lean_spec.types import Bytes32, SSZList, Uint64
 from lean_spec.types.bitfields import BaseBitlist
-from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
-from ..attestation import AggregationBits
+from ..attestation import AggregationBits, AttestationData
+from ..block import Block
 from ..validator import Validator
 
 if TYPE_CHECKING:
@@ -19,16 +20,11 @@ if TYPE_CHECKING:
 AttestationSignatureKey = tuple[Uint64, bytes]
 """Key type for looking up signatures: (validator_id, attestation_data_root)."""
 
-AggregatedSignaturePayload = tuple[AggregationBits, LeanAggregatedSignature]
+AggregatedSignaturePayload = tuple[AggregationBits, MultisigAggregatedSignature]
 """Aggregated signature payload with its participant bitlist."""
 
 AggregatedSignaturePayloads = list[AggregatedSignaturePayload]
 """List of aggregated signature payloads with their participant bitlists."""
-
-
-# Type aliases for common dict patterns
-from ..attestation import AttestationData  # noqa: E402
-from ..block import Block  # noqa: E402
 
 BlockLookup = dict[Bytes32, Block]
 """Mapping from block root to Block objects."""

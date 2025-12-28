@@ -21,6 +21,9 @@ from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
+from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
+from lean_spec.subspecs.xmss.containers import Signature
+from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
 from lean_spec.types import Bytes32, Uint64
 
 from ..keys import XmssKeyManager, get_shared_key_manager
@@ -221,14 +224,10 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 proposer_attestation.data,
             )
         else:
-            # Generate an invalid dummy signature (all zeros)
-            from lean_spec.subspecs.xmss.constants import TEST_CONFIG
-            from lean_spec.subspecs.xmss.containers import Signature
-            from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
-
+            # Generate a structurally valid but cryptographically invalid signature (all zeros).
             proposer_attestation_signature = Signature(
                 path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(TEST_CONFIG.RAND_LEN_FE)]),
+                rho=Randomness(data=[Fp(0) for _ in range(TARGET_CONFIG.RAND_LEN_FE)]),
                 hashes=HashDigestList(data=[]),
             )
 
@@ -334,14 +333,10 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 attestation.data,
             )
         else:
-            # Generate an invalid dummy signature (all zeros)
-            from lean_spec.subspecs.xmss.constants import TEST_CONFIG
-            from lean_spec.subspecs.xmss.containers import Signature
-            from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
-
+            # Generate a structurally valid but cryptographically invalid signature (all zeros).
             signature = Signature(
                 path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(TEST_CONFIG.RAND_LEN_FE)]),
+                rho=Randomness(data=[Fp(0) for _ in range(TARGET_CONFIG.RAND_LEN_FE)]),
                 hashes=HashDigestList(data=[]),
             )
 

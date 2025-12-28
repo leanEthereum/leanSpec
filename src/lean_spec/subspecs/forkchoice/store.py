@@ -41,6 +41,7 @@ from lean_spec.subspecs.containers.state.types import (
     StateLookup,
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.xmss.aggregation import MultisigAggregatedSignature
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import (
@@ -49,7 +50,6 @@ from lean_spec.types import (
     Uint64,
     is_proposer,
 )
-from lean_spec.types.byte_arrays import LeanAggregatedSignature
 from lean_spec.types.container import Container
 
 
@@ -563,31 +563,28 @@ class Store(Container):
 
         # Copy the aggregated signature payloads map for updates
         # Must deep copy the lists to maintain immutability of previous store snapshots
-        new_block_sigs = {k: list(v) for k, v in store.aggregated_payloads.items()}
+        new_block_sigs: Dict[AttestationSignatureKey, AggregatedSignaturePayloads] = copy.deepcopy(
+            store.aggregated_payloads
+        )
 
-        for aggregated_attestation, aggregated_signature in zip(
-            aggregated_attestations, attestation_signatures, strict=True
-        ):
-            validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
-            attestation_data = aggregated_attestation.data
-            data_root = attestation_data.data_root_bytes()
-            participant_bits = AggregationBits.from_validator_indices(validator_ids)
+        for att, sig in zip(aggregated_attestations, attestation_signatures, strict=True):
+            validator_ids = att.aggregation_bits.to_validator_indices()
+            data_root = att.data.data_root_bytes()
 
-            for validator_id in validator_ids:
-                # Store the aggregated signature payload against (validator_id, data_root)
-                # This is a list because the same (validator_id, data) can appear in multiple
-                # aggregated attestations, especially when we have aggregator roles.
-                # This list can be recursively aggregated by the block proposer.
-                key = (validator_id, data_root)
-                record = (participant_bits, aggregated_signature)
-                new_block_sigs.setdefault(key, []).append(record)
+            # Pre-calculate the payload record once for this entire group
+            record = (AggregationBits.from_validator_indices(validator_ids), sig)
 
-                # Import the attestation data into forkchoice for latest votes
+            for vid in validator_ids:
+                # Update Signature Map
+                #
+                # Store the payload so future block builders can reuse this aggregation
+                new_block_sigs.setdefault((vid, data_root), []).append(record)
+
+                # Update Fork Choice
+                #
+                # Register the vote immediately (historical/on-chain)
                 store = store.on_attestation(
-                    attestation=Attestation(
-                        validator_id=validator_id,
-                        data=attestation_data,
-                    ),
+                    attestation=Attestation(validator_id=vid, data=att.data),
                     is_from_block=True,
                 )
 
@@ -1040,7 +1037,7 @@ class Store(Container):
         self,
         slot: Slot,
         validator_index: Uint64,
-    ) -> tuple["Store", Block, list[LeanAggregatedSignature]]:
+    ) -> tuple["Store", Block, list[MultisigAggregatedSignature]]:
         """
         Produce a block and per-aggregated-attestation signature payloads for the target slot.
 

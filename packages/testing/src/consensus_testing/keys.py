@@ -45,7 +45,7 @@ from lean_spec.subspecs.containers.block.types import (
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.types import AttestationSignatureKey
-from lean_spec.subspecs.xmss.aggregation import aggregate_signatures
+from lean_spec.subspecs.xmss.aggregation import MultisigAggregatedSignature
 from lean_spec.subspecs.xmss.containers import KeyPair, PublicKey, Signature
 from lean_spec.subspecs.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
@@ -53,7 +53,6 @@ from lean_spec.subspecs.xmss.interface import (
     GeneralizedXmssScheme,
 )
 from lean_spec.types import Uint64
-from lean_spec.types.byte_arrays import LeanAggregatedSignature
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -281,12 +280,11 @@ class XmssKeyManager:
         Build `AttestationSignatures` for already-aggregated attestations.
 
         For each aggregated attestation, collect the participating validators' public keys and
-        signatures, then produce a single leanVM aggregated signature proof blob using
-        `xmss_aggregate_signatures` (via `aggregate_signatures`).
+        signatures, then produce a single leanVM aggregated signature proof.
         """
         lookup = signature_lookup or {}
 
-        proof_blobs: list[LeanAggregatedSignature] = []
+        proof_blobs: list[MultisigAggregatedSignature] = []
         for agg in aggregated_attestations:
             validator_ids = agg.aggregation_bits.to_validator_indices()
             message = agg.data.data_root_bytes()
@@ -300,7 +298,7 @@ class XmssKeyManager:
 
             # If the caller supplied raw signatures and any are invalid,
             # aggregation should fail with exception.
-            aggregated_signature = aggregate_signatures(
+            aggregated_signature = MultisigAggregatedSignature.aggregate_signatures(
                 public_keys=public_keys,
                 signatures=signatures,
                 message=message,

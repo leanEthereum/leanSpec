@@ -13,42 +13,45 @@ from lean_spec.types import Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
-# TODO: Add these tests back when we have prod aggregation & verificationAPI
 
-# def test_invalid_signature(
-#     verify_signatures_test: VerifySignaturesTestFiller,
-# ) -> None:
-#     """
-#     Test that invalid signatures are properly rejected during verification.
+def test_invalid_signature(
+    verify_signatures_test: VerifySignaturesTestFiller,
+) -> None:
+    """
+    Test that invalid signatures are properly rejected during verification.
 
-#     Scenario
-#     --------
-#     - Single block at slot 1
-#     - Proposer attestation has an invalid signature
-#     - No additional attestations (only proposer attestation)
+    Scenario
+    --------
+    - Single block at slot 1
+    - Proposer attestation has an invalid signature
+    - No additional attestations (only proposer attestation)
 
-#     Expected Behavior
-#     -----------------
-#     1. Proposer's signature in SignedBlockWithAttestation is rejected
+    Expected Behavior
+    -----------------
+    1. Proposer's signature in SignedBlockWithAttestation is rejected
 
-#     Why This Matters
-#     ----------------
-#     This test verifies the negative case:
-#     - Signature verification actually validates cryptographic correctness
-#       not just structural correctness.
-#     - Invalid signatures are caught, not silently accepted
-#     """
-#     verify_signatures_test(
-#         anchor_state=generate_pre_state(num_validators=1),
-#         block=BlockSpec(
-#             slot=Slot(1),
-#             attestations=[],
-#             valid_signature=False,
-#         ),
-#         expect_exception=AssertionError,
-#     )
+    Why This Matters
+    ----------------
+    This test verifies the negative case:
+    - Signature verification actually validates cryptographic correctness
+      not just structural correctness.
+    - Invalid signatures are caught, not silently accepted
+    """
+    verify_signatures_test(
+        anchor_state=generate_pre_state(num_validators=1),
+        block=BlockSpec(
+            slot=Slot(1),
+            attestations=[],
+            valid_signature=False,
+        ),
+        expect_exception=AssertionError,
+    )
 
 
+# TODO: Add test for mixed valid and invalid signatures
+# This test currently fails because attester-signature verification relies on the
+# aggregated multisig proof, but multisig aggregation/verification runs in test_mode.
+# Since the proposer signature is valid and verified individually, the block is not rejected.”
 # def test_mixed_valid_invalid_signatures(
 #     verify_signatures_test: VerifySignaturesTestFiller,
 # ) -> None:

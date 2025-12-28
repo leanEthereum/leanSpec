@@ -13,8 +13,7 @@ from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.xmss.aggregation import (
-    LeanMultisigError,
-    verify_aggregated_payload,
+    MultisigError,
 )
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Bytes32, Uint64
@@ -190,13 +189,12 @@ class SignedBlockWithAttestation(Container):
 
             public_keys = [validators[vid].get_pubkey() for vid in validator_ids]
             try:
-                verify_aggregated_payload(
+                aggregated_signature.verify_aggregated_payload(
                     public_keys=public_keys,
-                    payload=aggregated_signature,
                     message=attestation_data_root,
                     epoch=aggregated_attestation.data.slot,
                 )
-            except LeanMultisigError as exc:
+            except MultisigError as exc:
                 raise AssertionError(
                     f"Attestation aggregated signature verification failed: {exc}"
                 ) from exc
