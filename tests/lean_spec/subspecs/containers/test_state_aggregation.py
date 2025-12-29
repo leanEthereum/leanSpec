@@ -111,10 +111,14 @@ def test_gossip_aggregation_succeeds_with_all_signatures() -> None:
         gossip_signatures,
     )
 
-    assert result == TEST_AGGREGATED_SIGNATURE
+    assert result is not None
+    aggregated_signature, aggregated_bitlist, remaining = result
+    assert aggregated_signature == TEST_AGGREGATED_SIGNATURE
+    assert set(aggregated_bitlist.to_validator_indices()) == set(validator_ids)
+    assert remaining == set()
 
 
-def test_gossip_aggregation_returns_none_if_any_signature_missing() -> None:
+def test_gossip_aggregation_returns_partial_result_when_some_missing() -> None:
     state = make_state(2)
     data_root = b"\x22" * 32
     gossip_signatures = {(Uint64(0), data_root): make_signature(0)}
@@ -126,97 +130,120 @@ def test_gossip_aggregation_returns_none_if_any_signature_missing() -> None:
         gossip_signatures,
     )
 
-    assert result is None
+    assert result is not None
+    aggregated_signature, aggregated_bitlist, remaining = result
+    assert aggregated_signature == TEST_AGGREGATED_SIGNATURE
+    assert aggregated_bitlist.to_validator_indices() == [Uint64(0)]
+    assert remaining == {Uint64(1)}
 
 
-def test_block_payload_lookup_requires_matching_entries() -> None:
-    state = make_state(3)
+def test_gossip_aggregation_returns_none_if_no_signature_matches() -> None:
+    state = make_state(2)
     data_root = b"\x33" * 32
-    validator_ids = [Uint64(0), Uint64(1), Uint64(2)]
-    participant_bits = AggregationBits.from_validator_indices(validator_ids)
-    payload = MultisigAggregatedSignature(data=b"block-payload")
-    aggregated_payloads = {
-        (Uint64(0), data_root): [(participant_bits, payload)],
-        (Uint64(1), data_root): [(participant_bits, payload)],
-        (Uint64(2), data_root): [(participant_bits, payload)],
-    }
+    # Gossip data exists but for a different validator key, so no signatures match
+    gossip_signatures = {(Uint64(9), data_root): make_signature(0)}
 
-    result = state._aggregate_signatures_from_block_payload(
-        validator_ids,
+    result = state._aggregate_signatures_from_gossip(
+        [Uint64(0), Uint64(1)],
         data_root,
-        aggregated_payloads,
-    )
-
-    assert result == payload
-
-
-def test_block_payload_lookup_returns_none_without_complete_matches() -> None:
-    state = make_state(2)
-    data_root = b"\x44" * 32
-    validator_ids = [Uint64(0), Uint64(1)]
-    participant_bits = AggregationBits.from_validator_indices([Uint64(0)])
-    payload = MultisigAggregatedSignature(data=b"partial")
-    aggregated_payloads = {
-        (Uint64(0), data_root): [(participant_bits, payload)],
-        # Missing entries for validator 1
-    }
-
-    result = state._aggregate_signatures_from_block_payload(
-        validator_ids,
-        data_root,
-        aggregated_payloads,
+        Slot(2),
+        gossip_signatures,
     )
 
     assert result is None
 
 
-def test_split_aggregated_attestations_prefers_existing_payloads() -> None:
-    state = make_state(4)
-    source = Checkpoint(root=make_bytes32(9), slot=Slot(0))
-    att_data = make_attestation_data(5, make_bytes32(6), make_bytes32(7), source=source)
-    aggregated_attestation = AggregatedAttestation(
-        aggregation_bits=AggregationBits.from_validator_indices([Uint64(i) for i in range(4)]),
-        data=att_data,
-    )
-    data_root = att_data.data_root_bytes()
+def test_pick_from_aggregated_signatures_prefers_widest_overlap() -> None:
+    state = make_state(3)
+    data_root = b"\x44" * 32
+    remaining_validator_ids = {Uint64(0), Uint64(1)}
 
-    gossip_signatures = {
-        (Uint64(0), data_root): make_signature(0),
-        (Uint64(1), data_root): make_signature(1),
-    }
+    narrow_bits = AggregationBits.from_validator_indices([Uint64(0)])
+    best_bits = AggregationBits.from_validator_indices([Uint64(0), Uint64(1)])
+    narrow_signature = MultisigAggregatedSignature(data=b"narrow")
+    best_signature = MultisigAggregatedSignature(data=b"best")
 
-    block_bits = AggregationBits.from_validator_indices([Uint64(2), Uint64(3)])
-    block_signature = MultisigAggregatedSignature(data=b"block-23")
     aggregated_payloads = {
-        (Uint64(2), data_root): [(block_bits, block_signature)],
-        (Uint64(3), data_root): [(block_bits, block_signature)],
+        (Uint64(0), data_root): [
+            (narrow_bits, narrow_signature),
+            (best_bits, best_signature),
+        ],
+        (Uint64(1), data_root): [
+            (best_bits, best_signature),
+            (narrow_bits, narrow_signature),
+        ],
     }
 
-    split_atts, split_sigs = state.split_aggregated_attestations(
-        aggregated_attestation,
-        gossip_signatures,
-        aggregated_payloads,
+    signature, bitlist, remaining = state._pick_from_aggregated_signatures(
+        remaining_validator_ids=remaining_validator_ids,
+        data_root=data_root,
+        aggregated_payloads=aggregated_payloads,
     )
 
-    seen_participants = {
-        tuple(int(v) for v in att.aggregation_bits.to_validator_indices()) for att in split_atts
-    }
-    assert seen_participants == {(0, 1), (2, 3)}
-    assert block_signature in split_sigs
-    assert TEST_AGGREGATED_SIGNATURE in split_sigs
+    assert signature == best_signature
+    assert set(bitlist.to_validator_indices()) == {Uint64(0), Uint64(1)}
+    assert remaining == set()
 
 
-def test_split_aggregated_attestations_errors_when_signatures_missing() -> None:
+def test_pick_from_aggregated_signatures_returns_remaining_for_partial_payload() -> None:
     state = make_state(2)
-    source = Checkpoint(root=make_bytes32(1), slot=Slot(0))
-    att_data = make_attestation_data(5, make_bytes32(6), make_bytes32(7), source=source)
-    aggregated_attestation = AggregatedAttestation(
-        aggregation_bits=AggregationBits.from_validator_indices([Uint64(0), Uint64(1)]),
-        data=att_data,
+    data_root = b"\x45" * 32
+    remaining_validator_ids = {Uint64(0), Uint64(1)}
+
+    partial_bits_0 = AggregationBits.from_validator_indices([Uint64(0)])
+    partial_bits_1 = AggregationBits.from_validator_indices([Uint64(1)])
+    partial_signature_0 = MultisigAggregatedSignature(data=b"partial-0")
+    partial_signature_1 = MultisigAggregatedSignature(data=b"partial-1")
+
+    aggregated_payloads = {
+        (Uint64(0), data_root): [(partial_bits_0, partial_signature_0)],
+        (Uint64(1), data_root): [(partial_bits_1, partial_signature_1)],
+    }
+
+    signature, bitlist, remaining = state._pick_from_aggregated_signatures(
+        remaining_validator_ids=remaining_validator_ids,
+        data_root=data_root,
+        aggregated_payloads=aggregated_payloads,
     )
 
-    with pytest.raises(AssertionError, match="Cannot aggregate attestations"):
-        state.split_aggregated_attestations(aggregated_attestation, {}, {})
+    covered_validators = set(bitlist.to_validator_indices())
+    assert covered_validators <= {Uint64(0), Uint64(1)}
+    assert signature in {partial_signature_0, partial_signature_1}
+    assert remaining == remaining_validator_ids - covered_validators
+
+
+def test_pick_from_aggregated_signatures_requires_payloads() -> None:
+    state = make_state(1)
+
+    with pytest.raises(ValueError, match="aggregated payloads is required"):
+        state._pick_from_aggregated_signatures(
+            remaining_validator_ids={Uint64(0)},
+            data_root=b"\x55" * 32,
+            aggregated_payloads=None,
+        )
+
+
+def test_pick_from_aggregated_signatures_errors_on_empty_remaining() -> None:
+    state = make_state(1)
+
+    with pytest.raises(ValueError, match="remaining validator ids cannot be empty"):
+        state._pick_from_aggregated_signatures(
+            remaining_validator_ids=set(),
+            data_root=b"\x66" * 32,
+            aggregated_payloads={},
+        )
+
+
+def test_pick_from_aggregated_signatures_errors_when_no_candidates() -> None:
+    state = make_state(1)
+    data_root = b"\x77" * 32
+
+    with pytest.raises(ValueError, match="Failed to locate an aggregated signature payload"):
+        state._pick_from_aggregated_signatures(
+            remaining_validator_ids={Uint64(0)},
+            data_root=data_root,
+            aggregated_payloads={(Uint64(0), data_root): []},
+        )
 
 
 def test_compute_aggregated_signatures_prefers_full_gossip_payload() -> None:
@@ -390,257 +417,6 @@ def test_gossip_aggregation_with_empty_gossip_signatures() -> None:
     assert result is None
 
 
-def test_block_payload_with_empty_validator_list() -> None:
-    """Empty validator list should return None."""
-    state = make_state(2)
-    data_root = b"\x66" * 32
-    participant_bits = AggregationBits.from_validator_indices([Uint64(0)])
-    payload = MultisigAggregatedSignature(data=b"payload")
-    aggregated_payloads = {
-        (Uint64(0), data_root): [(participant_bits, payload)],
-    }
-
-    result = state._aggregate_signatures_from_block_payload(
-        [],  # empty validator list
-        data_root,
-        aggregated_payloads,
-    )
-
-    assert result is None
-
-
-def test_block_payload_with_none_aggregated_payloads() -> None:
-    """None aggregated_payloads should return None."""
-    state = make_state(2)
-    data_root = b"\x55" * 32
-
-    result = state._aggregate_signatures_from_block_payload(
-        [Uint64(0), Uint64(1)],
-        data_root,
-        None,  # None aggregated_payloads
-    )
-
-    assert result is None
-
-
-def test_block_payload_with_empty_aggregated_payloads() -> None:
-    """Empty aggregated_payloads dict should return None."""
-    state = make_state(2)
-    data_root = b"\x44" * 32
-
-    result = state._aggregate_signatures_from_block_payload(
-        [Uint64(0), Uint64(1)],
-        data_root,
-        {},  # empty dict
-    )
-
-    assert result is None
-
-
-def test_block_payload_with_empty_first_records() -> None:
-    """First validator having empty records should return None."""
-    state = make_state(2)
-    data_root = b"\x33" * 32
-    aggregated_payloads = {
-        (Uint64(0), data_root): [],  # empty records for first validator
-        (Uint64(1), data_root): [
-            (
-                AggregationBits.from_validator_indices([Uint64(1)]),
-                MultisigAggregatedSignature(data=b"sig"),
-            )
-        ],
-    }
-
-    result = state._aggregate_signatures_from_block_payload(
-        [Uint64(0), Uint64(1)],
-        data_root,
-        aggregated_payloads,
-    )
-
-    assert result is None
-
-
-def test_block_payload_with_mismatched_signatures() -> None:
-    """All validators have entries but with different signatures should return None."""
-    state = make_state(2)
-    data_root = b"\x22" * 32
-    participant_bits = AggregationBits.from_validator_indices([Uint64(0), Uint64(1)])
-    payload1 = MultisigAggregatedSignature(data=b"payload1")
-    payload2 = MultisigAggregatedSignature(data=b"payload2")
-    aggregated_payloads = {
-        (Uint64(0), data_root): [(participant_bits, payload1)],
-        (Uint64(1), data_root): [(participant_bits, payload2)],  # different signature
-    }
-
-    result = state._aggregate_signatures_from_block_payload(
-        [Uint64(0), Uint64(1)],
-        data_root,
-        aggregated_payloads,
-    )
-
-    assert result is None
-
-
-def test_block_payload_selects_correct_payload_among_multiple() -> None:
-    """When multiple payloads exist, should select the one matching all validators."""
-    state = make_state(3)
-    data_root = b"\x11" * 32
-
-    # Partial payload for validators 0 and 1
-    partial_bits = AggregationBits.from_validator_indices([Uint64(0), Uint64(1)])
-    partial_payload = MultisigAggregatedSignature(data=b"partial")
-
-    # Full payload for all three validators
-    full_bits = AggregationBits.from_validator_indices([Uint64(0), Uint64(1), Uint64(2)])
-    full_payload = MultisigAggregatedSignature(data=b"full")
-
-    aggregated_payloads = {
-        (Uint64(0), data_root): [(partial_bits, partial_payload), (full_bits, full_payload)],
-        (Uint64(1), data_root): [(partial_bits, partial_payload), (full_bits, full_payload)],
-        (Uint64(2), data_root): [(full_bits, full_payload)],
-    }
-
-    result = state._aggregate_signatures_from_block_payload(
-        [Uint64(0), Uint64(1), Uint64(2)],
-        data_root,
-        aggregated_payloads,
-    )
-
-    assert result == full_payload
-
-
-def test_split_with_only_gossip_signatures() -> None:
-    """Split should work with only gossip signatures (no block payloads)."""
-    state = make_state(3)
-    source = Checkpoint(root=make_bytes32(10), slot=Slot(0))
-    att_data = make_attestation_data(4, make_bytes32(7), make_bytes32(8), source=source)
-    aggregated_attestation = AggregatedAttestation(
-        aggregation_bits=AggregationBits.from_validator_indices([Uint64(i) for i in range(3)]),
-        data=att_data,
-    )
-    data_root = att_data.data_root_bytes()
-
-    gossip_signatures = {
-        (Uint64(0), data_root): make_signature(0),
-        (Uint64(1), data_root): make_signature(1),
-        (Uint64(2), data_root): make_signature(2),
-    }
-
-    split_atts, split_sigs = state.split_aggregated_attestations(
-        aggregated_attestation,
-        gossip_signatures,
-        None,  # no block payloads
-    )
-
-    # Should create a single aggregated attestation from gossip
-    assert len(split_atts) == 1
-    assert len(split_sigs) == 1
-    assert split_atts[0].aggregation_bits.to_validator_indices() == [
-        Uint64(0),
-        Uint64(1),
-        Uint64(2),
-    ]
-
-
-def test_split_with_only_block_payloads() -> None:
-    """Split should work with only block payloads (no gossip signatures)."""
-    state = make_state(2)
-    source = Checkpoint(root=make_bytes32(13), slot=Slot(0))
-    att_data = make_attestation_data(6, make_bytes32(14), make_bytes32(15), source=source)
-    aggregated_attestation = AggregatedAttestation(
-        aggregation_bits=AggregationBits.from_validator_indices([Uint64(0), Uint64(1)]),
-        data=att_data,
-    )
-    data_root = att_data.data_root_bytes()
-
-    block_bits = AggregationBits.from_validator_indices([Uint64(0), Uint64(1)])
-    block_signature = MultisigAggregatedSignature(data=b"block-01")
-    aggregated_payloads = {
-        (Uint64(0), data_root): [(block_bits, block_signature)],
-        (Uint64(1), data_root): [(block_bits, block_signature)],
-    }
-
-    split_atts, split_sigs = state.split_aggregated_attestations(
-        aggregated_attestation,
-        None,  # no gossip signatures
-        aggregated_payloads,
-    )
-
-    assert len(split_atts) == 1
-    assert len(split_sigs) == 1
-    assert split_sigs[0] == block_signature
-
-
-def test_split_with_single_validator() -> None:
-    """Split with a single validator should work correctly."""
-    state = make_state(1)
-    source = Checkpoint(root=make_bytes32(16), slot=Slot(0))
-    att_data = make_attestation_data(7, make_bytes32(17), make_bytes32(18), source=source)
-    aggregated_attestation = AggregatedAttestation(
-        aggregation_bits=AggregationBits.from_validator_indices([Uint64(0)]),
-        data=att_data,
-    )
-    data_root = att_data.data_root_bytes()
-
-    gossip_signatures = {
-        (Uint64(0), data_root): make_signature(0),
-    }
-
-    split_atts, split_sigs = state.split_aggregated_attestations(
-        aggregated_attestation,
-        gossip_signatures,
-        None,
-    )
-
-    assert len(split_atts) == 1
-    assert len(split_sigs) == 1
-    assert split_atts[0].aggregation_bits.to_validator_indices() == [Uint64(0)]
-
-
-def test_split_greedy_selection_prefers_larger_sets() -> None:
-    """Greedy algorithm should prefer larger validator sets to minimize splits."""
-    state = make_state(5)
-    source = Checkpoint(root=make_bytes32(19), slot=Slot(0))
-    att_data = make_attestation_data(8, make_bytes32(20), make_bytes32(21), source=source)
-    aggregated_attestation = AggregatedAttestation(
-        aggregation_bits=AggregationBits.from_validator_indices([Uint64(i) for i in range(5)]),
-        data=att_data,
-    )
-    data_root = att_data.data_root_bytes()
-
-    # Provide overlapping payloads: small pairs and one large group
-    bits_01 = AggregationBits.from_validator_indices([Uint64(0), Uint64(1)])
-    bits_23 = AggregationBits.from_validator_indices([Uint64(2), Uint64(3)])
-    bits_0234 = AggregationBits.from_validator_indices([Uint64(0), Uint64(2), Uint64(3), Uint64(4)])
-
-    sig_01 = MultisigAggregatedSignature(data=b"sig-01")
-    sig_23 = MultisigAggregatedSignature(data=b"sig-23")
-    sig_0234 = MultisigAggregatedSignature(data=b"sig-0234")
-
-    aggregated_payloads = {
-        (Uint64(0), data_root): [(bits_01, sig_01), (bits_0234, sig_0234)],
-        (Uint64(1), data_root): [(bits_01, sig_01)],
-        (Uint64(2), data_root): [(bits_23, sig_23), (bits_0234, sig_0234)],
-        (Uint64(3), data_root): [(bits_23, sig_23), (bits_0234, sig_0234)],
-        (Uint64(4), data_root): [(bits_0234, sig_0234)],
-    }
-
-    split_atts, split_sigs = state.split_aggregated_attestations(
-        aggregated_attestation,
-        {},
-        aggregated_payloads,
-    )
-
-    # Greedy should pick the large group first (0,2,3,4), then fill in validator 1
-    # This results in 2 splits instead of 3 if it picked small pairs first
-    assert len(split_atts) == 2
-    participant_sets = [
-        {int(v) for v in att.aggregation_bits.to_validator_indices()} for att in split_atts
-    ]
-    # The large set should be selected
-    assert {0, 2, 3, 4} in participant_sets or {0, 1, 2, 3, 4} in participant_sets
-
-
 def test_compute_aggregated_signatures_with_empty_attestations() -> None:
     """Empty attestations list should return empty results."""
     state = make_state(2)
@@ -714,7 +490,8 @@ def test_compute_aggregated_signatures_falls_back_to_block_payload() -> None:
         aggregated_payloads=aggregated_payloads,
     )
 
-    # Should use block payload since gossip is incomplete
-    assert len(aggregated_atts) == 1
-    assert len(aggregated_sigs) == 1
-    assert aggregated_sigs[0] == block_signature
+    # Should include both gossip-covered and fallback payload attestations/signatures
+    assert len(aggregated_atts) == 2
+    assert len(aggregated_sigs) == 2
+    assert block_signature in aggregated_sigs
+    assert TEST_AGGREGATED_SIGNATURE in aggregated_sigs
