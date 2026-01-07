@@ -6,6 +6,8 @@ from lean_spec.subspecs.chain.config import DEVNET_CONFIG
 from lean_spec.types import Bytes32, SSZList
 from lean_spec.types.bitfields import BaseBitlist
 
+from ..deposit import PendingDeposit
+from ..exit import ExitRequest
 from ..validator import Validator
 
 
@@ -39,4 +41,18 @@ class Validators(SSZList[Validator]):
     """Validator registry tracked in the state."""
 
     ELEMENT_TYPE = Validator
+    LIMIT = int(DEVNET_CONFIG.validator_registry_limit)
+
+
+class PendingDeposits(SSZList[PendingDeposit]):
+    """Queue of validators awaiting activation."""
+
+    ELEMENT_TYPE = PendingDeposit
+    LIMIT = int(DEVNET_CONFIG.validator_registry_limit)
+
+
+class ExitQueue(SSZList[ExitRequest]):
+    """Queue of validators awaiting removal."""
+
+    ELEMENT_TYPE = ExitRequest
     LIMIT = int(DEVNET_CONFIG.validator_registry_limit)

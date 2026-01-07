@@ -2,6 +2,8 @@
 
 from typing import AbstractSet, Iterable
 
+from pydantic import Field
+
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
@@ -24,10 +26,12 @@ from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
 from .types import (
+    ExitQueue,
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    PendingDeposits,
     Validators,
 )
 
@@ -70,6 +74,13 @@ class State(Container):
     justifications_validators: JustificationValidators
     """A bitlist of validators who participated in justifications."""
 
+    # Validator lifecycle
+    pending_deposits: PendingDeposits = Field(default_factory=lambda: PendingDeposits(data=[]))
+    """Queue of validators awaiting activation."""
+
+    exit_queue: ExitQueue = Field(default_factory=lambda: ExitQueue(data=[]))
+    """Queue of validators awaiting removal."""
+
     @classmethod
     def generate_genesis(cls, genesis_time: Uint64, validators: Validators) -> "State":
         """
@@ -93,12 +104,19 @@ class State(Container):
         )
 
         # Build the genesis block header for the state.
+        from ..deposit import ValidatorDeposits
+        from ..exit import ValidatorExits
+
         genesis_header = BlockHeader(
             slot=Slot(0),
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestations(data=[]))),
+            body_root=hash_tree_root(BlockBody(
+                attestations=AggregatedAttestations(data=[]),
+                deposits=ValidatorDeposits(data=[]),
+                exits=ValidatorExits(data=[]),
+            )),
         )
 
         # Assemble and return the full genesis state.
@@ -113,6 +131,8 @@ class State(Container):
             validators=validators,
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
+            pending_deposits=PendingDeposits(data=[]),
+            exit_queue=ExitQueue(data=[]),
         )
 
     def process_slots(self, target_slot: Slot) -> "State":
@@ -147,6 +167,10 @@ class State(Container):
 
         # Step through each missing slot:
         while state.slot < target_slot:
+            # Process validator lifecycle transitions
+            # (activations and exits happen automatically based on delays and limits)
+            state = state.process_validator_lifecycle()
+
             # Per-Slot Housekeeping & Slot Increment
             #
             # This single statement performs two tasks for each empty slot
@@ -358,12 +382,238 @@ class State(Container):
         Raises:
         ------
         AssertionError
-            If block contains duplicate aggregated attestations with no unique participant.
+            If block contains duplicate aggregated attestations with no unique participant
+            or if deposits/exits are invalid.
         """
         # First process the block header.
         state = self.process_block_header(block)
 
+        # Process validator lifecycle operations in order
+        state = state.process_deposits(block.body.deposits)
+        state = state.process_exits(block.body.exits)
+
         return state.process_attestations(block.body.attestations)
+
+    def process_deposits(
+        self,
+        deposits: Iterable["deposit.ValidatorDeposit"],
+    ) -> "State":
+        """
+        Process validator deposits and add them to the pending queue.
+
+        Validation:
+        - Pubkey must not be zero
+        - Pubkey must not already exist in active validators
+        - Pubkey must not already be in pending queue
+
+        Parameters
+        ----------
+        deposits : Iterable[ValidatorDeposit]
+            The deposits to process.
+
+        Returns:
+        -------
+        State
+            New state with deposits added to pending queue.
+
+        Raises:
+        ------
+        AssertionError
+            If deposit validation fails.
+        """
+        from ..deposit import PendingDeposit
+
+        # Collect existing pubkeys from active validators
+        active_pubkeys = {v.pubkey for v in self.validators}
+
+        # Collect existing pubkeys from pending deposits
+        pending_pubkeys = {pd.pubkey for pd in self.pending_deposits}
+
+        # Build list of new pending deposits
+        new_pending = list(self.pending_deposits)
+
+        for deposit in deposits:
+            # Validate pubkey is not zero
+            assert deposit.pubkey != deposit.pubkey.__class__.zero(), (
+                "Deposit pubkey cannot be zero"
+            )
+
+            # Check pubkey not already active
+            assert deposit.pubkey not in active_pubkeys, (
+                f"Validator with pubkey {deposit.pubkey.hex()} already active"
+            )
+
+            # Check pubkey not already pending
+            assert deposit.pubkey not in pending_pubkeys, (
+                f"Validator with pubkey {deposit.pubkey.hex()} already pending"
+            )
+
+            # Add to pending queue
+            new_pending.append(PendingDeposit(
+                pubkey=deposit.pubkey,
+                queued_slot=self.slot,
+            ))
+
+            # Track for duplicate detection in this batch
+            pending_pubkeys.add(deposit.pubkey)
+
+        return self.model_copy(
+            update={
+                "pending_deposits": PendingDeposits(data=new_pending),
+            }
+        )
+
+    def process_exits(
+        self,
+        exits: Iterable["exit.ValidatorExit"],
+    ) -> "State":
+        """
+        Process validator exit requests and add them to the exit queue.
+
+        Validation:
+        - Validator index must be valid (< len(validators))
+        - Validator must not already be in exit queue
+
+        Parameters
+        ----------
+        exits : Iterable[ValidatorExit]
+            The exit requests to process.
+
+        Returns:
+        -------
+        State
+            New state with exits added to exit queue.
+
+        Raises:
+        ------
+        AssertionError
+            If exit validation fails.
+        """
+        from ..exit import ExitRequest
+
+        # Collect validators already in exit queue
+        exiting_indices = {er.validator_index for er in self.exit_queue}
+
+        # Build list of new exit requests
+        new_exits = list(self.exit_queue)
+
+        for exit_request in exits:
+            # Validate validator index is in range
+            assert exit_request.validator_index < Uint64(len(self.validators)), (
+                f"Validator index {exit_request.validator_index} out of range"
+            )
+
+            # Check not already in exit queue
+            assert exit_request.validator_index not in exiting_indices, (
+                f"Validator {exit_request.validator_index} already in exit queue"
+            )
+
+            # Add to exit queue
+            new_exits.append(ExitRequest(
+                validator_index=exit_request.validator_index,
+                exit_slot=self.slot,
+            ))
+
+            # Track for duplicate detection in this batch
+            exiting_indices.add(exit_request.validator_index)
+
+        return self.model_copy(
+            update={
+                "exit_queue": ExitQueue(data=new_exits),
+            }
+        )
+
+    def process_validator_lifecycle(self) -> "State":
+        """
+        Process pending activations and exits with rate limiting.
+
+        This function is called during slot processing to handle the automatic
+        progression of validator lifecycle states.
+
+        Activations:
+        1. Check pending deposits that have waited MIN_ACTIVATION_DELAY slots
+        2. Activate up to MAX_ACTIVATIONS_PER_SLOT validators
+        3. Move them from pending_deposits to validators list
+        4. Assign sequential validator indices
+
+        Exits:
+        1. Check exit queue for requests that have waited MIN_EXIT_DELAY slots
+        2. Remove up to MAX_EXITS_PER_SLOT validators
+        3. Remove them from validators list
+        4. Remove them from exit_queue
+
+        Note: This creates validator index gaps. Indices are never reused.
+
+        Returns:
+        -------
+        State
+            New state with lifecycle transitions applied.
+        """
+        from ..validator import Validator
+
+        config = self.config
+
+        # --- Activation Processing ---
+
+        # Find deposits eligible for activation (waited long enough)
+        eligible_deposits = [
+            pd for pd in self.pending_deposits
+            if self.slot >= pd.queued_slot + config.min_activation_delay
+        ]
+
+        # Respect rate limit
+        deposits_to_activate = eligible_deposits[:int(config.max_activations_per_slot)]
+
+        # Build new validators list
+        new_validators = list(self.validators)
+        next_index = Uint64(len(new_validators))
+
+        for pending_deposit in deposits_to_activate:
+            new_validator = Validator(
+                pubkey=pending_deposit.pubkey,
+                index=next_index,
+            )
+            new_validators.append(new_validator)
+            next_index = Uint64(next_index + 1)
+
+        # Remove activated deposits from pending queue
+        remaining_deposits = [
+            pd for pd in self.pending_deposits
+            if pd not in deposits_to_activate
+        ]
+
+        # --- Exit Processing ---
+
+        # Find exits eligible for removal (waited long enough)
+        eligible_exits = [
+            er for er in self.exit_queue
+            if self.slot >= er.exit_slot + config.min_exit_delay
+        ]
+
+        # Respect rate limit
+        exits_to_process = eligible_exits[:int(config.max_exits_per_slot)]
+
+        # Remove exiting validators
+        exiting_indices = {er.validator_index for er in exits_to_process}
+        final_validators = [
+            v for v in new_validators
+            if v.index not in exiting_indices
+        ]
+
+        # Remove processed exits from queue
+        remaining_exits = [
+            er for er in self.exit_queue
+            if er not in exits_to_process
+        ]
+
+        # Update state
+        return self.model_copy(
+            update={
+                "validators": Validators(data=final_validators),
+                "pending_deposits": PendingDeposits(data=remaining_deposits),
+                "exit_queue": ExitQueue(data=remaining_exits),
+            }
+        )
 
     def process_attestations(
         self,
@@ -616,6 +866,8 @@ class State(Container):
         proposer_index: Uint64,
         parent_root: Bytes32,
         attestations: list[Attestation] | None = None,
+        deposits: list["deposit.ValidatorDeposit"] | None = None,
+        exits: list["exit.ValidatorExit"] | None = None,
         available_attestations: Iterable[Attestation] | None = None,
         known_block_roots: AbstractSet[Bytes32] | None = None,
         gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
@@ -640,6 +892,8 @@ class State(Container):
             proposer_index: Validator index of the proposer.
             parent_root: Root of the parent block.
             attestations: Initial attestations to include.
+            deposits: Validator deposit operations to include.
+            exits: Validator exit operations to include.
             available_attestations: Pool of attestations to collect from.
             known_block_roots: Set of known block roots for attestation validation.
             gossip_signatures: Per-validator XMSS signatures learned from gossip.
@@ -657,6 +911,9 @@ class State(Container):
         # This ensures we include the maximal valid attestation set.
         while True:
             # Create candidate block with current attestation set
+            from ..deposit import ValidatorDeposits
+            from ..exit import ValidatorExits
+
             candidate_block = Block(
                 slot=slot,
                 proposer_index=proposer_index,
@@ -665,7 +922,9 @@ class State(Container):
                 body=BlockBody(
                     attestations=AggregatedAttestations(
                         data=AggregatedAttestation.aggregate_by_data(attestations)
-                    )
+                    ),
+                    deposits=ValidatorDeposits(data=deposits or []),
+                    exits=ValidatorExits(data=exits or []),
                 ),
             )
 
@@ -730,6 +989,8 @@ class State(Container):
                     attestations=AggregatedAttestations(
                         data=aggregated_attestations,
                     ),
+                    deposits=candidate_block.body.deposits,
+                    exits=candidate_block.body.exits,
                 ),
                 # Store the post state root in the block
                 "state_root": hash_tree_root(post_state),

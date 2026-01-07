@@ -37,6 +37,45 @@ of approximately 12.1 days.
 VALIDATOR_REGISTRY_LIMIT: Final = Uint64(2**12)
 """The maximum number of validators that can be in the registry."""
 
+# --- Validator Lifecycle Parameters ---
+
+MIN_ACTIVATION_DELAY: Final = Uint64(8)
+"""
+Minimum number of slots a validator must wait before activation.
+
+This delay ensures:
+1. The deposit is finalized before activation
+2. Network participants see the deposit before validator is active
+3. Time for validation and consensus on the new validator
+"""
+
+MIN_EXIT_DELAY: Final = Uint64(8)
+"""
+Minimum number of slots from exit request to actual removal.
+
+This delay ensures:
+1. Ongoing attestations from exiting validator can complete
+2. Chain stability during validator set changes
+3. Clean handoff of validator responsibilities
+"""
+
+MAX_ACTIVATIONS_PER_SLOT: Final = Uint64(4)
+"""
+Maximum number of validators that can activate in a single slot.
+
+Rate limiting prevents:
+1. Sudden validator set size changes
+2. State bloat from mass activations
+3. Consensus instability from rapid composition changes
+"""
+
+MAX_EXITS_PER_SLOT: Final = Uint64(4)
+"""
+Maximum number of validators that can exit in a single slot.
+
+Similar to activation limiting, this ensures gradual validator set changes.
+"""
+
 
 class _ChainConfig(StrictBaseModel):
     """
@@ -52,6 +91,12 @@ class _ChainConfig(StrictBaseModel):
     historical_roots_limit: Uint64
     validator_registry_limit: Uint64
 
+    # Validator Lifecycle Parameters
+    min_activation_delay: Uint64
+    min_exit_delay: Uint64
+    max_activations_per_slot: Uint64
+    max_exits_per_slot: Uint64
+
 
 # The Devnet Chain Configuration.
 DEVNET_CONFIG: Final = _ChainConfig(
@@ -59,4 +104,8 @@ DEVNET_CONFIG: Final = _ChainConfig(
     justification_lookback_slots=JUSTIFICATION_LOOKBACK_SLOTS,
     historical_roots_limit=HISTORICAL_ROOTS_LIMIT,
     validator_registry_limit=VALIDATOR_REGISTRY_LIMIT,
+    min_activation_delay=MIN_ACTIVATION_DELAY,
+    min_exit_delay=MIN_EXIT_DELAY,
+    max_activations_per_slot=MAX_ACTIVATIONS_PER_SLOT,
+    max_exits_per_slot=MAX_EXITS_PER_SLOT,
 )

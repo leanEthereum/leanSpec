@@ -11,6 +11,8 @@ can propose.
 
 from typing import TYPE_CHECKING
 
+from pydantic import Field
+
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.xmss.aggregation import AggregationError
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
@@ -19,6 +21,8 @@ from lean_spec.types.container import Container
 
 from ...xmss.containers import Signature as XmssSignature
 from ..attestation import Attestation
+from ..deposit import ValidatorDeposits
+from ..exit import ValidatorExits
 from .types import (
     AggregatedAttestations,
     AttestationSignatures,
@@ -32,8 +36,8 @@ class BlockBody(Container):
     """
     The body of a block, containing payload data.
 
-    Currently, the main operation is voting. Validators submit attestations which are
-    packaged into blocks.
+    Contains validator votes (attestations) and validator lifecycle operations
+    (deposits and exits).
     """
 
     attestations: AggregatedAttestations
@@ -42,6 +46,12 @@ class BlockBody(Container):
     Individual signatures live in the aggregated block signature list, so
     these entries contain only attestation data without per-attestation signatures.
     """
+
+    deposits: ValidatorDeposits = Field(default_factory=lambda: ValidatorDeposits(data=[]))
+    """Validator deposit operations for new validators joining."""
+
+    exits: ValidatorExits = Field(default_factory=lambda: ValidatorExits(data=[]))
+    """Validator exit operations for validators leaving."""
 
 
 class BlockHeader(Container):
