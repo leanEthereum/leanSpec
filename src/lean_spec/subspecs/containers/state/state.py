@@ -1,6 +1,8 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import AbstractSet, Iterable
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, AbstractSet, Iterable
 
 from pydantic import Field
 
@@ -34,6 +36,10 @@ from .types import (
     PendingDeposits,
     Validators,
 )
+
+if TYPE_CHECKING:
+    from ..deposit import ValidatorDeposit
+    from ..exit import ValidatorExit
 
 
 class State(Container):
@@ -112,11 +118,13 @@ class State(Container):
             proposer_index=Uint64(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
-            body_root=hash_tree_root(BlockBody(
-                attestations=AggregatedAttestations(data=[]),
-                deposits=ValidatorDeposits(data=[]),
-                exits=ValidatorExits(data=[]),
-            )),
+            body_root=hash_tree_root(
+                BlockBody(
+                    attestations=AggregatedAttestations(data=[]),
+                    deposits=ValidatorDeposits(data=[]),
+                    exits=ValidatorExits(data=[]),
+                )
+            ),
         )
 
         # Assemble and return the full genesis state.
@@ -396,7 +404,7 @@ class State(Container):
 
     def process_deposits(
         self,
-        deposits: Iterable["deposit.ValidatorDeposit"],
+        deposits: Iterable[ValidatorDeposit],
     ) -> "State":
         """
         Process validator deposits and add them to the pending queue.
@@ -449,10 +457,12 @@ class State(Container):
             )
 
             # Add to pending queue
-            new_pending.append(PendingDeposit(
-                pubkey=deposit.pubkey,
-                queued_slot=self.slot,
-            ))
+            new_pending.append(
+                PendingDeposit(
+                    pubkey=deposit.pubkey,
+                    queued_slot=self.slot,
+                )
+            )
 
             # Track for duplicate detection in this batch
             pending_pubkeys.add(deposit.pubkey)
@@ -465,7 +475,7 @@ class State(Container):
 
     def process_exits(
         self,
-        exits: Iterable["exit.ValidatorExit"],
+        exits: Iterable[ValidatorExit],
     ) -> "State":
         """
         Process validator exit requests and add them to the exit queue.
@@ -509,10 +519,12 @@ class State(Container):
             )
 
             # Add to exit queue
-            new_exits.append(ExitRequest(
-                validator_index=exit_request.validator_index,
-                exit_slot=self.slot,
-            ))
+            new_exits.append(
+                ExitRequest(
+                    validator_index=exit_request.validator_index,
+                    exit_slot=self.slot,
+                )
+            )
 
             # Track for duplicate detection in this batch
             exiting_indices.add(exit_request.validator_index)
@@ -557,12 +569,13 @@ class State(Container):
 
         # Find deposits eligible for activation (waited long enough)
         eligible_deposits = [
-            pd for pd in self.pending_deposits
+            pd
+            for pd in self.pending_deposits
             if self.slot >= pd.queued_slot + config.min_activation_delay
         ]
 
         # Respect rate limit
-        deposits_to_activate = eligible_deposits[:int(config.max_activations_per_slot)]
+        deposits_to_activate = eligible_deposits[: int(config.max_activations_per_slot)]
 
         # Build new validators list
         new_validators = list(self.validators)
@@ -577,34 +590,24 @@ class State(Container):
             next_index = Uint64(next_index + 1)
 
         # Remove activated deposits from pending queue
-        remaining_deposits = [
-            pd for pd in self.pending_deposits
-            if pd not in deposits_to_activate
-        ]
+        remaining_deposits = [pd for pd in self.pending_deposits if pd not in deposits_to_activate]
 
         # --- Exit Processing ---
 
         # Find exits eligible for removal (waited long enough)
         eligible_exits = [
-            er for er in self.exit_queue
-            if self.slot >= er.exit_slot + config.min_exit_delay
+            er for er in self.exit_queue if self.slot >= er.exit_slot + config.min_exit_delay
         ]
 
         # Respect rate limit
-        exits_to_process = eligible_exits[:int(config.max_exits_per_slot)]
+        exits_to_process = eligible_exits[: int(config.max_exits_per_slot)]
 
         # Remove exiting validators
         exiting_indices = {er.validator_index for er in exits_to_process}
-        final_validators = [
-            v for v in new_validators
-            if v.index not in exiting_indices
-        ]
+        final_validators = [v for v in new_validators if v.index not in exiting_indices]
 
         # Remove processed exits from queue
-        remaining_exits = [
-            er for er in self.exit_queue
-            if er not in exits_to_process
-        ]
+        remaining_exits = [er for er in self.exit_queue if er not in exits_to_process]
 
         # Update state
         return self.model_copy(
@@ -866,8 +869,8 @@ class State(Container):
         proposer_index: Uint64,
         parent_root: Bytes32,
         attestations: list[Attestation] | None = None,
-        deposits: list["deposit.ValidatorDeposit"] | None = None,
-        exits: list["exit.ValidatorExit"] | None = None,
+        deposits: list[ValidatorDeposit] | None = None,
+        exits: list[ValidatorExit] | None = None,
         available_attestations: Iterable[Attestation] | None = None,
         known_block_roots: AbstractSet[Bytes32] | None = None,
         gossip_signatures: dict[SignatureKey, "Signature"] | None = None,

@@ -8,7 +8,7 @@ The deposit enters a pending queue and activates after a delay.
 
 from __future__ import annotations
 
-from lean_spec.types import Bytes52, Container, Uint64
+from lean_spec.types import Bytes52, Container
 
 from ..slot import Slot
 
