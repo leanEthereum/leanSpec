@@ -460,7 +460,7 @@ class State(Container):
             # This prevents votes about unknown or conflicting forks.
             if (
                 source.root != self.historical_block_hashes[source.slot]
-                and target.root != self.historical_block_hashes[target.slot]
+                or target.root != self.historical_block_hashes[target.slot]
             ):
                 continue
 
