@@ -62,8 +62,8 @@ if TYPE_CHECKING:
 
 # Pre-generated key download URLs
 KEY_DOWNLOAD_URLS = {
-    "test": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-d6cec9b/test_scheme.tar.gz",
-    "prod": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-d6cec9b/prod_scheme.tar.gz",
+    "test": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-77bde6b/test_scheme.tar.gz",
+    "prod": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-77bde6b/prod_scheme.tar.gz",
 }
 """URLs for downloading pre-generated keys."""
 
