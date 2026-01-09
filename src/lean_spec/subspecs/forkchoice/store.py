@@ -117,7 +117,7 @@ class Store(Container):
 
     states: dict[Bytes32, State] = {}
     """
-    Mapping from state root to State objects.
+    Mapping from block root to State objects.
 
     For each known block, we keep its post-state.
 
