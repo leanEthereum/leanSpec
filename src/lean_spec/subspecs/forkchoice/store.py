@@ -839,7 +839,53 @@ class Store(Container):
 
         return self.model_copy(update={"safe_target": safe_target})
 
-    def tick_interval(self, has_proposal: bool) -> "Store":
+    def aggregate_committee_signatures(self) -> "Store":
+        """
+        Aggregate committee signatures for attestations in committee_signatures.
+
+        This method aggregates signatures from the committee_signatures map if
+        the node possesses >= 90% of the signatures of the committee
+
+        Returns:
+            New Store with updated aggregated_payloads.
+        """
+        new_aggregated_payloads = dict(self.aggregated_payloads)
+
+        # Group signatures by attestation data root
+        signatures_by_data_root: Dict[Bytes32, List[Tuple[Uint64, Signature]]] = defaultdict(list)
+        for sig_key, signature in self.committee_signatures.items():
+            signatures_by_data_root[sig_key.attestation_data_root].append((sig_key.validator_id, signature))
+
+        for data_root, sig_list in signatures_by_data_root.items():
+            num_signatures = len(sig_list)
+            # get head state to determine committee size
+            head_state = self.states[self.head]
+            committee_size = len(head_state.validators) / self.config.attestation_subnet_count
+            if num_signatures >= committee_size * 90 // 100:
+                # Aggregate signatures
+                participant_bits = Bitfield(committee_size)
+                signatures = []
+                for validator_id, signature in sig_list:
+                    participant_bits.set_bit(int(validator_id))
+                    signatures.append(signature)
+
+                # Note: in a real implementation, signatures aggregation may be executed in a separate thread
+                aggregated_signature = aggregate_signatures(signatures)
+                aggregated_proof = AggregatedSignatureProof(
+                    aggregated_signature=aggregated_signature,
+                    participants=participant_bits,
+                )
+
+                # Store the aggregated proof
+                sig_key = SignatureKey(validator_id=Uint64(0), attestation_data_root=data_root)
+                if sig_key not in new_aggregated_payloads:
+                    new_aggregated_payloads[sig_key] = []
+                new_aggregated_payloads[sig_key].append(aggregated_proof)
+                # Note: here we should broadcast the aggregated signature to committee_aggregators topic
+
+        return self.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
+
+    def tick_interval(self, has_proposal: bool, is_aggregator: bool) -> "Store":
         """
         Advance store time by one interval and perform interval-specific actions.
 
@@ -869,6 +915,7 @@ class Store(Container):
 
         Args:
             has_proposal: Whether a proposal exists for this interval.
+            is_aggregator: Whether the node is an aggregator.
 
         Returns:
             New Store with advanced time and interval-specific updates applied.
@@ -884,13 +931,15 @@ class Store(Container):
         elif current_interval == Uint64(2):
             # Mid-slot - update safe target for validators
             store = store.update_safe_target()
+            if is_aggregator:
+                store = store.aggregate_committee_signatures()
         elif current_interval == Uint64(3):
             # End of slot - accept accumulated attestations
             store = store.accept_new_attestations()
 
         return store
 
-    def on_tick(self, time: Uint64, has_proposal: bool) -> "Store":
+    def on_tick(self, time: Uint64, has_proposal: bool, is_aggregator: bool) -> "Store":
         """
         Advance forkchoice store time to given timestamp.
 
@@ -901,6 +950,7 @@ class Store(Container):
         Args:
             time: Target time in seconds since genesis.
             has_proposal: Whether node has proposal for current slot.
+            is_aggregator: Whether the node is an aggregator.
 
         Returns:
             New Store with time advanced and all interval actions performed.
@@ -920,7 +970,7 @@ class Store(Container):
             should_signal_proposal = has_proposal and (store.time + Uint64(1)) == tick_interval_time
 
             # Advance by one interval with appropriate signaling
-            store = store.tick_interval(should_signal_proposal)
+            store = store.tick_interval(should_signal_proposal, is_aggregator)
 
         return store
 
