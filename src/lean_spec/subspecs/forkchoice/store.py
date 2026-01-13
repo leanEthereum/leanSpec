@@ -47,6 +47,7 @@ from lean_spec.types import (
     is_proposer,
 )
 from lean_spec.types.container import Container
+from lean_spec.subspecs.networking import compute_subnet_id
 
 
 class Store(Container):
@@ -156,6 +157,7 @@ class Store(Container):
     Per-validator XMSS signatures learned from committee attesters.
     
     Keyed by SignatureKey(validator_id, attestation_data_root).
+    TODO: should we also index by subnet id?
     """
 
     aggregated_payloads: Dict[SignatureKey, list[AggregatedSignatureProof]] = {}
@@ -278,7 +280,7 @@ class Store(Container):
         self,
         signed_attestation: SignedAttestation,
         is_aggregator: bool,
-        validator_index: Uint64,
+        current_validator_id: Uint64,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -292,6 +294,8 @@ class Store(Container):
         Args:
             signed_attestation: The signed attestation from gossip.
             scheme: XMSS signature scheme for verification.
+            is_aggregator: True if current validator holds aggregator role.
+            current_validator_id: Index of the current validator processing this attestation.
 
         Returns:
             New Store with attestation processed and signature stored.
@@ -303,6 +307,7 @@ class Store(Container):
         validator_id = signed_attestation.validator_id
         attestation_data = signed_attestation.message
         signature = signed_attestation.signature
+
 
         # Validate the attestation first so unknown blocks are rejected cleanly
         # (instead of raising a raw KeyError when state is missing).
@@ -323,14 +328,18 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
+        current_validator_subnet = compute_subnet_id(int(current_validator_id), self.config.attestation_subnet_count)
+        attester_subnet = compute_subnet_id(int(validator_id), self.config.attestation_subnet_count)
+
         # Store signature for later lookup during block building
         new_gossip_sigs = dict(self.gossip_signatures)
         sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
         new_gossip_sigs[sig_key] = signature
 
         new_committee_sigs = dict(self.committee_signatures)
-        if is_aggregator:
-            # If this validator is an aggregator, also store in committee signatures
+        if is_aggregator and current_validator_subnet == attester_subnet:
+            # If this validator is an aggregator for this attestation,
+            # also store the signature in the committee signatures map.
             new_committee_sigs[sig_key] = signature
 
         # Process the attestation data
@@ -338,7 +347,7 @@ class Store(Container):
 
         # Return store with updated signature maps
         return store.model_copy(update={"gossip_signatures": new_gossip_sigs,
-                                        "committee_signatures": new_committee_sigs})
+                                         "committee_signatures": new_committee_sigs})
 
     def on_attestation(
         self,
@@ -776,7 +785,7 @@ class Store(Container):
         - Interval 0: Block proposal
         - Interval 1: Validators cast attestations (enter "new")
         - Interval 2: Safe target update
-        - Interval 3: Attestations accepted (move to "known")
+        - Interval 3: Process accumulated attestations
 
         This staged progression ensures proper timing and prevents premature
         influence on fork choice decisions.
