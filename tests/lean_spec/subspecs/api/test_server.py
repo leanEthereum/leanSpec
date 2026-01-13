@@ -76,9 +76,7 @@ class TestHealthEndpoint:
             try:
                 reader, writer = await asyncio.open_connection("127.0.0.1", 15052)
 
-                request = (
-                    "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-                )
+                request = "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
                 writer.write(request.encode())
                 await writer.drain()
 
@@ -196,9 +194,7 @@ class TestUnknownEndpoints:
             try:
                 reader, writer = await asyncio.open_connection("127.0.0.1", 15053)
 
-                request = (
-                    "GET /unknown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-                )
+                request = "GET /unknown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
                 writer.write(request.encode())
                 await writer.drain()
 
@@ -228,9 +224,7 @@ class TestStateVerification:
 
         asyncio.run(run_test())
 
-    def test_state_without_validators_fails_verification(
-        self, genesis_state: State
-    ) -> None:
+    def test_state_without_validators_fails_verification(self, genesis_state: State) -> None:
         """State with no validators fails verification."""
 
         async def run_test() -> None:
