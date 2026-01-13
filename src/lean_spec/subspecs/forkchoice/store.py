@@ -151,6 +151,13 @@ class Store(Container):
     Keyed by SignatureKey(validator_id, attestation_data_root).
     """
 
+    committee_signatures: Dict[SignatureKey, Signature] = {}
+    """
+    Per-validator XMSS signatures learned from committee attesters.
+    
+    Keyed by SignatureKey(validator_id, attestation_data_root).
+    """
+
     aggregated_payloads: Dict[SignatureKey, list[AggregatedSignatureProof]] = {}
     """
     Aggregated signature proofs learned from blocks.
@@ -270,6 +277,8 @@ class Store(Container):
     def on_gossip_attestation(
         self,
         signed_attestation: SignedAttestation,
+        is_aggregator: bool,
+        validator_index: Uint64,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -319,11 +328,17 @@ class Store(Container):
         sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
         new_gossip_sigs[sig_key] = signature
 
+        new_committee_sigs = dict(self.committee_signatures)
+        if is_aggregator:
+            # If this validator is an aggregator, also store in committee signatures
+            new_committee_sigs[sig_key] = signature
+
         # Process the attestation data
         store = self.on_attestation(attestation=attestation, is_from_block=False)
 
-        # Return store with updated signature map
-        return store.model_copy(update={"gossip_signatures": new_gossip_sigs})
+        # Return store with updated signature maps
+        return store.model_copy(update={"gossip_signatures": new_gossip_sigs,
+                                        "committee_signatures": new_committee_sigs})
 
     def on_attestation(
         self,
@@ -833,10 +848,6 @@ class Store(Container):
             - Block proposer publishes their block
             - If proposal exists, immediately accept new attestations
             - This ensures validators see the block before attesting
-
-        **Interval 1 (Validator Attesting)**:
-            - Validators create and gossip attestations
-            - No store action (waiting for attestations to arrive)
 
         **Interval 2 (Safe Target Update)**:
             - Compute safe target with 2/3+ majority
