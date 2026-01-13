@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from lean_spec.subspecs.chain.config import DEVNET_CONFIG
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 
 if TYPE_CHECKING:
@@ -101,8 +102,16 @@ async def verify_checkpoint_state(state: "State") -> bool:
             logger.error("Invalid state: negative slot")
             return False
 
-        if len(state.validators) == 0:
+        validator_count = len(state.validators)
+        if validator_count == 0:
             logger.error("Invalid state: no validators")
+            return False
+
+        if validator_count > int(DEVNET_CONFIG.validator_registry_limit):
+            logger.error(
+                f"Invalid state: validator count {validator_count} exceeds "
+                f"registry limit {DEVNET_CONFIG.validator_registry_limit}"
+            )
             return False
 
         root_preview = computed_root.hex()[:16]
