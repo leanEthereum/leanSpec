@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import TYPE_CHECKING
@@ -53,7 +54,7 @@ class ApiServer:
     config: ApiServerConfig
     """Server configuration."""
 
-    _store_getter: callable = field(default=lambda: None)
+    _store_getter: Callable[[], Store | None] = field(default=lambda: None)
     """Callable that returns the current Store instance."""
 
     _server: asyncio.Server | None = field(default=None)
@@ -62,7 +63,7 @@ class ApiServer:
     _shutdown: asyncio.Event = field(default_factory=asyncio.Event)
     """Event signaling shutdown request."""
 
-    def set_store_getter(self, getter: callable) -> None:
+    def set_store_getter(self, getter: Callable[[], Store | None]) -> None:
         """
         Set the store getter function.
 

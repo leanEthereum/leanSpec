@@ -10,7 +10,7 @@ This matches the checkpoint sync client implemented in zeam.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ class CheckpointSyncError(Exception):
     pass
 
 
-async def fetch_finalized_state(url: str, state_class: type) -> "State":
+async def fetch_finalized_state(url: str, state_class: type[Any]) -> "State":
     """
     Fetch finalized state from a node via checkpoint sync.
 
