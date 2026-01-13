@@ -23,9 +23,6 @@ SubnetId = Uint64
 ProtocolId = str
 """Libp2p protocol identifier, e.g. ``/eth2/beacon_chain/req/status/1/ssz_snappy``."""
 
-PeerId = str
-"""Libp2p peer identifier derived from the node's public key."""
-
 Multiaddr = str
 """Multiaddress string, e.g. ``/ip4/192.168.1.1/tcp/9000``."""
 

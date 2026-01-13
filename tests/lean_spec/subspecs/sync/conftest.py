@@ -24,9 +24,10 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.koalabear import Fp
+from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.peer.info import PeerInfo
 from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.networking.types import ConnectionState, PeerId
+from lean_spec.subspecs.networking.types import ConnectionState
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.constants import PROD_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
@@ -37,19 +38,19 @@ from lean_spec.types import Bytes32, Bytes52, Uint64
 @pytest.fixture
 def peer_id() -> PeerId:
     """Provide a sample peer ID for tests."""
-    return "16Uiu2HAmTestPeer123"
+    return PeerId.from_base58("16Uiu2HAmTestPeer123")
 
 
 @pytest.fixture
 def peer_id_2() -> PeerId:
     """Provide a second sample peer ID for tests."""
-    return "16Uiu2HAmTestPeer456"
+    return PeerId.from_base58("16Uiu2HAmTestPeer456")
 
 
 @pytest.fixture
 def peer_id_3() -> PeerId:
     """Provide a third sample peer ID for tests."""
-    return "16Uiu2HAmTestPeer789"
+    return PeerId.from_base58("16Uiu2HAmTestPeer789")
 
 
 @pytest.fixture

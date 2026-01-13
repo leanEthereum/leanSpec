@@ -112,12 +112,7 @@ class SyncState(Enum):
         Returns:
             True if the transition is allowed by the state machine rules.
         """
-        valid_transitions: dict[SyncState, set[SyncState]] = {
-            SyncState.IDLE: {SyncState.SYNCING},
-            SyncState.SYNCING: {SyncState.SYNCED, SyncState.IDLE},
-            SyncState.SYNCED: {SyncState.SYNCING, SyncState.IDLE},
-        }
-        return target in valid_transitions.get(self, set())
+        return target in _VALID_TRANSITIONS.get(self, set())
 
     @property
     def is_syncing(self) -> bool:
@@ -138,3 +133,11 @@ class SyncState(Enum):
             True if incoming gossip blocks should be processed.
         """
         return self in {SyncState.SYNCING, SyncState.SYNCED}
+
+
+_VALID_TRANSITIONS: dict[SyncState, set[SyncState]] = {
+    SyncState.IDLE: {SyncState.SYNCING},
+    SyncState.SYNCING: {SyncState.SYNCED, SyncState.IDLE},
+    SyncState.SYNCED: {SyncState.SYNCING, SyncState.IDLE},
+}
+"""Valid state transitions for the sync state machine."""

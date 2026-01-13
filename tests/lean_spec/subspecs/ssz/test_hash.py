@@ -7,7 +7,7 @@ from typing import Iterable, Tuple, Type
 
 import pytest
 
-from lean_spec.subspecs.ssz.hash import HashTreeRoot, hash_tree_root
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.byte import Byte
@@ -174,7 +174,7 @@ def test_hash_tree_root_uints(uint_type: Type[BaseUint], value_int: int, le_hex:
     val = uint_type(value_int)
     # Calculate the hash tree root using both the functional and object-oriented approaches.
     root_fn = hash_tree_root(val)
-    root_oo = HashTreeRoot.compute(val)
+    root_oo = hash_tree_root(val)
     # The expected root is the little-endian hex string padded to a 32-byte chunk.
     expected_chunk = _chunk_hex(le_hex)
     # Verify that both calculated roots match the expected chunk.
@@ -204,7 +204,7 @@ def test_hash_tree_root_boolean(val: Boolean, serialized_hex: str) -> None:
     # Verify the functional approach gives the correct root.
     assert hash_tree_root(val).hex() == expected
     # Verify the object-oriented approach gives the correct root.
-    assert HashTreeRoot.compute(val).hex() == expected
+    assert hash_tree_root(val).hex() == expected
 
 
 @pytest.mark.parametrize(

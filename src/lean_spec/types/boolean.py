@@ -197,5 +197,5 @@ class Boolean(int, SSZType):
         return str(bool(self))
 
     def __hash__(self) -> int:
-        """Return a distinct hash for the object."""
+        """Return a hash distinct from raw bool."""
         return hash((type(self), int(self)))

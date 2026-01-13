@@ -389,7 +389,7 @@ class BaseUint(int, SSZType):
         return str(int(self))
 
     def __hash__(self) -> int:
-        """Return a distinct hash for the object."""
+        """Return a hash distinct from raw int."""
         return hash((type(self), int(self)))
 
     def __index__(self) -> int:

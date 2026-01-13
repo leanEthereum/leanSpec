@@ -6,10 +6,10 @@ import asyncio
 
 import pytest
 
-from lean_spec.subspecs.containers import Validator
+from lean_spec.subspecs.containers import SignedBlockWithAttestation, Validator
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
-from lean_spec.subspecs.networking import NetworkEvent
+from lean_spec.subspecs.networking import NetworkEvent, PeerId
 from lean_spec.subspecs.node import Node, NodeConfig
 from lean_spec.types import Bytes32, Bytes52, Uint64
 
@@ -40,9 +40,9 @@ class MockNetworkRequester:
 
     async def request_blocks_by_root(
         self,
-        peer_id: str,  # noqa: ARG002
+        peer_id: PeerId,  # noqa: ARG002
         roots: list[Bytes32],  # noqa: ARG002
-    ) -> list:
+    ) -> list[SignedBlockWithAttestation]:
         """Return empty list (no blocks available)."""
         return []
 

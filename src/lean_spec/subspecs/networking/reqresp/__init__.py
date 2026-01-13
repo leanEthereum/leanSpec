@@ -4,9 +4,7 @@ from .codec import (
     CodecError,
     ResponseCode,
     decode_request,
-    decode_varint,
     encode_request,
-    encode_varint,
 )
 from .message import (
     BLOCKS_BY_ROOT_PROTOCOL_V1,
@@ -29,6 +27,4 @@ __all__ = [
     "ResponseCode",
     "encode_request",
     "decode_request",
-    "encode_varint",
-    "decode_varint",
 ]

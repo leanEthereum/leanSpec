@@ -289,10 +289,10 @@ class HashSubTree(Container):
             raise ValueError(f"Depth must be even for top-bottom split, got {depth}.")
 
         # Each bottom tree has exactly sqrt(LIFETIME) leaves.
-        leafs_per_tree = 1 << (depth // 2)
-        if len(leaves) != leafs_per_tree:
+        leaves_per_tree = 1 << (depth // 2)
+        if len(leaves) != leaves_per_tree:
             raise ValueError(
-                f"Expected {leafs_per_tree} leaves for depth={depth}, got {len(leaves)}."
+                f"Expected {leaves_per_tree} leaves for depth={depth}, got {len(leaves)}."
             )
 
         # Build full tree from leaves.
@@ -301,7 +301,7 @@ class HashSubTree(Container):
             rand=rand,
             lowest_layer=Uint64(0),
             depth=Uint64(depth),
-            start_index=bottom_tree_index * Uint64(leafs_per_tree),
+            start_index=bottom_tree_index * Uint64(leaves_per_tree),
             parameter=parameter,
             lowest_layer_nodes=leaves,
         )
@@ -366,11 +366,11 @@ class HashSubTree(Container):
             A `HashSubTree` representing the requested bottom tree.
         """
         # Calculate the number of leaves per bottom tree: sqrt(LIFETIME).
-        leafs_per_bottom_tree = 1 << (config.LOG_LIFETIME // 2)
+        leaves_per_bottom_tree = 1 << (config.LOG_LIFETIME // 2)
 
         # Determine the epoch range for this bottom tree.
-        start_epoch = bottom_tree_index * Uint64(leafs_per_bottom_tree)
-        end_epoch = start_epoch + Uint64(leafs_per_bottom_tree)
+        start_epoch = bottom_tree_index * Uint64(leaves_per_bottom_tree)
+        end_epoch = start_epoch + Uint64(leaves_per_bottom_tree)
 
         # Generate leaf hashes for all epochs in this bottom tree.
         leaf_hashes: list[HashDigestVector] = []
@@ -527,8 +527,8 @@ def combined_path(
         raise ValueError(f"Depth must be even, got {depth}.")
 
     # Validate bottom tree matches position.
-    leafs_per_tree = Uint64(1 << (depth // 2))
-    expected_start = (position // leafs_per_tree) * leafs_per_tree
+    leaves_per_tree = Uint64(1 << (depth // 2))
+    expected_start = (position // leaves_per_tree) * leaves_per_tree
     if bottom_tree.layers[0].start_index != expected_start:
         raise ValueError(
             f"Wrong bottom tree: position {position} needs start {expected_start}, "
@@ -537,7 +537,7 @@ def combined_path(
 
     # Concatenate: bottom path + top path.
     bottom_path = bottom_tree.path(position)
-    top_path = top_tree.path(position // leafs_per_tree)
+    top_path = top_tree.path(position // leaves_per_tree)
     combined = tuple(bottom_path.siblings.data) + tuple(top_path.siblings.data)
 
     return HashTreeOpening(siblings=HashDigestList(data=combined))

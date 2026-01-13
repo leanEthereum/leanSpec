@@ -13,9 +13,10 @@ from lean_spec.subspecs.containers import SignedBlockWithAttestation
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
+from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.peer.info import PeerInfo
 from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.networking.types import ConnectionState, PeerId
+from lean_spec.subspecs.networking.types import ConnectionState
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.peer_manager import PeerManager

@@ -8,10 +8,11 @@ from lean_spec.subspecs.networking import ResponseCode
 from lean_spec.subspecs.networking.reqresp import (
     CodecError,
     decode_request,
-    decode_varint,
     encode_request,
-    encode_varint,
 )
+from lean_spec.subspecs.networking.varint import VarintError
+from lean_spec.subspecs.networking.varint import decode as decode_varint
+from lean_spec.subspecs.networking.varint import encode as encode_varint
 
 
 class TestVarintEncoding:
@@ -53,8 +54,8 @@ class TestVarintEncoding:
             encode_varint(-1)
 
     def test_decode_truncated_raises(self) -> None:
-        """Truncated varints raise CodecError."""
-        with pytest.raises(CodecError, match="Truncated"):
+        """Truncated varints raise VarintError."""
+        with pytest.raises(VarintError, match="Truncated"):
             decode_varint(b"\x80")  # Missing continuation byte
 
     def test_roundtrip(self) -> None:

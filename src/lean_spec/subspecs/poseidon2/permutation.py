@@ -6,7 +6,6 @@ Hash Function" (https://eprint.iacr.org/2023/323).
 """
 
 from itertools import chain
-from typing import List
 
 from pydantic import Field, model_validator
 
@@ -37,11 +36,11 @@ class Poseidon2Params(StrictBaseModel):
     width: int = Field(gt=0, description="The size of the state (t).")
     rounds_f: int = Field(gt=0, description="Total number of 'full' rounds.")
     rounds_p: int = Field(ge=0, description="Total number of 'partial' rounds.")
-    internal_diag_vectors: List[Fp] = Field(
+    internal_diag_vectors: list[Fp] = Field(
         min_length=1,
         description=("Diagonal vectors for the efficient internal linear layer matrix (M_I)."),
     )
-    round_constants: List[Fp] = Field(
+    round_constants: list[Fp] = Field(
         min_length=1,
         description="The list of pre-computed constants for all rounds.",
     )
@@ -128,7 +127,7 @@ M4_MATRIX = [
 ]
 
 
-def _apply_m4(chunk: List[Fp]) -> List[Fp]:
+def _apply_m4(chunk: list[Fp]) -> list[Fp]:
     """
     Applies the 4x4 M4 MDS matrix to a 4-element chunk of the state.
     This is a helper function for the external linear layer.
@@ -148,7 +147,7 @@ def _apply_m4(chunk: List[Fp]) -> List[Fp]:
     return result
 
 
-def external_linear_layer(state: List[Fp], width: int) -> List[Fp]:
+def external_linear_layer(state: list[Fp], width: int) -> list[Fp]:
     """
     Applies the external linear layer (M_E).
 
@@ -190,7 +189,7 @@ def external_linear_layer(state: List[Fp], width: int) -> List[Fp]:
     return state_after_circulant
 
 
-def internal_linear_layer(state: List[Fp], params: Poseidon2Params) -> List[Fp]:
+def internal_linear_layer(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     """
     Applies the internal linear layer (M_I).
 
@@ -226,7 +225,7 @@ def internal_linear_layer(state: List[Fp], params: Poseidon2Params) -> List[Fp]:
     return new_state
 
 
-def permute(state: List[Fp], params: Poseidon2Params) -> List[Fp]:
+def permute(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     """
     Performs the full Poseidon2 permutation on the given state.
 

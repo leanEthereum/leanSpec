@@ -2,6 +2,7 @@
 
 import pytest
 
+from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.config import (
     MESSAGE_DOMAIN_INVALID_SNAPPY,
     MESSAGE_DOMAIN_VALID_SNAPPY,
@@ -25,6 +26,11 @@ from lean_spec.subspecs.networking.gossipsub import (
     format_topic_string,
     parse_topic_string,
 )
+
+
+def peer(name: str) -> PeerId:
+    """Create a PeerId from a test name."""
+    return PeerId.from_base58(name)
 
 
 class TestGossipsubParameters:
@@ -271,36 +277,48 @@ class TestMeshState:
         mesh = MeshState(params=GossipsubParameters())
         mesh.subscribe("topic1")
 
-        assert mesh.add_to_mesh("topic1", "peer1")
-        assert mesh.add_to_mesh("topic1", "peer2")
-        assert not mesh.add_to_mesh("topic1", "peer1")  # Already in mesh
+        peer1 = peer("peer1")
+        peer2 = peer("peer2")
+
+        assert mesh.add_to_mesh("topic1", peer1)
+        assert mesh.add_to_mesh("topic1", peer2)
+        assert not mesh.add_to_mesh("topic1", peer1)  # Already in mesh
 
         peers = mesh.get_mesh_peers("topic1")
-        assert "peer1" in peers
-        assert "peer2" in peers
+        assert peer1 in peers
+        assert peer2 in peers
 
-        assert mesh.remove_from_mesh("topic1", "peer1")
-        assert not mesh.remove_from_mesh("topic1", "peer1")  # Already removed
+        assert mesh.remove_from_mesh("topic1", peer1)
+        assert not mesh.remove_from_mesh("topic1", peer1)  # Already removed
 
         peers = mesh.get_mesh_peers("topic1")
-        assert "peer1" not in peers
-        assert "peer2" in peers
+        assert peer1 not in peers
+        assert peer2 in peers
 
     def test_gossip_peer_selection(self) -> None:
         """Test selection of non-mesh peers for gossip."""
         params = GossipsubParameters(d_lazy=3)
         mesh = MeshState(params=params)
         mesh.subscribe("topic1")
-        mesh.add_to_mesh("topic1", "peer1")
-        mesh.add_to_mesh("topic1", "peer2")
+        peer1 = peer("peer1")
+        peer2 = peer("peer2")
+        mesh.add_to_mesh("topic1", peer1)
+        mesh.add_to_mesh("topic1", peer2)
 
-        all_peers = {"peer1", "peer2", "peer3", "peer4", "peer5", "peer6"}
+        all_peers = {
+            peer("peer1"),
+            peer("peer2"),
+            peer("peer3"),
+            peer("peer4"),
+            peer("peer5"),
+            peer("peer6"),
+        }
 
         gossip_peers = mesh.select_peers_for_gossip("topic1", all_peers)
 
         mesh_peers = mesh.get_mesh_peers("topic1")
-        for peer in gossip_peers:
-            assert peer not in mesh_peers
+        for p in gossip_peers:
+            assert p not in mesh_peers
 
 
 class TestTopicMesh:
@@ -309,14 +327,15 @@ class TestTopicMesh:
     def test_topic_mesh_add_remove(self) -> None:
         """Test adding and removing peers."""
         topic_mesh = TopicMesh()
+        peer1 = peer("peer1")
 
-        assert topic_mesh.add_peer("peer1")
-        assert not topic_mesh.add_peer("peer1")  # Already exists
-        assert "peer1" in topic_mesh.peers
+        assert topic_mesh.add_peer(peer1)
+        assert not topic_mesh.add_peer(peer1)  # Already exists
+        assert peer1 in topic_mesh.peers
 
-        assert topic_mesh.remove_peer("peer1")
-        assert not topic_mesh.remove_peer("peer1")  # Already removed
-        assert "peer1" not in topic_mesh.peers
+        assert topic_mesh.remove_peer(peer1)
+        assert not topic_mesh.remove_peer(peer1)  # Already removed
+        assert peer1 not in topic_mesh.peers
 
 
 class TestMessageCache:

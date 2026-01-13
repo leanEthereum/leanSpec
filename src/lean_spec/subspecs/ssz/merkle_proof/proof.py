@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Set
+from typing import Sequence
 
 from pydantic import Field, model_validator
 
@@ -49,14 +49,14 @@ class MerkleProof(StrictBaseModel):
         """Creates a MerkleProof object from a traditional single-item proof."""
         return cls(leaves=[leaf], proof_hashes=proof_hashes, indices=[index])
 
-    def _get_helper_indices(self) -> List[GeneralizedIndex]:
+    def _get_helper_indices(self) -> list[GeneralizedIndex]:
         """
         Calculates the generalized indices of all "helper" nodes needed to prove the leaves.
 
         This is an internal helper method.
         """
-        all_helper_indices: Set[GeneralizedIndex] = set()
-        all_path_indices: Set[GeneralizedIndex] = set()
+        all_helper_indices: set[GeneralizedIndex] = set()
+        all_path_indices: set[GeneralizedIndex] = set()
 
         for index in self.indices:
             all_helper_indices.update(index.get_branch_indices())
@@ -91,7 +91,7 @@ class MerkleProof(StrictBaseModel):
             raise ValueError("Proof length does not match the required number of helper nodes.")
 
         # 1. Start with the known nodes (leaves and proof hashes).
-        tree: Dict[int, Bytes32] = {
+        tree: dict[int, Bytes32] = {
             **{index.value: node for index, node in zip(self.indices, self.leaves, strict=False)},
             **{
                 index.value: node

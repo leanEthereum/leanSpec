@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.peer.info import PeerInfo
 from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.networking.types import ConnectionState, PeerId
+from lean_spec.subspecs.networking.types import ConnectionState
 from lean_spec.subspecs.sync.config import MAX_CONCURRENT_REQUESTS
 from lean_spec.subspecs.sync.peer_manager import PeerManager, SyncPeer
 from lean_spec.types import Bytes32
+
+
+def peer(name: str) -> PeerId:
+    """Create a PeerId from a test name."""
+    return PeerId.from_base58(name)
 
 
 class TestSyncPeer:
@@ -128,7 +134,7 @@ class TestPeerManagerBasicOperations:
     def test_remove_nonexistent_peer(self) -> None:
         """Removing a nonexistent peer returns None."""
         manager = PeerManager()
-        assert manager.remove_peer("nonexistent_peer") is None
+        assert manager.remove_peer(peer("16Uiu2HAmNonexistent")) is None
 
     def test_get_peer(self, connected_peer_info: PeerInfo) -> None:
         """Getting a peer by ID returns the SyncPeer."""
@@ -142,7 +148,7 @@ class TestPeerManagerBasicOperations:
     def test_get_nonexistent_peer(self) -> None:
         """Getting a nonexistent peer returns None."""
         manager = PeerManager()
-        assert manager.get_peer("nonexistent_peer") is None
+        assert manager.get_peer(peer("16Uiu2HAmNonexistent")) is None
 
     def test_clear(self, connected_peer_info: PeerInfo) -> None:
         """Clear removes all peers."""
@@ -170,7 +176,7 @@ class TestPeerManagerStatusTracking:
         """update_status does nothing for nonexistent peer."""
         manager = PeerManager()
         # Should not raise
-        manager.update_status("nonexistent_peer", sample_status)
+        manager.update_status(peer("16Uiu2HAmNonexistent"), sample_status)
 
 
 class TestPeerManagerPeerSelection:
@@ -293,7 +299,7 @@ class TestPeerManagerRequestCallbacks:
         """on_request_success does nothing for nonexistent peer."""
         manager = PeerManager()
         # Should not raise
-        manager.on_request_success("nonexistent_peer")
+        manager.on_request_success(peer("16Uiu2HAmNonexistent"))
 
     def test_on_request_failure(self, connected_peer_info: PeerInfo) -> None:
         """on_request_failure decrements in-flight count."""
@@ -308,7 +314,7 @@ class TestPeerManagerRequestCallbacks:
         """on_request_failure does nothing for nonexistent peer."""
         manager = PeerManager()
         # Should not raise
-        manager.on_request_failure("nonexistent_peer")
+        manager.on_request_failure(peer("16Uiu2HAmNonexistent"))
 
 
 class TestPeerManagerGetAllPeers:

@@ -10,9 +10,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.peer.info import PeerInfo
 from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.networking.types import PeerId
 
 from .config import MAX_CONCURRENT_REQUESTS
 
@@ -62,7 +62,7 @@ class SyncPeer:
         self.requests_in_flight = max(0, self.requests_in_flight - 1)
 
 
-@dataclass
+@dataclass(slots=True)
 class PeerManager:
     """
     Manages peers for sync operations.
@@ -129,18 +129,15 @@ class PeerManager:
 
         Returns the mode (most common) finalized slot reported by connected peers.
         """
-        finalized_slots: list[Slot] = []
-
-        for peer in self._peers.values():
-            if peer.status is not None and peer.is_connected():
-                finalized_slots.append(peer.status.finalized.slot)
-
-        if not finalized_slots:
+        slots = (
+            peer.status.finalized.slot
+            for peer in self._peers.values()
+            if peer.status is not None and peer.is_connected()
+        )
+        counter = Counter(slots)
+        if not counter:
             return None
-
-        counter = Counter(finalized_slots)
-        most_common = counter.most_common(1)
-        return most_common[0][0] if most_common else None
+        return counter.most_common(1)[0][0]
 
     def on_request_success(self, peer_id: PeerId) -> None:
         """Record a successful request to a peer."""
@@ -148,7 +145,7 @@ class PeerManager:
         if peer is not None:
             peer.on_request_complete()
 
-    def on_request_failure(self, peer_id: PeerId, reason: str = "") -> None:
+    def on_request_failure(self, peer_id: PeerId) -> None:
         """Record a failed request to a peer."""
         peer = self._peers.get(peer_id)
         if peer is not None:

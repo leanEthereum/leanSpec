@@ -50,6 +50,59 @@ uvx tox                  # Everything (checks + tests + docs)
 - Test files/functions must start with `test_`
 - **No example code in docstrings**: Do not include `Example:` sections with code blocks in docstrings. Keep documentation concise and focused on explaining *what* and *why*, not *how to use*. Unit tests serve as usage examples.
 
+### Import Style
+
+**Avoid confusing import renames.** When an external library exports a name that conflicts with a local type, prefer restructuring over renaming.
+
+Bad:
+```python
+from cryptography.hazmat.primitives.asymmetric.x25519 import (
+    X25519PublicKey as CryptographyX25519PublicKey,
+)
+```
+
+Good - import the module and use qualified access:
+```python
+from cryptography.hazmat.primitives.asymmetric import x25519
+
+# Then use x25519.X25519PublicKey when needed
+public_key = x25519.X25519PublicKey.from_public_bytes(data)
+```
+
+Good - move conflicting local types to a separate constants/types module:
+```python
+# In constants.py - no external dependencies that conflict
+X25519PublicKey: TypeAlias = Bytes32
+
+# In crypto.py - import from constants, use qualified access for external
+from .constants import X25519PublicKey
+from cryptography.hazmat.primitives.asymmetric import x25519
+```
+
+This keeps code readable and avoids mental overhead of tracking renamed imports.
+
+### Module-Level Constants
+
+Use docstrings (not comments) to document module-level constants. Place the docstring immediately after the assignment.
+
+Bad:
+```python
+# Noise protocol name - used to initialize the handshake state
+# This is the full protocol name per the Noise spec
+PROTOCOL_NAME: bytes = b"Noise_XX_25519_ChaChaPoly_SHA256"
+```
+
+Good:
+```python
+PROTOCOL_NAME: bytes = b"Noise_XX_25519_ChaChaPoly_SHA256"
+"""Noise protocol name per the Noise spec. Used to initialize the handshake state."""
+```
+
+This pattern:
+- Is recognized by documentation tools (Sphinx, mkdocs)
+- Shows up in IDE tooltips and autocomplete
+- Keeps documentation close to the code it describes
+
 ### Documentation Rules (CRITICAL)
 
 **NEVER use explicit function or method names in documentation.**
@@ -212,6 +265,14 @@ def test_block(state_transition_test: StateTransitionTestFiller) -> None:
 - Keep specs simple, readable, and clear
 - Repository is `leanSpec` not `lean-spec`
 - **Always run linter checks before finishing**: Run `uvx tox -e all-checks` at the end of any code changes to ensure all linting, formatting, type checking, and spell checking passes.
+- **CRITICAL - NO BACKWARD COMPATIBILITY**: This is a STRICT requirement. NEVER add backward compatibility code under any circumstances. This means:
+  - NO legacy constants (like `KEY_TYPE_ED25519 = KeyType.ED25519`)
+  - NO wrapper functions that delegate to new classes
+  - NO re-exports of deprecated APIs
+  - NO deprecation shims or aliases
+  - When refactoring from functions to classes, DELETE the old functions entirely
+  - Update ALL call sites to use the new API directly
+  - Old patterns must be REMOVED, not preserved alongside new ones
 
 ## SSZ Type Design Patterns
 
@@ -291,9 +352,3 @@ class Bitlist68719476736(BaseBitlist): ...
 class SignedAttestationList4096(SSZList): ...
 ```
 
-### API Compatibility
-
-When refactoring, maintain backward compatibility:
-
-- Keep existing import paths working through `__init__.py` exports
-- Preserve method signatures and behavior

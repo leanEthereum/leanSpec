@@ -183,7 +183,7 @@ class BaseBytes(bytes, SSZType):
         return f"{tname}({self.hex()})"
 
     def __hash__(self) -> int:
-        """Return the hash of the bytes."""
+        """Return a hash distinct from raw bytes."""
         return hash((type(self), bytes(self)))
 
     def hex(self, sep: str | bytes | None = None, bytes_per_sep: SupportsIndex = 1) -> str:
@@ -207,6 +207,18 @@ class Bytes8(BaseBytes):
     """Fixed-size byte array of exactly 8 bytes."""
 
     LENGTH = 8
+
+
+class Bytes12(BaseBytes):
+    """Fixed-size byte array of exactly 12 bytes (ChaCha20-Poly1305 nonce)."""
+
+    LENGTH = 12
+
+
+class Bytes16(BaseBytes):
+    """Fixed-size byte array of exactly 16 bytes (Poly1305 authentication tag)."""
+
+    LENGTH = 16
 
 
 class Bytes20(BaseBytes):

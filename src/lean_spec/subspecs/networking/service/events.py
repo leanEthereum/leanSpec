@@ -29,7 +29,7 @@ from lean_spec.subspecs.containers import SignedBlockWithAttestation
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic
 from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.networking.types import PeerId
+from lean_spec.subspecs.networking.transport import PeerId
 
 
 @dataclass(frozen=True, slots=True)

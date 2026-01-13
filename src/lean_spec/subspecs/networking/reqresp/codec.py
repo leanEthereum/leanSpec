@@ -78,6 +78,9 @@ from enum import IntEnum
 from lean_spec.snappy import SnappyDecompressionError, frame_compress, frame_decompress
 
 from ..config import MAX_PAYLOAD_SIZE
+from ..varint import VarintError
+from ..varint import decode as decode_varint
+from ..varint import encode as encode_varint
 
 
 class CodecError(Exception):
@@ -89,108 +92,6 @@ class CodecError(Exception):
       - Snappy decompression failures
       - Length mismatches after decompression
     """
-
-    pass
-
-
-def encode_varint(value: int) -> bytes:
-    """
-    Encode an unsigned integer as a varint (LEB128).
-
-    LEB128 is a variable-length encoding for integers.
-
-    Small values use fewer bytes, making it efficient for typical message sizes.
-
-    Args:
-        value: Non-negative integer to encode.
-
-    Returns:
-        Varint-encoded bytes (1-10 bytes for 64-bit values).
-
-    Raises:
-        ValueError: If value is negative.
-
-    Algorithm:
-        1. Extract low 7 bits of value.
-        2. If more bits remain, set continuation bit (0x80) and repeat.
-        3. When no more bits, write final byte without continuation.
-    """
-    # Varints only encode non-negative values.
-    if value < 0:
-        raise ValueError("Varint value must be non-negative")
-
-    result = bytearray()
-
-    # Process 7 bits at a time until value fits in 7 bits.
-    while value >= 0x80:
-        # Extract low 7 bits and set continuation flag (bit 7).
-        #
-        # value & 0x7F: Get low 7 bits.
-        # | 0x80: Set bit 7 to indicate more bytes follow.
-        result.append((value & 0x7F) | 0x80)
-
-        # Shift right to process next 7 bits.
-        value >>= 7
-
-    # Write final byte (no continuation flag).
-    result.append(value)
-
-    return bytes(result)
-
-
-def decode_varint(data: bytes, offset: int = 0) -> tuple[int, int]:
-    r"""
-    Decode a varint from bytes.
-
-    Args:
-        data: Input bytes containing the varint.
-        offset: Starting position in data.
-
-    Returns:
-        Tuple of (decoded_value, bytes_consumed).
-
-    Raises:
-        CodecError: If the varint is truncated or exceeds 10 bytes.
-
-    Algorithm:
-        1. Read bytes until one has bit 7 clear (no continuation).
-        2. Accumulate 7-bit groups into result, shifted appropriately.
-        3. Reject varints longer than 10 bytes (would overflow 64 bits).
-    """
-    result = 0
-    shift = 0
-    pos = offset
-
-    while True:
-        # Check for truncated input.
-        if pos >= len(data):
-            raise CodecError("Truncated varint")
-
-        # Read next byte.
-        byte = data[pos]
-        pos += 1
-
-        # Accumulate low 7 bits at current position.
-        #
-        # byte & 0x7F: Extract low 7 bits (data bits).
-        # << shift: Position them correctly in result.
-        result |= (byte & 0x7F) << shift
-        shift += 7
-
-        # Check continuation flag (bit 7).
-        #
-        # If bit 7 is clear, this is the last byte.
-        if not (byte & 0x80):
-            break
-
-        # Reject overly long varints.
-        #
-        # 10 bytes × 7 bits = 70 bits, but we only support 64-bit values.
-        # After 10 bytes (shift >= 70), reject as malformed.
-        if shift >= 70:
-            raise CodecError("Varint too long")
-
-    return result, pos - offset
 
 
 def encode_request(ssz_data: bytes) -> bytes:
@@ -267,7 +168,7 @@ def decode_request(data: bytes) -> bytes:
     # This tells us the expected uncompressed size.
     try:
         declared_length, varint_size = decode_varint(data)
-    except CodecError as e:
+    except VarintError as e:
         raise CodecError(f"Invalid request length: {e}") from e
 
     # Step 3: Validate declared length.
@@ -420,7 +321,7 @@ class ResponseCode(IntEnum):
         # Starts at offset 1 (after the code byte).
         try:
             declared_length, varint_size = decode_varint(data, offset=1)
-        except CodecError as e:
+        except VarintError as e:
             raise CodecError(f"Invalid response length: {e}") from e
 
         # Step 5: Validate declared length.

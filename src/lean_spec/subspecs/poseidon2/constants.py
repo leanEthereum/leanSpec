@@ -1,11 +1,9 @@
 """Round constants for the Poseidon2 permutation over the KoalaBear field."""
 
-from typing import List
-
 from ..koalabear.field import Fp
 
 # For width 16: 64 external_initial + 20 internal + 64 external_final = 148 constants
-_RAW_CONSTANTS_16: List[int] = [
+_RAW_CONSTANTS_16: list[int] = [
     # External initial (4 rounds × 16 = 64 constants)
     2128964168,
     288780357,
@@ -160,7 +158,7 @@ _RAW_CONSTANTS_16: List[int] = [
 ]
 
 # For width 24: 96 external_initial + 23 internal + 96 external_final = 215 constants
-_RAW_CONSTANTS_24: List[int] = [
+_RAW_CONSTANTS_24: list[int] = [
     # External initial (4 rounds × 24 = 96 constants)
     487143900,
     1829048205,
@@ -382,7 +380,7 @@ _RAW_CONSTANTS_24: List[int] = [
 ]
 
 # For width 16 (needs 8*16 + 20 = 148 constants).
-ROUND_CONSTANTS_16: List[Fp] = [Fp(value=v) for v in _RAW_CONSTANTS_16]
+ROUND_CONSTANTS_16: list[Fp] = [Fp(value=v) for v in _RAW_CONSTANTS_16]
 
 # For width 24 (needs 8*24 + 23 = 215 constants).
-ROUND_CONSTANTS_24: List[Fp] = [Fp(value=v) for v in _RAW_CONSTANTS_24]
+ROUND_CONSTANTS_24: list[Fp] = [Fp(value=v) for v in _RAW_CONSTANTS_24]

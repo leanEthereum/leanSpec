@@ -77,8 +77,6 @@ from .encoding import decode_tag, decode_varint32
 class SnappyDecompressionError(Exception):
     """Raised when decompression fails due to malformed data."""
 
-    pass
-
 
 def decompress(data: bytes) -> bytes:
     """Decompress Snappy-compressed data.

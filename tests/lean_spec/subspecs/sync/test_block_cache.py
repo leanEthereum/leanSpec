@@ -6,7 +6,7 @@ from time import time
 from unittest.mock import MagicMock
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.networking.types import PeerId
+from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.block_cache import BlockCache, PendingBlock
 from lean_spec.subspecs.sync.config import MAX_CACHED_BLOCKS

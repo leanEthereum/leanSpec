@@ -32,6 +32,7 @@ dependencies = [
     "lean-multisig-py>=0.1.0",
     "httpx>=0.28.0,<1",
     "aiohttp>=3.11.0,<4",
+    "cryptography>=46.0.0",
 ]
 
 [project.license]

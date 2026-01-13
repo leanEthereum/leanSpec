@@ -2,10 +2,9 @@
 
 from lean_spec.types import ZERO_HASH
 
-from .hash import HashTreeRoot, hash_tree_root
+from .hash import hash_tree_root
 
 __all__ = [
-    "HashTreeRoot",
     "hash_tree_root",
     "ZERO_HASH",
 ]

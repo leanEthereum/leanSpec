@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from lean_spec.subspecs.containers import SignedBlockWithAttestation
-from lean_spec.subspecs.networking.types import PeerId
+from lean_spec.subspecs.networking import PeerId
 from lean_spec.types import Bytes32
 
 from .block_cache import BlockCache
@@ -220,7 +220,7 @@ class BackfillSync:
 
         except Exception:
             # Network error.
-            self.peer_manager.on_request_failure(peer.peer_id, "backfill request failed")
+            self.peer_manager.on_request_failure(peer.peer_id)
 
     async def _process_received_blocks(
         self,
