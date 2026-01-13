@@ -3,8 +3,6 @@ Checkpoint sync client for downloading finalized state from another node.
 
 This client is used for fast synchronization - instead of syncing from genesis,
 a node can download the finalized state from a trusted peer and start from there.
-
-This matches the checkpoint sync client implemented in zeam.
 """
 
 from __future__ import annotations
