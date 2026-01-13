@@ -20,6 +20,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Bytes32, Container, Uint64
 
+from ...xmss.aggregation import AggregatedSignatureProof
 from ...xmss.containers import Signature
 from ..checkpoint import Checkpoint
 from .aggregation_bits import AggregationBits
@@ -107,3 +108,10 @@ class AggregatedAttestation(Container):
             )
             for data, validator_ids in data_to_validator_ids.items()
         ]
+
+class SignedAggregatedAttestation(Container):
+    data: AttestationData
+    """Combined attestation data similar to the beacon chain format."""
+
+    proof: AggregatedSignatureProof
+    """Aggregated signature proof covering all participating validators."""

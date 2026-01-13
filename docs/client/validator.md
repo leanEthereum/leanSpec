@@ -22,10 +22,14 @@ is temporary for devnet testing.
 Committee is a group of validators assigned to aggregate attestations. 
 Beacon chain uses subnets as network channels for specific committees.
 
-In the current design, however, there is one global subnet for signatures propagation, 
-in addition to direct sending to aggregators, who form aggregation committees.
+In the devnet-3 design, however, there is one global subnet for signed 
+attestations propagation, in addition to publishing into per committee subnets.
 This is due to 3SF-mini consensus design, that requires 2/3 + 1 of all 
 attestations to be observed by any validator to compute safe target correctly.
+
+Note that non-aggregating validators do not need to subscribe to committee
+attestation subnets. They only need to subscribe to the global attestation 
+subnet.
 
 Every validator is assigned to a single committee. Number of committees is 
 defined in config.yaml. Each committee maps to a subnet ID. Validators

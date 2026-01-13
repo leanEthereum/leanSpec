@@ -49,6 +49,9 @@ from lean_spec.types import (
 from lean_spec.types.container import Container
 from lean_spec.subspecs.networking import compute_subnet_id
 
+from src.lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
+from src.lean_spec.subspecs.xmss.aggregation import AggregationError
+
 
 class Store(Container):
     """
@@ -479,6 +482,86 @@ class Store(Container):
             }
         )
 
+    def on_gossip_committee_aggregation(self, signed_attestation: SignedAggregatedAttestation) -> "Store":
+        """
+        Process a signed aggregated attestation received via aggregation topic
+
+        This method:
+        1. Verifies the aggregated attestation
+        2. Stores the aggregation in aggregation_payloads map
+
+        Args:
+            signed_attestation: The signed aggregated attestation from committee aggregation.
+
+        Returns:
+            New Store with aggregation processed and stored.
+
+        Raises:
+            ValueError: If validator not found in state.
+            AssertionError: If signature verification fails.
+        """
+        data = signed_attestation.data
+        proof = signed_attestation.proof
+
+        # Get validator IDs who participated in this aggregation
+        validator_ids = proof.participants.to_validator_indices()
+
+        # Retrieve the relevant state to look up public keys for verification.
+        key_state = self.states.get(data.target.root)
+        assert key_state is not None, (
+            f"No state available to verify committee aggregation for target "
+            f"{data.target.root.hex()}"
+        )
+
+        # Ensure all participants exist in the active set
+        validators = key_state.validators
+        for validator_id in validator_ids:
+            assert validator_id < Uint64(len(validators)), (
+                f"Validator {validator_id} not found in state {data.target.root.hex()}"
+            )
+
+        # Prepare public keys for verification
+        public_keys = [validators[vid].get_pubkey() for vid in validator_ids]
+
+        # Verify the leanVM aggregated proof
+        try:
+            proof.verify(
+                public_keys=public_keys,
+                message=data.data_root_bytes(),
+                epoch=data.slot,
+            )
+        except AggregationError as exc:
+            raise AssertionError(
+                f"Committee aggregation signature verification failed: {exc}"
+            ) from exc
+
+        # Copy the aggregated proof map for updates
+        # Must deep copy the lists to maintain immutability of previous store snapshots
+        new_aggregated_payloads = copy.deepcopy(self.aggregated_payloads)
+        data_root = data.data_root_bytes()
+
+        store = self
+        for vid in validator_ids:
+            # Update Proof Map
+            #
+            # Store the proof so future block builders can reuse this aggregation
+            key = SignatureKey(vid, data_root)
+            new_aggregated_payloads.setdefault(key, []).append(proof)
+
+            # TODO: Update Fork Choice?
+            #
+            # Process the attestation data. Since it's from gossip, is_from_block=False.
+            # store = store.on_attestation(
+            #     attestation=Attestation(validator_id=vid, data=data),
+            #     is_from_block=False,
+            # )
+
+        # Return store with updated aggregated payloads
+        return store.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
+
+
+
+
     def on_block(
         self,
         signed_block_with_attestation: SignedBlockWithAttestation,
@@ -851,38 +934,36 @@ class Store(Container):
         """
         new_aggregated_payloads = dict(self.aggregated_payloads)
 
-        # Group signatures by attestation data root
-        signatures_by_data_root: Dict[Bytes32, List[Tuple[Uint64, Signature]]] = defaultdict(list)
-        for sig_key, signature in self.committee_signatures.items():
-            signatures_by_data_root[sig_key.attestation_data_root].append((sig_key.validator_id, signature))
+        attestations = self.latest_new_attestations
+        committee_signatures = self.committee_signatures
+        aggregated_payloads = self.aggregated_payloads
 
-        for data_root, sig_list in signatures_by_data_root.items():
-            num_signatures = len(sig_list)
-            # get head state to determine committee size
-            head_state = self.states[self.head]
-            committee_size = len(head_state.validators) / self.config.attestation_subnet_count
-            if num_signatures >= committee_size * 90 // 100:
-                # Aggregate signatures
-                participant_bits = Bitfield(committee_size)
-                signatures = []
-                for validator_id, signature in sig_list:
-                    participant_bits.set_bit(int(validator_id))
-                    signatures.append(signature)
+        head_state = self.states[self.head]
+        aggregated_attestations, aggregated_signatures = head_state.compute_aggregated_signatures(
+            attestations,
+            committee_signatures,
+            aggregated_payloads,
+        )
 
-                # Note: in a real implementation, signatures aggregation may be executed in a separate thread
-                aggregated_signature = aggregate_signatures(signatures)
-                aggregated_proof = AggregatedSignatureProof(
-                    aggregated_signature=aggregated_signature,
-                    participants=participant_bits,
-                )
+        # iterate to broadcast aggregated attestations
+        for aggregated_attestation, aggregated_signature in zip(aggregated_attestations, aggregated_signatures,
+                                                                strict=True):
+            signed_aggregated_attestation = SignedAggregatedAttestation(
+                data = aggregated_attestation.data,
+                proof = aggregated_signature,
+            )
+            # Note: here we should broadcast the aggregated signature to committee_aggregators topic
 
-                # Store the aggregated proof
-                sig_key = SignatureKey(validator_id=Uint64(0), attestation_data_root=data_root)
+        # Compute new aggregated payloads
+        for aggregated_attestation, aggregated_signature in zip(aggregated_attestations, aggregated_signatures,
+                                                                strict=True):
+            data_root = aggregated_attestation.data.data_root_bytes()
+            validator_ids = aggregated_signature.participants.to_validator_indices()
+            for vid in validator_ids:
+                sig_key = SignatureKey(vid, data_root)
                 if sig_key not in new_aggregated_payloads:
                     new_aggregated_payloads[sig_key] = []
-                new_aggregated_payloads[sig_key].append(aggregated_proof)
-                # Note: here we should broadcast the aggregated signature to committee_aggregators topic
-
+                new_aggregated_payloads[sig_key].append(aggregated_signature)
         return self.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
 
     def tick_interval(self, has_proposal: bool, is_aggregator: bool) -> "Store":
