@@ -11,12 +11,12 @@ This matches the checkpoint sync API implemented in zeam.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from http import HTTPStatus
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from aiohttp import web
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.forkchoice import Store
@@ -38,7 +38,6 @@ class ApiServerConfig:
     """Whether the API server is enabled."""
 
 
-@dataclass(slots=True)
 class ApiServer:
     """
     HTTP API server for checkpoint sync and node status.
@@ -46,22 +45,26 @@ class ApiServer:
     Provides endpoints for:
     - Checkpoint sync: Download finalized state for fast sync
     - Health checks: Verify node is running
-    - Status: Get current chain status
 
-    The server runs in the background and serves requests asynchronously.
+    Uses aiohttp to handle HTTP protocol details efficiently.
     """
 
-    config: ApiServerConfig
-    """Server configuration."""
+    def __init__(
+        self,
+        config: ApiServerConfig,
+        store_getter: Callable[[], Store | None] = lambda: None,
+    ):
+        """
+        Initialize the API server.
 
-    _store_getter: Callable[[], Store | None] = field(default=lambda: None)
-    """Callable that returns the current Store instance."""
-
-    _server: asyncio.Server | None = field(default=None)
-    """The asyncio server instance."""
-
-    _shutdown: asyncio.Event = field(default_factory=asyncio.Event)
-    """Event signaling shutdown request."""
+        Args:
+            config: Server configuration.
+            store_getter: Callable that returns the current Store instance.
+        """
+        self.config = config
+        self._store_getter = store_getter
+        self._runner: web.AppRunner | None = None
+        self._site: web.TCPSite | None = None
 
     def set_store_getter(self, getter: Callable[[], Store | None]) -> None:
         """
@@ -78,23 +81,26 @@ class ApiServer:
         return self._store_getter()
 
     async def start(self) -> None:
-        """
-        Start the API server.
-
-        Binds to the configured host and port and begins accepting connections.
-        """
+        """Start the API server in the background."""
         if not self.config.enabled:
             logger.info("API server is disabled")
             return
 
-        self._server = await asyncio.start_server(
-            self._handle_connection,
-            self.config.host,
-            self.config.port,
+        app = web.Application()
+        app.add_routes(
+            [
+                web.get("/health", self._handle_health),
+                web.get("/lean/states/finalized", self._handle_finalized_state),
+            ]
         )
 
-        addrs = ", ".join(str(sock.getsockname()) for sock in self._server.sockets)
-        logger.info(f"API server listening on {addrs}")
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+
+        self._site = web.TCPSite(self._runner, self.config.host, self.config.port)
+        await self._site.start()
+
+        logger.info(f"API server listening on {self.config.host}:{self.config.port}")
 
     async def run(self) -> None:
         """
@@ -102,108 +108,30 @@ class ApiServer:
 
         This method blocks until stop() is called.
         """
-        if self._server is None:
-            await self.start()
+        await self.start()
 
-        if self._server is None:
-            return
-
-        async with self._server:
-            await self._server.serve_forever()
+        # Keep running until stopped
+        while self._runner is not None:
+            await asyncio.sleep(1)
 
     def stop(self) -> None:
-        """
-        Request graceful shutdown.
+        """Request graceful shutdown."""
+        if self._runner is not None:
+            asyncio.create_task(self._async_stop())
 
-        Signals the server to stop accepting new connections.
-        """
-        if self._server is not None:
-            self._server.close()
-        self._shutdown.set()
+    async def _async_stop(self) -> None:
+        """Gracefully stop the server."""
+        if self._runner:
+            await self._runner.cleanup()
+            self._runner = None
+            self._site = None
+            logger.info("API server stopped")
 
-    async def _handle_connection(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
-        """
-        Handle an incoming HTTP connection.
+    async def _handle_health(self, request: web.Request) -> web.Response:
+        """Handle health check endpoint."""
+        return web.json_response({"status": "healthy", "service": "lean-spec-api"})
 
-        Parses the request and routes to the appropriate handler.
-        """
-        try:
-            # Read the HTTP request line and headers
-            request_line = await reader.readline()
-            if not request_line:
-                return
-
-            # Parse request line (e.g., "GET /health HTTP/1.1")
-            request_str = request_line.decode("utf-8").strip()
-            parts = request_str.split(" ")
-            if len(parts) < 2:
-                await self._send_error(writer, HTTPStatus.BAD_REQUEST, "Invalid request")
-                return
-
-            method, path = parts[0], parts[1]
-
-            # Read headers (we don't need them for now, but must consume them)
-            while True:
-                header_line = await reader.readline()
-                if header_line == b"\r\n" or header_line == b"\n" or not header_line:
-                    break
-
-            # Route the request
-            await self._route_request(method, path, writer)
-
-        except Exception as e:
-            logger.warning(f"Error handling request: {e}")
-            try:
-                await self._send_error(writer, HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
-            except Exception:
-                pass
-        finally:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
-
-    async def _route_request(
-        self,
-        method: str,
-        path: str,
-        writer: asyncio.StreamWriter,
-    ) -> None:
-        """
-        Route the request to the appropriate handler.
-
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            path: Request path
-            writer: Stream writer for sending response
-        """
-        if method != "GET":
-            await self._send_error(writer, HTTPStatus.METHOD_NOT_ALLOWED, "Method not allowed")
-            return
-
-        # Route to handlers
-        if path == "/health":
-            await self._handle_health(writer)
-        elif path == "/lean/states/finalized":
-            await self._handle_finalized_state(writer)
-        else:
-            await self._send_error(writer, HTTPStatus.NOT_FOUND, "Not found")
-
-    async def _handle_health(self, writer: asyncio.StreamWriter) -> None:
-        """
-        Handle health check endpoint.
-
-        Returns a simple JSON response indicating the server is healthy.
-        """
-        response = {"status": "healthy", "service": "lean-spec-api"}
-        await self._send_json(writer, response)
-
-    async def _handle_finalized_state(self, writer: asyncio.StreamWriter) -> None:
+    async def _handle_finalized_state(self, request: web.Request) -> web.Response:
         """
         Handle finalized checkpoint state endpoint.
 
@@ -213,79 +141,20 @@ class ApiServer:
         """
         store = self.store
         if store is None:
-            await self._send_error(
-                writer,
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                "Store not initialized",
-            )
-            return
+            raise web.HTTPServiceUnavailable(reason="Store not initialized")
 
-        # Get the finalized checkpoint
         finalized = store.latest_finalized
 
-        # Get the state at the finalized checkpoint
-        # The state is stored in store.states keyed by block root
         if finalized.root not in store.states:
-            await self._send_error(
-                writer,
-                HTTPStatus.NOT_FOUND,
-                "Finalized state not available",
-            )
-            return
+            raise web.HTTPNotFound(reason="Finalized state not available")
 
         state = store.states[finalized.root]
 
-        # Serialize to SSZ
-        ssz_bytes = state.encode_bytes()
+        # Run CPU-intensive SSZ encoding in a separate thread
+        try:
+            ssz_bytes = await asyncio.to_thread(state.encode_bytes)
+        except Exception as e:
+            logger.error(f"Failed to encode state: {e}")
+            raise web.HTTPInternalServerError(reason="Encoding failed") from e
 
-        # Send response
-        await self._send_binary(writer, ssz_bytes, "application/octet-stream")
-
-    async def _send_json(
-        self,
-        writer: asyncio.StreamWriter,
-        data: dict,
-        status: HTTPStatus = HTTPStatus.OK,
-    ) -> None:
-        """Send a JSON response."""
-        body = json.dumps(data).encode("utf-8")
-        headers = [
-            f"HTTP/1.1 {status.value} {status.phrase}",
-            "Content-Type: application/json; charset=utf-8",
-            f"Content-Length: {len(body)}",
-            "Connection: close",
-            "",
-            "",
-        ]
-        response = "\r\n".join(headers).encode("utf-8") + body
-        writer.write(response)
-        await writer.drain()
-
-    async def _send_binary(
-        self,
-        writer: asyncio.StreamWriter,
-        data: bytes,
-        content_type: str,
-        status: HTTPStatus = HTTPStatus.OK,
-    ) -> None:
-        """Send a binary response."""
-        headers = [
-            f"HTTP/1.1 {status.value} {status.phrase}",
-            f"Content-Type: {content_type}",
-            f"Content-Length: {len(data)}",
-            "Connection: close",
-            "",
-            "",
-        ]
-        response = "\r\n".join(headers).encode("utf-8") + data
-        writer.write(response)
-        await writer.drain()
-
-    async def _send_error(
-        self,
-        writer: asyncio.StreamWriter,
-        status: HTTPStatus,
-        message: str,
-    ) -> None:
-        """Send an error response."""
-        await self._send_json(writer, {"error": message}, status)
+        return web.Response(body=ssz_bytes, content_type="application/octet-stream")

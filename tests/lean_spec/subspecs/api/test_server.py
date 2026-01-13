@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
+
 from lean_spec.subspecs.api import (
     ApiServer,
     ApiServerConfig,
@@ -74,24 +76,17 @@ class TestHealthEndpoint:
             await server.start()
 
             try:
-                reader, writer = await asyncio.open_connection("127.0.0.1", 15052)
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("http://127.0.0.1:15052/health")
 
-                request = "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-                writer.write(request.encode())
-                await writer.drain()
-
-                response = await reader.read()
-                writer.close()
-                await writer.wait_closed()
-
-                response_str = response.decode("utf-8")
-
-                assert "200 OK" in response_str
-                assert "healthy" in response_str
-                assert "lean-spec-api" in response_str
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert data["status"] == "healthy"
+                    assert data["service"] == "lean-spec-api"
 
             finally:
                 server.stop()
+                await asyncio.sleep(0.1)
 
         asyncio.run(run_test())
 
@@ -109,25 +104,14 @@ class TestFinalizedStateEndpoint:
             await server.start()
 
             try:
-                reader, writer = await asyncio.open_connection("127.0.0.1", 15054)
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("http://127.0.0.1:15054/lean/states/finalized")
 
-                request = (
-                    "GET /lean/states/finalized HTTP/1.1\r\n"
-                    "Host: localhost\r\nConnection: close\r\n\r\n"
-                )
-                writer.write(request.encode())
-                await writer.drain()
-
-                response = await reader.read()
-                writer.close()
-                await writer.wait_closed()
-
-                response_str = response.decode("utf-8")
-
-                assert "503" in response_str or "Service Unavailable" in response_str
+                    assert response.status_code == 503
 
             finally:
                 server.stop()
+                await asyncio.sleep(0.1)
 
         asyncio.run(run_test())
 
@@ -136,45 +120,26 @@ class TestFinalizedStateEndpoint:
 
         async def run_test() -> None:
             config = ApiServerConfig(port=15056)
-            server = ApiServer(config=config)
-            server.set_store_getter(lambda: store)
+            server = ApiServer(config=config, store_getter=lambda: store)
 
             await server.start()
 
             try:
-                reader, writer = await asyncio.open_connection("127.0.0.1", 15056)
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("http://127.0.0.1:15056/lean/states/finalized")
 
-                request = (
-                    "GET /lean/states/finalized HTTP/1.1\r\n"
-                    "Host: localhost\r\nConnection: close\r\n\r\n"
-                )
-                writer.write(request.encode())
-                await writer.drain()
+                    assert response.status_code == 200
+                    assert response.headers["content-type"] == "application/octet-stream"
 
-                # Read headers
-                headers = b""
-                while True:
-                    line = await reader.readline()
-                    headers += line
-                    if line == b"\r\n":
-                        break
-
-                header_str = headers.decode("utf-8")
-                assert "200 OK" in header_str
-                assert "application/octet-stream" in header_str
-
-                # Read body (SSZ binary)
-                body = await reader.read()
-                writer.close()
-                await writer.wait_closed()
-
-                # Verify SSZ data can be deserialized
-                assert len(body) > 0
-                state = State.decode_bytes(body)
-                assert state.slot == Slot(0)
+                    # Verify SSZ data can be deserialized
+                    ssz_data = response.content
+                    assert len(ssz_data) > 0
+                    state = State.decode_bytes(ssz_data)
+                    assert state.slot == Slot(0)
 
             finally:
                 server.stop()
+                await asyncio.sleep(0.1)
 
         asyncio.run(run_test())
 
@@ -192,22 +157,14 @@ class TestUnknownEndpoints:
             await server.start()
 
             try:
-                reader, writer = await asyncio.open_connection("127.0.0.1", 15053)
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("http://127.0.0.1:15053/unknown")
 
-                request = "GET /unknown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-                writer.write(request.encode())
-                await writer.drain()
-
-                response = await reader.read()
-                writer.close()
-                await writer.wait_closed()
-
-                response_str = response.decode("utf-8")
-
-                assert "404" in response_str
+                    assert response.status_code == 404
 
             finally:
                 server.stop()
+                await asyncio.sleep(0.1)
 
         asyncio.run(run_test())
 
@@ -255,8 +212,7 @@ class TestCheckpointSyncClientServerIntegration:
 
         async def run_test() -> None:
             config = ApiServerConfig(port=15058)
-            server = ApiServer(config=config)
-            server.set_store_getter(lambda: store)
+            server = ApiServer(config=config, store_getter=lambda: store)
 
             await server.start()
 
@@ -271,5 +227,6 @@ class TestCheckpointSyncClientServerIntegration:
 
             finally:
                 server.stop()
+                await asyncio.sleep(0.1)
 
         asyncio.run(run_test())
