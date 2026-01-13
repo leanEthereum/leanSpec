@@ -30,6 +30,7 @@ from .types import (
     JustifiedSlots,
     Validators,
 )
+from ...chain.config import AGGREGATION_COMMITTEE_SIZE
 
 
 class State(Container):
@@ -90,6 +91,7 @@ class State(Container):
         # Configure the genesis state.
         genesis_config = Config(
             genesis_time=genesis_time,
+            attestation_subnet_count=AGGREGATION_COMMITTEE_SIZE,
         )
 
         # Build the genesis block header for the state.

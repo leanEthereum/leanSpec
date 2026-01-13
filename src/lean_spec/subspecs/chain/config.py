@@ -37,6 +37,9 @@ of approximately 12.1 days.
 VALIDATOR_REGISTRY_LIMIT: Final = Uint64(2**12)
 """The maximum number of validators that can be in the registry."""
 
+AGGREGATION_COMMITTEE_SIZE: Final = Uint64(1)
+"""The size of the aggregation committee for each slot."""
+
 
 class _ChainConfig(StrictBaseModel):
     """

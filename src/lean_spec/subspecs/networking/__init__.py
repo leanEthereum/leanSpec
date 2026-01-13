@@ -16,6 +16,7 @@ from .reqresp import (
     Status,
 )
 from .types import DomainType, ForkDigest, ProtocolId
+from .subnet import compute_subnet_id
 
 __all__ = [
     "MAX_REQUEST_BLOCKS",
@@ -32,4 +33,5 @@ __all__ = [
     "DomainType",
     "ProtocolId",
     "ForkDigest",
+    "compute_subnet_id",
 ]
