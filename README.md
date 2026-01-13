@@ -23,6 +23,22 @@ This project requires Python 3.12 or later and should be installed via `uv`:
 uv python install 3.12
 ```
 
+#### Installing Rust Nightly
+
+This project depends on `lean-multisig-py`, a Rust-based Python extension that requires Rust nightly to compile:
+
+```bash
+# Install rustup if not already installed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install and set nightly as default
+rustup install nightly
+rustup default nightly
+
+# Verify installation
+rustc --version  # Should show nightly version
+```
+
 ### Setup
 
 ```bash

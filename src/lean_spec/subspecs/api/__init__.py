@@ -1,0 +1,25 @@
+"""
+API server module for checkpoint sync and node status endpoints.
+
+Provides HTTP endpoints for:
+- /lean/states/finalized - Serve finalized checkpoint state as SSZ
+- /health - Health check endpoint
+
+Also provides a client for checkpoint sync:
+- fetch_finalized_state: Download finalized state from a node
+"""
+
+from .client import (
+    CheckpointSyncError,
+    fetch_finalized_state,
+    verify_checkpoint_state,
+)
+from .server import ApiServer, ApiServerConfig
+
+__all__ = [
+    "ApiServer",
+    "ApiServerConfig",
+    "CheckpointSyncError",
+    "fetch_finalized_state",
+    "verify_checkpoint_state",
+]

@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import ChainService, SlotClock
 from lean_spec.subspecs.containers import Block, BlockBody, State
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
@@ -51,6 +52,9 @@ class NodeConfig:
     time_fn: Callable[[], float] = field(default=time.time)
     """Time source (injectable for deterministic testing)."""
 
+    api_config: ApiServerConfig | None = field(default=None)
+    """Optional API server configuration. If None, API server is disabled."""
+
 
 @dataclass(slots=True)
 class Node:
@@ -75,6 +79,9 @@ class Node:
 
     network_service: NetworkService
     """Network service that routes events to sync."""
+
+    api_server: ApiServer | None = field(default=None)
+    """Optional API server for checkpoint sync and status endpoints."""
 
     _shutdown: asyncio.Event = field(default_factory=asyncio.Event)
     """Event signaling shutdown request."""
@@ -135,12 +142,21 @@ class Node:
             event_source=config.event_source,
         )
 
+        # Create API server if configured
+        api_server: ApiServer | None = None
+        if config.api_config is not None:
+            api_server = ApiServer(config=config.api_config)
+            # Set up store getter so API server can access current state
+            # We use a lambda that captures sync_service to get the live store
+            api_server.set_store_getter(lambda: sync_service.store)
+
         return cls(
             store=store,
             clock=clock,
             sync_service=sync_service,
             chain_service=chain_service,
             network_service=network_service,
+            api_server=api_server,
         )
 
     async def run(self, *, install_signal_handlers: bool = True) -> None:
@@ -156,6 +172,10 @@ class Node:
         if install_signal_handlers:
             self._install_signal_handlers()
 
+        # Start API server if configured
+        if self.api_server is not None:
+            await self.api_server.start()
+
         # Run services concurrently.
         #
         # A separate task monitors the shutdown signal.
@@ -164,6 +184,8 @@ class Node:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self.chain_service.run())
             tg.create_task(self.network_service.run())
+            if self.api_server is not None:
+                tg.create_task(self.api_server.run())
             tg.create_task(self._wait_shutdown())
 
     def _install_signal_handlers(self) -> None:
@@ -197,6 +219,8 @@ class Node:
         # Each service exits its run loop when stopped.
         self.chain_service.stop()
         self.network_service.stop()
+        if self.api_server is not None:
+            self.api_server.stop()
 
     def stop(self) -> None:
         """
