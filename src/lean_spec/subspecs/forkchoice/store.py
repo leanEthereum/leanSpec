@@ -732,7 +732,15 @@ class Store(Container):
         """
         # Advance time by one interval
         store = self.model_copy(update={"time": self.time + Uint64(1)})
-        current_interval = store.time % INTERVALS_PER_SLOT
+        # Calculate current interval within slot
+        # time is in seconds, so we need to:
+        # 1. Get seconds within current slot: time % SECONDS_PER_SLOT
+        # 2. Convert to intervals: // SECONDS_PER_INTERVAL
+        # This formula correctly handles the case when SECONDS_PER_SLOT != INTERVALS_PER_SLOT,
+        # unlike the incorrect formula: time % INTERVALS_PER_SLOT
+        # Note: This requires that SECONDS_PER_SLOT is a multiple of INTERVALS_PER_SLOT
+        # (i.e., SECONDS_PER_INTERVAL must be an integer >= 1)
+        current_interval = (store.time % SECONDS_PER_SLOT) // SECONDS_PER_INTERVAL
 
         if current_interval == Uint64(0):
             # Start of slot - process attestations if proposal exists
