@@ -105,9 +105,8 @@ compute the head.
 
 ### Broadcasting Attestations
 
-Validators sign their attestations and broadcast them. The network uses a single topic
-for all attestations. In addition to gossipsub topic, attestations are also sent to
-aggregators directly.
+Validators sign their attestations and broadcast them into the global 
+attestation topic and its corresponding subnet topic.
 
 ## Timing
 
@@ -126,7 +125,7 @@ blocks and attestations.
 Attestation aggregation combines multiple attestations into one. This saves bandwidth and
 block space.
 
-Devnet 2 introduced signatures aggregation. Aggregations are produced by block proposers.
+Devnet-2 introduced signatures aggregation. Aggregations are produced by block proposers.
 
 When aggregation is added, aggregators will collect attestations and combine them.
 Aggregated attestations will be broadcast separately.
