@@ -45,6 +45,8 @@ from lean_spec.subspecs.containers.block.types import (
     AttestationSignatures,
 )
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.poseidon2 import permutation_numpy
+from lean_spec.subspecs.xmss import poseidon
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
     SignatureKey,
@@ -321,9 +323,17 @@ def _generate_single_keypair(
     scheme: GeneralizedXmssScheme, num_epochs: int, index: int
 ) -> dict[str, str]:
     """Generate one key pair (module-level for pickling in ProcessPoolExecutor)."""
-    print(f"Starting key #{index} generation...")
-    pk, sk = scheme.key_gen(Uint64(0), Uint64(num_epochs))
-    return KeyPair(public=pk, secret=sk).to_dict()
+    # Use numpy-optimized permutation for much faster key generation
+    naive_permute = poseidon.permute
+    poseidon.permute = permutation_numpy.permute_numpy
+
+    try:
+        print(f"Starting key #{index} generation...")
+        pk, sk = scheme.key_gen(Uint64(0), Uint64(num_epochs))
+        return KeyPair(public=pk, secret=sk).to_dict()
+    finally:
+        # Restore naive permute function
+        poseidon.permute = naive_permute
 
 
 def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
