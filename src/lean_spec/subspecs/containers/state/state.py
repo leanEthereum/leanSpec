@@ -717,13 +717,21 @@ class State(Container):
             # Add new attestations and continue iteration
             attestations.extend(new_attestations)
 
-        # Compute the aggregated signatures for the attestations.
-        # If the attestations cannot be aggregated, split it in a greedy way.
-        aggregated_attestations, aggregated_signatures = self.compute_aggregated_signatures(
-            attestations,
-            gossip_signatures,
-            aggregated_payloads,
-        )
+        aggregated_attestations = AggregatedAttestation.aggregate_by_data(attestations)
+        aggregated_signatures: list[AggregatedSignatureProof] = []
+
+        # Collect aggregated signatures for the included attestations
+        for aggregated_attestation in aggregated_attestations:
+            data = aggregated_attestation.data
+            data_root = data.data_root_bytes()
+
+            # Look up aggregated signature proof in aggregated_payloads using first validator as key
+            validator_id = aggregated_attestation.aggregation_bits.to_validator_indices()[0]
+            sig_key = SignatureKey(validator_id, data_root)
+            aggregated_signature_proof = aggregated_payloads[sig_key]
+
+            # Append the found proof to the list
+            aggregated_signatures.append(aggregated_signature_proof)
 
         # Update the block with the aggregated attestations
         final_block = candidate_block.model_copy(
