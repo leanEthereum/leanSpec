@@ -325,7 +325,7 @@ def _generate_single_keypair(
     """Generate one key pair (module-level for pickling in ProcessPoolExecutor)."""
     # Use numpy-optimized permutation for much faster key generation
     naive_permute = poseidon.permute
-    poseidon.permute = permutation_numpy.permute_numpy
+    poseidon.permute = permutation_numpy.permute_numpy  # type: ignore[invalid-assignment]
 
     try:
         print(f"Starting key #{index} generation...")
@@ -333,7 +333,7 @@ def _generate_single_keypair(
         return KeyPair(public=pk, secret=sk).to_dict()
     finally:
         # Restore naive permute function
-        poseidon.permute = naive_permute
+        poseidon.permute = naive_permute  # type: ignore[invalid-assignment]
 
 
 def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
