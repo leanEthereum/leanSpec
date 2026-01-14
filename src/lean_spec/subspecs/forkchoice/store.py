@@ -553,6 +553,7 @@ class Store(Container):
     def on_block(
         self,
         signed_block_with_attestation: SignedBlockWithAttestation,
+        current_validator: Uint64,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -588,6 +589,7 @@ class Store(Container):
 
         Args:
             signed_block_with_attestation: Complete signed block with proposer attestation.
+            current_validator: Index of the current validator processing this block.
             scheme: XMSS signature scheme to use for signature verification.
 
         Returns:
@@ -695,11 +697,20 @@ class Store(Container):
         # 2. Be available for inclusion in future blocks
         # 3. Influence fork choice only after interval 3 (end of slot)
 
-        proposer_sig_key = SignatureKey(
-            proposer_attestation.validator_id,
-            proposer_attestation.data.data_root_bytes(),
-        )
         new_gossip_sigs = dict(store.gossip_committee_signatures)
+
+        # Store proposer signature for future lookup if he belongs to the same committee as current validator
+        proposer_validator_id = proposer_attestation.validator_id
+        proposer_subnet_id = compute_subnet_id(proposer_validator_id, self.config.attestation_subnet_count)
+        current_validator_subnet_id = compute_subnet_id(current_validator, self.config.attestation_subnet_count)
+        if proposer_subnet_id == current_validator_subnet_id:
+            proposer_sig_key = SignatureKey(
+                proposer_attestation.validator_id,
+                proposer_attestation.data.data_root_bytes(),
+            )
+            new_gossip_sigs[proposer_sig_key] = (
+                signed_block_with_attestation.signature.proposer_signature
+            )
 
         store = store.on_attestation(
             attestation=proposer_attestation,
