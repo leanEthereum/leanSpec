@@ -141,9 +141,7 @@ def _precompute_params(params: Poseidon2Params) -> dict:
         "width": params.width,
         "full_rounds": params.rounds_f,
         "partial_rounds": params.rounds_p,
-        "diag_vector": np.array(
-            [fp.value for fp in params.internal_diag_vectors], dtype=np.int64
-        ),
+        "diag_vector": np.array([fp.value for fp in params.internal_diag_vectors], dtype=np.int64),
         "round_constants": np.array([fp.value for fp in params.round_constants], dtype=np.int64),
     }
 
