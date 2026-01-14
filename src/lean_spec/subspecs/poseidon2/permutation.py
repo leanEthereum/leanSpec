@@ -233,12 +233,12 @@ def internal_linear_layer(
     # Calculate the sum of all state elements once (for J*state)
     state_sum = state.sum() % P
 
-    # Compute new_state[i] = state_sum + diagonal[i] * state[i]
+    # Compute state[i] = state_sum + diagonal[i] * state[i]
     # This is equivalent to (J + D) * state but much faster.
     return (state_sum + (diagonal_vector * state) % P) % P
 
 
-def permute(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
+def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     """
     Performs the full Poseidon2 permutation on the given state.
 
@@ -246,14 +246,14 @@ def permute(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     Initial Layer -> Full Rounds -> Partial Rounds -> Full Rounds
 
     Args:
-        state: A list of Fp elements representing the current state.
+        current_state: A list of Fp elements representing the current state.
         params: The object defining the permutation's configuration.
 
     Returns:
         The new state after applying the permutation.
     """
     # Ensure the input state has the correct dimensions.
-    if len(state) != params.width:
+    if len(current_state) != params.width:
         raise ValueError(f"Input state must have length {params.width}")
 
     # Get or compute cached numpy parameters
@@ -274,7 +274,7 @@ def permute(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     round_constant_index = 0
 
     # Convert input Fp elements to numpy array for vectorized operations
-    state = np.array([fp.value for fp in state], dtype=np.int64)
+    state = np.array([fp.value for fp in current_state], dtype=np.int64)
 
     # 1. Initial Linear Layer
     #
@@ -289,7 +289,9 @@ def permute(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # `(state*state % P) * state % P` to keep values in range.
     for _round in range(half_full_rounds):
         # Add round constants to the entire state.
-        state = (state + round_constants[round_constant_index : round_constant_index + width]) % P
+        state = (
+            state + round_constants[round_constant_index : round_constant_index + width]
+        ) % P
         round_constant_index += width
         # Apply the S-box (x -> x^d) to the full state.
         state = (state * state % P) * state % P
@@ -311,7 +313,9 @@ def permute(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # 4. Second Half of Full Rounds (R_F / 2)
     for _round in range(half_full_rounds):
         # Add round constants to the entire state.
-        state = (state + round_constants[round_constant_index : round_constant_index + width]) % P
+        state = (
+            state + round_constants[round_constant_index : round_constant_index + width]
+        ) % P
         round_constant_index += width
         # Apply the S-box to the full state.
         state = (state * state % P) * state % P
