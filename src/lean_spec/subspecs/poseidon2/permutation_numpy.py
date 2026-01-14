@@ -52,28 +52,64 @@ def _precompute_params(params: "Poseidon2Params") -> dict:
 _CACHE: dict = {}
 
 
-def _external_layer(state: np.ndarray, width: int) -> np.ndarray:
-    """Apply external linear layer using vectorized numpy operations."""
-    # Apply M4 to each 4-element chunk
-    chunks = state.reshape(-1, 4)
-    state = (chunks @ _M4.T).reshape(-1) % P
+def _apply_m4(state: np.ndarray) -> np.ndarray:
+    """
+    Apply the 4x4 M4 MDS matrix to each 4-element chunk of the state.
 
-    # Circulant structure: add column sums
+    This is a helper function for the external linear layer.
+    Vectorized version processes all chunks simultaneously.
+
+    Args:
+        state: State array with length divisible by 4.
+
+    Returns:
+        State after M4 transformation applied to each chunk.
+    """
+    chunks = state.reshape(-1, 4)
+    return (chunks @ _M4.T).reshape(-1) % P
+
+
+def _external_linear_layer(state: np.ndarray, width: int) -> np.ndarray:
+    """
+    Apply the external linear layer (M_E).
+
+    This layer provides strong diffusion across the entire state and is used
+    in the full rounds. Constructed from the base M4 matrix to form a larger
+    circulant-like matrix.
+
+    Args:
+        state: The current state vector.
+        width: The width of the state.
+
+    Returns:
+        The state after applying the external linear layer.
+    """
+    # Apply M4 to each 4-element chunk for local diffusion
+    state = _apply_m4(state)
+
+    # Apply circulant structure for global diffusion
+    # Equivalent to multiplying by circ(2*I, I, ..., I)
     chunks = state.reshape(-1, 4)
     sums = chunks.sum(axis=0) % P
     return (chunks + sums).reshape(-1) % P
 
 
-def _internal_layer(state: np.ndarray, diag: np.ndarray) -> np.ndarray:
-    """Apply internal linear layer: M_I * state = (J + D) * state."""
+def _internal_linear_layer(state: np.ndarray, diag: np.ndarray) -> np.ndarray:
+    """
+    Apply the internal linear layer (M_I).
+
+    Computes M_I * state = (J + D) * state, where J is the all-ones matrix
+    and D is a diagonal matrix. This structure allows O(t) computation.
+
+    Args:
+        state: The current state vector.
+        diag: Diagonal vector for the internal matrix.
+
+    Returns:
+        The state after applying the internal linear layer.
+    """
     state_sum = state.sum() % P
     return (state_sum + (diag * state) % P) % P
-
-
-def _sbox(state: np.ndarray) -> np.ndarray:
-    """Apply S-box (cubing) to all elements."""
-    x2 = (state * state) % P
-    return (x2 * state) % P
 
 
 def permute_numpy(state: List[Fp], params: "Poseidon2Params") -> List[Fp]:
@@ -110,28 +146,34 @@ def permute_numpy(state: List[Fp], params: "Poseidon2Params") -> List[Fp]:
     const_idx = 0
 
     # 1. Initial external layer
-    s = _external_layer(s, width)
+    s = _external_linear_layer(s, width)
+
 
     # 2. First half of full rounds
+
+    # Note that for S_BOX_DEGREE=3, s**3 would overflow before the modulo, i.e.
+    # values up to 2^93, but int64 max is 2^63. So we expand to `(s*s % P) * s % P`
+    # to keep values in range.
+
     for _ in range(half_f):
         s = (s + rc[const_idx : const_idx + width]) % P
         const_idx += width
-        s = _sbox(s)
-        s = _external_layer(s, width)
+        s = (s * s % P) * s % P  # S-box (x^S_BOX_DEGREE)
+        s = _external_linear_layer(s, width)
 
     # 3. Partial rounds
     for _ in range(rounds_p):
         s[0] = (s[0] + rc[const_idx]) % P
         const_idx += 1
-        s[0] = (s[0] * s[0] % P * s[0]) % P
-        s = _internal_layer(s, diag)
+        s[0] = (s[0] * s[0] % P) * s[0] % P  # S-box (x^S_BOX_DEGREE)
+        s = _internal_linear_layer(s, diag)
 
     # 4. Second half of full rounds
     for _ in range(half_f):
         s = (s + rc[const_idx : const_idx + width]) % P
         const_idx += width
-        s = _sbox(s)
-        s = _external_layer(s, width)
+        s = (s * s % P) * s % P  # S-box (x^S_BOX_DEGREE)
+        s = _external_linear_layer(s, width)
 
     # Convert back to Fp objects
     return [Fp(value=int(x)) for x in s]
