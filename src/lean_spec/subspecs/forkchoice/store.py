@@ -921,8 +921,7 @@ class Store(Container):
         """
         Aggregate committee signatures for attestations in committee_signatures.
 
-        This method aggregates signatures from the committee_signatures map if
-        the node possesses >= 90% of the signatures of the committee
+        This method aggregates signatures from the gossip_committee_signatures map
 
         Returns:
             New Store with updated aggregated_payloads.
@@ -931,18 +930,16 @@ class Store(Container):
 
         attestations = self.latest_new_attestations
         committee_signatures = self.gossip_committee_signatures
-        aggregated_payloads = self.aggregated_payloads
 
         head_state = self.states[self.head]
-        aggregated_attestations, aggregated_signatures = head_state.compute_aggregated_signatures(
+        # Perform aggregation
+        aggregated_results = head_state.aggregate_gossip_signatures(
             attestations,
             committee_signatures,
-            aggregated_payloads,
         )
 
         # iterate to broadcast aggregated attestations
-        for aggregated_attestation, aggregated_signature in zip(aggregated_attestations, aggregated_signatures,
-                                                                strict=True):
+        for aggregated_attestation, aggregated_signature in aggregated_results:
             signed_aggregated_attestation = SignedAggregatedAttestation(
                 data = aggregated_attestation.data,
                 proof = aggregated_signature,
@@ -950,8 +947,7 @@ class Store(Container):
             # Note: here we should broadcast the aggregated signature to committee_aggregators topic
 
         # Compute new aggregated payloads
-        for aggregated_attestation, aggregated_signature in zip(aggregated_attestations, aggregated_signatures,
-                                                                strict=True):
+        for aggregated_attestation, aggregated_signature in aggregated_results:
             data_root = aggregated_attestation.data.data_root_bytes()
             validator_ids = aggregated_signature.participants.to_validator_indices()
             for vid in validator_ids:
