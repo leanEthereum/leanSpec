@@ -289,9 +289,7 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # `(state*state % P) * state % P` to keep values in range.
     for _round in range(half_full_rounds):
         # Add round constants to the entire state.
-        state = (
-            state + round_constants[round_constant_index : round_constant_index + width]
-        ) % P
+        state = (state + round_constants[round_constant_index : round_constant_index + width]) % P
         round_constant_index += width
         # Apply the S-box (x -> x^d) to the full state.
         state = (state * state % P) * state % P
@@ -313,9 +311,7 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # 4. Second Half of Full Rounds (R_F / 2)
     for _round in range(half_full_rounds):
         # Add round constants to the entire state.
-        state = (
-            state + round_constants[round_constant_index : round_constant_index + width]
-        ) % P
+        state = (state + round_constants[round_constant_index : round_constant_index + width]) % P
         round_constant_index += width
         # Apply the S-box to the full state.
         state = (state * state % P) * state % P
