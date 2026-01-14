@@ -33,6 +33,7 @@ dependencies = [
     "httpx>=0.28.0,<1",
     "aiohttp>=3.11.0,<4",
     "cryptography>=46.0.0",
+    "numpy>=2.0.0,<3",
 ]
 
 [project.license]
