@@ -7,8 +7,6 @@ Hash Function" (https://eprint.iacr.org/2023/323).
 This implementation uses numpy arrays for vectorized field operations for efficiency.
 """
 
-from typing import Self
-
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
@@ -50,7 +48,7 @@ class Poseidon2Params(StrictBaseModel):
     )
 
     @model_validator(mode="after")
-    def check_lengths(self) -> Self:
+    def check_lengths(self) -> "Poseidon2Params":
         """Ensures vector lengths match the configuration."""
         if len(self.internal_diag_vectors) != self.width:
             raise ValueError("Length of internal_diag_vectors must equal width.")
