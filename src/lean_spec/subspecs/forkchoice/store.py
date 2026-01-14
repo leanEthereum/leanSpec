@@ -283,7 +283,8 @@ class Store(Container):
 
         This method:
         1. Verifies the XMSS signature
-        2. Stores the signature in the gossip signature map
+        2. If current node is aggregator, stores the signature in the gossip signature map if it belongs
+         to the current validator's subnet
         3. Processes the attestation data via on_attestation
 
         Args:
@@ -326,7 +327,7 @@ class Store(Container):
         current_validator_subnet = compute_subnet_id(current_validator_id, self.config.attestation_subnet_count)
         attester_subnet = compute_subnet_id(validator_id, self.config.attestation_subnet_count)
 
-        # Store signature for later lookup during block building
+        # Store signature for later aggregation if applicable
         new_commitee_sigs = dict(self.gossip_committee_signatures)
         if is_aggregator and current_validator_subnet == attester_subnet:
             # If this validator is an aggregator for this attestation,
@@ -536,13 +537,15 @@ class Store(Container):
             key = SignatureKey(vid, data_root)
             new_aggregated_payloads.setdefault(key, []).append(proof)
 
-            # TODO: Update Fork Choice?
-            #
+
             # Process the attestation data. Since it's from gossip, is_from_block=False.
-            # store = store.on_attestation(
-            #     attestation=Attestation(validator_id=vid, data=data),
-            #     is_from_block=False,
-            # )
+            # Note, we could have already processed individual attestations from this aggregation,
+            # during votes propagation into attestation topic, but it's safe to re-process here as
+            # on_attestation has idempotent behavior.
+            store = store.on_attestation(
+                attestation=Attestation(validator_id=vid, data=data),
+                is_from_block=False,
+            )
 
         # Return store with updated aggregated payloads
         return store.model_copy(update={"aggregated_payloads": new_aggregated_payloads})

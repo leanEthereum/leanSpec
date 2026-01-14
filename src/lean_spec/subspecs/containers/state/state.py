@@ -717,12 +717,9 @@ class State(Container):
             # Add new attestations and continue iteration
             attestations.extend(new_attestations)
 
-        # Use two-phase signature aggregation to build the final attestations and proofs
-        # Phase 1: Collect gossip signatures
-        # Phase 2: Fall back to aggregated payloads for uncovered validators
+        # Select aggregated attestations and proofs for the final block
         aggregated_attestations, aggregated_signatures = self.select_aggregated_proofs(
             attestations,
-            gossip_signatures,
             aggregated_payloads,
         )
 
@@ -844,9 +841,6 @@ class State(Container):
         ----------
         attestations : list[Attestation]
             Individual attestations to aggregate and sign.
-        gossip_signatures : dict[SignatureKey, Signature] | None
-            Per-validator XMSS signatures learned from the gossip network.
-            (Not used in this implementation - for compatibility with build_block)
         aggregated_payloads : dict[SignatureKey, list[AggregatedSignatureProof]] | None
             Aggregated proofs learned from previously-seen blocks.
             The list for each key should be ordered with most recent proofs first.
@@ -863,10 +857,9 @@ class State(Container):
             data = aggregated.data
             data_root = data.data_root_bytes()
             validator_ids = aggregated.aggregation_bits.to_validator_indices() # validators contributed to this attestation
-            all_validator_ids = [v.index for v in self.validators]
 
             # Validators that are missing in the current aggregation are put into remaining.
-            remaining: set[Uint64] = set(all_validator_ids) - set(validator_ids)
+            remaining: set[Uint64] = set(validator_ids)
 
             # Fallback to existing proofs
             #
