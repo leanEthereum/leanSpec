@@ -323,22 +323,22 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
-        current_validator_subnet = compute_subnet_id(int(current_validator_id), self.config.attestation_subnet_count)
-        attester_subnet = compute_subnet_id(int(validator_id), self.config.attestation_subnet_count)
+        current_validator_subnet = compute_subnet_id(current_validator_id, self.config.attestation_subnet_count)
+        attester_subnet = compute_subnet_id(validator_id, self.config.attestation_subnet_count)
 
         # Store signature for later lookup during block building
-        new_gossip_sigs = dict(self.gossip_committee_signatures)
+        new_commitee_sigs = dict(self.gossip_committee_signatures)
         if is_aggregator and current_validator_subnet == attester_subnet:
             # If this validator is an aggregator for this attestation,
             # also store the signature in the committee signatures map.
             sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
-            new_gossip_sigs[sig_key] = signature
+            new_commitee_sigs[sig_key] = signature
 
         # Process the attestation data
         store = self.on_attestation(attestation=attestation, is_from_block=False)
 
         # Return store with updated signature maps
-        return store.model_copy(update={"gossip_committee_signatures": new_gossip_sigs)
+        return store.model_copy(update={"gossip_committee_signatures": new_commitee_sigs})
 
     def on_attestation(
         self,
