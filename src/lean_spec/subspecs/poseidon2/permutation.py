@@ -141,10 +141,14 @@ def _precompute_params(params: Poseidon2Params) -> dict:
     """Convert Poseidon2Params to numpy arrays for efficient computation."""
     return {
         "width": params.width,
-        "rounds_f": params.rounds_f,
-        "rounds_p": params.rounds_p,
-        "diagonal_vector": np.array([fp.value for fp in params.internal_diag_vectors], dtype=np.int64),
-        "rc": np.array([fp.value for fp in params.round_constants], dtype=np.int64),
+        "full_rounds": params.rounds_f,
+        "partial_rounds": params.rounds_p,
+        "diagonal_vector": np.array(
+            [fp.value for fp in params.internal_diag_vectors], dtype=np.int64
+        ),
+        "round_constants": np.array(
+            [fp.value for fp in params.round_constants], dtype=np.int64
+        ),
     }
 
 
@@ -261,10 +265,10 @@ def permute(state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     cached = _CACHE[key]
 
     width = cached["width"]
-    full_rounds = cached["rounds_f"]
-    partial_rounds = cached["rounds_p"]
+    full_rounds = cached["full_rounds"]
+    partial_rounds = cached["partial_rounds"]
     diagonal_vector = cached["diagonal_vector"]
-    round_constants = cached["rc"]
+    round_constants = cached["round_constants"]
 
     # The number of full rounds is split between the beginning and end.
     half_full_rounds = full_rounds // 2
