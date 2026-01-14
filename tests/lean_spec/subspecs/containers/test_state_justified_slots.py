@@ -134,17 +134,15 @@ def test_justified_slots_rebases_when_finalization_advances() -> None:
     assert len(state.justified_slots) == 1
     assert bool(state.justified_slots[0]) is True
 
-    assert State._is_slot_justified(state.latest_finalized.slot, state.justified_slots, Slot(1))
-    assert State._is_slot_justified(state.latest_finalized.slot, state.justified_slots, Slot(2))
-    assert State._justified_slots_index(state.latest_finalized.slot, Slot(2)) == 0
+    assert state.justified_slots.is_slot_justified(state.latest_finalized.slot, Slot(1))
+    assert state.justified_slots.is_slot_justified(state.latest_finalized.slot, Slot(2))
+    assert Slot(2).justified_index_after(state.latest_finalized.slot) == 0
 
 
 def test_is_slot_justified_raises_on_out_of_bounds() -> None:
     # For slots > finalized_slot, the bitfield must be long enough to cover the slot.
     # If it is not, this indicates an inconsistent state and should fail fast.
     with pytest.raises(IndexError):
-        State._is_slot_justified(
-            Slot(0),
-            justified_slots=State.generate_genesis(Uint64(0), _mk_validators(1)).justified_slots,
-            slot=Slot(1),
+        State.generate_genesis(Uint64(0), _mk_validators(1)).justified_slots.is_slot_justified(
+            Slot(0), Slot(1)
         )

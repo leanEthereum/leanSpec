@@ -70,58 +70,6 @@ class State(Container):
     justifications_validators: JustificationValidators
     """A bitlist of validators who participated in justifications."""
 
-    @staticmethod
-    def _justified_slots_index(finalized_slot: Slot, slot: Slot) -> int | None:
-        """Return index into `justified_slots` for `slot`, or None if implicitly justified.
-
-        The spec stores `justified_slots` starting at `finalized_slot + 1`.
-        Any slot <= finalized_slot is treated as justified (finalized history).
-        """
-        if slot <= finalized_slot:
-            return None
-        base = finalized_slot + Slot(1)
-        return int(slot - base)
-
-    @classmethod
-    def _is_slot_justified(
-        cls,
-        finalized_slot: Slot,
-        justified_slots: JustifiedSlots,
-        slot: Slot,
-    ) -> bool:
-        """Return whether `slot` is justified under a finalized-relative bitfield."""
-        idx = cls._justified_slots_index(finalized_slot, slot)
-        if idx is None:
-            return True
-        if idx >= len(justified_slots):
-            raise IndexError(
-                "Justified slot index out of bounds "
-                f"(idx={idx}, len={len(justified_slots)}, "
-                f"slot={slot}, finalized_slot={finalized_slot})"
-            )
-        return bool(justified_slots[idx])
-
-    @classmethod
-    def _set_slot_justified(
-        cls,
-        finalized_slot: Slot,
-        justified_slots: JustifiedSlots,
-        slot: Slot,
-        value: bool | Boolean,
-    ) -> None:
-        """Set the justified bit for `slot` (no-op for slots <= finalized)."""
-        idx = cls._justified_slots_index(finalized_slot, slot)
-        if idx is None:
-            # Slots at or before finalization are implicitly justified.
-            return
-        if idx >= len(justified_slots):
-            raise IndexError(
-                "Justified slot index out of bounds "
-                f"(idx={idx}, len={len(justified_slots)}, "
-                f"slot={slot}, finalized_slot={finalized_slot})"
-            )
-        justified_slots[idx] = Boolean(value)
-
     @classmethod
     def generate_genesis(cls, genesis_time: Uint64, validators: Validators) -> "State":
         """
@@ -351,18 +299,7 @@ class State(Container):
         #   [parent_header.slot, block.slot)
         # but only for slots >= (latest_finalized.slot + 1).
         finalized_slot = self.latest_finalized.slot
-        base_slot = finalized_slot + Slot(1)
-        next_slot = Slot(int(base_slot) + len(self.justified_slots))
-
-        new_bits = list(self.justified_slots.data)
-        for slot_i in range(int(next_slot), int(block.slot)):
-            slot = Slot(slot_i)
-            if slot == parent_header.slot:
-                new_bits.append(Boolean(is_genesis_parent))
-            else:
-                new_bits.append(Boolean(False))
-
-        new_justified_slots_data = JustifiedSlots(data=new_bits)
+        new_justified_slots_data = self.justified_slots.extend_to_slot(finalized_slot, block.slot)
 
         # Construct the new latest block header.
         #
@@ -496,14 +433,14 @@ class State(Container):
             #
             # A vote may only originate from a point in history that is already justified.
             # A source that lacks existing justification cannot be used to anchor a new vote.
-            if not self._is_slot_justified(finalized_slot, justified_slots, source.slot):
+            if not justified_slots.is_slot_justified(finalized_slot, source.slot):
                 continue
 
             # Ignore votes for targets that have already reached consensus
             #
             # If a block is already justified, additional votes do not change anything.
             # We simply skip them.
-            if self._is_slot_justified(finalized_slot, justified_slots, target.slot):
+            if justified_slots.is_slot_justified(finalized_slot, target.slot):
                 continue
 
             # Ensure the vote refers to blocks that actually exist on our chain
@@ -572,7 +509,7 @@ class State(Container):
                 #
                 # The chain now considers this block part of its safe head.
                 latest_justified = target
-                self._set_slot_justified(finalized_slot, justified_slots, target.slot, True)
+                justified_slots.set_justified(finalized_slot, target.slot, True)
 
                 # There is no longer any need to track individual votes for this block.
                 del justifications[target.root]
@@ -604,7 +541,7 @@ class State(Container):
                     # We also prune any pending `justifications` whose slots are now finalized.
                     delta = int(finalized_slot - old_finalized_slot)
                     if delta > 0:
-                        justified_slots = JustifiedSlots(data=justified_slots.data[delta:])
+                        justified_slots = justified_slots.shift_window(delta)
                         justifications = {
                             root: votes
                             for root, votes in justifications.items()
