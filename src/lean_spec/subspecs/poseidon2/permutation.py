@@ -269,7 +269,7 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # The number of full rounds is split between the beginning and end.
     half_full_rounds = full_rounds // 2
     # Initialize index for accessing the flat list of round constants.
-    round_constant_index = 0
+    const_idx = 0
 
     # Convert input Fp elements to numpy array for vectorized operations
     state = np.array([fp.value for fp in current_state], dtype=np.int64)
@@ -287,8 +287,8 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # `(state*state % P) * state % P` to keep values in range.
     for _round in range(half_full_rounds):
         # Add round constants to the entire state.
-        state = (state + round_constants[round_constant_index : round_constant_index + width]) % P
-        round_constant_index += width
+        state = (state + round_constants[const_idx : const_idx + width]) % P
+        const_idx += width
         # Apply the S-box (x -> x^d) to the full state.
         state = (state * state % P) * state % P
         # Apply the external linear layer for diffusion.
@@ -297,8 +297,8 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # 3. Partial Rounds (R_P)
     for _round in range(partial_rounds):
         # Add a single round constant to the first state element.
-        state[0] = (state[0] + round_constants[round_constant_index]) % P
-        round_constant_index += 1
+        state[0] = (state[0] + round_constants[const_idx]) % P
+        const_idx += 1
         # Apply the S-box to the first state element only.
         #
         # This is the main optimization of the Hades design.
@@ -309,8 +309,8 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     # 4. Second Half of Full Rounds (R_F / 2)
     for _round in range(half_full_rounds):
         # Add round constants to the entire state.
-        state = (state + round_constants[round_constant_index : round_constant_index + width]) % P
-        round_constant_index += width
+        state = (state + round_constants[const_idx : const_idx + width]) % P
+        const_idx += width
         # Apply the S-box to the full state.
         state = (state * state % P) * state % P
         # Apply the external linear layer for diffusion.
