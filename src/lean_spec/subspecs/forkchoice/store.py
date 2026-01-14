@@ -148,7 +148,7 @@ class Store(Container):
     - Only stores the attestation data, not signatures.
     """
 
-    gossip_signatures: Dict[SignatureKey, Signature] = {}
+    gossip_committee_signatures: Dict[SignatureKey, Signature] = {}
     """
     Per-validator XMSS signatures learned from committee attesters.
 
@@ -327,7 +327,7 @@ class Store(Container):
         attester_subnet = compute_subnet_id(int(validator_id), self.config.attestation_subnet_count)
 
         # Store signature for later lookup during block building
-        new_gossip_sigs = dict(self.gossip_signatures)
+        new_gossip_sigs = dict(self.gossip_committee_signatures)
         if is_aggregator and current_validator_subnet == attester_subnet:
             # If this validator is an aggregator for this attestation,
             # also store the signature in the committee signatures map.
@@ -338,7 +338,7 @@ class Store(Container):
         store = self.on_attestation(attestation=attestation, is_from_block=False)
 
         # Return store with updated signature maps
-        return store.model_copy(update={"gossip_signatures": new_gossip_sigs)
+        return store.model_copy(update={"gossip_committee_signatures": new_gossip_sigs)
 
     def on_attestation(
         self,
@@ -694,16 +694,12 @@ class Store(Container):
         # 1. NOT affect this block's fork choice position (processed as "new")
         # 2. Be available for inclusion in future blocks
         # 3. Influence fork choice only after interval 3 (end of slot)
-        #
-        # We also store the proposer's signature for potential future block building.
+
         proposer_sig_key = SignatureKey(
             proposer_attestation.validator_id,
             proposer_attestation.data.data_root_bytes(),
         )
-        new_gossip_sigs = dict(store.gossip_signatures)
-        new_gossip_sigs[proposer_sig_key] = (
-            signed_block_with_attestation.signature.proposer_signature
-        )
+        new_gossip_sigs = dict(store.gossip_committee_signatures)
 
         store = store.on_attestation(
             attestation=proposer_attestation,
@@ -711,7 +707,7 @@ class Store(Container):
         )
 
         # Update store with proposer signature
-        store = store.model_copy(update={"gossip_signatures": new_gossip_sigs})
+        store = store.model_copy(update={"gossip_committee_signatures": new_gossip_sigs})
 
         return store
 
@@ -923,7 +919,7 @@ class Store(Container):
         new_aggregated_payloads = dict(self.aggregated_payloads)
 
         attestations = self.latest_new_attestations
-        committee_signatures = self.gossip_signatures
+        committee_signatures = self.gossip_committee_signatures
         aggregated_payloads = self.aggregated_payloads
 
         head_state = self.states[self.head]
@@ -1235,7 +1231,7 @@ class Store(Container):
             parent_root=head_root,
             available_attestations=available_attestations,
             known_block_roots=set(store.blocks.keys()),
-            gossip_signatures=store.gossip_signatures,
+            gossip_signatures=store.gossip_committee_signatures,
             aggregated_payloads=store.aggregated_payloads,
         )
 
