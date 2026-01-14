@@ -148,7 +148,6 @@ def permute_numpy(state: List[Fp], params: "Poseidon2Params") -> List[Fp]:
     # 1. Initial external layer
     s = _external_linear_layer(s, width)
 
-
     # 2. First half of full rounds
 
     # Note that for S_BOX_DEGREE=3, s**3 would overflow before the modulo, i.e.

@@ -16,7 +16,6 @@ from lean_spec.subspecs.poseidon2.permutation import (
     permute,
 )
 from lean_spec.subspecs.poseidon2.permutation_numpy import permute_numpy
-
 from tests.lean_spec.subspecs.poseidon2.test_permutation import INPUT_16, INPUT_24
 
 
