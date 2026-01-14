@@ -150,17 +150,9 @@ class Store(Container):
 
     gossip_signatures: Dict[SignatureKey, Signature] = {}
     """
-    Per-validator XMSS signatures learned from gossip.
-
-    Keyed by SignatureKey(validator_id, attestation_data_root).
-    """
-
-    committee_signatures: Dict[SignatureKey, Signature] = {}
-    """
     Per-validator XMSS signatures learned from committee attesters.
-    
+
     Keyed by SignatureKey(validator_id, attestation_data_root).
-    TODO: should we also index by subnet id?
     """
 
     aggregated_payloads: Dict[SignatureKey, list[AggregatedSignatureProof]] = {}
@@ -336,21 +328,17 @@ class Store(Container):
 
         # Store signature for later lookup during block building
         new_gossip_sigs = dict(self.gossip_signatures)
-        sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
-        new_gossip_sigs[sig_key] = signature
-
-        new_committee_sigs = dict(self.committee_signatures)
         if is_aggregator and current_validator_subnet == attester_subnet:
             # If this validator is an aggregator for this attestation,
             # also store the signature in the committee signatures map.
-            new_committee_sigs[sig_key] = signature
+            sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
+            new_gossip_sigs[sig_key] = signature
 
         # Process the attestation data
         store = self.on_attestation(attestation=attestation, is_from_block=False)
 
         # Return store with updated signature maps
-        return store.model_copy(update={"gossip_signatures": new_gossip_sigs,
-                                         "committee_signatures": new_committee_sigs})
+        return store.model_copy(update={"gossip_signatures": new_gossip_sigs)
 
     def on_attestation(
         self,
@@ -935,7 +923,7 @@ class Store(Container):
         new_aggregated_payloads = dict(self.aggregated_payloads)
 
         attestations = self.latest_new_attestations
-        committee_signatures = self.committee_signatures
+        committee_signatures = self.gossip_signatures
         aggregated_payloads = self.aggregated_payloads
 
         head_state = self.states[self.head]
