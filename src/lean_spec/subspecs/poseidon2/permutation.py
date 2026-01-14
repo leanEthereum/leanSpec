@@ -141,7 +141,7 @@ def _precompute_params(params: Poseidon2Params) -> dict:
         "width": params.width,
         "full_rounds": params.rounds_f,
         "partial_rounds": params.rounds_p,
-        "diagonal_vector": np.array(
+        "diag_vector": np.array(
             [fp.value for fp in params.internal_diag_vectors], dtype=np.int64
         ),
         "round_constants": np.array([fp.value for fp in params.round_constants], dtype=np.int64),
@@ -204,7 +204,7 @@ def external_linear_layer(state: NDArray[np.int64], width: int) -> NDArray[np.in
 
 
 def internal_linear_layer(
-    state: NDArray[np.int64], diagonal_vector: NDArray[np.int64]
+    state: NDArray[np.int64], diag_vector: NDArray[np.int64]
 ) -> NDArray[np.int64]:
     """
     Applies the internal linear layer (M_I).
@@ -218,7 +218,7 @@ def internal_linear_layer(
 
     Args:
         state: The current state vector.
-        diagonal_vector: The diagonal vector for the internal matrix.
+        diag_vector: The diagonal vector for the internal matrix.
 
     Returns:
         The state vector after applying the internal linear layer.
@@ -231,9 +231,9 @@ def internal_linear_layer(
     # Calculate the sum of all state elements once (for J*state)
     state_sum = state.sum() % P
 
-    # Compute state[i] = state_sum + diagonal[i] * state[i]
+    # Compute state[i] = state_sum + diag_vector[i] * state[i]
     # This is equivalent to (J + D) * state but much faster.
-    return (state_sum + (diagonal_vector * state) % P) % P
+    return (state_sum + (diag_vector * state) % P) % P
 
 
 def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
@@ -263,7 +263,7 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
     width = cached["width"]
     full_rounds = cached["full_rounds"]
     partial_rounds = cached["partial_rounds"]
-    diagonal_vector = cached["diagonal_vector"]
+    diag_vector = cached["diag_vector"]
     round_constants = cached["round_constants"]
 
     # The number of full rounds is split between the beginning and end.
@@ -304,7 +304,7 @@ def permute(current_state: list[Fp], params: Poseidon2Params) -> list[Fp]:
         # This is the main optimization of the Hades design.
         state[0] = (state[0] * state[0] % P) * state[0] % P
         # Apply the internal linear layer.
-        state = internal_linear_layer(state, diagonal_vector)
+        state = internal_linear_layer(state, diag_vector)
 
     # 4. Second Half of Full Rounds (R_F / 2)
     for _round in range(half_full_rounds):
