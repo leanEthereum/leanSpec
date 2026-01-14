@@ -66,12 +66,12 @@ This structure lets clients subscribe to relevant messages and ignore others.
 The payload carried in the gossipsub message is the SSZ-encoded, 
 Snappy-compressed message, which type is identified by the topic:
 
-| Topic Name                                                  | Message Type                | Encoding     |
-|-------------------------------------------------------------|-----------------------------|--------------|
-| /lean/consensus/devnet-0/blocks/ssz_snappy                  | SignedBlockWithAttestation  | SSZ + Snappy |
-| /lean/consensus/devnet-0/attestations/ssz_snappy            | SignedAttestation           | SSZ + Snappy |
-| /lean/consensus/devnet-0/attestation_{subnet_id}/ssz_snappy | SignedAttestation           | SSZ + Snappy |
-| /lean/consensus/devnet-0/aggregation/ssz_snappy             | SignedAggregatedAttestation | SSZ + Snappy |
+| Topic Name                                                 | Message Type                | Encoding     |
+|------------------------------------------------------------|-----------------------------|--------------|
+| /lean/consensus/devnet3/blocks/ssz_snappy                  | SignedBlockWithAttestation  | SSZ + Snappy |
+| /lean/consensus/devnet3/attestations/ssz_snappy            | SignedAttestation           | SSZ + Snappy |
+| /lean/consensus/devnet3/attestation_{subnet_id}/ssz_snappy | SignedAttestation           | SSZ + Snappy |
+| /lean/consensus/devnet3/aggregation/ssz_snappy             | SignedAggregatedAttestation | SSZ + Snappy |
 
 ### Message Types
 
