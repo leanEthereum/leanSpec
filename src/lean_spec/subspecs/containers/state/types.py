@@ -54,7 +54,7 @@ class JustifiedSlots(BaseBitlist):
 
         # Check the tracked bitfield for the slot's status.
         #
-        # We assume the slot is within the tracked range. 
+        # We assume the slot is within the tracked range.
         #
         # If the caller asks for a slot too far in the future, it indicates a logic error.
         try:
@@ -65,7 +65,12 @@ class JustifiedSlots(BaseBitlist):
                 f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
             ) from e
 
-    def with_justified(self, finalized_slot: Slot, target_slot: Slot, value: bool | Boolean) -> None:
+    def with_justified(
+        self,
+        finalized_slot: Slot,
+        target_slot: Slot,
+        value: bool | Boolean,
+    ) -> "JustifiedSlots":
         """
         Return a new bitfield with the justification status updated.
 
@@ -107,7 +112,7 @@ class JustifiedSlots(BaseBitlist):
         # 3. Use model_copy to return a new instance with the updated data.
         new_data = list(self.data)
         new_data[relative_index] = value
-        
+
         return self.model_copy(update={"data": new_data})
 
     def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> JustifiedSlots:

@@ -298,9 +298,14 @@ class State(Container):
         # latest finalized checkpoint.
         #
         # Here, we extend the storage capacity to ensure the range from the
-        # finalized boundary up to the current block's slot is fully tracked
-        # and addressable.
-        new_justified_slots_data = self.justified_slots.extend_to_slot(self.latest_finalized.slot, block.slot)
+        # finalized boundary up to the last materialized slot is fully tracked
+        # and addressable. The current block's slot is not materialized until
+        # its header is fully processed, so we stop at slot (block.slot - 1).
+        last_materialized_slot = block.slot - Slot(1)
+        new_justified_slots_data = self.justified_slots.extend_to_slot(
+            self.latest_finalized.slot,
+            last_materialized_slot,
+        )
 
         # Construct the new latest block header.
         #
@@ -417,7 +422,12 @@ class State(Container):
         justified_slots = self.justified_slots
 
         # Map roots to their slots for pruning when finalization advances.
-        root_to_slot = {root: Slot(i) for i, root in enumerate(self.historical_block_hashes)}
+        # Only track roots after the finalized boundary; earlier roots are pruned.
+        start_slot = int(finalized_slot) + 1
+        root_to_slot = {
+            self.historical_block_hashes[i]: Slot(i)
+            for i in range(start_slot, len(self.historical_block_hashes))
+        }
 
         # Process each attestation independently
         #
@@ -510,7 +520,11 @@ class State(Container):
                 #
                 # The chain now considers this block part of its safe head.
                 latest_justified = target
-                justified_slots.set_justified(finalized_slot, target.slot, True)
+                justified_slots = justified_slots.with_justified(
+                    finalized_slot,
+                    target.slot,
+                    True,
+                )
 
                 # There is no longer any need to track individual votes for this block.
                 del justifications[target.root]
