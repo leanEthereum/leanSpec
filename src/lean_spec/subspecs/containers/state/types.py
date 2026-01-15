@@ -65,16 +65,40 @@ class JustifiedSlots(BaseBitlist):
 
     def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> JustifiedSlots:
         """
-        Extend tracking so that slots below the target are addressable.
+        Extend the tracking capacity to cover a new target slot.
 
-        Newly created entries are initialized to False.
+        This prepares the state to process a new block by ensuring the
+        bitfield is long enough to store its justification status.
+        Gaps are filled with False (unjustified).
+
+        Args:
+            finalized_slot: The anchor point for the tracking window.
+            target_slot: The slot that must be addressable.
+
+        Returns:
+            A new instance with sufficient capacity.
         """
-        frontier_slot = finalized_slot + Slot(1) + Slot(len(self))
-        gap_size = int(target_slot - frontier_slot)
-        if gap_size <= 0:
+        # Calculate the index required to store the status of the target.
+        #
+        # If the target is already finalized, no extension is needed because
+        # we don't track finalized data.
+        if (relative_index := target_slot.justified_index_after(finalized_slot)) is None:
             return self
 
-        return JustifiedSlots(data=list(self.data) + [Boolean(False)] * gap_size)
+        # Calculate how many new entries we need to append.
+        #
+        # Since indices are zero-based, the required capacity is index + 1.
+        # If we already have enough capacity, the gap will be zero or negative.
+        required_capacity = relative_index + 1
+        if (gap_size := required_capacity - len(self)) <= 0:
+            return self
+
+        # Return a new instance with the extended data list.
+        #
+        # We extend the existing data with False values to bridge the gap.
+        return self.model_copy(
+            update={"data": list(self.data) + [Boolean(False)] * gap_size}
+        )
 
     def shift_window(self, delta: int) -> JustifiedSlots:
         """
