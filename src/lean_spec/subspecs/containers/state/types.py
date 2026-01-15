@@ -153,10 +153,12 @@ class JustifiedSlots(BaseBitlist):
 
         A non-positive delta keeps the tracking window unchanged.
         """
+        # If the boundary hasn't moved forward, the window stays the same.
         if delta <= 0:
             return self
 
-        return JustifiedSlots(data=self.data[delta:])
+        # Return a new instance containing only the relevant subset of data.
+        return self.model_copy(update={"data": self.data[delta:]})
 
 
 class JustificationValidators(BaseBitlist):
