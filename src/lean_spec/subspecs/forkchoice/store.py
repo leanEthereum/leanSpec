@@ -471,7 +471,7 @@ class Store(Container):
             }
         )
 
-    def on_gossip_committee_aggregation(self, signed_attestation: SignedAggregatedAttestation) -> "Store":
+    def on_gossip_aggregated_attestation(self, signed_attestation: SignedAggregatedAttestation) -> "Store":
         """
         Process a signed aggregated attestation received via aggregation topic
 

@@ -17,14 +17,15 @@ diversity helps test interoperability.
 In production, validator assignment will work differently. The current approach
 is temporary for devnet testing.
 
-## Committees and Subnets
+## Attestation Committees and Subnets
 
-Committee is a group of validators assigned to aggregate attestations. 
-Beacon chain uses subnets as network channels for specific committees.
+Attestation committee is a group of validators contributing to the common 
+aggregated attestations. Beacon chain uses subnets as network channels for 
+specific committees.
 
 In the devnet-3 design, however, there is one global subnet for signed 
 attestations propagation, in addition to publishing into per committee subnets.
-This is due to 3SF-mini consensus design, that requires 2/3 + 1 of all 
+This is due to 3SF-mini consensus design, that requires 2/3+ of all 
 attestations to be observed by any validator to compute safe target correctly.
 
 Note that non-aggregating validators do not need to subscribe to committee
@@ -32,16 +33,16 @@ attestation subnets. They only need to subscribe to the global attestation
 subnet.
 
 Every validator is assigned to a single committee. Number of committees is 
-defined in config.yaml. Each committee maps to a subnet ID. Validators
+defined in config.yaml. Each committee maps to a subnet ID. Validator's
 subnet ID is derived using their validator index modulo number of committees.
-This is to simplify debugging and testing. In the future, validators subnet id
+This is to simplify debugging and testing. In the future, validator's subnet ID
 will be assigned randomly per epoch.
 
 ## Aggregator assignment
 
 Some validators are self-assigned as aggregators. Aggregators collect and combine
 attestations from other validators in their committee. To become an aggregator,
-a validator sets `is_validator` flag to true as ENR record field.
+a validator sets `is_aggregator` flag to true as ENR record field.
 
 ## Proposing Blocks
 
@@ -125,10 +126,7 @@ blocks and attestations.
 Attestation aggregation combines multiple attestations into one. This saves bandwidth and
 block space.
 
-Devnet-2 introduced signatures aggregation. Aggregations are produced by block proposers.
-
-When aggregation is added, aggregators will collect attestations and combine them.
-Aggregated attestations will be broadcast separately.
+Devnet-2 introduces signatures aggregation. Aggregators will collect attestations and combine them. Aggregated attestations will be broadcast separately.
 
 ## Signature Handling
 
