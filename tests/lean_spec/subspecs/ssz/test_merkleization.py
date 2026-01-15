@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from lean_spec.subspecs.ssz.merkleization import Merkle
+from lean_spec.subspecs.ssz.merkleization import (
+    _zero_tree_root,
+    merkleize,
+    merkleize_progressive,
+    mix_in_length,
+    mix_in_selector,
+)
 from lean_spec.subspecs.ssz.utils import hash_nodes
 from lean_spec.types import ZERO_HASH
 from lean_spec.types.byte_arrays import Bytes32
@@ -27,7 +33,7 @@ for _ in range(10):
 
 def test_merkleize_empty_no_limit() -> None:
     """Tests that merkleizing an empty list with no limit returns the ZERO_HASH."""
-    assert Merkle.merkleize([]) == ZERO_HASH
+    assert merkleize([]) == ZERO_HASH
 
 
 @pytest.mark.parametrize(
@@ -48,35 +54,35 @@ def test_merkleize_empty_with_limit(
     Tests that merkleizing an empty list with a limit returns the correct
     pre-computed root for a tree of zero hashes of the specified width.
     """
-    assert Merkle.merkleize([], limit=limit) == expected_zero_root
+    assert merkleize([], limit=limit) == expected_zero_root
 
 
 def test_merkleize_single_chunk() -> None:
     """Tests that the root of a single chunk is the chunk itself."""
-    assert Merkle.merkleize([c[1]]) == c[1]
+    assert merkleize([c[1]]) == c[1]
 
 
 def test_merkleize_power_of_two_chunks() -> None:
     """Tests merkleization with a number of chunks that is a power of two (no padding needed)."""
     # Test with 2 chunks
-    assert Merkle.merkleize([c[0], c[1]]) == h(c[0], c[1])
+    assert merkleize([c[0], c[1]]) == h(c[0], c[1])
     # Test with 4 chunks
     root_4 = h(h(c[0], c[1]), h(c[2], c[3]))
-    assert Merkle.merkleize(c[0:4]) == root_4
+    assert merkleize(c[0:4]) == root_4
 
 
 def test_merkleize_non_power_of_two_chunks() -> None:
     """Tests merkleization with a number of chunks that requires padding."""
     # Test with 3 chunks (pads to 4)
     expected = h(h(c[0], c[1]), h(c[2], Z[0]))
-    assert Merkle.merkleize(c[0:3]) == expected
+    assert merkleize(c[0:3]) == expected
     # Test with 5 chunks (pads to 8)
     h01 = h(c[0], c[1])
     h23 = h(c[2], c[3])
     h4z = h(c[4], Z[0])
     # The remaining leaves are zero, so their parent is h(Z[0], Z[0]) = Z[1]
     expected = h(h(h01, h23), h(h4z, Z[1]))
-    assert Merkle.merkleize(c[0:5]) == expected
+    assert merkleize(c[0:5]) == expected
 
 
 def test_merkleize_with_limit_padding() -> None:
@@ -89,13 +95,13 @@ def test_merkleize_with_limit_padding() -> None:
     # The right branch is a zero-tree of width 4, so its root is Z[2].
     right_branch = Z[2]
     expected = h(left_branch, right_branch)
-    assert Merkle.merkleize(c[0:3], limit=8) == expected
+    assert merkleize(c[0:3], limit=8) == expected
 
 
 def test_merkleize_error_on_exceeding_limit() -> None:
     """Tests that merkleize raises a ValueError if the chunk count exceeds the limit."""
     with pytest.raises(ValueError, match="input exceeds limit"):
-        Merkle.merkleize(c[0:5], limit=4)
+        merkleize(c[0:5], limit=4)
 
 
 def test_mix_in_length() -> None:
@@ -104,7 +110,7 @@ def test_mix_in_length() -> None:
     length = 12345
     length_bytes = Bytes32(length.to_bytes(32, "little"))
     expected = h(root, length_bytes)
-    assert Merkle.mix_in_length(root, length) == expected
+    assert mix_in_length(root, length) == expected
 
 
 def test_mix_in_length_zero() -> None:
@@ -113,13 +119,13 @@ def test_mix_in_length_zero() -> None:
     length = 0
     length_bytes = Bytes32(length.to_bytes(32, "little"))
     expected = h(root, length_bytes)
-    assert Merkle.mix_in_length(root, length) == expected
+    assert mix_in_length(root, length) == expected
 
 
 def test_mix_in_length_error_on_negative() -> None:
     """Tests that mixing in a negative length raises a ValueError."""
     with pytest.raises(ValueError):
-        Merkle.mix_in_length(c[0], -1)
+        mix_in_length(c[0], -1)
 
 
 def test_mix_in_selector() -> None:
@@ -128,27 +134,27 @@ def test_mix_in_selector() -> None:
     selector = 42
     selector_bytes = Bytes32(selector.to_bytes(32, "little"))
     expected = h(root, selector_bytes)
-    assert Merkle.mix_in_selector(root, selector) == expected
+    assert mix_in_selector(root, selector) == expected
 
 
 def test_mix_in_selector_error_on_negative() -> None:
     """Tests that mixing in a negative selector raises a ValueError."""
     with pytest.raises(ValueError):
-        Merkle.mix_in_selector(c[1], -1)
+        mix_in_selector(c[1], -1)
 
 
 def test_zero_tree_root_internal() -> None:
     """Tests the internal helper for calculating the root of an all-zero tree."""
-    assert Merkle._zero_tree_root(1) == Z[0]
-    assert Merkle._zero_tree_root(2) == Z[1]
-    assert Merkle._zero_tree_root(4) == Z[2]
-    assert Merkle._zero_tree_root(8) == Z[3]
-    assert Merkle._zero_tree_root(16) == Z[4]
+    assert _zero_tree_root(1) == Z[0]
+    assert _zero_tree_root(2) == Z[1]
+    assert _zero_tree_root(4) == Z[2]
+    assert _zero_tree_root(8) == Z[3]
+    assert _zero_tree_root(16) == Z[4]
 
 
 def test_merkleize_progressive_empty() -> None:
     """Tests progressive merkleization of an empty list."""
-    assert Merkle.merkleize_progressive([]) == ZERO_HASH
+    assert merkleize_progressive([]) == ZERO_HASH
 
 
 def test_merkleize_progressive_single_chunk() -> None:
@@ -156,7 +162,7 @@ def test_merkleize_progressive_single_chunk() -> None:
     # right = merkleize([c[0]], 1) -> c[0]
     # left = ZERO_HASH
     expected = h(ZERO_HASH, c[0])
-    assert Merkle.merkleize_progressive([c[0]], num_leaves=1) == expected
+    assert merkleize_progressive([c[0]], num_leaves=1) == expected
 
 
 def test_merkleize_progressive_five_chunks() -> None:
@@ -183,4 +189,4 @@ def test_merkleize_progressive_five_chunks() -> None:
     right1 = c[0]
     expected = h(left1, right1)
 
-    assert Merkle.merkleize_progressive(chunks, num_leaves=1) == expected
+    assert merkleize_progressive(chunks, num_leaves=1) == expected

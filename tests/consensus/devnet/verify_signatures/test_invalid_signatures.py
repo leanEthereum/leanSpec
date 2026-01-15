@@ -3,13 +3,11 @@
 import pytest
 from consensus_testing import (
     BlockSpec,
-    SignedAttestationSpec,
     VerifySignaturesTestFiller,
     generate_pre_state,
 )
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
 

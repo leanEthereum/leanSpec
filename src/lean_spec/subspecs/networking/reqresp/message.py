@@ -5,21 +5,22 @@ This module defines the data structures for the peer-to-peer request/response
 domain. All messages are SSZ-encoded and then compressed with Snappy frames.
 """
 
-from typing import ClassVar, Type
+from typing import ClassVar
 
 from lean_spec.subspecs.containers import Checkpoint, SignedBlockWithAttestation
-from lean_spec.types import Bytes32, SSZList, SSZType, StrictBaseModel
+from lean_spec.types import Bytes32, SSZList, SSZType
+from lean_spec.types.container import Container
 
 from ..config import MAX_REQUEST_BLOCKS
 from ..types import ProtocolId
 
 # --- Status v1 ---
 
-STATUS_PROTOCOL_V1: ProtocolId = "/leanconsensus/req/status/1/"
+STATUS_PROTOCOL_V1: ProtocolId = "/leanconsensus/req/status/1/ssz_snappy"
 """The protocol ID for the Status v1 request/response message."""
 
 
-class Status(StrictBaseModel):
+class Status(Container):
     """
     The Status message, used by clients to share their chain state.
 
@@ -27,31 +28,11 @@ class Status(StrictBaseModel):
     the peer-to-peer handshake. It allows nodes to verify compatibility and
     determine if they are on the same chain.
 
-    For devnet 2, we include the following changes
-
-    The dialing client MUST send a `Status` request upon connection.
-
-    The request/response MUST be encoded as an SSZ-container.
-
-    The response MUST consist of a single `response_chunk`.
-
-    Clients SHOULD immediately disconnect from one another following the handshake
-    above under the following conditions:
-
-    1. If the (`finalized_root`, `finalized_epoch`) shared by the peer is not in the
-    client's chain at the expected epoch. For example, if Peer 1 sends (root,
-    epoch) of (A, 5) and Peer 2 sends (B, 3) but Peer 1 has root C at epoch 3,
-    then Peer 1 would disconnect because it knows that their chains are
-    irreparably disjoint.
-
-    Once the handshake completes, the client with the lower `finalized_epoch` or
-    `head_slot` (if the clients have equal `finalized_epoch`s) SHOULD request blocks
-    from its counterparty via the `BlocksByRoot` request.
-
-    *Note*: Under abnormal network condition or after some rounds of
-    `BlocksByRoot` requests, the client might need to send `Status` request
-    again to learn if the peer has a higher head. Implementers are free to implement
-    such behavior in their own way.
+    SSZ encoding produces 80 bytes:
+        - finalized.root (32 bytes)
+        - finalized.slot (8 bytes)
+        - head.root (32 bytes)
+        - head.slot (8 bytes)
     """
 
     finalized: Checkpoint
@@ -63,7 +44,7 @@ class Status(StrictBaseModel):
 
 # --- BlocksByRoot v1 ---
 
-BLOCKS_BY_ROOT_PROTOCOL_V1: ProtocolId = "/leanconsensus/req/blocks_by_root/1/"
+BLOCKS_BY_ROOT_PROTOCOL_V1: ProtocolId = "/leanconsensus/req/blocks_by_root/1/ssz_snappy"
 """The protocol ID for the BlocksByRoot v1 request/response message."""
 
 
@@ -74,7 +55,7 @@ class BlocksByRootRequest(SSZList[Bytes32]):
     This is primarily used to recover recent or missing blocks from a peer.
     """
 
-    ELEMENT_TYPE: ClassVar[Type[SSZType]] = Bytes32
+    ELEMENT_TYPE: ClassVar[type[SSZType]] = Bytes32
     LIMIT: ClassVar[int] = MAX_REQUEST_BLOCKS
 
 
@@ -87,5 +68,5 @@ class BlocksByRootResponse(SSZList[SignedBlockWithAttestation]):
     separate `response_chunk`.
     """
 
-    ELEMENT_TYPE: ClassVar[Type[SSZType]] = SignedBlockWithAttestation
+    ELEMENT_TYPE: ClassVar[type[SSZType]] = SignedBlockWithAttestation
     LIMIT: ClassVar[int] = MAX_REQUEST_BLOCKS

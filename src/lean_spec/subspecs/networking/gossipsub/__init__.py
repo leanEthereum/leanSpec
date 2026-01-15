@@ -22,6 +22,7 @@ References:
 - Ethereum P2P: https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md
 """
 
+from ..transport import PeerId
 from .control import (
     ControlMessage,
     Graft,
@@ -56,7 +57,6 @@ from .topic import (
 )
 from .types import (
     MessageId,
-    PeerId,
     TopicId,
 )
 

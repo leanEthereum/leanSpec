@@ -1,6 +1,5 @@
 """Tests for the hypercube mathematical operations."""
 
-import itertools
 import math
 from functools import lru_cache
 from typing import Any, Callable, List, Tuple

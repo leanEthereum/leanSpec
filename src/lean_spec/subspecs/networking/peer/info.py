@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum, auto
 from time import time
 
-from ..types import ConnectionState, Multiaddr, PeerId
+from ..transport import PeerId
+from ..types import ConnectionState, Multiaddr
 
 
 class Direction(IntEnum):

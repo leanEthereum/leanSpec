@@ -46,8 +46,155 @@ uvx tox                  # Everything (checks + tests + docs)
 ## Code Style
 
 - Line length: 100 characters, type hints everywhere
-- Google docstring style (no docstrings for `__init__`)
+- Google docstring style
 - Test files/functions must start with `test_`
+- **No example code in docstrings**: Do not include `Example:` sections with code blocks in docstrings. Keep documentation concise and focused on explaining *what* and *why*, not *how to use*. Unit tests serve as usage examples.
+
+### Import Style
+
+**Avoid confusing import renames.** When an external library exports a name that conflicts with a local type, prefer restructuring over renaming.
+
+Bad:
+```python
+from cryptography.hazmat.primitives.asymmetric.x25519 import (
+    X25519PublicKey as CryptographyX25519PublicKey,
+)
+```
+
+Good - import the module and use qualified access:
+```python
+from cryptography.hazmat.primitives.asymmetric import x25519
+
+# Then use x25519.X25519PublicKey when needed
+public_key = x25519.X25519PublicKey.from_public_bytes(data)
+```
+
+Good - move conflicting local types to a separate constants/types module:
+```python
+# In constants.py - no external dependencies that conflict
+X25519PublicKey: TypeAlias = Bytes32
+
+# In crypto.py - import from constants, use qualified access for external
+from .constants import X25519PublicKey
+from cryptography.hazmat.primitives.asymmetric import x25519
+```
+
+This keeps code readable and avoids mental overhead of tracking renamed imports.
+
+### Module-Level Constants
+
+Use docstrings (not comments) to document module-level constants. Place the docstring immediately after the assignment.
+
+Bad:
+```python
+# Noise protocol name - used to initialize the handshake state
+# This is the full protocol name per the Noise spec
+PROTOCOL_NAME: bytes = b"Noise_XX_25519_ChaChaPoly_SHA256"
+```
+
+Good:
+```python
+PROTOCOL_NAME: bytes = b"Noise_XX_25519_ChaChaPoly_SHA256"
+"""Noise protocol name per the Noise spec. Used to initialize the handshake state."""
+```
+
+This pattern:
+- Is recognized by documentation tools (Sphinx, mkdocs)
+- Shows up in IDE tooltips and autocomplete
+- Keeps documentation close to the code it describes
+
+### Documentation Rules (CRITICAL)
+
+**NEVER use explicit function or method names in documentation.**
+
+Names change. Documentation becomes stale. Use plain language instead.
+
+Bad:
+```python
+# The shutdown task waits for stop() to be called, then signals
+# all services to terminate. Once all services exit, TaskGroup completes.
+```
+
+Good:
+```python
+# A separate task monitors the shutdown signal.
+# When triggered, it stops all services.
+# Once services exit, execution completes.
+```
+
+**Write short, scannable sentences.**
+
+Attention spans are short. Capture the reader precisely and concisely.
+
+- One idea per line.
+- Add blank lines between logical groups.
+- Avoid long compound sentences.
+
+Bad:
+```python
+# The state includes initial checkpoints, validator registry,
+# and configuration derived from genesis time.
+```
+
+Good:
+```python
+# Includes initial checkpoints, validator registry, and config.
+```
+
+**Use bullet points or enumeration for lists.**
+
+When listing multiple items, use structured formatting. Helps readers maintain focus.
+
+Bad:
+```python
+"""
+The verification checks structural validity, cryptographic correctness,
+and state transition rules before accepting the block.
+"""
+```
+
+Good:
+```python
+"""
+The verification checks:
+
+- Structural validity
+- Cryptographic correctness
+- State transition rules
+"""
+```
+
+Or with numbered steps:
+```python
+"""
+Processing proceeds in order:
+
+1. Validate input format
+2. Check signatures
+3. Apply state transition
+4. Update forkchoice
+"""
+```
+
+Bad:
+```python
+"""
+Wait for shutdown signal then stop services.
+
+This task runs alongside the services. When shutdown is signaled,
+it stops both services, allowing their run loops to exit gracefully.
+"""
+```
+
+Good:
+```python
+"""
+Wait for shutdown signal then stop services.
+
+Runs alongside the services.
+When shutdown is signaled, stops all services gracefully.
+"""
+```
 
 ## Test Framework Structure
 
@@ -117,6 +264,15 @@ def test_block(state_transition_test: StateTransitionTestFiller) -> None:
 - Use Pydantic models for validation
 - Keep specs simple, readable, and clear
 - Repository is `leanSpec` not `lean-spec`
+- **Always run linter checks before finishing**: Run `uvx tox -e all-checks` at the end of any code changes to ensure all linting, formatting, type checking, and spell checking passes.
+- **CRITICAL - NO BACKWARD COMPATIBILITY**: This is a STRICT requirement. NEVER add backward compatibility code under any circumstances. This means:
+  - NO legacy constants (like `KEY_TYPE_ED25519 = KeyType.ED25519`)
+  - NO wrapper functions that delegate to new classes
+  - NO re-exports of deprecated APIs
+  - NO deprecation shims or aliases
+  - When refactoring from functions to classes, DELETE the old functions entirely
+  - Update ALL call sites to use the new API directly
+  - Old patterns must be REMOVED, not preserved alongside new ones
 
 ## SSZ Type Design Patterns
 
@@ -196,9 +352,3 @@ class Bitlist68719476736(BaseBitlist): ...
 class SignedAttestationList4096(SSZList): ...
 ```
 
-### API Compatibility
-
-When refactoring, maintain backward compatibility:
-
-- Keep existing import paths working through `__init__.py` exports
-- Preserve method signatures and behavior

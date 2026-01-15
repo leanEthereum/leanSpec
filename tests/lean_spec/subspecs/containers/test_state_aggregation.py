@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from lean_spec.subspecs.containers.attestation import (
-    AggregatedAttestation,
     AggregationBits,
     Attestation,
     AttestationData,

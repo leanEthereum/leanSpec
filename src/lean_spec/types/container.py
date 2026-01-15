@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import inspect
 import io
-from typing import IO, Any, Type
+from typing import IO, Any
 
 from typing_extensions import Self
 
@@ -21,7 +21,7 @@ from .ssz_base import SSZModel, SSZType
 from .uint import Uint32
 
 
-def _get_ssz_field_type(annotation: Any) -> Type[SSZType]:
+def _get_ssz_field_type(annotation: Any) -> type[SSZType]:
     """
     Extract the SSZType class from a field annotation, with validation.
 
@@ -151,14 +151,13 @@ class Container(SSZModel):
         offset = sum(len(part) if part else OFFSET_BYTE_LENGTH for part in fixed_parts)
 
         # Write fixed part with calculated offsets
-        var_index = 0
+        var_iter = iter(variable_data)
         for part in fixed_parts:
             if part:  # Fixed-size field data
                 stream.write(part)
             else:  # Variable-size field offset
                 stream.write(Uint32(offset).encode_bytes())
-                offset += len(variable_data[var_index])
-                var_index += 1
+                offset += len(next(var_iter))
 
         # Append all variable data at the end
         for data in variable_data:

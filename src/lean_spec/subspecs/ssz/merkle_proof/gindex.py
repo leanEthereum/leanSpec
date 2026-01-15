@@ -1,7 +1,5 @@
 """Generalized Index implementation."""
 
-from typing import List
-
 from pydantic import Field
 
 from lean_spec.types import StrictBaseModel
@@ -50,9 +48,9 @@ class GeneralizedIndex(StrictBaseModel):
         """
         return type(self)(value=self.value * 2 + int(right_side))
 
-    def get_branch_indices(self) -> List["GeneralizedIndex"]:
+    def get_branch_indices(self) -> list["GeneralizedIndex"]:
         """Gets the indices of the sibling nodes along the path to the root."""
-        indices: List["GeneralizedIndex"] = []
+        indices: list["GeneralizedIndex"] = []
         current_index = self.value
         while current_index > 1:
             # Sibling is the current index XOR 1
@@ -62,9 +60,9 @@ class GeneralizedIndex(StrictBaseModel):
             current_index //= 2
         return indices
 
-    def get_path_indices(self) -> List["GeneralizedIndex"]:
+    def get_path_indices(self) -> list["GeneralizedIndex"]:
         """Gets the indices of the nodes along the path to the root."""
-        indices: List["GeneralizedIndex"] = [self]
+        indices: list["GeneralizedIndex"] = [self]
         while indices[-1].value > 1:
             indices.append(indices[-1].parent)
         return indices[:-1]

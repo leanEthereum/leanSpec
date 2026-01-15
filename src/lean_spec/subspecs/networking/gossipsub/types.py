@@ -17,14 +17,6 @@ The domain byte distinguishes valid/invalid snappy compression.
 """
 
 
-PeerId: TypeAlias = str
-"""Libp2p peer identifier.
-
-Derived from the peer's public key as a base58-encoded multihash.
-Uniquely identifies peers in the P2P network.
-"""
-
-
 TopicId: TypeAlias = str
 """Topic string identifier.
 

@@ -49,7 +49,7 @@ References:
 - EIP-778: https://eips.ethereum.org/EIPS/eip-778
 """
 
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from lean_spec.subspecs.networking.types import Multiaddr, NodeId, SeqNumber
 from lean_spec.types import StrictBaseModel
@@ -94,10 +94,10 @@ class ENR(StrictBaseModel):
     pairs: dict[EnrKey, bytes]
     """Key/value pairs. Keys must be unique and sorted lexicographically."""
 
-    node_id: Optional[NodeId] = None
+    node_id: NodeId | None = None
     """32-byte node ID derived from public key via keccak256."""
 
-    def get(self, key: EnrKey) -> Optional[bytes]:
+    def get(self, key: EnrKey) -> bytes | None:
         """Get value by key, or None if absent."""
         return self.pairs.get(key)
 
@@ -106,24 +106,24 @@ class ENR(StrictBaseModel):
         return key in self.pairs
 
     @property
-    def identity_scheme(self) -> Optional[str]:
+    def identity_scheme(self) -> str | None:
         """Get identity scheme (should be "v4")."""
         id_bytes = self.get(keys.ID)
         return id_bytes.decode("utf-8") if id_bytes else None
 
     @property
-    def public_key(self) -> Optional[bytes]:
+    def public_key(self) -> bytes | None:
         """Get compressed secp256k1 public key (33 bytes)."""
         return self.get(keys.SECP256K1)
 
     @property
-    def ip4(self) -> Optional[str]:
+    def ip4(self) -> str | None:
         """IPv4 address as dotted string (e.g., "127.0.0.1")."""
         ip_bytes = self.get(keys.IP)
         return ".".join(str(b) for b in ip_bytes) if ip_bytes and len(ip_bytes) == 4 else None
 
     @property
-    def ip6(self) -> Optional[str]:
+    def ip6(self) -> str | None:
         """IPv6 address as colon-separated hex."""
         ip_bytes = self.get(keys.IP6)
         if ip_bytes and len(ip_bytes) == 16:
@@ -131,18 +131,18 @@ class ENR(StrictBaseModel):
         return None
 
     @property
-    def tcp_port(self) -> Optional[int]:
+    def tcp_port(self) -> int | None:
         """TCP port (applies to both IPv4 and IPv6 unless tcp6 is set)."""
         port = self.get(keys.TCP)
         return int.from_bytes(port, "big") if port else None
 
     @property
-    def udp_port(self) -> Optional[int]:
+    def udp_port(self) -> int | None:
         """UDP port for discovery (applies to both unless udp6 is set)."""
         port = self.get(keys.UDP)
         return int.from_bytes(port, "big") if port else None
 
-    def multiaddr(self) -> Optional[Multiaddr]:
+    def multiaddr(self) -> Multiaddr | None:
         """Construct multiaddress from endpoint info."""
         if self.ip4 and self.tcp_port:
             return f"/ip4/{self.ip4}/tcp/{self.tcp_port}"
@@ -155,7 +155,7 @@ class ENR(StrictBaseModel):
     # =========================================================================
 
     @property
-    def eth2_data(self) -> Optional[Eth2Data]:
+    def eth2_data(self) -> Eth2Data | None:
         """Parse eth2 key: fork_digest(4) + next_fork_version(4) + next_fork_epoch(8)."""
         eth2_bytes = self.get(keys.ETH2)
         if eth2_bytes and len(eth2_bytes) >= 16:
@@ -170,7 +170,7 @@ class ENR(StrictBaseModel):
         return None
 
     @property
-    def attestation_subnets(self) -> Optional[AttestationSubnets]:
+    def attestation_subnets(self) -> AttestationSubnets | None:
         """Parse attnets key (SSZ Bitvector[64])."""
         attnets = self.get(keys.ATTNETS)
         return AttestationSubnets.decode_bytes(attnets) if attnets and len(attnets) == 8 else None

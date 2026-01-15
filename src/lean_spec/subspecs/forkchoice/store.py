@@ -13,7 +13,6 @@ __all__ = [
 
 import copy
 from collections import defaultdict
-from typing import Dict
 
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
@@ -121,7 +120,7 @@ class Store(Container):
 
     states: dict[Bytes32, State] = {}
     """
-    Mapping from state root to State objects.
+    Mapping from block root to State objects.
 
     For each known block, we keep its post-state.
 
@@ -148,14 +147,14 @@ class Store(Container):
     - Only stores the attestation data, not signatures.
     """
 
-    gossip_committee_signatures: Dict[SignatureKey, Signature] = {}
+    gossip_committee_signatures: dict[SignatureKey, Signature] = {}
     """
     Per-validator XMSS signatures learned from committee attesters.
 
     Keyed by SignatureKey(validator_id, attestation_data_root).
     """
 
-    aggregated_payloads: Dict[SignatureKey, list[AggregatedSignatureProof]] = {}
+    aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {}
     """
     Aggregated signature proofs learned from blocks.
 
@@ -660,7 +659,7 @@ class Store(Container):
 
         # Copy the aggregated proof map for updates
         # Must deep copy the lists to maintain immutability of previous store snapshots
-        new_block_proofs: Dict[SignatureKey, list[AggregatedSignatureProof]] = copy.deepcopy(
+        new_block_proofs: dict[SignatureKey, list[AggregatedSignatureProof]] = copy.deepcopy(
             store.aggregated_payloads
         )
 
@@ -728,7 +727,7 @@ class Store(Container):
     def _compute_lmd_ghost_head(
         self,
         start_root: Bytes32,
-        attestations: Dict[Uint64, AttestationData],
+        attestations: dict[Uint64, AttestationData],
         min_score: int = 0,
     ) -> Bytes32:
         """
@@ -774,7 +773,7 @@ class Store(Container):
         # Prepare a table that will collect voting weight for each block.
         #
         # Each entry starts conceptually at zero and then accumulates contributions.
-        weights: Dict[Bytes32, int] = defaultdict(int)
+        weights: dict[Bytes32, int] = defaultdict(int)
 
         # For every vote, follow the chosen head upward through its ancestors.
         #
@@ -792,7 +791,7 @@ class Store(Container):
         # Build the adjacency tree (parent -> children).
         #
         # We use a defaultdict to avoid checking if keys exist.
-        children_map: Dict[Bytes32, list[Bytes32]] = defaultdict(list)
+        children_map: dict[Bytes32, list[Bytes32]] = defaultdict(list)
 
         for root, block in self.blocks.items():
             # 1. Structural check: skip blocks without parents (e.g., purely genesis/orphans)

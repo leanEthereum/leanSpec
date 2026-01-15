@@ -46,8 +46,9 @@ import random
 import time
 from dataclasses import dataclass, field
 
+from ..transport import PeerId
 from .parameters import GossipsubParameters
-from .types import PeerId, TopicId
+from .types import TopicId
 
 
 @dataclass(slots=True)

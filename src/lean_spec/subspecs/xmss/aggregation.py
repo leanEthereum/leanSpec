@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import NamedTuple, Self, Sequence
 
-from lean_multisig_py import aggregate_signatures as _aggregate_signatures_py
-from lean_multisig_py import setup_prover as _setup_prover
-from lean_multisig_py import setup_verifier as _setup_verifier
-from lean_multisig_py import verify_aggregated_signatures as _verify_aggregated_signatures_py
+from lean_multisig_py import (
+    aggregate_signatures,
+    setup_prover,
+    setup_verifier,
+    verify_aggregated_signatures,
+)
 
 from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.types import Bytes32, Uint64
@@ -80,10 +82,10 @@ class AggregatedSignatureProof(Container):
         Raises:
             AggregationError: If aggregation fails.
         """
-        _setup_prover()
+        setup_prover()
         try:
             # TODO: Remove test_mode once leanVM supports correct signature encoding.
-            proof_bytes = _aggregate_signatures_py(
+            proof_bytes = aggregate_signatures(
                 [pk.encode_bytes() for pk in public_keys],
                 [sig.encode_bytes() for sig in signatures],
                 message,
@@ -114,10 +116,10 @@ class AggregatedSignatureProof(Container):
         Raises:
             AggregationError: If verification fails.
         """
-        _setup_verifier()
+        setup_verifier()
         try:
             # TODO: Remove test_mode once leanVM supports correct signature encoding.
-            _verify_aggregated_signatures_py(
+            verify_aggregated_signatures(
                 [pk.encode_bytes() for pk in public_keys],
                 message,
                 self.proof_data.encode_bytes(),
