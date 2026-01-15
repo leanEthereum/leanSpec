@@ -47,21 +47,48 @@ class JustifiedSlots(BaseBitlist):
 
     def set_justified(self, finalized_slot: Slot, target_slot: Slot, value: bool | Boolean) -> None:
         """
-        Set justification status for a slot, relative to a finalized boundary.
+        Return a new bitfield with the justification status updated.
 
-        Writes to slots at or before the finalized boundary are ignored.
+        This method follows the immutable pattern:
+        - Returns 'self' if the slot is finalized (immutable).
+        - Returns a clone with the specific bit updated for active slots.
+
+        Args:
+            finalized_slot: The anchor point for the tracking window.
+            target_slot: The slot to update.
+            value: The new justification status.
+
+        Returns:
+            A new, updated JustifiedSlots instance.
+
+        Raises:
+            IndexError: If the target slot is active but outside the tracked range.
         """
-        idx = target_slot.justified_index_after(finalized_slot)
-        if idx is None:
-            return
+        # Determine the position of the target relative to the anchor.
+        #
+        # If the slot is behind the finalized boundary, we return 'self' unchanged.
+        # We cannot modify the status of finalized history, and treating it as a
+        # no-op preserves the immutability of the conceptual chain history.
+        if (relative_index := target_slot.justified_index_after(finalized_slot)) is None:
+            return self
 
-        if idx >= len(self):
+        # Ensure we are not trying to write to a future slot that does not exist
+        # in our tracking list yet. The state must be explicitly extended first.
+        if relative_index >= len(self):
             raise IndexError(
-                "Justified slot index out of bounds "
-                f"(idx={idx}, len={len(self)}, slot={target_slot}, finalized_slot={finalized_slot})"
+                f"Slot {target_slot} is outside the tracked range "
+                f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
             )
 
-        self[idx] = value
+        # Clone and update in one smooth operation.
+        #
+        # 1. Create a shallow copy of the data list to avoid mutating the original.
+        # 2. Update the specific bit in the copy.
+        # 3. Use model_copy to return a new instance with the updated data.
+        new_data = list(self.data)
+        new_data[relative_index] = value
+        
+        return self.model_copy(update={"data": new_data})
 
     def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> JustifiedSlots:
         """
