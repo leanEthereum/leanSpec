@@ -298,8 +298,7 @@ class State(Container):
         # Here we append flags for every newly materialized slot in:
         #   [parent_header.slot, block.slot)
         # but only for slots >= (latest_finalized.slot + 1).
-        finalized_slot = self.latest_finalized.slot
-        new_justified_slots_data = self.justified_slots.extend_to_slot(finalized_slot, block.slot)
+        new_justified_slots_data = self.justified_slots.extend_to_slot(self.latest_finalized.slot, block.slot)
 
         # Construct the new latest block header.
         #
