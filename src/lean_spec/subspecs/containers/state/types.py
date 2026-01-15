@@ -65,7 +65,7 @@ class JustifiedSlots(BaseBitlist):
                 f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
             ) from e
 
-    def set_justified(self, finalized_slot: Slot, target_slot: Slot, value: bool | Boolean) -> None:
+    def with_justified(self, finalized_slot: Slot, target_slot: Slot, value: bool | Boolean) -> None:
         """
         Return a new bitfield with the justification status updated.
 

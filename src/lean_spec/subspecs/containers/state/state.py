@@ -292,12 +292,14 @@ class State(Container):
 
         # Update the list of justified slot flags.
         #
-        # IMPORTANT: `justified_slots` is stored *relative* to the finalized boundary.
-        # The first bit corresponds to slot (latest_finalized.slot + 1).
+        # IMPORTANT: This list is stored relative to the finalized boundary.
         #
-        # Here we append flags for every newly materialized slot in:
-        #   [parent_header.slot, block.slot)
-        # but only for slots >= (latest_finalized.slot + 1).
+        # The first entry corresponds to the slot immediately following the
+        # latest finalized checkpoint.
+        #
+        # Here, we extend the storage capacity to ensure the range from the
+        # finalized boundary up to the current block's slot is fully tracked
+        # and addressable.
         new_justified_slots_data = self.justified_slots.extend_to_slot(self.latest_finalized.slot, block.slot)
 
         # Construct the new latest block header.
