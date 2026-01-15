@@ -29,21 +29,41 @@ class JustifiedSlots(BaseBitlist):
 
     def is_slot_justified(self, finalized_slot: Slot, target_slot: Slot) -> bool:
         """
-        Check whether a slot is justified, relative to a finalized boundary.
+        Determine if a specific slot is considered justified.
 
-        Slots at or before the finalized boundary are treated as justified.
+        The check follows these rules:
+        - Slots at or before the finalized boundary are implicitly justified.
+        - Future slots are checked against the tracked bitfield.
+
+        Args:
+            finalized_slot: The anchor point for the tracking window.
+            target_slot: The slot to query.
+
+        Returns:
+            True if the slot is justified or finalized, False otherwise.
+
+        Raises:
+            IndexError: If the target slot is active but outside the tracked range.
         """
-        idx = target_slot.justified_index_after(finalized_slot)
-        if idx is None:
+        # First, determine the position of the target relative to the anchor.
+        #
+        # If the result is None, the slot is behind the finalized boundary.
+        # By definition, finalized slots are justified.
+        if (relative_index := target_slot.justified_index_after(finalized_slot)) is None:
             return True
 
-        if idx >= len(self):
+        # Check the tracked bitfield for the slot's status.
+        #
+        # We assume the slot is within the tracked range. 
+        #
+        # If the caller asks for a slot too far in the future, it indicates a logic error.
+        try:
+            return bool(self[relative_index])
+        except IndexError as e:
             raise IndexError(
-                "Justified slot index out of bounds "
-                f"(idx={idx}, len={len(self)}, slot={target_slot}, finalized_slot={finalized_slot})"
-            )
-
-        return bool(self[idx])
+                f"Slot {target_slot} is outside the tracked range "
+                f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
+            ) from e
 
     def set_justified(self, finalized_slot: Slot, target_slot: Slot, value: bool | Boolean) -> None:
         """
