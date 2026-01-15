@@ -94,7 +94,7 @@ Used in the topic string to identify attestation messages for a specific subnet.
 `{subnet_id}` should be replaced with the subnet identifier (0-63).
 """
 
-COMMITTEE_AGGREGATION_TOPIC_NAME: str = "committee_aggregation"
+AGGREGATED_ATTESTATION_TOPIC_NAME: str = "aggregation"
 """Topic name for committee aggregation messages.
 
 Used in the topic string to identify committee's aggregation messages.
@@ -119,7 +119,7 @@ class TopicKind(Enum):
     ATTESTATION_SUBNET = ATTESTATION_SUBNET_TOPIC_NAME
     """Attestation subnet messages."""
 
-    COMMITTEE_AGGREGATION = COMMITTEE_AGGREGATION_TOPIC_NAME
+    AGGREGATED_ATTESTATION = AGGREGATED_ATTESTATION_TOPIC_NAME
     """Committee aggregated signatures messages."""
 
     def __str__(self) -> str:
