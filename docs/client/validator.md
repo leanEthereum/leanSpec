@@ -20,8 +20,7 @@ is temporary for devnet testing.
 ## Attestation Committees and Subnets
 
 Attestation committee is a group of validators contributing to the common 
-aggregated attestations. Beacon chain uses subnets as network channels for 
-specific committees.
+aggregated attestations. Subnets are network channels dedicated to specific committees.
 
 In the devnet-3 design, however, there is one global subnet for signed 
 attestations propagation, in addition to publishing into per committee subnets.
@@ -126,7 +125,7 @@ blocks and attestations.
 Attestation aggregation combines multiple attestations into one. This saves bandwidth and
 block space.
 
-Devnet-2 introduces signatures aggregation. Aggregators will collect attestations and combine them. Aggregated attestations will be broadcast separately.
+Devnet-3 introduces signatures aggregation. Aggregators will collect attestations and combine them. Aggregated attestations will be broadcast separately.
 
 ## Signature Handling
 
