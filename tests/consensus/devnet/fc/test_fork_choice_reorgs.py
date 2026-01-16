@@ -210,10 +210,10 @@ def test_three_block_deep_reorg(
     - Slots 2-5: Fork B slowly builds, then surpasses with 4 blocks
 
     Timeline:
-        Slot 2: Fork A leads (depth 1 vs 0)
-        Slot 3: Fork A leads (depth 2 vs 1)
-        Slot 4: Fork A leads (depth 3 vs 2)
-        Slot 5: Fork B overtakes (depth 4 vs 3) → 3-block deep reorg
+        Slot 2: Fork A leads (1 vs 0)
+        Slot 3: Fork A leads (2 vs 1)
+        Slot 4: Fork A leads (3 vs 2)
+        Slot 5: Fork B overtakes (4 vs 3) → 3-block deep reorg
 
     Expected Behavior
     -----------------
@@ -226,12 +226,6 @@ def test_three_block_deep_reorg(
     Reorg Details:
         - **Depth**: 3 blocks (deepest in this test suite)
         - **Trigger**: Alternative fork becomes longer
-
-    Validator Configuration
-    -----------------------
-    Uses 6 validators to ensure each slot has a unique proposer (slot % 6).
-    Competing blocks at the same slot share a proposer, but the later block's
-    attestation overwrites the earlier one. Fork B wins via depth advantage.
 
     Why This Matters
     ----------------
@@ -662,13 +656,13 @@ def test_back_and_forth_reorg_oscillation(
     tests fork choice correctness under extreme conditions.
 
     Oscillation Pattern:
-        Slot 2: Fork A leads (depth 1 vs 0) ← head
-        Slot 2: Fork B created (depth 1 vs 1) → tie, A maintains
-        Slot 3: Fork B extends (depth 2 vs 1) ← head switches to B (REORG #1)
-        Slot 3: Fork A extends (depth 2 vs 2) → tie, B maintains
-        Slot 4: Fork A extends (depth 3 vs 2) ← head switches to A (REORG #2)
-        Slot 4: Fork B extends (depth 3 vs 3) → tie, A maintains
-        Slot 5: Fork B extends (depth 4 vs 3) ← head switches to B (REORG #3)
+        Slot 2: Fork A leads (1 vs 0) ← head
+        Slot 2: Fork B created (1 vs 1) → tie, A maintains
+        Slot 3: Fork B extends (2 vs 1) ← head switches to B (REORG #1)
+        Slot 3: Fork A extends (2 vs 2) → tie, B maintains
+        Slot 4: Fork A extends (3 vs 2) ← head switches to A (REORG #2)
+        Slot 4: Fork B extends (3 vs 3) → tie, A maintains
+        Slot 5: Fork B extends (4 vs 3) ← head switches to B (REORG #3)
 
     Expected Behavior
     -----------------
@@ -678,12 +672,6 @@ def test_back_and_forth_reorg_oscillation(
     4. Fork choice remains consistent and correct throughout
 
     Reorg Count: 3 reorgs in 4 slots (very high rate)
-
-    Validator Configuration
-    -----------------------
-    Uses 6 validators to ensure each slot has a unique proposer (slot % 6).
-    Competing blocks at the same slot share a proposer, but the later block's
-    attestation overwrites the earlier one. Fork B ultimately wins via depth.
 
     Why This Matters
     ----------------
