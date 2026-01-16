@@ -2,6 +2,7 @@
 
 from typing import AbstractSet, Iterable
 
+from lean_spec.subspecs.networking.subnet import compute_subnet_id, compute_subnet_size
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
@@ -742,6 +743,7 @@ class State(Container):
         self,
         attestations: list[Attestation],
         gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
+        threshold_ratio: float = 0.0,
     ) -> list[tuple[AggregatedAttestation, AggregatedSignatureProof]]:
         """
         Collect aggregated signatures from gossip network and aggregate them.
@@ -756,6 +758,9 @@ class State(Container):
             Individual attestations to aggregate and sign.
         gossip_signatures : dict[SignatureKey, Signature] | None
             Per-validator XMSS signatures learned from the gossip network.
+        threshold_ratio : float
+            Minimum ratio of committee signatures required to produce an aggregation.
+            Defaults to 0.0 (aggregate even if only 1 signature).
 
         Returns:
         -------
@@ -807,6 +812,23 @@ class State(Container):
             # The aggregation combines multiple XMSS signatures into a single
             # compact proof that can verify all participants signed the message.
             if gossip_ids:
+                # Check participation threshold if required
+                if threshold_ratio > 0.0:
+                    # Calculate committee size for the subnet of these validators
+                    # We assume all validators in an aggregation group belong to the same subnet
+                    first_validator_id = gossip_ids[0]
+                    subnet_id = compute_subnet_id(first_validator_id, self.config.attestation_subnet_count)
+
+                    # Count total validators in this subnet
+                    committee_size = compute_subnet_size(
+                        subnet_id,
+                        self.config.attestation_subnet_count,
+                        len(self.validators),
+                    )
+
+                    if len(gossip_ids) < committee_size * threshold_ratio:
+                        continue
+
                 participants = AggregationBits.from_validator_indices(gossip_ids)
                 proof = AggregatedSignatureProof.aggregate(
                     participants=participants,

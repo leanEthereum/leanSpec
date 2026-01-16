@@ -147,6 +147,12 @@ class Store(Container):
     - Only stores the attestation data, not signatures.
     """
 
+    aggregated_in_current_slot: Boolean = Boolean(False)
+    """
+    Tracks whether committee signatures have been successfully aggregated in the current slot.
+    Reset at the start of each slot (Interval 0).
+    """
+
     gossip_committee_signatures: dict[SignatureKey, Signature] = {}
     """
     Per-validator XMSS signatures learned from committee attesters.
@@ -919,14 +925,18 @@ class Store(Container):
 
         return self.model_copy(update={"safe_target": safe_target})
 
-    def aggregate_committee_signatures(self) -> "Store":
+    def aggregate_committee_signatures(self, threshold_ratio: float = 0.0) -> "Store":
         """
         Aggregate committee signatures for attestations in committee_signatures.
 
-        This method aggregates signatures from the gossip_committee_signatures map
+        This method aggregates signatures from the gossip_committee_signatures map.
+
+        Args:
+            threshold_ratio: Minimum participation ratio (0.0 to 1.0).
+                             Aggregates only if signature count / committee size >= ratio.
 
         Returns:
-            New Store with updated aggregated_payloads.
+            New Store with updated aggregated_payloads and aggregated_in_current_slot flag.
         """
         new_aggregated_payloads = dict(self.aggregated_payloads)
 
@@ -938,6 +948,7 @@ class Store(Container):
         aggregated_results = head_state.aggregate_gossip_signatures(
             attestations,
             committee_signatures,
+            threshold_ratio=threshold_ratio,
         )
 
         # iterate to broadcast aggregated attestations
@@ -957,7 +968,18 @@ class Store(Container):
                 if sig_key not in new_aggregated_payloads:
                     new_aggregated_payloads[sig_key] = []
                 new_aggregated_payloads[sig_key].append(aggregated_signature)
-        return self.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
+
+        # If we produced any aggregations, mark as done for this slot
+        aggregated_flag = self.aggregated_in_current_slot
+        if aggregated_results:
+            aggregated_flag = Boolean(True)
+
+        return self.model_copy(
+            update={
+                "aggregated_payloads": new_aggregated_payloads,
+                "aggregated_in_current_slot": aggregated_flag,
+            }
+        )
 
     def tick_interval(self, has_proposal: bool, is_aggregator: bool) -> "Store":
         """
@@ -981,11 +1003,13 @@ class Store(Container):
         **Interval 2 (Safe Target Update)**:
             - Compute safe target with 2/3+ majority
             - Provides validators with a stable attestation target
+            - Aggregators check for 90% participation before aggregating
 
         **Interval 3 (Attestation Acceptance)**:
             - Accept accumulated attestations (new → known)
             - Update head based on new attestation weights
             - Prepare for next slot
+            - Aggregators force aggregation if not done yet
 
         Args:
             has_proposal: Whether a proposal exists for this interval.
@@ -999,16 +1023,21 @@ class Store(Container):
         current_interval = store.time % SECONDS_PER_SLOT % INTERVALS_PER_SLOT
 
         if current_interval == Uint64(0):
-            # Start of slot - process attestations if proposal exists
+            # Start of slot - reset flags and process attestations if proposal exists
+            store = store.model_copy(update={"aggregated_in_current_slot": Boolean(False)})
             if has_proposal:
                 store = store.accept_new_attestations()
         elif current_interval == Uint64(2):
             # Mid-slot - update safe target for validators
             store = store.update_safe_target()
             if is_aggregator:
-                store = store.aggregate_committee_signatures()
+                # Wait for 90% signatures from subnet validators
+                store = store.aggregate_committee_signatures(threshold_ratio=0.9)
         elif current_interval == Uint64(3):
-            # End of slot - accept accumulated attestations
+            # End of slot - finalize aggregation and accept attestations
+            if is_aggregator and not store.aggregated_in_current_slot:
+                # Aggregate no matter how many signatures if not done before
+                store = store.aggregate_committee_signatures(threshold_ratio=0.0)
             store = store.accept_new_attestations()
 
         return store
@@ -1073,7 +1102,9 @@ class Store(Container):
         slot_time = self.config.genesis_time + slot * SECONDS_PER_SLOT
 
         # Advance time to current slot (ticking intervals)
-        store = self.on_tick(slot_time, True)
+        # It is safe not to aggregate during advancement, as it is too
+        # late to aggregate committee signatures anyway when proposing
+        store = self.on_tick(slot_time, True, is_aggregator=False)
 
         # Process any pending attestations before proposal
         store = store.accept_new_attestations()

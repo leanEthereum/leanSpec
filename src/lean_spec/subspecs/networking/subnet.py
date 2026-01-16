@@ -8,7 +8,7 @@ from __future__ import annotations
 from src.lean_spec.types import Uint64
 
 
-def compute_subnet_id(validator_index: Uint64, num_committees: Uint64) -> int:
+def compute_subnet_id(validator_index: Uint64, num_committees: Uint64) -> Uint64:
     """Compute the attestation subnet id for a validator.
 
     Args:
@@ -20,3 +20,21 @@ def compute_subnet_id(validator_index: Uint64, num_committees: Uint64) -> int:
     """
     subnet_id = validator_index % num_committees
     return subnet_id
+
+def compute_subnet_size(subnet_id: Uint64, num_committees: Uint64, total_validators: Uint64) -> Uint64:
+    """Compute the size of a given subnet.
+
+    Args:
+        subnet_id: The subnet id to compute the size for.
+        num_committees: Positive number of committees.
+        total_validators: Total number of validators.
+
+    Returns:
+        The size of the specified subnet.
+    """
+    base_size = total_validators // num_committees
+    remainder = total_validators % num_committees
+    if subnet_id < remainder:
+        return base_size + 1
+    else:
+        return base_size
