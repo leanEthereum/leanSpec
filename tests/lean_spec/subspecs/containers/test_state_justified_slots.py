@@ -12,8 +12,19 @@ import pytest
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
-from lean_spec.types import Uint64
-from tests.lean_spec.helpers import make_aggregated_attestation, make_block, make_validators
+from lean_spec.subspecs.containers.state.types import (
+    HistoricalBlockHashes,
+    JustificationRoots,
+    JustificationValidators,
+    JustifiedSlots,
+)
+from lean_spec.types import Boolean, Uint64
+from tests.lean_spec.helpers import (
+    make_aggregated_attestation,
+    make_block,
+    make_bytes32,
+    make_validators,
+)
 
 
 def test_justified_slots_do_not_include_finalized_boundary() -> None:
@@ -97,3 +108,48 @@ def test_is_slot_justified_raises_on_out_of_bounds() -> None:
         State.generate_genesis(Uint64(0), make_validators(1)).justified_slots.is_slot_justified(
             Slot(0), Slot(1)
         )
+
+
+def test_pruning_with_duplicate_roots_keeps_pending_justification() -> None:
+    validators = make_validators(3)
+    state = State.generate_genesis(genesis_time=Uint64(0), validators=validators)
+
+    # Historical roots with a duplicate value at multiple slots.
+    dup_root = make_bytes32(9)
+    history = [
+        make_bytes32(0),
+        make_bytes32(1),
+        dup_root,  # slot 2
+        make_bytes32(3),  # slot 3
+        dup_root,  # slot 4 (duplicate)
+        make_bytes32(5),
+    ]
+
+    # Finalized boundary at slot 1, slot 2 already justified.
+    state = state.model_copy(
+        update={
+            "latest_finalized": Checkpoint(root=history[1], slot=Slot(1)),
+            "latest_justified": Checkpoint(root=history[1], slot=Slot(1)),
+            "historical_block_hashes": HistoricalBlockHashes(data=history),
+            "justified_slots": JustifiedSlots(
+                data=[Boolean(True), Boolean(False), Boolean(False), Boolean(False)]
+            ),
+            "justifications_roots": JustificationRoots(data=[dup_root]),
+            "justifications_validators": JustificationValidators(
+                data=[Boolean(False)] * len(validators)
+            ),
+        }
+    )
+
+    # Justify slot 3 from source slot 2, which advances finalization to slot 2.
+    attestation = make_aggregated_attestation(
+        participant_ids=[0, 1],
+        attestation_slot=Slot(3),
+        source=Checkpoint(root=history[2], slot=Slot(2)),
+        target=Checkpoint(root=history[3], slot=Slot(3)),
+    )
+
+    post_state = state.process_attestations([attestation])
+
+    assert post_state.latest_finalized.slot == Slot(2)
+    assert list(post_state.justifications_roots) == [dup_root]

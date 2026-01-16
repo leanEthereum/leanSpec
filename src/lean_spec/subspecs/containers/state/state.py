@@ -423,11 +423,16 @@ class State(Container):
 
         # Map roots to their slots for pruning when finalization advances.
         # Only track roots after the finalized boundary; earlier roots are pruned.
+        #
+        # NOTE:
+        # Roots are not guaranteed to be unique in the history (e.g., ZERO_HASH
+        # for missed slots). We must preserve *all* slots per root to avoid
+        # collapsing duplicates and incorrectly pruning pending justifications.
         start_slot = int(finalized_slot) + 1
-        root_to_slot = {
-            self.historical_block_hashes[i]: Slot(i)
-            for i in range(start_slot, len(self.historical_block_hashes))
-        }
+        root_to_slots: dict[Bytes32, list[Slot]] = {}
+        for i in range(start_slot, len(self.historical_block_hashes)):
+            root = self.historical_block_hashes[i]
+            root_to_slots.setdefault(root, []).append(Slot(i))
 
         # Process each attestation independently
         #
@@ -560,7 +565,7 @@ class State(Container):
                         justifications = {
                             root: votes
                             for root, votes in justifications.items()
-                            if root_to_slot.get(root, Slot(0)) > finalized_slot
+                            if any(slot > finalized_slot for slot in root_to_slots.get(root, []))
                         }
 
         # Convert the vote structure back into SSZ format
