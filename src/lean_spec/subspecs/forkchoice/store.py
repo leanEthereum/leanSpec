@@ -19,6 +19,7 @@ from lean_spec.subspecs.chain.config import (
     JUSTIFICATION_LOOKBACK_SLOTS,
     SECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
+    ATTESTATION_COMMITTEE_COUNT,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -329,8 +330,8 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
-        current_validator_subnet = compute_subnet_id(current_validator_id, self.config.attestation_subnet_count)
-        attester_subnet = compute_subnet_id(validator_id, self.config.attestation_subnet_count)
+        current_validator_subnet = compute_subnet_id(current_validator_id, ATTESTATION_COMMITTEE_COUNT)
+        attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT)
 
         # Store signature for later aggregation if applicable
         new_commitee_sigs = dict(self.gossip_committee_signatures)
@@ -709,8 +710,8 @@ class Store(Container):
 
         # Store proposer signature for future lookup if he belongs to the same committee as current validator
         proposer_validator_id = proposer_attestation.validator_id
-        proposer_subnet_id = compute_subnet_id(proposer_validator_id, self.config.attestation_subnet_count)
-        current_validator_subnet_id = compute_subnet_id(current_validator, self.config.attestation_subnet_count)
+        proposer_subnet_id = compute_subnet_id(proposer_validator_id, ATTESTATION_COMMITTEE_COUNT)
+        current_validator_subnet_id = compute_subnet_id(current_validator, ATTESTATION_COMMITTEE_COUNT)
         if proposer_subnet_id == current_validator_subnet_id:
             proposer_sig_key = SignatureKey(
                 proposer_attestation.validator_id,
