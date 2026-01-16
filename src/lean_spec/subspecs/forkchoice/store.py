@@ -311,7 +311,6 @@ class Store(Container):
         attestation_data = signed_attestation.message
         signature = signed_attestation.signature
 
-
         # Validate the attestation first so unknown blocks are rejected cleanly
         # (instead of raising a raw KeyError when state is missing).
         attestation = Attestation(validator_id=validator_id, data=attestation_data)
@@ -331,6 +330,9 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
+        # Process the attestation data
+        store = self.on_attestation(attestation=attestation, is_from_block=False)
+
         current_validator_subnet = compute_subnet_id(current_validator_id, ATTESTATION_COMMITTEE_COUNT)
         attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT)
 
@@ -342,8 +344,12 @@ class Store(Container):
             sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
             new_commitee_sigs[sig_key] = signature
 
-        # Process the attestation data
-        store = self.on_attestation(attestation=attestation, is_from_block=False)
+            # If in the interval 2 of the slot and not yet aggregated, try to aggregate
+            current_interval = (self.time // SECONDS_PER_INTERVAL) % INTERVALS_PER_SLOT
+            if current_interval == 2 and not store.aggregated_in_current_slot:
+                store = store.aggregate_committee_signatures(
+                    threshold_ratio=COMMITTEE_SIGNATURE_THRESHOLD_RATIO
+                )
 
         # Return store with updated signature maps
         return store.model_copy(update={"gossip_committee_signatures": new_commitee_sigs})
