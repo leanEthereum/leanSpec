@@ -212,7 +212,7 @@ class Store(Container):
         anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
 
         return cls(
-            time=Uint64(anchor_slot * SECONDS_PER_SLOT),
+            time=Uint64(anchor_slot * INTERVALS_PER_SLOT),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
@@ -263,7 +263,7 @@ class Store(Container):
         #
         # Validate attestation is not too far in the future
         # We allow a small margin for clock disparity (1 slot), but no further.
-        current_slot = Slot(self.time // SECONDS_PER_SLOT)
+        current_slot = Slot(self.time // INTERVALS_PER_SLOT)
         assert data.slot <= current_slot + Slot(1), "Attestation too far in future"
 
     def on_gossip_attestation(
@@ -431,7 +431,7 @@ class Store(Container):
             #   contributing to fork choice weights.
 
             # Convert Store time to slots to check for "future" attestations.
-            time_slots = self.time // SECONDS_PER_SLOT
+            time_slots = self.time // INTERVALS_PER_SLOT
 
             # Reject the attestation if:
             # - its slot is strictly greater than our current slot.

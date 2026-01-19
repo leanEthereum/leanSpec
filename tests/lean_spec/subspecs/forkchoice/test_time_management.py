@@ -61,6 +61,46 @@ def sample_store(sample_config: Config) -> Store:
     )
 
 
+class TestGetForkchoiceStore:
+    """Test Store.get_forkchoice_store() time initialization."""
+
+    @pytest.mark.parametrize(
+        "anchor_slot,expected_time",
+        [
+            # store.time = anchor_slot * INTERVALS_PER_SLOT
+            # With INTERVALS_PER_SLOT=4:
+            (0, 0),
+            (1, 4),
+            (2, 8),
+            (5, 20),
+            (10, 40),
+            (25, 100),
+        ],
+    )
+    def test_store_time_from_anchor_slot(self, anchor_slot: int, expected_time: int) -> None:
+        """get_forkchoice_store sets time = anchor_slot * INTERVALS_PER_SLOT."""
+        # Must creates its own state and block even though it's very similar to sample_store()
+        # because sample_store() bypasses the Store constructor with hardcoded time.
+        state = State.generate_genesis(
+            genesis_time=Uint64(1000),
+            validators=Validators(data=[]),
+        )
+        state_root = hash_tree_root(state)
+
+        # Create anchor block with matching state root
+        anchor_block = Block(
+            slot=Slot(anchor_slot),
+            proposer_index=Uint64(0),
+            parent_root=Bytes32.zero(),
+            state_root=state_root,
+            body=BlockBody(attestations=AggregatedAttestations(data=[])),
+        )
+
+        store = Store.get_forkchoice_store(state=state, anchor_block=anchor_block)
+
+        assert store.time == Uint64(expected_time)
+
+
 class TestOnTick:
     """Test Store on_tick functionality."""
 
@@ -162,70 +202,6 @@ class TestIntervalTicking:
             current_interval = sample_store.time % INTERVALS_PER_SLOT
             expected_interval = Uint64((interval + 1)) % INTERVALS_PER_SLOT
             assert current_interval == expected_interval
-
-
-class TestSlotTimeCalculations:
-    """Test slot and time calculations."""
-
-    def test_slot_to_time_conversion(self, sample_config: Config) -> None:
-        """Test conversion from slot to time."""
-        from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
-
-        genesis_time = sample_config.genesis_time
-
-        # Slot 0 should be at genesis time
-        slot_0_time = genesis_time + Uint64(0) * SECONDS_PER_SLOT
-        assert slot_0_time == genesis_time
-
-        # Slot 1 should be at genesis + SECONDS_PER_SLOT
-        slot_1_time = genesis_time + Uint64(1) * SECONDS_PER_SLOT
-        assert slot_1_time == genesis_time + SECONDS_PER_SLOT
-
-        # Slot 10 should be at genesis + 10 * SECONDS_PER_SLOT
-        slot_10_time = genesis_time + Uint64(10) * SECONDS_PER_SLOT
-        assert slot_10_time == genesis_time + Uint64(10) * SECONDS_PER_SLOT
-
-    def test_time_to_slot_conversion(self, sample_config: Config) -> None:
-        """Test conversion from time to slot."""
-        from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
-
-        genesis_time = sample_config.genesis_time
-
-        # Time at genesis should be slot 0
-        time_at_genesis = genesis_time
-        slot_0 = (time_at_genesis - genesis_time) // SECONDS_PER_SLOT
-        assert slot_0 == Uint64(0)
-
-        # Time after one slot duration should be slot 1
-        time_after_one_slot = genesis_time + SECONDS_PER_SLOT
-        slot_1 = (time_after_one_slot - genesis_time) // SECONDS_PER_SLOT
-        assert slot_1 == Uint64(1)
-
-        # Time after multiple slots
-        time_after_five_slots = genesis_time + Uint64(5) * SECONDS_PER_SLOT
-        slot_5 = (time_after_five_slots - genesis_time) // SECONDS_PER_SLOT
-        assert slot_5 == Uint64(5)
-
-    def test_interval_calculations(self) -> None:
-        """Test interval calculations within slots."""
-        from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
-
-        # Test interval arithmetic
-        total_intervals = Uint64(10)
-        slot_number = total_intervals // INTERVALS_PER_SLOT
-        interval_in_slot = total_intervals % INTERVALS_PER_SLOT
-
-        # 10 intervals with 4 intervals per slot = slot 2, interval 2
-        assert slot_number == Uint64(2)
-        assert interval_in_slot == Uint64(2)
-
-        # Test boundary cases
-        boundary_intervals = INTERVALS_PER_SLOT
-        boundary_slot = boundary_intervals // INTERVALS_PER_SLOT
-        boundary_interval = boundary_intervals % INTERVALS_PER_SLOT
-
-        assert boundary_slot == Uint64(1)  # Start of next slot
-        assert boundary_interval == Uint64(0)  # First interval of slot
 
 
 class TestAttestationProcessingTiming:
