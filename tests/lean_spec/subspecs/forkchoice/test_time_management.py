@@ -1,7 +1,10 @@
 """Tests for time advancement, intervals, and slot management."""
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
+from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers import (
     Block,
     BlockBody,
@@ -64,23 +67,12 @@ def sample_store(sample_config: Config) -> Store:
 class TestGetForkchoiceStore:
     """Test Store.get_forkchoice_store() time initialization."""
 
-    @pytest.mark.parametrize(
-        "anchor_slot,expected_time",
-        [
-            # store.time = anchor_slot * INTERVALS_PER_SLOT
-            # With INTERVALS_PER_SLOT=4:
-            (0, 0),
-            (1, 4),
-            (2, 8),
-            (5, 20),
-            (10, 40),
-            (25, 100),
-        ],
-    )
-    def test_store_time_from_anchor_slot(self, anchor_slot: int, expected_time: int) -> None:
+    @settings(max_examples=100)
+    @given(anchor_slot=st.integers(min_value=0, max_value=10000))
+    def test_store_time_from_anchor_slot(self, anchor_slot: int) -> None:
         """get_forkchoice_store sets time = anchor_slot * INTERVALS_PER_SLOT."""
-        # Must creates its own state and block even though it's very similar to sample_store()
-        # because sample_store() bypasses the Store constructor with hardcoded time.
+        # Must create its own state and block instead of using sample_store()
+        # because sample_store() bypasses get_forkchoice_store() with hardcoded time.
         state = State.generate_genesis(
             genesis_time=Uint64(1000),
             validators=Validators(data=[]),
@@ -98,7 +90,7 @@ class TestGetForkchoiceStore:
 
         store = Store.get_forkchoice_store(state=state, anchor_block=anchor_block)
 
-        assert store.time == Uint64(expected_time)
+        assert store.time == INTERVALS_PER_SLOT * Uint64(anchor_slot)
 
 
 class TestOnTick:
