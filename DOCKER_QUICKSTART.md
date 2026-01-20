@@ -144,18 +144,6 @@ docker run --rm \
 | `NODE_ID` | Node identifier for validator assignment | `lean_spec_0` | No |
 | `VERBOSE` | Enable debug logging (`true`/`false`) | `false` | No |
 
-## Docker Compose
-
-See `docker-compose.example.yml` for a complete example configuration.
-
-Copy and customize:
-
-```bash
-cp docker-compose.example.yml docker-compose.yml
-# Edit docker-compose.yml to set your paths
-docker compose up lean-spec-node-basic
-```
-
 ## Troubleshooting
 
 ### Error: "GENESIS_FILE environment variable is required"

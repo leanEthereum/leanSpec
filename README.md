@@ -346,48 +346,6 @@ docker run --rm -it lean-spec:dev
 docker run --rm -it -v $(pwd):/app lean-spec:dev
 ```
 
-### Docker Compose (Optional)
-
-For convenience, you can create a `docker-compose.yml`:
-
-```yaml
-services:
-  # Test runner
-  lean-spec-test:
-    build:
-      context: .
-      target: runtime
-    volumes:
-      - .:/app
-    command: uv run pytest -n auto
-
-  # Consensus node
-  lean-spec-node:
-    build:
-      context: .
-      target: node
-    ports:
-      - "9000:9000"
-    volumes:
-      - ./genesis:/app/data
-    environment:
-      GENESIS_FILE: /app/data/genesis-lean-spec.json
-      BOOTNODE: /ip4/127.0.0.1/tcp/9001
-      NODE_ID: zeam_0
-      VALIDATOR_KEYS_PATH: /app/data
-      VERBOSE: "true"
-```
-
-Then run with:
-
-```bash
-# Run tests
-docker compose run --rm lean-spec-test
-
-# Run node
-docker compose up lean-spec-node
-```
-
 ## Documentation
 
 - **[DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md)** - Complete Docker deployment guide with examples

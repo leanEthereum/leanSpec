@@ -62,6 +62,4 @@ scripts/
 .cursor/
 
 # Docker files
-docker-compose.yml
-docker-compose.example.yml
 DOCKER_QUICKSTART.md
