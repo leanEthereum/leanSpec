@@ -22,17 +22,14 @@ docker build --target development -t lean-spec:dev .
 
 ## Genesis File Format
 
-The node expects a JSON genesis file with this format:
+The node expects a YAML genesis file (`config.yaml`) with this format:
 
-```json
-{
-    "GENESIS_TIME": 1766620797,
-    "GENESIS_VALIDATORS": [
-        "0xb4b1bd5c9e770811cfc54951ee396e0b423dd06a3d889a427cd28653d7f8a55eb161047b926bef60c6ed7231e38e9432e00e6547",
-        "0x10f8dd53e8ebbf36b4fc2b16bb9f5a30bf2aee6c3874c836a2060e32ed49f06704aa4b2a5cc86c533fb7d06fa1e73b69d9d98710",
-        ...
-    ]
-}
+```yaml
+GENESIS_TIME: 1766620797
+GENESIS_VALIDATORS:
+  - "0xb4b1bd5c9e770811cfc54951ee396e0b423dd06a3d889a427cd28653d7f8a55eb161047b926bef60c6ed7231e38e9432e00e6547"
+  - "0x10f8dd53e8ebbf36b4fc2b16bb9f5a30bf2aee6c3874c836a2060e32ed49f06704aa4b2a5cc86c533fb7d06fa1e73b69d9d98710"
+  # ... more validators
 ```
 
 ## Running Examples
@@ -44,7 +41,7 @@ Run a node that syncs but doesn't validate:
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -p 9000:9000 \
   lean-spec:node
 ```
@@ -56,7 +53,7 @@ Connect to an existing network:
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
   -p 9001:9001 \
   -e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9001 \
@@ -70,7 +67,7 @@ Run as a validator with keys:
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e VALIDATOR_KEYS_PATH=/app/data \
   -e NODE_ID=zeam_0 \
   -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
@@ -86,7 +83,7 @@ Fast sync from a finalized checkpoint:
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e CHECKPOINT_SYNC_URL=http://host.docker.internal:5052 \
   -e VALIDATOR_KEYS_PATH=/app/data \
   -e NODE_ID=zeam_0 \
@@ -102,7 +99,7 @@ Enable debug logs:
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e VERBOSE=true \
   -p 9000:9000 \
   lean-spec:node
@@ -116,7 +113,7 @@ If you have the lean-quickstart repo with generated genesis:
 # For local-devnet
 docker run --rm \
   -v /path/to/lean-quickstart/local-devnet/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e VALIDATOR_KEYS_PATH=/app/data \
   -e NODE_ID=zeam_0 \
   -p 9000:9000 \
@@ -125,7 +122,7 @@ docker run --rm \
 # For ansible-devnet
 docker run --rm \
   -v /path/to/lean-quickstart/ansible-devnet/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e VALIDATOR_KEYS_PATH=/app/data \
   -e NODE_ID=zeam_0 \
   -p 9000:9000 \
@@ -136,7 +133,7 @@ docker run --rm \
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `GENESIS_FILE` | Path to genesis JSON file | - | **Yes** |
+| `GENESIS_FILE` | Path to genesis YAML file (config.yaml) | - | **Yes** |
 | `BOOTNODE` | Bootnode address(es), comma-separated | - | No |
 | `LISTEN_ADDR` | Address to listen on | `/ip4/0.0.0.0/tcp/9000` | No |
 | `CHECKPOINT_SYNC_URL` | URL for checkpoint sync | - | No |

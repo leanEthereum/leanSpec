@@ -5,10 +5,10 @@ Run a minimal lean consensus client that can sync with other lean consensus node
 
 Usage::
 
-    python -m lean_spec --genesis genesis.json --bootnode /ip4/127.0.0.1/tcp/9000
-    python -m lean_spec --genesis genesis.json --bootnode enr:-IS4QHCYrYZbAKW...
-    python -m lean_spec --genesis genesis.json --checkpoint-sync-url http://localhost:5052
-    python -m lean_spec --genesis genesis.json --validator-keys ./keys --node-id lean_spec_0
+    python -m lean_spec --genesis config.yaml --bootnode /ip4/127.0.0.1/tcp/9000
+    python -m lean_spec --genesis config.yaml --bootnode enr:-IS4QHCYrYZbAKW...
+    python -m lean_spec --genesis config.yaml --checkpoint-sync-url http://localhost:5052
+    python -m lean_spec --genesis config.yaml --validator-keys ./keys --node-id lean_spec_0
 
 Options:
     --genesis              Path to genesis YAML file (required)

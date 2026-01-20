@@ -221,7 +221,7 @@ def test_withdrawal_amount_above_uint64_max():
 | Serve docs                                    | `uv run mkdocs serve`                                  |
 | Run everything (checks + tests + docs)        | `uvx tox`                                              |
 | Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                                |
-| Run consensus node                            | `uv run python -m lean_spec --genesis genesis.json`    |
+| Run consensus node                            | `uv run python -m lean_spec --genesis config.yaml`     |
 | Build Docker test image                       | `docker build -t lean-spec:test .`                     |
 | Build Docker node image                       | `docker build --target node -t lean-spec:node .`       |
 | Run tests in Docker                           | `docker run --rm lean-spec:test`                       |
@@ -270,14 +270,14 @@ The `node` image is configured via environment variables:
 # Basic node with genesis file
 docker run --rm \
   -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -p 9000:9000 \
   lean-spec:node
 
 # Node with bootnode
 docker run --rm \
   -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
   -p 9000:9000 \
   lean-spec:node
@@ -285,14 +285,14 @@ docker run --rm \
 # Multiple bootnodes (comma-separated)
 docker run --rm \
   -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e BOOTNODE="/ip4/127.0.0.1/tcp/9000,/ip4/192.168.1.10/tcp/9000" \
   lean-spec:node
 
 # Validator node with keys
 docker run --rm \
   -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e VALIDATOR_KEYS_PATH=/app/data \
   -e NODE_ID=zeam_0 \
   -p 9000:9000 \
@@ -301,7 +301,7 @@ docker run --rm \
 # With checkpoint sync (fast startup)
 docker run --rm \
   -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e CHECKPOINT_SYNC_URL=http://host.docker.internal:5052 \
   -e VALIDATOR_KEYS_PATH=/app/data \
   -e NODE_ID=zeam_0 \
@@ -311,14 +311,14 @@ docker run --rm \
 # Verbose logging
 docker run --rm \
   -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e VERBOSE=true \
   lean-spec:node
 
 # Custom listen address
 docker run --rm \
   -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e GENESIS_FILE=/app/data/config.yaml \
   -e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9010 \
   -p 9010:9010 \
   lean-spec:node
@@ -328,7 +328,7 @@ docker run --rm \
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `GENESIS_FILE` | Path to genesis JSON file | - | Yes |
+| `GENESIS_FILE` | Path to genesis YAML file (config.yaml) | - | Yes |
 | `BOOTNODE` | Bootnode address(es), comma-separated for multiple | - | No |
 | `LISTEN_ADDR` | Address to listen on | `/ip4/0.0.0.0/tcp/9000` | No |
 | `CHECKPOINT_SYNC_URL` | URL for checkpoint sync | - | No |
