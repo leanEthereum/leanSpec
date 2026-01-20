@@ -6,10 +6,10 @@ The registry supports two YAML files:
 
 1. **validators.yaml** - Maps node IDs to validator indices:
 
-       ream_0:
+       lean_spec_0:
        - 0
        - 1
-       zeam_0:
+       lean_spec_1:
        - 2
 
 2. **validator-keys-manifest.yaml** - Contains key metadata and file paths:

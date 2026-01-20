@@ -2,7 +2,13 @@
 
 The Lean Ethereum protocol specifications and cryptographic subspecifications.
 
+> **🐳 Running with Docker?** Skip the setup and jump to [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for containerized deployment examples.
+
 ## Quick Start
+
+**New to lean_spec?** Choose your path:
+- **Local development**: Follow the instructions below
+- **Docker deployment**: See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for running as a consensus node
 
 ### Prerequisites
 
@@ -203,18 +209,189 @@ def test_withdrawal_amount_above_uint64_max():
 
 ## Common Commands Reference
 
-| Task                                          | Command                   |
-|-----------------------------------------------|---------------------------|
-| Install and sync project and dev dependencies | `uv sync`                 |
-| Run tests                                     | `uv run pytest ...`       |
-| Format code                                   | `uv run ruff format`      |
-| Lint code                                     | `uv run ruff check`       |
-| Fix lint errors                               | `uv run ruff check --fix` |
-| Type check                                    | `uv run ty check`         |
-| Build docs                                    | `uv run mkdocs build`     |
-| Serve docs                                    | `uv run mkdocs serve`     |
-| Run everything (checks + tests + docs)        | `uvx tox`                 |
-| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`   |
+| Task                                          | Command                                                |
+|-----------------------------------------------|--------------------------------------------------------|
+| Install and sync project and dev dependencies | `uv sync`                                              |
+| Run tests                                     | `uv run pytest ...`                                    |
+| Format code                                   | `uv run ruff format`                                   |
+| Lint code                                     | `uv run ruff check`                                    |
+| Fix lint errors                               | `uv run ruff check --fix`                              |
+| Type check                                    | `uv run ty check`                                      |
+| Build docs                                    | `uv run mkdocs build`                                  |
+| Serve docs                                    | `uv run mkdocs serve`                                  |
+| Run everything (checks + tests + docs)        | `uvx tox`                                              |
+| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                                |
+| Run consensus node                            | `uv run python -m lean_spec --genesis genesis.json`    |
+| Build Docker test image                       | `docker build -t lean-spec:test .`                     |
+| Build Docker node image                       | `docker build --target node -t lean-spec:node .`       |
+| Run tests in Docker                           | `docker run --rm lean-spec:test`                       |
+| Run node in Docker                            | `docker run --rm -e GENESIS_FILE=... lean-spec:node`   |
+| Dev shell in Docker                           | `docker run --rm -it lean-spec:dev`                    |
+
+## Docker
+
+> **🚀 Quick Start**: New to Docker? See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for:
+> - Step-by-step deployment examples
+> - Running as a validator node
+> - Checkpoint sync configuration
+> - Troubleshooting common issues
+
+### Building the Docker Image
+
+```bash
+# Build the test runtime image (default, for running tests)
+docker build -t lean-spec:test .
+
+# Build the node image (for running as a consensus node)
+docker build --target node -t lean-spec:node .
+
+# Build the development image (includes all dev tools)
+docker build --target development -t lean-spec:dev .
+```
+
+### Running Tests with Docker
+
+```bash
+# Run tests (default command for 'test' target)
+docker run --rm lean-spec:test
+
+# Run tests in parallel
+docker run --rm lean-spec:test uv run pytest -n auto
+
+# Run the fill command
+docker run --rm lean-spec:test uv run fill --clean --fork=devnet
+```
+
+### Running a Consensus Node with Docker
+
+The `node` image is configured via environment variables:
+
+```bash
+# Basic node with genesis file
+docker run --rm \
+  -v /path/to/genesis:/app/data \
+  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -p 9000:9000 \
+  lean-spec:node
+
+# Node with bootnode
+docker run --rm \
+  -v /path/to/genesis:/app/data \
+  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
+  -p 9000:9000 \
+  lean-spec:node
+
+# Multiple bootnodes (comma-separated)
+docker run --rm \
+  -v /path/to/genesis:/app/data \
+  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e BOOTNODE="/ip4/127.0.0.1/tcp/9000,/ip4/192.168.1.10/tcp/9000" \
+  lean-spec:node
+
+# Validator node with keys
+docker run --rm \
+  -v /path/to/genesis:/app/data \
+  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e VALIDATOR_KEYS_PATH=/app/data \
+  -e NODE_ID=zeam_0 \
+  -p 9000:9000 \
+  lean-spec:node
+
+# With checkpoint sync (fast startup)
+docker run --rm \
+  -v /path/to/genesis:/app/data \
+  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e CHECKPOINT_SYNC_URL=http://host.docker.internal:5052 \
+  -e VALIDATOR_KEYS_PATH=/app/data \
+  -e NODE_ID=zeam_0 \
+  -p 9000:9000 \
+  lean-spec:node
+
+# Verbose logging
+docker run --rm \
+  -v /path/to/genesis:/app/data \
+  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e VERBOSE=true \
+  lean-spec:node
+
+# Custom listen address
+docker run --rm \
+  -v /path/to/genesis:/app/data \
+  -e GENESIS_FILE=/app/data/genesis-lean-spec.json \
+  -e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9010 \
+  -p 9010:9010 \
+  lean-spec:node
+```
+
+#### Environment Variables for Node
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `GENESIS_FILE` | Path to genesis JSON file | - | Yes |
+| `BOOTNODE` | Bootnode address(es), comma-separated for multiple | - | No |
+| `LISTEN_ADDR` | Address to listen on | `/ip4/0.0.0.0/tcp/9000` | No |
+| `CHECKPOINT_SYNC_URL` | URL for checkpoint sync | - | No |
+| `VALIDATOR_KEYS_PATH` | Path to validator keys directory | - | No |
+| `NODE_ID` | Node identifier for validator assignment | `lean_spec_0` | No |
+| `VERBOSE` | Enable debug logging (true/false) | - | No |
+
+### Development with Docker
+
+```bash
+# Interactive development shell
+docker run --rm -it lean-spec:dev
+
+# Mount local directory for development
+docker run --rm -it -v $(pwd):/app lean-spec:dev
+```
+
+### Docker Compose (Optional)
+
+For convenience, you can create a `docker-compose.yml`:
+
+```yaml
+services:
+  # Test runner
+  lean-spec-test:
+    build:
+      context: .
+      target: runtime
+    volumes:
+      - .:/app
+    command: uv run pytest -n auto
+
+  # Consensus node
+  lean-spec-node:
+    build:
+      context: .
+      target: node
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./genesis:/app/data
+    environment:
+      GENESIS_FILE: /app/data/genesis-lean-spec.json
+      BOOTNODE: /ip4/127.0.0.1/tcp/9001
+      NODE_ID: zeam_0
+      VALIDATOR_KEYS_PATH: /app/data
+      VERBOSE: "true"
+```
+
+Then run with:
+
+```bash
+# Run tests
+docker compose run --rm lean-spec-test
+
+# Run node
+docker compose up lean-spec-node
+```
+
+## Documentation
+
+- **[DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md)** - Complete Docker deployment guide with examples
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
 
 ## Contributing
 

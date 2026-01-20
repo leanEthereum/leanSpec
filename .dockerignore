@@ -1,0 +1,67 @@
+# Git
+.git/
+.gitignore
+.github/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.uv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing/Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+coverage.xml
+
+# Documentation
+docs/_build/
+site/
+
+# Caches
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated fixtures
+fixtures/
+
+# Local development
+*.log
+scripts/
+
+# Claude/Cursor config
+.claude/
+.cursor/
+
+# Docker files
+docker-compose.yml
+docker-compose.example.yml
+DOCKER_QUICKSTART.md

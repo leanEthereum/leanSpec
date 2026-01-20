@@ -5,10 +5,10 @@ Run a minimal lean consensus client that can sync with other lean consensus node
 
 Usage::
 
-    python -m lean_spec --genesis config.yaml --bootnode /ip4/127.0.0.1/tcp/9000
-    python -m lean_spec --genesis config.yaml --bootnode enr:-IS4QHCYrYZbAKW...
-    python -m lean_spec --genesis config.yaml --checkpoint-sync-url http://localhost:5052
-    python -m lean_spec --genesis config.yaml --validator-keys ./keys --node-id node_0
+    python -m lean_spec --genesis genesis.json --bootnode /ip4/127.0.0.1/tcp/9000
+    python -m lean_spec --genesis genesis.json --bootnode enr:-IS4QHCYrYZbAKW...
+    python -m lean_spec --genesis genesis.json --checkpoint-sync-url http://localhost:5052
+    python -m lean_spec --genesis genesis.json --validator-keys ./keys --node-id lean_spec_0
 
 Options:
     --genesis              Path to genesis YAML file (required)
@@ -16,7 +16,7 @@ Options:
     --listen               Address to listen on (default: /ip4/0.0.0.0/tcp/9001)
     --checkpoint-sync-url  URL to fetch finalized checkpoint state for fast sync
     --validator-keys       Path to validator keys directory
-    --node-id              Node identifier for validator assignment (default: node_0)
+    --node-id              Node identifier for validator assignment (default: lean_spec_0)
 """
 
 from __future__ import annotations
@@ -377,7 +377,7 @@ async def run_node(
     listen_addr: str,
     checkpoint_sync_url: str | None = None,
     validator_keys_path: Path | None = None,
-    node_id: str = "node_0",
+    node_id: str = "lean_spec_0",
     genesis_time_now: bool = False,
 ) -> None:
     """
@@ -607,8 +607,8 @@ def main() -> None:
     parser.add_argument(
         "--node-id",
         type=str,
-        default="node_0",
-        help="Node identifier for validator assignment (default: node_0)",
+        default="lean_spec_0",
+        help="Node identifier for validator assignment (default: lean_spec_0)",
     )
     parser.add_argument(
         "-v",
