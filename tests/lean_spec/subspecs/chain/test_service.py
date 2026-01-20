@@ -19,7 +19,10 @@ class MockStore:
     time: Uint64 = field(default_factory=lambda: Uint64(0))
     tick_calls: list[tuple[Uint64, bool]] = field(default_factory=list)
     head: Any = field(default_factory=lambda: b"\x00" * 32)  # Mock head hash
-    latest_finalized: Any = field(default_factory=lambda: type('obj', (object,), {'slot': Uint64(0)})())
+    # Mock finalized checkpoint with slot attribute
+    latest_finalized: Any = field(
+        default_factory=lambda: type('obj', (object,), {'slot': Uint64(0)})()
+    )
 
     def on_tick(self, time: Uint64, has_proposal: bool) -> "MockStore":
         """Record the tick call and return a new store."""
