@@ -140,18 +140,12 @@ class ChainService:
             seconds_since_genesis = int(current_time - self.clock.genesis_time)
             # 4 intervals per slot
             current_slot = seconds_since_genesis // (int(SECONDS_PER_INTERVAL) * 4)
-            current_interval = int(
-                (current_time - self.clock.genesis_time) // SECONDS_PER_INTERVAL
-            )
+            current_interval = int((current_time - self.clock.genesis_time) // SECONDS_PER_INTERVAL)
 
             # Get head and finalized info (defensive for testing/mocking)
-            head_str = (
-                new_store.head.hex()[:16] if hasattr(new_store, "head") else "unknown"
-            )
+            head_str = new_store.head.hex()[:16] if hasattr(new_store, "head") else "unknown"
             finalized_slot = (
-                new_store.latest_finalized.slot
-                if hasattr(new_store, "latest_finalized")
-                else 0
+                new_store.latest_finalized.slot if hasattr(new_store, "latest_finalized") else 0
             )
 
             logger.info(

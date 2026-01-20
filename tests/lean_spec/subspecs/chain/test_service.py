@@ -21,7 +21,7 @@ class MockStore:
     head: Any = field(default_factory=lambda: b"\x00" * 32)  # Mock head hash
     # Mock finalized checkpoint with slot attribute
     latest_finalized: Any = field(
-        default_factory=lambda: type('obj', (object,), {'slot': Uint64(0)})()
+        default_factory=lambda: type("obj", (object,), {"slot": Uint64(0)})()
     )
 
     def on_tick(self, time: Uint64, has_proposal: bool) -> "MockStore":
@@ -30,7 +30,7 @@ class MockStore:
             time=time,
             tick_calls=list(self.tick_calls),
             head=self.head,
-            latest_finalized=self.latest_finalized
+            latest_finalized=self.latest_finalized,
         )
         new_store.tick_calls.append((time, has_proposal))
         return new_store
