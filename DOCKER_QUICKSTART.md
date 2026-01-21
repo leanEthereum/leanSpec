@@ -69,7 +69,7 @@ docker run --rm \
   -v /path/to/genesis:/app/data:ro \
   -e GENESIS_FILE=/app/data/config.yaml \
   -e VALIDATOR_KEYS_PATH=/app/data \
-  -e NODE_ID=zeam_0 \
+  -e NODE_ID=lean_spec_0 \
   -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
   -p 9010:9010 \
   -e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9010 \
