@@ -182,7 +182,7 @@ class TestJustifiedEndpoint:
                     assert response.status_code == 200
                     assert "application/json" in response.headers["content-type"]
 
-                    # Verify JSON structure
+                    # Verify JSON structure and types
                     data = response.json()
                     assert "slot" in data
                     assert "root" in data
@@ -190,6 +190,10 @@ class TestJustifiedEndpoint:
                     assert isinstance(data["root"], str)
                     # Root should be a hex string
                     assert len(data["root"]) == 64  # 32 bytes * 2 hex chars
+
+                    # Verify actual values match the store's latest justified checkpoint
+                    assert data["slot"] == int(base_store.latest_justified.slot)
+                    assert data["root"] == base_store.latest_justified.root.hex()
 
             finally:
                 server.stop()
