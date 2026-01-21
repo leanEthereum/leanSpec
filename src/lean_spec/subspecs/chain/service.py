@@ -140,7 +140,9 @@ class ChainService:
             current_slot = int(self.clock.current_slot())
             current_interval = int(self.clock.total_intervals())
 
-            # Get head and finalized info (defensive for testing/mocking)
+            # Get head and finalized info for logging (defensive for testing/mocking).
+            # Truncate head hash to 16 hex chars (8 bytes) for log readability -
+            # sufficient for identification while keeping logs concise.
             head_str = new_store.head.hex()[:16] if hasattr(new_store, "head") else "unknown"
             finalized_slot = (
                 new_store.latest_finalized.slot if hasattr(new_store, "latest_finalized") else 0
