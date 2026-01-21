@@ -6,7 +6,7 @@ The Lean Ethereum protocol specifications and cryptographic subspecifications.
 
 ## Quick Start
 
-**New to lean_spec?** Choose your path:
+**New to leanSpec?** Choose your path:
 - **Local development**: Follow the instructions below
 - **Docker deployment**: See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for running as a consensus node
 
