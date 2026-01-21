@@ -264,87 +264,26 @@ docker run --rm lean-spec:test uv run fill --clean --fork=devnet
 
 ### Running a Consensus Node with Docker
 
-The `node` image is configured via environment variables:
+Pass CLI arguments directly to the node:
 
 ```bash
-# Basic node with genesis file
+# Basic node
 docker run --rm \
-  -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/config.yaml \
+  -v /path/to/genesis:/app/data:ro \
   -p 9000:9000 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml
 
-# Node with bootnode
+# With bootnode
 docker run --rm \
-  -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
+  -v /path/to/genesis:/app/data:ro \
   -p 9000:9000 \
-  lean-spec:node
-
-# Multiple bootnodes (comma-separated)
-docker run --rm \
-  -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e BOOTNODE="/ip4/127.0.0.1/tcp/9000,/ip4/192.168.1.10/tcp/9000" \
-  lean-spec:node
-
-# Validator node with keys
-docker run --rm \
-  -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e VALIDATOR_KEYS_PATH=/app/data \
-  -e NODE_ID=zeam_0 \
-  -p 9000:9000 \
-  lean-spec:node
-
-# With checkpoint sync (fast startup)
-docker run --rm \
-  -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e CHECKPOINT_SYNC_URL=http://host.docker.internal:5052 \
-  -e VALIDATOR_KEYS_PATH=/app/data \
-  -e NODE_ID=zeam_0 \
-  -p 9000:9000 \
-  lean-spec:node
-
-# Verbose logging
-docker run --rm \
-  -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e VERBOSE=true \
-  lean-spec:node
-
-# Custom listen address
-docker run --rm \
-  -v /path/to/genesis:/app/data \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9010 \
-  -p 9010:9010 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --bootnode /ip4/127.0.0.1/tcp/9000
 ```
 
-#### Environment Variables for Node
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `GENESIS_FILE` | Path to genesis YAML file (config.yaml) | - | Yes |
-| `BOOTNODE` | Bootnode address(es), comma-separated for multiple | - | No |
-| `LISTEN_ADDR` | Address to listen on | `/ip4/0.0.0.0/tcp/9000` | No |
-| `CHECKPOINT_SYNC_URL` | URL for checkpoint sync | - | No |
-| `VALIDATOR_KEYS_PATH` | Path to validator keys directory | - | No |
-| `NODE_ID` | Node identifier for validator assignment | `lean_spec_0` | No |
-| `VERBOSE` | Enable debug logging (true/false) | - | No |
-
-### Development with Docker
-
-```bash
-# Interactive development shell
-docker run --rm -it lean-spec:dev
-
-# Mount local directory for development
-docker run --rm -it -v $(pwd):/app lean-spec:dev
-```
+See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for more examples including validator nodes, checkpoint sync, and troubleshooting.
 
 ## Documentation
 
