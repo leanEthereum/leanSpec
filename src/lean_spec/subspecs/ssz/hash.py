@@ -1,7 +1,12 @@
-"""
-SSZ Merkleization entry point (`hash_tree_root`).
+"""SSZ Merkleization entry point.
 
-This module exposes a `hash_tree_root(value: object) -> Bytes32` singledispatch function.
+Computes Merkle roots for SSZ types.
+
+Handles:
+
+- Basic types: pack into chunks
+- Composite types: merkleize child roots
+- Variable-size types: mix in length
 """
 
 from __future__ import annotations
@@ -9,7 +14,7 @@ from __future__ import annotations
 from functools import singledispatch
 from math import ceil
 
-from lean_spec.subspecs.ssz.constants import BYTES_PER_CHUNK
+from lean_spec.subspecs.ssz.constants import BITS_PER_CHUNK, BYTES_PER_CHUNK
 from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.byte_arrays import BaseByteList, BaseBytes, Bytes32
@@ -27,20 +32,19 @@ from .pack import pack_bits, pack_bytes
 
 @singledispatch
 def hash_tree_root(value: object) -> Bytes32:
-    """
-    Compute `hash_tree_root(value)` for SSZ values.
+    """Compute the Merkle root for an SSZ value.
 
-    Concrete specializations are registered below with `@hash_tree_root.register(Type)`.
+    Dispatches to type-specific implementations.
 
     Raises:
-        TypeError: If `value` has no registered specialization.
+        TypeError: If the value type has no registered implementation.
     """
     raise TypeError(f"hash_tree_root: unsupported value type {type(value).__name__}")
 
 
 @hash_tree_root.register
 def _htr_uint(value: BaseUint) -> Bytes32:
-    """Basic scalars merkleize as `merkleize(pack(bytes))`."""
+    """Basic scalars: pack bytes into chunks and merkleize."""
     return merkleize(pack_bytes(value.encode_bytes()))
 
 
@@ -81,17 +85,15 @@ def _htr_bytelist(value: BaseByteList) -> Bytes32:
 
 @hash_tree_root.register
 def _htr_bitvector_base(value: BaseBitvector) -> Bytes32:
-    # Compute limit in chunks: (nbits + 255) // 256
-    limit = (type(value).LENGTH + 255) // 256
-    # Pack bits and merkleize with the computed limit
+    # Compute limit in chunks using ceiling division
+    limit = (type(value).LENGTH + BITS_PER_CHUNK - 1) // BITS_PER_CHUNK
     return merkleize(pack_bits(tuple(bool(b) for b in value.data)), limit=limit)
 
 
 @hash_tree_root.register
 def _htr_bitlist_base(value: BaseBitlist) -> Bytes32:
-    # Compute limit in chunks: (LIMIT + 255) // 256
-    limit = (type(value).LIMIT + 255) // 256
-    # Pack bits, merkleize, and mix in the length
+    # Compute limit in chunks using ceiling division
+    limit = (type(value).LIMIT + BITS_PER_CHUNK - 1) // BITS_PER_CHUNK
     return mix_in_length(
         merkleize(pack_bits(tuple(bool(b) for b in value.data)), limit=limit),
         len(value.data),

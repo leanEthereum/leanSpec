@@ -404,6 +404,9 @@ class State(Container):
         #       (block root) → [vote flags for validators 0..N-1]
         #
         # which makes the rest of the logic easier to express and understand.
+        assert not any(root == ZERO_HASH for root in self.justifications_roots), (
+            "zero hash is not allowed in justifications roots"
+        )
         justifications = (
             {
                 root: self.justifications_validators[
@@ -421,18 +424,17 @@ class State(Container):
         finalized_slot = latest_finalized.slot
         justified_slots = self.justified_slots
 
-        # Map roots to all slots where they appear.
+        # Map roots to their latest slot for pruning.
         #
-        # Missed slots produce duplicate zero hashes in history.
-        # During pruning, we must check all slot occurrences for each root.
-        # A single-slot mapping would fail when iterating over slots.
+        # Votes for zero hash are ignored, so we only need the most recent slot
+        # where a root appears to decide whether it is still unfinalized.
         start_slot = int(finalized_slot) + 1
-        root_to_slots: dict[Bytes32, list[Slot]] = {}
+        root_to_slot: dict[Bytes32, Slot] = {}
         for i in range(start_slot, len(self.historical_block_hashes)):
             root = self.historical_block_hashes[i]
-            if root not in root_to_slots:
-                root_to_slots[root] = []
-            root_to_slots[root].append(Slot(i))
+            slot = Slot(i)
+            if root not in root_to_slot or slot > root_to_slot[root]:
+                root_to_slot[root] = slot
 
         # Process each attestation independently
         #
@@ -457,6 +459,10 @@ class State(Container):
             # If a block is already justified, additional votes do not change anything.
             # We simply skip them.
             if justified_slots.is_slot_justified(finalized_slot, target.slot):
+                continue
+
+            # Ignore votes that reference zero-hash slots.
+            if source.root == ZERO_HASH or target.root == ZERO_HASH:
                 continue
 
             # Ensure the vote refers to blocks that actually exist on our chain
@@ -558,16 +564,18 @@ class State(Container):
                     # The state stores justified slot flags starting at (finalized_slot + 1),
                     # so when finalization advances by `delta`, we drop the first `delta` bits.
                     #
-                    # We also prune any pending justifications whose slots are now finalized.
-                    # A root may appear at multiple slots; keep the justification if ANY
-                    # slot for that root is still unfinalized (conservative approach).
+                    # We also prune any pending justifications whose latest slot
+                    # is now finalized (latest <= finalized_slot).
                     delta = int(finalized_slot - old_finalized_slot)
                     if delta > 0:
                         justified_slots = justified_slots.shift_window(delta)
+                        assert all(root in root_to_slot for root in justifications), (
+                            "Justification root missing from root_to_slot"
+                        )
                         justifications = {
                             root: votes
                             for root, votes in justifications.items()
-                            if any(slot > finalized_slot for slot in root_to_slots.get(root, []))
+                            if root_to_slot[root] > finalized_slot
                         }
 
         # Convert the vote structure back into SSZ format

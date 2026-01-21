@@ -56,6 +56,6 @@ class SlotClock:
         """
         Get total intervals elapsed since genesis.
 
-        This is the value expected by ``Store.time``.
+        This is the value expected by our store time type.
         """
         return self._seconds_since_genesis() // SECONDS_PER_INTERVAL

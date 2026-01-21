@@ -42,6 +42,13 @@ class TestCurrentSlot:
         clock = SlotClock(genesis_time=genesis, _time_fn=lambda: float(time))
         assert clock.current_slot() == Slot(3)
 
+    def test_at_slot_boundary_minus_one(self) -> None:
+        """Slot does not increment until boundary is reached."""
+        genesis = Uint64(1700000000)
+        time = genesis + SECONDS_PER_SLOT - Uint64(1)
+        clock = SlotClock(genesis_time=genesis, _time_fn=lambda: float(time))
+        assert clock.current_slot() == Slot(0)
+
 
 class TestCurrentInterval:
     """Tests for current_interval()."""
@@ -66,6 +73,19 @@ class TestCurrentInterval:
         time = genesis + SECONDS_PER_SLOT
         clock = SlotClock(genesis_time=genesis, _time_fn=lambda: float(time))
         assert clock.current_interval() == Interval(0)
+
+    def test_before_genesis(self) -> None:
+        """Interval is 0 before genesis."""
+        genesis = Uint64(1700000000)
+        clock = SlotClock(genesis_time=genesis, _time_fn=lambda: float(genesis - Uint64(100)))
+        assert clock.current_interval() == Interval(0)
+
+    def test_last_interval_of_slot(self) -> None:
+        """Last interval before slot boundary is INTERVALS_PER_SLOT - 1."""
+        genesis = Uint64(1700000000)
+        time = genesis + SECONDS_PER_SLOT - Uint64(1)
+        clock = SlotClock(genesis_time=genesis, _time_fn=lambda: float(time))
+        assert clock.current_interval() == Interval(int(INTERVALS_PER_SLOT) - 1)
 
 
 class TestTotalIntervals:

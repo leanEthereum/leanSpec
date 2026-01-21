@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import ChainService, SlotClock
-from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
+from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers import Block, BlockBody, State
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
@@ -300,7 +300,7 @@ class Node:
         # The store starts with just the head block and state.
         # Additional blocks can be loaded on demand or via sync.
         return Store(
-            time=Uint64(head_block.slot * SECONDS_PER_SLOT),
+            time=Uint64(head_block.slot * INTERVALS_PER_SLOT),
             config=head_state.config,
             head=head_root,
             safe_target=head_root,

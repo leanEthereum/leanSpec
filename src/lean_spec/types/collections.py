@@ -26,39 +26,15 @@ from .ssz_base import SSZModel, SSZType
 from .uint import Uint32
 
 T = TypeVar("T", bound=SSZType)
-"""
-Generic type parameter for SSZ collection elements.
+"""Generic type parameter for SSZ collection elements.
 
-This TypeVar enables proper static typing for collection access:
-
-- Bound to `SSZType` to ensure elements are valid SSZ types
-- Used with `Generic[T]` to parameterize `SSZVector` and `SSZList`
-- Allows type checkers to infer correct return types for `__getitem__`
-
-Example:
-    class Uint64Vector4(SSZVector[Uint64]):
-        LENGTH = 4
-
-    vec = Uint64Vector4(data=[...])
-    x = vec[0]  # Type checker infers `x: Uint64`
+Bound to SSZType to ensure elements are valid SSZ types.
+Enables type checkers to infer correct return types for indexed access.
 """
 
 
 def _extract_element_type_from_generic(cls: type, origin_class: type) -> type[SSZType] | None:
-    """
-    Extract ELEMENT_TYPE from Pydantic's generic metadata.
-
-    When a class inherits from `SSZVector[Uint64]` or `SSZList[Uint64]`,
-    Pydantic stores the type argument in `__pydantic_generic_metadata__`.
-    This helper extracts that type argument.
-
-    Args:
-        cls: The subclass being initialized.
-        origin_class: The generic base class (SSZVector or SSZList).
-
-    Returns:
-        The extracted element type, or None if not found.
-    """
+    """Extract ELEMENT_TYPE from Pydantic's generic metadata."""
     for base in cls.__bases__:
         metadata = getattr(base, "__pydantic_generic_metadata__", None)
         if metadata and metadata.get("origin") is origin_class:
@@ -69,20 +45,7 @@ def _extract_element_type_from_generic(cls: type, origin_class: type) -> type[SS
 
 
 def _serialize_ssz_elements_to_json(value: Sequence[Any]) -> list[Any]:
-    """
-    Serialize SSZ collection elements to JSON-compatible format.
-
-    Handles special cases:
-    - BaseBytes → hex string with 0x prefix
-    - Fp field elements → raw integer value
-    - Other SSZ types → pass through (rely on Pydantic serialization)
-
-    Args:
-        value: Sequence of SSZ elements to serialize.
-
-    Returns:
-        List of JSON-serializable values.
-    """
+    """Serialize SSZ collection elements to JSON-compatible format."""
     from lean_spec.subspecs.koalabear import Fp
 
     result: list[Any] = []
@@ -96,29 +59,43 @@ def _serialize_ssz_elements_to_json(value: Sequence[Any]) -> list[Any]:
     return result
 
 
-class SSZVector(SSZModel, Generic[T]):
+def _validate_offsets(offsets: list[int], scope: int, type_name: str) -> None:
+    """Validate offset table before processing elements.
+
+    Checks:
+
+    - Offsets are monotonically non-decreasing
+    - Final offset does not exceed scope
     """
-    Fixed-length, immutable SSZ sequence.
+    if not offsets:
+        return
 
-    An SSZ Vector contains exactly `LENGTH` elements of type `ELEMENT_TYPE`.
-    The length is fixed at the type level and cannot change at runtime.
+    for i in range(1, len(offsets)):
+        if offsets[i] < offsets[i - 1]:
+            raise SSZSerializationError(
+                f"{type_name}: offsets not monotonically increasing: "
+                f"{offsets[i - 1]} -> {offsets[i]}"
+            )
 
-    Subclasses must define:
-        LENGTH: The exact number of elements
+    if offsets[-1] > scope:
+        raise SSZSerializationError(
+            f"{type_name}: final offset {offsets[-1]} exceeds scope {scope}"
+        )
 
-    The ELEMENT_TYPE is automatically inferred from the generic parameter.
 
-    Example:
-        class Uint16Vector2(SSZVector[Uint16]):
-            LENGTH = 2
+class SSZVector(SSZModel, Generic[T]):
+    """Fixed-length, immutable SSZ sequence.
 
-        vec = Uint16Vector2(data=[Uint16(1), Uint16(2)])
-        assert len(vec) == 2
-        assert vec[0] == Uint16(1)  # Properly typed as Uint16
+    Contains exactly LENGTH elements of type ELEMENT_TYPE.
+    Length is fixed at the type level and cannot change at runtime.
 
-    SSZ Encoding:
-        - Fixed-size elements: Serialized back-to-back
-        - Variable-size elements: Offset table followed by element data
+    Subclasses must define LENGTH.
+    ELEMENT_TYPE is auto-inferred from the generic parameter.
+
+    SSZ encoding:
+
+    - Fixed-size elements: serialized back-to-back
+    - Variable-size elements: offset table followed by element data
     """
 
     ELEMENT_TYPE: ClassVar[type[SSZType]]
@@ -230,13 +207,11 @@ class SSZVector(SSZModel, Generic[T]):
                 int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH)) for _ in range(cls.LENGTH - 1)
             ]
             offsets.append(scope)
+            # Validate all offsets upfront before processing elements.
+            _validate_offsets(offsets, scope, cls.__name__)
             # Read each element's data from its calculated slice.
             for i in range(cls.LENGTH):
                 start, end = offsets[i], offsets[i + 1]
-                if start > end:
-                    raise SSZSerializationError(
-                        f"{cls.__name__}: invalid offsets start={start} > end={end}"
-                    )
                 elements.append(cls.ELEMENT_TYPE.deserialize(stream, end - start))
             return cls(data=elements)
 
@@ -283,29 +258,19 @@ class SSZVector(SSZModel, Generic[T]):
 
 
 class SSZList(SSZModel, Generic[T]):
-    """
-    Variable-length SSZ sequence with a maximum capacity.
+    """Variable-length SSZ sequence with a maximum capacity.
 
-    An SSZ List contains between 0 and `LIMIT` elements of type `ELEMENT_TYPE`.
-    Unlike Vector, the length can vary at runtime.
+    Contains between 0 and LIMIT elements of type ELEMENT_TYPE.
+    Unlike Vector, length can vary at runtime.
 
-    Subclasses must define:
-        LIMIT: The maximum number of elements allowed
+    Subclasses must define LIMIT.
+    ELEMENT_TYPE is auto-inferred from the generic parameter.
 
-    The ELEMENT_TYPE is automatically inferred from the generic parameter.
+    SSZ encoding:
 
-    Example:
-        class Uint64List32(SSZList[Uint64]):
-            LIMIT = 32
-
-        my_list = Uint64List32(data=[Uint64(1), Uint64(2)])
-        assert len(my_list) == 2
-        assert my_list[0] == Uint64(1)  # Properly typed as Uint64
-
-    SSZ Encoding:
-        - Fixed-size elements: Serialized back-to-back
-        - Variable-size elements: Offset table followed by element data
-        - Hash tree root includes the element count (mixed-in)
+    - Fixed-size elements: serialized back-to-back
+    - Variable-size elements: offset table followed by element data
+    - Hash tree root includes element count (mixed-in)
     """
 
     ELEMENT_TYPE: ClassVar[type[SSZType]]
@@ -454,15 +419,12 @@ class SSZList(SSZModel, Generic[T]):
                 int(Uint32.deserialize(stream, OFFSET_BYTE_LENGTH)) for _ in range(count - 1)
             ]
             offsets.append(scope)
-
+            # Validate all offsets upfront before processing elements.
+            _validate_offsets(offsets, scope, cls.__name__)
             # Read each element based on the calculated boundaries.
             elements = []
             for i in range(count):
                 start, end = offsets[i], offsets[i + 1]
-                if start > end:
-                    raise SSZSerializationError(
-                        f"{cls.__name__}: invalid offsets start={start} > end={end}"
-                    )
                 elements.append(cls.ELEMENT_TYPE.deserialize(stream, end - start))
 
             return cls(data=elements)

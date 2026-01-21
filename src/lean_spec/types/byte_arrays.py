@@ -255,12 +255,6 @@ class Bytes96(BaseBytes):
     LENGTH = 96
 
 
-class Bytes3116(BaseBytes):
-    """Fixed-size byte array of exactly 3116 bytes."""
-
-    LENGTH = 3116
-
-
 class BaseByteList(SSZModel):
     """
     Base class for specialized `ByteList[L]`.

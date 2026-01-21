@@ -28,61 +28,27 @@ SELECTOR_BYTE_SIZE: Final[int] = 1
 
 
 class SSZUnion(SSZModel):
-    """
-    Base class for SSZ Union types using clean inheritance pattern.
+    """Base class for SSZ Union types.
 
-    Union types represent tagged sum types (discriminated unions) that hold exactly
-    one value from a predefined set of SSZ types. This implementation uses clean
-    inheritance patterns similar to SSZVector and SSZList.
+    Represents tagged sum types (discriminated unions) holding exactly one value
+    from a predefined set of SSZ types.
 
-    ## Creating Union Types
+    Subclasses must define OPTIONS as a tuple of SSZ types (or None at index 0).
 
-    Inherit from SSZUnion and define the OPTIONS class variable:
+    Type safety:
 
-    ```python
-    class MyUnion(SSZUnion):
-        \"\"\"Union of numeric types.\"\"\"
-        OPTIONS = (Uint16, Uint32, Uint64)
-
-    class OptionalUnion(SSZUnion):
-        \"\"\"Optional union with None variant.\"\"\"
-        OPTIONS = (None, MyContainer)
-    ```
-
-    ## Instance Creation
-
-    Create instances using selector and value:
-
-    ```python
-    # Direct instantiation
-    instance = MyUnion(selector=1, value=Uint32(42))
-
-    # Pydantic-style creation
-    instance = MyUnion.model_validate({"selector": 1, "value": 42})
-    ```
-
-    ## Data Access
-
-    Access union data through direct fields:
-
-    ```python
-    assert instance.selector == 1
-    assert instance.selected_type == Uint32
-    assert instance.value == Uint32(42)
-    ```
-
-    ## Type Safety
-
-    - OPTIONS must be tuple of SSZType classes (or None at index 0)
     - Selector must be valid index into OPTIONS tuple
     - Values are validated and coerced to selected type
-    - Comprehensive error messages for invalid configurations
+    - None only allowed at index 0
+
+    SSZ encoding: selector byte followed by serialized value.
     """
 
     OPTIONS: ClassVar[Tuple[Type[SSZType] | None, ...]]
     """Tuple of possible types for this Union.
 
-    Each position corresponds to a selector index. Only index 0 may be None.
+    Each position corresponds to a selector index.
+    Only index 0 may be None.
     All non-None options must implement the SSZType protocol.
 
     Example:
