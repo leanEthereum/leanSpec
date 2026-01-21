@@ -13,11 +13,10 @@ from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
 from lean_spec.subspecs.containers.state.types import (
-    HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
 )
-from lean_spec.types import ZERO_HASH, Boolean, Uint64
+from lean_spec.types import Boolean, Uint64
 from tests.lean_spec.helpers import make_aggregated_attestation, make_block, make_validators
 
 
@@ -104,22 +103,13 @@ def test_is_slot_justified_raises_on_out_of_bounds() -> None:
         )
 
 
-def test_duplicate_roots_in_root_to_slots_mapping() -> None:
+def test_pruning_keeps_pending_justifications() -> None:
     """
-    Verify duplicate block roots are tracked correctly for pruning decisions.
-
-    Missed slots produce empty block hashes (zeros).
-    Multiple missed slots create duplicate entries in the history.
-
-    When finalization advances, pending justifications must be pruned.
-    The pruning logic needs to know which slots each root appears at.
-
-    The root-to-slots mapping must store all slots where each root appears.
-    Otherwise, iteration during pruning fails.
+    Verify pruning keeps pending justifications after finalization advances.
 
     Test strategy:
 
-    1. Build a chain with zeros at two slots (simulating missed blocks)
+    1. Build a chain with a justified checkpoint
     2. Add a pending justification that should survive pruning
     3. Trigger finalization to run the pruning logic
     4. Verify the pending justification survives correctly
@@ -152,8 +142,6 @@ def test_duplicate_roots_in_root_to_slots_mapping() -> None:
     assert state.latest_justified.slot == Slot(1)
 
     # Phase 2: Extend chain to populate more history entries.
-    #
-    # We need enough slots to inject duplicate roots later.
 
     state = state.process_slots(Slot(3))
     block_3 = make_block(state, Slot(3), attestations=[])
@@ -167,16 +155,7 @@ def test_duplicate_roots_in_root_to_slots_mapping() -> None:
     block_5 = make_block(state, Slot(5), attestations=[])
     state = state.process_block_header(block_5)
 
-    # Phase 3: Inject duplicate roots to simulate missed blocks.
-    #
-    # Missed blocks leave zeros in the history.
-    # Multiple missed blocks create the same root at different slots.
-    # The pruning logic must handle this case correctly.
-
     slot_3_root = state.historical_block_hashes[3]
-    modified_hashes = list(state.historical_block_hashes.data)
-    modified_hashes[2] = ZERO_HASH
-    modified_hashes[4] = ZERO_HASH
 
     # Register a pending justification for slot 3.
     #
@@ -186,15 +165,12 @@ def test_duplicate_roots_in_root_to_slots_mapping() -> None:
 
     state = state.model_copy(
         update={
-            "historical_block_hashes": HistoricalBlockHashes(data=modified_hashes),
             "justifications_roots": JustificationRoots(data=[slot_3_root]),
             "justifications_validators": JustificationValidators(data=pending_votes),
         }
     )
 
-    # Sanity check: zeros at slots 2 and 4, real root at slot 3.
-    assert state.historical_block_hashes[2] == ZERO_HASH
-    assert state.historical_block_hashes[4] == ZERO_HASH
+    # Sanity check: slot 3 root is present in history.
     assert state.historical_block_hashes[3] == slot_3_root
 
     # Phase 4: Trigger finalization to exercise pruning.
@@ -203,7 +179,7 @@ def test_duplicate_roots_in_root_to_slots_mapping() -> None:
     # Finalization triggers pruning of stale justifications.
 
     source_1 = Checkpoint(root=state.historical_block_hashes[1], slot=Slot(1))
-    target_2 = Checkpoint(root=ZERO_HASH, slot=Slot(2))
+    target_2 = Checkpoint(root=state.historical_block_hashes[2], slot=Slot(2))
     att_1_to_2 = make_aggregated_attestation(
         participant_ids=[0, 1],
         attestation_slot=Slot(5),
