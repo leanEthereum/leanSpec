@@ -404,9 +404,9 @@ class State(Container):
         #       (block root) → [vote flags for validators 0..N-1]
         #
         # which makes the rest of the logic easier to express and understand.
-        assert not any(
-            root == ZERO_HASH for root in self.justifications_roots
-        ), "zero hash is not allowed in justifications roots"
+        assert not any(root == ZERO_HASH for root in self.justifications_roots), (
+            "zero hash is not allowed in justifications roots"
+        )
         justifications = (
             {
                 root: self.justifications_validators[
@@ -569,9 +569,9 @@ class State(Container):
                     delta = int(finalized_slot - old_finalized_slot)
                     if delta > 0:
                         justified_slots = justified_slots.shift_window(delta)
-                        assert all(
-                            root in root_to_slot for root in justifications
-                        ), "Justification root missing from root_to_slot"
+                        assert all(root in root_to_slot for root in justifications), (
+                            "Justification root missing from root_to_slot"
+                        )
                         justifications = {
                             root: votes
                             for root, votes in justifications.items()
