@@ -426,7 +426,7 @@ class State(Container):
 
         # Map roots to their latest slot for pruning.
         #
-        # Votes for ZERO_HASH are ignored, so we only need the most recent slot
+        # Votes for zero hash are ignored, so we only need the most recent slot
         # where a root appears to decide whether it is still unfinalized.
         start_slot = int(finalized_slot) + 1
         root_to_slot: dict[Bytes32, Slot] = {}
