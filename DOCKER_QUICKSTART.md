@@ -147,10 +147,6 @@ docker run --rm \
 
 Make sure you're setting the `-e GENESIS_FILE=...` environment variable.
 
-### Error: "License file does not exist"
-
-You may need to rebuild the image. The Dockerfile now includes LICENSE and README.md.
-
 ### Can't connect to bootnode
 
 - Check that the bootnode is reachable from the container
