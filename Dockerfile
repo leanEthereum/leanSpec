@@ -59,7 +59,9 @@ USER leanspec
 
 WORKDIR /app
 
-# Copy the virtual environment and source from builder
+# Copy the virtual environment from builder stage.
+# This is safe because both stages use the same Python base image (python:3.12-slim),
+# same architecture, and same paths. Avoids reinstalling dependencies in runtime stage.
 COPY --from=builder --chown=leanspec:leanspec /app/.venv /app/.venv
 COPY --from=builder --chown=leanspec:leanspec /app/src /app/src
 COPY --from=builder --chown=leanspec:leanspec /app/tests /app/tests
@@ -95,7 +97,9 @@ USER leanspec
 
 WORKDIR /app
 
-# Copy the virtual environment and source from builder
+# Copy the virtual environment from builder stage.
+# This is safe because both stages use the same Python base image (python:3.12-slim),
+# same architecture, and same paths. Avoids reinstalling dependencies in runtime stage.
 COPY --from=builder --chown=leanspec:leanspec /app/.venv /app/.venv
 COPY --from=builder --chown=leanspec:leanspec /app/src /app/src
 COPY --from=builder --chown=leanspec:leanspec /app/packages /app/packages
