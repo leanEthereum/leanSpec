@@ -136,11 +136,9 @@ class ChainService:
             # the updated time.
             self.sync_service.store = new_store
 
-            # Log slot progression after tick
-            seconds_since_genesis = int(current_time - self.clock.genesis_time)
-            # 4 intervals per slot
-            current_slot = seconds_since_genesis // (int(SECONDS_PER_INTERVAL) * 4)
-            current_interval = seconds_since_genesis // SECONDS_PER_INTERVAL)
+            # Log slot progression after tick using SlotClock methods
+            current_slot = int(self.clock.current_slot())
+            current_interval = int(self.clock.total_intervals())
 
             # Get head and finalized info (defensive for testing/mocking)
             head_str = new_store.head.hex()[:16] if hasattr(new_store, "head") else "unknown"
