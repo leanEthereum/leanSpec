@@ -1,4 +1,4 @@
-# Lean Ethereum Specifications - Docker Image
+# Lean Consensus Specification - Docker Image
 # Multi-stage build for smaller final image
 
 # =============================================================================
