@@ -3,6 +3,7 @@ API server for checkpoint sync, node status, and metrics endpoints.
 
 Provides HTTP endpoints for:
 - /lean/states/finalized - Serve finalized checkpoint state as SSZ
+- /lean/state/justified - Return latest justified checkpoint information
 - /health - Health check endpoint
 - /metrics - Prometheus metrics endpoint
 
@@ -100,6 +101,7 @@ class ApiServer:
                 web.get("/health", _handle_health),
                 web.get("/metrics", _handle_metrics),
                 web.get("/lean/states/finalized", self._handle_finalized_state),
+                web.get("/lean/state/justified", self._handle_justified),
             ]
         )
 
@@ -163,3 +165,30 @@ class ApiServer:
             raise web.HTTPInternalServerError(reason="Encoding failed") from e
 
         return web.Response(body=ssz_bytes, content_type="application/octet-stream")
+
+    async def _handle_justified(self, _request: web.Request) -> web.Response:
+        """
+        Handle latest justified checkpoint endpoint.
+
+        Returns the latest justified checkpoint information as JSON at /lean/state/justified.
+        This provides the slot number and root hash of the most recent justified checkpoint,
+        which is useful for monitoring consensus progress and fork choice state.
+
+        Response format:
+        {
+            "slot": <slot_number>,
+            "root": "<hex_root_hash>"
+        }
+        """
+        store = self.store
+        if store is None:
+            raise web.HTTPServiceUnavailable(reason="Store not initialized")
+
+        justified = store.latest_justified
+
+        return web.json_response(
+            {
+                "slot": int(justified.slot),
+                "root": justified.root.hex(),
+            }
+        )

@@ -142,6 +142,62 @@ class TestFinalizedStateEndpoint:
         asyncio.run(run_test())
 
 
+class TestJustifiedEndpoint:
+    """Tests for the /lean/state/justified endpoint behavior."""
+
+    def test_returns_503_when_store_not_initialized(self) -> None:
+        """Endpoint returns 503 Service Unavailable when store is not set."""
+
+        async def run_test() -> None:
+            config = ApiServerConfig(port=15057)
+            server = ApiServer(config=config)
+
+            await server.start()
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("http://127.0.0.1:15057/lean/state/justified")
+
+                    assert response.status_code == 503
+
+            finally:
+                server.stop()
+                await asyncio.sleep(0.1)
+
+        asyncio.run(run_test())
+
+    def test_returns_json_with_justified_checkpoint(self, base_store: Store) -> None:
+        """Endpoint returns JSON with latest justified checkpoint information."""
+
+        async def run_test() -> None:
+            config = ApiServerConfig(port=15058)
+            server = ApiServer(config=config, store_getter=lambda: base_store)
+
+            await server.start()
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("http://127.0.0.1:15058/lean/state/justified")
+
+                    assert response.status_code == 200
+                    assert "application/json" in response.headers["content-type"]
+
+                    # Verify JSON structure
+                    data = response.json()
+                    assert "slot" in data
+                    assert "root" in data
+                    assert isinstance(data["slot"], int)
+                    assert isinstance(data["root"], str)
+                    # Root should be a hex string
+                    assert len(data["root"]) == 64  # 32 bytes * 2 hex chars
+
+            finally:
+                server.stop()
+                await asyncio.sleep(0.1)
+
+        asyncio.run(run_test())
+
+
 class TestUnknownEndpoints:
     """Tests for unknown endpoint handling."""
 
