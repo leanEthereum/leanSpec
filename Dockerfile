@@ -108,81 +108,19 @@ COPY --from=builder --chown=leanspec:leanspec /app/README.md /app/README.md
 ENV VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:$PATH"
 
-# Consensus node configuration via environment variables
-ENV GENESIS_FILE="" \
-    BOOTNODE="" \
-    LISTEN_ADDR="/ip4/0.0.0.0/tcp/9000" \
-    CHECKPOINT_SYNC_URL="" \
-    VALIDATOR_KEYS_PATH="" \
-    NODE_ID="lean_spec_0" \
-    VERBOSE=""
-
 # Create directory for genesis and validator keys
 RUN mkdir -p /app/data
 
 # Expose p2p port
 EXPOSE 9000
 
-# Entrypoint script to handle CLI arguments
-COPY --chown=leanspec:leanspec <<'EOF' /app/entrypoint.sh
-#!/bin/bash
-set -e
+# Set entrypoint to lean_spec directly
+# Users can pass CLI arguments directly: docker run lean_spec --genesis /data/config.yaml --bootnode ...
+ENTRYPOINT ["uv", "run", "python", "-m", "lean_spec"]
 
-# Build lean_spec command with environment variables
-CMD="uv run python -m lean_spec"
-
-# Genesis file (required)
-if [ -n "$GENESIS_FILE" ]; then
-    CMD="$CMD --genesis $GENESIS_FILE"
-else
-    echo "Error: GENESIS_FILE environment variable is required"
-    echo "Usage: docker run -e GENESIS_FILE=/app/data/genesis.json ..."
-    exit 1
-fi
-
-# Bootnode (optional, can be multiple)
-if [ -n "$BOOTNODE" ]; then
-    # Split on commas and add each bootnode
-    IFS=',' read -ra BOOTNODES <<< "$BOOTNODE"
-    for bn in "${BOOTNODES[@]}"; do
-        CMD="$CMD --bootnode $bn"
-    done
-fi
-
-# Listen address
-if [ -n "$LISTEN_ADDR" ]; then
-    CMD="$CMD --listen $LISTEN_ADDR"
-fi
-
-# Checkpoint sync URL
-if [ -n "$CHECKPOINT_SYNC_URL" ]; then
-    CMD="$CMD --checkpoint-sync-url $CHECKPOINT_SYNC_URL"
-fi
-
-# Validator keys path
-if [ -n "$VALIDATOR_KEYS_PATH" ]; then
-    CMD="$CMD --validator-keys $VALIDATOR_KEYS_PATH"
-fi
-
-# Node ID
-if [ -n "$NODE_ID" ]; then
-    CMD="$CMD --node-id $NODE_ID"
-fi
-
-# Verbose logging
-if [ "$VERBOSE" = "true" ] || [ "$VERBOSE" = "1" ]; then
-    CMD="$CMD -v"
-fi
-
-# Execute the command
-echo "Starting lean_spec node..."
-echo "Command: $CMD"
-exec $CMD
-EOF
-
-RUN chmod +x /app/entrypoint.sh
-
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Default arguments (can be overridden)
+# Users must provide at least --genesis argument
+CMD ["--help"]
 
 # =============================================================================
 # Stage 4: Development - Full environment with all tools

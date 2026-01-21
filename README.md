@@ -225,7 +225,7 @@ def test_withdrawal_amount_above_uint64_max():
 | Build Docker test image                       | `docker build -t lean-spec:test .`                     |
 | Build Docker node image                       | `docker build --target node -t lean-spec:node .`       |
 | Run tests in Docker                           | `docker run --rm lean-spec:test`                       |
-| Run node in Docker                            | `docker run --rm -e GENESIS_FILE=... lean-spec:node`   |
+| Run node in Docker                            | `docker run --rm lean-spec:node --genesis /app/data/config.yaml` |
 | Dev shell in Docker                           | `docker run --rm -it lean-spec:dev`                    |
 
 ## Docker

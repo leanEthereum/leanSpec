@@ -34,6 +34,8 @@ GENESIS_VALIDATORS:
 
 ## Running Examples
 
+All examples pass CLI arguments directly to the node. Simply append arguments after the image name.
+
 ### 1. Basic Passive Node
 
 Run a node that syncs but doesn't validate:
@@ -41,9 +43,9 @@ Run a node that syncs but doesn't validate:
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/config.yaml \
   -p 9000:9000 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml
 ```
 
 ### 2. Node with Bootnode
@@ -53,56 +55,95 @@ Connect to an existing network:
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
   -p 9001:9001 \
-  -e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9001 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --bootnode /ip4/127.0.0.1/tcp/9000 \
+  --listen /ip4/0.0.0.0/tcp/9001
 ```
 
-### 3. Validator Node
+### 3. Multiple Bootnodes
+
+Connect to multiple peers:
+
+```bash
+docker run --rm \
+  -v /path/to/genesis:/app/data:ro \
+  -p 9000:9000 \
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --bootnode /ip4/192.168.1.10/tcp/9000 \
+  --bootnode /ip4/192.168.1.11/tcp/9000 \
+  --bootnode enr:-IS4QHCYrYZbAKW...
+```
+
+### 4. Validator Node
 
 Run as a validator with keys:
 
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e VALIDATOR_KEYS_PATH=/app/data \
-  -e NODE_ID=lean_spec_0 \
-  -e BOOTNODE=/ip4/127.0.0.1/tcp/9000 \
+  -v /path/to/keys:/app/keys:ro \
   -p 9010:9010 \
-  -e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9010 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --validator-keys /app/keys \
+  --node-id lean_spec_0 \
+  --bootnode /ip4/127.0.0.1/tcp/9000 \
+  --listen /ip4/0.0.0.0/tcp/9010
 ```
 
-### 4. Checkpoint Sync
+### 5. Checkpoint Sync
 
 Fast sync from a finalized checkpoint:
 
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e CHECKPOINT_SYNC_URL=http://host.docker.internal:5052 \
-  -e VALIDATOR_KEYS_PATH=/app/data \
-  -e NODE_ID=zeam_0 \
+  -v /path/to/keys:/app/keys:ro \
   -p 9020:9020 \
   --add-host=host.docker.internal:host-gateway \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --checkpoint-sync-url http://host.docker.internal:5052 \
+  --validator-keys /app/keys \
+  --node-id lean_spec_0 \
+  --listen /ip4/0.0.0.0/tcp/9020
 ```
 
-### 5. With Verbose Logging
+### 6. With Verbose Logging
 
 Enable debug logs:
 
 ```bash
 docker run --rm \
   -v /path/to/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e VERBOSE=true \
   -p 9000:9000 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  -v
+```
+
+### 7. Background Service
+
+Run as a background service:
+
+```bash
+docker run -d \
+  --name lean-spec-node \
+  --restart unless-stopped \
+  -v /path/to/genesis:/app/data:ro \
+  -p 9000:9000 \
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --bootnode /ip4/127.0.0.1/tcp/9000
+
+# Check logs
+docker logs -f lean-spec-node
+
+# Stop
+docker stop lean-spec-node
 ```
 
 ## Using with lean-quickstart Genesis
@@ -113,39 +154,41 @@ If you have the lean-quickstart repo with generated genesis:
 # For local-devnet
 docker run --rm \
   -v /path/to/lean-quickstart/local-devnet/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e VALIDATOR_KEYS_PATH=/app/data \
-  -e NODE_ID=zeam_0 \
   -p 9000:9000 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --validator-keys /app/data \
+  --node-id lean_spec_0
 
 # For ansible-devnet
 docker run --rm \
   -v /path/to/lean-quickstart/ansible-devnet/genesis:/app/data:ro \
-  -e GENESIS_FILE=/app/data/config.yaml \
-  -e VALIDATOR_KEYS_PATH=/app/data \
-  -e NODE_ID=zeam_0 \
   -p 9000:9000 \
-  lean-spec:node
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --validator-keys /app/data \
+  --node-id lean_spec_0
 ```
 
-## Environment Variables Reference
+## Command-Line Arguments Reference
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `GENESIS_FILE` | Path to genesis YAML file (config.yaml) | - | **Yes** |
-| `BOOTNODE` | Bootnode address(es), comma-separated | - | No |
-| `LISTEN_ADDR` | Address to listen on | `/ip4/0.0.0.0/tcp/9000` | No |
-| `CHECKPOINT_SYNC_URL` | URL for checkpoint sync | - | No |
-| `VALIDATOR_KEYS_PATH` | Path to validator keys directory | - | No |
-| `NODE_ID` | Node identifier for validator assignment | `lean_spec_0` | No |
-| `VERBOSE` | Enable debug logging (`true`/`false`) | `false` | No |
+| Argument | Description | Required |
+|----------|-------------|----------|
+| `--genesis PATH` | Path to genesis YAML file (config.yaml) | **Yes** |
+| `--bootnode ADDR` | Bootnode multiaddr or ENR (can be specified multiple times) | No |
+| `--listen ADDR` | Multiaddr to listen on (default: `/ip4/0.0.0.0/tcp/9000`) | No |
+| `--checkpoint-sync-url URL` | URL for checkpoint sync (e.g., `http://host:5052`) | No |
+| `--validator-keys PATH` | Path to validator keys directory | No |
+| `--node-id ID` | Node identifier for validator assignment (default: `lean_spec_0`) | No |
+| `-v, --verbose` | Enable debug logging | No |
+
+Run `docker run lean-spec:node --help` to see all available options.
 
 ## Troubleshooting
 
-### Error: "GENESIS_FILE environment variable is required"
+### Error: "License file does not exist"
 
-Make sure you're setting the `-e GENESIS_FILE=...` environment variable.
+You may need to rebuild the image. The Dockerfile now includes LICENSE and README.md.
 
 ### Can't connect to bootnode
 
@@ -157,4 +200,4 @@ Make sure you're setting the `-e GENESIS_FILE=...` environment variable.
 
 Change the port mapping: `-p 9001:9000` (host:container)
 
-Or change the listen address: `-e LISTEN_ADDR=/ip4/0.0.0.0/tcp/9001`
+Or change the listen address: `--listen /ip4/0.0.0.0/tcp/9001`
