@@ -406,7 +406,7 @@ class State(Container):
         # which makes the rest of the logic easier to express and understand.
         assert not any(
             root == ZERO_HASH for root in self.justifications_roots
-        ), "ZERO_HASH is not allowed in justifications_roots"
+        ), "zero hash is not allowed in justifications roots"
         justifications = (
             {
                 root: self.justifications_validators[
