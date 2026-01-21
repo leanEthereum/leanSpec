@@ -349,7 +349,6 @@ docker run --rm -it -v $(pwd):/app lean-spec:dev
 ## Documentation
 
 - **[DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md)** - Complete Docker deployment guide with examples
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
 
 ## Contributing
 
