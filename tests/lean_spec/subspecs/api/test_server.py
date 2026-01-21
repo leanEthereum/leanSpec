@@ -143,7 +143,7 @@ class TestFinalizedStateEndpoint:
 
 
 class TestJustifiedEndpoint:
-    """Tests for the /lean/state/justified endpoint behavior."""
+    """Tests for the /lean/states/justified endpoint behavior."""
 
     def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
@@ -156,7 +156,7 @@ class TestJustifiedEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15057/lean/state/justified")
+                    response = await client.get("http://127.0.0.1:15057/lean/states/justified")
 
                     assert response.status_code == 503
 
@@ -177,7 +177,7 @@ class TestJustifiedEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15058/lean/state/justified")
+                    response = await client.get("http://127.0.0.1:15058/lean/states/justified")
 
                     assert response.status_code == 200
                     assert "application/json" in response.headers["content-type"]

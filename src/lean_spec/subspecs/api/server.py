@@ -3,7 +3,7 @@ API server for checkpoint sync, node status, and metrics endpoints.
 
 Provides HTTP endpoints for:
 - /lean/states/finalized - Serve finalized checkpoint state as SSZ
-- /lean/state/justified - Return latest justified checkpoint information
+- /lean/states/justified - Return latest justified checkpoint information
 - /health - Health check endpoint
 - /metrics - Prometheus metrics endpoint
 
@@ -101,7 +101,7 @@ class ApiServer:
                 web.get("/health", _handle_health),
                 web.get("/metrics", _handle_metrics),
                 web.get("/lean/states/finalized", self._handle_finalized_state),
-                web.get("/lean/state/justified", self._handle_justified),
+                web.get("/lean/states/justified", self._handle_justified),
             ]
         )
 
@@ -170,7 +170,7 @@ class ApiServer:
         """
         Handle latest justified checkpoint endpoint.
 
-        Returns the latest justified checkpoint information as JSON at /lean/state/justified.
+        Returns the latest justified checkpoint information as JSON at /lean/states/justified.
         This provides the slot number and root hash of the most recent justified checkpoint,
         which is useful for monitoring consensus progress and fork choice state.
 
