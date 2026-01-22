@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from consensus_testing.keys import get_shared_key_manager
+
 from lean_spec.subspecs.containers.attestation import (
     AggregationBits,
     Attestation,
@@ -12,31 +15,25 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
 from lean_spec.subspecs.containers.state.types import Validators
 from lean_spec.subspecs.containers.validator import Validator
-from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
-from lean_spec.subspecs.xmss.containers import PublicKey, Signature
-from lean_spec.subspecs.xmss.types import (
-    HashDigestList,
-    HashDigestVector,
-    HashTreeOpening,
-    Parameter,
-    Randomness,
-)
 from lean_spec.types import Bytes32, Bytes52, Uint64
-from lean_spec.types.byte_arrays import ByteListMiB
 
 
-def make_test_proof(validator_ids: list[Uint64], data: bytes = b"\x00") -> AggregatedSignatureProof:
-    """Create a test AggregatedSignatureProof with given participants."""
-    return AggregatedSignatureProof(
-        participants=AggregationBits.from_validator_indices(validator_ids),
-        proof_data=ByteListMiB(data=data),
-    )
+@pytest.fixture(scope="module", autouse=True)
+def _set_test_env(monkeypatch_module):
+    """Ensure LEAN_ENV is set to test for all tests in this module."""
+    monkeypatch_module.setenv("LEAN_ENV", "test")
 
 
-# Default test proof with empty participants (will be replaced in most tests)
-TEST_AGGREGATED_PROOF = make_test_proof([Uint64(0), Uint64(1)])
+@pytest.fixture(scope="module")
+def monkeypatch_module():
+    """Module-scoped monkeypatch fixture."""
+    from _pytest.monkeypatch import MonkeyPatch
+
+    mp = MonkeyPatch()
+    yield mp
+    mp.undo()
 
 
 def make_bytes32(seed: int) -> Bytes32:
@@ -44,35 +41,23 @@ def make_bytes32(seed: int) -> Bytes32:
     return Bytes32(bytes([seed % 256]) * 32)
 
 
-def make_public_key_bytes(seed: int) -> bytes:
-    """Encode a deterministic XMSS public key."""
-    root = HashDigestVector(data=[Fp(seed + i) for i in range(HashDigestVector.LENGTH)])
-    parameter = Parameter(data=[Fp(seed + 100 + i) for i in range(Parameter.LENGTH)])
-    public_key = PublicKey(root=root, parameter=parameter)
-    return public_key.encode_bytes()
-
-
-def make_signature(seed: int) -> Signature:
-    """Create a minimal but valid XMSS signature container."""
-    randomness = Randomness(data=[Fp(seed + 200 + i) for i in range(Randomness.LENGTH)])
-    return Signature(
-        path=HashTreeOpening(siblings=HashDigestList(data=[])),
-        rho=randomness,
-        hashes=HashDigestList(data=[]),
-    )
-
-
 def make_validators(count: int) -> Validators:
-    """Build a validator registry with deterministic keys."""
+    """Build a validator registry using public keys from the key manager."""
+    key_manager = get_shared_key_manager()
     validators = [
-        Validator(pubkey=Bytes52(make_public_key_bytes(i)), index=Uint64(i)) for i in range(count)
+        Validator(
+            pubkey=Bytes52(key_manager.get_public_key(Uint64(i)).encode_bytes()),
+            index=Uint64(i),
+        )
+        for i in range(count)
     ]
     return Validators(data=validators)
 
 
 def make_state(num_validators: int) -> State:
     """Create a genesis state with the requested number of validators."""
-    return State.generate_genesis(Uint64(0), validators=make_validators(num_validators))
+    validators = make_validators(num_validators)
+    return State.generate_genesis(Uint64(0), validators=validators)
 
 
 def make_attestation_data(
@@ -103,13 +88,17 @@ def make_attestation_data(
     )
 
 
-def test_compute_aggregated_signatures_prefers_full_gossip_payload() -> None:
+def test_aggregated_signatures_prefers_full_gossip_payload() -> None:
+    key_manager = get_shared_key_manager()
     state = make_state(2)
     source = Checkpoint(root=make_bytes32(1), slot=Slot(0))
     att_data = make_attestation_data(2, make_bytes32(3), make_bytes32(4), source=source)
     attestations = [Attestation(validator_id=Uint64(i), data=att_data) for i in range(2)]
     data_root = att_data.data_root_bytes()
-    gossip_signatures = {SignatureKey(Uint64(i), data_root): make_signature(i) for i in range(2)}
+    gossip_signatures = {
+        SignatureKey(Uint64(i), data_root): key_manager.sign_attestation_data(Uint64(i), att_data)
+        for i in range(2)
+    }
 
     aggregated_atts, aggregated_proofs = state.compute_aggregated_signatures(
         attestations,
@@ -120,16 +109,40 @@ def test_compute_aggregated_signatures_prefers_full_gossip_payload() -> None:
     assert len(aggregated_proofs) == 1
     assert set(aggregated_proofs[0].participants.to_validator_indices()) == {Uint64(0), Uint64(1)}
 
+    # Verify the aggregated proof
+    public_keys = [key_manager.get_public_key(Uint64(i)) for i in range(2)]
+    aggregated_proofs[0].verify(
+        public_keys=public_keys,
+        message=data_root,
+        epoch=att_data.slot,
+    )
+
 
 def test_compute_aggregated_signatures_splits_when_needed() -> None:
+    key_manager = get_shared_key_manager()
     state = make_state(3)
     source = Checkpoint(root=make_bytes32(2), slot=Slot(0))
     att_data = make_attestation_data(3, make_bytes32(5), make_bytes32(6), source=source)
     attestations = [Attestation(validator_id=Uint64(i), data=att_data) for i in range(3)]
     data_root = att_data.data_root_bytes()
-    gossip_signatures = {SignatureKey(Uint64(0), data_root): make_signature(0)}
+    gossip_signatures = {
+        SignatureKey(Uint64(0), data_root): key_manager.sign_attestation_data(Uint64(0), att_data)
+    }
 
-    block_proof = make_test_proof([Uint64(1), Uint64(2)], b"block-12")
+    block_proof = AggregatedSignatureProof.aggregate(
+        participants=AggregationBits.from_validator_indices([Uint64(1), Uint64(2)]),
+        public_keys=[
+            key_manager.get_public_key(Uint64(1)),
+            key_manager.get_public_key(Uint64(2)),
+        ],
+        signatures=[
+            key_manager.sign_attestation_data(Uint64(1), att_data),
+            key_manager.sign_attestation_data(Uint64(2), att_data),
+        ],
+        message=data_root,
+        epoch=att_data.slot,
+    )
+
     aggregated_payloads = {
         SignatureKey(Uint64(1), data_root): [block_proof],
         SignatureKey(Uint64(2), data_root): [block_proof],
@@ -154,8 +167,19 @@ def test_compute_aggregated_signatures_splits_when_needed() -> None:
     assert (0,) in proof_participants
     assert (1, 2) in proof_participants
 
+    # Verify the proof for validator 0 (the one with a real signature)
+    for proof in aggregated_proofs:
+        participants = proof.participants.to_validator_indices()
+        if participants == [Uint64(0)]:
+            proof.verify(
+                public_keys=[key_manager.get_public_key(Uint64(0))],
+                message=data_root,
+                epoch=att_data.slot,
+            )
+
 
 def test_build_block_collects_valid_available_attestations() -> None:
+    key_manager = get_shared_key_manager()
     state = make_state(2)
     # Compute parent_root as it will be after process_slots fills in the state_root
     parent_header_with_state_root = state.latest_block_header.model_copy(
@@ -175,7 +199,9 @@ def test_build_block_collects_valid_available_attestations() -> None:
     attestation = Attestation(validator_id=Uint64(0), data=att_data)
     data_root = att_data.data_root_bytes()
 
-    gossip_signatures = {SignatureKey(Uint64(0), data_root): make_signature(0)}
+    gossip_signatures = {
+        SignatureKey(Uint64(0), data_root): key_manager.sign_attestation_data(Uint64(0), att_data)
+    }
 
     # Proposer for slot 1 with 2 validators: slot % num_validators = 1 % 2 = 1
     block, post_state, aggregated_atts, aggregated_proofs = state.build_block(
@@ -194,6 +220,13 @@ def test_build_block_collects_valid_available_attestations() -> None:
     assert len(aggregated_proofs) == 1
     assert aggregated_proofs[0].participants.to_validator_indices() == [Uint64(0)]
     assert block.body.attestations.data[0].aggregation_bits.to_validator_indices() == [Uint64(0)]
+
+    # Verify the aggregated proof
+    aggregated_proofs[0].verify(
+        public_keys=[key_manager.get_public_key(Uint64(0))],
+        message=data_root,
+        epoch=att_data.slot,
+    )
 
 
 def test_build_block_skips_attestations_without_signatures() -> None:
@@ -247,8 +280,9 @@ def test_compute_aggregated_signatures_with_empty_attestations() -> None:
     assert aggregated_sigs == []
 
 
-def test_compute_aggregated_signatures_with_multiple_data_groups() -> None:
+def test_aggregated_signatures_with_multiple_data_groups() -> None:
     """Multiple attestation data groups should be processed independently."""
+    key_manager = get_shared_key_manager()
     state = make_state(4)
     source = Checkpoint(root=make_bytes32(22), slot=Slot(0))
     att_data1 = make_attestation_data(9, make_bytes32(23), make_bytes32(24), source=source)
@@ -265,10 +299,18 @@ def test_compute_aggregated_signatures_with_multiple_data_groups() -> None:
     data_root2 = att_data2.data_root_bytes()
 
     gossip_signatures = {
-        SignatureKey(Uint64(0), data_root1): make_signature(0),
-        SignatureKey(Uint64(1), data_root1): make_signature(1),
-        SignatureKey(Uint64(2), data_root2): make_signature(2),
-        SignatureKey(Uint64(3), data_root2): make_signature(3),
+        SignatureKey(Uint64(0), data_root1): key_manager.sign_attestation_data(
+            Uint64(0), att_data1
+        ),
+        SignatureKey(Uint64(1), data_root1): key_manager.sign_attestation_data(
+            Uint64(1), att_data1
+        ),
+        SignatureKey(Uint64(2), data_root2): key_manager.sign_attestation_data(
+            Uint64(2), att_data2
+        ),
+        SignatureKey(Uint64(3), data_root2): key_manager.sign_attestation_data(
+            Uint64(3), att_data2
+        ),
     }
 
     aggregated_atts, aggregated_proofs = state.compute_aggregated_signatures(
@@ -280,9 +322,20 @@ def test_compute_aggregated_signatures_with_multiple_data_groups() -> None:
     assert len(aggregated_atts) == 2
     assert len(aggregated_proofs) == 2
 
+    # Verify each aggregated proof
+    for agg_att, proof in zip(aggregated_atts, aggregated_proofs, strict=True):
+        participants = proof.participants.to_validator_indices()
+        public_keys = [key_manager.get_public_key(vid) for vid in participants]
+        proof.verify(
+            public_keys=public_keys,
+            message=agg_att.data.data_root_bytes(),
+            epoch=agg_att.data.slot,
+        )
 
-def test_compute_aggregated_signatures_falls_back_to_block_payload() -> None:
+
+def test_aggregated_signatures_falls_back_to_block_payload() -> None:
     """Should fall back to block payload when gossip is incomplete."""
+    key_manager = get_shared_key_manager()
     state = make_state(2)
     source = Checkpoint(root=make_bytes32(27), slot=Slot(0))
     att_data = make_attestation_data(11, make_bytes32(28), make_bytes32(29), source=source)
@@ -290,10 +343,25 @@ def test_compute_aggregated_signatures_falls_back_to_block_payload() -> None:
     data_root = att_data.data_root_bytes()
 
     # Only gossip signature for validator 0 (incomplete)
-    gossip_signatures = {SignatureKey(Uint64(0), data_root): make_signature(0)}
+    gossip_signatures = {
+        SignatureKey(Uint64(0), data_root): key_manager.sign_attestation_data(Uint64(0), att_data)
+    }
 
     # Block payload covers both validators
-    block_proof = make_test_proof([Uint64(0), Uint64(1)], b"block-fallback")
+    block_proof = AggregatedSignatureProof.aggregate(
+        participants=AggregationBits.from_validator_indices([Uint64(0), Uint64(1)]),
+        public_keys=[
+            key_manager.get_public_key(Uint64(0)),
+            key_manager.get_public_key(Uint64(1)),
+        ],
+        signatures=[
+            key_manager.sign_attestation_data(Uint64(0), att_data),
+            key_manager.sign_attestation_data(Uint64(1), att_data),
+        ],
+        message=data_root,
+        epoch=att_data.slot,
+    )
+
     aggregated_payloads = {
         SignatureKey(Uint64(0), data_root): [block_proof],
         SignatureKey(Uint64(1), data_root): [block_proof],
@@ -312,3 +380,13 @@ def test_compute_aggregated_signatures_falls_back_to_block_payload() -> None:
     proof_participants = [set(p.participants.to_validator_indices()) for p in aggregated_proofs]
     assert {Uint64(0)} in proof_participants
     assert {Uint64(0), Uint64(1)} in proof_participants
+
+    # Verify the proof for validator 0 (the one with a real signature from gossip)
+    for proof in aggregated_proofs:
+        participants = proof.participants.to_validator_indices()
+        if participants == [Uint64(0)]:
+            proof.verify(
+                public_keys=[key_manager.get_public_key(Uint64(0))],
+                message=data_root,
+                epoch=att_data.slot,
+            )

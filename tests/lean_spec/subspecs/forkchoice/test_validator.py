@@ -1,6 +1,7 @@
 """Tests for validator block production and attestation functionality."""
 
 import pytest
+from consensus_testing.keys import get_shared_key_manager
 
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -28,7 +29,22 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
 from lean_spec.types import Bytes32, Bytes52, Uint64
 from lean_spec.types.validator import is_proposer
-from tests.lean_spec.helpers import make_mock_signature
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _set_test_env(monkeypatch_module):
+    """Ensure LEAN_ENV is set to test for all tests in this module."""
+    monkeypatch_module.setenv("LEAN_ENV", "test")
+
+
+@pytest.fixture(scope="module")
+def monkeypatch_module():
+    """Module-scoped monkeypatch fixture."""
+    from _pytest.monkeypatch import MonkeyPatch
+
+    mp = MonkeyPatch()
+    yield mp
+    mp.undo()
 
 
 @pytest.fixture
@@ -40,6 +56,7 @@ def config() -> Config:
 @pytest.fixture
 def sample_state(config: Config) -> State:
     """Create a sample state for validator testing."""
+    key_manager = get_shared_key_manager()
     # Create block header for testing
     block_header = BlockHeader(
         slot=Slot(0),
@@ -52,9 +69,15 @@ def sample_state(config: Config) -> State:
     # Use a placeholder for genesis - will be updated in store fixture
     temp_finalized = Checkpoint(root=Bytes32(b"genesis" + b"\x00" * 25), slot=Slot(0))
 
-    # Create validators list with 10 validators for testing
+    # Create validators list with 10 validators using real public keys from key manager
     validators = Validators(
-        data=[Validator(pubkey=Bytes52.zero(), index=Uint64(i)) for i in range(10)]
+        data=[
+            Validator(
+                pubkey=Bytes52(key_manager.get_public_key(Uint64(i)).encode_bytes()),
+                index=Uint64(i),
+            )
+            for i in range(10)
+        ]
     )
 
     return State(
@@ -148,6 +171,7 @@ class TestBlockProduction:
 
     def test_produce_block_with_attestations(self, sample_store: Store) -> None:
         """Test block production includes available attestations."""
+        key_manager = get_shared_key_manager()
         head_block = sample_store.blocks[sample_store.head]
 
         # Add some attestations to the store
@@ -161,7 +185,7 @@ class TestBlockProduction:
         signed_5 = SignedAttestation(
             validator_id=Uint64(5),
             message=data_5,
-            signature=make_mock_signature(),
+            signature=key_manager.sign_attestation_data(Uint64(5), data_5),
         )
         data_6 = AttestationData(
             slot=head_block.slot,
@@ -172,7 +196,7 @@ class TestBlockProduction:
         signed_6 = SignedAttestation(
             validator_id=Uint64(6),
             message=data_6,
-            signature=make_mock_signature(),
+            signature=key_manager.sign_attestation_data(Uint64(6), data_6),
         )
         sample_store.latest_known_attestations[Uint64(5)] = signed_5.message
         sample_store.latest_known_attestations[Uint64(6)] = signed_6.message
@@ -184,7 +208,7 @@ class TestBlockProduction:
         slot = Slot(2)
         validator_idx = Uint64(2)  # Proposer for slot 2
 
-        store, block, _signatures = sample_store.produce_block_with_signatures(
+        store, block, signatures = sample_store.produce_block_with_signatures(
             slot,
             validator_idx,
         )
@@ -196,6 +220,16 @@ class TestBlockProduction:
         assert block.slot == slot
         assert block.proposer_index == validator_idx
         assert block.state_root != Bytes32.zero()
+
+        # Verify each aggregated signature proof
+        for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
+            participants = proof.participants.to_validator_indices()
+            public_keys = [key_manager.get_public_key(vid) for vid in participants]
+            proof.verify(
+                public_keys=public_keys,
+                message=agg_att.data.data_root_bytes(),
+                epoch=agg_att.data.slot,
+            )
 
     def test_produce_block_sequential_slots(self, sample_store: Store) -> None:
         """Test producing blocks in sequential slots."""
@@ -257,6 +291,7 @@ class TestBlockProduction:
 
     def test_produce_block_state_consistency(self, sample_store: Store) -> None:
         """Test that produced block's state is consistent with block content."""
+        key_manager = get_shared_key_manager()
         slot = Slot(4)
         validator_idx = Uint64(4)
 
@@ -272,13 +307,13 @@ class TestBlockProduction:
         signed_7 = SignedAttestation(
             validator_id=Uint64(7),
             message=data_7,
-            signature=make_mock_signature(),
+            signature=key_manager.sign_attestation_data(Uint64(7), data_7),
         )
         sample_store.latest_known_attestations[Uint64(7)] = signed_7.message
         sig_key_7 = SignatureKey(Uint64(7), signed_7.message.data_root_bytes())
         sample_store.gossip_signatures[sig_key_7] = signed_7.signature
 
-        store, block, _signatures = sample_store.produce_block_with_signatures(
+        store, block, signatures = sample_store.produce_block_with_signatures(
             slot,
             validator_idx,
         )
@@ -287,6 +322,16 @@ class TestBlockProduction:
         # Verify the stored state matches the block's state root
         stored_state = store.states[block_hash]
         assert hash_tree_root(stored_state) == block.state_root
+
+        # Verify each aggregated signature proof
+        for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
+            participants = proof.participants.to_validator_indices()
+            public_keys = [key_manager.get_public_key(vid) for vid in participants]
+            proof.verify(
+                public_keys=public_keys,
+                message=agg_att.data.data_root_bytes(),
+                epoch=agg_att.data.slot,
+            )
 
 
 class TestValidatorIntegration:

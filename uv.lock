@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [manifest]
@@ -867,7 +867,7 @@ requires-dist = [
 [[package]]
 name = "lean-multisig-py"
 version = "0.1.0"
-source = { git = "https://github.com/anshalshukla/leanMultisig-py?branch=main#049538ad82b165555e96164ab567808e3993a256" }
+source = { git = "https://github.com/anshalshukla/leanMultisig-py?branch=devnet2#37f265c699b3c7a3dbcb45661a1faf0b4a84acb6" }
 
 [[package]]
 name = "lean-spec"
@@ -933,7 +933,7 @@ requires-dist = [
     { name = "aioquic", specifier = ">=1.2.0,<2" },
     { name = "cryptography", specifier = ">=46.0.0" },
     { name = "httpx", specifier = ">=0.28.0,<1" },
-    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?branch=main" },
+    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?branch=devnet2" },
     { name = "numpy", specifier = ">=2.0.0,<3" },
     { name = "prometheus-client", specifier = ">=0.21.0,<1" },
     { name = "pydantic", specifier = ">=2.12.0,<3" },
@@ -949,7 +949,7 @@ dev = [
     { name = "ipdb", specifier = ">=0.13" },
     { name = "ipython", specifier = ">=8.31.0,<9" },
     { name = "lean-ethereum-testing", editable = "packages/testing" },
-    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?branch=main" },
+    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?branch=devnet2" },
     { name = "mdformat", specifier = "==0.7.22" },
     { name = "mkdocs", specifier = ">=1.6.1,<2" },
     { name = "mkdocs-material", specifier = ">=9.5.45,<10" },
@@ -976,7 +976,7 @@ lint = [
 test = [
     { name = "hypothesis", specifier = ">=6.138.14" },
     { name = "lean-ethereum-testing", editable = "packages/testing" },
-    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?branch=main" },
+    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?branch=devnet2" },
     { name = "pytest", specifier = ">=8.3.3,<9" },
     { name = "pytest-cov", specifier = ">=6.0.0,<7" },
     { name = "pytest-xdist", specifier = ">=3.6.1,<4" },
