@@ -216,7 +216,7 @@ class TestIntervalSleep:
         genesis = Uint64(1000)
         current_time = 1000.5  # 0.5 seconds into first interval
 
-        clock = SlotClock(genesis_time=genesis, _time_fn=lambda: current_time)
+        clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
         registry = ValidatorRegistry()
 
         service = ValidatorService(
@@ -250,7 +250,7 @@ class TestIntervalSleep:
         genesis = Uint64(1000)
         current_time = 900.0  # 100 seconds before genesis
 
-        clock = SlotClock(genesis_time=genesis, _time_fn=lambda: current_time)
+        clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
         registry = ValidatorRegistry()
 
         service = ValidatorService(

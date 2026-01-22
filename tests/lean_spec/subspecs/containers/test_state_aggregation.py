@@ -390,3 +390,127 @@ def test_aggregated_signatures_falls_back_to_block_payload() -> None:
                 message=data_root,
                 epoch=att_data.slot,
             )
+
+def test_build_block_state_root_valid_when_signatures_split() -> None:
+    """
+    Verify state root validity when attestations split across signature sources.
+
+    Signatures arrive through two channels in the protocol:
+
+    1. Gossip network - individual validator signatures propagated in real-time
+    2. Aggregated proofs - batched signatures from block payloads
+
+    When both sources cover the same attestation data, they cannot always merge.
+    Each source may cover different validator subsets.
+    The aggregation process must split them into separate attestations.
+    
+    This creates a critical constraint: the block's state root must reflect
+    the final attestation structure, not a preliminary grouping.
+    
+    Test scenario:
+   
+    - Three validators attest to identical data
+    - One signature arrives via gossip (validator 0)
+    - Two signatures arrive via aggregated proof (validators 1, 2)
+    - Result: two attestations in the block, not one
+    - The state transition must succeed with correct state root
+    """
+    num_validators = 4
+    pre_state = make_state(num_validators)
+
+    # Compute the parent block root.
+    #
+    # The header needs its state root filled in before hashing.
+    # This mirrors what happens during slot processing.
+    parent_header_with_state_root = pre_state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(pre_state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    
+    # Set up checkpoint references for the attestation.
+    #
+    # Source points to the justified checkpoint (genesis here).
+    # Target references the current epoch's checkpoint.
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    head_root = make_bytes32(50)
+    target = Checkpoint(root=make_bytes32(51), slot=Slot(0))
+
+    # Create the attestation data that all validators will sign.
+    #
+    # All three validators vote on the same head, target, and source.
+    # This is the common case when validators agree on chain head.
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=head_root, slot=Slot(1)),
+        target=target,
+        source=source,
+    )
+    data_root = att_data.data_root_bytes()
+
+    # Three validators attest to identical data.
+    attestations = [Attestation(validator_id=Uint64(i), data=att_data) for i in range(3)]
+
+    # Simulate partial gossip coverage.
+    #
+    # Only one signature arrived via the gossip network.
+    # This happens when network partitions delay some messages.
+    gossip_signatures = {SignatureKey(Uint64(0), data_root): make_signature(0)}
+
+    # Simulate the remaining signatures arriving via aggregated proof.
+    #
+    # These validators' signatures were batched in a previous block.
+    # The proof covers both validators together.
+    fallback_proof = make_test_proof([Uint64(1), Uint64(2)], b"fallback-12")
+    aggregated_payloads = {
+        SignatureKey(Uint64(1), data_root): [fallback_proof],
+        SignatureKey(Uint64(2), data_root): [fallback_proof],
+    }
+
+    # Build the block with mixed signature sources.
+    #
+    # Proposer index follows round-robin: slot 1 with 4 validators selects validator 1.
+    block, post_state, aggregated_atts, _ = pre_state.build_block(
+        slot=Slot(1),
+        proposer_index=Uint64(1),
+        parent_root=parent_root,
+        attestations=attestations,
+        gossip_signatures=gossip_signatures,
+        aggregated_payloads=aggregated_payloads,
+    )
+
+    # Verify attestations split by signature source.
+    #
+    # Cannot merge gossip and aggregated proof signatures.
+    # Each source becomes a separate attestation in the block.
+    assert len(aggregated_atts) == 2, "Expected split into 2 attestations"
+
+    # Confirm each attestation covers the expected validators.
+    actual_bits = [set(att.aggregation_bits.to_validator_indices()) for att in aggregated_atts]
+    assert {Uint64(0)} in actual_bits, "Gossip attestation should cover only validator 0"
+    assert {Uint64(1), Uint64(2)} in actual_bits, "Fallback should cover validators 1,2"
+
+    # Execute the state transition.
+    #
+    # The block's state root must match the post-state computed from
+    # the final block body. This validates that attestation splitting
+    # does not break state root consistency.
+    result_state = pre_state.state_transition(block, valid_signatures=True)
+
+    # Verify slot advanced correctly.
+    assert result_state.slot == Slot(1)
+
+    # Verify block header reflects the processed block.
+    assert result_state.latest_block_header.slot == Slot(1)
+    assert result_state.latest_block_header.proposer_index == Uint64(1)
+    assert result_state.latest_block_header.parent_root == parent_root
+
+    # Verify state root consistency.
+    #
+    # The block's embedded state root must equal the hash of the resulting state.
+    assert block.state_root == hash_tree_root(result_state)
+    
+    # Verify the block contains both split attestations.
+    assert len(block.body.attestations.data) == 2
+
+    # Verify validators remain unchanged (attestation processing does not modify registry).
+    assert len(result_state.validators.data) == num_validators

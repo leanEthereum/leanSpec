@@ -24,16 +24,16 @@ SAMPLE_YAML = yaml.dump(
     }
 )
 
-# Real pubkeys from ream config (split for line length)
-REAM_PUBKEY_1 = (
+# Real pubkeys
+PUBKEY_1 = (
     "0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65e"
     "c589c858b9c7980b276ebe550056b23f0bdc3b5a"
 )
-REAM_PUBKEY_2 = (
+PUBKEY_2 = (
     "0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e37"
     "7237595d9a27887421b5233d09a50832db2f303d"
 )
-REAM_PUBKEY_3 = (
+PUBKEY_3 = (
     "0xd4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a311"
     "05bd9a69afd2690ffd737d22ec6e3b31d47a642f"
 )
@@ -169,17 +169,53 @@ class TestGenesisConfigValidation:
         with pytest.raises(ValidationError):
             GenesisConfig.from_yaml(yaml_content)
 
-
-class TestReamCompatibility:
-    """Tests for compatibility with ream config format."""
-
-    def test_ream_format_config(self) -> None:
-        """Loads config in ream format with 0x-prefixed pubkeys."""
-        # This matches the format used in ream/bin/ream/assets/lean/config.yaml
+    def test_validators_not_a_list_raises_error(self) -> None:
+        """Rejects GENESIS_VALIDATORS that is not a list."""
         yaml_content = yaml.dump(
             {
                 "GENESIS_TIME": 1704085200,
-                "GENESIS_VALIDATORS": [REAM_PUBKEY_1, REAM_PUBKEY_2, REAM_PUBKEY_3],
+                "GENESIS_VALIDATORS": "not_a_list",
+            }
+        )
+        with pytest.raises(ValidationError, match="must be a list"):
+            GenesisConfig.from_yaml(yaml_content)
+
+    def test_num_validators_mismatch_raises_error(self) -> None:
+        """Rejects config where NUM_VALIDATORS does not match actual count."""
+        yaml_content = yaml.dump(
+            {
+                "GENESIS_TIME": 1704085200,
+                "NUM_VALIDATORS": 5,
+                "GENESIS_VALIDATORS": [SAMPLE_PUBKEY_1, SAMPLE_PUBKEY_2],
+            }
+        )
+        with pytest.raises(ValidationError, match="does not match"):
+            GenesisConfig.from_yaml(yaml_content)
+
+    def test_num_validators_correct_value_accepted(self) -> None:
+        """Accepts config where NUM_VALIDATORS matches actual count."""
+        yaml_content = yaml.dump(
+            {
+                "GENESIS_TIME": 1704085200,
+                "NUM_VALIDATORS": 2,
+                "GENESIS_VALIDATORS": [SAMPLE_PUBKEY_1, SAMPLE_PUBKEY_2],
+            }
+        )
+        config = GenesisConfig.from_yaml(yaml_content)
+
+        assert config.num_validators == 2
+        assert len(config.genesis_validators) == 2
+
+
+class TestCrossClientFormat:
+    """Tests for cross-client YAML config format compatibility."""
+
+    def test_hex_prefixed_pubkeys(self) -> None:
+        """Loads config with 0x-prefixed hex pubkeys (cross-client convention)."""
+        yaml_content = yaml.dump(
+            {
+                "GENESIS_TIME": 1704085200,
+                "GENESIS_VALIDATORS": [PUBKEY_1, PUBKEY_2, PUBKEY_3],
             }
         )
         config = GenesisConfig.from_yaml(yaml_content)
@@ -187,11 +223,25 @@ class TestReamCompatibility:
         assert config.genesis_time == Uint64(1704085200)
         assert len(config.genesis_validators) == 3
 
-        # Verify first pubkey matches.
-        expected_first = Bytes52(
-            bytes.fromhex(
-                "e2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65e"
-                "c589c858b9c7980b276ebe550056b23f0bdc3b5a"
-            )
-        )
-        assert config.genesis_validators[0] == expected_first
+        # Verify all pubkeys match expected values.
+        expected_pubkeys = [
+            Bytes52(
+                bytes.fromhex(
+                    "e2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65e"
+                    "c589c858b9c7980b276ebe550056b23f0bdc3b5a"
+                )
+            ),
+            Bytes52(
+                bytes.fromhex(
+                    "0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e37"
+                    "7237595d9a27887421b5233d09a50832db2f303d"
+                )
+            ),
+            Bytes52(
+                bytes.fromhex(
+                    "d4355005bc37f76f390dcd2bcc51677d8c6ab44e0cc64913fb84ad459789a311"
+                    "05bd9a69afd2690ffd737d22ec6e3b31d47a642f"
+                )
+            ),
+        ]
+        assert config.genesis_validators == expected_pubkeys

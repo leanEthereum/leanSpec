@@ -878,16 +878,11 @@ class Store(Container):
         incrementally to ensure all interval-specific actions are performed.
 
         Args:
-            time: Target time in seconds since genesis.
+            time: Target time as Unix timestamp in seconds.
             has_proposal: Whether node has proposal for current slot.
 
         Returns:
             New Store with time advanced and all interval actions performed.
-
-        Example:
-            >>> # Advance from slot 0 to slot 5
-            >>> slot_5_time = config.genesis_time + 5 * SECONDS_PER_SLOT
-            >>> store = store.on_tick(slot_5_time, has_proposal=True)
         """
         # Calculate target time in intervals
         tick_interval_time = (time - self.config.genesis_time) // SECONDS_PER_INTERVAL

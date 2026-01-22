@@ -409,7 +409,7 @@ class ValidatorService:
         Calculates the precise sleep duration to wake up at the start
         of the next interval.
         """
-        now = self.clock._time_fn()
+        now = self.clock.time_fn()
         genesis = int(self.clock.genesis_time)
 
         elapsed = now - genesis

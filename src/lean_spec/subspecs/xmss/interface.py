@@ -405,9 +405,12 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # Retrieve the scheme's configuration parameters.
         config = self.config
 
-        # A signature for an epoch beyond the scheme's lifetime is invalid.
+        # Validate epoch bounds.
+        #
+        # Return False instead of raising to avoid panic on invalid signatures.
+        # The epoch is attacker-controlled input.
         if epoch > self.config.LIFETIME:
-            raise ValueError("The signature is for a future epoch.")
+            return False
 
         # Re-encode the message using the randomness `rho` from the signature.
         #

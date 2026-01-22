@@ -138,7 +138,7 @@ def create_sync_service(peer_id: PeerId) -> SyncService:
         store=cast(Store, mock_store),
         peer_manager=peer_manager,
         block_cache=BlockCache(),
-        clock=SlotClock(genesis_time=Uint64(0), _time_fn=lambda: 1000.0),
+        clock=SlotClock(genesis_time=Uint64(0), time_fn=lambda: 1000.0),
         network=MockNetworkRequester(),
         process_block=lambda s, b: s.on_block(b),
     )

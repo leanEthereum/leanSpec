@@ -587,16 +587,17 @@ def verify_path(
 
     Returns:
         `True` if the path is valid and reconstructs the root, `False` otherwise.
-
-    Raises:
-        ValueError: If the tree depth exceeds 32 or position doesn't match path length.
+        Returns `False` for invalid inputs (depth > 32 or position out of bounds).
     """
-    # Compute the depth
+    # Validate depth and position bounds.
+    #
+    # These checks guard against malformed attacker-controlled input.
+    # Return False instead of raising to avoid panic on invalid signatures.
     depth = len(opening.siblings)
     if depth > 32:
-        raise ValueError("Depth exceeds maximum of 32.")
+        return False
     if int(position) >= (1 << depth):
-        raise ValueError("Position exceeds tree capacity.")
+        return False
 
     # Start: hash leaf parts to get leaf node.
     current = hasher.apply(

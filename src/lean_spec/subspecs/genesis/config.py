@@ -13,9 +13,10 @@ The expected YAML format matches the cross-client convention:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from lean_spec.subspecs.containers import State, Validator
 from lean_spec.subspecs.containers.state import Validators
@@ -77,19 +78,16 @@ class GenesisConfig(StrictBaseModel):
 
     @field_validator("genesis_validators", mode="before")
     @classmethod
-    def parse_hex_pubkeys(cls, v: list[str | int]) -> list[Bytes52]:
+    def parse_hex_pubkeys(cls, v: Any) -> list[Bytes52]:
         """
         Convert hex strings or integers to validated Bytes52 pubkeys.
 
         YAML parsers may interpret 0x-prefixed values as integers.
-        We handle both string and integer inputs for compatibility.
-
-        Args:
-            v: List of hex-encoded pubkey strings or integers from YAML.
-
-        Returns:
-            List of validated Bytes52 pubkey objects.
+        Handles both string and integer inputs for compatibility.
         """
+        if not isinstance(v, list):
+            raise ValueError(f"genesis_validators must be a list, got {type(v).__name__}")
+
         result = []
         for pk in v:
             if isinstance(pk, int):
@@ -99,15 +97,24 @@ class GenesisConfig(StrictBaseModel):
             result.append(Bytes52(pk))
         return result
 
+    @model_validator(mode="after")
+    def validate_num_validators_consistency(self) -> GenesisConfig:
+        """Verify num_validators matches actual count when provided."""
+        if self.num_validators is not None:
+            actual_count = len(self.genesis_validators)
+            if self.num_validators != actual_count:
+                raise ValueError(
+                    f"NUM_VALIDATORS ({self.num_validators}) does not match "
+                    f"actual validator count ({actual_count})"
+                )
+        return self
+
     def to_validators(self) -> Validators:
         """
         Build the genesis validator set with assigned indices.
 
         Each validator needs an index for the registry.
         Indices are assigned sequentially starting from 0.
-
-        Returns:
-            Validators container ready for State creation.
         """
         return Validators(
             data=[
@@ -122,9 +129,6 @@ class GenesisConfig(StrictBaseModel):
 
         Combines genesis time and validator set to create the initial
         consensus state. This state becomes slot 0 for the chain.
-
-        Returns:
-            Fully initialized genesis State object.
         """
         return State.generate_genesis(self.genesis_time, self.to_validators())
 
@@ -136,19 +140,13 @@ class GenesisConfig(StrictBaseModel):
         Use this to load shared genesis files distributed to all clients.
         Compatible with ream's config.yaml format.
 
-        Args:
-            path: Path to genesis YAML file.
-
-        Returns:
-            Validated GenesisConfig instance.
-
         Raises:
             FileNotFoundError: If the file does not exist.
             yaml.YAMLError: If the file is not valid YAML.
             pydantic.ValidationError: If the data fails validation.
         """
         path = Path(path)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls.model_validate(data)
 
@@ -158,12 +156,6 @@ class GenesisConfig(StrictBaseModel):
         Load configuration from a YAML string.
 
         Useful for testing or programmatic config generation.
-
-        Args:
-            content: YAML content as a string.
-
-        Returns:
-            Validated GenesisConfig instance.
         """
         data = yaml.safe_load(content)
         return cls.model_validate(data)

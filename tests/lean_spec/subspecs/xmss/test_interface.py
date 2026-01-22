@@ -199,3 +199,47 @@ def test_deterministic_signing() -> None:
     assert sig1.rho == sig2.rho
     assert sig1.hashes == sig2.hashes
     assert sig1.path.siblings == sig2.path.siblings
+
+
+class TestVerifySecurityBounds:
+    """
+    Security tests for verify method input validation.
+
+    Verification functions must return False (not raise) on attacker-controlled invalid input.
+    This prevents denial-of-service via malformed signatures.
+    """
+
+    def test_rejects_epoch_beyond_lifetime(self) -> None:
+        """verify returns False when epoch exceeds scheme LIFETIME."""
+        scheme = TEST_SIGNATURE_SCHEME
+
+        # Generate valid keys.
+        pk, sk = scheme.key_gen(Uint64(0), Uint64(scheme.config.LIFETIME))
+
+        # Sign a valid message at a valid epoch.
+        valid_epoch = Uint64(4)
+        message = b"\x42" * scheme.config.MESSAGE_LENGTH
+        signature = scheme.sign(sk, valid_epoch, message)
+
+        # Verify with an epoch beyond LIFETIME.
+        invalid_epoch = Uint64(int(scheme.config.LIFETIME) + 1)
+
+        # Must return False, not raise.
+        result = scheme.verify(pk, invalid_epoch, message, signature)
+        assert result is False
+
+    def test_rejects_very_large_epoch(self) -> None:
+        """verify returns False for absurdly large epoch values."""
+        scheme = TEST_SIGNATURE_SCHEME
+        pk, sk = scheme.key_gen(Uint64(0), Uint64(scheme.config.LIFETIME))
+
+        valid_epoch = Uint64(4)
+        message = b"\x42" * scheme.config.MESSAGE_LENGTH
+        signature = scheme.sign(sk, valid_epoch, message)
+
+        # Try to verify with a huge epoch.
+        huge_epoch = Uint64(2**32)
+
+        # Must return False, not raise.
+        result = scheme.verify(pk, huge_epoch, message, signature)
+        assert result is False

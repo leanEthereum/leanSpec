@@ -185,7 +185,7 @@ class Node:
                 database.put_block_root_by_slot(block.slot, block_root)
 
         # Create shared dependencies.
-        clock = SlotClock(genesis_time=config.genesis_time, _time_fn=config.time_fn)
+        clock = SlotClock(genesis_time=config.genesis_time, time_fn=config.time_fn)
         peer_manager = PeerManager()
         block_cache = BlockCache()
 
