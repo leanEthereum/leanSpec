@@ -86,7 +86,7 @@ class AggregatedSignatureProof(Container):
         Raises:
             AggregationError: If aggregation fails.
         """
-        mode = LEAN_ENV if mode is None else mode
+        mode = mode or LEAN_ENV
         setup_prover(mode=mode)
         try:
             proof_bytes = aggregate_signatures(
