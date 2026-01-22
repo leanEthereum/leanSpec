@@ -762,18 +762,23 @@ class State(Container):
             aggregated_payloads,
         )
 
-        # Update the block with the aggregated attestations
-        final_block = candidate_block.model_copy(
-            update={
-                "body": BlockBody(
-                    attestations=AggregatedAttestations(
-                        data=aggregated_attestations,
-                    ),
+        # Create the final block with aggregated attestations
+        final_block = Block(
+            slot=slot,
+            proposer_index=proposer_index,
+            parent_root=parent_root,
+            state_root=Bytes32.zero(),
+            body=BlockBody(
+                attestations=AggregatedAttestations(
+                    data=aggregated_attestations,
                 ),
-                # Store the post state root in the block
-                "state_root": hash_tree_root(post_state),
-            }
+            ),
         )
+
+        # Recompute state from the final block
+        post_state = self.process_slots(slot).process_block(final_block)
+
+        final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures
 
