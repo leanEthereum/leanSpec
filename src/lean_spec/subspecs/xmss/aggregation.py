@@ -123,7 +123,7 @@ class AggregatedSignatureProof(Container):
         Raises:
             AggregationError: If verification fails.
         """
-        mode = LEAN_ENV if mode is None else mode
+        mode = mode or LEAN_ENV
         setup_verifier(mode=mode)
         try:
             verify_aggregated_signatures(
