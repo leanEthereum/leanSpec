@@ -4,7 +4,7 @@ API server for checkpoint sync, node status, and metrics endpoints.
 Provides HTTP endpoints for:
 - /lean/v0/states/finalized - Serve finalized checkpoint state as SSZ
 - /lean/v0/states/justified - Return latest justified checkpoint information
-- /health - Health check endpoint
+- /lean/v0/health - Health check endpoint
 - /metrics - Prometheus metrics endpoint
 
 This matches the checkpoint sync API implemented in zeam.
@@ -98,7 +98,7 @@ class ApiServer:
         app = web.Application()
         app.add_routes(
             [
-                web.get("/health", _handle_health),
+                web.get("/lean/v0/health", _handle_health),
                 web.get("/metrics", _handle_metrics),
                 web.get("/lean/v0/states/finalized", self._handle_finalized_state),
                 web.get("/lean/v0/states/justified", self._handle_justified_state),

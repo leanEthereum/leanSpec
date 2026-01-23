@@ -62,7 +62,7 @@ class TestApiServerStoreIntegration:
 
 
 class TestHealthEndpoint:
-    """Tests for the /health endpoint behavior."""
+    """Tests for the /lean/v0/health endpoint behavior."""
 
     def test_returns_healthy_status_json(self) -> None:
         """Health endpoint returns JSON with healthy status."""
@@ -75,7 +75,7 @@ class TestHealthEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15052/health")
+                    response = await client.get("http://127.0.0.1:15052/lean/v0/health")
 
                     assert response.status_code == 200
                     data = response.json()

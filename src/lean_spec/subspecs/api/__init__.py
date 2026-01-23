@@ -3,7 +3,7 @@ API server module for checkpoint sync and node status endpoints.
 
 Provides HTTP endpoints for:
 - /lean/v0/states/finalized - Serve finalized checkpoint state as SSZ
-- /health - Health check endpoint
+- /lean/v0/health - Health check endpoint
 
 Also provides a client for checkpoint sync:
 - fetch_finalized_state: Download finalized state from a node
