@@ -10,7 +10,6 @@ from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
-    SignedAttestation,
 )
 from lean_spec.subspecs.containers.block import (
     Block,
@@ -36,11 +35,11 @@ from lean_spec.types import Bytes32, Uint64
 
 from ..keys import LEAN_ENV_TO_SCHEMES, XmssKeyManager, get_shared_key_manager
 from ..test_types import (
+    AggregatedAttestationSpec,
     AttestationStep,
     BlockSpec,
     BlockStep,
     ForkChoiceStep,
-    SignedAttestationSpec,
     TickStep,
 )
 from .base import BaseConsensusFixture
@@ -399,49 +398,65 @@ class ForkChoiceTest(BaseConsensusFixture):
 
     def _build_attestations_from_spec(
         self,
-        spec: BlockSpec,
+        block_spec: BlockSpec,
         store: Store,
         block_registry: dict[str, Block],
         parent_root: Bytes32,
         key_manager: XmssKeyManager,
     ) -> tuple[list[Attestation], dict[SignatureKey, Signature]]:
-        """Build attestations list from BlockSpec and their signatures."""
-        if spec.attestations is None:
+        """Build aggregated attestations from BlockSpec and their signatures."""
+        if block_spec.attestations is None:
             return [], {}
 
         parent_state = store.states[parent_root]
         attestations = []
         signature_lookup: dict[SignatureKey, Signature] = {}
 
-        for att_spec in spec.attestations:
-            if isinstance(att_spec, SignedAttestationSpec):
-                signed_att = self._build_signed_attestation_from_spec(
-                    att_spec, block_registry, parent_state, key_manager
-                )
-            else:
-                signed_att = att_spec
+        for aggregated_spec in block_spec.attestations:
+            # Build attestation data (shared across all validators in this aggregation spec)
+            attestation_data = self._build_attestation_data_from_spec(
+                aggregated_spec, block_registry, parent_state
+            )
 
-            attestation = Attestation(validator_id=signed_att.validator_id, data=signed_att.message)
-            attestations.append(attestation)
-            sig_key = SignatureKey(attestation.validator_id, attestation.data.data_root_bytes())
-            signature_lookup[sig_key] = signed_att.signature
+            # Create individual attestations and signatures for each validator
+            for validator_id in aggregated_spec.validator_ids:
+                attestation = Attestation(
+                    validator_id=validator_id,
+                    data=attestation_data,
+                )
+                attestations.append(attestation)
+
+                # Sign the attestation
+                if aggregated_spec.valid_signature:
+                    signature = key_manager.sign_attestation_data(
+                        validator_id,
+                        attestation_data,
+                    )
+                else:
+                    signature = Signature(
+                        path=HashTreeOpening(siblings=HashDigestList(data=[])),
+                        rho=Randomness(data=[Fp(0) for _ in range(Randomness.LENGTH)]),
+                        hashes=HashDigestList(data=[]),
+                    )
+
+                sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
+                signature_lookup[sig_key] = signature
 
         return attestations, signature_lookup
 
-    def _build_signed_attestation_from_spec(
+    def _build_attestation_data_from_spec(
         self,
-        spec: SignedAttestationSpec,
+        spec: AggregatedAttestationSpec,
         block_registry: dict[str, Block],
         state: State,
-        key_manager: XmssKeyManager,
-    ) -> SignedAttestation:
+    ) -> AttestationData:
         """
-        Build a SignedAttestation from a SignedAttestationSpec.
+        Build AttestationData from an AggregatedAttestationSpec.
 
         Parameters
         ----------
-        spec : SignedAttestationSpec
-            The attestation specification to resolve.
+        spec : AggregatedAttestationSpec
+            The aggregated attestation specification.
         block_registry : dict[str, Block]
             Registry of labeled blocks for resolving target_root_label.
         state : State
@@ -449,8 +464,8 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         Returns:
         -------
-        SignedAttestation
-            The resolved signed attestation.
+        AttestationData
+            The attestation data shared by all validators in this aggregation.
         """
         # Resolve target checkpoint from label
         if spec.target_root_label not in block_registry:
@@ -468,33 +483,9 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Derive source from state's latest justified checkpoint
         source_checkpoint = state.latest_justified
 
-        # Create attestation
-        attestation = Attestation(
-            validator_id=spec.validator_id,
-            data=AttestationData(
-                slot=spec.slot,
-                head=head_checkpoint,
-                target=target_checkpoint,
-                source=source_checkpoint,
-            ),
-        )
-
-        # Create signed attestation
-        if spec.signature is not None:
-            signature = spec.signature
-        elif spec.valid_signature:
-            signature = key_manager.sign_attestation_data(
-                attestation.validator_id, attestation.data
-            )
-        else:
-            signature = Signature(
-                path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(Randomness.LENGTH)]),
-                hashes=HashDigestList(data=[]),
-            )
-
-        return SignedAttestation(
-            validator_id=attestation.validator_id,
-            message=attestation.data,
-            signature=signature,
+        return AttestationData(
+            slot=spec.slot,
+            head=head_checkpoint,
+            target=target_checkpoint,
+            source=source_checkpoint,
         )

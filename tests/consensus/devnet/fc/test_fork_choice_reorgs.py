@@ -2,10 +2,10 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
-    SignedAttestationSpec,
     StoreChecks,
     TickStep,
     generate_pre_state,
@@ -862,42 +862,20 @@ def test_reorg_on_newly_justified_slot(
                     parent_label="fork_b_1",
                     label="fork_b_2",
                     attestations=[
-                        SignedAttestationSpec(
-                            validator_id=Uint64(0),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(1),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
+                        # Aggregated attestation from validators 0, 1, 5, 6, 7, 8
                         # fork_b_1 should be able to justify without extra attestations
                         # from validator 5 and 6 but the test is failing without these
-                        # two attestations below because block proposer's attestations
-                        # are not being counted towards justification
-                        SignedAttestationSpec(
-                            validator_id=Uint64(5),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(6),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(7),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(8),
+                        # because block proposer's attestations are not being counted
+                        # towards justification
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                Uint64(0),
+                                Uint64(1),
+                                Uint64(5),
+                                Uint64(6),
+                                Uint64(7),
+                                Uint64(8),
+                            ],
                             slot=Slot(5),
                             target_slot=Slot(5),
                             target_root_label="fork_b_1",
