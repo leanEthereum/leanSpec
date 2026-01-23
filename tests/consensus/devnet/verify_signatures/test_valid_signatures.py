@@ -2,8 +2,8 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
-    SignedAttestationSpec,
     VerifySignaturesTestFiller,
     generate_pre_state,
 )
@@ -55,36 +55,30 @@ def test_proposer_and_attester_signatures(
     --------
     - Single block at slot 1
     - 3 validators in the genesis state
-    - 2 additional attestations from validators 0 and 2 (in addition to proposer)
-    - Verifies that all signatures are generated correctly
+    - Aggregated attestation from validators 0 and 2 (in addition to proposer)
+    - Verifies that all signatures are generated and aggregated correctly
 
     Expected Behavior
     -----------------
     1. Proposer's signature in SignedBlockWithAttestation can be verified against
        the validator's pubkey in the state
-    2. Attester's signatures in SignedBlockWithAttestation can be verified against
-       the validator's pubkey in the state
+    2. Aggregated attestation signatures can be verified against the validators'
+       pubkeys in the state
 
     Why This Matters
     ----------------
-    This test verifies multi-validator signature scenarios:
+    This test verifies multi-validator signature aggregation:
     - Multiple XMSS keys are generated for different validators
-    - Attestations from non-proposer validators are correctly verified
-    - Signature aggregation works with multiple attestations (signature positions are correct)
+    - Attestations with same data are properly aggregated
+    - leanVM signature aggregation works with multiple validators
     """
     verify_signatures_test(
         anchor_state=generate_pre_state(num_validators=3),
         block=BlockSpec(
             slot=Slot(1),
             attestations=[
-                SignedAttestationSpec(
-                    validator_id=Uint64(0),
-                    slot=Slot(1),
-                    target_slot=Slot(0),
-                    target_root_label="genesis",
-                ),
-                SignedAttestationSpec(
-                    validator_id=Uint64(2),
+                AggregatedAttestationSpec(
+                    validator_ids=[Uint64(0), Uint64(2)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",

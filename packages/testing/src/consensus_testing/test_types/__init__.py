@@ -1,5 +1,6 @@
 """Test types for consensus test fixtures."""
 
+from .aggregated_attestation_spec import AggregatedAttestationSpec
 from .block_spec import BlockSpec
 from .genesis import generate_pre_state
 from .signed_attestation_spec import SignedAttestationSpec
@@ -14,6 +15,7 @@ from .step_types import (
 from .store_checks import AttestationCheck, StoreChecks
 
 __all__ = [
+    "AggregatedAttestationSpec",
     "StateExpectation",
     "StoreChecks",
     "AttestationCheck",

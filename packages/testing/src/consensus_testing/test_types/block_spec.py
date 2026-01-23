@@ -1,13 +1,10 @@
 """Lightweight block specification for test definitions."""
 
-from typing import Union
-
-from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block import BlockBody
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Bytes32, CamelModel, Uint64
 
-from .signed_attestation_spec import SignedAttestationSpec
+from .aggregated_attestation_spec import AggregatedAttestationSpec
 
 
 class BlockSpec(CamelModel):
@@ -59,12 +56,12 @@ class BlockSpec(CamelModel):
     Note: If body is provided, attestations field is ignored.
     """
 
-    attestations: list[Union[SignedAttestation, SignedAttestationSpec]] | None = None
+    attestations: list[AggregatedAttestationSpec] | None = None
     """
-    List of signed attestations to include in this block's body.
+    List of aggregated attestations to include in this block's body.
 
-    These attestations will be included in block.body.attestations.
-    Can be either SignedAttestation (direct) or SignedAttestationSpec.
+    Each entry specifies multiple validators attesting to the same data.
+    The framework generates signatures and aggregates them.
 
     If None, framework uses default behavior (empty body).
     If body is provided, this field is ignored.

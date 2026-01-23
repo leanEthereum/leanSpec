@@ -10,6 +10,7 @@ from .test_fixtures import (
     VerifySignaturesTest,
 )
 from .test_types import (
+    AggregatedAttestationSpec,
     AttestationCheck,
     AttestationStep,
     BaseForkChoiceStep,
@@ -29,6 +30,7 @@ VerifySignaturesTestFiller = Type[VerifySignaturesTest]
 
 __all__ = [
     # Public API
+    "AggregatedAttestationSpec",
     "BlockSpec",
     "SignedAttestationSpec",
     "forks",

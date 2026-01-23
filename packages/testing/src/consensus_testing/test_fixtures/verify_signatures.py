@@ -9,7 +9,6 @@ from pydantic import Field, field_serializer
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
-    SignedAttestation,
 )
 from lean_spec.subspecs.containers.block import (
     BlockSignatures,
@@ -28,7 +27,7 @@ from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Rando
 from lean_spec.types import Bytes32, Uint64
 
 from ..keys import XmssKeyManager, get_shared_key_manager
-from ..test_types import BlockSpec, SignedAttestationSpec
+from ..test_types import AggregatedAttestationSpec, BlockSpec
 from .base import BaseConsensusFixture
 
 
@@ -256,53 +255,55 @@ class VerifySignaturesTest(BaseConsensusFixture):
         attestations = []
         attestation_signatures = []
 
-        for attestation_item in spec.attestations:
-            if isinstance(attestation_item, SignedAttestationSpec):
-                signed_attestation = self._build_signed_attestation_from_spec(
-                    attestation_item, state, key_manager
-                )
-                # Reconstruct Attestation from SignedAttestation components
+        for aggregated_spec in spec.attestations:
+            # Build attestation data (shared across all validators in this group)
+            attestation_data = self._build_attestation_data_from_spec(aggregated_spec, state)
+
+            # Create individual attestations and signatures for each validator
+            for validator_id in aggregated_spec.validator_ids:
                 attestations.append(
                     Attestation(
-                        validator_id=signed_attestation.validator_id,
-                        data=signed_attestation.message,
+                        validator_id=validator_id,
+                        data=attestation_data,
                     )
                 )
-                attestation_signatures.append(signed_attestation.signature)
-            else:
-                # Reconstruct Attestation from existing SignedAttestation
-                attestations.append(
-                    Attestation(
-                        validator_id=attestation_item.validator_id,
-                        data=attestation_item.message,
+
+                # Sign the attestation
+                if aggregated_spec.valid_signature:
+                    signature = key_manager.sign_attestation_data(
+                        validator_id,
+                        attestation_data,
                     )
-                )
-                attestation_signatures.append(attestation_item.signature)
+                else:
+                    # Generate a structurally valid but cryptographically invalid signature.
+                    signature = Signature(
+                        path=HashTreeOpening(siblings=HashDigestList(data=[])),
+                        rho=Randomness(data=[Fp(0) for _ in range(TARGET_CONFIG.RAND_LEN_FE)]),
+                        hashes=HashDigestList(data=[]),
+                    )
+                attestation_signatures.append(signature)
 
         return attestations, attestation_signatures
 
-    def _build_signed_attestation_from_spec(
+    def _build_attestation_data_from_spec(
         self,
-        spec: SignedAttestationSpec,
+        spec: AggregatedAttestationSpec,
         state: State,
-        key_manager: XmssKeyManager,
-    ) -> SignedAttestation:
+    ) -> AttestationData:
         """
-        Build a SignedAttestation from a SignedAttestationSpec.
+        Build AttestationData from an AggregatedAttestationSpec.
 
         Parameters
         ----------
-        spec : SignedAttestationSpec
-            The attestation specification to resolve.
+        spec : AggregatedAttestationSpec
+            The aggregated attestation specification.
         state : State
             The state to get latest_justified checkpoint from.
-        key_manager : XmssKeyManager
-            The key manager for signing.
 
         Returns:
         -------
-        SignedAttestation
-            The resolved signed attestation.
+        AttestationData
+            The attestation data shared by all validators in this aggregation.
         """
         # For this test, we use a dummy target since we're just testing signature generation
         # In a real test, you would resolve target_root_label from a block registry
@@ -315,35 +316,9 @@ class VerifySignaturesTest(BaseConsensusFixture):
         # Derive source from state's latest justified checkpoint
         source_checkpoint = state.latest_justified
 
-        # Create attestation
-        attestation = Attestation(
-            validator_id=spec.validator_id,
-            data=AttestationData(
-                slot=spec.slot,
-                head=head_checkpoint,
-                target=target_checkpoint,
-                source=source_checkpoint,
-            ),
-        )
-
-        # Sign the attestation - use dummy signature if expecting invalid signature
-        if spec.valid_signature:
-            # Generate valid signature using key manager
-            signature = key_manager.sign_attestation_data(
-                attestation.validator_id,
-                attestation.data,
-            )
-        else:
-            # Generate a structurally valid but cryptographically invalid signature (all zeros).
-            signature = Signature(
-                path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(TARGET_CONFIG.RAND_LEN_FE)]),
-                hashes=HashDigestList(data=[]),
-            )
-
-        # Create signed attestation
-        return SignedAttestation(
-            validator_id=attestation.validator_id,
-            message=attestation.data,
-            signature=signature,
+        return AttestationData(
+            slot=spec.slot,
+            head=head_checkpoint,
+            target=target_checkpoint,
+            source=source_checkpoint,
         )
