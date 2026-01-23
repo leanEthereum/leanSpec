@@ -20,7 +20,6 @@ from lean_spec.subspecs.chain.config import (
     SECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
     ATTESTATION_COMMITTEE_COUNT,
-    COMMITTEE_SIGNATURE_THRESHOLD_RATIO,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -1033,8 +1032,8 @@ class Store(Container):
             # Mid-slot - update safe target for validators
             store = store.update_safe_target()
             if is_aggregator:
-                # Wait for configured ratio of signatures from subnet validators
-                store = store.aggregate_committee_signatures(threshold_ratio=COMMITTEE_SIGNATURE_THRESHOLD_RATIO)
+                # Wait for 90% signatures from subnet validators
+                store = store.aggregate_committee_signatures(threshold_ratio=0.9)
         elif current_interval == Uint64(3):
             # End of slot - finalize aggregation and accept attestations
             if is_aggregator and not store.aggregated_in_current_slot:

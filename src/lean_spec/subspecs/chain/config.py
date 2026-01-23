@@ -40,9 +40,6 @@ VALIDATOR_REGISTRY_LIMIT: Final = Uint64(2**12)
 ATTESTATION_COMMITTEE_COUNT: Final = Uint64(1)
 """The number of attestation committees per slot."""
 
-COMMITTEE_SIGNATURE_THRESHOLD_RATIO: Final = 0.9
-"""Default ratio of committee signature participation required to trigger aggregation."""
-
 
 class _ChainConfig(StrictBaseModel):
     """
@@ -61,9 +58,6 @@ class _ChainConfig(StrictBaseModel):
     # Attestation / Networking
     attestation_committee_count: Uint64
 
-    # Aggregation behavior
-    committee_signature_threshold_ratio: float
-
 
 # The Devnet Chain Configuration.
 DEVNET_CONFIG: Final = _ChainConfig(
@@ -72,5 +66,4 @@ DEVNET_CONFIG: Final = _ChainConfig(
     historical_roots_limit=HISTORICAL_ROOTS_LIMIT,
     validator_registry_limit=VALIDATOR_REGISTRY_LIMIT,
     attestation_committee_count=ATTESTATION_COMMITTEE_COUNT,
-    committee_signature_threshold_ratio=COMMITTEE_SIGNATURE_THRESHOLD_RATIO,
 )
