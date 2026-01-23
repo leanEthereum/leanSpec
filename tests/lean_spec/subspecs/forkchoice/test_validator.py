@@ -31,22 +31,6 @@ from lean_spec.types import Bytes32, Bytes52, Uint64
 from lean_spec.types.validator import is_proposer
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _set_test_env(monkeypatch_module):
-    """Ensure LEAN_ENV is set to test for all tests in this module."""
-    monkeypatch_module.setenv("LEAN_ENV", "test")
-
-
-@pytest.fixture(scope="module")
-def monkeypatch_module():
-    """Module-scoped monkeypatch fixture."""
-    from _pytest.monkeypatch import MonkeyPatch
-
-    mp = MonkeyPatch()
-    yield mp
-    mp.undo()
-
-
 @pytest.fixture
 def config() -> Config:
     """Sample configuration for validator testing."""
