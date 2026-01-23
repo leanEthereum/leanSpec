@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 60.0
 """HTTP request timeout in seconds. Large states may take time to transfer."""
 
-FINALIZED_STATE_ENDPOINT = "/lean/states/finalized"
+FINALIZED_STATE_ENDPOINT = "/lean/v0/states/finalized"
 """API endpoint for fetching finalized state. Follows Beacon API conventions."""
 
 

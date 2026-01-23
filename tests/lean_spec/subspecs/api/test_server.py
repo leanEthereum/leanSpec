@@ -90,7 +90,7 @@ class TestHealthEndpoint:
 
 
 class TestFinalizedStateEndpoint:
-    """Tests for the /lean/states/finalized endpoint behavior."""
+    """Tests for the /lean/v0/states/finalized endpoint behavior."""
 
     def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
@@ -103,7 +103,7 @@ class TestFinalizedStateEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15054/lean/states/finalized")
+                    response = await client.get("http://127.0.0.1:15054/lean/v0/states/finalized")
 
                     assert response.status_code == 503
 
@@ -124,7 +124,7 @@ class TestFinalizedStateEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15056/lean/states/finalized")
+                    response = await client.get("http://127.0.0.1:15056/lean/v0/states/finalized")
 
                     assert response.status_code == 200
                     assert response.headers["content-type"] == "application/octet-stream"
@@ -143,7 +143,7 @@ class TestFinalizedStateEndpoint:
 
 
 class TestJustifiedEndpoint:
-    """Tests for the /lean/states/justified endpoint behavior."""
+    """Tests for the /lean/v0/states/justified endpoint behavior."""
 
     def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
@@ -156,7 +156,7 @@ class TestJustifiedEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15057/lean/states/justified")
+                    response = await client.get("http://127.0.0.1:15057/lean/v0/states/justified")
 
                     assert response.status_code == 503
 
@@ -177,7 +177,7 @@ class TestJustifiedEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15058/lean/states/justified")
+                    response = await client.get("http://127.0.0.1:15058/lean/v0/states/justified")
 
                     assert response.status_code == 200
                     assert "application/json" in response.headers["content-type"]
