@@ -44,7 +44,7 @@ from .base import BaseConsensusFixture
 
 def _create_dummy_signature() -> Signature:
     """
-    Create a structurally valid but cryptographically invalid signature.
+    Create a structurally valid but cryptographically invalid individual signature.
 
     The signature has proper structure (correct number of siblings, hashes, etc.)
     but all values are zeros, so it will fail cryptographic verification.

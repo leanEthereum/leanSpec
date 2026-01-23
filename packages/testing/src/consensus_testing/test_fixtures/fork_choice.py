@@ -398,21 +398,21 @@ class ForkChoiceTest(BaseConsensusFixture):
 
     def _build_attestations_from_spec(
         self,
-        block_spec: BlockSpec,
+        spec: BlockSpec,
         store: Store,
         block_registry: dict[str, Block],
         parent_root: Bytes32,
         key_manager: XmssKeyManager,
     ) -> tuple[list[Attestation], dict[SignatureKey, Signature]]:
         """Build aggregated attestations from BlockSpec and their signatures."""
-        if block_spec.attestations is None:
+        if spec.attestations is None:
             return [], {}
 
         parent_state = store.states[parent_root]
         attestations = []
         signature_lookup: dict[SignatureKey, Signature] = {}
 
-        for aggregated_spec in block_spec.attestations:
+        for aggregated_spec in spec.attestations:
             # Build attestation data (shared across all validators in this aggregation spec)
             attestation_data = self._build_attestation_data_from_spec(
                 aggregated_spec, block_registry, parent_state
