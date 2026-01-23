@@ -391,6 +391,7 @@ def test_aggregated_signatures_falls_back_to_block_payload() -> None:
                 epoch=att_data.slot,
             )
 
+
 def test_build_block_state_root_valid_when_signatures_split() -> None:
     """
     Verify state root validity when attestations split across signature sources.
@@ -403,18 +404,19 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
     When both sources cover the same attestation data, they cannot always merge.
     Each source may cover different validator subsets.
     The aggregation process must split them into separate attestations.
-    
+
     This creates a critical constraint: the block's state root must reflect
     the final attestation structure, not a preliminary grouping.
-    
+
     Test scenario:
-   
+
     - Three validators attest to identical data
     - One signature arrives via gossip (validator 0)
     - Two signatures arrive via aggregated proof (validators 1, 2)
     - Result: two attestations in the block, not one
     - The state transition must succeed with correct state root
     """
+    key_manager = get_shared_key_manager()
     num_validators = 4
     pre_state = make_state(num_validators)
 
@@ -426,7 +428,7 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
         update={"state_root": hash_tree_root(pre_state)}
     )
     parent_root = hash_tree_root(parent_header_with_state_root)
-    
+
     # Set up checkpoint references for the attestation.
     #
     # Source points to the justified checkpoint (genesis here).
@@ -454,13 +456,27 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
     #
     # Only one signature arrived via the gossip network.
     # This happens when network partitions delay some messages.
-    gossip_signatures = {SignatureKey(Uint64(0), data_root): make_signature(0)}
+    gossip_signatures = {
+        SignatureKey(Uint64(0), data_root): key_manager.sign_attestation_data(Uint64(0), att_data)
+    }
 
     # Simulate the remaining signatures arriving via aggregated proof.
     #
     # These validators' signatures were batched in a previous block.
     # The proof covers both validators together.
-    fallback_proof = make_test_proof([Uint64(1), Uint64(2)], b"fallback-12")
+    fallback_proof = AggregatedSignatureProof.aggregate(
+        participants=AggregationBits.from_validator_indices([Uint64(1), Uint64(2)]),
+        public_keys=[
+            key_manager.get_public_key(Uint64(1)),
+            key_manager.get_public_key(Uint64(2)),
+        ],
+        signatures=[
+            key_manager.sign_attestation_data(Uint64(1), att_data),
+            key_manager.sign_attestation_data(Uint64(2), att_data),
+        ],
+        message=data_root,
+        epoch=att_data.slot,
+    )
     aggregated_payloads = {
         SignatureKey(Uint64(1), data_root): [fallback_proof],
         SignatureKey(Uint64(2), data_root): [fallback_proof],
@@ -508,7 +524,7 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
     #
     # The block's embedded state root must equal the hash of the resulting state.
     assert block.state_root == hash_tree_root(result_state)
-    
+
     # Verify the block contains both split attestations.
     assert len(block.body.attestations.data) == 2
 
