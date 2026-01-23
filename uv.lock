@@ -867,7 +867,7 @@ requires-dist = [
 [[package]]
 name = "lean-multisig-py"
 version = "0.1.0"
-source = { git = "https://github.com/anshalshukla/leanMultisig-py?branch=devnet2#ca61a74e7cd28e7c8ee3acfe16258b1cfce56eeb" }
+source = { git = "https://github.com/anshalshukla/leanMultisig-py?branch=devnet2#13703c11e6e8d98be29e1b0cbe6f2d5a8df51d55" }
 
 [[package]]
 name = "lean-spec"
