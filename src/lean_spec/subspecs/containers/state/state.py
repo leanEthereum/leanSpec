@@ -92,6 +92,7 @@ class State(Container):
         # Configure the genesis state.
         genesis_config = Config(
             genesis_time=genesis_time,
+            attestation_subnet_count=ATTESTATION_COMMITTEE_COUNT,
         )
 
         # Build the genesis block header for the state.
@@ -816,12 +817,12 @@ class State(Container):
                     # Calculate committee size for the subnet of these validators
                     # We assume all validators in an aggregation group belong to the same subnet
                     first_validator_id = gossip_ids[0]
-                    subnet_id = compute_subnet_id(first_validator_id, ATTESTATION_COMMITTEE_COUNT)
+                    subnet_id = compute_subnet_id(first_validator_id, self.config.attestation_subnet_count)
 
                     # Count total validators in this subnet
                     committee_size = compute_subnet_size(
                         subnet_id,
-                        ATTESTATION_COMMITTEE_COUNT,
+                        self.config.attestation_subnet_count,
                         len(self.validators),
                     )
 

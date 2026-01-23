@@ -55,9 +55,6 @@ class _ChainConfig(StrictBaseModel):
     historical_roots_limit: Uint64
     validator_registry_limit: Uint64
 
-    # Attestation / Networking
-    attestation_committee_count: Uint64
-
 
 # The Devnet Chain Configuration.
 DEVNET_CONFIG: Final = _ChainConfig(
@@ -65,5 +62,4 @@ DEVNET_CONFIG: Final = _ChainConfig(
     justification_lookback_slots=JUSTIFICATION_LOOKBACK_SLOTS,
     historical_roots_limit=HISTORICAL_ROOTS_LIMIT,
     validator_registry_limit=VALIDATOR_REGISTRY_LIMIT,
-    attestation_committee_count=ATTESTATION_COMMITTEE_COUNT,
 )
