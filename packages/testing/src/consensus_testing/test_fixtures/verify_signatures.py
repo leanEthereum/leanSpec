@@ -7,6 +7,8 @@ from typing import Any, ClassVar
 from pydantic import Field, field_serializer
 
 from lean_spec.subspecs.containers.attestation import (
+    AggregatedAttestation,
+    AggregationBits,
     Attestation,
     AttestationData,
 )
@@ -15,20 +17,65 @@ from lean_spec.subspecs.containers.block import (
     BlockWithAttestation,
     SignedBlockWithAttestation,
 )
-from lean_spec.subspecs.containers.block.types import AttestationSignatures
+from lean_spec.subspecs.containers.block.types import (
+    AggregatedAttestations,
+    AttestationSignatures,
+)
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
+from lean_spec.subspecs.xmss.types import (
+    HashDigestList,
+    HashDigestVector,
+    HashTreeOpening,
+    Randomness,
+)
 from lean_spec.types import Bytes32, Uint64
+from lean_spec.types.byte_arrays import ByteListMiB
 
 from ..keys import XmssKeyManager, get_shared_key_manager
 from ..test_types import AggregatedAttestationSpec, BlockSpec
 from .base import BaseConsensusFixture
+
+
+def _create_dummy_signature() -> Signature:
+    """
+    Create a structurally valid but cryptographically invalid signature.
+
+    The signature has proper structure (correct number of siblings, hashes, etc.)
+    but all values are zeros, so it will fail cryptographic verification.
+    """
+    # Create zero-filled hash digests with correct dimensions
+    zero_digest = HashDigestVector(data=[Fp(0) for _ in range(TARGET_CONFIG.HASH_LEN_FE)])
+
+    # Path needs LOG_LIFETIME siblings for the Merkle authentication path
+    siblings = HashDigestList(data=[zero_digest for _ in range(TARGET_CONFIG.LOG_LIFETIME)])
+
+    # Hashes need DIMENSION vectors for the Winternitz chain hashes
+    hashes = HashDigestList(data=[zero_digest for _ in range(TARGET_CONFIG.DIMENSION)])
+
+    return Signature(
+        path=HashTreeOpening(siblings=siblings),
+        rho=Randomness(data=[Fp(0) for _ in range(TARGET_CONFIG.RAND_LEN_FE)]),
+        hashes=hashes,
+    )
+
+
+def _create_dummy_aggregated_proof(validator_ids: list[Uint64]) -> AggregatedSignatureProof:
+    """
+    Create a dummy aggregated signature proof with invalid proof data.
+
+    The proof has the correct participants bitfield but invalid proof bytes,
+    so it will fail verification.
+    """
+    return AggregatedSignatureProof(
+        participants=AggregationBits.from_validator_indices(validator_ids),
+        proof_data=ByteListMiB(data=b"\x00" * 32),  # Invalid proof bytes
+    )
 
 
 class VerifySignaturesTest(BaseConsensusFixture):
@@ -178,28 +225,52 @@ class VerifySignaturesTest(BaseConsensusFixture):
         parent_state = state.process_slots(spec.slot)
         parent_root = hash_tree_root(parent_state.latest_block_header)
 
-        # Build attestations from spec
-        attestations, attestation_signature_inputs = self._build_attestations_from_spec(
-            spec, state, key_manager
+        # Build attestations from spec - only valid ones go through aggregation
+        valid_attestations, valid_signatures, invalid_specs = (
+            self._build_attestations_from_spec(spec, state, key_manager)
         )
 
-        # Provide signatures to State.build_block so it can include attestations during
-        # fixed-point collection when available_attestations/known_block_roots are used.
-        # This might contain invalid signatures as we are not validating them here.
+        # Provide signatures to State.build_block for valid attestations
         gossip_signatures = {
             SignatureKey(att.validator_id, att.data.data_root_bytes()): sig
-            for att, sig in zip(attestations, attestation_signature_inputs, strict=True)
+            for att, sig in zip(valid_attestations, valid_signatures, strict=True)
         }
 
-        # Use State.build_block for core block building (pure spec logic)
+        # Use State.build_block for valid attestations (pure spec logic)
         final_block, _, _, aggregated_signatures = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            attestations=attestations,
+            attestations=valid_attestations,
             gossip_signatures=gossip_signatures,
             aggregated_payloads={},
         )
+
+        # Create dummy proofs for invalid attestation specs
+        for invalid_spec in invalid_specs:
+            attestation_data = self._build_attestation_data_from_spec(invalid_spec, state)
+
+            # Create aggregated attestation with dummy proof
+            aggregation_bits = AggregationBits.from_validator_indices(invalid_spec.validator_ids)
+            invalid_aggregated = AggregatedAttestation(
+                aggregation_bits=aggregation_bits,
+                data=attestation_data,
+            )
+            invalid_proof = _create_dummy_aggregated_proof(invalid_spec.validator_ids)
+
+            # Add to block's attestations
+            final_block = final_block.model_copy(
+                update={
+                    "body": final_block.body.model_copy(
+                        update={
+                            "attestations": AggregatedAttestations(
+                                data=[*final_block.body.attestations.data, invalid_aggregated]
+                            )
+                        }
+                    )
+                }
+            )
+            aggregated_signatures.append(invalid_proof)
 
         attestation_signatures = AttestationSignatures(
             data=aggregated_signatures,
@@ -224,12 +295,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 proposer_attestation.data,
             )
         else:
-            # Generate a structurally valid but cryptographically invalid signature (all zeros).
-            proposer_attestation_signature = Signature(
-                path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                rho=Randomness(data=[Fp(0) for _ in range(TARGET_CONFIG.RAND_LEN_FE)]),
-                hashes=HashDigestList(data=[]),
-            )
+            proposer_attestation_signature = _create_dummy_signature()
 
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
@@ -247,43 +313,48 @@ class VerifySignaturesTest(BaseConsensusFixture):
         spec: BlockSpec,
         state: State,
         key_manager: XmssKeyManager,
-    ) -> tuple[list[Attestation], list[Any]]:
-        """Build attestations list from BlockSpec."""
-        if spec.attestations is None:
-            return [], []
+    ) -> tuple[list[Attestation], list[Any], list[AggregatedAttestationSpec]]:
+        """
+        Build attestations list from BlockSpec.
 
-        attestations = []
-        attestation_signatures = []
+        Returns:
+        -------
+        tuple of:
+            - valid_attestations: Attestations with valid signatures for aggregation
+            - valid_signatures: Corresponding signatures for valid attestations
+            - invalid_specs: Specs with valid_signature=False (handled separately)
+        """
+        if spec.attestations is None:
+            return [], [], []
+
+        valid_attestations = []
+        valid_signatures = []
+        invalid_specs = []
 
         for aggregated_spec in spec.attestations:
+            if not aggregated_spec.valid_signature:
+                # Defer invalid specs - they'll get dummy proofs created directly
+                invalid_specs.append(aggregated_spec)
+                continue
+
             # Build attestation data (shared across all validators in this group)
             attestation_data = self._build_attestation_data_from_spec(aggregated_spec, state)
 
             # Create individual attestations and signatures for each validator
             for validator_id in aggregated_spec.validator_ids:
-                attestations.append(
+                valid_attestations.append(
                     Attestation(
                         validator_id=validator_id,
                         data=attestation_data,
                     )
                 )
+                signature = key_manager.sign_attestation_data(
+                    validator_id,
+                    attestation_data,
+                )
+                valid_signatures.append(signature)
 
-                # Sign the attestation
-                if aggregated_spec.valid_signature:
-                    signature = key_manager.sign_attestation_data(
-                        validator_id,
-                        attestation_data,
-                    )
-                else:
-                    # Generate a structurally valid but cryptographically invalid signature.
-                    signature = Signature(
-                        path=HashTreeOpening(siblings=HashDigestList(data=[])),
-                        rho=Randomness(data=[Fp(0) for _ in range(TARGET_CONFIG.RAND_LEN_FE)]),
-                        hashes=HashDigestList(data=[]),
-                    )
-                attestation_signatures.append(signature)
-
-        return attestations, attestation_signatures
+        return valid_attestations, valid_signatures, invalid_specs
 
     def _build_attestation_data_from_spec(
         self,

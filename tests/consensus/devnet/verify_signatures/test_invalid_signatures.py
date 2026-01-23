@@ -2,17 +2,19 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     VerifySignaturesTestFiller,
     generate_pre_state,
 )
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.types import Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
 
-def test_invalid_signature(
+def test_invalid_proposer_signature(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
     """
@@ -46,54 +48,53 @@ def test_invalid_signature(
     )
 
 
-# TODO: Add test for mixed valid and invalid signatures
-# This test currently fails because attester-signature verification relies on the
-# aggregated multisig proof, but multisig aggregation/verification runs in test_mode.
-# Since the proposer signature is valid and verified individually, the block is not rejected.”
-# def test_mixed_valid_invalid_signatures(
-#     verify_signatures_test: VerifySignaturesTestFiller,
-# ) -> None:
-#     """
-#     Test that signature verification catches invalid signatures among valid ones.
+def test_invalid_aggregated_attestation_signature(
+    verify_signatures_test: VerifySignaturesTestFiller,
+) -> None:
+    """
+    Test that invalid aggregated attestation signatures are properly rejected.
 
-#     Scenario
-#     --------
-#     - Single block at slot 1
-#     - Proposer attestation from validator 1
-#     - 2 non-proposer attestations from validators 0 and 2
-#     - Total: 3 signatures, middle attestation (validator 2) has an invalid signature
+    Scenario
+    --------
+    - Single block at slot 1
+    - Proposer attestation from validator 1 (valid)
+    - Two aggregated attestations with different data:
+      - One from validator 0 with valid signature
+      - One from validator 2 with invalid signature
 
-#     Expected Behavior
-#     -----------------
-#     1. The SignedBlockWithAttestation is rejected due to 1 invalid signature
+    Expected Behavior
+    -----------------
+    1. The SignedBlockWithAttestation is rejected due to invalid aggregated signature
 
-#     Why This Matters
-#     ----------------
-#     This test verifies that signature verification:
-#     - Checks every signature individually, not just the first or last
-#     - Cannot be bypassed by surrounding invalid signatures with valid ones
-#     - Properly fails even when some signatures are valid
-#     - Validates all attestations in the block
-#     """
-#     verify_signatures_test(
-#         anchor_state=generate_pre_state(num_validators=3),
-#         block=BlockSpec(
-#             slot=Slot(1),
-#             attestations=[
-#                 SignedAttestationSpec(
-#                     validator_id=Uint64(0),
-#                     slot=Slot(1),
-#                     target_slot=Slot(0),
-#                     target_root_label="genesis",
-#                 ),
-#                 SignedAttestationSpec(
-#                     validator_id=Uint64(2),
-#                     slot=Slot(1),
-#                     target_slot=Slot(0),
-#                     target_root_label="genesis",
-#                     valid_signature=False,
-#                 ),
-#             ],
-#         ),
-#         expect_exception=AssertionError,
-#     )
+    Why This Matters
+    ----------------
+    This test verifies that aggregated signature verification:
+    - Properly validates leanVM aggregated proofs for each attestation group
+    - Rejects blocks containing any invalid aggregated attestation signature
+    - Works correctly even when some attestations have valid signatures
+    """
+    verify_signatures_test(
+        anchor_state=generate_pre_state(num_validators=3),
+        block=BlockSpec(
+            slot=Slot(2),
+            attestations=[
+                # Valid aggregated attestation
+                AggregatedAttestationSpec(
+                    validator_ids=[Uint64(0)],
+                    slot=Slot(2),
+                    target_slot=Slot(1),
+                    target_root_label="genesis",
+                    valid_signature=True,
+                ),
+                # Invalid aggregated attestation (different target to force separate aggregation)
+                AggregatedAttestationSpec(
+                    validator_ids=[Uint64(2)],
+                    slot=Slot(1),
+                    target_slot=Slot(0),
+                    target_root_label="genesis",
+                    valid_signature=False,
+                ),
+            ],
+        ),
+        expect_exception=AssertionError,
+    )
