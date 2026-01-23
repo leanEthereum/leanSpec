@@ -226,8 +226,8 @@ class VerifySignaturesTest(BaseConsensusFixture):
         parent_root = hash_tree_root(parent_state.latest_block_header)
 
         # Build attestations from spec - only valid ones go through aggregation
-        valid_attestations, valid_signatures, invalid_specs = (
-            self._build_attestations_from_spec(spec, state, key_manager)
+        valid_attestations, valid_signatures, invalid_specs = self._build_attestations_from_spec(
+            spec, state, key_manager
         )
 
         # Provide signatures to State.build_block for valid attestations
