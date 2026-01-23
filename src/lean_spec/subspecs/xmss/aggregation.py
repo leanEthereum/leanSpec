@@ -66,7 +66,6 @@ class AggregatedSignatureProof(Container):
         signatures: Sequence[Signature],
         message: bytes,
         epoch: Uint64,
-        *,
         mode: str | None = None,
     ) -> Self:
         """
@@ -108,7 +107,6 @@ class AggregatedSignatureProof(Container):
         public_keys: Sequence[PublicKey],
         message: bytes,
         epoch: Uint64,
-        *,
         mode: str | None = None,
     ) -> None:
         """
