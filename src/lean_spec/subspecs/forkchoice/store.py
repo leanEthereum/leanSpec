@@ -390,11 +390,11 @@ class Store(Container):
         # Copy the known attestation map:
         # - we build a new Store immutably,
         # - changes are applied on this local copy.
-        new_known = self.latest_known_attestations
+        new_known = dict(self.latest_known_attestations)
 
         # Copy the new attestation map:
         # - holds pending attestations that are not yet active.
-        new_new = self.latest_new_attestations
+        new_new = dict(self.latest_new_attestations)
 
         if is_from_block:
             # On-chain attestation processing
