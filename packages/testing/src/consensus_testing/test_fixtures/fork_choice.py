@@ -371,11 +371,14 @@ class ForkChoiceTest(BaseConsensusFixture):
         gossip_signatures = dict(store.gossip_signatures)
         gossip_signatures.update(attestation_signatures)
 
-        # Collect attestations from the store if requested.
+        # Prepare attestations for block construction.
         #
-        # Previous proposers' attestations become available for inclusion.
-        # This makes test vectors more realistic.
-        available_attestations: list[Attestation] | None = None
+        # Two sources of attestations:
+        # 1. Explicit attestations from the spec (always included)
+        # 2. Store attestations (only if include_store_attestations is True)
+        #
+        # When both are present, they are merged during block construction.
+        available_attestations: list[Attestation]
         known_block_roots: set[Bytes32] | None = None
 
         if spec.include_store_attestations:
@@ -388,7 +391,12 @@ class ForkChoiceTest(BaseConsensusFixture):
                 Attestation(validator_id=vid, data=data)
                 for vid, data in store.latest_new_attestations.items()
             )
+            # Add explicit attestations from the spec
+            available_attestations.extend(attestations)
             known_block_roots = set(store.blocks.keys())
+        else:
+            # Use only explicit attestations from the spec
+            available_attestations = attestations
 
         # Build the block using spec logic
         #
