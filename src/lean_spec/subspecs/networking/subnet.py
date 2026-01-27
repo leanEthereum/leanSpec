@@ -5,7 +5,7 @@ its validator index and number of committees.
 """
 from __future__ import annotations
 
-from src.lean_spec.types import Uint64
+from lean_spec.types import Uint64
 
 
 def compute_subnet_id(validator_index: Uint64, num_committees: Uint64) -> int:

@@ -112,10 +112,10 @@ def test_genesis_block_hash_comparison() -> None:
 
     # Compare genesis block hashes with expected hex values
     hash1_hex = f"0x{genesis_block_hash1.hex()}"
-    assert hash1_hex == "0xcc03f11dd80dd79a4add86265fad0a141d0a553812d43b8f2c03aa43e4b002e3"
+    assert hash1_hex == "0x71555f7f28d7475af64371eb3ae8fad01c76271c02fe2a7799464b25ae3335ee"
 
     hash2_hex = f"0x{genesis_block_hash2.hex()}"
-    assert hash2_hex == "0x6bd5347aa1397c63ed8558079fdd3042112a5f4258066e3a659a659ff75ba14f"
+    assert hash2_hex == "0x846150f171dbaf07433cd16475e36d7a213fef8bda7a0643242dc38e23870f58"
 
     hash3_hex = f"0x{genesis_block_hash3.hex()}"
-    assert hash3_hex == "0xce48a709189aa2b23b6858800996176dc13eb49c0c95d717c39e60042de1ac91"
+    assert hash3_hex == "0x69b339f5373f45d91435cdabb85b072e9378768aa588a3642295afe01a1b4682"

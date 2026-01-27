@@ -15,5 +15,5 @@ class Config(Container):
     genesis_time: Uint64
     """The timestamp of the genesis block."""
 
-    attestation_subnet_count: Uint64
+    attestation_subnet_count: Uint64 = Uint64(1)
     """The number of attestation subnets in the network."""

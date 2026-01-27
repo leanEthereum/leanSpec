@@ -48,8 +48,8 @@ from lean_spec.types import (
 from lean_spec.types.container import Container
 from lean_spec.subspecs.networking import compute_subnet_id
 
-from src.lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
-from src.lean_spec.subspecs.xmss.aggregation import AggregationError
+from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
+from lean_spec.subspecs.xmss.aggregation import AggregationError
 
 
 class Store(Container):
@@ -147,7 +147,7 @@ class Store(Container):
     - Only stores the attestation data, not signatures.
     """
 
-    gossip_committee_signatures: dict[SignatureKey, Signature] = {}
+    gossip_signatures: dict[SignatureKey, Signature] = {}
     """
     Per-validator XMSS signatures learned from committee attesters.
 
@@ -273,8 +273,8 @@ class Store(Container):
     def on_gossip_attestation(
         self,
         signed_attestation: SignedAttestation,
-        is_aggregator: bool,
-        current_validator_id: ValidatorIndex,
+        is_aggregator: bool = False,
+        current_validator_id: ValidatorIndex | None = None,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -323,22 +323,32 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
-        current_validator_subnet = compute_subnet_id(current_validator_id, self.config.attestation_subnet_count)
-        attester_subnet = compute_subnet_id(validator_id, self.config.attestation_subnet_count)
-
-        # Store signature for later aggregation if applicable
-        new_commitee_sigs = dict(self.gossip_committee_signatures)
-        if is_aggregator and current_validator_subnet == attester_subnet:
+        # Store signature for later aggregation if applicable.
+        #
+        # For backwards compatibility, if the caller does not provide
+        # `current_validator_id`, we treat this as "not aggregating committee sigs".
+        new_commitee_sigs = dict(self.gossip_signatures)
+        if is_aggregator and current_validator_id is not None:
+            current_validator_subnet = compute_subnet_id(
+                current_validator_id, self.config.attestation_subnet_count
+            )
+            attester_subnet = compute_subnet_id(validator_id, self.config.attestation_subnet_count)
+            if current_validator_subnet != attester_subnet:
+                # Not part of our committee; ignore for committee aggregation.
+                pass
+            else:
+                sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
+                new_commitee_sigs[sig_key] = signature
+        else:
             # If this validator is an aggregator for this attestation,
             # also store the signature in the committee signatures map.
-            sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
-            new_commitee_sigs[sig_key] = signature
+            pass
 
         # Process the attestation data
         store = self.on_attestation(attestation=attestation, is_from_block=False)
 
         # Return store with updated signature maps
-        return store.model_copy(update={"gossip_committee_signatures": new_commitee_sigs})
+        return store.model_copy(update={"gossip_signatures": new_commitee_sigs})
 
     def on_attestation(
         self,
@@ -555,7 +565,7 @@ class Store(Container):
     def on_block(
         self,
         signed_block_with_attestation: SignedBlockWithAttestation,
-        current_validator: ValidatorIndex,
+        current_validator: ValidatorIndex | None = None,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -699,20 +709,26 @@ class Store(Container):
         # 2. Be available for inclusion in future blocks
         # 3. Influence fork choice only after interval 3 (end of slot)
 
-        new_gossip_sigs = dict(store.gossip_committee_signatures)
+        new_gossip_sigs = dict(store.gossip_signatures)
 
-        # Store proposer signature for future lookup if he belongs to the same committee as current validator
-        proposer_validator_id = proposer_attestation.validator_id
-        proposer_subnet_id = compute_subnet_id(proposer_validator_id, self.config.attestation_subnet_count)
-        current_validator_subnet_id = compute_subnet_id(current_validator, self.config.attestation_subnet_count)
-        if proposer_subnet_id == current_validator_subnet_id:
-            proposer_sig_key = SignatureKey(
-                proposer_attestation.validator_id,
-                proposer_attestation.data.data_root_bytes(),
+        # Store proposer signature for future lookup if it belongs to the same committee
+        # as the current validator (if provided).
+        if current_validator is not None:
+            proposer_validator_id = proposer_attestation.validator_id
+            proposer_subnet_id = compute_subnet_id(
+                proposer_validator_id, self.config.attestation_subnet_count
             )
-            new_gossip_sigs[proposer_sig_key] = (
-                signed_block_with_attestation.signature.proposer_signature
+            current_validator_subnet_id = compute_subnet_id(
+                current_validator, self.config.attestation_subnet_count
             )
+            if proposer_subnet_id == current_validator_subnet_id:
+                proposer_sig_key = SignatureKey(
+                    proposer_attestation.validator_id,
+                    proposer_attestation.data.data_root_bytes(),
+                )
+                new_gossip_sigs[proposer_sig_key] = (
+                    signed_block_with_attestation.signature.proposer_signature
+                )
 
         store = store.on_attestation(
             attestation=proposer_attestation,
@@ -720,7 +736,7 @@ class Store(Container):
         )
 
         # Update store with proposer signature
-        store = store.model_copy(update={"gossip_committee_signatures": new_gossip_sigs})
+        store = store.model_copy(update={"gossip_signatures": new_gossip_sigs})
 
         return store
 
@@ -923,7 +939,7 @@ class Store(Container):
         """
         Aggregate committee signatures for attestations in committee_signatures.
 
-        This method aggregates signatures from the gossip_committee_signatures map
+        This method aggregates signatures from the gossip_signatures map
 
         Returns:
             New Store with updated aggregated_payloads.
@@ -931,7 +947,7 @@ class Store(Container):
         new_aggregated_payloads = dict(self.aggregated_payloads)
 
         attestations = self.latest_new_attestations
-        committee_signatures = self.gossip_committee_signatures
+        committee_signatures = self.gossip_signatures
 
         head_state = self.states[self.head]
         # Perform aggregation
@@ -959,7 +975,7 @@ class Store(Container):
                 new_aggregated_payloads[sig_key].append(aggregated_signature)
         return self.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
 
-    def tick_interval(self, has_proposal: bool, is_aggregator: bool) -> "Store":
+    def tick_interval(self, has_proposal: bool, is_aggregator: bool = False) -> "Store":
         """
         Advance store time by one interval and perform interval-specific actions.
 
@@ -1013,7 +1029,7 @@ class Store(Container):
 
         return store
 
-    def on_tick(self, time: Uint64, has_proposal: bool, is_aggregator: bool) -> "Store":
+    def on_tick(self, time: Uint64, has_proposal: bool, is_aggregator: bool = False) -> "Store":
         """
         Advance forkchoice store time to given timestamp.
 
@@ -1240,7 +1256,7 @@ class Store(Container):
             parent_root=head_root,
             available_attestations=available_attestations,
             known_block_roots=set(store.blocks.keys()),
-            gossip_signatures=store.gossip_committee_signatures,
+            gossip_signatures=store.gossip_signatures,
             aggregated_payloads=store.aggregated_payloads,
         )
 

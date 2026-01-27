@@ -236,7 +236,7 @@ class GossipTopic:
         Returns:
             GossipTopic for committee aggregation messages.
         """
-        return cls(kind=TopicKind.COMMITTEE_AGGREGATION, fork_digest=fork_digest)
+        return cls(kind=TopicKind.AGGREGATED_ATTESTATION, fork_digest=fork_digest)
 
 
 def format_topic_string(
