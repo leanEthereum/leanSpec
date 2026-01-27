@@ -266,6 +266,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                     # This validates, applies state transition, and updates head.
                     store = store.on_block(
                         signed_block,
+                        current_validator=DEFAULT_VALIDATOR_ID,
                         scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                     )
 
@@ -371,32 +372,85 @@ class ForkChoiceTest(BaseConsensusFixture):
         gossip_signatures = dict(store.gossip_signatures)
         gossip_signatures.update(attestation_signatures)
 
-        # Prepare attestations for block construction.
+        # Prepare attestations and aggregated payloads for block construction.
         #
         # Two sources of attestations:
         # 1. Explicit attestations from the spec (always included)
         # 2. Store attestations (only if include_store_attestations is True)
         #
-        # When both are present, they are merged during block construction.
+        # For all attestations, we need to create aggregated proofs
+        # so build_block can include them in the block body.
+        # Attestations with the same data should be merged into a single proof.
         available_attestations: list[Attestation]
         known_block_roots: set[Bytes32] | None = None
-
+        
+        # Create aggregated payloads from explicit attestations
+        # Group attestations by data to create one proof per group
+        from lean_spec.subspecs.containers.block.types import AggregatedAttestation
+        from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
+        from lean_spec.subspecs.containers.attestation import AggregationBits
+        
+        aggregated_payloads = dict(store.aggregated_payloads) if store.aggregated_payloads else {}
+        
+        # Collect all attestations that need aggregated proofs
+        all_attestations_for_proofs: list[Attestation] = list(attestations)
+        
         if spec.include_store_attestations:
             # Gather all attestations: both active and recently received.
-            available_attestations = [
+            store_attestations = [
                 Attestation(validator_id=vid, data=data)
                 for vid, data in store.latest_known_attestations.items()
             ]
-            available_attestations.extend(
+            store_attestations.extend(
                 Attestation(validator_id=vid, data=data)
                 for vid, data in store.latest_new_attestations.items()
             )
-            # Add explicit attestations from the spec
-            available_attestations.extend(attestations)
+            
+            # Add store attestations to the list for proof creation
+            all_attestations_for_proofs.extend(store_attestations)
+            
+            # Combine for block construction
+            available_attestations = store_attestations + attestations
             known_block_roots = set(store.blocks.keys())
         else:
             # Use only explicit attestations from the spec
             available_attestations = attestations
+        
+        # Create aggregated proofs for all attestations (merged by data)
+        # This ensures attestations with the same data are aggregated together
+        for agg_att in AggregatedAttestation.aggregate_by_data(all_attestations_for_proofs):
+            validator_ids = list(agg_att.aggregation_bits.to_validator_indices())
+            message = agg_att.data.data_root_bytes()
+            epoch = agg_att.data.slot
+            
+            # Check if we have signatures for all validators
+            all_sigs_available = all(
+                SignatureKey(vid, message) in gossip_signatures
+                for vid in validator_ids
+            )
+            
+            if all_sigs_available:
+                # Collect public keys and signatures for these validators
+                public_keys = [key_manager.get_public_key(vid) for vid in validator_ids]
+                signatures = [gossip_signatures[SignatureKey(vid, message)] for vid in validator_ids]
+                
+                # Create aggregated proof
+                participants = AggregationBits.from_validator_indices(validator_ids)
+                proof = AggregatedSignatureProof.aggregate(
+                    participants=participants,
+                    public_keys=public_keys,
+                    signatures=signatures,
+                    message=message,
+                    epoch=epoch,
+                )
+                
+                # Add to aggregated_payloads for each validator
+                for vid in validator_ids:
+                    sig_key = SignatureKey(vid, message)
+                    if sig_key not in aggregated_payloads:
+                        aggregated_payloads[sig_key] = []
+                    # Insert at the beginning (most recent)
+                    aggregated_payloads[sig_key].insert(0, proof)
 
         # Build the block using spec logic
         #
@@ -410,7 +464,7 @@ class ForkChoiceTest(BaseConsensusFixture):
             attestations=available_attestations,
             available_attestations=available_attestations,
             known_block_roots=known_block_roots,
-            aggregated_payloads=store.aggregated_payloads,
+            aggregated_payloads=aggregated_payloads,
         )
 
         # Create proposer attestation
