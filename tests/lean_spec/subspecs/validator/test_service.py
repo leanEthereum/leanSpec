@@ -781,21 +781,39 @@ class TestValidatorServiceIntegration:
         attestation_data = store.produce_attestation_data(Slot(0))
         data_root = attestation_data.data_root_bytes()
 
-        # Simulate gossip attestations from validators 3 and 4
+        # Simulate aggregated payloads for validators 3 and 4
+        from lean_spec.subspecs.containers.attestation import AggregationBits
+        from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+        
         attestation_map: dict[ValidatorIndex, AttestationData] = {}
-        gossip_sigs: dict[SignatureKey, Signature] = {}
+        signatures = []
+        participants = [ValidatorIndex(3), ValidatorIndex(4)]
+        public_keys = []
+        
+        for vid in participants:
+            sig = key_manager.sign_attestation_data(vid, attestation_data)
+            signatures.append(sig)
+            public_keys.append(key_manager.get_public_key(vid))
+            attestation_map[vid] = attestation_data
 
-        for validator_id in (ValidatorIndex(3), ValidatorIndex(4)):
-            attestation_map[validator_id] = attestation_data
-            gossip_sigs[SignatureKey(validator_id, data_root)] = key_manager.sign_attestation_data(
-                validator_id, attestation_data
-            )
+        proof = AggregatedSignatureProof.aggregate(
+            participants=AggregationBits.from_validator_indices(participants),
+            public_keys=public_keys,
+            signatures=signatures,
+            message=data_root,
+            epoch=attestation_data.slot,
+        )
 
-        # Update store with pending attestations
+        aggregated_payloads = {
+            SignatureKey(vid, data_root): [proof]
+            for vid in participants
+        }
+
+        # Update store with pending attestations and aggregated payloads
         updated_store = store.model_copy(
             update={
                 "latest_known_attestations": attestation_map,
-                "gossip_signatures": gossip_sigs,
+                "aggregated_payloads": aggregated_payloads,
             }
         )
         real_sync_service.store = updated_store

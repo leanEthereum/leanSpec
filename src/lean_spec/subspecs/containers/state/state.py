@@ -656,7 +656,6 @@ class State(Container):
         attestations: list[Attestation] | None = None,
         available_attestations: Iterable[Attestation] | None = None,
         known_block_roots: AbstractSet[Bytes32] | None = None,
-        gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
         aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
     ) -> tuple[Block, "State", list[AggregatedAttestation], list[AggregatedSignatureProof]]:
         """
@@ -736,14 +735,13 @@ class State(Container):
                     continue
 
                 # We can only include an attestation if we have some way to later provide
-                # an aggregated proof for its group:
-                # - either a per validator XMSS signature from gossip, or
-                # - at least one aggregated proof learned from a block that references
-                #   this validator+data.
-                has_gossip_sig = bool(gossip_signatures and sig_key in gossip_signatures)
+                # an aggregated proof for its group.
+                #
+                # We strictly rely on existing aggregated proofs learned from blocks.
+                # We do NOT aggregate fresh gossip signatures during block production.
                 has_block_proof = bool(aggregated_payloads and sig_key in aggregated_payloads)
 
-                if has_gossip_sig or has_block_proof:
+                if has_block_proof:
                     new_attestations.append(attestation)
 
             # Fixed point reached: no new attestations found
@@ -754,10 +752,8 @@ class State(Container):
             attestations.extend(new_attestations)
 
         # Select aggregated attestations and proofs for the final block.
-        # Prefer fresh gossip signatures; fall back to previously-seen aggregated proofs.
-        aggregated_attestations, aggregated_signatures = self.compute_aggregated_signatures(
+        aggregated_attestations, aggregated_signatures = self.select_aggregated_proofs(
             attestations,
-            gossip_signatures=gossip_signatures,
             aggregated_payloads=aggregated_payloads,
         )
 

@@ -1257,7 +1257,6 @@ class Store(Container):
             parent_root=head_root,
             available_attestations=available_attestations,
             known_block_roots=set(store.blocks.keys()),
-            gossip_signatures=store.gossip_signatures,
             aggregated_payloads=store.aggregated_payloads,
         )
 

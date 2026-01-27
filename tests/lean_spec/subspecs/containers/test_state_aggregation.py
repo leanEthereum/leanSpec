@@ -207,10 +207,17 @@ def test_build_block_collects_valid_available_attestations() -> None:
     attestation = Attestation(validator_id=ValidatorIndex(0), data=att_data)
     data_root = att_data.data_root_bytes()
 
-    gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        )
+    # Calculate aggregated proof directly
+    signature = key_manager.sign_attestation_data(ValidatorIndex(0), att_data)
+    proof = AggregatedSignatureProof.aggregate(
+        participants=AggregationBits.from_validator_indices([ValidatorIndex(0)]),
+        public_keys=[key_manager.get_public_key(ValidatorIndex(0))],
+        signatures=[signature],
+        message=data_root,
+        epoch=att_data.slot,
+    )
+    aggregated_payloads = {
+        SignatureKey(ValidatorIndex(0), data_root): [proof]
     }
 
     # Proposer for slot 1 with 2 validators: slot % num_validators = 1 % 2 = 1
@@ -221,8 +228,7 @@ def test_build_block_collects_valid_available_attestations() -> None:
         attestations=[],
         available_attestations=[attestation],
         known_block_roots={head_root},
-        gossip_signatures=gossip_signatures,
-        aggregated_payloads={},
+        aggregated_payloads=aggregated_payloads,
     )
 
     assert post_state.latest_block_header.slot == Slot(1)
@@ -270,7 +276,6 @@ def test_build_block_skips_attestations_without_signatures() -> None:
         attestations=[],
         available_attestations=[attestation],
         known_block_roots={head_root},
-        gossip_signatures={},
         aggregated_payloads={},
     )
 
@@ -468,15 +473,15 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
     # Three validators attest to identical data.
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
 
-    # Simulate partial gossip coverage.
-    #
-    # Only one signature arrived via the gossip network.
-    # This happens when network partitions delay some messages.
-    gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        )
-    }
+    # Use a second aggregated proof for Validator 0 instead of gossip.
+    # This simulates receiving an aggregated signature for this validator from another source.
+    proof_0 = AggregatedSignatureProof.aggregate(
+        participants=AggregationBits.from_validator_indices([ValidatorIndex(0)]),
+        public_keys=[key_manager.get_public_key(ValidatorIndex(0))],
+        signatures=[key_manager.sign_attestation_data(ValidatorIndex(0), att_data)],
+        message=data_root,
+        epoch=att_data.slot,
+    )
 
     # Simulate the remaining signatures arriving via aggregated proof.
     #
@@ -496,6 +501,7 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
         epoch=att_data.slot,
     )
     aggregated_payloads = {
+        SignatureKey(ValidatorIndex(0), data_root): [proof_0],
         SignatureKey(ValidatorIndex(1), data_root): [fallback_proof],
         SignatureKey(ValidatorIndex(2), data_root): [fallback_proof],
     }
@@ -508,7 +514,6 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
         proposer_index=ValidatorIndex(1),
         parent_root=parent_root,
         attestations=attestations,
-        gossip_signatures=gossip_signatures,
         aggregated_payloads=aggregated_payloads,
     )
 
@@ -520,7 +525,7 @@ def test_build_block_state_root_valid_when_signatures_split() -> None:
 
     # Confirm each attestation covers the expected validators.
     actual_bits = [set(att.aggregation_bits.to_validator_indices()) for att in aggregated_atts]
-    assert {ValidatorIndex(0)} in actual_bits, "Gossip attestation should cover only validator 0"
+    assert {ValidatorIndex(0)} in actual_bits, "First attestation should cover only validator 0"
     assert {ValidatorIndex(1), ValidatorIndex(2)} in actual_bits, (
         "Fallback should cover validators 1,2"
     )

@@ -65,19 +65,35 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
         validator_id: attestation_data for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
     }
 
-    # Store signatures in gossip_signatures
+    # Aggregate signatures manually for aggregated_payloads
     data_root = attestation_data.data_root_bytes()
-    gossip_sigs = {
-        SignatureKey(validator_id, data_root): key_manager.sign_attestation_data(
-            validator_id, attestation_data
-        )
-        for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
+    signatures_list = [
+        key_manager.sign_attestation_data(vid, attestation_data)
+        for vid in (ValidatorIndex(1), ValidatorIndex(2))
+    ]
+    participants = [ValidatorIndex(1), ValidatorIndex(2)]
+    
+    from lean_spec.subspecs.containers.attestation import AggregationBits
+    from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+
+    proof = AggregatedSignatureProof.aggregate(
+        participants=AggregationBits.from_validator_indices(participants),
+        public_keys=[key_manager.get_public_key(vid) for vid in participants],
+        signatures=signatures_list,
+        message=data_root,
+        epoch=attestation_data.slot,
+    )
+
+    aggregated_payloads = {
+        SignatureKey(vid, data_root): [proof] 
+        for vid in participants
     }
 
     producer_store = base_store.model_copy(
         update={
             "latest_known_attestations": attestation_data_map,
-            "gossip_signatures": gossip_sigs,
+            # No gossip signatures needed for block production now
+            "aggregated_payloads": aggregated_payloads,
         }
     )
 
