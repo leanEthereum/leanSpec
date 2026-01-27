@@ -3,7 +3,7 @@
 ## Overview
 
 Validators participate in consensus by proposing blocks and producing attestations.
-Optionally validators can opt-in to behave as aggregators in their committee .
+Optionally validators can opt-in to behave as aggregators in their committee.
 This document describes what honest validators do.
 
 ## Validator Assignment

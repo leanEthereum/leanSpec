@@ -68,10 +68,10 @@ Snappy-compressed message, which type is identified by the topic:
 
 | Topic Name | Message Type | Encoding |
 |------------------------------------------------------------|-----------------------------|--------------|
-| /lean/consensus/devnet3/blocks/ssz_snappy | SignedBlockWithAttestation | SSZ + Snappy |
-| /lean/consensus/devnet3/attestations/ssz_snappy | SignedAttestation | SSZ + Snappy |
-| /lean/consensus/devnet3/attestation\_{subnet_id}/ssz_snappy | SignedAttestation | SSZ + Snappy |
-| /lean/consensus/devnet3/aggregation/ssz_snappy | SignedAggregatedAttestation | SSZ + Snappy |
+| /leanconsensus/devnet3/blocks/ssz_snappy | SignedBlockWithAttestation | SSZ + Snappy |
+| /leanconsensus/devnet3/attestations/ssz_snappy | SignedAttestation | SSZ + Snappy |
+| /leanconsensus/devnet3/attestation\_{subnet_id}/ssz_snappy | SignedAttestation | SSZ + Snappy |
+| /leanconsensus/devnet3/aggregation/ssz_snappy | SignedAggregatedAttestation | SSZ + Snappy |
 
 ### Message Types
 
