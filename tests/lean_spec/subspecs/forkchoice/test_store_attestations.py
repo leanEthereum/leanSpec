@@ -25,6 +25,7 @@ from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
 from lean_spec.types import Bytes32, Bytes52, Uint64
+from tests.lean_spec.helpers import TEST_VALIDATOR_ID
 
 
 def test_on_block_processes_multi_validator_aggregations() -> None:
@@ -48,7 +49,11 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    base_store = Store.get_forkchoice_store(genesis_state, genesis_block)
+    base_store = Store.get_forkchoice_store(
+        genesis_state,
+        genesis_block,
+        validator_id=TEST_VALIDATOR_ID,
+    )
     consumer_store = base_store
 
     # Producer view knows about attestations from validators 1 and 2
@@ -145,7 +150,11 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    base_store = Store.get_forkchoice_store(genesis_state, genesis_block)
+    base_store = Store.get_forkchoice_store(
+        genesis_state,
+        genesis_block,
+        validator_id=TEST_VALIDATOR_ID,
+    )
 
     # First block: create and process a block with attestations to populate
     # `aggregated_payloads`.

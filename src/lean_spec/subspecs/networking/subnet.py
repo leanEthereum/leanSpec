@@ -3,6 +3,7 @@
 Provides a small utility to compute a validator's attestation subnet id from
 its validator index and number of committees.
 """
+
 from __future__ import annotations
 
 from lean_spec.types import Uint64

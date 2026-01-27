@@ -43,11 +43,16 @@ from typing import TYPE_CHECKING
 
 from lean_spec.subspecs import metrics
 from lean_spec.subspecs.chain.clock import SlotClock
-from lean_spec.subspecs.containers import Block, SignedBlockWithAttestation
-from lean_spec.subspecs.containers.attestation import SignedAttestation
-from lean_spec.subspecs.forkchoice import Store
-from lean_spec.subspecs.networking import PeerId
+from lean_spec.subspecs.containers import (
+    Block,
+    SignedAggregatedAttestation,
+    SignedAttestation,
+    SignedBlockWithAttestation,
+)
+from lean_spec.subspecs.forkchoice.store import Store
+
 from lean_spec.subspecs.networking.reqresp.message import Status
+from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 
 from .backfill_sync import BackfillSync, NetworkRequester
@@ -409,13 +414,21 @@ class SyncService:
         if not self._state.accepts_gossip:
             return
 
+        from lean_spec.subspecs.node.helpers import is_aggregator
+
+        # Check if we are an aggregator
+        is_aggregator_role = is_aggregator(self.store.validator_id)
+
         # Integrate the attestation into forkchoice state.
         #
         # The store validates the signature and updates branch weights.
         # Invalid attestations (bad signature, unknown target) are rejected.
         # Validation failures are logged but don't crash the event loop.
         try:
-            self.store = self.store.on_gossip_attestation(attestation)
+            self.store = self.store.on_gossip_attestation(
+                signed_attestation=attestation,
+                is_aggregator=is_aggregator_role,
+            )
         except (AssertionError, KeyError):
             # Attestation validation failed.
             #

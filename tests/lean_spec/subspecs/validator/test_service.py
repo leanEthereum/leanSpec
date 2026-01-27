@@ -34,6 +34,7 @@ from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Bytes52, Uint64
+from tests.lean_spec.helpers import TEST_VALIDATOR_ID
 
 
 class MockNetworkRequester(NetworkRequester):
@@ -51,7 +52,11 @@ class MockNetworkRequester(NetworkRequester):
 @pytest.fixture
 def store(genesis_state: State, genesis_block: Block) -> Store:
     """Forkchoice store initialized with genesis."""
-    return Store.get_forkchoice_store(genesis_state, genesis_block)
+    return Store.get_forkchoice_store(
+        genesis_state,
+        genesis_block,
+        validator_id=TEST_VALIDATOR_ID,
+    )
 
 
 @pytest.fixture
@@ -532,7 +537,11 @@ class TestValidatorServiceIntegration:
             state_root=hash_tree_root(genesis_state),
             body=BlockBody(attestations=AggregatedAttestations(data=[])),
         )
-        return Store.get_forkchoice_store(genesis_state, genesis_block)
+        return Store.get_forkchoice_store(
+            genesis_state,
+            genesis_block,
+            validator_id=TEST_VALIDATOR_ID,
+        )
 
     @pytest.fixture
     def real_sync_service(self, real_store: Store) -> SyncService:

@@ -92,6 +92,20 @@ class NodeConfig:
     """
 
 
+def get_local_validator_id(registry: ValidatorRegistry | None) -> ValidatorIndex | None:
+    """
+    Get the validator index for this node.
+
+    For now, returns None as a default for passive nodes or simple setups.
+    Future implementations will look up keys in the registry.
+    """
+    if registry is None or len(registry.validators) == 0:
+        return None
+
+    # For simplicity, use the first validator in the registry.
+    return registry.validators[0].index
+
+
 @dataclass(slots=True)
 class Node:
     """
@@ -146,11 +160,11 @@ class Node:
         if config.database_path is not None:
             database = cls._create_database(config.database_path)
 
-        # Try to load existing state from database.
         #
         # If database contains valid state, resume from there.
         # Otherwise, fall through to genesis initialization.
-        store = cls._try_load_from_database(database)
+        validator_id = get_local_validator_id(config.validator_registry)
+        store = cls._try_load_from_database(database, validator_id)
 
         if store is None:
             # Generate genesis state from validators.
@@ -173,7 +187,7 @@ class Node:
             # Initialize forkchoice store.
             #
             # Genesis block is both justified and finalized.
-            store = Store.get_forkchoice_store(state, block)
+            store = Store.get_forkchoice_store(state, block, validator_id)
 
             # Persist genesis to database if available.
             if database is not None:
@@ -262,7 +276,10 @@ class Node:
         return SQLiteDatabase(path)
 
     @staticmethod
-    def _try_load_from_database(database: Database | None) -> Store | None:
+    def _try_load_from_database(
+        database: Database | None,
+        validator_id: ValidatorIndex,
+    ) -> Store | None:
         """
         Try to load forkchoice store from existing database state.
 
@@ -270,6 +287,7 @@ class Node:
 
         Args:
             database: Database to load from.
+            validator_id: Validator index for the store instance.
 
         Returns:
             Loaded Store or None if no valid state exists.
@@ -309,6 +327,7 @@ class Node:
             latest_finalized=finalized,
             blocks={head_root: head_block},
             states={head_root: head_state},
+            validator_id=validator_id,
         )
 
     async def run(self, *, install_signal_handlers: bool = True) -> None:

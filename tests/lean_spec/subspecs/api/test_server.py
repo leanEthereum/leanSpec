@@ -15,6 +15,7 @@ from lean_spec.subspecs.api import (
 from lean_spec.subspecs.containers import State
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 
 

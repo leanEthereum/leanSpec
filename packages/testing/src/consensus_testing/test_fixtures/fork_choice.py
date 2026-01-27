@@ -51,6 +51,9 @@ from ..test_types import (
 from .base import BaseConsensusFixture
 
 
+DEFAULT_VALIDATOR_ID = ValidatorIndex(0)
+
+
 class ForkChoiceTest(BaseConsensusFixture):
     """
     Test fixture for event-driven fork choice scenarios.
@@ -212,6 +215,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         store = Store.get_forkchoice_store(
             state=self.anchor_state,
             anchor_block=self.anchor_block,
+            validator_id=DEFAULT_VALIDATOR_ID,
         )
 
         # Block registry for fork creation

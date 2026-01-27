@@ -36,7 +36,6 @@ from .events import (
     GossipBlockEvent,
     NetworkEvent,
     NetworkEventSource,
-    PeerConnectedEvent,
     PeerDisconnectedEvent,
     PeerStatusEvent,
 )
@@ -138,10 +137,12 @@ class NetworkService:
                 await self.sync_service.on_gossip_block(block, peer_id)
 
             case GossipAttestationEvent(attestation=attestation, peer_id=peer_id):
-                # Route gossip attestations to the sync service.
                 #
                 # SyncService will validate signature and update forkchoice.
-                await self.sync_service.on_gossip_attestation(attestation, peer_id)
+                await self.sync_service.on_gossip_attestation(
+                    attestation=attestation,
+                    peer_id=peer_id,
+                )
 
             case PeerStatusEvent(peer_id=peer_id, status=status):
                 # Route peer status updates to sync service.

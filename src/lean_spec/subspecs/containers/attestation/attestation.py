@@ -110,6 +110,7 @@ class AggregatedAttestation(Container):
             for data, validator_ids in data_to_validator_ids.items()
         ]
 
+
 class SignedAggregatedAttestation(Container):
     data: AttestationData
     """Combined attestation data similar to the beacon chain format."""

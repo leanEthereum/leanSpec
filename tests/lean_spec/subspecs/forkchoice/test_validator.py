@@ -29,6 +29,7 @@ from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
 from lean_spec.types import Bytes32, Bytes52, Uint64
+from tests.lean_spec.helpers import TEST_VALIDATOR_ID
 
 
 @pytest.fixture
@@ -121,6 +122,7 @@ def sample_store(config: Config, sample_state: State) -> Store:
         latest_finalized=finalized,
         blocks={genesis_hash: genesis_block},
         states={genesis_hash: consistent_state},  # States are indexed by block hash
+        validator_id=TEST_VALIDATOR_ID,
     )
 
 
@@ -490,6 +492,7 @@ class TestValidatorIntegration:
             latest_finalized=final_checkpoint,
             blocks={genesis_hash: genesis},
             states={genesis_hash: state},
+            validator_id=TEST_VALIDATOR_ID,
         )
 
         # Should be able to produce block and attestation
@@ -532,6 +535,7 @@ class TestValidatorErrorHandling:
             latest_finalized=checkpoint,
             blocks={},  # No blocks
             states={},  # No states
+            validator_id=TEST_VALIDATOR_ID,
         )
 
         with pytest.raises(KeyError):  # Missing head in get_proposal_head

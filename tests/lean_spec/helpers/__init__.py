@@ -15,6 +15,10 @@ from .builders import (
     make_validators_with_keys,
 )
 from .mocks import MockNoiseSession
+from lean_spec.subspecs.containers.validator import ValidatorIndex
+
+TEST_VALIDATOR_ID = ValidatorIndex(0)
+
 
 __all__ = [
     # Builders
@@ -32,4 +36,6 @@ __all__ = [
     "make_validators_with_keys",
     # Mocks
     "MockNoiseSession",
+    # Constants
+    "TEST_VALIDATOR_ID",
 ]

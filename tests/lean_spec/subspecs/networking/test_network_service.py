@@ -36,7 +36,7 @@ from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.sync.states import SyncState
 from lean_spec.types import Bytes32, Uint64
-from tests.lean_spec.helpers import make_mock_signature, make_signed_block
+from tests.lean_spec.helpers import make_mock_signature, make_signed_block, TEST_VALIDATOR_ID
 
 
 @dataclass
@@ -90,6 +90,7 @@ class MockStore:
         """Initialize mock store with genesis block."""
         self._head_slot = head_slot
         self.head = Bytes32.zero()
+        self.validator_id: ValidatorIndex = TEST_VALIDATOR_ID
         self.blocks: dict[Bytes32, Any] = {}
         self.states: dict[Bytes32, Any] = {}
         self._attestations_received: list[SignedAttestation] = []
@@ -118,14 +119,18 @@ class MockStore:
         new_store.head = root
         return new_store
 
-    def on_gossip_attestation(self, attestation: SignedAttestation) -> "MockStore":
+    def on_gossip_attestation(
+        self,
+        signed_attestation: SignedAttestation,
+        is_aggregator: bool = False,
+    ) -> "MockStore":
         """Process an attestation: track it for verification."""
         new_store = MockStore(self._head_slot)
         new_store.blocks = dict(self.blocks)
         new_store.states = dict(self.states)
         new_store.head = self.head
         new_store._attestations_received = list(self._attestations_received)
-        new_store._attestations_received.append(attestation)
+        new_store._attestations_received.append(signed_attestation)
         return new_store
 
 
@@ -192,7 +197,10 @@ class TestBlockRoutingToForkchoice:
             GossipBlockEvent(block=block, peer_id=peer_id, topic=block_topic),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -224,7 +232,10 @@ class TestBlockRoutingToForkchoice:
             GossipBlockEvent(block=block, peer_id=peer_id, topic=block_topic),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -255,7 +266,10 @@ class TestBlockRoutingToForkchoice:
             GossipBlockEvent(block=block, peer_id=peer_id, topic=block_topic),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -299,7 +313,10 @@ class TestAttestationRoutingToForkchoice:
             ),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -339,7 +356,10 @@ class TestAttestationRoutingToForkchoice:
             ),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -369,7 +389,10 @@ class TestPeerStatusStateTransitions:
             PeerStatusEvent(peer_id=peer_id, status=status),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -392,7 +415,10 @@ class TestPeerStatusStateTransitions:
             PeerStatusEvent(peer_id=peer_id, status=status),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -444,7 +470,10 @@ class TestIntegrationEventSequence:
             GossipBlockEvent(block=block, peer_id=peer_id, topic=block_topic),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -487,7 +516,10 @@ class TestIntegrationEventSequence:
             PeerStatusEvent(peer_id=peer_id, status=status),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 
@@ -529,7 +561,10 @@ class TestIntegrationEventSequence:
             GossipBlockEvent(block=block2, peer_id=peer_id, topic=block_topic),
         ]
         source = MockEventSource(events=events)
-        network_service = NetworkService(sync_service=sync_service, event_source=source)
+        network_service = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
 
         asyncio.run(network_service.run())
 

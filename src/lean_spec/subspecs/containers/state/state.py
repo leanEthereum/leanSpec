@@ -884,7 +884,9 @@ class State(Container):
         - `aggregate_gossip_signatures` (fresh per-validator signatures collected via gossip)
         - `select_aggregated_proofs` (reusing previously-seen aggregated proofs from blocks)
         """
-        results = self.aggregate_gossip_signatures(attestations, gossip_signatures=gossip_signatures)
+        results = self.aggregate_gossip_signatures(
+            attestations, gossip_signatures=gossip_signatures
+        )
         if aggregated_payloads:
             # Note: This may add additional proofs for the same attestation data.
             # Callers that rely on strict minimality should use the split APIs.
@@ -935,7 +937,9 @@ class State(Container):
         for aggregated in AggregatedAttestation.aggregate_by_data(attestations):
             data = aggregated.data
             data_root = data.data_root_bytes()
-            validator_ids = aggregated.aggregation_bits.to_validator_indices() # validators contributed to this attestation
+            validator_ids = (
+                aggregated.aggregation_bits.to_validator_indices()
+            )  # validators contributed to this attestation
 
             # Validators that are missing in the current aggregation are put into remaining.
             remaining: set[Uint64] = set(validator_ids)
@@ -1024,4 +1028,3 @@ class State(Container):
         # Unzip the results into parallel lists.
         aggregated_attestations, aggregated_proofs = zip(*results, strict=True)
         return list(aggregated_attestations), list(aggregated_proofs)
-

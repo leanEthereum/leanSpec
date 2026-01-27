@@ -20,7 +20,7 @@ from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Bytes52, Uint64
-from tests.lean_spec.helpers import make_signed_attestation
+from tests.lean_spec.helpers import make_signed_attestation, TEST_VALIDATOR_ID
 
 
 @pytest.fixture
@@ -62,6 +62,7 @@ def sample_store(sample_config: Config) -> Store:
         latest_finalized=checkpoint,
         blocks={genesis_hash: genesis_block},
         states={genesis_hash: state},
+        validator_id=TEST_VALIDATOR_ID,
     )
 
 
@@ -89,7 +90,11 @@ class TestGetForkchoiceStore:
             body=BlockBody(attestations=AggregatedAttestations(data=[])),
         )
 
-        store = Store.get_forkchoice_store(state=state, anchor_block=anchor_block)
+        store = Store.get_forkchoice_store(
+            anchor_state=state,
+            anchor_block=anchor_block,
+            validator_id=TEST_VALIDATOR_ID,
+        )
 
         assert store.time == INTERVALS_PER_SLOT * Uint64(anchor_slot)
 
