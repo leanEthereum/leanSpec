@@ -274,7 +274,7 @@ class Store(Container):
         self,
         signed_attestation: SignedAttestation,
         is_aggregator: bool,
-        current_validator_id: Uint64,
+        current_validator_id: ValidatorIndex,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -504,7 +504,7 @@ class Store(Container):
         # Ensure all participants exist in the active set
         validators = key_state.validators
         for validator_id in validator_ids:
-            assert validator_id < Uint64(len(validators)), (
+            assert validator_id < ValidatorIndex(len(validators)), (
                 f"Validator {validator_id} not found in state {data.target.root.hex()}"
             )
 
@@ -555,7 +555,7 @@ class Store(Container):
     def on_block(
         self,
         signed_block_with_attestation: SignedBlockWithAttestation,
-        current_validator: Uint64,
+        current_validator: ValidatorIndex,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
