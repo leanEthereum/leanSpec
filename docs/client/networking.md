@@ -63,35 +63,35 @@ Messages are organized by topic. Topic names follow a pattern that includes:
 
 This structure lets clients subscribe to relevant messages and ignore others.
 
-The payload carried in the gossipsub message is the SSZ-encoded, 
+The payload carried in the gossipsub message is the SSZ-encoded,
 Snappy-compressed message, which type is identified by the topic:
 
-| Topic Name                                                 | Message Type                | Encoding     |
+| Topic Name | Message Type | Encoding |
 |------------------------------------------------------------|-----------------------------|--------------|
-| /lean/consensus/devnet3/blocks/ssz_snappy                  | SignedBlockWithAttestation  | SSZ + Snappy |
-| /lean/consensus/devnet3/attestations/ssz_snappy            | SignedAttestation           | SSZ + Snappy |
-| /lean/consensus/devnet3/attestation_{subnet_id}/ssz_snappy | SignedAttestation           | SSZ + Snappy |
-| /lean/consensus/devnet3/aggregation/ssz_snappy             | SignedAggregatedAttestation | SSZ + Snappy |
+| /lean/consensus/devnet3/blocks/ssz_snappy | SignedBlockWithAttestation | SSZ + Snappy |
+| /lean/consensus/devnet3/attestations/ssz_snappy | SignedAttestation | SSZ + Snappy |
+| /lean/consensus/devnet3/attestation\_{subnet_id}/ssz_snappy | SignedAttestation | SSZ + Snappy |
+| /lean/consensus/devnet3/aggregation/ssz_snappy | SignedAggregatedAttestation | SSZ + Snappy |
 
 ### Message Types
 
 Three main message types exist:
 
-* _Blocks_, defined by the `SignedBlockWithAttestation` type, are proposed by 
-validators and propagated on the block topic. Every node needs to see blocks 
-quickly.
+- _Blocks_, defined by the `SignedBlockWithAttestation` type, are proposed by
+  validators and propagated on the block topic. Every node needs to see blocks
+  quickly.
 
-* _Attestations_, defined by the `SignedAttestation` type, come from all 
-validators. They propagate on the global attestation topic. Additionally,
-each committee has its own attestation topic. Validators publish to their
-committee's attestation topic and global attestation topic. Non-aggregating 
-validators subscribe only to the global attestation topic, while aggregators 
-subscribe to both the global and their committee's attestation topic.
+- _Attestations_, defined by the `SignedAttestation` type, come from all
+  validators. They propagate on the global attestation topic. Additionally,
+  each committee has its own attestation topic. Validators publish to their
+  committee's attestation topic and global attestation topic. Non-aggregating
+  validators subscribe only to the global attestation topic, while aggregators
+  subscribe to both the global and their committee's attestation topic.
 
-* _Committee aggregations_, defined by the `SignedAggregatedAttestation` type, 
-created by committee aggregators. These combine attestations from committee 
-members. Aggregations propagate on the aggregation topic to which every 
-validator subscribes.
+- _Committee aggregations_, defined by the `SignedAggregatedAttestation` type,
+  created by committee aggregators. These combine attestations from committee
+  members. Aggregations propagate on the aggregation topic to which every
+  validator subscribes.
 
 ### Encoding
 

@@ -1,6 +1,6 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import AbstractSet, Iterable
+from typing import AbstractSet, Collection, Iterable
 
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
@@ -779,7 +779,7 @@ class State(Container):
 
     def aggregate_gossip_signatures(
         self,
-        attestations: list[Attestation],
+        attestations: Collection[Attestation],
         gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
     ) -> list[tuple[AggregatedAttestation, AggregatedSignatureProof]]:
         """
@@ -791,7 +791,7 @@ class State(Container):
 
         Parameters
         ----------
-        attestations : list[Attestation]
+        attestations : Collection[Attestation]
             Individual attestations to aggregate and sign.
         gossip_signatures : dict[SignatureKey, Signature] | None
             Per-validator XMSS signatures learned from the gossip network.
@@ -807,7 +807,7 @@ class State(Container):
         #
         # Multiple validators may attest to the same data (slot, head, target, source).
         # We aggregate them into groups so each group can share a single proof.
-        for aggregated in AggregatedAttestation.aggregate_by_data(attestations):
+        for aggregated in AggregatedAttestation.aggregate_by_data(list(attestations)):
             # Extract the common attestation data and its hash.
             #
             # All validators in this group signed the same message (the data root).
@@ -831,7 +831,6 @@ class State(Container):
             # Track validators we couldn't find signatures for.
             #
             # These will need to be covered by Phase 2 (existing proofs).
-            remaining: set[ValidatorIndex] = set()
 
             # Attempt to collect each validator's signature from gossip.
             #

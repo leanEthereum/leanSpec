@@ -511,7 +511,7 @@ class TestGossipReceptionIntegration:
     def test_full_block_reception_flow(self) -> None:
         """Tests complete flow: stream -> parse -> decompress -> decode."""
 
-        async def run() -> tuple[SignedBlockWithAttestation | SignedAttestation, bytes]:
+        async def run() -> tuple[SignedBlockWithAttestation | SignedAttestation | None, bytes]:
             handler = GossipHandler(fork_digest="0x00000000")
             original_block = make_test_signed_block()
             ssz_bytes = original_block.encode_bytes()
@@ -536,7 +536,9 @@ class TestGossipReceptionIntegration:
     def test_full_attestation_reception_flow(self) -> None:
         """Tests complete flow for attestation messages."""
 
-        async def run() -> tuple[SignedBlockWithAttestation | SignedAttestation, bytes, TopicKind]:
+        async def run() -> tuple[
+            SignedBlockWithAttestation | SignedAttestation | None, bytes, TopicKind
+        ]:
             handler = GossipHandler(fork_digest="0x00000000")
             original_attestation = make_test_signed_attestation()
             ssz_bytes = original_attestation.encode_bytes()
@@ -586,6 +588,7 @@ class TestGossipReceptionIntegration:
 
             # Decode
             decoded = handler.decode_message(topic_str, compressed)
+            assert decoded is not None, "decode_message should not return None for valid input"
             decoded_bytes = decoded.encode_bytes()
 
             return decoded_bytes, original_bytes

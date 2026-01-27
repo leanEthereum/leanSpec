@@ -20,7 +20,7 @@ from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Bytes52, Uint64
-from tests.lean_spec.helpers import make_signed_attestation, TEST_VALIDATOR_ID
+from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_signed_attestation
 
 
 @pytest.fixture

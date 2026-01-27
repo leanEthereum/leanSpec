@@ -2,8 +2,8 @@
 
 ## Overview
 
-Validators participate in consensus by proposing blocks and producing attestations. 
-Optionally validators can opt-in to behave as aggregators in their committee . 
+Validators participate in consensus by proposing blocks and producing attestations.
+Optionally validators can opt-in to behave as aggregators in their committee .
 This document describes what honest validators do.
 
 ## Validator Assignment
@@ -19,19 +19,19 @@ is temporary for devnet testing.
 
 ## Attestation Committees and Subnets
 
-Attestation committee is a group of validators contributing to the common 
+Attestation committee is a group of validators contributing to the common
 aggregated attestations. Subnets are network channels dedicated to specific committees.
 
-In the devnet-3 design, however, there is one global subnet for signed 
+In the devnet-3 design, however, there is one global subnet for signed
 attestations propagation, in addition to publishing into per committee subnets.
-This is due to 3SF-mini consensus design, that requires 2/3+ of all 
+This is due to 3SF-mini consensus design, that requires 2/3+ of all
 attestations to be observed by any validator to compute safe target correctly.
 
 Note that non-aggregating validators do not need to subscribe to committee
-attestation subnets. They only need to subscribe to the global attestation 
+attestation subnets. They only need to subscribe to the global attestation
 subnet.
 
-Every validator is assigned to a single committee. Number of committees is 
+Every validator is assigned to a single committee. Number of committees is
 defined in config.yaml. Each committee maps to a subnet ID. Validator's
 subnet ID is derived using their validator index modulo number of committees.
 This is to simplify debugging and testing. In the future, validator's subnet ID
@@ -105,7 +105,7 @@ compute the head.
 
 ### Broadcasting Attestations
 
-Validators sign their attestations and broadcast them into the global 
+Validators sign their attestations and broadcast them into the global
 attestation topic and its corresponding subnet topic.
 
 ## Timing

@@ -36,7 +36,7 @@ from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.sync.states import SyncState
 from lean_spec.types import Bytes32, Uint64
-from tests.lean_spec.helpers import make_mock_signature, make_signed_block, TEST_VALIDATOR_ID
+from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_mock_signature, make_signed_block
 
 
 @dataclass

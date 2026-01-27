@@ -45,12 +45,10 @@ from lean_spec.subspecs import metrics
 from lean_spec.subspecs.chain.clock import SlotClock
 from lean_spec.subspecs.containers import (
     Block,
-    SignedAggregatedAttestation,
     SignedAttestation,
     SignedBlockWithAttestation,
 )
 from lean_spec.subspecs.forkchoice.store import Store
-
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root

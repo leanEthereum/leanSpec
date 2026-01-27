@@ -32,7 +32,6 @@ from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
 from lean_spec.subspecs.validator.registry import ValidatorEntry
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
-from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Bytes52, Uint64
 from tests.lean_spec.helpers import TEST_VALIDATOR_ID
 
@@ -784,12 +783,12 @@ class TestValidatorServiceIntegration:
         # Simulate aggregated payloads for validators 3 and 4
         from lean_spec.subspecs.containers.attestation import AggregationBits
         from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
-        
+
         attestation_map: dict[ValidatorIndex, AttestationData] = {}
         signatures = []
         participants = [ValidatorIndex(3), ValidatorIndex(4)]
         public_keys = []
-        
+
         for vid in participants:
             sig = key_manager.sign_attestation_data(vid, attestation_data)
             signatures.append(sig)
@@ -804,10 +803,7 @@ class TestValidatorServiceIntegration:
             epoch=attestation_data.slot,
         )
 
-        aggregated_payloads = {
-            SignatureKey(vid, data_root): [proof]
-            for vid in participants
-        }
+        aggregated_payloads = {SignatureKey(vid, data_root): [proof] for vid in participants}
 
         # Update store with pending attestations and aggregated payloads
         updated_store = store.model_copy(

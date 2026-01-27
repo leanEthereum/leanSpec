@@ -216,9 +216,7 @@ def test_build_block_collects_valid_available_attestations() -> None:
         message=data_root,
         epoch=att_data.slot,
     )
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(0), data_root): [proof]
-    }
+    aggregated_payloads = {SignatureKey(ValidatorIndex(0), data_root): [proof]}
 
     # Proposer for slot 1 with 2 validators: slot % num_validators = 1 % 2 = 1
     block, post_state, aggregated_atts, aggregated_proofs = state.build_block(

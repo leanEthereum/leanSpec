@@ -112,6 +112,12 @@ class AggregatedAttestation(Container):
 
 
 class SignedAggregatedAttestation(Container):
+    """
+    A signed aggregated attestation for broadcasting.
+
+    Contains the attestation data and the aggregated signature proof.
+    """
+
     data: AttestationData
     """Combined attestation data similar to the beacon chain format."""
 

@@ -99,11 +99,11 @@ def get_local_validator_id(registry: ValidatorRegistry | None) -> ValidatorIndex
     For now, returns None as a default for passive nodes or simple setups.
     Future implementations will look up keys in the registry.
     """
-    if registry is None or len(registry.validators) == 0:
+    if registry is None or len(registry) == 0:
         return None
 
     # For simplicity, use the first validator in the registry.
-    return registry.validators[0].index
+    return registry.indices()[0]
 
 
 @dataclass(slots=True)
@@ -278,7 +278,7 @@ class Node:
     @staticmethod
     def _try_load_from_database(
         database: Database | None,
-        validator_id: ValidatorIndex,
+        validator_id: ValidatorIndex | None,
     ) -> Store | None:
         """
         Try to load forkchoice store from existing database state.

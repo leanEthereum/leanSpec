@@ -50,7 +50,6 @@ from ..test_types import (
 )
 from .base import BaseConsensusFixture
 
-
 DEFAULT_VALIDATOR_ID = ValidatorIndex(0)
 
 
@@ -213,7 +212,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # The Store is the node's local view of the chain.
         # It starts from a trusted anchor (usually genesis).
         store = Store.get_forkchoice_store(
-            state=self.anchor_state,
+            anchor_state=self.anchor_state,
             anchor_block=self.anchor_block,
             validator_id=DEFAULT_VALIDATOR_ID,
         )
@@ -265,7 +264,10 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                     # Process the block through Store.
                     # This validates, applies state transition, and updates head.
-                    store = store.on_block(signed_block, LEAN_ENV_TO_SCHEMES[self.lean_env])
+                    store = store.on_block(
+                        signed_block,
+                        scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
+                    )
 
                 elif isinstance(step, AttestationStep):
                     # Process a gossip attestation.
@@ -397,10 +399,9 @@ class ForkChoiceTest(BaseConsensusFixture):
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            attestations=attestations,
+            attestations=available_attestations,
             available_attestations=available_attestations,
             known_block_roots=known_block_roots,
-            gossip_signatures=gossip_signatures,
             aggregated_payloads=store.aggregated_payloads,
         )
 

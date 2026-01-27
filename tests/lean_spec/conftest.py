@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 
 from lean_spec.subspecs.containers import Block, State
-from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.forkchoice import Store
 from tests.lean_spec.helpers import make_genesis_block, make_genesis_state
 
 

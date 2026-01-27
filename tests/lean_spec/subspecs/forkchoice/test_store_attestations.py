@@ -72,7 +72,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
         for vid in (ValidatorIndex(1), ValidatorIndex(2))
     ]
     participants = [ValidatorIndex(1), ValidatorIndex(2)]
-    
+
     from lean_spec.subspecs.containers.attestation import AggregationBits
     from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 
@@ -84,10 +84,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
         epoch=attestation_data.slot,
     )
 
-    aggregated_payloads = {
-        SignatureKey(vid, data_root): [proof] 
-        for vid in participants
-    }
+    aggregated_payloads = {SignatureKey(vid, data_root): [proof] for vid in participants}
 
     producer_store = base_store.model_copy(
         update={

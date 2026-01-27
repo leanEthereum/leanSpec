@@ -1,6 +1,4 @@
-"""
-Helper functions for node operations.
-"""
+"""Helper functions for node operations."""
 
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 

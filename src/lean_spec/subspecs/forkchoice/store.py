@@ -15,11 +15,11 @@ import copy
 from collections import defaultdict
 
 from lean_spec.subspecs.chain.config import (
+    ATTESTATION_COMMITTEE_COUNT,
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
     SECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
-    ATTESTATION_COMMITTEE_COUNT,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -32,11 +32,14 @@ from lean_spec.subspecs.containers import (
     State,
     ValidatorIndex,
 )
+from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
 from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.networking import compute_subnet_id
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
+    AggregationError,
     SignatureKey,
 )
 from lean_spec.subspecs.xmss.containers import Signature
@@ -47,10 +50,6 @@ from lean_spec.types import (
     Uint64,
 )
 from lean_spec.types.container import Container
-from lean_spec.subspecs.networking import compute_subnet_id
-
-from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
-from lean_spec.subspecs.xmss.aggregation import AggregationError
 
 
 class Store(Container):
@@ -294,8 +293,8 @@ class Store(Container):
 
         This method:
         1. Verifies the XMSS signature
-        2. If current node is aggregator, stores the signature in the gossip signature map if it belongs
-         to the current validator's subnet
+        2. If current node is aggregator, stores the signature in the gossip
+           signature map if it belongs to the current validator's subnet
         3. Processes the attestation data via on_attestation
 
         Args:
@@ -950,16 +949,20 @@ class Store(Container):
         attestations = self.latest_new_attestations
         committee_signatures = self.gossip_signatures
 
+        attestation_list = [
+            Attestation(validator_id=vid, data=data) for vid, data in attestations.items()
+        ]
+
         head_state = self.states[self.head]
         # Perform aggregation
         aggregated_results = head_state.aggregate_gossip_signatures(
-            attestations,
+            attestation_list,
             committee_signatures,
         )
 
         # iterate to broadcast aggregated attestations
         for aggregated_attestation, aggregated_signature in aggregated_results:
-            signed_aggregated_attestation = SignedAggregatedAttestation(
+            _ = SignedAggregatedAttestation(
                 data=aggregated_attestation.data,
                 proof=aggregated_signature,
             )

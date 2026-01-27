@@ -324,7 +324,7 @@ class GossipHandler:
         self,
         topic_str: str,
         compressed_data: bytes,
-    ) -> SignedBlockWithAttestation | SignedAttestation:
+    ) -> SignedBlockWithAttestation | SignedAttestation | None:
         """
         Decode a gossip message from topic and compressed data.
 

@@ -36,6 +36,7 @@ from .events import (
     GossipBlockEvent,
     NetworkEvent,
     NetworkEventSource,
+    PeerConnectedEvent,
     PeerDisconnectedEvent,
     PeerStatusEvent,
 )
