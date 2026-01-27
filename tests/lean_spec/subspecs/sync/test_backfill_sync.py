@@ -8,6 +8,7 @@ import pytest
 
 from lean_spec.subspecs.containers import SignedBlockWithAttestation
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.peer.info import PeerInfo
 from lean_spec.subspecs.networking.types import ConnectionState
@@ -16,9 +17,8 @@ from lean_spec.subspecs.sync.backfill_sync import BackfillSync
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.config import MAX_BACKFILL_DEPTH, MAX_BLOCKS_PER_REQUEST
 from lean_spec.subspecs.sync.peer_manager import PeerManager
-from lean_spec.types import Bytes32, Uint64
-
-from .conftest import create_signed_block
+from lean_spec.types import Bytes32
+from tests.lean_spec.helpers import make_signed_block
 
 
 class MockNetworkRequester:
@@ -77,9 +77,9 @@ class TestBackfillChainResolution:
     ) -> None:
         """Fetching a single missing block adds it to cache."""
         # Create a block that will be "on the network"
-        block = create_signed_block(
+        block = make_signed_block(
             slot=Slot(10),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
@@ -103,25 +103,25 @@ class TestBackfillChainResolution:
         """Backfill recursively fetches missing parents up the chain."""
         # Create a chain: grandparent -> parent -> child
         # Only child's root is initially requested, but we should fetch all
-        grandparent = create_signed_block(
+        grandparent = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),  # Genesis as parent (known)
             state_root=Bytes32(b"\x01" * 32),
         )
         grandparent_root = network.add_block(grandparent)
 
-        parent = create_signed_block(
+        parent = make_signed_block(
             slot=Slot(2),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=grandparent_root,
             state_root=Bytes32(b"\x02" * 32),
         )
         parent_root = network.add_block(parent)
 
-        child = create_signed_block(
+        child = make_signed_block(
             slot=Slot(3),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=parent_root,
             state_root=Bytes32(b"\x03" * 32),
         )
@@ -168,9 +168,9 @@ class TestBackfillChainResolution:
         peer_id: PeerId,
     ) -> None:
         """Blocks already in cache are not re-requested."""
-        block = create_signed_block(
+        block = make_signed_block(
             slot=Slot(5),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
@@ -250,18 +250,18 @@ class TestOrphanHandling:
     ) -> None:
         """fill_all_orphans fetches parents for all orphan blocks in cache."""
         # Create a parent block on the network
-        parent = create_signed_block(
+        parent = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
         parent_root = network.add_block(parent)
 
         # Add child as orphan (parent not in cache)
-        child = create_signed_block(
+        child = make_signed_block(
             slot=Slot(2),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=parent_root,
             state_root=Bytes32(b"\x01" * 32),
         )
@@ -284,24 +284,24 @@ class TestOrphanHandling:
     ) -> None:
         """Multiple orphans with same parent only trigger one request for that parent."""
         # Shared parent
-        parent = create_signed_block(
+        parent = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
         parent_root = network.add_block(parent)
 
         # Two children with same parent
-        child1 = create_signed_block(
+        child1 = make_signed_block(
             slot=Slot(2),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=parent_root,
             state_root=Bytes32(b"\x01" * 32),
         )
-        child2 = create_signed_block(
+        child2 = make_signed_block(
             slot=Slot(2),
-            proposer_index=Uint64(1),
+            proposer_index=ValidatorIndex(1),
             parent_root=parent_root,
             state_root=Bytes32(b"\x02" * 32),
         )

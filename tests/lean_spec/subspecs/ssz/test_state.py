@@ -14,13 +14,14 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
     Validators,
 )
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes32, Uint64
 
 
 def test_encode_decode_state_roundtrip() -> None:
     block_header = BlockHeader(
         slot=Slot(0),
-        proposer_index=Uint64(0),
+        proposer_index=ValidatorIndex(0),
         parent_root=Bytes32.zero(),
         state_root=Bytes32.zero(),
         body_root=Bytes32.zero(),

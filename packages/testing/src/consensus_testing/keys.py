@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
 from lean_spec.config import LEAN_ENV
-from lean_spec.subspecs.containers import AttestationData
+from lean_spec.subspecs.containers import AttestationData, ValidatorIndex
 from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
@@ -81,6 +81,9 @@ Mapping from short name to scheme objects. This mapping is useful for:
 
 _KEY_MANAGER_CACHE: dict[tuple[str, Slot], XmssKeyManager] = {}
 """Cache for key managers: {(scheme_name, max_slot): XmssKeyManager}"""
+
+_VALIDATOR_INDEX_CACHE: dict[Uint64, ValidatorIndex] = {}
+"""Cache for converting Uint64 to ValidatorIndex."""
 
 _DEFAULT_MAX_SLOT: Slot = Slot(10)
 """Default number of max slots that the shared key manager is generated with"""
@@ -129,7 +132,7 @@ def _get_keys_dir(scheme_name: str) -> Path:
 
 
 @cache
-def load_keys(scheme_name: str) -> dict[Uint64, KeyPair]:
+def load_keys(scheme_name: str) -> dict[ValidatorIndex, KeyPair]:
     """
     Load pre-generated keys from disk (cached after first call).
 
@@ -154,7 +157,7 @@ def load_keys(scheme_name: str) -> dict[Uint64, KeyPair]:
     result = {}
     for key_file in sorted(keys_dir.glob("*.json")):
         # Extract validator index from filename (e.g., "0.json" -> 0)
-        validator_idx = Uint64(int(key_file.stem))
+        validator_idx = ValidatorIndex(int(key_file.stem))
         data = json.loads(key_file.read_text())
         result[validator_idx] = KeyPair.from_dict(data)
 
@@ -194,18 +197,18 @@ class XmssKeyManager:
         """Initialize the manager with optional custom configuration."""
         self.max_slot = max_slot
         self.scheme = scheme
-        self._state: dict[Uint64, KeyPair] = {}
+        self._state: dict[ValidatorIndex, KeyPair] = {}
 
         for scheme_name, scheme_obj in LEAN_ENV_TO_SCHEMES.items():
             if scheme_obj is scheme:
                 self.scheme_name = scheme_name
 
     @property
-    def keys(self) -> dict[Uint64, KeyPair]:
+    def keys(self) -> dict[ValidatorIndex, KeyPair]:
         """Lazy access to immutable base keys."""
         return load_keys(self.scheme_name)
 
-    def __getitem__(self, idx: Uint64) -> KeyPair:
+    def __getitem__(self, idx: ValidatorIndex) -> KeyPair:
         """Get key pair, returning advanced state if available."""
         if idx in self._state:
             return self._state[idx]
@@ -213,7 +216,7 @@ class XmssKeyManager:
             raise KeyError(f"Validator {idx} not found (max: {len(self.keys) - 1})")
         return self.keys[idx]
 
-    def __contains__(self, idx: Uint64) -> bool:
+    def __contains__(self, idx: ValidatorIndex) -> bool:
         """Check if validator index exists."""
         return idx in self.keys
 
@@ -221,21 +224,21 @@ class XmssKeyManager:
         """Number of available validators."""
         return len(self.keys)
 
-    def __iter__(self) -> Iterator[Uint64]:
+    def __iter__(self) -> Iterator[ValidatorIndex]:
         """Iterate over validator indices."""
         return iter(self.keys)
 
-    def get_public_key(self, idx: Uint64) -> PublicKey:
+    def get_public_key(self, idx: ValidatorIndex) -> PublicKey:
         """Get a validator's public key."""
         return self[idx].public
 
-    def get_all_public_keys(self) -> dict[Uint64, PublicKey]:
+    def get_all_public_keys(self) -> dict[ValidatorIndex, PublicKey]:
         """Get all public keys (from base keys, not advanced state)."""
         return {idx: kp.public for idx, kp in self.keys.items()}
 
     def sign_attestation_data(
         self,
-        validator_id: Uint64,
+        validator_id: ValidatorIndex,
         attestation_data: AttestationData,
     ) -> Signature:
         """

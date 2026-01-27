@@ -34,15 +34,18 @@ dependencies = [
     "aiohttp>=3.11.0,<4",
     "cryptography>=46.0.0",
     "numpy>=2.0.0,<3",
+    "prometheus-client>=0.21.0,<1",
+    "aioquic>=1.2.0,<2",
+    "pyyaml>=6.0.0,<7",
 ]
 
 [project.license]
 file = "LICENSE"
 
 [project.urls]
-Homepage = "https://github.com/leanEthereum/lean-spec"
-Source = "https://github.com/leanEthereum/lean-spec"
-Issues = "https://github.com/leanEthereum/lean-spec/issues"
+Homepage = "https://github.com/leanEthereum/leanSpec"
+Source = "https://github.com/leanEthereum/leanSpec"
+Issues = "https://github.com/leanEthereum/leanSpec/issues"
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -118,7 +121,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 lean-ethereum-testing = { workspace = true }
-lean-multisig-py = { git = "https://github.com/anshalshukla/leanMultisig-py", branch = "main" }
+lean-multisig-py = { git = "https://github.com/anshalshukla/leanMultisig-py", branch = "devnet2" }
 
 [dependency-groups]
 test = [

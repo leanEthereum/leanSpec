@@ -30,8 +30,8 @@ from ..koalabear import Fp
 from ..poseidon2.permutation import (
     PARAMS_16,
     PARAMS_24,
+    Poseidon2,
     Poseidon2Params,
-    permute,
 )
 from ._validation import enforce_strict_types
 from .utils import int_to_base_p
@@ -90,7 +90,7 @@ class PoseidonXmss(StrictBaseModel):
         padded_input = list(input_vec) + [Fp(value=0)] * (width - len(input_vec))
 
         # Apply the Poseidon2 permutation.
-        permuted_state = permute(padded_input, params)
+        permuted_state = Poseidon2(params).permute(padded_input)
 
         # Apply the feed-forward step, adding the input back element-wise.
         final_state = [p + i for p, i in zip(permuted_state, padded_input, strict=True)]
@@ -185,6 +185,9 @@ class PoseidonXmss(StrictBaseModel):
         state = [Fp(value=0)] * width
         state[rate:] = capacity_value
 
+        # Create the engine once for efficiency.
+        engine = Poseidon2(params)
+
         # Absorb the input in rate-sized chunks.
         for i in range(0, len(padded_input), rate):
             chunk = padded_input[i : i + rate]
@@ -192,7 +195,7 @@ class PoseidonXmss(StrictBaseModel):
             for j in range(rate):
                 state[j] += chunk[j]
             # Apply the cryptographic permutation to mix the state.
-            state = permute(state, params)
+            state = engine.permute(state)
 
         # Squeeze the output until enough elements have been generated.
         output: list[Fp] = []
@@ -200,7 +203,7 @@ class PoseidonXmss(StrictBaseModel):
             # Extract the rate part of the state as output.
             output.extend(state[:rate])
             # Permute the state.
-            state = permute(state, params)
+            state = engine.permute(state)
 
         # Truncate to the final output length and return.
         return output[:output_len]

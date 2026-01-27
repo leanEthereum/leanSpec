@@ -12,6 +12,7 @@ from lean_spec.subspecs.chain.clock import SlotClock
 from lean_spec.subspecs.containers import SignedBlockWithAttestation
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.peer.info import PeerInfo
@@ -23,8 +24,7 @@ from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.sync.states import SyncState
 from lean_spec.types import Bytes32, Uint64
-
-from .conftest import create_signed_block
+from tests.lean_spec.helpers import make_signed_block
 
 
 class MockNetworkRequester:
@@ -79,7 +79,7 @@ def create_sync_service(peer_id: PeerId) -> SyncService:
         store=cast(Store, mock_store),
         peer_manager=peer_manager,
         block_cache=BlockCache(),
-        clock=SlotClock(genesis_time=Uint64(0), _time_fn=lambda: 1000.0),
+        clock=SlotClock(genesis_time=Uint64(0), time_fn=lambda: 1000.0),
         network=MockNetworkRequester(),
         process_block=lambda s, b: s.on_block(b),
     )
@@ -142,9 +142,9 @@ class TestStateMachineTransitions:
         sync_service._state = SyncState.SYNCING
 
         # Add an orphan to the cache
-        block = create_signed_block(
+        block = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32(b"\x01" * 32),
             state_root=Bytes32.zero(),
         )
@@ -227,9 +227,9 @@ class TestGossipBlockHandling:
         """Gossip blocks are ignored when in IDLE state."""
         assert sync_service.state == SyncState.IDLE
 
-        block = create_signed_block(
+        block = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
@@ -251,9 +251,9 @@ class TestGossipBlockHandling:
         # Get genesis root from store
         genesis_root = sync_service.store.head
 
-        block = create_signed_block(
+        block = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
@@ -272,9 +272,9 @@ class TestGossipBlockHandling:
         sync_service._state = SyncState.SYNCING
 
         # Block with unknown parent
-        block = create_signed_block(
+        block = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32(b"\x01" * 32),
             state_root=Bytes32.zero(),
         )
@@ -334,15 +334,15 @@ class TestProgressReporting:
     ) -> None:
         """Progress includes cache size and orphan count."""
         # Add blocks to cache
-        block1 = create_signed_block(
+        block1 = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32(b"\x01" * 32),
             state_root=Bytes32(b"\x01" * 32),
         )
-        block2 = create_signed_block(
+        block2 = make_signed_block(
             slot=Slot(2),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32(b"\x02" * 32),
             state_root=Bytes32(b"\x02" * 32),
         )
@@ -369,9 +369,9 @@ class TestReset:
         sync_service._state = SyncState.SYNCED
         sync_service._blocks_processed = 100
 
-        block = create_signed_block(
+        block = make_signed_block(
             slot=Slot(1),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32(b"\x01" * 32),
             state_root=Bytes32.zero(),
         )

@@ -10,13 +10,14 @@ from .test_fixtures import (
     VerifySignaturesTest,
 )
 from .test_types import (
+    AggregatedAttestationCheck,
+    AggregatedAttestationSpec,
     AttestationCheck,
     AttestationStep,
     BaseForkChoiceStep,
     BlockSpec,
     BlockStep,
     ForkChoiceStep,
-    SignedAttestationSpec,
     StateExpectation,
     StoreChecks,
     TickStep,
@@ -29,8 +30,8 @@ VerifySignaturesTestFiller = Type[VerifySignaturesTest]
 
 __all__ = [
     # Public API
+    "AggregatedAttestationSpec",
     "BlockSpec",
-    "SignedAttestationSpec",
     "forks",
     "generate_pre_state",
     # Base types
@@ -48,6 +49,7 @@ __all__ = [
     "StateExpectation",
     "StoreChecks",
     "AttestationCheck",
+    "AggregatedAttestationCheck",
     # Type aliases for test function signatures
     "StateTransitionTestFiller",
     "ForkChoiceTestFiller",

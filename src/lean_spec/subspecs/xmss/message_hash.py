@@ -36,7 +36,7 @@ from lean_spec.subspecs.xmss.poseidon import (
     TEST_POSEIDON,
     PoseidonXmss,
 )
-from lean_spec.types import StrictBaseModel, Uint64
+from lean_spec.types import Bytes32, StrictBaseModel, Uint64
 
 from ..koalabear import Fp, P
 from ._validation import enforce_strict_types
@@ -70,7 +70,7 @@ class MessageHasher(StrictBaseModel):
         enforce_strict_types(self, config=XmssConfig, poseidon=PoseidonXmss)
         return self
 
-    def encode_message(self, message: bytes) -> list[Fp]:
+    def encode_message(self, message: Bytes32) -> list[Fp]:
         """
         Encodes a 32-byte message into a list of field elements.
 
@@ -145,7 +145,7 @@ class MessageHasher(StrictBaseModel):
         parameter: Parameter,
         epoch: Uint64,
         rho: Randomness,
-        message: bytes,
+        message: Bytes32,
     ) -> list[int]:
         """
         Applies the full "Top Level" message hash and mapping procedure.

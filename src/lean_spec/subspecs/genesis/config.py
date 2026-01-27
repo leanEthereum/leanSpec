@@ -1,14 +1,26 @@
-"""Genesis configuration loader."""
+"""Genesis configuration loader.
+
+Loads genesis configuration from YAML files compatible with ream and zeam.
+
+The expected YAML format matches the cross-client convention:
+
+    GENESIS_TIME: 1704085200
+    GENESIS_VALIDATORS:
+    - 0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65e...
+    - 0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e37...
+"""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field, field_validator
+import yaml
+from pydantic import Field, field_validator, model_validator
 
 from lean_spec.subspecs.containers import State, Validator
 from lean_spec.subspecs.containers.state import Validators
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes52, StrictBaseModel, Uint64
 
 
@@ -22,30 +34,10 @@ class GenesisConfig(StrictBaseModel):
 
     The genesis configuration solves two fundamental coordination problems:
 
-    1. **Time Synchronization**: All nodes must agree on when slots begin.
-       The genesis time anchors the chain's internal clock to real-world time.
-       From this moment, slots tick forward at fixed intervals. A node can
-       compute "what slot is it now?" by measuring seconds since genesis.
+    - Time Synchronization: All nodes agree on when slots begin
+    - Initial Trust: Bootstrap validators that can produce and attest blocks
 
-    2. **Initial Trust**: Proof-of-stake requires an initial set of validators.
-       These validators form the first committee that can produce and attest
-       to blocks. Without them, no blocks could ever be finalized.
-
-    The genesis block (slot 0) is implicit. It has no parent, no proposer,
-    and no attestations. The first real block builds on top of this implicit
-    origin, establishing the chain's cryptographic lineage.
-
-    Example JSON configuration:
-
-        {
-            "GENESIS_TIME": 1704085200,
-            "GENESIS_VALIDATORS": [
-                "0xe2a03c1689769ae5f5762222b170b4a925f3f8e89340ed1cd31d31c134b0abc2...",
-                "0x0767e659c1b61d30f65eadb7a309c4183d5d4c0f99e935737b89ce95dd1c4568..."
-            ]
-        }
-
-    Field names use UPPERCASE to match the cross-client JSON convention.
+    Field names use UPPERCASE to match cross-client YAML convention.
     Pydantic aliases map them to snake_case Python attributes.
     """
 
@@ -58,6 +50,14 @@ class GenesisConfig(StrictBaseModel):
     Nodes compute the current slot as: (now - genesis_time) / slot_duration.
 
     Immutable once the chain launches.
+    """
+
+    num_validators: int | None = Field(default=None, alias="NUM_VALIDATORS")
+    """
+    Number of validators (optional, for ream compatibility).
+
+    This field is informational and may be included in ream config files.
+    The actual validator count is derived from the genesis_validators list.
     """
 
     genesis_validators: list[Bytes52] = Field(alias="GENESIS_VALIDATORS")
@@ -79,20 +79,36 @@ class GenesisConfig(StrictBaseModel):
 
     @field_validator("genesis_validators", mode="before")
     @classmethod
-    def parse_hex_pubkeys(cls, v: list[str]) -> list[Bytes52]:
+    def parse_hex_pubkeys(cls, v: Any) -> list[Bytes52]:
         """
-        Convert hex strings to validated Bytes52 pubkeys.
+        Convert hex strings or integers to validated Bytes52 pubkeys.
 
-        The JSON contains string representations.
-        We parse them into typed Bytes52 objects for validation and use.
-
-        Args:
-            v: List of hex-encoded pubkey strings from JSON.
-
-        Returns:
-            List of validated Bytes52 pubkey objects.
+        YAML parsers may interpret 0x-prefixed values as integers.
+        Handles both string and integer inputs for compatibility.
         """
-        return [Bytes52(pk) for pk in v]
+        if not isinstance(v, list):
+            raise ValueError(f"genesis_validators must be a list, got {type(v).__name__}")
+
+        result = []
+        for pk in v:
+            if isinstance(pk, int):
+                # YAML parsed 0x... as integer, convert back to hex string.
+                # Pad to 52 bytes (104 hex chars).
+                pk = f"0x{pk:0104x}"
+            result.append(Bytes52(pk))
+        return result
+
+    @model_validator(mode="after")
+    def validate_num_validators_consistency(self) -> GenesisConfig:
+        """Verify num_validators matches actual count when provided."""
+        if self.num_validators is not None:
+            actual_count = len(self.genesis_validators)
+            if self.num_validators != actual_count:
+                raise ValueError(
+                    f"NUM_VALIDATORS ({self.num_validators}) does not match "
+                    f"actual validator count ({actual_count})"
+                )
+        return self
 
     def to_validators(self) -> Validators:
         """
@@ -100,13 +116,10 @@ class GenesisConfig(StrictBaseModel):
 
         Each validator needs an index for the registry.
         Indices are assigned sequentially starting from 0.
-
-        Returns:
-            Validators container ready for State creation.
         """
         return Validators(
             data=[
-                Validator(pubkey=pk, index=Uint64(i))
+                Validator(pubkey=pk, index=ValidatorIndex(i))
                 for i, pk in enumerate(self.genesis_validators)
             ]
         )
@@ -117,40 +130,33 @@ class GenesisConfig(StrictBaseModel):
 
         Combines genesis time and validator set to create the initial
         consensus state. This state becomes slot 0 for the chain.
-
-        Returns:
-            Fully initialized genesis State object.
         """
         return State.generate_genesis(self.genesis_time, self.to_validators())
 
     @classmethod
-    def from_json_file(cls, path: Path | str) -> GenesisConfig:
+    def from_yaml_file(cls, path: Path | str) -> GenesisConfig:
         """
-        Load configuration from a JSON file on disk.
+        Load configuration from a YAML file.
 
         Use this to load shared genesis files distributed to all clients.
+        Compatible with ream's config.yaml format.
 
-        Args:
-            path: Path to genesis JSON file.
-
-        Returns:
-            Validated GenesisConfig instance.
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            yaml.YAMLError: If the file is not valid YAML.
+            pydantic.ValidationError: If the data fails validation.
         """
-        with open(path) as f:
-            data = json.load(f)
+        path = Path(path)
+        with path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f)
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, content: str) -> GenesisConfig:
+    def from_yaml(cls, content: str) -> GenesisConfig:
         """
-        Load configuration from a JSON string.
+        Load configuration from a YAML string.
 
-        Use this for testing or programmatic config generation.
-
-        Args:
-            content: JSON content as a string.
-
-        Returns:
-            Validated GenesisConfig instance.
+        Useful for testing or programmatic config generation.
         """
-        return cls.model_validate_json(content)
+        data = yaml.safe_load(content)
+        return cls.model_validate(data)

@@ -10,7 +10,8 @@ from lean_spec.subspecs.containers.attestation import (
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Boolean, Bytes32, Uint64
+from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+from lean_spec.types import Boolean, Bytes32
 
 
 class TestAggregationBits:
@@ -26,7 +27,7 @@ class TestAggregationBits:
         """Test conversion with a single bit set."""
         bits = AggregationBits(data=[Boolean(False), Boolean(True), Boolean(False)])
         indices = bits.to_validator_indices()
-        assert indices == [Uint64(1)]
+        assert indices == ValidatorIndices(data=[ValidatorIndex(1)])
 
     def test_to_validator_indices_multiple_bits(self) -> None:
         """Test conversion with multiple bits set."""
@@ -34,11 +35,15 @@ class TestAggregationBits:
             data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True), Boolean(False)]
         )
         indices = bits.to_validator_indices()
-        assert indices == [Uint64(0), Uint64(2), Uint64(3)]
+        assert indices == ValidatorIndices(
+            data=[ValidatorIndex(0), ValidatorIndex(2), ValidatorIndex(3)]
+        )
 
     def test_from_validator_indices_roundtrip(self) -> None:
         """Test that from_validator_indices and to_validator_indices are inverses."""
-        original_indices = [Uint64(1), Uint64(5), Uint64(7)]
+        original_indices = ValidatorIndices(
+            data=[ValidatorIndex(1), ValidatorIndex(5), ValidatorIndex(7)]
+        )
         bits = AggregationBits.from_validator_indices(original_indices)
         recovered_indices = bits.to_validator_indices()
         assert recovered_indices == original_indices
@@ -56,12 +61,12 @@ class TestAggregatedAttestation:
             source=Checkpoint(root=Bytes32.zero(), slot=Slot(2)),
         )
 
-        bits = AggregationBits.from_validator_indices([Uint64(2), Uint64(7)])
+        bits = AggregationBits.from_validator_indices([ValidatorIndex(2), ValidatorIndex(7)])
         agg = AggregatedAttestation(aggregation_bits=bits, data=att_data)
 
         # Verify we can extract validator indices
         indices = agg.aggregation_bits.to_validator_indices()
-        assert set(indices) == {Uint64(2), Uint64(7)}
+        assert set(indices) == {ValidatorIndex(2), ValidatorIndex(7)}
         assert agg.data == att_data
 
     def test_aggregated_attestation_with_many_validators(self) -> None:
@@ -73,12 +78,12 @@ class TestAggregatedAttestation:
             source=Checkpoint(root=Bytes32.zero(), slot=Slot(7)),
         )
 
-        validator_ids = [Uint64(i) for i in [0, 5, 10, 15, 20, 25]]
+        validator_ids = [ValidatorIndex(i) for i in [0, 5, 10, 15, 20, 25]]
         bits = AggregationBits.from_validator_indices(validator_ids)
         agg = AggregatedAttestation(aggregation_bits=bits, data=att_data)
 
         recovered = agg.aggregation_bits.to_validator_indices()
-        assert recovered == validator_ids
+        assert recovered == ValidatorIndices(data=validator_ids)
 
 
 class TestAggregateByData:
@@ -100,9 +105,9 @@ class TestAggregateByData:
         )
 
         attestations = [
-            Attestation(validator_id=Uint64(1), data=att_data1),
-            Attestation(validator_id=Uint64(3), data=att_data1),
-            Attestation(validator_id=Uint64(5), data=att_data2),
+            Attestation(validator_id=ValidatorIndex(1), data=att_data1),
+            Attestation(validator_id=ValidatorIndex(3), data=att_data1),
+            Attestation(validator_id=ValidatorIndex(5), data=att_data2),
         ]
 
         aggregated = AggregatedAttestation.aggregate_by_data(attestations)
@@ -115,14 +120,14 @@ class TestAggregateByData:
         validator_ids1 = agg1.aggregation_bits.to_validator_indices()
 
         # Should contain validators 1 and 3
-        assert set(validator_ids1) == {Uint64(1), Uint64(3)}
+        assert set(validator_ids1) == {ValidatorIndex(1), ValidatorIndex(3)}
 
         # Find the aggregated attestation with att_data2
         agg2 = next(agg for agg in aggregated if agg.data == att_data2)
         validator_ids2 = agg2.aggregation_bits.to_validator_indices()
 
         # Should contain only validator 5
-        assert set(validator_ids2) == {Uint64(5)}
+        assert set(validator_ids2) == {ValidatorIndex(5)}
 
     def test_aggregate_empty_attestations(self) -> None:
         """Test aggregation with no attestations."""
@@ -138,10 +143,10 @@ class TestAggregateByData:
             source=Checkpoint(root=Bytes32.zero(), slot=Slot(2)),
         )
 
-        attestations = [Attestation(validator_id=Uint64(5), data=att_data)]
+        attestations = [Attestation(validator_id=ValidatorIndex(5), data=att_data)]
 
         aggregated = AggregatedAttestation.aggregate_by_data(attestations)
 
         assert len(aggregated) == 1
         validator_ids = aggregated[0].aggregation_bits.to_validator_indices()
-        assert validator_ids == [Uint64(5)]
+        assert validator_ids == ValidatorIndices(data=[ValidatorIndex(5)])

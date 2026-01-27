@@ -24,16 +24,14 @@ How It Works
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
-from lean_spec.types import Uint64
+from lean_spec.subspecs.sync import SyncService
 
-from .clock import SlotClock
-from .config import SECONDS_PER_INTERVAL
+from .clock import Interval, SlotClock
 
-if TYPE_CHECKING:
-    from lean_spec.subspecs.sync import SyncService
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -68,21 +66,57 @@ class ChainService:
         until each interval boundary and then advancing the store's time.
 
         The loop continues until the service is stopped.
+
+        NOTE: We track the last handled interval to avoid skipping intervals.
+        If processing takes time and we end up in a new interval, we
+        handle it immediately instead of sleeping past it.
         """
         self._running = True
 
-        while self._running:
-            # Sleep until next interval boundary for precise timing.
-            #
-            # Interval boundaries occur every SECONDS_PER_INTERVAL (1 second).
-            # Sleeping to boundaries ensures consistent tick timing.
-            await self._sleep_until_next_interval()
+        # Catch up store time to current wall clock (post-genesis only).
+        #
+        # - Before genesis, returns None; the main loop handles the wait.
+        # - After genesis, this ensures attestation validation accepts valid attestations
+        # (the store's time would otherwise lag behind wall-clock).
+        last_handled_total_interval = await self._initial_tick()
 
-            # Get current wall-clock time as Unix timestamp.
+        while self._running:
+            # Get current wall-clock time.
+            current_time = self.clock.current_time()
+            genesis_time = self.clock.genesis_time
+
+            # Wait for genesis if we're before it.
+            if current_time < genesis_time:
+                sleep_duration = int(genesis_time) - int(current_time)
+                await asyncio.sleep(sleep_duration)
+                continue
+
+            # Get current total interval count.
+            total_interval = self.clock.total_intervals()
+
+            # If we've already handled this interval, sleep until the next boundary.
+            already_handled = (
+                last_handled_total_interval is not None
+                and total_interval <= last_handled_total_interval
+            )
+            if already_handled:
+                await self._sleep_until_next_interval()
+                # Check if stopped during sleep.
+                if not self._running:
+                    break
+                # Re-fetch interval after sleep.
+                #
+                # If still the same (e.g., time didn't advance),
+                # skip this iteration to avoid duplicate ticks.
+                total_interval = self.clock.total_intervals()
+                if total_interval <= last_handled_total_interval:
+                    continue
+
+            # Get current wall-clock time as Unix timestamp (may have changed after sleep).
             #
             # The store expects an absolute timestamp, not intervals.
             # It internally converts to intervals.
-            current_time = Uint64(int(self.clock._time_fn()))
+            current_time = self.clock.current_time()
 
             # Tick the store forward to current time.
             #
@@ -103,34 +137,50 @@ class ChainService:
             # the updated time.
             self.sync_service.store = new_store
 
+            logger.info(
+                "Tick: slot=%d interval=%d time=%d head=%s finalized=slot%d",
+                self.clock.current_slot(),
+                self.clock.total_intervals(),
+                current_time,
+                new_store.head.hex(),
+                new_store.latest_finalized.slot,
+            )
+
+            # Mark this interval as handled.
+            last_handled_total_interval = total_interval
+
+    async def _initial_tick(self) -> Interval | None:
+        """
+        Perform initial tick to catch up store time to current wall clock.
+
+        This is called once at startup to ensure the store's time reflects
+        actual wall clock time, not just the genesis anchor time.
+
+        Returns the interval that was handled, or None if before genesis.
+        """
+        current_time = self.clock.current_time()
+
+        # Only tick if we're past genesis.
+        if current_time >= self.clock.genesis_time:
+            new_store = self.sync_service.store.on_tick(
+                time=current_time,
+                has_proposal=False,
+            )
+            self.sync_service.store = new_store
+            return self.clock.total_intervals()
+
+        return None
+
     async def _sleep_until_next_interval(self) -> None:
         """
         Sleep until the next interval boundary.
 
-        Calculates the precise sleep duration to wake up at the start
-        of the next interval. This ensures tick timing is aligned with
-        network consensus expectations.
+        Uses the clock to calculate precise sleep duration, ensuring tick
+        timing is aligned with network consensus expectations.
         """
-        now = self.clock._time_fn()
-        genesis = int(self.clock.genesis_time)
-
-        # Time since genesis in seconds (float for precision).
-        elapsed = now - genesis
-
-        if elapsed < 0:
-            # Before genesis - sleep until genesis.
-            await asyncio.sleep(-elapsed)
-            return
-
-        # Current interval number (floored to integer).
-        current_interval = int(elapsed // int(SECONDS_PER_INTERVAL))
-
-        # Next interval boundary in absolute time.
-        next_boundary = genesis + (current_interval + 1) * int(SECONDS_PER_INTERVAL)
-
-        # Sleep duration (may be zero if we're exactly at boundary).
-        sleep_time = max(0.0, next_boundary - now)
-        await asyncio.sleep(sleep_time)
+        sleep_time = self.clock.seconds_until_next_interval()
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
 
     def stop(self) -> None:
         """

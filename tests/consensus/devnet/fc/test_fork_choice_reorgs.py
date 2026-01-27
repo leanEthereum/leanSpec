@@ -2,17 +2,17 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
-    SignedAttestationSpec,
     StoreChecks,
     TickStep,
     generate_pre_state,
 )
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Uint64
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -226,7 +226,6 @@ def test_three_block_deep_reorg(
     Reorg Details:
         - **Depth**: 3 blocks (deepest in this test suite)
         - **Trigger**: Alternative fork becomes longer
-        - **Weight advantage**: 4 proposer attestations vs 3
 
     Why This Matters
     ----------------
@@ -245,6 +244,7 @@ def test_three_block_deep_reorg(
     about chain history, ensuring safety and liveness even in adversarial scenarios.
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=6),
         steps=[
             # Common base
             BlockStep(
@@ -656,13 +656,13 @@ def test_back_and_forth_reorg_oscillation(
     tests fork choice correctness under extreme conditions.
 
     Oscillation Pattern:
-        Slot 2: Fork A leads (1 block) ← head
-        Slot 3: Fork B catches up (1 block each) → tie
-        Slot 4: Fork B extends (2 vs 1) ← head switches to B
-        Slot 5: Fork A extends (2 vs 2) → tie
-        Slot 6: Fork A extends (3 vs 2) ← head switches to A
-        Slot 7: Fork B extends (3 vs 3) → tie
-        Slot 8: Fork B extends (4 vs 3) ← head switches to B
+        Slot 2: Fork A leads (1 vs 0) ← head
+        Slot 2: Fork B created (1 vs 1) → tie, A maintains
+        Slot 3: Fork B extends (2 vs 1) ← head switches to B (REORG #1)
+        Slot 3: Fork A extends (2 vs 2) → tie, B maintains
+        Slot 4: Fork A extends (3 vs 2) ← head switches to A (REORG #2)
+        Slot 4: Fork B extends (3 vs 3) → tie, A maintains
+        Slot 5: Fork B extends (4 vs 3) ← head switches to B (REORG #3)
 
     Expected Behavior
     -----------------
@@ -671,7 +671,7 @@ def test_back_and_forth_reorg_oscillation(
     3. All reorgs are 1-2 blocks deep
     4. Fork choice remains consistent and correct throughout
 
-    Reorg Count: 3 reorgs in 6 slots (very high rate)
+    Reorg Count: 3 reorgs in 4 slots (very high rate)
 
     Why This Matters
     ----------------
@@ -694,6 +694,7 @@ def test_back_and_forth_reorg_oscillation(
     convergence.
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=6),
         steps=[
             # Common base
             BlockStep(
@@ -861,42 +862,20 @@ def test_reorg_on_newly_justified_slot(
                     parent_label="fork_b_1",
                     label="fork_b_2",
                     attestations=[
-                        SignedAttestationSpec(
-                            validator_id=Uint64(0),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(1),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
+                        # Aggregated attestation from validators 0, 1, 5, 6, 7, 8
                         # fork_b_1 should be able to justify without extra attestations
                         # from validator 5 and 6 but the test is failing without these
-                        # two attestations below because block proposer's attestations
-                        # are not being counted towards justification
-                        SignedAttestationSpec(
-                            validator_id=Uint64(5),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(6),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(7),
-                            slot=Slot(5),
-                            target_slot=Slot(5),
-                            target_root_label="fork_b_1",
-                        ),
-                        SignedAttestationSpec(
-                            validator_id=Uint64(8),
+                        # because block proposer's attestations are not being counted
+                        # towards justification
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(5),
+                                ValidatorIndex(6),
+                                ValidatorIndex(7),
+                                ValidatorIndex(8),
+                            ],
                             slot=Slot(5),
                             target_slot=Slot(5),
                             target_root_label="fork_b_1",

@@ -1,10 +1,7 @@
 """Packing helpers for SSZ Merkleization.
 
-These helpers convert existing *serialized* data into 32-byte chunks (Bytes32).
-They do not serialize objects themselves; they only arrange bytes into chunks
-as required by the SSZ Merkleization rules.
-
-All functions return `list[Bytes32]`, the canonical chunk form fed into `merkleize`.
+Converts serialized data into 32-byte chunks.
+Does not serialize objects; only arranges bytes into chunks per SSZ rules.
 """
 
 from __future__ import annotations
@@ -40,18 +37,9 @@ def _partition_chunks(b: bytes) -> list[Bytes32]:
 
 
 def pack_basic_serialized(serialized_basic_values: Iterable[bytes]) -> list[Bytes32]:
-    """Pack *serialized* basic values (e.g. uintN/boolean/byte) into chunks.
+    """Pack serialized basic values into chunks.
 
-    Parameters
-    ----------
-    serialized_basic_values:
-        Iterable of bytes objects; each element is already the SSZ-serialized
-        form of a basic value.
-
-    Returns:
-    -------
-    list[Bytes32]
-        Concatenated and right-padded chunks ready for Merkleization.
+    Concatenates and right-pads to produce chunks ready for merkleization.
     """
     return _partition_chunks(_right_pad_to_chunk(b"".join(serialized_basic_values)))
 
@@ -64,11 +52,8 @@ def pack_bytes(data: bytes) -> list[Bytes32]:
 def pack_bits(bools: Sequence[bool]) -> list[Bytes32]:
     """Pack a boolean sequence into a bitfield, then into 32-byte chunks.
 
-    Notes:
-    -----
-    - This does **not** add the Bitlist length-delimiter bit. Callers implementing
-      Bitlist should add it separately or mix the list length at the Merkle level.
-    - Bit ordering follows SSZ (little-endian within each byte).
+    Does not add bitlist delimiter bit.
+    Bit ordering follows SSZ (little-endian within each byte).
     """
     if not bools:
         return []

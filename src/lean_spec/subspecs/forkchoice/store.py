@@ -29,6 +29,7 @@ from lean_spec.subspecs.containers import (
     SignedAttestation,
     SignedBlockWithAttestation,
     State,
+    ValidatorIndex,
 )
 from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
@@ -43,7 +44,6 @@ from lean_spec.types import (
     ZERO_HASH,
     Bytes32,
     Uint64,
-    is_proposer,
 )
 from lean_spec.types.container import Container
 from lean_spec.subspecs.networking import compute_subnet_id
@@ -128,7 +128,7 @@ class Store(Container):
     `Store`'s latest justified and latest finalized checkpoints.
     """
 
-    latest_known_attestations: dict[Uint64, AttestationData] = {}
+    latest_known_attestations: dict[ValidatorIndex, AttestationData] = {}
     """
     Latest attestation data by validator that have been processed.
 
@@ -137,7 +137,7 @@ class Store(Container):
     - Only stores the attestation data, not signatures.
     """
 
-    latest_new_attestations: dict[Uint64, AttestationData] = {}
+    latest_new_attestations: dict[ValidatorIndex, AttestationData] = {}
     """
     Latest attestation data by validator that are pending processing.
 
@@ -216,7 +216,7 @@ class Store(Container):
         anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
 
         return cls(
-            time=Uint64(anchor_slot * SECONDS_PER_SLOT),
+            time=Uint64(anchor_slot * INTERVALS_PER_SLOT),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
@@ -267,7 +267,7 @@ class Store(Container):
         #
         # Validate attestation is not too far in the future
         # We allow a small margin for clock disparity (1 slot), but no further.
-        current_slot = Slot(self.time // SECONDS_PER_SLOT)
+        current_slot = Slot(self.time // INTERVALS_PER_SLOT)
         assert data.slot <= current_slot + Slot(1), "Attestation too far in future"
 
     def on_gossip_attestation(
@@ -314,7 +314,7 @@ class Store(Container):
             f"No state available to verify attestation signature for target block "
             f"{attestation_data.target.root.hex()}"
         )
-        assert validator_id < len(key_state.validators), (
+        assert validator_id.is_valid(len(key_state.validators)), (
             f"Validator {validator_id} not found in state {attestation_data.target.root.hex()}"
         )
         public_key = key_state.validators[validator_id].get_pubkey()
@@ -397,7 +397,7 @@ class Store(Container):
         self.validate_attestation(attestation)
 
         # Extract the validator index that produced this attestation.
-        validator_id = Uint64(attestation.validator_id)
+        validator_id = attestation.validator_id
 
         # Extract the attestation data and slot
         attestation_data = attestation.data
@@ -406,11 +406,11 @@ class Store(Container):
         # Copy the known attestation map:
         # - we build a new Store immutably,
         # - changes are applied on this local copy.
-        new_known = self.latest_known_attestations
+        new_known = dict(self.latest_known_attestations)
 
         # Copy the new attestation map:
         # - holds pending attestations that are not yet active.
-        new_new = self.latest_new_attestations
+        new_new = dict(self.latest_new_attestations)
 
         if is_from_block:
             # On-chain attestation processing
@@ -447,7 +447,7 @@ class Store(Container):
             #   contributing to fork choice weights.
 
             # Convert Store time to slots to check for "future" attestations.
-            time_slots = self.time // SECONDS_PER_SLOT
+            time_slots = self.time // INTERVALS_PER_SLOT
 
             # Reject the attestation if:
             # - its slot is strictly greater than our current slot.
@@ -727,7 +727,7 @@ class Store(Container):
     def _compute_lmd_ghost_head(
         self,
         start_root: Bytes32,
-        attestations: dict[Uint64, AttestationData],
+        attestations: dict[ValidatorIndex, AttestationData],
         min_score: int = 0,
     ) -> Bytes32:
         """
@@ -996,7 +996,7 @@ class Store(Container):
         """
         # Advance time by one interval
         store = self.model_copy(update={"time": self.time + Uint64(1)})
-        current_interval = store.time % SECONDS_PER_SLOT % INTERVALS_PER_SLOT
+        current_interval = store.time % INTERVALS_PER_SLOT
 
         if current_interval == Uint64(0):
             # Start of slot - process attestations if proposal exists
@@ -1022,17 +1022,12 @@ class Store(Container):
         incrementally to ensure all interval-specific actions are performed.
 
         Args:
-            time: Target time in seconds since genesis.
+            time: Target time as Unix timestamp in seconds.
             has_proposal: Whether node has proposal for current slot.
             is_aggregator: Whether the node is an aggregator.
 
         Returns:
             New Store with time advanced and all interval actions performed.
-
-        Example:
-            >>> # Advance from slot 0 to slot 5
-            >>> slot_5_time = config.genesis_time + 5 * SECONDS_PER_SLOT
-            >>> store = store.on_tick(slot_5_time, has_proposal=True)
         """
         # Calculate target time in intervals
         tick_interval_time = (time - self.config.genesis_time) // SECONDS_PER_INTERVAL
@@ -1178,62 +1173,67 @@ class Store(Container):
     def produce_block_with_signatures(
         self,
         slot: Slot,
-        validator_index: Uint64,
+        validator_index: ValidatorIndex,
     ) -> tuple["Store", Block, list[AggregatedSignatureProof]]:
         """
-        Produce a block and per-aggregated-attestation signature payloads for the target slot.
+        Produce a block and its aggregated signature proofs for the target slot.
 
-        The proposer returns the block and `LeanAggregatedSignature` payloads aligned
-        with `block.body.attestations` so it can craft `SignedBlockWithAttestation`.
+        Block production proceeds in four stages:
+        1. Retrieve the current chain head as the parent block
+        2. Verify proposer authorization for the target slot
+        3. Build the block with maximal valid attestations
+        4. Store the block and update checkpoints
 
-        Algorithm Overview
-        ------------------
-        1. **Validate Authorization**: Verify proposer is authorized for slot
-        2. **Get Proposal Head**: Retrieve current chain head as parent
-        3. **Iteratively Build Attestation Set**:
-            - Create candidate block with current attestations
-            - Apply state transition (slot advancement + block processing)
-            - Find new valid attestations matching post-state requirements
-            - Continue until no new attestations can be added (fixed point)
-        4. **Finalize Block**: Compute state root and store block
+        The block builder uses a fixed-point algorithm to collect attestations.
+        Each iteration may update the justified checkpoint.
+        Some attestations only become valid after this update.
+        The process repeats until no new attestations can be added.
 
-        The Fixed-Point Algorithm
-        --------------------------
-        Attestations are collected iteratively because:
-        - Block processing updates the justified checkpoint
-        - Some attestations only become valid after this update
-        - We repeat until no new valid attestations are found
-
-        This ensures the block includes the maximal valid attestation set,
-        maximizing the block's contribution to chain consensus.
+        This maximizes consensus contribution from each block.
 
         Args:
-            slot: Target slot number for block production.
-            validator_index: Index of validator authorized to propose this block.
+            slot: Target slot for block production.
+            validator_index: Proposer's validator index.
 
         Returns:
-            Tuple of (new Store with block stored, finalized Block, attestation signature payloads).
+            Tuple containing:
+
+            - Updated store with the new block
+            - The produced block
+            - Signature proofs aligned with block attestations
 
         Raises:
-            AssertionError: If validator lacks proposer authorization for slot.
+            AssertionError: If validator is not the proposer for this slot.
         """
-        # Get parent block and state to build upon
+        # Retrieve parent block.
+        #
+        # The proposal head reflects the latest chain view after processing
+        # all pending attestations. Building on stale state would orphan the block.
         store, head_root = self.get_proposal_head(slot)
         head_state = store.states[head_root]
 
-        # Validate proposer authorization for this slot
-        num_validators = Uint64(len(head_state.validators))
-        assert is_proposer(validator_index, slot, num_validators), (
+        # Verify proposer authorization.
+        #
+        # Only one validator may propose per slot.
+        # Unauthorized proposals would be rejected by other nodes.
+        num_validators = len(head_state.validators)
+        assert validator_index.is_proposer_for(slot, num_validators), (
             f"Validator {validator_index} is not the proposer for slot {slot}"
         )
 
-        # Convert AttestationData to Attestation objects for build_block
+        # Gather attestations from the store.
+        #
+        # Known attestations have already influenced fork choice.
+        # Including them in the block makes them permanent on-chain.
         available_attestations = [
             Attestation(validator_id=validator_id, data=attestation_data)
             for validator_id, attestation_data in store.latest_known_attestations.items()
         ]
 
-        # Build block with fixed-point attestation collection
+        # Build the block.
+        #
+        # The builder iteratively collects valid attestations.
+        # It returns the final block, post-state, and signature proofs.
         final_block, final_post_state, _, signatures = head_state.build_block(
             slot=slot,
             proposer_index=validator_index,
@@ -1244,12 +1244,32 @@ class Store(Container):
             aggregated_payloads=store.aggregated_payloads,
         )
 
-        # Store block and state immutably
+        # Compute block hash for storage.
         block_hash = hash_tree_root(final_block)
+
+        # Update checkpoints from post-state.
+        #
+        # Locally produced blocks bypass normal block processing.
+        # We must manually propagate any checkpoint advances.
+        # Higher slots indicate more recent justified/finalized states.
+        latest_justified = (
+            final_post_state.latest_justified
+            if final_post_state.latest_justified.slot > store.latest_justified.slot
+            else store.latest_justified
+        )
+        latest_finalized = (
+            final_post_state.latest_finalized
+            if final_post_state.latest_finalized.slot > store.latest_finalized.slot
+            else store.latest_finalized
+        )
+
+        # Persist block and state immutably.
         store = store.model_copy(
             update={
                 "blocks": {**store.blocks, block_hash: final_block},
                 "states": {**store.states, block_hash: final_post_state},
+                "latest_justified": latest_justified,
+                "latest_finalized": latest_finalized,
             }
         )
 

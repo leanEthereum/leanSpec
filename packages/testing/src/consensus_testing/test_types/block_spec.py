@@ -1,13 +1,11 @@
 """Lightweight block specification for test definitions."""
 
-from typing import Union
-
-from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block import BlockBody
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes32, CamelModel, Uint64
+from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.types import Bytes32, CamelModel
 
-from .signed_attestation_spec import SignedAttestationSpec
+from .aggregated_attestation_spec import AggregatedAttestationSpec
 
 
 class BlockSpec(CamelModel):
@@ -22,14 +20,14 @@ class BlockSpec(CamelModel):
 
     Usage:
     - Simple: BlockSpec(slot=Slot(1)) - framework computes everything
-    - Custom: BlockSpec(slot=Slot(1), proposer_index=Uint64(5)) - override specific fields
+    - Custom: BlockSpec(slot=Slot(1), proposer_index=ValidatorIndex(5)) - override specific fields
     - Invalid: BlockSpec(slot=Slot(1), state_root=Bytes32.zero()) - test invalid blocks
     """
 
     slot: Slot
     """The slot for this block (required)."""
 
-    proposer_index: Uint64 | None = None
+    proposer_index: ValidatorIndex | None = None
     """
     The proposer index for this block.
 
@@ -59,12 +57,12 @@ class BlockSpec(CamelModel):
     Note: If body is provided, attestations field is ignored.
     """
 
-    attestations: list[Union[SignedAttestation, SignedAttestationSpec]] | None = None
+    attestations: list[AggregatedAttestationSpec] | None = None
     """
-    List of signed attestations to include in this block's body.
+    List of aggregated attestations to include in this block's body.
 
-    These attestations will be included in block.body.attestations.
-    Can be either SignedAttestation (direct) or SignedAttestationSpec.
+    Each entry specifies multiple validators attesting to the same data.
+    The framework generates signatures and aggregates them.
 
     If None, framework uses default behavior (empty body).
     If body is provided, this field is ignored.
@@ -117,4 +115,19 @@ class BlockSpec(CamelModel):
     before processing this block.
 
     Useful for tests that intentionally exercise slot mismatch failures.
+    """
+
+    include_store_attestations: bool = False
+    """
+    Automatically include available attestations in the block body.
+
+    When True:
+    - Previous proposers' attestations flow into subsequent blocks
+    - Gossip attestations are automatically collected
+    - Combined with any explicitly specified attestations
+
+    When False (default):
+    - Only explicitly specified attestations are included
+
+    Enables more realistic test vectors without manual specification.
     """

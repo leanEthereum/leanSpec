@@ -12,11 +12,12 @@ from lean_spec.subspecs.containers.block.types import (
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.xmss.constants import PROD_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import HashDigestList, HashTreeOpening, Randomness
-from lean_spec.types import Bytes32, Uint64
+from lean_spec.types import Bytes32
 
 
 def test_encode_decode_signed_block_with_attestation_roundtrip() -> None:
@@ -24,13 +25,13 @@ def test_encode_decode_signed_block_with_attestation_roundtrip() -> None:
         message=BlockWithAttestation(
             block=Block(
                 slot=Slot(0),
-                proposer_index=Uint64(0),
+                proposer_index=ValidatorIndex(0),
                 parent_root=Bytes32.zero(),
                 state_root=Bytes32.zero(),
                 body=BlockBody(attestations=AggregatedAttestations(data=[])),
             ),
             proposer_attestation=Attestation(
-                validator_id=Uint64(0),
+                validator_id=ValidatorIndex(0),
                 data=AttestationData(
                     slot=Slot(0),
                     head=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),

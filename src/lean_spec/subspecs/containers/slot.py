@@ -12,6 +12,19 @@ from lean_spec.types import Uint64
 class Slot(Uint64):
     """Represents a slot number as a 64-bit unsigned integer."""
 
+    def justified_index_after(self, finalized_slot: Slot) -> int | None:
+        """
+        Return the relative bitfield index for justification tracking.
+
+        Slots at or before the finalized boundary are treated as justified.
+        Those slots do not have an index in the tracked bitfield.
+        """
+        if self <= finalized_slot:
+            return None
+
+        # Slot (finalized_slot + 1) maps to index 0.
+        return int(self - finalized_slot) - 1
+
     def is_justifiable_after(self, finalized_slot: Slot) -> bool:
         """
         Checks if this slot is a valid candidate for justification after a given finalized slot.

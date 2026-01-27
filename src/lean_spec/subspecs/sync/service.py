@@ -39,19 +39,25 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
+from lean_spec.subspecs import metrics
 from lean_spec.subspecs.chain.clock import SlotClock
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import Block, SignedBlockWithAttestation
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.reqresp.message import Status
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache
 from .head_sync import HeadSync
 from .peer_manager import PeerManager
 from .states import SyncState
+
+if TYPE_CHECKING:
+    from lean_spec.subspecs.storage import Database
 
 BlockProcessor = Callable[[Store, SignedBlockWithAttestation], Store]
 
@@ -135,6 +141,9 @@ class SyncService:
     network: NetworkRequester
     """Network interface for block requests."""
 
+    database: Database | None = field(default=None)
+    """Optional database for persisting blocks and states."""
+
     process_block: BlockProcessor = field(default=default_block_processor)
     """Block processor function. Defaults to Store.on_block()."""
 
@@ -187,21 +196,74 @@ class SyncService:
         block: SignedBlockWithAttestation,
     ) -> Store:
         """
-        Wrapper for block processing that updates counters.
+        Wrapper for block processing that updates counters and persists data.
 
-        This wrapper is injected into HeadSync to track processed blocks.
+        This wrapper is injected into HeadSync to track processed blocks
+        and optionally persist them to the database.
         """
         # Delegate to the actual block processor (typically Store.on_block).
         #
         # The processor validates the block and updates forkchoice state.
-        new_store = self.process_block(store, block)
+        with metrics.block_processing_time.time():
+            new_store = self.process_block(store, block)
 
         # Track metrics after successful processing.
         #
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
+        metrics.blocks_processed.inc()
+
+        # Update chain state metrics.
+        metrics.head_slot.set(float(new_store.blocks[new_store.head].slot))
+        metrics.justified_slot.set(float(new_store.latest_justified.slot))
+        metrics.finalized_slot.set(float(new_store.latest_finalized.slot))
+
+        # Update validator count from head state.
+        head_state = new_store.states.get(new_store.head)
+        if head_state is not None:
+            metrics.validators_count.set(float(len(head_state.validators)))
+
+        # Persist block and state to database if available.
+        #
+        # This is write-through: data is persisted synchronously after processing.
+        # The database call is optional - nodes can run without persistence.
+        if self.database is not None:
+            self._persist_block(new_store, block.message.block)
 
         return new_store
+
+    def _persist_block(self, store: Store, block: Block) -> None:
+        """
+        Persist block and its post-state to the database.
+
+        Called after successful block processing to ensure data survives restarts.
+
+        Args:
+            store: The updated store containing the new block and state.
+            block: The block that was just processed.
+        """
+        if self.database is None:
+            return
+
+        block_root = hash_tree_root(block)
+
+        # Persist block
+        self.database.put_block(block, block_root)
+
+        # Persist post-state
+        post_state = store.states.get(block_root)
+        if post_state is not None:
+            self.database.put_state(post_state, block_root)
+
+        # Update slot index for historical queries
+        self.database.put_block_root_by_slot(block.slot, block_root)
+
+        # Update head root
+        self.database.put_head_root(store.head)
+
+        # Update checkpoints
+        self.database.put_justified_checkpoint(store.latest_justified)
+        self.database.put_finalized_checkpoint(store.latest_finalized)
 
     @property
     def state(self) -> SyncState:
@@ -351,7 +413,19 @@ class SyncService:
         #
         # The store validates the signature and updates branch weights.
         # Invalid attestations (bad signature, unknown target) are rejected.
-        self.store = self.store.on_gossip_attestation(attestation)
+        # Validation failures are logged but don't crash the event loop.
+        try:
+            self.store = self.store.on_gossip_attestation(attestation)
+        except (AssertionError, KeyError):
+            # Attestation validation failed.
+            #
+            # Common causes:
+            # - Unknown blocks (source/target/head not in store yet)
+            # - Attestation for future slot (clock drift)
+            # - Invalid signature
+            #
+            # These are expected during normal operation and don't indicate bugs.
+            pass
 
     async def start_sync(self) -> None:
         """

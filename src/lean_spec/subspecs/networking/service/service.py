@@ -11,7 +11,8 @@ The network service is the bridge. It:
 
 1. Consumes events from an abstract source (async iterator)
 2. Routes each event to the appropriate sync handler
-3. Runs until stopped or the source exhausts
+3. Publishes locally-produced blocks and attestations to peers
+4. Runs until stopped or the source exhausts
 
 This means:
 - The network layer produces events,
@@ -21,8 +22,14 @@ This means:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from lean_spec.snappy import frame_compress
+from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers.attestation import SignedAttestation
+from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic
 
 from .events import (
     GossipAttestationEvent,
@@ -37,20 +44,24 @@ from .events import (
 if TYPE_CHECKING:
     from lean_spec.subspecs.sync import SyncService
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class NetworkService:
     """
-    Routes network events to the sync service.
+    Routes network events to the sync service and publishes outbound messages.
 
-    This service is intentionally minimal. It does not:
+    This service:
+
+    - Routes inbound events to sync handlers
+    - Publishes locally-produced blocks and attestations to the network
+
+    It does not:
 
     - Manage connections (libp2p handles this)
     - Score peers (libp2p gossipsub handles this)
     - Buffer events (async iteration provides backpressure)
-    - Produce outbound messages (validators need this, not sync)
-
-    It only routes inbound events to the appropriate handlers.
     """
 
     sync_service: SyncService
@@ -58,6 +69,9 @@ class NetworkService:
 
     event_source: NetworkEventSource
     """Source of network events (libp2p wrapper or test mock)."""
+
+    fork_digest: str = field(default="0x00000000")
+    """Fork digest for gossip topics (4-byte hex string)."""
 
     _running: bool = field(default=False, repr=False)
     """Whether the event loop is running."""
@@ -162,3 +176,37 @@ class NetworkService:
     def events_processed(self) -> int:
         """Total events processed since creation."""
         return self._events_processed
+
+    async def publish_block(self, block: SignedBlockWithAttestation) -> None:
+        """
+        Publish a block to the gossip network.
+
+        Encodes the block as SSZ, compresses with Snappy, and broadcasts
+        to all connected peers on the block topic.
+
+        Args:
+            block: Signed block to publish.
+        """
+        topic = GossipTopic.block(self.fork_digest)
+        ssz_bytes = block.encode_bytes()
+        compressed = frame_compress(ssz_bytes)
+
+        await self.event_source.publish(str(topic), compressed)
+        logger.debug("Published block at slot %s", block.message.block.slot)
+
+    async def publish_attestation(self, attestation: SignedAttestation) -> None:
+        """
+        Publish an attestation to the gossip network.
+
+        Encodes the attestation as SSZ, compresses with Snappy, and broadcasts
+        to all connected peers on the attestation topic.
+
+        Args:
+            attestation: Signed attestation to publish.
+        """
+        topic = GossipTopic.attestation(self.fork_digest)
+        ssz_bytes = attestation.encode_bytes()
+        compressed = frame_compress(ssz_bytes)
+
+        await self.event_source.publish(str(topic), compressed)
+        logger.debug("Published attestation for slot %s", attestation.message.slot)

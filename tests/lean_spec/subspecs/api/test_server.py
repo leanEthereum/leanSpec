@@ -53,16 +53,16 @@ class TestApiServerStoreIntegration:
         assert server.config == config
         assert server.store is None
 
-    def test_store_getter_provides_access_to_store(self, store: Store) -> None:
+    def test_store_getter_provides_access_to_store(self, base_store: Store) -> None:
         """Store getter callable provides access to the forkchoice store."""
         config = ApiServerConfig()
-        server = ApiServer(config=config, store_getter=lambda: store)
+        server = ApiServer(config=config, store_getter=lambda: base_store)
 
-        assert server.store is store
+        assert server.store is base_store
 
 
 class TestHealthEndpoint:
-    """Tests for the /health endpoint behavior."""
+    """Tests for the /lean/v0/health endpoint behavior."""
 
     def test_returns_healthy_status_json(self) -> None:
         """Health endpoint returns JSON with healthy status."""
@@ -75,7 +75,7 @@ class TestHealthEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15052/health")
+                    response = await client.get("http://127.0.0.1:15052/lean/v0/health")
 
                     assert response.status_code == 200
                     data = response.json()
@@ -90,7 +90,7 @@ class TestHealthEndpoint:
 
 
 class TestFinalizedStateEndpoint:
-    """Tests for the /lean/states/finalized endpoint behavior."""
+    """Tests for the /lean/v0/states/finalized endpoint behavior."""
 
     def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
@@ -103,7 +103,7 @@ class TestFinalizedStateEndpoint:
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15054/lean/states/finalized")
+                    response = await client.get("http://127.0.0.1:15054/lean/v0/states/finalized")
 
                     assert response.status_code == 503
 
@@ -113,18 +113,18 @@ class TestFinalizedStateEndpoint:
 
         asyncio.run(run_test())
 
-    def test_returns_ssz_state_when_store_available(self, store: Store) -> None:
+    def test_returns_ssz_state_when_store_available(self, base_store: Store) -> None:
         """Endpoint returns SSZ-encoded state as octet-stream."""
 
         async def run_test() -> None:
             config = ApiServerConfig(port=15056)
-            server = ApiServer(config=config, store_getter=lambda: store)
+            server = ApiServer(config=config, store_getter=lambda: base_store)
 
             await server.start()
 
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get("http://127.0.0.1:15056/lean/states/finalized")
+                    response = await client.get("http://127.0.0.1:15056/lean/v0/states/finalized")
 
                     assert response.status_code == 200
                     assert response.headers["content-type"] == "application/octet-stream"
@@ -134,6 +134,70 @@ class TestFinalizedStateEndpoint:
                     assert len(ssz_data) > 0
                     state = State.decode_bytes(ssz_data)
                     assert state.slot == Slot(0)
+
+            finally:
+                server.stop()
+                await asyncio.sleep(0.1)
+
+        asyncio.run(run_test())
+
+
+class TestJustifiedCheckpointEndpoint:
+    """Tests for the /lean/v0/checkpoints/justified endpoint behavior."""
+
+    def test_returns_503_when_store_not_initialized(self) -> None:
+        """Endpoint returns 503 Service Unavailable when store is not set."""
+
+        async def run_test() -> None:
+            config = ApiServerConfig(port=15057)
+            server = ApiServer(config=config)
+
+            await server.start()
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        "http://127.0.0.1:15057/lean/v0/checkpoints/justified"
+                    )
+
+                    assert response.status_code == 503
+
+            finally:
+                server.stop()
+                await asyncio.sleep(0.1)
+
+        asyncio.run(run_test())
+
+    def test_returns_json_with_justified_checkpoint(self, base_store: Store) -> None:
+        """Endpoint returns JSON with latest justified checkpoint information."""
+
+        async def run_test() -> None:
+            config = ApiServerConfig(port=15058)
+            server = ApiServer(config=config, store_getter=lambda: base_store)
+
+            await server.start()
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        "http://127.0.0.1:15058/lean/v0/checkpoints/justified"
+                    )
+
+                    assert response.status_code == 200
+                    assert "application/json" in response.headers["content-type"]
+
+                    # Verify JSON structure and types
+                    data = response.json()
+                    assert "slot" in data
+                    assert "root" in data
+                    assert isinstance(data["slot"], int)
+                    assert isinstance(data["root"], str)
+                    # Root should be a hex string
+                    assert len(data["root"]) == 64  # 32 bytes * 2 hex chars
+
+                    # Verify actual values match the store's latest justified checkpoint
+                    assert data["slot"] == int(base_store.latest_justified.slot)
+                    assert data["root"] == base_store.latest_justified.root.hex()
 
             finally:
                 server.stop()
@@ -205,12 +269,12 @@ class TestStateVerification:
 class TestCheckpointSyncClientServerIntegration:
     """Integration tests for checkpoint sync client fetching from server."""
 
-    def test_client_fetches_and_deserializes_state(self, store: Store) -> None:
+    def test_client_fetches_and_deserializes_state(self, base_store: Store) -> None:
         """Client successfully fetches and deserializes state from server."""
 
         async def run_test() -> None:
             config = ApiServerConfig(port=15058)
-            server = ApiServer(config=config, store_getter=lambda: store)
+            server = ApiServer(config=config, store_getter=lambda: base_store)
 
             await server.start()
 

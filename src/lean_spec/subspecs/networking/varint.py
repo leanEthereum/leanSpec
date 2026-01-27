@@ -114,7 +114,7 @@ class VarintError(Exception):
     """Raised when varint encoding or decoding fails."""
 
 
-def encode(value: int) -> bytes:
+def encode_varint(value: int) -> bytes:
     """
     Encode an unsigned integer as LEB128 varint.
 
@@ -160,7 +160,7 @@ def encode(value: int) -> bytes:
     return bytes(result)
 
 
-def decode(data: bytes, offset: int = 0) -> tuple[int, int]:
+def decode_varint(data: bytes, offset: int = 0) -> tuple[int, int]:
     """
     Decode a varint from bytes at the given offset.
 

@@ -1,20 +1,18 @@
 """
-Block Containers for the Lean Ethereum consensus specification.
+Block containers for Lean Ethereum consensus.
 
-A block proposes changes to the chain. It references its parent block, creating
-a chain. The block includes a state root that represents the result of
-applying this block.
-
-Each block has a proposer who created it. The slot determines which validator
-can propose.
+Blocks propose changes to the chain.
+Each references its parent, forming a chain.
+The proposer is determined by slot assignment.
 """
 
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.xmss.aggregation import AggregationError
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
-from lean_spec.types import Bytes32, Uint64
+from lean_spec.types import Bytes32
 from lean_spec.types.container import Container
 
 from ...xmss.containers import Signature as XmssSignature
@@ -29,37 +27,24 @@ if TYPE_CHECKING:
 
 
 class BlockBody(Container):
-    """
-    The body of a block, containing payload data.
-
-    Currently, the main operation is voting. Validators submit attestations which are
-    packaged into blocks.
-    """
+    """Payload of a block containing attestations."""
 
     attestations: AggregatedAttestations
-    """Plain validator attestations carried in the block body.
-
-    Individual signatures live in the aggregated block signature list, so
-    these entries contain only attestation data without per-attestation signatures.
-    """
+    """Attestations in the block. Signatures are in BlockSignatures."""
 
 
 class BlockHeader(Container):
     """
-    The header of a block, containing metadata.
+    Metadata summarizing a block.
 
-    Block headers summarize blocks without storing full content. The header
-    includes references to the parent and the resulting state. It also contains
-    a hash of the block body.
-
-    Headers are smaller than full blocks. They're useful for tracking the chain
-    without storing everything.
+    Contains parent reference, state root, and body hash.
+    Smaller than full blocks.
     """
 
     slot: Slot
     """The slot in which the block was proposed."""
 
-    proposer_index: Uint64
+    proposer_index: ValidatorIndex
     """The index of the validator that proposed the block."""
 
     parent_root: Bytes32
@@ -78,7 +63,7 @@ class Block(Container):
     slot: Slot
     """The slot in which the block was proposed."""
 
-    proposer_index: Uint64
+    proposer_index: ValidatorIndex
     """The index of the validator that proposed the block."""
 
     parent_root: Bytes32
@@ -102,17 +87,10 @@ class BlockWithAttestation(Container):
 
 
 class BlockSignatures(Container):
-    """Signature payload for the block."""
+    """Aggregated signature payload for a block."""
 
     attestation_signatures: AttestationSignatures
-    """Attestation signatures for the aggregated attestations in the block body.
-
-    Each entry corresponds to an aggregated attestation from the block body and
-    contains the leanVM aggregated signature proof bytes for the participating validators.
-
-    TODO:
-    - Eventually this field will be replaced by a single SNARK aggregating *all* signatures.
-    """
+    """Aggregated signatures for attestations in the block body."""
 
     proposer_signature: XmssSignature
     """Signature for the proposer's attestation."""
@@ -125,16 +103,7 @@ class SignedBlockWithAttestation(Container):
     """The block plus an attestation from proposer being signed."""
 
     signature: BlockSignatures
-    """Aggregated signature payload for the block.
-
-    Signatures remain in attestation order followed by the proposer signature
-    over entire message. For devnet 1, however the proposer signature is just
-    over message.proposer_attestation since leanVM is not yet performant enough
-    to aggregate signatures with sufficient throughput.
-
-    Eventually this field will be replaced by a SNARK (which represents the
-    aggregation of all signatures).
-    """
+    """Aggregated signature payload for the block."""
 
     def verify_signatures(
         self, parent_state: "State", scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME
@@ -142,50 +111,60 @@ class SignedBlockWithAttestation(Container):
         """
         Verify all XMSS signatures in this signed block.
 
-        This function ensures that every attestation included in the block
-        (both on-chain attestations from the block body and the proposer's
-        own attestation) is properly signed by the claimed validator using
-        their registered XMSS public key.
+        Checks that:
+
+        - Each attestation is signed by participating validators
+        - The proposer attestation is signed by the block proposer
 
         Args:
-            parent_state: The state at the parent block, used to retrieve
-                validator public keys and verify signatures.
-            scheme: The XMSS signature scheme to use for verification.
+            parent_state: State at parent block. Provides validator public keys.
+            scheme: XMSS signature scheme for verification.
 
         Returns:
-            True if all signatures are cryptographically valid.
+            True if all signatures are valid.
 
         Raises:
-            AssertionError: If signature verification fails, including:
-                - Signature count mismatch
-                - Validator index out of range
-                - lean-multisig aggregated signature verification failure
-                - XMSS signature verification failure
+            AssertionError: On verification failure.
         """
+        # Extract block components for verification.
         block = self.message.block
         signatures = self.signature
         aggregated_attestations = block.body.attestations
         attestation_signatures = signatures.attestation_signatures
 
+        # Each attestation in the body must have a corresponding signature entry.
+        # This ensures no attestation is missing cryptographic proof.
         assert len(aggregated_attestations) == len(attestation_signatures), (
             "Attestation signature groups must align with block body attestations"
         )
 
+        # Validator registry from parent state contains public keys for verification.
         validators = parent_state.validators
 
+        # Attestations and signatures are parallel arrays.
+        # - Each attestation says "validators X, Y, Z voted for this data".
+        # - Each signature proves those validators actually signed.
         for aggregated_attestation, aggregated_signature in zip(
             aggregated_attestations, attestation_signatures, strict=True
         ):
+            # Extract which validators participated in this attestation.
+            # The aggregation bits encode validator indices as a bitfield.
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
 
+            # The signed message is the attestation data root.
+            # All validators in this group signed this exact data.
             attestation_data_root = aggregated_attestation.data.data_root_bytes()
 
-            # Verify the leanVM aggregated proof for this attestation data root
+            # Bounds check: all validators must exist in the registry.
             for validator_id in validator_ids:
-                # Ensure validator exists in the active set
-                assert validator_id < Uint64(len(validators)), "Validator index out of range"
+                assert validator_id.is_valid(len(validators)), "Validator index out of range"
 
+            # Collect public keys for all participating validators.
+            # Order matters: must match the order in the aggregated signature.
             public_keys = [validators[vid].get_pubkey() for vid in validator_ids]
+
+            # Verify the aggregated signature against all public keys.
+            # Uses slot as epoch for XMSS one-time signature indexing.
             try:
                 aggregated_signature.verify(
                     public_keys=public_keys,
@@ -197,14 +176,25 @@ class SignedBlockWithAttestation(Container):
                     f"Attestation aggregated signature verification failed: {exc}"
                 ) from exc
 
-        # Verify proposer attestation signature
+        # Verify proposer attestation signature.
+        # The proposer includes their own attestation separate from the body.
         proposer_attestation = self.message.proposer_attestation
         proposer_signature = signatures.proposer_signature
-        assert proposer_attestation.validator_id < Uint64(len(validators)), (
+
+        # Critical safety check: the attestation must be from the actual proposer.
+        # Without this, an attacker could substitute another validator's attestation.
+        assert proposer_attestation.validator_id == block.proposer_index, (
+            "Proposer attestation must be from the block proposer"
+        )
+
+        # Bounds check: proposer must exist in the validator registry.
+        assert proposer_attestation.validator_id.is_valid(len(validators)), (
             "Proposer index out of range"
         )
         proposer = validators[proposer_attestation.validator_id]
 
+        # Verify the proposer's individual XMSS signature.
+        # This is not aggregated since there's only one signer.
         assert proposer_signature.verify(
             proposer.get_pubkey(),
             proposer_attestation.data.slot,

@@ -55,7 +55,7 @@ class TestNoiseIdentityPayloadEncode:
         assert encoded[0] == _TAG_IDENTITY_KEY
         # Length varint follows
         key_len = len(identity_key)
-        expected_len_bytes = varint.encode(key_len)
+        expected_len_bytes = varint.encode_varint(key_len)
         offset = 1 + len(expected_len_bytes)
         assert encoded[1 : 1 + len(expected_len_bytes)] == expected_len_bytes
         # Key data follows
@@ -126,10 +126,10 @@ class TestNoiseIdentityPayloadDecode:
         # Manually construct protobuf
         encoded = (
             bytes([_TAG_IDENTITY_KEY])
-            + varint.encode(len(identity_key))
+            + varint.encode_varint(len(identity_key))
             + identity_key
             + bytes([_TAG_IDENTITY_SIG])
-            + varint.encode(len(identity_sig))
+            + varint.encode_varint(len(identity_sig))
             + identity_sig
         )
 
@@ -142,7 +142,9 @@ class TestNoiseIdentityPayloadDecode:
         """Decode raises ValueError when identity_key is missing."""
         # Only identity_sig field
         identity_sig = b"signature_data"
-        encoded = bytes([_TAG_IDENTITY_SIG]) + varint.encode(len(identity_sig)) + identity_sig
+        encoded = (
+            bytes([_TAG_IDENTITY_SIG]) + varint.encode_varint(len(identity_sig)) + identity_sig
+        )
 
         with pytest.raises(ValueError, match="Missing identity_key"):
             NoiseIdentityPayload.decode(encoded)
@@ -151,7 +153,9 @@ class TestNoiseIdentityPayloadDecode:
         """Decode raises ValueError when identity_sig is missing."""
         # Only identity_key field
         identity_key = b"key_data"
-        encoded = bytes([_TAG_IDENTITY_KEY]) + varint.encode(len(identity_key)) + identity_key
+        encoded = (
+            bytes([_TAG_IDENTITY_KEY]) + varint.encode_varint(len(identity_key)) + identity_key
+        )
 
         with pytest.raises(ValueError, match="Missing identity_sig"):
             NoiseIdentityPayload.decode(encoded)
@@ -160,7 +164,7 @@ class TestNoiseIdentityPayloadDecode:
         """Decode raises ValueError for truncated data."""
         identity_key = b"key_data"
         # Truncate the data - claim 100 bytes but provide less
-        encoded = bytes([_TAG_IDENTITY_KEY]) + varint.encode(100) + identity_key
+        encoded = bytes([_TAG_IDENTITY_KEY]) + varint.encode_varint(100) + identity_key
 
         with pytest.raises(ValueError, match="Truncated payload"):
             NoiseIdentityPayload.decode(encoded)
@@ -176,15 +180,15 @@ class TestNoiseIdentityPayloadDecode:
         identity_sig = b"sig_data"
 
         # Add an unknown field (tag 0x1A = field 3, length-delimited)
-        unknown_field = bytes([0x1A]) + varint.encode(5) + b"extra"
+        unknown_field = bytes([0x1A]) + varint.encode_varint(5) + b"extra"
 
         encoded = (
             bytes([_TAG_IDENTITY_KEY])
-            + varint.encode(len(identity_key))
+            + varint.encode_varint(len(identity_key))
             + identity_key
             + unknown_field
             + bytes([_TAG_IDENTITY_SIG])
-            + varint.encode(len(identity_sig))
+            + varint.encode_varint(len(identity_sig))
             + identity_sig
         )
 
@@ -201,10 +205,10 @@ class TestNoiseIdentityPayloadDecode:
         # Put identity_sig before identity_key
         encoded = (
             bytes([_TAG_IDENTITY_SIG])
-            + varint.encode(len(identity_sig))
+            + varint.encode_varint(len(identity_sig))
             + identity_sig
             + bytes([_TAG_IDENTITY_KEY])
-            + varint.encode(len(identity_key))
+            + varint.encode_varint(len(identity_key))
             + identity_key
         )
 
@@ -661,7 +665,7 @@ class TestNoiseIdentityPayloadEdgeCases:
             + bytes([0xC8, 0x01])  # 200 as varint
             + large_key
             + bytes([_TAG_IDENTITY_SIG])
-            + varint.encode(len(sig))
+            + varint.encode_varint(len(sig))
             + sig
         )
 
@@ -677,10 +681,10 @@ class TestNoiseIdentityPayloadEdgeCases:
 
         encoded = (
             bytes([_TAG_IDENTITY_KEY])
-            + varint.encode(len(identity_key))
+            + varint.encode_varint(len(identity_key))
             + identity_key
             + bytes([_TAG_IDENTITY_SIG])
-            + varint.encode(len(identity_sig))
+            + varint.encode_varint(len(identity_sig))
             + identity_sig
         )
 

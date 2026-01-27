@@ -10,9 +10,11 @@ from lean_spec.subspecs.networking.reqresp import (
     decode_request,
     encode_request,
 )
-from lean_spec.subspecs.networking.varint import VarintError
-from lean_spec.subspecs.networking.varint import decode as decode_varint
-from lean_spec.subspecs.networking.varint import encode as encode_varint
+from lean_spec.subspecs.networking.varint import (
+    VarintError,
+    decode_varint,
+    encode_varint,
+)
 
 
 class TestVarintEncoding:

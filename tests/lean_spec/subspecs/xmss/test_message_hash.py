@@ -12,7 +12,7 @@ from lean_spec.subspecs.xmss.message_hash import (
 )
 from lean_spec.subspecs.xmss.rand import TEST_RAND
 from lean_spec.subspecs.xmss.utils import int_to_base_p
-from lean_spec.types import Uint64
+from lean_spec.types import Bytes32, Uint64
 
 
 def test_encode_message() -> None:
@@ -21,13 +21,13 @@ def test_encode_message() -> None:
     hasher = TEST_MESSAGE_HASHER
 
     # All-zero message
-    msg_zeros = b"\x00" * config.MESSAGE_LENGTH
+    msg_zeros = Bytes32(b"\x00" * 32)
     encoded_zeros = hasher.encode_message(msg_zeros)
     assert len(encoded_zeros) == config.MSG_LEN_FE
     assert all(fe.value == 0 for fe in encoded_zeros)
 
     # All-max message (0xff)
-    msg_max = b"\xff" * config.MESSAGE_LENGTH
+    msg_max = Bytes32(b"\xff" * 32)
     acc = int.from_bytes(msg_max, "little")
     expected_max = int_to_base_p(acc, config.MSG_LEN_FE)
     assert hasher.encode_message(msg_max) == expected_max
@@ -70,7 +70,7 @@ def test_apply_output_is_in_correct_hypercube_part() -> None:
     parameter = rand.parameter()
     epoch = Uint64(313)
     randomness = rand.rho()
-    message = b"\xaa" * config.MESSAGE_LENGTH
+    message = Bytes32(b"\xaa" * 32)
 
     # Call the message hash function.
     vertex = hasher.apply(parameter, epoch, randomness, message)

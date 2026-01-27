@@ -15,18 +15,26 @@ import signal
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import ChainService, SlotClock
+from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers import Block, BlockBody, State
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.networking import NetworkEventSource, NetworkService
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync import BlockCache, NetworkRequester, PeerManager, SyncService
+from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
 from lean_spec.types import Bytes32, Uint64
+
+if TYPE_CHECKING:
+    from lean_spec.subspecs.storage import Database
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +62,34 @@ class NodeConfig:
 
     api_config: ApiServerConfig | None = field(default=None)
     """Optional API server configuration. If None, API server is disabled."""
+
+    database_path: Path | str | None = field(default=None)
+    """
+    Optional path to SQLite database file for persistence.
+
+    If provided, the node will persist blocks and states to disk.
+    On restart, existing state is loaded from the database.
+
+    Use \":memory:\" for in-memory database (testing only).
+    """
+
+    validator_registry: ValidatorRegistry | None = field(default=None)
+    """
+    Optional validator registry with secret keys.
+
+    If provided, the node will participate in consensus by:
+    - Proposing blocks when scheduled
+    - Creating attestations every slot
+
+    If None, the node runs in passive mode (sync only).
+    """
+
+    fork_digest: str = field(default="0x00000000")
+    """
+    Fork digest for gossip topics.
+
+    For devnet testing with ream, use "devnet0".
+    """
 
 
 @dataclass(slots=True)
@@ -83,6 +119,9 @@ class Node:
     api_server: ApiServer | None = field(default=None)
     """Optional API server for checkpoint sync and status endpoints."""
 
+    validator_service: ValidatorService | None = field(default=None)
+    """Optional validator service for block/attestation production."""
+
     _shutdown: asyncio.Event = field(default_factory=asyncio.Event)
     """Event signaling shutdown request."""
 
@@ -91,36 +130,63 @@ class Node:
         """
         Create a fully-wired node from genesis configuration.
 
+        If a database path is provided and contains existing state, the node
+        resumes from the persisted state. Otherwise, it starts fresh from genesis.
+
         Args:
             config: Node configuration with genesis parameters.
 
         Returns:
             A Node ready to run.
         """
-        # Generate genesis state from validators.
+        # Initialize database if path provided.
         #
-        # Includes initial checkpoints, validator registry, and config.
-        state = State.generate_genesis(config.genesis_time, config.validators)
+        # The database is optional - nodes can run without persistence.
+        database: Database | None = None
+        if config.database_path is not None:
+            database = cls._create_database(config.database_path)
 
-        # Create genesis block.
+        # Try to load existing state from database.
         #
-        # Slot 0, no parent, empty body.
-        # State root is the hash of the genesis state.
-        block = Block(
-            slot=Slot(0),
-            proposer_index=Uint64(0),
-            parent_root=Bytes32.zero(),
-            state_root=hash_tree_root(state),
-            body=BlockBody(attestations=AggregatedAttestations(data=[])),
-        )
+        # If database contains valid state, resume from there.
+        # Otherwise, fall through to genesis initialization.
+        store = cls._try_load_from_database(database)
 
-        # Initialize forkchoice store.
-        #
-        # Genesis block is both justified and finalized.
-        store = Store.get_forkchoice_store(state, block)
+        if store is None:
+            # Generate genesis state from validators.
+            #
+            # Includes initial checkpoints, validator registry, and config.
+            state = State.generate_genesis(config.genesis_time, config.validators)
+
+            # Create genesis block.
+            #
+            # Slot 0, no parent, empty body.
+            # State root is the hash of the genesis state.
+            block = Block(
+                slot=Slot(0),
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32.zero(),
+                state_root=hash_tree_root(state),
+                body=BlockBody(attestations=AggregatedAttestations(data=[])),
+            )
+
+            # Initialize forkchoice store.
+            #
+            # Genesis block is both justified and finalized.
+            store = Store.get_forkchoice_store(state, block)
+
+            # Persist genesis to database if available.
+            if database is not None:
+                block_root = hash_tree_root(block)
+                database.put_block(block, block_root)
+                database.put_state(state, block_root)
+                database.put_head_root(block_root)
+                database.put_justified_checkpoint(store.latest_justified)
+                database.put_finalized_checkpoint(store.latest_finalized)
+                database.put_block_root_by_slot(block.slot, block_root)
 
         # Create shared dependencies.
-        clock = SlotClock(genesis_time=config.genesis_time, _time_fn=config.time_fn)
+        clock = SlotClock(genesis_time=config.genesis_time, time_fn=config.time_fn)
         peer_manager = PeerManager()
         block_cache = BlockCache()
 
@@ -134,12 +200,14 @@ class Node:
             block_cache=block_cache,
             clock=clock,
             network=config.network,
+            database=database,
         )
 
         chain_service = ChainService(sync_service=sync_service, clock=clock)
         network_service = NetworkService(
             sync_service=sync_service,
             event_source=config.event_source,
+            fork_digest=config.fork_digest,
         )
 
         # Create API server if configured
@@ -151,6 +219,22 @@ class Node:
                 store_getter=lambda: sync_service.store,
             )
 
+        # Create validator service if registry provided.
+        #
+        # Validators need keys to sign blocks and attestations.
+        # Without a registry, the node runs in passive mode.
+        #
+        # Wire callbacks to publish produced blocks/attestations to the network.
+        validator_service: ValidatorService | None = None
+        if config.validator_registry is not None:
+            validator_service = ValidatorService(
+                sync_service=sync_service,
+                clock=clock,
+                registry=config.validator_registry,
+                on_block=network_service.publish_block,
+                on_attestation=network_service.publish_attestation,
+            )
+
         return cls(
             store=store,
             clock=clock,
@@ -158,6 +242,73 @@ class Node:
             chain_service=chain_service,
             network_service=network_service,
             api_server=api_server,
+            validator_service=validator_service,
+        )
+
+    @staticmethod
+    def _create_database(path: Path | str) -> Database:
+        """
+        Create database instance from path.
+
+        Args:
+            path: Path to SQLite database file.
+
+        Returns:
+            Database instance ready for use.
+        """
+        from lean_spec.subspecs.storage import SQLiteDatabase
+
+        # SQLite handles its own caching at the filesystem level.
+        return SQLiteDatabase(path)
+
+    @staticmethod
+    def _try_load_from_database(database: Database | None) -> Store | None:
+        """
+        Try to load forkchoice store from existing database state.
+
+        Returns None if database is empty or unavailable.
+
+        Args:
+            database: Database to load from.
+
+        Returns:
+            Loaded Store or None if no valid state exists.
+        """
+        if database is None:
+            return None
+
+        # Check if database has existing state.
+        head_root = database.get_head_root()
+        if head_root is None:
+            return None
+
+        # Load head block and state.
+        head_block = database.get_block(head_root)
+        head_state = database.get_state(head_root)
+
+        if head_block is None or head_state is None:
+            return None
+
+        # Load checkpoints.
+        justified = database.get_justified_checkpoint()
+        finalized = database.get_finalized_checkpoint()
+
+        if justified is None or finalized is None:
+            return None
+
+        # Reconstruct minimal store from persisted data.
+        #
+        # The store starts with just the head block and state.
+        # Additional blocks can be loaded on demand or via sync.
+        return Store(
+            time=Uint64(head_block.slot * INTERVALS_PER_SLOT),
+            config=head_state.config,
+            head=head_root,
+            safe_target=head_root,
+            latest_justified=justified,
+            latest_finalized=finalized,
+            blocks={head_root: head_block},
+            states={head_root: head_state},
         )
 
     async def run(self, *, install_signal_handlers: bool = True) -> None:
@@ -187,6 +338,8 @@ class Node:
             tg.create_task(self.network_service.run())
             if self.api_server is not None:
                 tg.create_task(self.api_server.run())
+            if self.validator_service is not None:
+                tg.create_task(self.validator_service.run())
             tg.create_task(self._wait_shutdown())
 
     def _install_signal_handlers(self) -> None:
@@ -222,6 +375,8 @@ class Node:
         self.network_service.stop()
         if self.api_server is not None:
             self.api_server.stop()
+        if self.validator_service is not None:
+            self.validator_service.stop()
 
     def stop(self) -> None:
         """

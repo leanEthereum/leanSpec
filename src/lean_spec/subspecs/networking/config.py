@@ -2,7 +2,7 @@
 
 from typing_extensions import Final
 
-from lean_spec.types.byte_arrays import Bytes4
+from lean_spec.types.byte_arrays import Bytes1
 
 from .types import DomainType
 
@@ -32,8 +32,51 @@ response, including all chunks for multi-part responses like BlocksByRange.
 
 # --- Gossip Message Domains ---
 
-MESSAGE_DOMAIN_INVALID_SNAPPY: Final[DomainType] = Bytes4(b"\x00\x00\x00\x00")
-"""4-byte domain for gossip message-id isolation of invalid snappy messages."""
+MESSAGE_DOMAIN_INVALID_SNAPPY: Final[DomainType] = Bytes1(b"\x00")
+"""1-byte domain for gossip message-id isolation of invalid snappy messages.
 
-MESSAGE_DOMAIN_VALID_SNAPPY: Final[DomainType] = Bytes4(b"\x01\x00\x00\x00")
-"""4-byte domain for gossip message-id isolation of valid snappy messages."""
+Per Ethereum spec, prepended to the message hash when decompression fails.
+"""
+
+MESSAGE_DOMAIN_VALID_SNAPPY: Final[DomainType] = Bytes1(b"\x01")
+"""1-byte domain for gossip message-id isolation of valid snappy messages.
+
+Per Ethereum spec, prepended to the message hash when decompression succeeds.
+"""
+
+# --- Gossipsub Protocol IDs ---
+
+GOSSIPSUB_PROTOCOL_ID_V10: Final[str] = "/meshsub/1.0.0"
+"""Gossipsub v1.0 protocol ID - basic mesh pubsub."""
+
+GOSSIPSUB_PROTOCOL_ID_V11: Final[str] = "/meshsub/1.1.0"
+"""Gossipsub v1.1 protocol ID - peer scoring, extended validators.
+
+This is the minimum version required by the Ethereum consensus spec.
+"""
+
+GOSSIPSUB_PROTOCOL_ID_V12: Final[str] = "/meshsub/1.2.0"
+"""Gossipsub v1.2 protocol ID - IDONTWANT bandwidth optimization."""
+
+GOSSIPSUB_DEFAULT_PROTOCOL_ID: Final[str] = GOSSIPSUB_PROTOCOL_ID_V11
+"""
+Default protocol ID per Ethereum consensus spec requirements.
+
+The Ethereum consensus P2P spec states:
+"Clients MUST support the gossipsub v1 libp2p Protocol including the gossipsub v1.1 extension."
+"""
+
+# --- Gossipsub Parameters ---
+
+PRUNE_BACKOFF: Final[int] = 60
+"""Default PRUNE backoff duration in seconds.
+
+When a peer is pruned from the mesh, they must wait this duration
+before attempting to re-graft. This prevents rapid mesh churn.
+"""
+
+MESSAGE_ID_SIZE: Final[int] = 20
+"""Size of gossipsub message IDs in bytes.
+
+Per Ethereum spec, message IDs are the first 20 bytes of SHA256(domain + topic_len + topic + data).
+"""

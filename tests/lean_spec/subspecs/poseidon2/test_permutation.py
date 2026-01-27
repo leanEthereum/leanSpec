@@ -1,8 +1,4 @@
-"""
-Tests for the Poseidon2 permutation for widths 16 and 24.
-"""
-
-from typing import List
+"""Tests for the Poseidon2 permutation for widths 16 and 24."""
 
 import pytest
 
@@ -10,8 +6,8 @@ from lean_spec.subspecs.koalabear.field import Fp
 from lean_spec.subspecs.poseidon2.permutation import (
     PARAMS_16,
     PARAMS_24,
+    Poseidon2,
     Poseidon2Params,
-    permute,
 )
 
 # --- Test Vectors ---
@@ -120,17 +116,16 @@ EXPECTED_24 = [
     ids=["width_16", "width_24"],
 )
 def test_permutation_vector(
-    params: Poseidon2Params, input_state: List[Fp], expected_output: List[Fp]
+    params: Poseidon2Params, input_state: list[Fp], expected_output: list[Fp]
 ) -> None:
     """
-    Tests the Poseidon2 permutation against known answer vectors.
+    Test the Poseidon2 permutation against known answer vectors.
 
-    This serves as a regression test to ensure the logic is consistent.
+    Serves as a regression test to ensure logic consistency.
     """
-    # Run the permutation
-    output_state = permute(input_state, params)
+    engine = Poseidon2(params)
+    output_state = engine.permute(input_state)
 
-    # Verify the output
     assert len(output_state) == params.width
     assert output_state == expected_output, (
         f"Permutation output for width {params.width} did not match."

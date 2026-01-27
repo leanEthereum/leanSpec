@@ -331,10 +331,12 @@ class PublicKeyProto:
             Protobuf-encoded PublicKey message bytes.
         """
         # Field 1: Type (tag = 0x08, value = key_type as varint)
-        type_field = bytes([_ProtobufTag.TYPE]) + varint.encode(self.key_type)
+        type_field = bytes([_ProtobufTag.TYPE]) + varint.encode_varint(self.key_type)
 
         # Field 2: Data (tag = 0x12, value = length-delimited bytes)
-        data_field = bytes([_ProtobufTag.DATA]) + varint.encode(len(self.key_data)) + self.key_data
+        data_field = (
+            bytes([_ProtobufTag.DATA]) + varint.encode_varint(len(self.key_data)) + self.key_data
+        )
 
         return type_field + data_field
 

@@ -35,8 +35,7 @@ from __future__ import annotations
 import asyncio
 from typing import Final
 
-from lean_spec.subspecs.networking.varint import decode as decode_varint
-from lean_spec.subspecs.networking.varint import encode as encode_varint
+from lean_spec.subspecs.networking.varint import decode_varint, encode_varint
 
 from ..protocols import StreamReaderProtocol, StreamWriterProtocol
 

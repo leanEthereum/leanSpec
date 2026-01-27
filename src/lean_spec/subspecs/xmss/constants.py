@@ -13,6 +13,7 @@ from typing_extensions import Final
 
 from lean_spec.config import LEAN_ENV
 from lean_spec.types import StrictBaseModel, Uint64
+from lean_spec.types.constants import OFFSET_BYTE_LENGTH
 
 from ..koalabear import P_BYTES, Fp
 
@@ -96,14 +97,23 @@ class XmssConfig(StrictBaseModel):
 
     @property
     def SIGNATURE_LEN_BYTES(self) -> int:  # noqa: N802
-        """The size of the signature in bytes."""
-        # - path siblings: LOG_LIFETIME siblings × HASH_LEN_FE elements
-        # - rho: RAND_LEN_FE elements
-        # - hashes: DIMENSION hashes × HASH_LEN_FE elements per hash
-        path_size = self.LOG_LIFETIME * self.HASH_LEN_FE * P_BYTES
+        """
+        The SSZ-encoded size of a signature in bytes.
+
+        Includes raw field data plus SSZ offset overhead for variable-size fields:
+
+        - Signature container: 2 offsets (path, hashes)
+        - HashTreeOpening container: 1 offset (siblings)
+        """
+        # Raw data sizes
+        path_siblings_size = self.LOG_LIFETIME * self.HASH_LEN_FE * P_BYTES
         rho_size = self.RAND_LEN_FE * P_BYTES
         hashes_size = self.DIMENSION * self.HASH_LEN_FE * P_BYTES
-        return path_size + rho_size + hashes_size
+
+        # SSZ offset overhead: 3 variable fields × 4 bytes each
+        ssz_offset_overhead = 3 * OFFSET_BYTE_LENGTH
+
+        return path_siblings_size + rho_size + hashes_size + ssz_offset_overhead
 
 
 PROD_CONFIG: Final = XmssConfig(

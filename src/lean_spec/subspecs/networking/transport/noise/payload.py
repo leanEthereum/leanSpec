@@ -72,12 +72,16 @@ class NoiseIdentityPayload:
         """
         # Field 1: identity_key (length-delimited)
         field1 = (
-            bytes([_TAG_IDENTITY_KEY]) + varint.encode(len(self.identity_key)) + self.identity_key
+            bytes([_TAG_IDENTITY_KEY])
+            + varint.encode_varint(len(self.identity_key))
+            + self.identity_key
         )
 
         # Field 2: identity_sig (length-delimited)
         field2 = (
-            bytes([_TAG_IDENTITY_SIG]) + varint.encode(len(self.identity_sig)) + self.identity_sig
+            bytes([_TAG_IDENTITY_SIG])
+            + varint.encode_varint(len(self.identity_sig))
+            + self.identity_sig
         )
 
         return field1 + field2
@@ -105,7 +109,7 @@ class NoiseIdentityPayload:
             offset += 1
 
             # Decode length varint
-            length, consumed = varint.decode(data, offset)
+            length, consumed = varint.decode_varint(data, offset)
             offset += consumed
 
             if offset + length > len(data):
@@ -192,7 +196,7 @@ class NoiseIdentityPayload:
             offset += 1
 
             # Read type varint
-            key_type, consumed = varint.decode(self.identity_key, offset)
+            key_type, consumed = varint.decode_varint(self.identity_key, offset)
             offset += consumed
 
             if key_type != KeyType.SECP256K1:
@@ -204,7 +208,7 @@ class NoiseIdentityPayload:
             offset += 1
 
             # Read length varint
-            length, consumed = varint.decode(self.identity_key, offset)
+            length, consumed = varint.decode_varint(self.identity_key, offset)
             offset += consumed
 
             if offset + length > len(self.identity_key):

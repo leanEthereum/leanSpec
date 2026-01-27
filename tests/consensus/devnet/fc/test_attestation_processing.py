@@ -10,7 +10,7 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Uint64
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -44,7 +44,7 @@ def test_proposer_attestation_appears_in_latest_new(
                     head_slot=Slot(1),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             head_slot=Slot(1),
                             source_slot=Slot(0),  # Genesis
@@ -90,7 +90,7 @@ def test_attestation_superseding_same_validator(
                     head_slot=Slot(1),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             head_slot=Slot(1),
                             source_slot=Slot(0),
@@ -107,7 +107,7 @@ def test_attestation_superseding_same_validator(
                     attestation_checks=[
                         # Validator 1's newer attestation (superseded the old one)
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(5),
                             head_slot=Slot(5),
                             target_slot=Slot(5),
@@ -156,7 +156,7 @@ def test_attestations_move_to_known_between_blocks(
                     head_slot=Slot(1),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             head_slot=Slot(1),
                             source_slot=Slot(0),
@@ -173,7 +173,7 @@ def test_attestations_move_to_known_between_blocks(
                     attestation_checks=[
                         # Validator 1's attestation migrated to known
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             head_slot=Slot(1),
                             source_slot=Slot(0),
@@ -182,7 +182,7 @@ def test_attestations_move_to_known_between_blocks(
                         ),
                         # Validator 2's new attestation
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             head_slot=Slot(2),
                             source_slot=Slot(1),
@@ -230,7 +230,7 @@ def test_attestation_accumulation_full_validator_set(
                     head_slot=Slot(1),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             target_slot=Slot(1),
                             location="new",
@@ -244,12 +244,12 @@ def test_attestation_accumulation_full_validator_set(
                     head_slot=Slot(2),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="known",  # Moved to known
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             target_slot=Slot(2),
                             location="new",
@@ -263,17 +263,17 @@ def test_attestation_accumulation_full_validator_set(
                     head_slot=Slot(3),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             target_slot=Slot(3),
                             location="new",
@@ -288,22 +288,22 @@ def test_attestation_accumulation_full_validator_set(
                     attestation_checks=[
                         # All 4 validators now have attestations
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(0),
+                            validator=ValidatorIndex(0),
                             attestation_slot=Slot(4),
                             target_slot=Slot(4),
                             location="new",
@@ -352,7 +352,7 @@ def test_slot_gaps_with_attestation_superseding(
                     head_slot=Slot(1),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             target_slot=Slot(1),
                             location="new",
@@ -366,12 +366,12 @@ def test_slot_gaps_with_attestation_superseding(
                     head_slot=Slot(3),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="known",  # Moved to known
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             target_slot=Slot(3),
                             location="new",
@@ -385,12 +385,12 @@ def test_slot_gaps_with_attestation_superseding(
                     head_slot=Slot(5),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(5),  # Newer attestation superseded slot 1
                             target_slot=Slot(5),
                             location="new",
@@ -404,12 +404,12 @@ def test_slot_gaps_with_attestation_superseding(
                     head_slot=Slot(7),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(5),  # Latest from validator 1
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(7),  # Newer attestation superseded slot 3
                             target_slot=Slot(7),
                             location="new",
@@ -461,7 +461,7 @@ def test_extended_chain_attestation_superseding_pattern(
                     head_slot=Slot(1),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="new",
                         ),
@@ -474,12 +474,12 @@ def test_extended_chain_attestation_superseding_pattern(
                     head_slot=Slot(2),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             location="new",
                         ),
@@ -492,17 +492,17 @@ def test_extended_chain_attestation_superseding_pattern(
                     head_slot=Slot(3),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             location="new",
                         ),
@@ -515,22 +515,22 @@ def test_extended_chain_attestation_superseding_pattern(
                     head_slot=Slot(4),
                     attestation_checks=[
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(1),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(0),
+                            validator=ValidatorIndex(0),
                             attestation_slot=Slot(4),
                             location="new",
                         ),
@@ -544,22 +544,22 @@ def test_extended_chain_attestation_superseding_pattern(
                     attestation_checks=[
                         # Validator 1's newer attestation supersedes slot 1
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(5),
                             location="new",
                         ),
                         AttestationCheck(
-                            validator=Uint64(0),
+                            validator=ValidatorIndex(0),
                             attestation_slot=Slot(4),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(2),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             location="known",
                         ),
@@ -573,22 +573,22 @@ def test_extended_chain_attestation_superseding_pattern(
                     attestation_checks=[
                         # Validator 2's newer attestation supersedes slot 2
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(6),
                             location="new",
                         ),
                         AttestationCheck(
-                            validator=Uint64(0),
+                            validator=ValidatorIndex(0),
                             attestation_slot=Slot(4),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(5),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(3),
                             location="known",
                         ),
@@ -602,22 +602,22 @@ def test_extended_chain_attestation_superseding_pattern(
                     attestation_checks=[
                         # Validator 3's newer attestation supersedes slot 3
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(7),
                             location="new",
                         ),
                         AttestationCheck(
-                            validator=Uint64(0),
+                            validator=ValidatorIndex(0),
                             attestation_slot=Slot(4),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(5),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(6),
                             location="known",
                         ),
@@ -631,22 +631,22 @@ def test_extended_chain_attestation_superseding_pattern(
                     attestation_checks=[
                         # Validator 0's newer attestation supersedes slot 4
                         AttestationCheck(
-                            validator=Uint64(0),
+                            validator=ValidatorIndex(0),
                             attestation_slot=Slot(8),
                             location="new",
                         ),
                         AttestationCheck(
-                            validator=Uint64(1),
+                            validator=ValidatorIndex(1),
                             attestation_slot=Slot(5),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(2),
+                            validator=ValidatorIndex(2),
                             attestation_slot=Slot(6),
                             location="known",
                         ),
                         AttestationCheck(
-                            validator=Uint64(3),
+                            validator=ValidatorIndex(3),
                             attestation_slot=Slot(7),
                             location="known",
                         ),

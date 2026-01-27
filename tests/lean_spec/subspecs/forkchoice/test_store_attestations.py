@@ -20,7 +20,7 @@ from lean_spec.subspecs.containers.block.types import (
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State, Validators
-from lean_spec.subspecs.containers.validator import Validator
+from lean_spec.subspecs.containers.validator import Validator, ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
@@ -32,14 +32,17 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
     key_manager = XmssKeyManager(max_slot=Slot(10))
     validators = Validators(
         data=[
-            Validator(pubkey=Bytes52(key_manager[Uint64(i)].public.encode_bytes()), index=Uint64(i))
+            Validator(
+                pubkey=Bytes52(key_manager[ValidatorIndex(i)].public.encode_bytes()),
+                index=ValidatorIndex(i),
+            )
             for i in range(3)
         ]
     )
     genesis_state = State.generate_genesis(genesis_time=Uint64(0), validators=validators)
     genesis_block = Block(
         slot=Slot(0),
-        proposer_index=Uint64(0),
+        proposer_index=ValidatorIndex(0),
         parent_root=Bytes32.zero(),
         state_root=hash_tree_root(genesis_state),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
@@ -54,7 +57,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
 
     # Store attestation data in latest_known_attestations
     attestation_data_map = {
-        validator_id: attestation_data for validator_id in (Uint64(1), Uint64(2))
+        validator_id: attestation_data for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
     }
 
     # Store signatures in gossip_signatures
@@ -63,7 +66,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
         SignatureKey(validator_id, data_root): key_manager.sign_attestation_data(
             validator_id, attestation_data
         )
-        for validator_id in (Uint64(1), Uint64(2))
+        for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
     }
 
     producer_store = base_store.model_copy(
@@ -74,7 +77,7 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
     )
 
     # For slot 1 with 3 validators: 1 % 3 == 1, so validator 1 is the proposer
-    proposer_index = Uint64(1)
+    proposer_index = ValidatorIndex(1)
     _, block, _ = producer_store.produce_block_with_signatures(
         attestation_slot,
         proposer_index,
@@ -115,10 +118,10 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
 
     updated_store = consumer_store.on_block(signed_block)
 
-    assert Uint64(1) in updated_store.latest_known_attestations
-    assert Uint64(2) in updated_store.latest_known_attestations
-    assert updated_store.latest_known_attestations[Uint64(1)] == attestation_data
-    assert updated_store.latest_known_attestations[Uint64(2)] == attestation_data
+    assert ValidatorIndex(1) in updated_store.latest_known_attestations
+    assert ValidatorIndex(2) in updated_store.latest_known_attestations
+    assert updated_store.latest_known_attestations[ValidatorIndex(1)] == attestation_data
+    assert updated_store.latest_known_attestations[ValidatorIndex(2)] == attestation_data
 
 
 def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
@@ -126,14 +129,17 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
     key_manager = XmssKeyManager(max_slot=Slot(10))
     validators = Validators(
         data=[
-            Validator(pubkey=Bytes52(key_manager[Uint64(i)].public.encode_bytes()), index=Uint64(i))
+            Validator(
+                pubkey=Bytes52(key_manager[ValidatorIndex(i)].public.encode_bytes()),
+                index=ValidatorIndex(i),
+            )
             for i in range(3)
         ]
     )
     genesis_state = State.generate_genesis(genesis_time=Uint64(0), validators=validators)
     genesis_block = Block(
         slot=Slot(0),
-        proposer_index=Uint64(0),
+        proposer_index=ValidatorIndex(0),
         parent_root=Bytes32.zero(),
         state_root=hash_tree_root(genesis_state),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
@@ -148,13 +154,13 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
     data_root_1 = attestation_data_1.data_root_bytes()
 
     attestation_data_map_1 = {
-        validator_id: attestation_data_1 for validator_id in (Uint64(1), Uint64(2))
+        validator_id: attestation_data_1 for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
     }
     gossip_sigs_1 = {
         SignatureKey(validator_id, data_root_1): key_manager.sign_attestation_data(
             validator_id, attestation_data_1
         )
-        for validator_id in (Uint64(1), Uint64(2))
+        for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
     }
 
     producer_store_1 = base_store.model_copy(
@@ -164,7 +170,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
         }
     )
 
-    proposer_index_1 = Uint64(1)
+    proposer_index_1 = ValidatorIndex(1)
     _, block_1, _ = producer_store_1.produce_block_with_signatures(
         attestation_slot_1,
         proposer_index_1,
@@ -214,13 +220,13 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
     data_root_2 = attestation_data_2.data_root_bytes()
 
     attestation_data_map_2 = {
-        validator_id: attestation_data_2 for validator_id in (Uint64(1), Uint64(2))
+        validator_id: attestation_data_2 for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
     }
     gossip_sigs_2 = {
         SignatureKey(validator_id, data_root_2): key_manager.sign_attestation_data(
             validator_id, attestation_data_2
         )
-        for validator_id in (Uint64(1), Uint64(2))
+        for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
     }
 
     producer_store_2 = store_after_block_1.model_copy(
@@ -230,7 +236,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
         }
     )
 
-    proposer_index_2 = Uint64(2)
+    proposer_index_2 = ValidatorIndex(2)
     _, block_2, _ = producer_store_2.produce_block_with_signatures(
         attestation_slot_2,
         proposer_index_2,

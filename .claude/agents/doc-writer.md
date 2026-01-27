@@ -101,6 +101,54 @@ def process(self, data: bytes) -> Result:
 
 ## Critical Writing Guidelines
 
+### LINE-BY-LINE DOCUMENTATION IS ESSENTIAL
+
+**This is the most important principle.** Every function body should have inline comments that guide the reader through the logic step by step. The spec is educational material—readers need to understand every decision.
+
+**Good** - Line-by-line explanation:
+```python
+def verify_signatures(self, state: State) -> bool:
+    # Extract block components for verification.
+    block = self.message.block
+    signatures = self.signature
+
+    # Each attestation in the body must have a corresponding signature entry.
+    # This ensures no attestation is missing cryptographic proof.
+    assert len(attestations) == len(signatures), "Mismatch"
+
+    # Validator registry from parent state contains public keys for verification.
+    validators = state.validators
+
+    # Verify each aggregated attestation signature.
+    # An aggregated attestation bundles votes from multiple validators.
+    # The aggregated signature proves all participants signed the same data.
+    for attestation, signature in zip(attestations, signatures):
+        # Extract which validators participated in this attestation.
+        # The aggregation bits encode validator indices as a bitfield.
+        validator_ids = attestation.aggregation_bits.to_validator_indices()
+        ...
+```
+
+**Bad** - Sparse comments, reader is lost:
+```python
+def verify_signatures(self, state: State) -> bool:
+    block = self.message.block
+    signatures = self.signature
+    assert len(attestations) == len(signatures), "Mismatch"
+    validators = state.validators
+    for attestation, signature in zip(attestations, signatures):
+        validator_ids = attestation.aggregation_bits.to_validator_indices()
+        ...
+```
+
+**Key principles for inline documentation:**
+
+- Comment BEFORE the code block it explains
+- Explain the PURPOSE of each logical step
+- Group related lines and comment the group
+- Use blank lines to create visual separation
+- Every non-obvious operation deserves an explanation
+
 ### Explain the WHY, not the WHAT
 
 **Good** - Explains purpose:

@@ -16,6 +16,7 @@ from lean_spec.subspecs.networking.transport.yamux.session import (
     YamuxSession,
     YamuxStream,
 )
+from tests.lean_spec.helpers import MockNoiseSession
 
 
 class TestSessionConstants:
@@ -591,23 +592,3 @@ def _create_mock_session(is_initiator: bool) -> YamuxSession:
     """Create a mock YamuxSession for testing."""
     noise = MockNoiseSession()
     return YamuxSession(noise=noise, is_initiator=is_initiator)
-
-
-class MockNoiseSession:
-    """Mock NoiseSession for testing yamux."""
-
-    def __init__(self) -> None:
-        self._written: list[bytes] = []
-        self._to_read: list[bytes] = []
-        self._closed = False
-
-    async def write(self, plaintext: bytes) -> None:
-        self._written.append(plaintext)
-
-    async def read(self) -> bytes:
-        if self._to_read:
-            return self._to_read.pop(0)
-        return b""
-
-    async def close(self) -> None:
-        self._closed = True

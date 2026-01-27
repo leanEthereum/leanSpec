@@ -2,7 +2,13 @@
 
 The Lean Ethereum protocol specifications and cryptographic subspecifications.
 
+> **🐳 Running with Docker?** Skip the setup and jump to [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for containerized deployment examples.
+
 ## Quick Start
+
+**New to leanSpec?** Choose your path:
+- **Local development**: Follow the instructions below
+- **Docker deployment**: See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for running as a consensus node
 
 ### Prerequisites
 
@@ -203,18 +209,85 @@ def test_withdrawal_amount_above_uint64_max():
 
 ## Common Commands Reference
 
-| Task                                          | Command                   |
-|-----------------------------------------------|---------------------------|
-| Install and sync project and dev dependencies | `uv sync`                 |
-| Run tests                                     | `uv run pytest ...`       |
-| Format code                                   | `uv run ruff format`      |
-| Lint code                                     | `uv run ruff check`       |
-| Fix lint errors                               | `uv run ruff check --fix` |
-| Type check                                    | `uv run ty check`         |
-| Build docs                                    | `uv run mkdocs build`     |
-| Serve docs                                    | `uv run mkdocs serve`     |
-| Run everything (checks + tests + docs)        | `uvx tox`                 |
-| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`   |
+| Task                                          | Command                                                |
+|-----------------------------------------------|--------------------------------------------------------|
+| Install and sync project and dev dependencies | `uv sync`                                              |
+| Run tests                                     | `uv run pytest ...`                                    |
+| Format code                                   | `uv run ruff format`                                   |
+| Lint code                                     | `uv run ruff check`                                    |
+| Fix lint errors                               | `uv run ruff check --fix`                              |
+| Type check                                    | `uv run ty check`                                      |
+| Build docs                                    | `uv run mkdocs build`                                  |
+| Serve docs                                    | `uv run mkdocs serve`                                  |
+| Run everything (checks + tests + docs)        | `uvx tox`                                              |
+| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                                |
+| Run consensus node                            | `uv run python -m lean_spec --genesis config.yaml`     |
+| Build Docker test image                       | `docker build -t lean-spec:test .`                     |
+| Build Docker node image                       | `docker build --target node -t lean-spec:node .`       |
+| Run tests in Docker                           | `docker run --rm lean-spec:test`                       |
+| Run node in Docker                            | `docker run --rm lean-spec:node --genesis /app/data/config.yaml` |
+| Dev shell in Docker                           | `docker run --rm -it lean-spec:dev`                    |
+
+## Docker
+
+> **🚀 Quick Start**: New to Docker? See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for:
+> - Step-by-step deployment examples
+> - Running as a validator node
+> - Checkpoint sync configuration
+> - Troubleshooting common issues
+
+### Building the Docker Image
+
+```bash
+# Build the test runtime image (default, for running tests)
+docker build -t lean-spec:test .
+
+# Build the node image (for running as a consensus node)
+docker build --target node -t lean-spec:node .
+
+# Build the development image (includes all dev tools)
+docker build --target development -t lean-spec:dev .
+```
+
+### Running Tests with Docker
+
+```bash
+# Run tests (default command for 'test' target)
+docker run --rm lean-spec:test
+
+# Run tests in parallel
+docker run --rm lean-spec:test uv run pytest -n auto
+
+# Run the fill command
+docker run --rm lean-spec:test uv run fill --clean --fork=devnet
+```
+
+### Running a Consensus Node with Docker
+
+Pass CLI arguments directly to the node:
+
+```bash
+# Basic node
+docker run --rm \
+  -v /path/to/genesis:/app/data:ro \
+  -p 9000:9000 \
+  lean-spec:node \
+  --genesis /app/data/config.yaml
+
+# With bootnode
+docker run --rm \
+  -v /path/to/genesis:/app/data:ro \
+  -p 9000:9000 \
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --bootnode /ip4/127.0.0.1/tcp/9000
+```
+
+See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for more examples including validator nodes, checkpoint sync, and troubleshooting.
+
+## Documentation
+
+- **[DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md)** - Complete Docker deployment guide with examples
 
 ## Contributing
 

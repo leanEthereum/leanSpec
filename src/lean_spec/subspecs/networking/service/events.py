@@ -128,7 +128,8 @@ class NetworkEventSource(Protocol):
     Abstract source of network events.
 
     This protocol defines the interface that network implementations must
-    provide. It is an async iterator that yields NetworkEvent objects.
+    provide. It is an async iterator that yields NetworkEvent objects and
+    supports publishing outbound messages.
 
     Any class that implements async iteration over NetworkEvent can serve
     as a source.
@@ -159,5 +160,17 @@ class NetworkEventSource(Protocol):
 
         Raises:
             StopAsyncIteration: When no more events will arrive.
+        """
+        ...
+
+    async def publish(self, topic: str, data: bytes) -> None:
+        """
+        Publish a message to all connected peers on a topic.
+
+        Used to broadcast locally-produced blocks and attestations.
+
+        Args:
+            topic: Gossip topic string.
+            data: Message bytes to publish.
         """
         ...

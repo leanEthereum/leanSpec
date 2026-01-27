@@ -3,10 +3,16 @@
 from enum import IntEnum, auto
 
 from lean_spec.types import Uint64
-from lean_spec.types.byte_arrays import Bytes4, Bytes32
+from lean_spec.types.byte_arrays import Bytes1, Bytes4, Bytes32
 
-DomainType = Bytes4
-"""4-byte domain for message-id isolation in Gossipsub."""
+DomainType = Bytes1
+"""1-byte domain for message-id isolation in Gossipsub.
+
+The domain is a single byte prepended to the message hash to compute the gossip message ID.
+
+- Valid messages use 0x01,
+- Invalid messages use 0x00.
+"""
 
 NodeId = Bytes32
 """32-byte node identifier for Discovery v5, derived from ``keccak256(pubkey)``."""

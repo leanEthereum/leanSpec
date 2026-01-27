@@ -8,7 +8,7 @@ from lean_spec.subspecs.xmss.interface import (
     TEST_SIGNATURE_SCHEME,
     GeneralizedXmssScheme,
 )
-from lean_spec.types import Uint64
+from lean_spec.types import Bytes32, Uint64
 
 
 def _test_correctness_roundtrip(
@@ -32,7 +32,7 @@ def _test_correctness_roundtrip(
     #
     # Pick a sample epoch within the active range to test signing.
     test_epoch = Uint64(activation_epoch + num_active_epochs // 2)
-    message = b"\x42" * scheme.config.MESSAGE_LENGTH
+    message = Bytes32(b"\x42" * 32)
 
     # Sign the message at the chosen epoch.
     #
@@ -46,7 +46,7 @@ def _test_correctness_roundtrip(
     # TEST INVALID CASES
     #
     # Verification must fail if the message is tampered with.
-    tampered_message = b"\x43" * scheme.config.MESSAGE_LENGTH
+    tampered_message = Bytes32(b"\x43" * 32)
 
     # With small test parameters (test configuration), there's a small chance that
     # the tampered message produces the same codeword as the original due to
@@ -176,7 +176,7 @@ def test_sign_requires_prepared_interval() -> None:
     assert int(outside_epoch) not in prepared_interval
 
     # Signing should fail
-    message = b"\x42" * scheme.config.MESSAGE_LENGTH
+    message = Bytes32(b"\x42" * 32)
     with pytest.raises(ValueError, match="outside the prepared interval"):
         scheme.sign(sk, outside_epoch, message)
 
@@ -189,7 +189,7 @@ def test_deterministic_signing() -> None:
 
     # Use epoch within prepared interval
     epoch = Uint64(4)
-    message = b"\x42" * scheme.config.MESSAGE_LENGTH
+    message = Bytes32(b"\x42" * 32)
 
     # Sign twice
     sig1 = scheme.sign(sk, epoch, message)
@@ -199,3 +199,47 @@ def test_deterministic_signing() -> None:
     assert sig1.rho == sig2.rho
     assert sig1.hashes == sig2.hashes
     assert sig1.path.siblings == sig2.path.siblings
+
+
+class TestVerifySecurityBounds:
+    """
+    Security tests for verify method input validation.
+
+    Verification functions must return False (not raise) on attacker-controlled invalid input.
+    This prevents denial-of-service via malformed signatures.
+    """
+
+    def test_rejects_epoch_beyond_lifetime(self) -> None:
+        """verify returns False when epoch exceeds scheme LIFETIME."""
+        scheme = TEST_SIGNATURE_SCHEME
+
+        # Generate valid keys.
+        pk, sk = scheme.key_gen(Uint64(0), Uint64(scheme.config.LIFETIME))
+
+        # Sign a valid message at a valid epoch.
+        valid_epoch = Uint64(4)
+        message = Bytes32(b"\x42" * 32)
+        signature = scheme.sign(sk, valid_epoch, message)
+
+        # Verify with an epoch beyond LIFETIME.
+        invalid_epoch = Uint64(int(scheme.config.LIFETIME) + 1)
+
+        # Must return False, not raise.
+        result = scheme.verify(pk, invalid_epoch, message, signature)
+        assert result is False
+
+    def test_rejects_very_large_epoch(self) -> None:
+        """verify returns False for absurdly large epoch values."""
+        scheme = TEST_SIGNATURE_SCHEME
+        pk, sk = scheme.key_gen(Uint64(0), Uint64(scheme.config.LIFETIME))
+
+        valid_epoch = Uint64(4)
+        message = Bytes32(b"\x42" * 32)
+        signature = scheme.sign(sk, valid_epoch, message)
+
+        # Try to verify with a huge epoch.
+        huge_epoch = Uint64(2**32)
+
+        # Must return False, not raise.
+        result = scheme.verify(pk, huge_epoch, message, signature)
+        assert result is False

@@ -12,10 +12,12 @@ from lean_multisig_py import (
 )
 
 from lean_spec.subspecs.containers.attestation import AggregationBits
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.byte_arrays import ByteListMiB
 from lean_spec.types.container import Container
 
+from .constants import LEAN_ENV
 from .containers import PublicKey, Signature
 
 
@@ -26,7 +28,7 @@ class SignatureKey(NamedTuple):
     Used to index signature caches by (validator, message) pairs.
     """
 
-    validator_id: Uint64
+    validator_id: ValidatorIndex
     """The validator who produced the signature."""
 
     data_root: Bytes32
@@ -63,8 +65,9 @@ class AggregatedSignatureProof(Container):
         participants: AggregationBits,
         public_keys: Sequence[PublicKey],
         signatures: Sequence[Signature],
-        message: bytes,
+        message: Bytes32,
         epoch: Uint64,
+        mode: str | None = None,
     ) -> Self:
         """
         Aggregate individual XMSS signatures into a single proof.
@@ -75,6 +78,7 @@ class AggregatedSignatureProof(Container):
             signatures: Individual XMSS signatures to aggregate.
             message: The 32-byte message that was signed.
             epoch: The epoch in which the signatures were created.
+            mode: The mode to use for the aggregation (test or prod).
 
         Returns:
             An aggregated signature proof covering all participants.
@@ -82,15 +86,15 @@ class AggregatedSignatureProof(Container):
         Raises:
             AggregationError: If aggregation fails.
         """
-        setup_prover()
+        mode = mode or LEAN_ENV
+        setup_prover(mode=mode)
         try:
-            # TODO: Remove test_mode once leanVM supports correct signature encoding.
             proof_bytes = aggregate_signatures(
                 [pk.encode_bytes() for pk in public_keys],
                 [sig.encode_bytes() for sig in signatures],
                 message,
                 epoch,
-                test_mode=True,
+                mode=mode,
             )
             return cls(
                 participants=participants,
@@ -102,8 +106,9 @@ class AggregatedSignatureProof(Container):
     def verify(
         self,
         public_keys: Sequence[PublicKey],
-        message: bytes,
+        message: Bytes32,
         epoch: Uint64,
+        mode: str | None = None,
     ) -> None:
         """
         Verify this aggregated signature proof.
@@ -112,19 +117,20 @@ class AggregatedSignatureProof(Container):
             public_keys: Public keys of the participants (order must match participants bitfield).
             message: The 32-byte message that was signed.
             epoch: The epoch in which the signatures were created.
+            mode: The mode to use for the verification (test or prod).
 
         Raises:
             AggregationError: If verification fails.
         """
-        setup_verifier()
+        mode = mode or LEAN_ENV
+        setup_verifier(mode=mode)
         try:
-            # TODO: Remove test_mode once leanVM supports correct signature encoding.
             verify_aggregated_signatures(
                 [pk.encode_bytes() for pk in public_keys],
                 message,
                 self.proof_data.encode_bytes(),
-                int(epoch),
-                test_mode=True,
+                epoch,
+                mode=mode,
             )
         except Exception as exc:
             raise AggregationError(f"Signature verification failed: {exc}") from exc

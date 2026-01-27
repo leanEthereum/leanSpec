@@ -9,7 +9,8 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.types import Bytes32, Uint64
+from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -191,7 +192,7 @@ def test_block_with_invalid_proposer(
         blocks=[
             BlockSpec(
                 slot=Slot(1),
-                proposer_index=Uint64(3),  # Wrong proposer
+                proposer_index=ValidatorIndex(3),  # Wrong proposer
             ),
         ],
         post=None,  # Expect failure

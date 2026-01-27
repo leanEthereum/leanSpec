@@ -15,7 +15,7 @@ import os
 from pydantic import model_validator
 
 from lean_spec.subspecs.koalabear import Fp
-from lean_spec.types import StrictBaseModel, Uint64
+from lean_spec.types import Bytes32, StrictBaseModel, Uint64
 
 from ._validation import enforce_strict_types
 from .constants import (
@@ -178,7 +178,7 @@ class Prf(StrictBaseModel):
         return HashDigestVector(data=_bytes_to_field_elements(prf_output_bytes, config.HASH_LEN_FE))
 
     def get_randomness(
-        self, key: PRFKey, epoch: Uint64, message: bytes, counter: Uint64
+        self, key: PRFKey, epoch: Uint64, message: Bytes32, counter: Uint64
     ) -> Randomness:
         """
         Derives pseudorandom field elements for use in deterministic signing.

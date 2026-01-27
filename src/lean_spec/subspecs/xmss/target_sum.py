@@ -8,7 +8,7 @@ top of the message hash output.
 
 from pydantic import model_validator
 
-from lean_spec.types import StrictBaseModel, Uint64
+from lean_spec.types import Bytes32, StrictBaseModel, Uint64
 
 from ._validation import enforce_strict_types
 from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
@@ -41,7 +41,7 @@ class TargetSumEncoder(StrictBaseModel):
         return self
 
     def encode(
-        self, parameter: Parameter, message: bytes, rho: Randomness, epoch: Uint64
+        self, parameter: Parameter, message: Bytes32, rho: Randomness, epoch: Uint64
     ) -> list[int] | None:
         """
         Encodes a message into a codeword if it meets the target sum criteria.

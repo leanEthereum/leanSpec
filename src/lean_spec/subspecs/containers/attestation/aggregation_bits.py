@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
-from lean_spec.types import Boolean, Uint64
+from lean_spec.types import Boolean
 from lean_spec.types.bitfields import BaseBitlist
+
+if TYPE_CHECKING:
+    from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 
 
 class AggregationBits(BaseBitlist):
@@ -18,12 +23,15 @@ class AggregationBits(BaseBitlist):
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
 
     @classmethod
-    def from_validator_indices(cls, indices: list[Uint64]) -> AggregationBits:
+    def from_validator_indices(
+        cls, indices: "ValidatorIndices | list[ValidatorIndex]"
+    ) -> AggregationBits:
         """
         Construct aggregation bits from a set of validator indices.
 
         Args:
-            indices: Validator indices to set in the bitlist.
+            indices: Validator indices to set in the bitlist. Accepts either
+                a ValidatorIndices collection or a plain list of ValidatorIndex.
 
         Returns:
             AggregationBits with the corresponding indices set to True.
@@ -32,14 +40,20 @@ class AggregationBits(BaseBitlist):
             AssertionError: If no indices are provided.
             AssertionError: If any index is outside the supported LIMIT.
         """
+        # Import here to avoid circular dependency
+        from lean_spec.subspecs.containers.validator import ValidatorIndices
+
+        # Extract list from ValidatorIndices if needed
+        index_list = indices.data if isinstance(indices, ValidatorIndices) else indices
+
         # Require at least one validator for a valid aggregation.
-        if not indices:
+        if not index_list:
             raise AssertionError("Aggregated attestation must reference at least one validator")
 
         # Convert to a set of native ints.
         #
         # This combines int conversion and deduplication in a single O(N) pass.
-        ids = {int(i) for i in indices}
+        ids = {int(i) for i in index_list}
 
         # Validate bounds: max index must be within registry limit.
         if (max_id := max(ids)) >= cls.LIMIT:
@@ -50,18 +64,22 @@ class AggregationBits(BaseBitlist):
         # - False elsewhere.
         return cls(data=[Boolean(i in ids) for i in range(max_id + 1)])
 
-    def to_validator_indices(self) -> list[Uint64]:
+    def to_validator_indices(self) -> "ValidatorIndices":
         """
         Extract all validator indices encoded in these aggregation bits.
 
         Returns:
-            List of validator indices, sorted in ascending order.
+            ValidatorIndices containing the indices, sorted in ascending order.
 
         Raises:
             AssertionError: If no bits are set.
         """
+        # Import here to avoid circular dependency
+        from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+
         # Extract indices where bit is set; fail if none found.
-        if not (indices := [Uint64(i) for i, bit in enumerate(self.data) if bool(bit)]):
+        indices = [ValidatorIndex(i) for i, bit in enumerate(self.data) if bool(bit)]
+        if not indices:
             raise AssertionError("Aggregated attestation must reference at least one validator")
 
-        return indices
+        return ValidatorIndices(data=indices)

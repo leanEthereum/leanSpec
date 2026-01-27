@@ -8,9 +8,10 @@ from lean_spec.subspecs.containers.attestation import Attestation
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
-from lean_spec.types import Bytes32, Uint64
+from lean_spec.types import Bytes32
 
 from ..keys import get_shared_key_manager
 from ..test_types import BlockSpec, StateExpectation
@@ -214,7 +215,9 @@ class StateTransitionTest(BaseConsensusFixture):
             Block and cached post-state (None if not computed).
         """
         # Use provided proposer index or compute it
-        proposer_index = spec.proposer_index or Uint64(int(spec.slot) % len(state.validators))
+        proposer_index = spec.proposer_index or ValidatorIndex(
+            int(spec.slot) % len(state.validators)
+        )
 
         temp_state: State | None = None
         if not spec.skip_slot_processing:

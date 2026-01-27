@@ -3,11 +3,13 @@
 from .permutation import (
     PARAMS_16,
     PARAMS_24,
-    permute,
+    Poseidon2,
+    Poseidon2Params,
 )
 
 __all__ = [
-    "permute",
+    "Poseidon2",
+    "Poseidon2Params",
     "PARAMS_16",
     "PARAMS_24",
 ]

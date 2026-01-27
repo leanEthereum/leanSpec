@@ -3,12 +3,31 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from lean_spec.subspecs.containers import SignedBlockWithAttestation, Validator
+from lean_spec.subspecs.chain.config import HISTORICAL_ROOTS_LIMIT
+from lean_spec.subspecs.containers import (
+    Block,
+    BlockBody,
+    SignedBlockWithAttestation,
+    State,
+    Validator,
+)
+from lean_spec.subspecs.containers.block import BlockHeader
+from lean_spec.subspecs.containers.block.types import AggregatedAttestations
+from lean_spec.subspecs.containers.checkpoint import Checkpoint
+from lean_spec.subspecs.containers.config import Config
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
+from lean_spec.subspecs.containers.state.types import (
+    HistoricalBlockHashes,
+    JustificationRoots,
+    JustificationValidators,
+    JustifiedSlots,
+)
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking import NetworkEvent, PeerId
 from lean_spec.subspecs.node import Node, NodeConfig
 from lean_spec.types import Bytes32, Bytes52, Uint64
@@ -21,6 +40,7 @@ class MockEventSource:
         """Initialize with optional list of events."""
         self._events = events or []
         self._index = 0
+        self._published: list[tuple[str, bytes]] = []
 
     def __aiter__(self) -> MockEventSource:
         """Return self as async iterator."""
@@ -33,6 +53,10 @@ class MockEventSource:
         event = self._events[self._index]
         self._index += 1
         return event
+
+    async def publish(self, topic: str, data: bytes) -> None:
+        """Mock publish - records published messages for testing."""
+        self._published.append((topic, data))
 
 
 class MockNetworkRequester:
@@ -51,7 +75,7 @@ class MockNetworkRequester:
 def validators() -> Validators:
     """Provide a minimal validator set for tests."""
     return Validators(
-        data=[Validator(pubkey=Bytes52(b"\x00" * 52), index=Uint64(i)) for i in range(3)]
+        data=[Validator(pubkey=Bytes52(b"\x00" * 52), index=ValidatorIndex(i)) for i in range(3)]
     )
 
 
@@ -101,6 +125,65 @@ class TestNodeFromGenesis:
         # All services should be wired to the same SyncService instance
         assert node.chain_service.sync_service is node.sync_service
         assert node.network_service.sync_service is node.sync_service
+
+    def test_store_time_from_database_uses_intervals_not_seconds(self) -> None:
+        """This test verifies the invariant that store time represents intervals."""
+
+        test_slot = Slot(10)
+        head_root = Bytes32(b"\x01" * 32)
+
+        block = Block(
+            slot=test_slot,
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+            body=BlockBody(attestations=AggregatedAttestations(data=[])),
+        )
+
+        checkpoint = Checkpoint(root=head_root, slot=test_slot)
+
+        state = State(
+            config=Config(genesis_time=Uint64(1704067200)),
+            slot=test_slot,
+            latest_block_header=BlockHeader(
+                slot=test_slot,
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32.zero(),
+                state_root=Bytes32.zero(),
+                body_root=Bytes32.zero(),
+            ),
+            latest_justified=checkpoint,
+            latest_finalized=checkpoint,
+            historical_block_hashes=HistoricalBlockHashes(data=[Bytes32.zero()]),
+            justified_slots=JustifiedSlots(data=[]),
+            validators=Validators(data=[]),
+            justifications_roots=JustificationRoots(
+                data=[Bytes32.zero()] * int(HISTORICAL_ROOTS_LIMIT)
+            ),
+            justifications_validators=JustificationValidators(data=[]),
+        )
+
+        # Simulates loading from an existing database.
+        # Exercises the code path where time is computed from slot.
+        mock_db = MagicMock()
+        mock_db.get_head_root.return_value = head_root
+        mock_db.get_block.return_value = block
+        mock_db.get_state.return_value = state
+        mock_db.get_justified_checkpoint.return_value = checkpoint
+        mock_db.get_finalized_checkpoint.return_value = checkpoint
+
+        # Patching to 8 distinguishes from the seconds per slot.
+        patched_intervals = Uint64(8)
+        with patch("lean_spec.subspecs.node.node.INTERVALS_PER_SLOT", patched_intervals):
+            store = Node._try_load_from_database(mock_db)
+
+        assert store is not None
+        expected_time = Uint64(test_slot * patched_intervals)
+        assert store.time == expected_time, (
+            f"Store.time should use INTERVALS_PER_SLOT, not SECONDS_PER_SLOT. "
+            f"Expected time={expected_time} (slot={test_slot} * intervals={patched_intervals}), "
+            f"got time={store.time}"
+        )
 
 
 class TestNodeShutdown:

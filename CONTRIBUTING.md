@@ -21,7 +21,7 @@
 
 - **Type hints**: Required for all functions and methods
 - **Docstrings**: Use Google style for public APIs
-- **Line length**: 79 characters (enforced by ruff)
+- **Line length**: 100 characters (enforced by ruff)
 - **Formatting**: Run `uvx tox -e fix` to auto-format
 
 ## Adding New Subspecifications

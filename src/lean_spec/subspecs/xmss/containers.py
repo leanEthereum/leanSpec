@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Mapping, NamedTuple
 
-from ...types import Uint64
+from ...types import Bytes32, Uint64
 from ...types.container import Container
 from .subtree import HashSubTree
 from .types import (
@@ -71,7 +71,7 @@ class Signature(Container):
         self,
         public_key: PublicKey,
         epoch: "Uint64",
-        message: bytes,
+        message: "Bytes32",
         scheme: "GeneralizedXmssScheme",
     ) -> bool:
         """

@@ -159,3 +159,6 @@ site/
 
 # PQ test keys
 packages/testing/src/consensus_testing/test_keys/prod_scheme/
+
+# Local scripts
+scripts/

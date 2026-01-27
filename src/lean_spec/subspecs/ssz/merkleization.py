@@ -8,34 +8,60 @@ from lean_spec.subspecs.ssz.utils import get_power_of_two_ceil, hash_nodes
 from lean_spec.types import ZERO_HASH
 from lean_spec.types.byte_arrays import Bytes32
 
+_MAX_ZERO_HASH_DEPTH: int = 64
+"""Maximum depth of pre-computed zero hashes (supports trees up to 2^64 leaves)."""
+
+_ZERO_HASHES: list[Bytes32] = []
+"""Pre-computed zero hash roots at each depth level.
+
+Index i contains the root of a full zero tree with 2^i leaves:
+
+- Index 0: ZERO_HASH (single leaf)
+- Index 1: hash(ZERO_HASH || ZERO_HASH) (2 leaves)
+- Index 2: hash of two index-1 hashes (4 leaves)
+- And so on...
+"""
+
+
+def _precompute_zero_hashes() -> None:
+    """Pre-compute zero hashes at module load time for O(1) lookup."""
+    global _ZERO_HASHES
+    _ZERO_HASHES = [ZERO_HASH]
+    for _ in range(_MAX_ZERO_HASH_DEPTH):
+        prev = _ZERO_HASHES[-1]
+        _ZERO_HASHES.append(hash_nodes(prev, prev))
+
+
+_precompute_zero_hashes()
+
 
 def _zero_tree_root(width_pow2: int) -> Bytes32:
-    """
-    Return the Merkle root of a full zero tree with `width_pow2` leaves.
+    """Return the Merkle root of a full zero tree with `width_pow2` leaves.
 
-    Power of two >= 1.
+    Uses pre-computed zero hashes for O(1) lookup.
+    Falls back to computation for extremely large trees beyond the cache.
     """
     if width_pow2 <= 1:
         return ZERO_HASH
-    # Build tree from bottom up: hash ZERO_HASH with itself repeatedly
-    h, w = ZERO_HASH, width_pow2
-    while w > 1:
-        h, w = hash_nodes(h, h), w // 2
+    depth = (width_pow2 - 1).bit_length()
+    if depth < len(_ZERO_HASHES):
+        return _ZERO_HASHES[depth]
+    # Fallback for extremely large trees beyond pre-computed depth
+    h = _ZERO_HASHES[-1]
+    for _ in range(depth - len(_ZERO_HASHES) + 1):
+        h = hash_nodes(h, h)
     return h
 
 
 def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
-    """Compute the Merkle root of `chunks`.
+    """Compute the Merkle root of chunks.
 
-    Behavior
-    --------
-    - If `limit` is None: pad to next power of two of len(chunks).
-    - If `limit` is provided and >= len(chunks): pad to next power of two of `limit`.
-    - If `limit` < len(chunks): raise (exceeds limit).
-    - If no chunks: return ZERO_HASH.
-      *Exception when `limit` is provided:* return the zero-subtree root for the padded width.
+    Padding rules:
 
-    This matches the SSZ spec's padding/limiting rules.
+    - No limit: pad to next power of two of len(chunks)
+    - With limit >= len(chunks): pad to next power of two of limit
+    - limit < len(chunks): raises ValueError
+    - Empty chunks: returns ZERO_HASH (or zero-subtree root if limit provided)
     """
     n = len(chunks)
     if n == 0:

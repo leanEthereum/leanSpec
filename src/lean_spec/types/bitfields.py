@@ -1,18 +1,14 @@
 """Bitvector and Bitlist type specifications.
 
-This module provides two SSZ (SimpleSerialize) collection types:
+Provides two SSZ bitfield types:
 
-- BaseBitvector: fixed-length, immutable sequence of booleans.
-- BaseBitlist: variable-length, immutable sequence of booleans with max capacity.
+- BaseBitvector: fixed-length sequence of booleans
+- BaseBitlist: variable-length sequence with max capacity
 
-Both types support SSZ byte encoding/decoding:
-- Bitvector packs bits little-endian within each byte (bit 0 -> LSB).
-- Bitlist packs bits the same way and appends a single delimiter bit set to 1
-  immediately after the last data bit (may create a new byte).
+Both pack bits little-endian within each byte (bit 0 -> LSB).
+Bitlist appends a delimiter bit set to 1 after the last data bit.
 
-Concrete types inherit from the base classes and specify LENGTH or LIMIT:
-- class MyBitvector(BaseBitvector): LENGTH = 128
-- class MyBitlist(BaseBitlist): LIMIT = 2048
+Subclasses must define LENGTH (bitvector) or LIMIT (bitlist).
 """
 
 from __future__ import annotations

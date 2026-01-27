@@ -49,14 +49,23 @@ References:
 - EIP-778: https://eips.ethereum.org/EIPS/eip-778
 """
 
+from __future__ import annotations
+
+import base64
 from typing import ClassVar
 
+from typing_extensions import Self
+
 from lean_spec.subspecs.networking.types import Multiaddr, NodeId, SeqNumber
-from lean_spec.types import StrictBaseModel
+from lean_spec.types import RLPDecodingError, StrictBaseModel, Uint64
+from lean_spec.types.rlp import decode_list as rlp_decode_list
 
 from . import keys
 from .eth2 import AttestationSubnets, Eth2Data
 from .keys import EnrKey
+
+ENR_PREFIX = "enr:"
+"""Text prefix for ENR strings."""
 
 
 class ENR(StrictBaseModel):
@@ -218,3 +227,68 @@ class ENR(StrictBaseModel):
         if eth2 := self.eth2_data:
             parts.append(f"fork={eth2.fork_digest.hex()}")
         return ", ".join(parts) + ")"
+
+    @classmethod
+    def from_string(cls, enr_text: str) -> Self:
+        """
+        Parse an ENR from its text representation.
+
+        Text format is URL-safe base64 with `enr:` prefix.
+
+        Args:
+            enr_text: ENR string (e.g., "enr:-IS4Q...")
+
+        Returns:
+            Parsed ENR instance.
+
+        Raises:
+            ValueError: If the string is malformed or RLP decoding fails.
+        """
+        if not enr_text.startswith(ENR_PREFIX):
+            raise ValueError(f"ENR must start with '{ENR_PREFIX}'")
+
+        # Extract base64url content after prefix.
+        b64_content = enr_text[len(ENR_PREFIX) :]
+
+        # Base64url decode (add padding if needed).
+        #
+        # Python's base64.urlsafe_b64decode requires proper padding.
+        padding = 4 - (len(b64_content) % 4)
+        if padding != 4:
+            b64_content += "=" * padding
+
+        try:
+            rlp_data = base64.urlsafe_b64decode(b64_content)
+        except Exception as e:
+            raise ValueError(f"Invalid base64 encoding: {e}") from e
+
+        # RLP decode: [signature, seq, k1, v1, k2, v2, ...]
+        try:
+            items = rlp_decode_list(rlp_data)
+        except RLPDecodingError as e:
+            raise ValueError(f"Invalid RLP encoding: {e}") from e
+
+        if len(items) < 2:
+            raise ValueError("ENR must have at least signature and seq")
+
+        if len(items) % 2 != 0:
+            raise ValueError("ENR key/value pairs must be even")
+
+        signature = items[0]
+        seq_bytes = items[1]
+        seq = int.from_bytes(seq_bytes, "big") if seq_bytes else 0
+
+        # Parse key/value pairs.
+        #
+        # Keys are strings, values are arbitrary bytes.
+        pairs: dict[str, bytes] = {}
+        for i in range(2, len(items), 2):
+            key = items[i].decode("utf-8")
+            value = items[i + 1]
+            pairs[key] = value
+
+        return cls(
+            signature=signature,
+            seq=Uint64(seq),
+            pairs=pairs,
+        )

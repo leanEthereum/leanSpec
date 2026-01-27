@@ -31,6 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 
 from ..identity import IdentityKeypair
 from ..protocols import StreamReaderProtocol, StreamWriterProtocol
+from .handshake import NoiseHandshake
 from .payload import NoiseIdentityPayload
 from .types import CipherState
 
@@ -235,8 +236,6 @@ async def perform_handshake_initiator(
         SessionError: If identity verification fails
         InvalidTag: If decryption fails (indicates MITM or bug)
     """
-    from .handshake import NoiseHandshake
-
     handshake = NoiseHandshake.initiator(noise_key)
 
     # Message 1: -> e
@@ -313,8 +312,6 @@ async def perform_handshake_responder(
         SessionError: If identity verification fails
         InvalidTag: If decryption fails (indicates MITM or bug)
     """
-    from .handshake import NoiseHandshake
-
     handshake = NoiseHandshake.responder(noise_key)
 
     # Message 1: -> e

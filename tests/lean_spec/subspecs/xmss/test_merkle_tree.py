@@ -9,8 +9,9 @@ from lean_spec.subspecs.xmss.tweak_hash import (
     TreeTweak,
     TweakHasher,
 )
-from lean_spec.subspecs.xmss.types import HashDigestVector
+from lean_spec.subspecs.xmss.types import HashDigestList, HashDigestVector, HashTreeOpening
 from lean_spec.types import Uint64
+from lean_spec.types.exceptions import SSZValueError
 
 
 def _run_commit_open_verify_roundtrip(
@@ -108,3 +109,88 @@ def test_commit_open_verify_roundtrip(
     _run_commit_open_verify_roundtrip(
         PROD_TWEAK_HASHER, PROD_RAND, num_leaves, depth, start_index, leaf_parts_len
     )
+
+
+class TestVerifyPathSecurityBounds:
+    """
+    Security tests for verify_path input validation.
+
+    Verification functions must return False (not raise) on attacker-controlled invalid input.
+    This prevents denial-of-service via malformed signatures.
+    """
+
+    def test_ssz_validation_rejects_excessive_depth(self) -> None:
+        """
+        SSZ type system rejects openings with depth > 32.
+
+        HashDigestList has a LIMIT of 32, so the type system prevents
+        creating malformed openings at the SSZ level. The check in
+        verify_path is defense-in-depth for deserialized data.
+        """
+        rand = PROD_RAND
+
+        # Attempting to create a list with 33 siblings raises at the type level.
+        excessive_siblings = [rand.domain() for _ in range(33)]
+        with pytest.raises(SSZValueError):
+            HashDigestList(data=excessive_siblings)
+
+    def test_rejects_position_exceeding_tree_capacity(self) -> None:
+        """verify_path returns False when position >= 2^depth."""
+        rand = PROD_RAND
+        hasher = PROD_TWEAK_HASHER
+        parameter = rand.parameter()
+
+        root = rand.domain()
+        leaf_parts = [rand.domain()]
+
+        # Create an opening with depth=4 (supports positions 0-15).
+        siblings = [rand.domain() for _ in range(4)]
+        opening = HashTreeOpening(siblings=HashDigestList(data=siblings))
+
+        # Position 16 is out of bounds for depth 4 (capacity = 2^4 = 16).
+        result = verify_path(
+            hasher=hasher,
+            parameter=parameter,
+            root=root,
+            position=Uint64(16),
+            leaf_parts=leaf_parts,
+            opening=opening,
+        )
+        assert result is False
+
+        # Position 100 is also out of bounds.
+        result = verify_path(
+            hasher=hasher,
+            parameter=parameter,
+            root=root,
+            position=Uint64(100),
+            leaf_parts=leaf_parts,
+            opening=opening,
+        )
+        assert result is False
+
+    def test_valid_position_at_boundary(self) -> None:
+        """verify_path accepts position at maximum valid value (2^depth - 1)."""
+        rand = PROD_RAND
+        hasher = PROD_TWEAK_HASHER
+        parameter = rand.parameter()
+
+        root = rand.domain()
+        leaf_parts = [rand.domain()]
+
+        # Create an opening with depth=4.
+        siblings = [rand.domain() for _ in range(4)]
+        opening = HashTreeOpening(siblings=HashDigestList(data=siblings))
+
+        # Position 15 is the maximum valid position for depth 4.
+        # This should not return False due to bounds check (may still fail root check).
+        result = verify_path(
+            hasher=hasher,
+            parameter=parameter,
+            root=root,
+            position=Uint64(15),
+            leaf_parts=leaf_parts,
+            opening=opening,
+        )
+        # Result may be False due to wrong root, but importantly it didn't raise.
+        assert isinstance(result, bool)

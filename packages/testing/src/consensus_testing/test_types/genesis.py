@@ -3,7 +3,7 @@
 from typing import Any
 
 from lean_spec.subspecs.containers.state import State, Validators
-from lean_spec.subspecs.containers.validator import Validator
+from lean_spec.subspecs.containers.validator import Validator, ValidatorIndex
 from lean_spec.types import Bytes52, Uint64
 
 from ..keys import get_shared_key_manager
@@ -36,8 +36,8 @@ def generate_pre_state(**kwargs: Any) -> State:
     validators = Validators(
         data=[
             Validator(
-                pubkey=Bytes52(key_manager[Uint64(i)].public.encode_bytes()),
-                index=Uint64(i),
+                pubkey=Bytes52(key_manager[ValidatorIndex(i)].public.encode_bytes()),
+                index=ValidatorIndex(i),
             )
             for i in range(num_validators)
         ]

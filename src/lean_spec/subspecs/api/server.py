@@ -1,9 +1,11 @@
 """
-API server for checkpoint sync and node status endpoints.
+API server for checkpoint sync, node status, and metrics endpoints.
 
 Provides HTTP endpoints for:
-- /lean/states/finalized - Serve finalized checkpoint state as SSZ
-- /health - Health check endpoint
+- /lean/v0/states/finalized - Serve finalized checkpoint state as SSZ
+- /lean/v0/checkpoints/justified - Return latest justified checkpoint information
+- /lean/v0/health - Health check endpoint
+- /metrics - Prometheus metrics endpoint
 
 This matches the checkpoint sync API implemented in zeam.
 """
@@ -17,6 +19,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from aiohttp import web
+
+from lean_spec.subspecs.metrics import generate_metrics
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.forkchoice import Store
@@ -32,6 +36,14 @@ def _no_store() -> Store | None:
 async def _handle_health(_request: web.Request) -> web.Response:
     """Handle health check endpoint."""
     return web.json_response({"status": "healthy", "service": "lean-spec-api"})
+
+
+async def _handle_metrics(_request: web.Request) -> web.Response:
+    """Handle Prometheus metrics endpoint."""
+    return web.Response(
+        body=generate_metrics(),
+        content_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,8 +98,10 @@ class ApiServer:
         app = web.Application()
         app.add_routes(
             [
-                web.get("/health", _handle_health),
-                web.get("/lean/states/finalized", self._handle_finalized_state),
+                web.get("/lean/v0/health", _handle_health),
+                web.get("/metrics", _handle_metrics),
+                web.get("/lean/v0/states/finalized", self._handle_finalized_state),
+                web.get("/lean/v0/checkpoints/justified", self._handle_justified_checkpoint),
             ]
         )
 
@@ -128,7 +142,7 @@ class ApiServer:
         """
         Handle finalized checkpoint state endpoint.
 
-        Serves the finalized state as SSZ binary at /lean/states/finalized.
+        Serves the finalized state as SSZ binary at /lean/v0/states/finalized.
         This endpoint is used for checkpoint sync - clients can download
         the finalized state to bootstrap quickly instead of syncing from genesis.
         """
@@ -151,3 +165,29 @@ class ApiServer:
             raise web.HTTPInternalServerError(reason="Encoding failed") from e
 
         return web.Response(body=ssz_bytes, content_type="application/octet-stream")
+
+    async def _handle_justified_checkpoint(self, _request: web.Request) -> web.Response:
+        """
+        Handle latest justified checkpoint endpoint.
+
+        Returns checkpoint info as JSON at /lean/v0/checkpoints/justified.
+        Useful for monitoring consensus progress and fork choice state.
+
+        Response format:
+        {
+            "slot": <slot_number>,
+            "root": "<hex_root_hash>"
+        }
+        """
+        store = self.store
+        if store is None:
+            raise web.HTTPServiceUnavailable(reason="Store not initialized")
+
+        justified = store.latest_justified
+
+        return web.json_response(
+            {
+                "slot": justified.slot,
+                "root": justified.root.hex(),
+            }
+        )

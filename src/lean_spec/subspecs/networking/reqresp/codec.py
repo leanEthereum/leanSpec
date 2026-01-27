@@ -78,9 +78,7 @@ from enum import IntEnum
 from lean_spec.snappy import SnappyDecompressionError, frame_compress, frame_decompress
 
 from ..config import MAX_PAYLOAD_SIZE
-from ..varint import VarintError
-from ..varint import decode as decode_varint
-from ..varint import encode as encode_varint
+from ..varint import VarintError, decode_varint, encode_varint
 
 
 class CodecError(Exception):

@@ -59,7 +59,8 @@ References:
 
 from __future__ import annotations
 
-from lean_spec.subspecs.chain.config import DEVNET_CONFIG
+from lean_spec.subspecs.chain.config import JUSTIFICATION_LOOKBACK_SLOTS, SECONDS_PER_SLOT
+from lean_spec.subspecs.networking.config import GOSSIPSUB_DEFAULT_PROTOCOL_ID
 from lean_spec.types import StrictBaseModel
 
 
@@ -71,7 +72,7 @@ class GossipsubParameters(StrictBaseModel):
     Default values follow the Ethereum consensus P2P specification.
     """
 
-    protocol_id: str = "/meshsub/1.3.0"
+    protocol_id: str = GOSSIPSUB_DEFAULT_PROTOCOL_ID
     """The protocol ID for gossip messages."""
 
     # -------------------------------------------------------------------------
@@ -151,9 +152,7 @@ class GossipsubParameters(StrictBaseModel):
     be retrieved via IWANT but won't be actively gossiped.
     """
 
-    seen_ttl_secs: int = (
-        int(DEVNET_CONFIG.seconds_per_slot) * int(DEVNET_CONFIG.justification_lookback_slots) * 2
-    )
+    seen_ttl_secs: int = int(SECONDS_PER_SLOT) * int(JUSTIFICATION_LOOKBACK_SLOTS) * 2
     """Time-to-live for seen message IDs in seconds.
 
     Message IDs are tracked to detect duplicates. This should

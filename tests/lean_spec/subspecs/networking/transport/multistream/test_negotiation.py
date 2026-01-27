@@ -501,7 +501,7 @@ class _MockWriter:
 
 async def _write_message(writer: StreamWriterProtocol, message: str) -> None:
     """Write a multistream message."""
-    from lean_spec.subspecs.networking.varint import encode as encode_varint
+    from lean_spec.subspecs.networking.varint import encode_varint
 
     payload = message.encode("utf-8") + b"\n"
     length_prefix = encode_varint(len(payload))
@@ -521,7 +521,7 @@ async def _read_message(reader: StreamReaderProtocol) -> str:
         if byte[0] & 0x80 == 0:
             break
 
-    from lean_spec.subspecs.networking.varint import decode as decode_varint
+    from lean_spec.subspecs.networking.varint import decode_varint
 
     length, _ = decode_varint(bytes(length_bytes))
 

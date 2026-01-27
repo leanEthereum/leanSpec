@@ -14,7 +14,6 @@ from lean_spec.types import (
     Bytes32,
     Container,
     Uint64,
-    is_proposer,
 )
 
 from ..attestation import AggregatedAttestation, AggregationBits, Attestation
@@ -23,6 +22,7 @@ from ..block.types import AggregatedAttestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
+from ..validator import ValidatorIndex
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -97,7 +97,7 @@ class State(Container):
         # Build the genesis block header for the state.
         genesis_header = BlockHeader(
             slot=Slot(0),
-            proposer_index=Uint64(0),
+            proposer_index=ValidatorIndex(0),
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
             body_root=hash_tree_root(BlockBody(attestations=AggregatedAttestations(data=[]))),
@@ -108,8 +108,8 @@ class State(Container):
             config=genesis_config,
             slot=Slot(0),
             latest_block_header=genesis_header,
-            latest_justified=Checkpoint.default(),
-            latest_finalized=Checkpoint.default(),
+            latest_justified=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+            latest_finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
             historical_block_hashes=HistoricalBlockHashes(data=[]),
             justified_slots=JustifiedSlots(data=[]),
             validators=validators,
@@ -239,10 +239,9 @@ class State(Container):
         # Verify the block proposer.
         #
         # Ensures the block was proposed by the assigned validator for this round.
-        assert is_proposer(
-            validator_index=block.proposer_index,
+        assert block.proposer_index.is_proposer_for(
             slot=self.slot,
-            num_validators=Uint64(len(self.validators)),
+            num_validators=len(self.validators),
         ), "Incorrect block proposer"
 
         # Verify the chain link.
@@ -294,25 +293,19 @@ class State(Container):
 
         # Update the list of justified slot flags.
         #
-        # Structure: [Existing flags] + [Is genesis parent?] + [False for gaps]
+        # IMPORTANT: This list is stored relative to the finalized boundary.
         #
-        # We construct the new history list by concatenating three segments:
+        # The first entry corresponds to the slot immediately following the
+        # latest finalized checkpoint.
         #
-        # 1. The existing history:
-        #    We preserve the flags for all previously processed blocks.
-        #
-        # 2. The parent block status (one entry):
-        #    We append the status of the block immediately preceding any gaps.
-        #    - If Genesis: True (Justified by definition).
-        #    - If Normal: False (Pending). It remains unjustified until validators
-        #      vote for it later in the process.
-        #
-        # 3. The skipped slots status (multiple entries):
-        #    We append False for every empty slot between the parent and the
-        #    current block. Since no blocks exist there, they are permanently
-        #    unjustified.
-        new_justified_slots_data = (
-            self.justified_slots + [Boolean(is_genesis_parent)] + [Boolean(False)] * num_empty_slots
+        # Here, we extend the storage capacity to ensure the range from the
+        # finalized boundary up to the last materialized slot is fully tracked
+        # and addressable. The current block's slot is not materialized until
+        # its header is fully processed, so we stop at slot (block.slot - 1).
+        last_materialized_slot = block.slot - Slot(1)
+        new_justified_slots_data = self.justified_slots.extend_to_slot(
+            self.latest_finalized.slot,
+            last_materialized_slot,
         )
 
         # Construct the new latest block header.
@@ -412,6 +405,9 @@ class State(Container):
         #       (block root) → [vote flags for validators 0..N-1]
         #
         # which makes the rest of the logic easier to express and understand.
+        assert not any(root == ZERO_HASH for root in self.justifications_roots), (
+            "zero hash is not allowed in justifications roots"
+        )
         justifications = (
             {
                 root: self.justifications_validators[
@@ -426,7 +422,20 @@ class State(Container):
         # Track state changes to be applied at the end
         latest_justified = self.latest_justified
         latest_finalized = self.latest_finalized
+        finalized_slot = latest_finalized.slot
         justified_slots = self.justified_slots
+
+        # Map roots to their latest slot for pruning.
+        #
+        # Votes for zero hash are ignored, so we only need the most recent slot
+        # where a root appears to decide whether it is still unfinalized.
+        start_slot = int(finalized_slot) + 1
+        root_to_slot: dict[Bytes32, Slot] = {}
+        for i in range(start_slot, len(self.historical_block_hashes)):
+            root = self.historical_block_hashes[i]
+            slot = Slot(i)
+            if root not in root_to_slot or slot > root_to_slot[root]:
+                root_to_slot[root] = slot
 
         # Process each attestation independently
         #
@@ -443,14 +452,18 @@ class State(Container):
             #
             # A vote may only originate from a point in history that is already justified.
             # A source that lacks existing justification cannot be used to anchor a new vote.
-            if not justified_slots[source.slot]:
+            if not justified_slots.is_slot_justified(finalized_slot, source.slot):
                 continue
 
             # Ignore votes for targets that have already reached consensus
             #
             # If a block is already justified, additional votes do not change anything.
             # We simply skip them.
-            if justified_slots[target.slot]:
+            if justified_slots.is_slot_justified(finalized_slot, target.slot):
+                continue
+
+            # Ignore votes that reference zero-hash slots.
+            if source.root == ZERO_HASH or target.root == ZERO_HASH:
                 continue
 
             # Ensure the vote refers to blocks that actually exist on our chain
@@ -519,7 +532,11 @@ class State(Container):
                 #
                 # The chain now considers this block part of its safe head.
                 latest_justified = target
-                justified_slots[target.slot] = True
+                justified_slots = justified_slots.with_justified(
+                    finalized_slot,
+                    target.slot,
+                    Boolean(True),
+                )
 
                 # There is no longer any need to track individual votes for this block.
                 del justifications[target.root]
@@ -539,7 +556,28 @@ class State(Container):
                     Slot(slot).is_justifiable_after(self.latest_finalized.slot)
                     for slot in range(source.slot + Slot(1), target.slot)
                 ):
+                    old_finalized_slot = finalized_slot
                     latest_finalized = source
+                    finalized_slot = latest_finalized.slot
+
+                    # Rebase/prune justification tracking across the new finalized boundary.
+                    #
+                    # The state stores justified slot flags starting at (finalized_slot + 1),
+                    # so when finalization advances by `delta`, we drop the first `delta` bits.
+                    #
+                    # We also prune any pending justifications whose latest slot
+                    # is now finalized (latest <= finalized_slot).
+                    delta = int(finalized_slot - old_finalized_slot)
+                    if delta > 0:
+                        justified_slots = justified_slots.shift_window(delta)
+                        assert all(root in root_to_slot for root in justifications), (
+                            "Justification root missing from root_to_slot"
+                        )
+                        justifications = {
+                            root: votes
+                            for root, votes in justifications.items()
+                            if root_to_slot[root] > finalized_slot
+                        }
 
         # Convert the vote structure back into SSZ format
         #
@@ -615,7 +653,7 @@ class State(Container):
     def build_block(
         self,
         slot: Slot,
-        proposer_index: Uint64,
+        proposer_index: ValidatorIndex,
         parent_root: Bytes32,
         attestations: list[Attestation] | None = None,
         available_attestations: Iterable[Attestation] | None = None,
@@ -723,18 +761,23 @@ class State(Container):
             aggregated_payloads,
         )
 
-        # Update the block with the aggregated attestations and proofs
-        final_block = candidate_block.model_copy(
-            update={
-                "body": BlockBody(
-                    attestations=AggregatedAttestations(
-                        data=aggregated_attestations,
-                    ),
+        # Create the final block with aggregated attestations and proofs
+        final_block = Block(
+            slot=slot,
+            proposer_index=proposer_index,
+            parent_root=parent_root,
+            state_root=Bytes32.zero(),
+            body=BlockBody(
+                attestations=AggregatedAttestations(
+                    data=aggregated_attestations,
                 ),
-                # Store the post state root in the block
-                "state_root": hash_tree_root(post_state),
-            }
+            ),
         )
+
+        # Recompute state from the final block
+        post_state = self.process_slots(slot).process_block(final_block)
+
+        final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures
 
@@ -787,7 +830,12 @@ class State(Container):
             # Parallel lists for signatures, public keys, and validator IDs.
             gossip_sigs: list[Signature] = []
             gossip_keys: list[PublicKey] = []
-            gossip_ids: list[Uint64] = []
+            gossip_ids: list[ValidatorIndex] = []
+
+            # Track validators we couldn't find signatures for.
+            #
+            # These will need to be covered by Phase 2 (existing proofs).
+            remaining: set[ValidatorIndex] = set()
 
             # Attempt to collect each validator's signature from gossip.
             #
@@ -895,9 +943,11 @@ class State(Container):
                 target_id = next(iter(remaining))
                 candidates = aggregated_payloads.get(SignatureKey(target_id, data_root), [])
 
-                # No proofs found for this validator: stop the loop.
+                # No proofs found for this validator.
+                # Remove it and try another validator.
                 if not candidates:
-                    break
+                    remaining.discard(target_id)
+                    continue
 
                 # Step 2: Pick the proof covering the most remaining validators.
                 #

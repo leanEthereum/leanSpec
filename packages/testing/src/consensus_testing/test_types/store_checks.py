@@ -3,12 +3,31 @@
 from typing import TYPE_CHECKING, Literal
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes32, CamelModel, Uint64
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.containers import AttestationData
-    from lean_spec.subspecs.containers.block.block import Block
+    from lean_spec.subspecs.containers.block.block import Block, BlockWithAttestation
     from lean_spec.subspecs.forkchoice.store import Store
+
+
+class AggregatedAttestationCheck(CamelModel):
+    """
+    Validation checks for an aggregated attestation in the block body.
+
+    Used to verify signature aggregation results by checking which validators
+    are covered by each aggregated attestation.
+    """
+
+    participants: set[int]
+    """Expected validator indices covered by this aggregated attestation."""
+
+    attestation_slot: Slot | None = None
+    """Expected attestation data slot (optional - only check if set)."""
+
+    target_slot: Slot | None = None
+    """Expected target checkpoint slot (optional - only check if set)."""
 
 
 class AttestationCheck(CamelModel):
@@ -19,7 +38,7 @@ class AttestationCheck(CamelModel):
     Used to validate attestation content beyond just counting.
     """
 
-    validator: Uint64
+    validator: ValidatorIndex
     """Which validator's attestation to check."""
 
     attestation_slot: Slot | None = None
@@ -167,6 +186,25 @@ class StoreChecks(CamelModel):
     attestation_checks: list[AttestationCheck] | None = None
     """Optional list of attestation content checks for specific validators."""
 
+    block_attestation_count: int | None = None
+    """
+    Expected number of aggregated attestations in the block body.
+
+    Use this to verify signature aggregation behavior:
+    - 1 = all attestations aggregated into a single proof
+    - >1 = attestations split due to incompatible sources
+    """
+
+    block_attestations: list[AggregatedAttestationCheck] | None = None
+    """
+    Detailed checks for each aggregated attestation in the block body.
+
+    Each check validates:
+    - participants: which validators are covered by this aggregation
+    - attestation_slot: the attestation data slot (optional)
+    - target_slot: the target checkpoint slot (optional)
+    """
+
     lexicographic_head_among: list[str] | None = None
     """
     Verify that the head is chosen via lexicographic tiebreaker.
@@ -202,6 +240,7 @@ class StoreChecks(CamelModel):
         store: "Store",
         step_index: int,
         block_registry: dict[str, "Block"] | None = None,
+        filled_block: "BlockWithAttestation | None" = None,
     ) -> None:
         """
         Validate these checks against actual Store state.
@@ -217,6 +256,9 @@ class StoreChecks(CamelModel):
             Index of the step being validated (for error messages).
         block_registry : dict[str, Block] | None
             Optional registry of labeled blocks for resolving head_root_label.
+        filled_block : BlockWithAttestation | None
+            Optional filled block for validating block body attestations.
+            Required if block_attestation_count or block_attestations is set.
 
         Raises:
         ------
@@ -404,6 +446,85 @@ class StoreChecks(CamelModel):
                             )
                         attestation = store.latest_known_attestations[validator_idx]
                         check.validate_attestation(attestation, "in latest_known", step_index)
+
+            elif field_name == "block_attestation_count":
+                # Validate the number of aggregated attestations in the block body
+                if filled_block is None:
+                    raise ValueError(
+                        f"Step {step_index}: block_attestation_count specified but "
+                        f"filled_block not provided to validate_against_store()"
+                    )
+
+                actual_count = len(filled_block.block.body.attestations.data)
+                if actual_count != expected_value:
+                    # Build detailed info for error message
+                    att_info = []
+                    for att in filled_block.block.body.attestations.data:
+                        participants = att.aggregation_bits.to_validator_indices()
+                        att_info.append(f"  - participants={list(participants)}")
+
+                    att_details = "\n".join(att_info) if att_info else "  (empty)"
+                    raise AssertionError(
+                        f"Step {step_index}: block body has {actual_count} aggregated "
+                        f"attestations, expected {expected_value}\n"
+                        f"Attestations in block:\n{att_details}"
+                    )
+
+            elif field_name == "block_attestations":
+                # Validate detailed attestation structure in the block body
+                if filled_block is None:
+                    raise ValueError(
+                        f"Step {step_index}: block_attestations specified but "
+                        f"filled_block not provided to validate_against_store()"
+                    )
+
+                actual_attestations = filled_block.block.body.attestations.data
+                actual_participants_list = [
+                    {int(v) for v in att.aggregation_bits.to_validator_indices()}
+                    for att in actual_attestations
+                ]
+
+                # For each expected check, verify a matching attestation exists
+                for check in expected_value:
+                    expected_participants = check.participants
+
+                    # Find an attestation with matching participants
+                    matching_att = None
+                    matching_idx = None
+                    for idx, att in enumerate(actual_attestations):
+                        actual_participants = {
+                            int(v) for v in att.aggregation_bits.to_validator_indices()
+                        }
+                        if actual_participants == expected_participants:
+                            matching_att = att
+                            matching_idx = idx
+                            break
+
+                    if matching_att is None:
+                        raise AssertionError(
+                            f"Step {step_index}: no aggregated attestation found with "
+                            f"participants={expected_participants}\n"
+                            f"Available attestations: {actual_participants_list}"
+                        )
+
+                    # Validate optional fields on the matching attestation
+                    if check.attestation_slot is not None:
+                        actual_slot = matching_att.data.slot
+                        if actual_slot != check.attestation_slot:
+                            raise AssertionError(
+                                f"Step {step_index}: attestation[{matching_idx}] with "
+                                f"participants={expected_participants} has slot={actual_slot}, "
+                                f"expected {check.attestation_slot}"
+                            )
+
+                    if check.target_slot is not None:
+                        actual_target = matching_att.data.target.slot
+                        if actual_target != check.target_slot:
+                            raise AssertionError(
+                                f"Step {step_index}: attestation[{matching_idx}] with "
+                                f"participants={expected_participants} has "
+                                f"target_slot={actual_target}, expected {check.target_slot}"
+                            )
 
             elif field_name == "lexicographic_head_among":
                 # Validate lexicographic tiebreaker behavior

@@ -25,7 +25,7 @@ from .checkpoint import Checkpoint
 from .config import Config
 from .slot import Slot
 from .state import State
-from .validator import Validator
+from .validator import Validator, ValidatorIndex, ValidatorIndices
 
 __all__ = [
     "AggregatedAttestation",
@@ -42,4 +42,6 @@ __all__ = [
     "Slot",
     "State",
     "Validator",
+    "ValidatorIndex",
+    "ValidatorIndices",
 ]

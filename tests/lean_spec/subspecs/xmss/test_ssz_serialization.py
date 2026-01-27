@@ -3,7 +3,7 @@
 from lean_spec.subspecs.xmss.constants import TEST_CONFIG
 from lean_spec.subspecs.xmss.containers import PublicKey, Signature
 from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME
-from lean_spec.types import Uint64
+from lean_spec.types import Bytes32, Uint64
 
 
 def test_public_key_ssz_roundtrip() -> None:
@@ -32,7 +32,7 @@ def test_signature_ssz_roundtrip() -> None:
     num_active_epochs = Uint64(32)
     public_key, secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_epoch, num_active_epochs)
 
-    message = bytes([42] * TEST_CONFIG.MESSAGE_LENGTH)
+    message = Bytes32(bytes([42] * 32))
     epoch = Uint64(0)
     signature = TEST_SIGNATURE_SCHEME.sign(secret_key, epoch, message)
 
@@ -79,7 +79,7 @@ def test_secret_key_ssz_roundtrip() -> None:
     assert recovered_sk == secret_key
 
     # Verify the recovered secret key can still sign
-    message = bytes([99] * TEST_CONFIG.MESSAGE_LENGTH)
+    message = Bytes32(bytes([99] * 32))
     epoch = Uint64(1)
     signature = TEST_SIGNATURE_SCHEME.sign(recovered_sk, epoch, message)
     assert TEST_SIGNATURE_SCHEME.verify(public_key, epoch, message, signature)
@@ -103,7 +103,7 @@ def test_deterministic_serialization() -> None:
     assert sk_bytes1 == sk_bytes2
 
     # Sign a message multiple times with deterministic randomness
-    message = bytes([42] * TEST_CONFIG.MESSAGE_LENGTH)
+    message = Bytes32(bytes([42] * 32))
     epoch = Uint64(0)
     sig1 = TEST_SIGNATURE_SCHEME.sign(secret_key, epoch, message)
     sig2 = TEST_SIGNATURE_SCHEME.sign(secret_key, epoch, message)
@@ -114,3 +114,27 @@ def test_deterministic_serialization() -> None:
     sig_bytes1 = sig1.encode_bytes()
     sig_bytes2 = sig2.encode_bytes()
     assert sig_bytes1 == sig_bytes2
+
+
+def test_signature_size_matches_config() -> None:
+    """Verify SIGNATURE_LEN_BYTES matches actual SSZ-encoded size."""
+    activation_epoch = Uint64(0)
+    num_active_epochs = Uint64(32)
+    public_key, secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_epoch, num_active_epochs)
+
+    message = Bytes32(bytes([42] * 32))
+    epoch = Uint64(0)
+    signature = TEST_SIGNATURE_SCHEME.sign(secret_key, epoch, message)
+
+    encoded = signature.encode_bytes()
+    assert len(encoded) == TEST_CONFIG.SIGNATURE_LEN_BYTES
+
+
+def test_public_key_size_matches_config() -> None:
+    """Verify PUBLIC_KEY_LEN_BYTES matches actual SSZ-encoded size."""
+    activation_epoch = Uint64(0)
+    num_active_epochs = Uint64(32)
+    public_key, _ = TEST_SIGNATURE_SCHEME.key_gen(activation_epoch, num_active_epochs)
+
+    encoded = public_key.encode_bytes()
+    assert len(encoded) == TEST_CONFIG.PUBLIC_KEY_LEN_BYTES
