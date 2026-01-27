@@ -19,6 +19,7 @@ from lean_spec.subspecs.chain.config import (
     JUSTIFICATION_LOOKBACK_SLOTS,
     SECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
+    ATTESTATION_COMMITTEE_COUNT,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -330,9 +331,9 @@ class Store(Container):
         new_commitee_sigs = dict(self.gossip_signatures)
         if is_aggregator and current_validator_id is not None:
             current_validator_subnet = compute_subnet_id(
-                current_validator_id, self.config.attestation_subnet_count
+                current_validator_id, ATTESTATION_COMMITTEE_COUNT
             )
-            attester_subnet = compute_subnet_id(validator_id, self.config.attestation_subnet_count)
+            attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT)
             if current_validator_subnet != attester_subnet:
                 # Not part of our committee; ignore for committee aggregation.
                 pass
@@ -716,10 +717,10 @@ class Store(Container):
         if current_validator is not None:
             proposer_validator_id = proposer_attestation.validator_id
             proposer_subnet_id = compute_subnet_id(
-                proposer_validator_id, self.config.attestation_subnet_count
+                proposer_validator_id, ATTESTATION_COMMITTEE_COUNT
             )
             current_validator_subnet_id = compute_subnet_id(
-                current_validator, self.config.attestation_subnet_count
+                current_validator, ATTESTATION_COMMITTEE_COUNT
             )
             if proposer_subnet_id == current_validator_subnet_id:
                 proposer_sig_key = SignatureKey(
