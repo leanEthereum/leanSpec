@@ -15,6 +15,7 @@ from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
+    SignedAttestation,
 )
 from lean_spec.subspecs.containers.block import (
     Block,
@@ -363,14 +364,32 @@ class ForkChoiceTest(BaseConsensusFixture):
         #
         # Attestations vote for blocks and influence fork choice weight.
         # The spec may include attestations to include in this block.
-        attestations, attestation_signatures = self._build_attestations_from_spec(
-            spec, store, block_registry, parent_root, key_manager
+        attestations, attestation_signatures, valid_signature_keys = (
+            self._build_attestations_from_spec(
+                spec, store, block_registry, parent_root, key_manager
+            )
         )
 
-        # Merge new attestation signatures with existing gossip signatures.
-        # These are needed for signature aggregation later.
-        gossip_signatures = dict(store.gossip_signatures)
-        gossip_signatures.update(attestation_signatures)
+        # Merge per-attestation signatures into the Store's gossip signature cache.
+        # Required so the Store can aggregate committee signatures later when building payloads.
+        working_store = store
+        for attestation in attestations:
+            sig_key = SignatureKey(attestation.validator_id, attestation.data.data_root_bytes())
+            if sig_key not in valid_signature_keys:
+                continue
+            signature = attestation_signatures.get(sig_key)
+            if signature is None:
+                continue
+            signed_attestation = SignedAttestation(
+                validator_id=attestation.validator_id,
+                message=attestation.data,
+                signature=signature,
+            )
+            working_store = working_store.on_gossip_attestation(
+                signed_attestation,
+                scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
+                is_aggregator=True,
+            )
 
         # Prepare attestations and aggregated payloads for block construction.
         #
@@ -383,12 +402,6 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Attestations with the same data should be merged into a single proof.
         available_attestations: list[Attestation]
         known_block_roots: set[Bytes32] | None = None
-
-        # Create aggregated payloads from explicit attestations
-        # Group attestations by data to create one proof per group
-        from lean_spec.subspecs.containers.attestation import AggregationBits
-        from lean_spec.subspecs.containers.block.types import AggregatedAttestation
-        from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
 
         aggregated_payloads = dict(store.aggregated_payloads) if store.aggregated_payloads else {}
 
@@ -416,42 +429,20 @@ class ForkChoiceTest(BaseConsensusFixture):
             # Use only explicit attestations from the spec
             available_attestations = attestations
 
-        # Create aggregated proofs for all attestations (merged by data)
-        # This ensures attestations with the same data are aggregated together
-        for agg_att in AggregatedAttestation.aggregate_by_data(all_attestations_for_proofs):
-            validator_ids = list(agg_att.aggregation_bits.to_validator_indices())
-            message = agg_att.data.data_root_bytes()
-            epoch = agg_att.data.slot
-
-            # Check if we have signatures for all validators
-            all_sigs_available = all(
-                SignatureKey(vid, message) in gossip_signatures for vid in validator_ids
-            )
-
-            if all_sigs_available:
-                # Collect public keys and signatures for these validators
-                public_keys = [key_manager.get_public_key(vid) for vid in validator_ids]
-                signatures = [
-                    gossip_signatures[SignatureKey(vid, message)] for vid in validator_ids
-                ]
-
-                # Create aggregated proof
-                participants = AggregationBits.from_validator_indices(validator_ids)
-                proof = AggregatedSignatureProof.aggregate(
-                    participants=participants,
-                    public_keys=public_keys,
-                    signatures=signatures,
-                    message=message,
-                    epoch=epoch,
-                )
-
-                # Add to aggregated_payloads for each validator
-                for vid in validator_ids:
-                    sig_key = SignatureKey(vid, message)
-                    if sig_key not in aggregated_payloads:
-                        aggregated_payloads[sig_key] = []
-                    # Insert at the beginning (most recent)
-                    aggregated_payloads[sig_key].insert(0, proof)
+        # Build aggregated proofs via Store aggregation logic.
+        attestation_map = {
+            attestation.validator_id: attestation.data
+            for attestation in all_attestations_for_proofs
+        }
+        aggregation_store = working_store.model_copy(
+            update={
+                "head": parent_root,
+                "latest_new_attestations": attestation_map,
+                "aggregated_payloads": aggregated_payloads,
+            }
+        )
+        aggregation_store = aggregation_store.aggregate_committee_signatures()
+        aggregated_payloads = aggregation_store.aggregated_payloads
 
         # Build the block using spec logic
         #
@@ -573,7 +564,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         block_registry: dict[str, Block],
         parent_root: Bytes32,
         key_manager: XmssKeyManager,
-    ) -> tuple[list[Attestation], dict[SignatureKey, Signature]]:
+    ) -> tuple[list[Attestation], dict[SignatureKey, Signature], set[SignatureKey]]:
         """
         Build attestations and signatures from block specification.
 
@@ -589,15 +580,16 @@ class ForkChoiceTest(BaseConsensusFixture):
             key_manager: Key manager for signing.
 
         Returns:
-            Tuple of (attestations list, signature lookup dict).
+            Tuple of (attestations list, signature lookup dict, valid signature keys).
         """
         # No attestations specified means empty block body.
         if spec.attestations is None:
-            return [], {}
+            return [], {}, set()
 
         parent_state = store.states[parent_root]
         attestations = []
         signature_lookup: dict[SignatureKey, Signature] = {}
+        valid_signature_keys: set[SignatureKey] = set()
 
         for aggregated_spec in spec.attestations:
             # Build attestation data once.
@@ -635,8 +627,10 @@ class ForkChoiceTest(BaseConsensusFixture):
                 # This enables lookup during signature aggregation.
                 sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
                 signature_lookup[sig_key] = signature
+                if aggregated_spec.valid_signature:
+                    valid_signature_keys.add(sig_key)
 
-        return attestations, signature_lookup
+        return attestations, signature_lookup, valid_signature_keys
 
     def _build_attestation_data_from_spec(
         self,
