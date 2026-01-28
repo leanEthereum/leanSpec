@@ -25,6 +25,7 @@ from lean_spec.subspecs.networking.reqresp.message import (
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,
     BlocksByRootRequest,
+    BlocksByRootRequestRoots,
     Status,
 )
 from lean_spec.types import Bytes32
@@ -352,7 +353,9 @@ class TestDefaultRequestHandlerBlocksByRoot:
             handler = DefaultRequestHandler(block_lookup=lookup)
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            request = BlocksByRootRequest(
+                roots=BlocksByRootRequestRoots(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            )
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -387,10 +390,12 @@ class TestDefaultRequestHandlerBlocksByRoot:
 
             # Request two blocks, only one exists
             request = BlocksByRootRequest(
-                data=[
-                    Bytes32(b"\x11" * 32),  # exists
-                    Bytes32(b"\x99" * 32),  # missing
-                ]
+                roots=BlocksByRootRequestRoots(
+                    data=[
+                        Bytes32(b"\x11" * 32),  # exists
+                        Bytes32(b"\x99" * 32),  # missing
+                    ]
+                )
             )
 
             await handler.handle_blocks_by_root(request, response)
@@ -410,7 +415,9 @@ class TestDefaultRequestHandlerBlocksByRoot:
             handler = DefaultRequestHandler()  # No block_lookup set
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[Bytes32(b"\x11" * 32)])
+            request = BlocksByRootRequest(
+                roots=BlocksByRootRequestRoots(data=[Bytes32(b"\x11" * 32)])
+            )
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -433,7 +440,7 @@ class TestDefaultRequestHandlerBlocksByRoot:
             handler = DefaultRequestHandler(block_lookup=lookup)
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[])
+            request = BlocksByRootRequest(roots=BlocksByRootRequestRoots(data=[]))
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -461,7 +468,9 @@ class TestDefaultRequestHandlerBlocksByRoot:
             response = MockResponseStream()
 
             # First block causes error, second succeeds
-            request = BlocksByRootRequest(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            request = BlocksByRootRequest(
+                roots=BlocksByRootRequestRoots(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            )
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -537,7 +546,7 @@ class TestReqRespServer:
             server = ReqRespServer(handler=handler)
 
             # Build wire-format request
-            request = BlocksByRootRequest(data=[root1])
+            request = BlocksByRootRequest(roots=BlocksByRootRequestRoots(data=[root1]))
             request_bytes = encode_request(request.encode_bytes())
 
             stream = MockStream(request_data=request_bytes)
@@ -785,7 +794,7 @@ class TestIntegration:
             server = ReqRespServer(handler=handler)
 
             # Client side: encode request
-            request = BlocksByRootRequest(data=[root1, root2])
+            request = BlocksByRootRequest(roots=BlocksByRootRequestRoots(data=[root1, root2]))
             request_wire = encode_request(request.encode_bytes())
 
             # Server side: handle request
@@ -826,7 +835,9 @@ class TestIntegration:
             server = ReqRespServer(handler=handler)
 
             # Request two blocks, only one exists
-            request = BlocksByRootRequest(data=[root1, root_missing])
+            request = BlocksByRootRequest(
+                roots=BlocksByRootRequestRoots(data=[root1, root_missing])
+            )
             request_wire = encode_request(request.encode_bytes())
 
             stream = MockStream(request_data=request_wire)
@@ -1179,7 +1190,7 @@ class TestDefaultRequestHandlerEdgeCases:
             handler = DefaultRequestHandler(block_lookup=lookup)
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[root])
+            request = BlocksByRootRequest(roots=BlocksByRootRequestRoots(data=[root]))
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -1204,11 +1215,13 @@ class TestDefaultRequestHandlerEdgeCases:
             response = MockResponseStream()
 
             request = BlocksByRootRequest(
-                data=[
-                    Bytes32(b"\x11" * 32),
-                    Bytes32(b"\x22" * 32),
-                    Bytes32(b"\x33" * 32),
-                ]
+                roots=BlocksByRootRequestRoots(
+                    data=[
+                        Bytes32(b"\x11" * 32),
+                        Bytes32(b"\x22" * 32),
+                        Bytes32(b"\x33" * 32),
+                    ]
+                )
             )
 
             await handler.handle_blocks_by_root(request, response)
@@ -1240,11 +1253,13 @@ class TestDefaultRequestHandlerEdgeCases:
             response = MockResponseStream()
 
             request = BlocksByRootRequest(
-                data=[
-                    Bytes32(b"\x11" * 32),
-                    Bytes32(b"\x22" * 32),
-                    Bytes32(b"\x33" * 32),
-                ]
+                roots=BlocksByRootRequestRoots(
+                    data=[
+                        Bytes32(b"\x11" * 32),
+                        Bytes32(b"\x22" * 32),
+                        Bytes32(b"\x33" * 32),
+                    ]
+                )
             )
 
             await handler.handle_blocks_by_root(request, response)
@@ -1358,7 +1373,9 @@ class TestConcurrentRequestHandling:
             status_stream = MockStream(request_data=status_request)
 
             # BlocksByRoot request
-            blocks_request = encode_request(BlocksByRootRequest(data=[root]).encode_bytes())
+            blocks_request = encode_request(
+                BlocksByRootRequest(roots=BlocksByRootRequestRoots(data=[root])).encode_bytes()
+            )
             blocks_stream = MockStream(request_data=blocks_request)
 
             # Handle concurrently

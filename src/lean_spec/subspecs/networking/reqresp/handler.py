@@ -364,7 +364,7 @@ class DefaultRequestHandler(RequestHandler):
         #
         # 3. Order is preserved.
         #    Blocks are sent in the same order as requested.
-        for root in request.data:
+        for root in request.roots.data:
             try:
                 block = await self.block_lookup(root)
                 if block is not None:

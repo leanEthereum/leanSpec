@@ -8,7 +8,7 @@ domain. All messages are SSZ-encoded and then compressed with Snappy frames.
 from typing import ClassVar
 
 from lean_spec.subspecs.containers import Checkpoint
-from lean_spec.types import Bytes32, SSZList, SSZType
+from lean_spec.types import Bytes32, SSZList
 from lean_spec.types.container import Container
 
 from ..config import MAX_REQUEST_BLOCKS
@@ -48,12 +48,18 @@ BLOCKS_BY_ROOT_PROTOCOL_V1: ProtocolId = "/leanconsensus/req/blocks_by_root/1/ss
 """The protocol ID for the BlocksByRoot v1 request/response message."""
 
 
-class BlocksByRootRequest(SSZList[Bytes32]):
+class BlocksByRootRequestRoots(SSZList[Bytes32]):
+    """List of requested root hashes."""
+
+    LIMIT: ClassVar[int] = MAX_REQUEST_BLOCKS
+
+
+class BlocksByRootRequest(Container):
     """
     A request for one or more blocks by their root hashes.
 
     This is primarily used to recover recent or missing blocks from a peer.
     """
 
-    ELEMENT_TYPE: ClassVar[type[SSZType]] = Bytes32
-    LIMIT: ClassVar[int] = MAX_REQUEST_BLOCKS
+    roots: BlocksByRootRequestRoots
+    """List of requested root hashes."""
