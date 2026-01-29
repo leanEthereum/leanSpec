@@ -30,3 +30,6 @@ of approximately 12.1 days.
 
 VALIDATOR_REGISTRY_LIMIT: Final = Uint64(2**12)
 """The maximum number of validators that can be in the registry."""
+
+ATTESTATION_COMMITTEE_COUNT: Final = Uint64(1)
+"""The number of attestation committees per slot."""

@@ -175,7 +175,7 @@ class TestNodeFromGenesis:
         # Patching to 8 distinguishes from the seconds per slot.
         patched_intervals = Uint64(8)
         with patch("lean_spec.subspecs.node.node.INTERVALS_PER_SLOT", patched_intervals):
-            store = Node._try_load_from_database(mock_db)
+            store = Node._try_load_from_database(mock_db, validator_id=ValidatorIndex(0))
 
         assert store is not None
         expected_time = Uint64(test_slot * patched_intervals)

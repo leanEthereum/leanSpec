@@ -34,7 +34,7 @@ from lean_spec.subspecs.genesis import GenesisConfig
 from lean_spec.subspecs.networking.client import LiveNetworkEventSource
 from lean_spec.subspecs.networking.gossipsub import GossipTopic
 from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.node import Node, NodeConfig
+from lean_spec.subspecs.node import Node, NodeConfig, get_local_validator_id
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.types import Bytes32, Uint64
@@ -263,7 +263,8 @@ async def _init_from_checkpoint(
         #
         # The store treats this as the new "genesis" for fork choice purposes.
         # All blocks before the checkpoint are effectively pruned.
-        store = Store.get_forkchoice_store(state, anchor_block)
+        validator_id = get_local_validator_id(validator_registry)
+        store = Store.get_forkchoice_store(state, anchor_block, validator_id)
         logger.info(
             "Initialized from checkpoint at slot %d (finalized=%s)",
             state.slot,

@@ -32,6 +32,7 @@ from .service import (
     PeerDisconnectedEvent,
     PeerStatusEvent,
 )
+from .subnet import compute_subnet_id
 from .transport import PeerId
 from .types import DomainType, ForkDigest, ProtocolId
 
@@ -73,4 +74,5 @@ __all__ = [
     "ForkDigest",
     "PeerId",
     "ProtocolId",
+    "compute_subnet_id",
 ]

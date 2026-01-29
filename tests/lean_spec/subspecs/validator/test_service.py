@@ -32,8 +32,8 @@ from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
 from lean_spec.subspecs.validator.registry import ValidatorEntry
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.aggregation import SignatureKey
-from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Bytes52, Uint64
+from tests.lean_spec.helpers import TEST_VALIDATOR_ID
 
 
 class MockNetworkRequester(NetworkRequester):
@@ -51,7 +51,11 @@ class MockNetworkRequester(NetworkRequester):
 @pytest.fixture
 def store(genesis_state: State, genesis_block: Block) -> Store:
     """Forkchoice store initialized with genesis."""
-    return Store.get_forkchoice_store(genesis_state, genesis_block)
+    return Store.get_forkchoice_store(
+        genesis_state,
+        genesis_block,
+        validator_id=TEST_VALIDATOR_ID,
+    )
 
 
 @pytest.fixture
@@ -532,7 +536,11 @@ class TestValidatorServiceIntegration:
             state_root=hash_tree_root(genesis_state),
             body=BlockBody(attestations=AggregatedAttestations(data=[])),
         )
-        return Store.get_forkchoice_store(genesis_state, genesis_block)
+        return Store.get_forkchoice_store(
+            genesis_state,
+            genesis_block,
+            validator_id=TEST_VALIDATOR_ID,
+        )
 
     @pytest.fixture
     def real_sync_service(self, real_store: Store) -> SyncService:
@@ -772,21 +780,36 @@ class TestValidatorServiceIntegration:
         attestation_data = store.produce_attestation_data(Slot(0))
         data_root = attestation_data.data_root_bytes()
 
-        # Simulate gossip attestations from validators 3 and 4
+        # Simulate aggregated payloads for validators 3 and 4
+        from lean_spec.subspecs.containers.attestation import AggregationBits
+        from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+
         attestation_map: dict[ValidatorIndex, AttestationData] = {}
-        gossip_sigs: dict[SignatureKey, Signature] = {}
+        signatures = []
+        participants = [ValidatorIndex(3), ValidatorIndex(4)]
+        public_keys = []
 
-        for validator_id in (ValidatorIndex(3), ValidatorIndex(4)):
-            attestation_map[validator_id] = attestation_data
-            gossip_sigs[SignatureKey(validator_id, data_root)] = key_manager.sign_attestation_data(
-                validator_id, attestation_data
-            )
+        for vid in participants:
+            sig = key_manager.sign_attestation_data(vid, attestation_data)
+            signatures.append(sig)
+            public_keys.append(key_manager.get_public_key(vid))
+            attestation_map[vid] = attestation_data
 
-        # Update store with pending attestations
+        proof = AggregatedSignatureProof.aggregate(
+            participants=AggregationBits.from_validator_indices(participants),
+            public_keys=public_keys,
+            signatures=signatures,
+            message=data_root,
+            epoch=attestation_data.slot,
+        )
+
+        aggregated_payloads = {SignatureKey(vid, data_root): [proof] for vid in participants}
+
+        # Update store with pending attestations and aggregated payloads
         updated_store = store.model_copy(
             update={
                 "latest_known_attestations": attestation_map,
-                "gossip_signatures": gossip_sigs,
+                "aggregated_payloads": aggregated_payloads,
             }
         )
         real_sync_service.store = updated_store

@@ -12,6 +12,7 @@ from .attestation import (
     AggregatedAttestation,
     Attestation,
     AttestationData,
+    SignedAggregatedAttestation,
     SignedAttestation,
 )
 from .block import (
@@ -37,6 +38,7 @@ __all__ = [
     "BlockWithAttestation",
     "Checkpoint",
     "Config",
+    "SignedAggregatedAttestation",
     "SignedAttestation",
     "SignedBlockWithAttestation",
     "Slot",

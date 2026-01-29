@@ -98,6 +98,19 @@ ATTESTATION_TOPIC_NAME: str = "attestation"
 Used in the topic string to identify signed attestation messages.
 """
 
+ATTESTATION_SUBNET_TOPIC_NAME: str = "attestation_{subnet_id}"
+"""Template topic name for attestation subnet messages.
+
+Used in the topic string to identify attestation messages for a specific subnet.
+`{subnet_id}` should be replaced with the subnet identifier (0-63).
+"""
+
+AGGREGATED_ATTESTATION_TOPIC_NAME: str = "aggregation"
+"""Topic name for committee aggregation messages.
+
+Used in the topic string to identify committee's aggregation messages.
+"""
+
 
 class TopicKind(Enum):
     """Gossip topic types.
@@ -113,6 +126,12 @@ class TopicKind(Enum):
 
     ATTESTATION = ATTESTATION_TOPIC_NAME
     """Signed attestation messages."""
+
+    ATTESTATION_SUBNET = ATTESTATION_SUBNET_TOPIC_NAME
+    """Attestation subnet messages."""
+
+    AGGREGATED_ATTESTATION = AGGREGATED_ATTESTATION_TOPIC_NAME
+    """Committee aggregated signatures messages."""
 
     def __str__(self) -> str:
         """Return the topic name string."""
@@ -264,6 +283,18 @@ class GossipTopic:
             GossipTopic for attestation messages.
         """
         return cls(kind=TopicKind.ATTESTATION, fork_digest=fork_digest)
+
+    @classmethod
+    def committee_aggregation(cls, fork_digest: str) -> GossipTopic:
+        """Create a committee aggregation topic for the given fork.
+
+        Args:
+            fork_digest: Fork digest as 0x-prefixed hex string.
+
+        Returns:
+            GossipTopic for committee aggregation messages.
+        """
+        return cls(kind=TopicKind.AGGREGATED_ATTESTATION, fork_digest=fork_digest)
 
 
 def format_topic_string(

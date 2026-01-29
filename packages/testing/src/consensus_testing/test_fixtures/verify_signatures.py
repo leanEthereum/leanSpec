@@ -26,7 +26,7 @@ from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import (
@@ -233,19 +233,12 @@ class VerifySignaturesTest(BaseConsensusFixture):
             spec, state, key_manager
         )
 
-        # Provide signatures to State.build_block for valid attestations
-        gossip_signatures = {
-            SignatureKey(att.validator_id, att.data.data_root_bytes()): sig
-            for att, sig in zip(valid_attestations, valid_signatures, strict=True)
-        }
-
         # Use State.build_block for valid attestations (pure spec logic)
         final_block, _, _, aggregated_signatures = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
             attestations=valid_attestations,
-            gossip_signatures=gossip_signatures,
             aggregated_payloads={},
         )
 

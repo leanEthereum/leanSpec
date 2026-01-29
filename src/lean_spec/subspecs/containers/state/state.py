@@ -1,6 +1,6 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from typing import AbstractSet, Iterable
+from typing import AbstractSet, Collection, Iterable
 
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
@@ -656,7 +656,6 @@ class State(Container):
         attestations: list[Attestation] | None = None,
         available_attestations: Iterable[Attestation] | None = None,
         known_block_roots: AbstractSet[Bytes32] | None = None,
-        gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
         aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
     ) -> tuple[Block, "State", list[AggregatedAttestation], list[AggregatedSignatureProof]]:
         """
@@ -736,14 +735,13 @@ class State(Container):
                     continue
 
                 # We can only include an attestation if we have some way to later provide
-                # an aggregated proof for its group:
-                # - either a per validator XMSS signature from gossip, or
-                # - at least one aggregated proof learned from a block that references
-                #   this validator+data.
-                has_gossip_sig = bool(gossip_signatures and sig_key in gossip_signatures)
+                # an aggregated proof for its group.
+                #
+                # We strictly rely on existing aggregated proofs learned from blocks.
+                # We do NOT aggregate fresh gossip signatures during block production.
                 has_block_proof = bool(aggregated_payloads and sig_key in aggregated_payloads)
 
-                if has_gossip_sig or has_block_proof:
+                if has_block_proof:
                     new_attestations.append(attestation)
 
             # Fixed point reached: no new attestations found
@@ -753,15 +751,13 @@ class State(Container):
             # Add new attestations and continue iteration
             attestations.extend(new_attestations)
 
-        # Compute the aggregated signatures for the attestations.
-        # If the attestations cannot be aggregated, split it in a greedy way.
-        aggregated_attestations, aggregated_signatures = self.compute_aggregated_signatures(
+        # Select aggregated attestations and proofs for the final block.
+        aggregated_attestations, aggregated_signatures = self.select_aggregated_proofs(
             attestations,
-            gossip_signatures,
-            aggregated_payloads,
+            aggregated_payloads=aggregated_payloads,
         )
 
-        # Create the final block with aggregated attestations
+        # Create the final block with aggregated attestations and proofs
         final_block = Block(
             slot=slot,
             proposer_index=proposer_index,
@@ -781,49 +777,37 @@ class State(Container):
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures
 
-    def compute_aggregated_signatures(
+    def aggregate_gossip_signatures(
         self,
-        attestations: list[Attestation],
+        attestations: Collection[Attestation],
         gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
-        aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
-    ) -> tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]:
+    ) -> list[tuple[AggregatedAttestation, AggregatedSignatureProof]]:
         """
-        Compute aggregated signatures for a set of attestations.
+        Collect aggregated signatures from gossip network and aggregate them.
 
-        This method implements a two-phase signature collection strategy:
-
-        1. **Gossip Phase**: For each attestation group, first attempt to collect
-           individual XMSS signatures from the gossip network. These are fresh
-           signatures that validators broadcast when they attest.
-
-        2. **Fallback Phase**: For any validators not covered by gossip, fall back
-           to previously-seen aggregated proofs from blocks. This uses a greedy
-           set-cover approach to minimize the number of proofs needed.
-
-        The result is a list of (attestation, proof) pairs ready for block inclusion.
+        For each attestation group, attempt to collect individual XMSS signatures
+        from the gossip network. These are fresh signatures that validators
+        broadcast when they attest.
 
         Parameters
         ----------
-        attestations : list[Attestation]
+        attestations : Collection[Attestation]
             Individual attestations to aggregate and sign.
         gossip_signatures : dict[SignatureKey, Signature] | None
             Per-validator XMSS signatures learned from the gossip network.
-        aggregated_payloads : dict[SignatureKey, list[AggregatedSignatureProof]] | None
-            Aggregated proofs learned from previously-seen blocks.
 
         Returns:
         -------
-        tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]
-            Paired attestations and their corresponding proofs.
+        list[tuple[AggregatedAttestation, AggregatedSignatureProof]]
+            - List of (attestation, proof) pairs from gossip collection.
         """
-        # Accumulator for (attestation, proof) pairs.
         results: list[tuple[AggregatedAttestation, AggregatedSignatureProof]] = []
 
         # Group individual attestations by data
         #
         # Multiple validators may attest to the same data (slot, head, target, source).
         # We aggregate them into groups so each group can share a single proof.
-        for aggregated in AggregatedAttestation.aggregate_by_data(attestations):
+        for aggregated in AggregatedAttestation.aggregate_by_data(list(attestations)):
             # Extract the common attestation data and its hash.
             #
             # All validators in this group signed the same message (the data root).
@@ -833,8 +817,6 @@ class State(Container):
             # Get the list of validators who attested to this data.
             validator_ids = aggregated.aggregation_bits.to_validator_indices()
 
-            # Phase 1: Gossip Collection
-            #
             # When a validator creates an attestation, it broadcasts the
             # individual XMSS signature over the gossip network. If we have
             # received these signatures, we can aggregate them ourselves.
@@ -849,13 +831,11 @@ class State(Container):
             # Track validators we couldn't find signatures for.
             #
             # These will need to be covered by Phase 2 (existing proofs).
-            remaining: set[ValidatorIndex] = set()
 
             # Attempt to collect each validator's signature from gossip.
             #
             # Signatures are keyed by (validator ID, data root).
             # - If a signature exists, we add it to our collection.
-            # - Otherwise, we mark that validator as "remaining" for the fallback phase.
             if gossip_signatures:
                 for vid in validator_ids:
                     key = SignatureKey(vid, data_root)
@@ -864,12 +844,6 @@ class State(Container):
                         gossip_sigs.append(sig)
                         gossip_keys.append(self.validators[vid].get_pubkey())
                         gossip_ids.append(vid)
-                    else:
-                        # No signature available: mark for fallback coverage.
-                        remaining.add(vid)
-            else:
-                # No gossip data at all: all validators need fallback coverage.
-                remaining = set(validator_ids)
 
             # If we collected any gossip signatures, aggregate them into a proof.
             #
@@ -884,14 +858,88 @@ class State(Container):
                     message=data_root,
                     epoch=data.slot,
                 )
-                results.append(
-                    (
-                        AggregatedAttestation(aggregation_bits=participants, data=data),
-                        proof,
-                    )
-                )
+                attestation = AggregatedAttestation(aggregation_bits=participants, data=data)
+                results.append((attestation, proof))
 
-            # Phase 2: Fallback to existing proofs
+        return results
+
+    def compute_aggregated_signatures(
+        self,
+        attestations: list[Attestation],
+        gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
+        aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
+    ) -> tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]:
+        """
+        Backwards-compatible wrapper for signature aggregation.
+
+        Older code/tests expect a single method that returns two parallel lists:
+        (aggregated_attestations, aggregated_proofs).
+
+        The current implementation separates:
+        - `aggregate_gossip_signatures` (fresh per-validator signatures collected via gossip)
+        - `select_aggregated_proofs` (reusing previously-seen aggregated proofs from blocks)
+        """
+        results = self.aggregate_gossip_signatures(
+            attestations, gossip_signatures=gossip_signatures
+        )
+        if aggregated_payloads:
+            # Note: This may add additional proofs for the same attestation data.
+            # Callers that rely on strict minimality should use the split APIs.
+            fallback_atts, fallback_proofs = self.select_aggregated_proofs(
+                attestations, aggregated_payloads=aggregated_payloads
+            )
+            results.extend(zip(fallback_atts, fallback_proofs, strict=True))
+
+        if not results:
+            return [], []
+
+        atts, proofs = zip(*results, strict=True)
+        return list(atts), list(proofs)
+
+    def select_aggregated_proofs(
+        self,
+        attestations: list[Attestation],
+        aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
+    ) -> tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]:
+        """
+        Select aggregated proofs for a set of attestations.
+
+        This method selects aggregated proofs from aggregated_payloads,
+        prioritizing proofs from the most recent blocks.
+
+        Strategy:
+        1. For each attestation group, aggregate as many signatures as possible
+           from the most recent block's proofs.
+        2. If remaining validators exist after step 1, include proofs from
+           previous blocks that cover them.
+
+        Parameters:
+        ----------
+        attestations : list[Attestation]
+            Individual attestations to aggregate and sign.
+        aggregated_payloads : dict[SignatureKey, list[AggregatedSignatureProof]] | None
+            Aggregated proofs learned from previously-seen blocks.
+            The list for each key should be ordered with most recent proofs first.
+
+        Returns:
+        -------
+        tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]
+            Paired attestations and their corresponding proofs.
+        """
+        results: list[tuple[AggregatedAttestation, AggregatedSignatureProof]] = []
+
+        # Group individual attestations by data
+        for aggregated in AggregatedAttestation.aggregate_by_data(attestations):
+            data = aggregated.data
+            data_root = data.data_root_bytes()
+            validator_ids = (
+                aggregated.aggregation_bits.to_validator_indices()
+            )  # validators contributed to this attestation
+
+            # Validators that are missing in the current aggregation are put into remaining.
+            remaining: set[Uint64] = set(validator_ids)
+
+            # Fallback to existing proofs
             #
             # Some validators may not have broadcast their signatures over gossip,
             # but we might have seen proofs for them in previously-received blocks.
@@ -969,11 +1017,6 @@ class State(Container):
                 remaining -= covered
 
         # Final Assembly
-        #
-        # - We built a list of (attestation, proof) tuples.
-        # - Now we unzip them into two parallel lists for the return value.
-
-        # Handle the empty case explicitly.
         if not results:
             return [], []
 

@@ -15,6 +15,7 @@ import copy
 from collections import defaultdict
 
 from lean_spec.subspecs.chain.config import (
+    ATTESTATION_COMMITTEE_COUNT,
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
     SECONDS_PER_INTERVAL,
@@ -31,11 +32,14 @@ from lean_spec.subspecs.containers import (
     State,
     ValidatorIndex,
 )
+from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
 from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.networking import compute_subnet_id
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
+    AggregationError,
     SignatureKey,
 )
 from lean_spec.subspecs.xmss.containers import Signature
@@ -124,6 +128,9 @@ class Store(Container):
     `Store`'s latest justified and latest finalized checkpoints.
     """
 
+    validator_id: ValidatorIndex | None
+    """Index of the validator running this store instance."""
+
     latest_known_attestations: dict[ValidatorIndex, AttestationData] = {}
     """
     Latest attestation data by validator that have been processed.
@@ -145,7 +152,7 @@ class Store(Container):
 
     gossip_signatures: dict[SignatureKey, Signature] = {}
     """
-    Per-validator XMSS signatures learned from gossip.
+    Per-validator XMSS signatures learned from committee attesters.
 
     Keyed by SignatureKey(validator_id, attestation_data_root).
     """
@@ -162,7 +169,12 @@ class Store(Container):
     """
 
     @classmethod
-    def get_forkchoice_store(cls, state: State, anchor_block: Block) -> "Store":
+    def get_forkchoice_store(
+        cls,
+        anchor_state: State,
+        anchor_block: Block,
+        validator_id: ValidatorIndex | None,
+    ) -> "Store":
         """
         Initialize forkchoice store from an anchor state and block.
 
@@ -170,10 +182,9 @@ class Store(Container):
         We treat this anchor as both justified and finalized.
 
         Args:
-            state:
-                The trusted post-state corresponding to the anchor block.
-            anchor_block:
-                The trusted block acting as the initial chain root.
+            anchor_state: The state corresponding to the anchor block.
+            anchor_block: A trusted block (e.g. genesis or checkpoint).
+            validator_id: Index of the validator running this store.
 
         Returns:
             A new Store instance, ready to accept blocks and attestations.
@@ -186,7 +197,7 @@ class Store(Container):
         # Compute the SSZ root of the given state.
         #
         # This is the canonical hash that should appear in the block's state root.
-        computed_state_root = hash_tree_root(state)
+        computed_state_root = hash_tree_root(anchor_state)
 
         # Check that the block actually points to this state.
         #
@@ -209,17 +220,22 @@ class Store(Container):
         # Build an initial checkpoint using the anchor block.
         #
         # Both the root and the slot come directly from the anchor.
-        anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
+        # Initialize checkpoints from the anchor state
+        #
+        # We explicitly set the root to the anchor block root.
+        # The anchor state internally might have zero-hash checkpoints (if genesis),
+        # but the Store must treat the anchor block as the justified/finalized point.
 
         return cls(
             time=Uint64(anchor_slot * INTERVALS_PER_SLOT),
-            config=state.config,
+            config=anchor_state.config,
             head=anchor_root,
             safe_target=anchor_root,
-            latest_justified=anchor_checkpoint,
-            latest_finalized=anchor_checkpoint,
-            blocks={anchor_root: copy.copy(anchor_block)},
-            states={anchor_root: copy.copy(state)},
+            latest_justified=anchor_state.latest_justified.model_copy(update={"root": anchor_root}),
+            latest_finalized=anchor_state.latest_finalized.model_copy(update={"root": anchor_root}),
+            blocks={anchor_root: anchor_block},
+            states={anchor_root: anchor_state},
+            validator_id=validator_id,
         )
 
     def validate_attestation(self, attestation: Attestation) -> None:
@@ -270,18 +286,21 @@ class Store(Container):
         self,
         signed_attestation: SignedAttestation,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
+        is_aggregator: bool = False,
     ) -> "Store":
         """
         Process a signed attestation received via gossip network.
 
         This method:
         1. Verifies the XMSS signature
-        2. Stores the signature in the gossip signature map
+        2. If current node is aggregator, stores the signature in the gossip
+           signature map if it belongs to the current validator's subnet
         3. Processes the attestation data via on_attestation
 
         Args:
             signed_attestation: The signed attestation from gossip.
             scheme: XMSS signature scheme for verification.
+            is_aggregator: True if current validator holds aggregator role.
 
         Returns:
             New Store with attestation processed and signature stored.
@@ -313,16 +332,27 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
-        # Store signature for later lookup during block building
-        new_gossip_sigs = dict(self.gossip_signatures)
-        sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
-        new_gossip_sigs[sig_key] = signature
+        # Store signature for later aggregation if applicable.
+        #
+        new_commitee_sigs = dict(self.gossip_signatures)
+        if is_aggregator:
+            assert self.validator_id is not None, "Current validator ID must be set for aggregation"
+            current_validator_subnet = compute_subnet_id(
+                self.validator_id, ATTESTATION_COMMITTEE_COUNT
+            )
+            attester_subnet = compute_subnet_id(validator_id, ATTESTATION_COMMITTEE_COUNT)
+            if current_validator_subnet != attester_subnet:
+                # Not part of our committee; ignore for committee aggregation.
+                pass
+            else:
+                sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
+                new_commitee_sigs[sig_key] = signature
 
         # Process the attestation data
         store = self.on_attestation(attestation=attestation, is_from_block=False)
 
-        # Return store with updated signature map
-        return store.model_copy(update={"gossip_signatures": new_gossip_sigs})
+        # Return store with updated signature maps
+        return store.model_copy(update={"gossip_signatures": new_commitee_sigs})
 
     def on_attestation(
         self,
@@ -454,9 +484,90 @@ class Store(Container):
             }
         )
 
+    def on_gossip_aggregated_attestation(
+        self, signed_attestation: SignedAggregatedAttestation
+    ) -> "Store":
+        """
+        Process a signed aggregated attestation received via aggregation topic
+
+        This method:
+        1. Verifies the aggregated attestation
+        2. Stores the aggregation in aggregation_payloads map
+
+        Args:
+            signed_attestation: The signed aggregated attestation from committee aggregation.
+
+        Returns:
+            New Store with aggregation processed and stored.
+
+        Raises:
+            ValueError: If validator not found in state.
+            AssertionError: If signature verification fails.
+        """
+        data = signed_attestation.data
+        proof = signed_attestation.proof
+
+        # Get validator IDs who participated in this aggregation
+        validator_ids = proof.participants.to_validator_indices()
+
+        # Retrieve the relevant state to look up public keys for verification.
+        key_state = self.states.get(data.target.root)
+        assert key_state is not None, (
+            f"No state available to verify committee aggregation for target "
+            f"{data.target.root.hex()}"
+        )
+
+        # Ensure all participants exist in the active set
+        validators = key_state.validators
+        for validator_id in validator_ids:
+            assert validator_id < ValidatorIndex(len(validators)), (
+                f"Validator {validator_id} not found in state {data.target.root.hex()}"
+            )
+
+        # Prepare public keys for verification
+        public_keys = [validators[vid].get_pubkey() for vid in validator_ids]
+
+        # Verify the leanVM aggregated proof
+        try:
+            proof.verify(
+                public_keys=public_keys,
+                message=data.data_root_bytes(),
+                epoch=data.slot,
+            )
+        except AggregationError as exc:
+            raise AssertionError(
+                f"Committee aggregation signature verification failed: {exc}"
+            ) from exc
+
+        # Copy the aggregated proof map for updates
+        # Must deep copy the lists to maintain immutability of previous store snapshots
+        new_aggregated_payloads = copy.deepcopy(self.aggregated_payloads)
+        data_root = data.data_root_bytes()
+
+        store = self
+        for vid in validator_ids:
+            # Update Proof Map
+            #
+            # Store the proof so future block builders can reuse this aggregation
+            key = SignatureKey(vid, data_root)
+            new_aggregated_payloads.setdefault(key, []).append(proof)
+
+            # Process the attestation data. Since it's from gossip, is_from_block=False.
+            # Note, we could have already processed individual attestations from this aggregation,
+            # during votes propagation into attestation topic, but it's safe to re-process here as
+            # on_attestation has idempotent behavior.
+            store = store.on_attestation(
+                attestation=Attestation(validator_id=vid, data=data),
+                is_from_block=False,
+            )
+
+        # Return store with updated aggregated payloads
+        return store.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
+
     def on_block(
         self,
         signed_block_with_attestation: SignedBlockWithAttestation,
+        current_validator: ValidatorIndex | None = None,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -492,6 +603,7 @@ class Store(Container):
 
         Args:
             signed_block_with_attestation: Complete signed block with proposer attestation.
+            current_validator: Index of the current validator processing this block.
             scheme: XMSS signature scheme to use for signature verification.
 
         Returns:
@@ -574,8 +686,6 @@ class Store(Container):
                 key = SignatureKey(vid, data_root)
                 new_block_proofs.setdefault(key, []).append(proof)
 
-                # Update Fork Choice
-                #
                 # Register the vote immediately (historical/on-chain)
                 store = store.on_attestation(
                     attestation=Attestation(validator_id=vid, data=att.data),
@@ -598,16 +708,27 @@ class Store(Container):
         # 1. NOT affect this block's fork choice position (processed as "new")
         # 2. Be available for inclusion in future blocks
         # 3. Influence fork choice only after interval 3 (end of slot)
-        #
-        # We also store the proposer's signature for potential future block building.
-        proposer_sig_key = SignatureKey(
-            proposer_attestation.validator_id,
-            proposer_attestation.data.data_root_bytes(),
-        )
+
         new_gossip_sigs = dict(store.gossip_signatures)
-        new_gossip_sigs[proposer_sig_key] = (
-            signed_block_with_attestation.signature.proposer_signature
-        )
+
+        # Store proposer signature for future lookup if it belongs to the same committee
+        # as the current validator (if provided).
+        if current_validator is not None:
+            proposer_validator_id = proposer_attestation.validator_id
+            proposer_subnet_id = compute_subnet_id(
+                proposer_validator_id, ATTESTATION_COMMITTEE_COUNT
+            )
+            current_validator_subnet_id = compute_subnet_id(
+                current_validator, ATTESTATION_COMMITTEE_COUNT
+            )
+            if proposer_subnet_id == current_validator_subnet_id:
+                proposer_sig_key = SignatureKey(
+                    proposer_attestation.validator_id,
+                    proposer_attestation.data.data_root_bytes(),
+                )
+                new_gossip_sigs[proposer_sig_key] = (
+                    signed_block_with_attestation.signature.proposer_signature
+                )
 
         store = store.on_attestation(
             attestation=proposer_attestation,
@@ -760,7 +881,7 @@ class Store(Container):
         - Interval 0: Block proposal
         - Interval 1: Validators cast attestations (enter "new")
         - Interval 2: Safe target update
-        - Interval 3: Attestations accepted (move to "known")
+        - Interval 3: Process accumulated attestations
 
         This staged progression ensures proper timing and prevents premature
         influence on fork choice decisions.
@@ -814,7 +935,51 @@ class Store(Container):
 
         return self.model_copy(update={"safe_target": safe_target})
 
-    def tick_interval(self, has_proposal: bool) -> "Store":
+    def aggregate_committee_signatures(self) -> "Store":
+        """
+        Aggregate committee signatures for attestations in committee_signatures.
+
+        This method aggregates signatures from the gossip_signatures map
+
+        Returns:
+            New Store with updated aggregated_payloads.
+        """
+        new_aggregated_payloads = dict(self.aggregated_payloads)
+
+        attestations = self.latest_new_attestations
+        committee_signatures = self.gossip_signatures
+
+        attestation_list = [
+            Attestation(validator_id=vid, data=data) for vid, data in attestations.items()
+        ]
+
+        head_state = self.states[self.head]
+        # Perform aggregation
+        aggregated_results = head_state.aggregate_gossip_signatures(
+            attestation_list,
+            committee_signatures,
+        )
+
+        # iterate to broadcast aggregated attestations
+        for aggregated_attestation, aggregated_signature in aggregated_results:
+            _ = SignedAggregatedAttestation(
+                data=aggregated_attestation.data,
+                proof=aggregated_signature,
+            )
+            # Note: here we should broadcast the aggregated signature to committee_aggregators topic
+
+        # Compute new aggregated payloads
+        for aggregated_attestation, aggregated_signature in aggregated_results:
+            data_root = aggregated_attestation.data.data_root_bytes()
+            validator_ids = aggregated_signature.participants.to_validator_indices()
+            for vid in validator_ids:
+                sig_key = SignatureKey(vid, data_root)
+                if sig_key not in new_aggregated_payloads:
+                    new_aggregated_payloads[sig_key] = []
+                new_aggregated_payloads[sig_key].append(aggregated_signature)
+        return self.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
+
+    def tick_interval(self, has_proposal: bool, is_aggregator: bool = False) -> "Store":
         """
         Advance store time by one interval and perform interval-specific actions.
 
@@ -833,10 +998,6 @@ class Store(Container):
             - If proposal exists, immediately accept new attestations
             - This ensures validators see the block before attesting
 
-        **Interval 1 (Validator Attesting)**:
-            - Validators create and gossip attestations
-            - No store action (waiting for attestations to arrive)
-
         **Interval 2 (Safe Target Update)**:
             - Compute safe target with 2/3+ majority
             - Provides validators with a stable attestation target
@@ -848,6 +1009,7 @@ class Store(Container):
 
         Args:
             has_proposal: Whether a proposal exists for this interval.
+            is_aggregator: Whether the node is an aggregator.
 
         Returns:
             New Store with advanced time and interval-specific updates applied.
@@ -863,13 +1025,15 @@ class Store(Container):
         elif current_interval == Uint64(2):
             # Mid-slot - update safe target for validators
             store = store.update_safe_target()
+            if is_aggregator:
+                store = store.aggregate_committee_signatures()
         elif current_interval == Uint64(3):
             # End of slot - accept accumulated attestations
             store = store.accept_new_attestations()
 
         return store
 
-    def on_tick(self, time: Uint64, has_proposal: bool) -> "Store":
+    def on_tick(self, time: Uint64, has_proposal: bool, is_aggregator: bool = False) -> "Store":
         """
         Advance forkchoice store time to given timestamp.
 
@@ -880,6 +1044,7 @@ class Store(Container):
         Args:
             time: Target time as Unix timestamp in seconds.
             has_proposal: Whether node has proposal for current slot.
+            is_aggregator: Whether the node is an aggregator.
 
         Returns:
             New Store with time advanced and all interval actions performed.
@@ -894,7 +1059,7 @@ class Store(Container):
             should_signal_proposal = has_proposal and (store.time + Uint64(1)) == tick_interval_time
 
             # Advance by one interval with appropriate signaling
-            store = store.tick_interval(should_signal_proposal)
+            store = store.tick_interval(should_signal_proposal, is_aggregator)
 
         return store
 
@@ -1095,7 +1260,6 @@ class Store(Container):
             parent_root=head_root,
             available_attestations=available_attestations,
             known_block_roots=set(store.blocks.keys()),
-            gossip_signatures=store.gossip_signatures,
             aggregated_payloads=store.aggregated_payloads,
         )
 

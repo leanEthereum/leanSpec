@@ -2,8 +2,9 @@
 
 ## Overview
 
-Validators participate in consensus by proposing blocks and producing attestations. This
-document describes what honest validators do.
+Validators participate in consensus by proposing blocks and producing attestations.
+Optionally validators can opt-in to behave as aggregators in their committee.
+This document describes what honest validators do.
 
 ## Validator Assignment
 
@@ -15,6 +16,32 @@ diversity helps test interoperability.
 
 In production, validator assignment will work differently. The current approach
 is temporary for devnet testing.
+
+## Attestation Committees and Subnets
+
+Attestation committee is a group of validators contributing to the common
+aggregated attestations. Subnets are network channels dedicated to specific committees.
+
+In the devnet-3 design, however, there is one global subnet for signed
+attestations propagation, in addition to publishing into per committee subnets.
+This is due to 3SF-mini consensus design, that requires 2/3+ of all
+attestations to be observed by any validator to compute safe target correctly.
+
+Note that non-aggregating validators do not need to subscribe to committee
+attestation subnets. They only need to subscribe to the global attestation
+subnet.
+
+Every validator is assigned to a single committee. Number of committees is
+defined in config.yaml. Each committee maps to a subnet ID. Validator's
+subnet ID is derived using their validator index modulo number of committees.
+This is to simplify debugging and testing. In the future, validator's subnet ID
+will be assigned randomly per epoch.
+
+## Aggregator assignment
+
+Some validators are self-assigned as aggregators. Aggregators collect and combine
+attestations from other validators in their committee. To become an aggregator,
+a validator sets `is_aggregator` flag to true as ENR record field.
 
 ## Proposing Blocks
 
@@ -52,7 +79,7 @@ receive and validate it.
 
 ## Attesting
 
-Every validator attestations in every slot. Attesting happens in the second interval,
+Every validator attests in every slot. Attesting happens in the second interval,
 after proposals are made.
 
 ### What to Attest For
@@ -78,8 +105,8 @@ compute the head.
 
 ### Broadcasting Attestations
 
-Validators sign their attestations and broadcast them. The network uses a single topic
-for all attestations. No subnets or committees in the current design.
+Validators sign their attestations and broadcast them into the global
+attestation topic and its corresponding subnet topic.
 
 ## Timing
 
@@ -98,11 +125,7 @@ blocks and attestations.
 Attestation aggregation combines multiple attestations into one. This saves bandwidth and
 block space.
 
-Devnet 0 has no aggregation. Each attestation is separate. Future devnets will add
-aggregation.
-
-When aggregation is added, aggregators will collect attestations and combine them.
-Aggregated attestations will be broadcast separately.
+Devnet-3 introduces signatures aggregation. Aggregators will collect attestations and combine them. Aggregated attestations will be broadcast separately.
 
 ## Signature Handling
 
