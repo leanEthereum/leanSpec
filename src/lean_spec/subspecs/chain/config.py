@@ -9,11 +9,11 @@ from lean_spec.types.uint import Uint64
 INTERVALS_PER_SLOT = Uint64(4)
 """Number of intervals per slot for forkchoice processing."""
 
-SECONDS_PER_SLOT: Final = Uint64(4)
-"""The fixed duration of a single slot in seconds."""
+MILLISECONDS_PER_SLOT: Final = Uint64(4000)
+"""The fixed duration of a single slot in milliseconds."""
 
-SECONDS_PER_INTERVAL = SECONDS_PER_SLOT // INTERVALS_PER_SLOT
-"""Seconds per forkchoice processing interval."""
+MILLISECONDS_PER_INTERVAL = MILLISECONDS_PER_SLOT // INTERVALS_PER_SLOT
+"""Milliseconds per forkchoice processing interval."""
 
 JUSTIFICATION_LOOKBACK_SLOTS: Final = Uint64(3)
 """The number of slots to lookback for justification."""

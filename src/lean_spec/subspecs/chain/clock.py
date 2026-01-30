@@ -16,7 +16,7 @@ from typing import Callable
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Uint64
 
-from .config import SECONDS_PER_INTERVAL, SECONDS_PER_SLOT
+from .config import MILLISECONDS_PER_INTERVAL, MILLISECONDS_PER_SLOT
 
 Interval = Uint64
 """Interval count since genesis (matches ``Store.time``)."""
@@ -43,14 +43,18 @@ class SlotClock:
             return Uint64(0)
         return now - self.genesis_time
 
+    def _milliseconds_since_genesis(self) -> Uint64:
+        """Milliseconds elapsed since genesis (0 if before genesis)."""
+        return self._seconds_since_genesis() * Uint64(1000)
+
     def current_slot(self) -> Slot:
         """Get the current slot number (0 if before genesis)."""
-        return Slot(self._seconds_since_genesis() // SECONDS_PER_SLOT)
+        return Slot(self._milliseconds_since_genesis() // MILLISECONDS_PER_SLOT)
 
     def current_interval(self) -> Interval:
         """Get the current interval within the slot (0-3)."""
-        seconds_into_slot = self._seconds_since_genesis() % SECONDS_PER_SLOT
-        return seconds_into_slot // SECONDS_PER_INTERVAL
+        milliseconds_into_slot = self._milliseconds_since_genesis() % MILLISECONDS_PER_SLOT
+        return milliseconds_into_slot // MILLISECONDS_PER_INTERVAL
 
     def total_intervals(self) -> Interval:
         """
@@ -58,7 +62,7 @@ class SlotClock:
 
         This is the value expected by our store time type.
         """
-        return self._seconds_since_genesis() // SECONDS_PER_INTERVAL
+        return self._milliseconds_since_genesis() // MILLISECONDS_PER_INTERVAL
 
     def current_time(self) -> Uint64:
         """Get current wall-clock time as Uint64 (Unix timestamp in seconds)."""
@@ -79,8 +83,10 @@ class SlotClock:
             # Before genesis - return time until genesis.
             return -elapsed
 
-        # Time into current interval.
-        time_into_interval = elapsed % int(SECONDS_PER_INTERVAL)
+        # Convert to milliseconds and find time into current interval.
+        elapsed_ms = int(elapsed * 1000)
+        time_into_interval_ms = elapsed_ms % int(MILLISECONDS_PER_INTERVAL)
 
         # Time until next boundary (may be 0 if exactly at boundary).
-        return float(int(SECONDS_PER_INTERVAL) - time_into_interval)
+        ms_until_next = int(MILLISECONDS_PER_INTERVAL) - time_into_interval_ms
+        return ms_until_next / 1000.0

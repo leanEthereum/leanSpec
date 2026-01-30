@@ -2,7 +2,7 @@
 
 from consensus_testing.keys import XmssKeyManager
 
-from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
+from lean_spec.subspecs.chain.config import MILLISECONDS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
@@ -131,7 +131,8 @@ def test_on_block_processes_multi_validator_aggregations() -> None:
     )
 
     # Advance consumer store time to block's slot before processing
-    block_time = consumer_store.config.genesis_time + block.slot * Uint64(SECONDS_PER_SLOT)
+    slot_duration_seconds = (block.slot * Uint64(MILLISECONDS_PER_SLOT)) // Uint64(1000)
+    block_time = consumer_store.config.genesis_time + slot_duration_seconds
     consumer_store = consumer_store.on_tick(block_time, has_proposal=True)
 
     updated_store = consumer_store.on_block(signed_block)
@@ -231,7 +232,8 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
     )
 
     # Process first block
-    block_time_1 = base_store.config.genesis_time + block_1.slot * Uint64(SECONDS_PER_SLOT)
+    slot_duration_seconds_1 = (block_1.slot * Uint64(MILLISECONDS_PER_SLOT)) // Uint64(1000)
+    block_time_1 = base_store.config.genesis_time + slot_duration_seconds_1
     consumer_store = base_store.on_tick(block_time_1, has_proposal=True)
     store_after_block_1 = consumer_store.on_block(signed_block_1)
 
@@ -297,7 +299,8 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
     )
 
     # Advance time and capture state before processing second block
-    block_time_2 = store_after_block_1.config.genesis_time + block_2.slot * Uint64(SECONDS_PER_SLOT)
+    slot_duration_seconds_2 = (block_2.slot * Uint64(MILLISECONDS_PER_SLOT)) // Uint64(1000)
+    block_time_2 = store_after_block_1.config.genesis_time + slot_duration_seconds_2
     store_before_block_2 = store_after_block_1.on_tick(block_time_2, has_proposal=True)
 
     # Capture the original list lengths for keys that already exist

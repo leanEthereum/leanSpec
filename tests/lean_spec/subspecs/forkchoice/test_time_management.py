@@ -336,18 +336,18 @@ class TestTimeConstants:
         """Test that time constants are consistent with each other."""
         from lean_spec.subspecs.chain.config import (
             INTERVALS_PER_SLOT,
-            SECONDS_PER_INTERVAL,
-            SECONDS_PER_SLOT,
+            MILLISECONDS_PER_INTERVAL,
+            MILLISECONDS_PER_SLOT,
         )
 
-        # SECONDS_PER_SLOT should equal INTERVALS_PER_SLOT * SECONDS_PER_INTERVAL
-        expected_seconds_per_slot = INTERVALS_PER_SLOT * SECONDS_PER_INTERVAL
-        assert SECONDS_PER_SLOT == expected_seconds_per_slot
+        # MILLISECONDS_PER_SLOT should equal INTERVALS_PER_SLOT * MILLISECONDS_PER_INTERVAL
+        expected_milliseconds_per_slot = INTERVALS_PER_SLOT * MILLISECONDS_PER_INTERVAL
+        assert MILLISECONDS_PER_SLOT == expected_milliseconds_per_slot
 
         # All should be positive
         assert INTERVALS_PER_SLOT > Uint64(0)
-        assert SECONDS_PER_INTERVAL > Uint64(0)
-        assert SECONDS_PER_SLOT > Uint64(0)
+        assert MILLISECONDS_PER_INTERVAL > Uint64(0)
+        assert MILLISECONDS_PER_SLOT > Uint64(0)
 
     def test_interval_slot_relationship(self) -> None:
         """Test the relationship between intervals and slots."""

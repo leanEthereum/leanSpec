@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from unittest.mock import patch
 
 from lean_spec.subspecs.chain import ChainService, SlotClock
-from lean_spec.subspecs.chain.config import SECONDS_PER_INTERVAL
+from lean_spec.subspecs.chain.config import MILLISECONDS_PER_INTERVAL
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import ZERO_HASH, Bytes32, Uint64
 
@@ -117,7 +117,7 @@ class TestIntervalTiming:
         Precise boundary alignment is critical for coordinated validator actions.
         """
         genesis = Uint64(1000)
-        interval_secs = float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
         # Halfway into first interval.
         current_time = float(genesis) + interval_secs / 2
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
@@ -149,7 +149,7 @@ class TestIntervalTiming:
         """
         genesis = Uint64(1000)
         # Clock reads exactly at first interval boundary.
-        current_time = float(genesis + SECONDS_PER_INTERVAL)
+        current_time = float(genesis + (MILLISECONDS_PER_INTERVAL // Uint64(1000)))
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
         sync_service = MockSyncService()
         chain_service = ChainService(sync_service=sync_service, clock=clock)  # type: ignore[arg-type]
@@ -167,7 +167,7 @@ class TestIntervalTiming:
         asyncio.run(check_sleep())
 
         # At boundary, next boundary is one full interval away.
-        expected = float(SECONDS_PER_INTERVAL)
+        expected = float(MILLISECONDS_PER_INTERVAL) / 1000.0
         assert captured_duration is not None
         assert abs(captured_duration - expected) < 0.001
 
@@ -212,7 +212,8 @@ class TestStoreTicking:
         """
         genesis = Uint64(1000)
         # Several intervals after genesis.
-        current_time = float(genesis) + 5 * float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
+        current_time = float(genesis) + 5 * interval_secs
         expected_time = Uint64(int(current_time))
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
@@ -243,7 +244,8 @@ class TestStoreTicking:
         Block production requires validator keys, which this service does not handle.
         """
         genesis = Uint64(1000)
-        current_time = float(genesis) + 5 * float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
+        current_time = float(genesis) + 5 * interval_secs
         expected_time = Uint64(int(current_time))
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
@@ -274,7 +276,8 @@ class TestStoreTicking:
         The Store uses immutable updates, so each tick creates a new instance.
         """
         genesis = Uint64(1000)
-        current_time = float(genesis) + 5 * float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
+        current_time = float(genesis) + 5 * interval_secs
         expected_time = Uint64(int(current_time))
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
@@ -311,7 +314,7 @@ class TestMultipleIntervals:
         Each interval triggers a store tick with the current time.
         """
         genesis = Uint64(1000)
-        interval_secs = float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
         # 4 consecutive interval times.
         times = [
             float(genesis) + 1 * interval_secs,
@@ -389,7 +392,8 @@ class TestInitialTick:
         """
         genesis = Uint64(1000)
         # Several intervals after genesis.
-        current_time = float(genesis) + 5 * float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
+        current_time = float(genesis) + 5 * interval_secs
         expected_time = Uint64(int(current_time))
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
@@ -442,7 +446,7 @@ class TestIntervalTracking:
         to prevent duplicate ticks if the service finishes before the next boundary.
         """
         genesis = Uint64(1000)
-        interval_secs = float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
         # Halfway into second interval (stays constant).
         current_time = float(genesis) + interval_secs + interval_secs / 2
         expected_time = Uint64(int(current_time))
@@ -482,7 +486,7 @@ class TestEdgeCases:
         This tests the boundary condition of Unix epoch as genesis.
         """
         genesis = Uint64(0)
-        current_time = 5 * float(SECONDS_PER_INTERVAL)
+        current_time = 5 * (float(MILLISECONDS_PER_INTERVAL) / 1000.0)
         expected_time = Uint64(int(current_time))
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
@@ -508,7 +512,7 @@ class TestEdgeCases:
         Tests that large integer arithmetic works correctly.
         """
         genesis = Uint64(1700000000)  # Nov 2023
-        current_time = float(genesis) + 100 * float(SECONDS_PER_INTERVAL) + 0.5
+        current_time = float(genesis) + 100 * (float(MILLISECONDS_PER_INTERVAL) / 1000.0) + 0.5
         expected_time = Uint64(int(current_time))
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
@@ -534,7 +538,8 @@ class TestEdgeCases:
         The running flag is checked after each sleep to enable graceful shutdown.
         """
         genesis = Uint64(1000)
-        current_time = float(genesis) + 5 * float(SECONDS_PER_INTERVAL)
+        interval_secs = float(MILLISECONDS_PER_INTERVAL) / 1000.0
+        current_time = float(genesis) + 5 * interval_secs
         expected_time = Uint64(int(current_time))
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)

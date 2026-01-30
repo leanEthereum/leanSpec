@@ -6,8 +6,8 @@ The Store tracks all information required for the LMD GHOST forkchoice algorithm
 
 __all__ = [
     "Store",
-    "SECONDS_PER_SLOT",
-    "SECONDS_PER_INTERVAL",
+    "MILLISECONDS_PER_SLOT",
+    "MILLISECONDS_PER_INTERVAL",
     "INTERVALS_PER_SLOT",
 ]
 
@@ -18,8 +18,8 @@ from lean_spec.subspecs.chain.config import (
     ATTESTATION_COMMITTEE_COUNT,
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
-    SECONDS_PER_INTERVAL,
-    SECONDS_PER_SLOT,
+    MILLISECONDS_PER_INTERVAL,
+    MILLISECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -1050,7 +1050,8 @@ class Store(Container):
             New Store with time advanced and all interval actions performed.
         """
         # Calculate target time in intervals
-        tick_interval_time = (time - self.config.genesis_time) // SECONDS_PER_INTERVAL
+        time_delta_ms = (time - self.config.genesis_time) * Uint64(1000)
+        tick_interval_time = time_delta_ms // MILLISECONDS_PER_INTERVAL
 
         # Tick forward one interval at a time
         store = self
@@ -1085,7 +1086,8 @@ class Store(Container):
             Tuple of (new Store with updated time, head root for building).
         """
         # Calculate time corresponding to this slot
-        slot_time = self.config.genesis_time + slot * SECONDS_PER_SLOT
+        slot_duration_seconds = (slot * MILLISECONDS_PER_SLOT) // Uint64(1000)
+        slot_time = self.config.genesis_time + slot_duration_seconds
 
         # Advance time to current slot (ticking intervals)
         store = self.on_tick(slot_time, True)
