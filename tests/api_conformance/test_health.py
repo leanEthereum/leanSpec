@@ -25,4 +25,4 @@ def test_health_response_structure(server_url: str) -> None:
     assert data["status"] == "healthy"
 
     assert "service" in data
-    assert data["service"] == "lean-spec-api"
+    assert data["service"] == "lean-rpc-api"

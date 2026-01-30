@@ -35,7 +35,7 @@ def _no_store() -> Store | None:
 
 async def _handle_health(_request: web.Request) -> web.Response:
     """Handle health check endpoint."""
-    return web.json_response({"status": "healthy", "service": "lean-spec-api"})
+    return web.json_response({"status": "healthy", "service": "lean-rpc-api"})
 
 
 async def _handle_metrics(_request: web.Request) -> web.Response:
@@ -189,6 +189,6 @@ class ApiServer:
         return web.json_response(
             {
                 "slot": justified.slot,
-                "root": justified.root.hex(),
+                "root": "0x" + justified.root.hex(),
             }
         )
