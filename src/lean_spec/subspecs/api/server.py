@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 
 
 async def _handle_health(_request: web.Request) -> web.Response:
-    """Handle health check endpoint."""
+    """
+    Handle health check endpoint.
+
+    Response format:
+    - status: The status of the API server. Always return "healthy" when the API endpoint is served.
+    - service: The API service name. Fixed to "lean-rpc-api".
+    """
     return web.json_response({"status": "healthy", "service": "lean-rpc-api"})
 
 
