@@ -35,6 +35,7 @@ Issues = "https://github.com/leanEthereum/lean-spec/issues"
 
 [project.scripts]
 fill = "framework.cli.fill:fill"
+apitest = "framework.cli.apitest:apitest"
 
 [tool.setuptools.packages.find]
 where = ["src"]
