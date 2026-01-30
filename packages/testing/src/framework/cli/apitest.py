@@ -27,7 +27,7 @@ def apitest(
 
     SERVER_URL is the base URL of the API server (e.g., http://localhost:5052).
 
-    For testing the local leanSpec implementation, use `uv run pytest tests/api_conformance`
+    For testing the local leanSpec implementation, use `uv run pytest tests/api`
     which automatically starts a local server.
 
     Examples:
@@ -57,7 +57,7 @@ def apitest(
         str(config_path),
         f"--rootdir={project_root}",
         f"--server-url={server_url}",
-        "tests/api_conformance",
+        "tests/api",
     ]
 
     args.extend(pytest_args)

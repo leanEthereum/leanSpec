@@ -1,7 +1,7 @@
 """Tests for the API server implementation details.
 
 API contract tests (status codes, content types, response structure) are in
-tests/api_conformance/ and run automatically with `uv run pytest`.
+tests/api/ and also run automatically with `uv run pytest`.
 
 These tests cover leanSpec-specific implementation details:
 - Configuration behavior
