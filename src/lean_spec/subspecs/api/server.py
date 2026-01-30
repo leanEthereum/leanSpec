@@ -28,11 +28,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _no_store() -> Store | None:
-    """Default store getter that returns None."""
-    return None
-
-
 async def _handle_health(_request: web.Request) -> web.Response:
     """Handle health check endpoint."""
     return web.json_response({"status": "healthy", "service": "lean-rpc-api"})
@@ -76,7 +71,7 @@ class ApiServer:
     config: ApiServerConfig
     """Server configuration."""
 
-    store_getter: Callable[[], Store | None] = _no_store
+    store_getter: Callable[[], Store | None] | None = None
     """Callable that returns the current Store instance."""
 
     _runner: web.AppRunner | None = field(default=None, init=False)
@@ -88,7 +83,7 @@ class ApiServer:
     @property
     def store(self) -> Store | None:
         """Get the current Store instance."""
-        return self.store_getter()
+        return self.store_getter() if self.store_getter else None
 
     async def start(self) -> None:
         """Start the API server in the background."""
