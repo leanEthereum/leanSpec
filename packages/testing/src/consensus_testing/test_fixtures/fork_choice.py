@@ -234,7 +234,8 @@ class ForkChoiceTest(BaseConsensusFixture):
                 if isinstance(step, TickStep):
                     # Time advancement may trigger slot boundaries.
                     # At slot boundaries, pending attestations may become active.
-                    store = store.on_tick(Uint64(step.time), has_proposal=False)
+                    # Always act as aggregator to ensure gossip signatures are aggregated
+                    store = store.on_tick(Uint64(step.time), has_proposal=False, is_aggregator=True)
 
                 elif isinstance(step, BlockStep):
                     # Build a complete signed block from the lightweight spec.
@@ -260,10 +261,11 @@ class ForkChoiceTest(BaseConsensusFixture):
                     # Advance time to the block's slot.
                     # Store rejects blocks from the future.
                     # This tick includes a block (has proposal).
+                    # Always act as aggregator to ensure gossip signatures are aggregated
                     slot_ms = block.slot * Uint64(MILLISECONDS_PER_SLOT)
                     slot_duration_seconds = slot_ms // Uint64(1000)
                     block_time = store.config.genesis_time + slot_duration_seconds
-                    store = store.on_tick(block_time, has_proposal=True)
+                    store = store.on_tick(block_time, has_proposal=True, is_aggregator=True)
 
                     # Process the block through Store.
                     # This validates, applies state transition, and updates head.
