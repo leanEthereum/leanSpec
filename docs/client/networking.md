@@ -69,7 +69,6 @@ Snappy-compressed message, which type is identified by the topic:
 | Topic Name | Message Type | Encoding |
 |------------------------------------------------------------|-----------------------------|--------------|
 | /leanconsensus/devnet3/blocks/ssz_snappy | SignedBlockWithAttestation | SSZ + Snappy |
-| /leanconsensus/devnet3/attestations/ssz_snappy | SignedAttestation | SSZ + Snappy |
 | /leanconsensus/devnet3/attestation\_{subnet_id}/ssz_snappy | SignedAttestation | SSZ + Snappy |
 | /leanconsensus/devnet3/aggregation/ssz_snappy | SignedAggregatedAttestation | SSZ + Snappy |
 
@@ -82,11 +81,9 @@ Three main message types exist:
   quickly.
 
 - _Attestations_, defined by the `SignedAttestation` type, come from all
-  validators. They propagate on the global attestation topic. Additionally,
-  each committee has its own attestation topic. Validators publish to their
-  committee's attestation topic and global attestation topic. Non-aggregating
-  validators subscribe only to the global attestation topic, while aggregators
-  subscribe to both the global and their committee's attestation topic.
+  validators. Each committee has its own attestation topic. Validators publish to
+  their committee's attestation subnet. All validators must subscribe to their
+  assigned committee's attestation subnet to receive attestations.
 
 - _Committee aggregations_, defined by the `SignedAggregatedAttestation` type,
   created by committee aggregators. These combine attestations from committee

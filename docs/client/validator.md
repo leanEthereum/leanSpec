@@ -22,14 +22,9 @@ is temporary for devnet testing.
 Attestation committee is a group of validators contributing to the common
 aggregated attestations. Subnets are network channels dedicated to specific committees.
 
-In the devnet-3 design, however, there is one global subnet for signed
-attestations propagation, in addition to publishing into per committee subnets.
-This is due to 3SF-mini consensus design, that requires 2/3+ of all
-attestations to be observed by any validator to compute safe target correctly.
-
-Note that non-aggregating validators do not need to subscribe to committee
-attestation subnets. They only need to subscribe to the global attestation
-subnet.
+In the devnet-3 design, attestations propagate on per-committee subnets only.
+Validators must subscribe to their assigned committee's attestation subnet to
+see attestations.
 
 Every validator is assigned to a single committee. Number of committees is
 defined in config.yaml. Each committee maps to a subnet ID. Validator's
@@ -105,8 +100,7 @@ compute the head.
 
 ### Broadcasting Attestations
 
-Validators sign their attestations and broadcast them into the global
-attestation topic and its corresponding subnet topic.
+Validators sign their attestations and broadcast them into their corresponding subnet topic.
 
 ## Timing
 
