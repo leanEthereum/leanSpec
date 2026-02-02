@@ -1,13 +1,8 @@
 """
-API server for checkpoint sync, node status, and metrics endpoints.
+API server implementation using aiohttp.
 
-Provides HTTP endpoints for:
-- /lean/v0/states/finalized - Serve finalized checkpoint state as SSZ
-- /lean/v0/checkpoints/justified - Return latest justified checkpoint information
-- /lean/v0/health - Health check endpoint
-- /metrics - Prometheus metrics endpoint
-
-This matches the checkpoint sync API implemented in zeam.
+Provides the HTTP server that serves routes defined in routes.py.
+See endpoints/ for endpoint specifications and handlers.
 """
 
 from __future__ import annotations
@@ -20,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
-from lean_spec.subspecs.metrics import generate_metrics
+from .routes import ROUTES
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.forkchoice import Store
@@ -28,29 +23,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _handle_health(_request: web.Request) -> web.Response:
-    """
-    Handle health check endpoint.
-
-    Response format:
-    - status: The status of the API server. Always return "healthy" when the API endpoint is served.
-    - service: The API service name. Fixed to "lean-rpc-api".
-    """
-    return web.json_response({"status": "healthy", "service": "lean-rpc-api"})
+_routes = [web.get(path, handler) for path, handler in ROUTES.items()]
+"""aiohttp route definitions generated from ROUTES."""
 
 
-async def _handle_metrics(_request: web.Request) -> web.Response:
-    """Handle Prometheus metrics endpoint."""
-    return web.Response(
-        body=generate_metrics(),
-        content_type="text/plain; version=0.0.4",
-        charset="utf-8",
-    )
+# =============================================================================
+# IMPLEMENTATION-SPECIFIC
+# =============================================================================
+# The following classes are implementation details.
+# Other implementations may structure their code differently.
 
 
 @dataclass(frozen=True, slots=True)
 class ApiServerConfig:
-    """Configuration for the API server."""
+    """
+    Configuration for the API server.
+
+    Implementation-specific. Other implementations may use different
+    configuration patterns (env vars, config files, CLI args, etc.).
+    """
 
     host: str = "0.0.0.0"
     """Host address to bind to."""
@@ -65,13 +56,14 @@ class ApiServerConfig:
 @dataclass(slots=True)
 class ApiServer:
     """
-    HTTP API server for checkpoint sync and node status.
+    HTTP API server using aiohttp.
 
-    Provides endpoints for:
-    - Checkpoint sync: Download finalized state for fast sync
-    - Health checks: Verify node is running
+    Implementation-specific. This class handles:
+    - Server lifecycle (start, stop, run)
+    - Route registration
+    - Store access via callable getter
 
-    Uses aiohttp to handle HTTP protocol details efficiently.
+    Other implementations may use different frameworks or patterns.
     """
 
     config: ApiServerConfig
@@ -81,10 +73,10 @@ class ApiServer:
     """Callable that returns the current Store instance."""
 
     _runner: web.AppRunner | None = field(default=None, init=False)
-    """The aiohttp application runner."""
+    """aiohttp application runner."""
 
     _site: web.TCPSite | None = field(default=None, init=False)
-    """The TCP site for the server."""
+    """TCP site for the server."""
 
     @property
     def store(self) -> Store | None:
@@ -98,14 +90,12 @@ class ApiServer:
             return
 
         app = web.Application()
-        app.add_routes(
-            [
-                web.get("/lean/v0/health", _handle_health),
-                web.get("/metrics", _handle_metrics),
-                web.get("/lean/v0/states/finalized", self._handle_finalized_state),
-                web.get("/lean/v0/checkpoints/justified", self._handle_justified_checkpoint),
-            ]
-        )
+
+        # Store the store_getter in app for handlers that need store access
+        app["store_getter"] = self.store_getter
+
+        # Add all routes
+        app.add_routes(_routes)
 
         self._runner = web.AppRunner(app)
         await self._runner.setup()
@@ -119,11 +109,10 @@ class ApiServer:
         """
         Run the API server until shutdown.
 
-        This method blocks until stop() is called.
+        Blocks until stop() is called.
         """
         await self.start()
 
-        # Keep running until stopped
         while self._runner is not None:
             await asyncio.sleep(1)
 
@@ -139,57 +128,3 @@ class ApiServer:
             self._runner = None
             self._site = None
             logger.info("API server stopped")
-
-    async def _handle_finalized_state(self, _request: web.Request) -> web.Response:
-        """
-        Handle finalized checkpoint state endpoint.
-
-        Serves the finalized state as SSZ binary at /lean/v0/states/finalized.
-        This endpoint is used for checkpoint sync - clients can download
-        the finalized state to bootstrap quickly instead of syncing from genesis.
-        """
-        store = self.store
-        if store is None:
-            raise web.HTTPServiceUnavailable(reason="Store not initialized")
-
-        finalized = store.latest_finalized
-
-        if finalized.root not in store.states:
-            raise web.HTTPNotFound(reason="Finalized state not available")
-
-        state = store.states[finalized.root]
-
-        # Run CPU-intensive SSZ encoding in a separate thread
-        try:
-            ssz_bytes = await asyncio.to_thread(state.encode_bytes)
-        except Exception as e:
-            logger.error(f"Failed to encode state: {e}")
-            raise web.HTTPInternalServerError(reason="Encoding failed") from e
-
-        return web.Response(body=ssz_bytes, content_type="application/octet-stream")
-
-    async def _handle_justified_checkpoint(self, _request: web.Request) -> web.Response:
-        """
-        Handle latest justified checkpoint endpoint.
-
-        Returns checkpoint info as JSON at /lean/v0/checkpoints/justified.
-        Useful for monitoring consensus progress and fork choice state.
-
-        Response format:
-        {
-            "slot": <slot_number>,
-            "root": "<hex_root_hash>"
-        }
-        """
-        store = self.store
-        if store is None:
-            raise web.HTTPServiceUnavailable(reason="Store not initialized")
-
-        justified = store.latest_justified
-
-        return web.json_response(
-            {
-                "slot": justified.slot,
-                "root": "0x" + justified.root.hex(),
-            }
-        )
