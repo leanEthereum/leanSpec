@@ -382,12 +382,12 @@ class TestInitFromCheckpoint:
 
             with (
                 patch(
-                    "lean_spec.subspecs.api.client.fetch_finalized_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                     new_callable=AsyncMock,
                     return_value=checkpoint_state,
                 ),
                 patch(
-                    "lean_spec.subspecs.api.client.verify_checkpoint_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
                     new_callable=AsyncMock,
                     return_value=True,
                 ),
@@ -424,12 +424,12 @@ class TestInitFromCheckpoint:
 
             with (
                 patch(
-                    "lean_spec.subspecs.api.client.fetch_finalized_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                     new_callable=AsyncMock,
                     return_value=checkpoint_state,
                 ),
                 patch(
-                    "lean_spec.subspecs.api.client.verify_checkpoint_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
                     new_callable=AsyncMock,
                     return_value=False,  # Verification fails
                 ),
@@ -451,8 +451,8 @@ class TestInitFromCheckpoint:
 
         async def run_test() -> None:
             from lean_spec.__main__ import _init_from_checkpoint
-            from lean_spec.subspecs.api.client import CheckpointSyncError
             from lean_spec.subspecs.genesis import GenesisConfig
+            from lean_spec.subspecs.sync.checkpoint_sync import CheckpointSyncError
 
             # Arrange
             local_genesis = GenesisConfig.model_validate(
@@ -465,7 +465,7 @@ class TestInitFromCheckpoint:
             mock_event_source = AsyncMock()
 
             with patch(
-                "lean_spec.subspecs.api.client.fetch_finalized_state",
+                "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                 new_callable=AsyncMock,
                 side_effect=CheckpointSyncError("Network error: connection refused"),
             ):
@@ -506,12 +506,12 @@ class TestInitFromCheckpoint:
 
             with (
                 patch(
-                    "lean_spec.subspecs.api.client.fetch_finalized_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                     new_callable=AsyncMock,
                     return_value=checkpoint_state,
                 ),
                 patch(
-                    "lean_spec.subspecs.api.client.verify_checkpoint_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
                     new_callable=AsyncMock,
                     return_value=True,
                 ),
@@ -537,8 +537,8 @@ class TestInitFromCheckpoint:
 
         async def run_test() -> None:
             from lean_spec.__main__ import _init_from_checkpoint
-            from lean_spec.subspecs.api.client import CheckpointSyncError
             from lean_spec.subspecs.genesis import GenesisConfig
+            from lean_spec.subspecs.sync.checkpoint_sync import CheckpointSyncError
 
             # Arrange
             local_genesis = GenesisConfig.model_validate(
@@ -551,7 +551,7 @@ class TestInitFromCheckpoint:
             mock_event_source = AsyncMock()
 
             with patch(
-                "lean_spec.subspecs.api.client.fetch_finalized_state",
+                "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                 new_callable=AsyncMock,
                 side_effect=CheckpointSyncError("HTTP error 404: Not Found"),
             ):
