@@ -6,8 +6,9 @@ import asyncio
 from dataclasses import dataclass, field
 from unittest.mock import patch
 
-from lean_spec.subspecs.chain import ChainService, SlotClock
+from lean_spec.subspecs.chain import SlotClock
 from lean_spec.subspecs.chain.config import SECONDS_PER_INTERVAL
+from lean_spec.subspecs.chain.service import ChainService
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import ZERO_HASH, Bytes32, Uint64
 

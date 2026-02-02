@@ -19,8 +19,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
-from lean_spec.subspecs.chain import ChainService, SlotClock
+from lean_spec.subspecs.chain import SlotClock
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
+from lean_spec.subspecs.chain.service import ChainService
 from lean_spec.subspecs.containers import Block, BlockBody, State
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot

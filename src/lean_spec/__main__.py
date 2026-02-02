@@ -231,7 +231,7 @@ async def _init_from_checkpoint(
     Returns:
         A fully initialized Node if successful, None if checkpoint sync failed.
     """
-    from lean_spec.subspecs.api.client import (
+    from lean_spec.subspecs.sync.checkpoint_sync import (
         CheckpointSyncError,
         fetch_finalized_state,
         verify_checkpoint_state,

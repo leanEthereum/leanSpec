@@ -23,10 +23,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
-from lean_spec.subspecs.containers import Slot
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-
 if TYPE_CHECKING:
     from lean_spec.subspecs.containers import State
 
@@ -129,6 +125,11 @@ async def verify_checkpoint_state(state: "State") -> bool:
     Returns:
         True if valid, False otherwise.
     """
+    # Lazy imports to avoid circular dependency with containers
+    from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
+    from lean_spec.subspecs.containers import Slot
+    from lean_spec.subspecs.ssz.hash import hash_tree_root
+
     try:
         # Sanity check: slot must be non-negative.
         if state.slot < Slot(0):
