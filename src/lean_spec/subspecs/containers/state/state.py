@@ -863,39 +863,6 @@ class State(Container):
 
         return results
 
-    def compute_aggregated_signatures(
-        self,
-        attestations: list[Attestation],
-        gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
-        aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
-    ) -> tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]:
-        """
-        Backwards-compatible wrapper for signature aggregation.
-
-        Older code/tests expect a single method that returns two parallel lists:
-        (aggregated_attestations, aggregated_proofs).
-
-        The current implementation separates:
-        - `aggregate_gossip_signatures` (fresh per-validator signatures collected via gossip)
-        - `select_aggregated_proofs` (reusing previously-seen aggregated proofs from blocks)
-        """
-        results = self.aggregate_gossip_signatures(
-            attestations, gossip_signatures=gossip_signatures
-        )
-        if aggregated_payloads:
-            # Note: This may add additional proofs for the same attestation data.
-            # Callers that rely on strict minimality should use the split APIs.
-            fallback_atts, fallback_proofs = self.select_aggregated_proofs(
-                attestations, aggregated_payloads=aggregated_payloads
-            )
-            results.extend(zip(fallback_atts, fallback_proofs, strict=True))
-
-        if not results:
-            return [], []
-
-        atts, proofs = zip(*results, strict=True)
-        return list(atts), list(proofs)
-
     def select_aggregated_proofs(
         self,
         attestations: list[Attestation],
