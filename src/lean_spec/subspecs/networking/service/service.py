@@ -196,17 +196,18 @@ class NetworkService:
         await self.event_source.publish(str(topic), compressed)
         logger.debug("Published block at slot %s", block.message.block.slot)
 
-    async def publish_attestation(self, attestation: SignedAttestation) -> None:
+    async def publish_attestation(self, attestation: SignedAttestation, subnet_id: int) -> None:
         """
-        Publish an attestation to the gossip network.
+        Publish an attestation to the attestation subnet gossip topic.
 
         Encodes the attestation as SSZ, compresses with Snappy, and broadcasts
-        to all connected peers on the attestation topic.
+        to all connected peers on the attestation subnet topic.
 
         Args:
             attestation: Signed attestation to publish.
+            subnet_id: Subnet ID to publish to.
         """
-        topic = GossipTopic.attestation(self.fork_digest)
+        topic = GossipTopic.attestation_subnet(self.fork_digest, subnet_id)
         ssz_bytes = attestation.encode_bytes()
         compressed = frame_compress(ssz_bytes)
 

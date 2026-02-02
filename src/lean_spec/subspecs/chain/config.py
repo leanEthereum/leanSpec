@@ -6,7 +6,7 @@ from lean_spec.types.uint import Uint64
 
 # --- Time Parameters ---
 
-INTERVALS_PER_SLOT = Uint64(4)
+INTERVALS_PER_SLOT = Uint64(5)
 """Number of intervals per slot for forkchoice processing."""
 
 MILLISECONDS_PER_SLOT: Final = Uint64(4000)

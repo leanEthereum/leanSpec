@@ -213,8 +213,8 @@ class TestTopicFormatting:
         block_topic = GossipTopic.block("0xabcd1234")
         assert block_topic.kind == TopicKind.BLOCK
 
-        attestation_topic = GossipTopic.attestation("0xabcd1234")
-        assert attestation_topic.kind == TopicKind.ATTESTATION
+        attestation_subnet_topic = GossipTopic.attestation_subnet("0xabcd1234", 0)
+        assert attestation_subnet_topic.kind == TopicKind.ATTESTATION_SUBNET
 
     def test_format_topic_string(self) -> None:
         """Test topic string formatting."""
@@ -243,7 +243,7 @@ class TestTopicFormatting:
     def test_topic_kind_enum(self) -> None:
         """Test TopicKind enum."""
         assert TopicKind.BLOCK.value == "block"
-        assert TopicKind.ATTESTATION.value == "attestation"
+        assert TopicKind.ATTESTATION_SUBNET.value == "attestation"
         assert str(TopicKind.BLOCK) == "block"
 
 

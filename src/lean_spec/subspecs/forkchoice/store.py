@@ -986,23 +986,32 @@ class Store(Container):
         Different actions are performed based on interval within slot:
         - Interval 0: Process attestations if proposal exists
         - Interval 1: Validator attesting period (no action)
-        - Interval 2: Update safe target
-        - Interval 3: Process accumulated attestations
+        - Interval 2: Aggregators create proofs & broadcast
+        - Interval 3: Update safe target (fast confirm)
+        - Interval 4: Process accumulated attestations
 
-        The Four-Interval System
+        The Five-Interval System
         -------------------------
-        Each slot is divided into 4 intervals:
+        Each slot is divided into 5 intervals:
 
         **Interval 0 (Block Proposal)**:
             - Block proposer publishes their block
             - If proposal exists, immediately accept new attestations
             - This ensures validators see the block before attesting
 
-        **Interval 2 (Safe Target Update)**:
-            - Compute safe target with 2/3+ majority
-            - Provides validators with a stable attestation target
+        **Interval 1 (Vote Propagation)**:
+            - Validators vote & propagate to their attestation subnet topics
+            - No store action required
 
-        **Interval 3 (Attestation Acceptance)**:
+        **Interval 2 (Aggregation)**:
+            - Aggregators collect votes and create aggregated proofs
+            - Broadcast proofs to the aggregation topic
+
+        **Interval 3 (Safe Target Update)**:
+            - Validators use received proofs to update safe target
+            - Provides validators with a stable attestation target (fast confirm)
+
+        **Interval 4 (Attestation Acceptance)**:
             - Accept accumulated attestations (new → known)
             - Update head based on new attestation weights
             - Prepare for next slot
@@ -1023,11 +1032,13 @@ class Store(Container):
             if has_proposal:
                 store = store.accept_new_attestations()
         elif current_interval == Uint64(2):
-            # Mid-slot - update safe target for validators
-            store = store.update_safe_target()
+            # Aggregation interval - aggregators create proofs
             if is_aggregator:
                 store = store.aggregate_committee_signatures()
         elif current_interval == Uint64(3):
+            # Fast confirm - update safe target based on received proofs
+            store = store.update_safe_target()
+        elif current_interval == Uint64(4):
             # End of slot - accept accumulated attestations
             store = store.accept_new_attestations()
 

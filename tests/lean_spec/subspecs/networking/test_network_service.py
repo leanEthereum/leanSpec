@@ -164,8 +164,8 @@ def block_topic() -> GossipTopic:
 
 @pytest.fixture
 def attestation_topic() -> GossipTopic:
-    """Provide an attestation gossip topic for tests."""
-    return GossipTopic(kind=TopicKind.ATTESTATION, fork_digest="0x12345678")
+    """Provide an attestation subnet gossip topic for tests."""
+    return GossipTopic(kind=TopicKind.ATTESTATION_SUBNET, fork_digest="0x12345678")
 
 
 class TestBlockRoutingToForkchoice:

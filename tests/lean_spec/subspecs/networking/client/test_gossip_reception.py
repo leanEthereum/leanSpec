@@ -102,9 +102,9 @@ def make_block_topic(fork_digest: str = "0x00000000") -> str:
     return f"/{TOPIC_PREFIX}/{fork_digest}/block/{ENCODING_POSTFIX}"
 
 
-def make_attestation_topic(fork_digest: str = "0x00000000") -> str:
-    """Create a valid attestation topic string."""
-    return f"/{TOPIC_PREFIX}/{fork_digest}/attestation/{ENCODING_POSTFIX}"
+def make_attestation_topic(fork_digest: str = "0x00000000", subnet_id: int = 0) -> str:
+    """Create a valid attestation subnet topic string."""
+    return f"/{TOPIC_PREFIX}/{fork_digest}/attestation_{subnet_id}/{ENCODING_POSTFIX}"
 
 
 def make_test_signed_block() -> SignedBlockWithAttestation:
@@ -186,15 +186,15 @@ class TestGossipHandlerGetTopic:
         assert topic.kind == TopicKind.BLOCK
         assert topic.fork_digest == "0x12345678"
 
-    def test_valid_attestation_topic(self) -> None:
-        """Parses valid attestation topic string."""
+    def test_valid_attestation_subnet_topic(self) -> None:
+        """Parses valid attestation subnet topic string."""
         handler = GossipHandler(fork_digest="0x00000000")
-        topic_str = "/leanconsensus/0x00000000/attestation/ssz_snappy"
+        topic_str = "/leanconsensus/0x00000000/attestation_0/ssz_snappy"
 
         topic = handler.get_topic(topic_str)
 
         assert isinstance(topic, GossipTopic)
-        assert topic.kind == TopicKind.ATTESTATION
+        assert topic.kind == TopicKind.ATTESTATION_SUBNET
         assert topic.fork_digest == "0x00000000"
 
     def test_invalid_topic_format_missing_parts(self) -> None:
@@ -560,7 +560,7 @@ class TestGossipReceptionIntegration:
         decoded, original_bytes, topic_kind = asyncio.run(run())
 
         # Step 4: Verify result
-        assert topic_kind == TopicKind.ATTESTATION
+        assert topic_kind == TopicKind.ATTESTATION_SUBNET
         assert isinstance(decoded, SignedAttestation)
         assert decoded.encode_bytes() == original_bytes
 

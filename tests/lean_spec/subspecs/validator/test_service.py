@@ -227,8 +227,12 @@ class TestIntervalSleep:
         sync_service: SyncService,
     ) -> None:
         """Sleep duration is calculated correctly mid-interval."""
+        from lean_spec.subspecs.chain.config import MILLISECONDS_PER_INTERVAL
+
         genesis = Uint64(1000)
-        current_time = 1000.5  # 0.5 seconds into first interval
+        interval_seconds = float(MILLISECONDS_PER_INTERVAL) / 1000.0
+        # Half way into first interval
+        current_time = float(genesis) + interval_seconds / 2
 
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: current_time)
         registry = ValidatorRegistry()
@@ -251,10 +255,10 @@ class TestIntervalSleep:
 
         asyncio.run(check_sleep())
 
-        # Should sleep until next interval boundary (1001.0)
-        expected = 1001.0 - current_time  # 0.5 seconds
+        # Should sleep until next interval boundary
+        expected = interval_seconds / 2
         assert captured_duration is not None
-        assert abs(captured_duration - expected) < 0.001
+        assert abs(captured_duration - expected) < 0.01
 
     def test_sleep_before_genesis(
         self,

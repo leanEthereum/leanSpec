@@ -81,17 +81,11 @@ BLOCK_TOPIC_NAME: str = "block"
 Used in the topic string to identify signed beacon block messages.
 """
 
-ATTESTATION_TOPIC_NAME: str = "attestation"
-"""Topic name for attestation messages.
 
-Used in the topic string to identify signed attestation messages.
-"""
+ATTESTATION_SUBNET_TOPIC_PREFIX: str = "attestation"
+"""Base prefix for attestation subnet topic names.
 
-ATTESTATION_SUBNET_TOPIC_NAME: str = "attestation_{subnet_id}"
-"""Template topic name for attestation subnet messages.
-
-Used in the topic string to identify attestation messages for a specific subnet.
-`{subnet_id}` should be replaced with the subnet identifier (0-63).
+Full topic names are formatted as "attestation_{subnet_id}".
 """
 
 AGGREGATED_ATTESTATION_TOPIC_NAME: str = "aggregation"
@@ -113,10 +107,7 @@ class TopicKind(Enum):
     BLOCK = BLOCK_TOPIC_NAME
     """Signed beacon block messages."""
 
-    ATTESTATION = ATTESTATION_TOPIC_NAME
-    """Signed attestation messages."""
-
-    ATTESTATION_SUBNET = ATTESTATION_SUBNET_TOPIC_NAME
+    ATTESTATION_SUBNET = ATTESTATION_SUBNET_TOPIC_PREFIX
     """Attestation subnet messages."""
 
     AGGREGATED_ATTESTATION = AGGREGATED_ATTESTATION_TOPIC_NAME
@@ -149,13 +140,22 @@ class GossipTopic:
     Peers must match on fork digest to exchange messages on a topic.
     """
 
+    subnet_id: int | None = None
+    """Subnet id for attestation subnet topics (required for ATTESTATION_SUBNET)."""
+
     def __str__(self) -> str:
         """Return the full topic string.
 
         Returns:
             Topic in format `/{prefix}/{fork}/{name}/{encoding}`
         """
-        return f"/{TOPIC_PREFIX}/{self.fork_digest}/{self.kind}/{ENCODING_POSTFIX}"
+        if self.kind is TopicKind.ATTESTATION_SUBNET:
+            if self.subnet_id is None:
+                raise ValueError("subnet_id is required for attestation subnet topics")
+            topic_name = f"attestation_{self.subnet_id}"
+        else:
+            topic_name = str(self.kind)
+        return f"/{TOPIC_PREFIX}/{self.fork_digest}/{topic_name}/{ENCODING_POSTFIX}"
 
     def __bytes__(self) -> bytes:
         """Return the topic string as UTF-8 bytes.
@@ -195,6 +195,20 @@ class GossipTopic:
         if encoding != ENCODING_POSTFIX:
             raise ValueError(f"Invalid encoding: expected '{ENCODING_POSTFIX}', got '{encoding}'")
 
+        # Handle attestation subnet topics which have format attestation_N
+        if topic_name.startswith("attestation_"):
+            try:
+                # Validate the subnet ID is a valid integer
+                subnet_part = topic_name[len("attestation_") :]
+                subnet_id = int(subnet_part)
+                return cls(
+                    kind=TopicKind.ATTESTATION_SUBNET,
+                    fork_digest=fork_digest,
+                    subnet_id=subnet_id,
+                )
+            except ValueError:
+                pass  # Fall through to the normal TopicKind parsing
+
         try:
             kind = TopicKind(topic_name)
         except ValueError:
@@ -215,18 +229,6 @@ class GossipTopic:
         return cls(kind=TopicKind.BLOCK, fork_digest=fork_digest)
 
     @classmethod
-    def attestation(cls, fork_digest: str) -> GossipTopic:
-        """Create an attestation topic for the given fork.
-
-        Args:
-            fork_digest: Fork digest as 0x-prefixed hex string.
-
-        Returns:
-            GossipTopic for attestation messages.
-        """
-        return cls(kind=TopicKind.ATTESTATION, fork_digest=fork_digest)
-
-    @classmethod
     def committee_aggregation(cls, fork_digest: str) -> GossipTopic:
         """Create a committee aggregation topic for the given fork.
 
@@ -237,6 +239,19 @@ class GossipTopic:
             GossipTopic for committee aggregation messages.
         """
         return cls(kind=TopicKind.AGGREGATED_ATTESTATION, fork_digest=fork_digest)
+
+    @classmethod
+    def attestation_subnet(cls, fork_digest: str, subnet_id: int) -> GossipTopic:
+        """Create an attestation subnet topic for the given fork and subnet.
+
+        Args:
+            fork_digest: Fork digest as 0x-prefixed hex string.
+            subnet_id: Subnet ID for the attestation topic.
+
+        Returns:
+            GossipTopic for attestation subnet messages.
+        """
+        return cls(kind=TopicKind.ATTESTATION_SUBNET, fork_digest=fork_digest, subnet_id=subnet_id)
 
 
 def format_topic_string(

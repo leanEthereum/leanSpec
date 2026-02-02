@@ -52,7 +52,7 @@ class SlotClock:
         return Slot(self._milliseconds_since_genesis() // MILLISECONDS_PER_SLOT)
 
     def current_interval(self) -> Interval:
-        """Get the current interval within the slot (0-3)."""
+        """Get the current interval within the slot (0-4)."""
         milliseconds_into_slot = self._milliseconds_since_genesis() % MILLISECONDS_PER_SLOT
         return milliseconds_into_slot // MILLISECONDS_PER_INTERVAL
 

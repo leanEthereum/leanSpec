@@ -7,7 +7,7 @@ Ethereum consensus requires active participation from validators.
 
 At specific intervals within each slot, validators must:
 - Interval 0: Propose blocks (if scheduled)
-- Interval 1: Create attestations
+- Interval 1: Create attestations (broadcast to subnet topics only)
 
 This service drives validator duties by monitoring the slot clock
 and triggering production at the appropriate intervals.
@@ -166,7 +166,7 @@ class ValidatorService:
                 # All validators should attest to current head.
                 await self._produce_attestations(slot)
 
-            # Intervals 2-3 have no validator duties.
+            # Intervals 2-4 have no validator duties.
 
             # Mark this interval as handled.
             last_handled_total_interval = total_interval

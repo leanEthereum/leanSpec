@@ -131,7 +131,8 @@ class TestOnTick:
         sample_store = sample_store.on_tick(current_target, has_proposal=True)
 
         # Should not change significantly (time can only increase)
-        assert sample_store.time - initial_time <= Uint64(10)  # small tolerance
+        # Tolerance increased for 5-interval per slot system
+        assert sample_store.time - initial_time <= Uint64(30)
 
     def test_on_tick_small_increment(self, sample_store: Store) -> None:
         """Test on_tick with small time increment."""

@@ -86,7 +86,6 @@ from .rpc import (
     Message as RPCMessage,
 )
 from .topic import (
-    ATTESTATION_TOPIC_NAME,
     BLOCK_TOPIC_NAME,
     ENCODING_POSTFIX,
     TOPIC_PREFIX,
@@ -115,7 +114,6 @@ __all__ = [
     "TOPIC_PREFIX",
     "ENCODING_POSTFIX",
     "BLOCK_TOPIC_NAME",
-    "ATTESTATION_TOPIC_NAME",
     "format_topic_string",
     "parse_topic_string",
     # Parameters

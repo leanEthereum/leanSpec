@@ -383,7 +383,7 @@ class GossipHandler:
             match topic.kind:
                 case TopicKind.BLOCK:
                     return SignedBlockWithAttestation.decode_bytes(ssz_bytes)
-                case TopicKind.ATTESTATION:
+                case TopicKind.ATTESTATION_SUBNET:
                     return SignedAttestation.decode_bytes(ssz_bytes)
         except SSZSerializationError as e:
             raise GossipMessageError(f"SSZ decode failed: {e}") from e
@@ -799,7 +799,7 @@ class LiveNetworkEventSource:
                 case TopicKind.BLOCK:
                     if isinstance(message, SignedBlockWithAttestation):
                         await self._emit_gossip_block(message, event.peer_id)
-                case TopicKind.ATTESTATION:
+                case TopicKind.ATTESTATION_SUBNET:
                     if isinstance(message, SignedAttestation):
                         await self._emit_gossip_attestation(message, event.peer_id)
 
@@ -1132,7 +1132,7 @@ class LiveNetworkEventSource:
             attestation: Attestation received from gossip.
             peer_id: Peer that sent it.
         """
-        topic = GossipTopic(kind=TopicKind.ATTESTATION, fork_digest=self._fork_digest)
+        topic = GossipTopic(kind=TopicKind.ATTESTATION_SUBNET, fork_digest=self._fork_digest)
         await self._events.put(
             GossipAttestationEvent(attestation=attestation, peer_id=peer_id, topic=topic)
         )
@@ -1409,7 +1409,7 @@ class LiveNetworkEventSource:
                         # Type mismatch indicates a bug in decode_message.
                         logger.warning("Block topic but got %s", type(message).__name__)
 
-                case TopicKind.ATTESTATION:
+                case TopicKind.ATTESTATION_SUBNET:
                     if isinstance(message, SignedAttestation):
                         await self._emit_gossip_attestation(message, peer_id)
                     else:
