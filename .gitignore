@@ -162,3 +162,6 @@ packages/testing/src/consensus_testing/test_keys/prod_scheme/
 
 # Local scripts
 scripts/
+
+# Claude Code
+.claude/settings.local.json
