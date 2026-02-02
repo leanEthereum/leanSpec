@@ -20,14 +20,16 @@ from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import ChainService, SlotClock
-from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
+from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT, INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers import Block, BlockBody, State
+from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.networking import NetworkEventSource, NetworkService
+from lean_spec.subspecs.networking.subnet import compute_subnet_id
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync import BlockCache, NetworkRequester, PeerManager, SyncService
 from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
@@ -241,12 +243,18 @@ class Node:
         # Wire callbacks to publish produced blocks/attestations to the network.
         validator_service: ValidatorService | None = None
         if config.validator_registry is not None:
+            # Create a wrapper for publish_attestation that computes the subnet_id
+            # from the validator_id in the attestation
+            async def publish_attestation_wrapper(attestation: SignedAttestation) -> None:
+                subnet_id = compute_subnet_id(attestation.validator_id, ATTESTATION_COMMITTEE_COUNT)
+                await network_service.publish_attestation(attestation, subnet_id)
+
             validator_service = ValidatorService(
                 sync_service=sync_service,
                 clock=clock,
                 registry=config.validator_registry,
                 on_block=network_service.publish_block,
-                on_attestation=network_service.publish_attestation,
+                on_attestation=publish_attestation_wrapper,
             )
 
         return cls(

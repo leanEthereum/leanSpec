@@ -16,7 +16,6 @@ from lean_spec.subspecs.containers.state import State
 from lean_spec.subspecs.containers.state.types import Validators
 from lean_spec.subspecs.containers.validator import Validator, ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss import Signature
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
 from lean_spec.types import Bytes32, Bytes52, Uint64
 
@@ -606,7 +605,6 @@ def test_greedy_selects_proof_with_maximum_overlap() -> None:
     data_root = att_data.data_root_bytes()
 
     # No gossip signatures - all validators need fallback
-    gossip_signatures: dict[SignatureKey, Signature] = {}
 
     # Create three proofs with different coverage
     # Proof A: validators {0, 1}
@@ -892,7 +890,6 @@ def test_greedy_single_validator_proofs() -> None:
     data_root = att_data.data_root_bytes()
 
     # No gossip - all need fallback
-    gossip_signatures: dict[SignatureKey, Signature] = {}
 
     # Single-validator proofs only
     proofs = []
@@ -1070,7 +1067,6 @@ def test_aggregated_payloads_only_no_gossip() -> None:
     data_root = att_data.data_root_bytes()
 
     # No gossip signatures
-    gossip_signatures: dict[SignatureKey, Signature] = {}
 
     # Proof covering all 3 validators
     proof = AggregatedSignatureProof.aggregate(
