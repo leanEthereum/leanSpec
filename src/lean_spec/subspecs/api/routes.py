@@ -4,12 +4,12 @@ from collections.abc import Awaitable, Callable
 
 from aiohttp import web
 
-from .endpoints import checkpoint_sync, health, metrics
+from .endpoints import checkpoints, health, metrics, states
 
 ROUTES: dict[str, Callable[[web.Request], Awaitable[web.Response]]] = {
     "/lean/v0/health": health.handle,
-    "/lean/v0/states/finalized": checkpoint_sync.handle_finalized_state,
-    "/lean/v0/checkpoints/justified": checkpoint_sync.handle_justified_checkpoint,
+    "/lean/v0/states/finalized": states.handle_finalized,
+    "/lean/v0/checkpoints/justified": checkpoints.handle_justified,
     "/metrics": metrics.handle,
 }
 """All API routes mapped to their handlers."""

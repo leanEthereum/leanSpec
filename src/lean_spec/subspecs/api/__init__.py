@@ -1,12 +1,4 @@
-"""
-API server module for checkpoint sync and node status endpoints.
-
-Provides HTTP endpoints for:
-- /lean/v0/states/finalized - Serve finalized checkpoint state as SSZ
-- /lean/v0/checkpoints/justified - Return latest justified checkpoint information
-- /lean/v0/health - Health check endpoint
-- /metrics - Prometheus metrics endpoint
-"""
+"""API server module for various API endpoints."""
 
 from .server import ApiServer, ApiServerConfig
 
