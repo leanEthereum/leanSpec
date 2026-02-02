@@ -405,20 +405,42 @@ class ForkChoiceTest(BaseConsensusFixture):
         available_attestations: list[Attestation]
         known_block_roots: set[Bytes32] | None = None
 
-        aggregated_payloads = dict(store.aggregated_payloads) if store.aggregated_payloads else {}
+        # First, aggregate any gossip signatures into payloads
+        # This ensures that signatures from previous blocks (like proposer attestations)
+        # are available for extraction
+        aggregation_store = working_store.aggregate_committee_signatures()
+
+        # Now combine aggregated payloads from both sources
+        aggregated_payloads = (
+            dict(store.latest_known_aggregated_payloads)
+            if store.latest_known_aggregated_payloads
+            else {}
+        )
+        # Add newly aggregated payloads from gossip signatures
+        for key, proofs in aggregation_store.latest_new_aggregated_payloads.items():
+            if key not in aggregated_payloads:
+                aggregated_payloads[key] = []
+            aggregated_payloads[key].extend(proofs)
 
         # Collect all attestations that need aggregated proofs
         all_attestations_for_proofs: list[Attestation] = list(attestations)
 
         if spec.include_store_attestations:
-            # Gather all attestations: both active and recently received.
+            # Gather all attestations by extracting from aggregated payloads.
+            # This now includes attestations from gossip signatures that were just aggregated.
+            known_attestations = store._extract_attestations_from_aggregated_payloads(
+                store.latest_known_aggregated_payloads
+            )
+            new_attestations = aggregation_store._extract_attestations_from_aggregated_payloads(
+                aggregation_store.latest_new_aggregated_payloads
+            )
+
+            # Convert to list of Attestations
             store_attestations = [
-                Attestation(validator_id=vid, data=data)
-                for vid, data in store.latest_known_attestations.items()
+                Attestation(validator_id=vid, data=data) for vid, data in known_attestations.items()
             ]
             store_attestations.extend(
-                Attestation(validator_id=vid, data=data)
-                for vid, data in store.latest_new_attestations.items()
+                Attestation(validator_id=vid, data=data) for vid, data in new_attestations.items()
             )
 
             # Add store attestations to the list for proof creation
@@ -431,20 +453,14 @@ class ForkChoiceTest(BaseConsensusFixture):
             # Use only explicit attestations from the spec
             available_attestations = attestations
 
-        # Build aggregated proofs via Store aggregation logic.
-        attestation_map = {
-            attestation.validator_id: attestation.data
-            for attestation in all_attestations_for_proofs
-        }
-        aggregation_store = working_store.model_copy(
-            update={
-                "head": parent_root,
-                "latest_new_attestations": attestation_map,
-                "aggregated_payloads": aggregated_payloads,
-            }
-        )
-        aggregation_store = aggregation_store.aggregate_committee_signatures()
-        aggregated_payloads = aggregation_store.aggregated_payloads
+        # Update attestation_data_by_root with any new attestation data
+        attestation_data_by_root = dict(aggregation_store.attestation_data_by_root)
+        for attestation in all_attestations_for_proofs:
+            data_root = attestation.data.data_root_bytes()
+            attestation_data_by_root[data_root] = attestation.data
+
+        # Use the aggregated payloads we just created
+        # No need to call aggregate_committee_signatures again since we already did it
 
         # Build the block using spec logic
         #

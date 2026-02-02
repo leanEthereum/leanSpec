@@ -26,11 +26,13 @@ import asyncio
 import logging
 from pathlib import Path
 
+from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.containers import Block, BlockBody, Checkpoint, State
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.genesis import GenesisConfig
+from lean_spec.subspecs.networking import compute_subnet_id
 from lean_spec.subspecs.networking.client import LiveNetworkEventSource
 from lean_spec.subspecs.networking.gossipsub import GossipTopic
 from lean_spec.subspecs.networking.reqresp.message import Status
@@ -38,8 +40,6 @@ from lean_spec.subspecs.node import Node, NodeConfig, get_local_validator_id
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.types import Bytes32, Uint64
-from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
-from lean_spec.subspecs.networking import compute_subnet_id
 
 # Fork identifier for gossip topics.
 #

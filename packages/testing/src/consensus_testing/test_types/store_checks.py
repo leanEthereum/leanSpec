@@ -56,8 +56,8 @@ class AttestationCheck(CamelModel):
     location: Literal["new", "known"]
     """
     Expected attestation location:
-        - "new" for `latest_new_attestations`
-        - "known" for `latest_known_attestations`
+        - "new" for `latest_new_aggregated_payloads`
+        - "known" for `latest_known_aggregated_payloads`
     """
 
     def validate_attestation(
@@ -428,23 +428,33 @@ class StoreChecks(CamelModel):
                 for check in expected_value:
                     validator_idx = check.validator
 
-                    # Check attestation location
+                    # Extract attestations from aggregated payloads
                     if check.location == "new":
-                        if validator_idx not in store.latest_new_attestations:
+                        extracted_attestations = (
+                            store._extract_attestations_from_aggregated_payloads(
+                                store.latest_new_aggregated_payloads
+                            )
+                        )
+                        if validator_idx not in extracted_attestations:
                             raise AssertionError(
                                 f"Step {step_index}: validator {validator_idx} not found "
-                                f"in latest_new_attestations"
+                                f"in latest_new_aggregated_payloads"
                             )
-                        attestation = store.latest_new_attestations[validator_idx]
+                        attestation = extracted_attestations[validator_idx]
                         check.validate_attestation(attestation, "in latest_new", step_index)
 
                     else:  # check.location == "known"
-                        if validator_idx not in store.latest_known_attestations:
+                        extracted_attestations = (
+                            store._extract_attestations_from_aggregated_payloads(
+                                store.latest_known_aggregated_payloads
+                            )
+                        )
+                        if validator_idx not in extracted_attestations:
                             raise AssertionError(
                                 f"Step {step_index}: validator {validator_idx} not found "
-                                f"in latest_known_attestations"
+                                f"in latest_known_aggregated_payloads"
                             )
-                        attestation = store.latest_known_attestations[validator_idx]
+                        attestation = extracted_attestations[validator_idx]
                         check.validate_attestation(attestation, "in latest_known", step_index)
 
             elif field_name == "block_attestation_count":
@@ -561,8 +571,12 @@ class StoreChecks(CamelModel):
 
                     # Calculate attestation weight: count attestations voting for this fork
                     # An attestation votes for this fork if its head is this block or a descendant
+                    # Extract attestations from latest_known_aggregated_payloads
+                    known_attestations = store._extract_attestations_from_aggregated_payloads(
+                        store.latest_known_aggregated_payloads
+                    )
                     weight = 0
-                    for attestation in store.latest_known_attestations.values():
+                    for attestation in known_attestations.values():
                         att_head_root = attestation.head.root
                         # Check if attestation head is this block or a descendant
                         if att_head_root == root:

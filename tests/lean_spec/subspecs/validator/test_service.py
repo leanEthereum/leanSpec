@@ -809,11 +809,11 @@ class TestValidatorServiceIntegration:
 
         aggregated_payloads = {SignatureKey(vid, data_root): [proof] for vid in participants}
 
-        # Update store with pending attestations and aggregated payloads
+        # Update store with attestation data and aggregated payloads
         updated_store = store.model_copy(
             update={
-                "latest_known_attestations": attestation_map,
-                "aggregated_payloads": aggregated_payloads,
+                "attestation_data_by_root": {data_root: attestation_data},
+                "latest_known_aggregated_payloads": aggregated_payloads,
             }
         )
         real_sync_service.store = updated_store

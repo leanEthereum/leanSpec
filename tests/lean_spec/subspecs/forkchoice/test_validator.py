@@ -184,12 +184,51 @@ class TestBlockProduction:
             message=data_6,
             signature=key_manager.sign_attestation_data(ValidatorIndex(6), data_6),
         )
-        sample_store.latest_known_attestations[ValidatorIndex(5)] = signed_5.message
-        sample_store.latest_known_attestations[ValidatorIndex(6)] = signed_6.message
-        sig_key_5 = SignatureKey(ValidatorIndex(5), signed_5.message.data_root_bytes())
-        sig_key_6 = SignatureKey(ValidatorIndex(6), signed_6.message.data_root_bytes())
-        sample_store.gossip_signatures[sig_key_5] = signed_5.signature
-        sample_store.gossip_signatures[sig_key_6] = signed_6.signature
+
+        # Create aggregated payloads for the attestations
+        from lean_spec.subspecs.containers.attestation import AggregationBits
+        from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+
+        # Build aggregated proofs
+        data_root_5 = signed_5.message.data_root_bytes()
+        data_root_6 = signed_6.message.data_root_bytes()
+
+        proof_5 = AggregatedSignatureProof.aggregate(
+            participants=AggregationBits.from_validator_indices([ValidatorIndex(5)]),
+            public_keys=[key_manager.get_public_key(ValidatorIndex(5))],
+            signatures=[signed_5.signature],
+            message=data_root_5,
+            epoch=signed_5.message.slot,
+        )
+
+        proof_6 = AggregatedSignatureProof.aggregate(
+            participants=AggregationBits.from_validator_indices([ValidatorIndex(6)]),
+            public_keys=[key_manager.get_public_key(ValidatorIndex(6))],
+            signatures=[signed_6.signature],
+            message=data_root_6,
+            epoch=signed_6.message.slot,
+        )
+
+        # Update sample_store with aggregated payloads and attestation data
+        sig_key_5 = SignatureKey(ValidatorIndex(5), data_root_5)
+        sig_key_6 = SignatureKey(ValidatorIndex(6), data_root_6)
+
+        sample_store = sample_store.model_copy(
+            update={
+                "latest_known_aggregated_payloads": {
+                    sig_key_5: [proof_5],
+                    sig_key_6: [proof_6],
+                },
+                "attestation_data_by_root": {
+                    data_root_5: signed_5.message,
+                    data_root_6: signed_6.message,
+                },
+                "gossip_signatures": {
+                    sig_key_5: signed_5.signature,
+                    sig_key_6: signed_6.signature,
+                },
+            }
+        )
 
         slot = Slot(2)
         validator_idx = ValidatorIndex(2)  # Proposer for slot 2
@@ -262,8 +301,13 @@ class TestBlockProduction:
         slot = Slot(3)
         validator_idx = ValidatorIndex(3)
 
-        # Ensure no attestations in store
-        sample_store.latest_known_attestations.clear()
+        # Ensure no attestations in store (clear aggregated payloads)
+        sample_store = sample_store.model_copy(
+            update={
+                "latest_known_aggregated_payloads": {},
+                "attestation_data_by_root": {},
+            }
+        )
 
         store, block, _signatures = sample_store.produce_block_with_signatures(
             slot,
@@ -296,9 +340,28 @@ class TestBlockProduction:
             message=data_7,
             signature=key_manager.sign_attestation_data(ValidatorIndex(7), data_7),
         )
-        sample_store.latest_known_attestations[ValidatorIndex(7)] = signed_7.message
-        sig_key_7 = SignatureKey(ValidatorIndex(7), signed_7.message.data_root_bytes())
-        sample_store.gossip_signatures[sig_key_7] = signed_7.signature
+
+        # Create aggregated payload for validator 7
+        from lean_spec.subspecs.containers.attestation import AggregationBits
+        from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+
+        data_root_7 = signed_7.message.data_root_bytes()
+        proof_7 = AggregatedSignatureProof.aggregate(
+            participants=AggregationBits.from_validator_indices([ValidatorIndex(7)]),
+            public_keys=[key_manager.get_public_key(ValidatorIndex(7))],
+            signatures=[signed_7.signature],
+            message=data_root_7,
+            epoch=signed_7.message.slot,
+        )
+
+        sig_key_7 = SignatureKey(ValidatorIndex(7), data_root_7)
+        sample_store = sample_store.model_copy(
+            update={
+                "latest_known_aggregated_payloads": {sig_key_7: [proof_7]},
+                "attestation_data_by_root": {data_root_7: signed_7.message},
+                "gossip_signatures": {sig_key_7: signed_7.signature},
+            }
+        )
 
         store, block, signatures = sample_store.produce_block_with_signatures(
             slot,

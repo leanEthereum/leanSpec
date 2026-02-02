@@ -412,7 +412,7 @@ def test_reorg_with_slot_gaps(
             # Advance to end of slot 9 to accept fork_b_9's proposer attestation
             # This ensures the attestation contributes to fork choice weight
             TickStep(
-                time=(9 * 4 + 3),  # Slot 9, interval 3 (end of slot)
+                time=(9 * 4 + 4),  # Slot 9, interval 4 (end of slot)
                 checks=StoreChecks(
                     head_slot=Slot(9),
                     head_root_label="fork_b_9",  # REORG with sparse blocks

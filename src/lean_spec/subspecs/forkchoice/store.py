@@ -131,25 +131,6 @@ class Store(Container):
     validator_id: ValidatorIndex | None
     """Index of the validator running this store instance."""
 
-    latest_known_attestations: dict[ValidatorIndex, AttestationData] = {}
-    """
-    Latest attestation data by validator that have been processed.
-
-    - These attestations are "known" and contribute to fork choice weights.
-    - Keyed by validator index to enforce one attestation per validator.
-    - Only stores the attestation data, not signatures.
-    """
-
-    latest_new_attestations: dict[ValidatorIndex, AttestationData] = {}
-    """
-    Latest attestation data by validator that are pending processing.
-
-    - These attestations are "new" and do not yet contribute to fork choice.
-    - They migrate to `latest_known_attestations` via interval ticks.
-    - Keyed by validator index to enforce one attestation per validator.
-    - Only stores the attestation data, not signatures.
-    """
-
     gossip_signatures: dict[SignatureKey, Signature] = {}
     """
     Per-validator XMSS signatures learned from committee attesters.
@@ -157,15 +138,35 @@ class Store(Container):
     Keyed by SignatureKey(validator_id, attestation_data_root).
     """
 
-    aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {}
+    attestation_data_by_root: dict[Bytes32, AttestationData] = {}
     """
-    Aggregated signature proofs learned from blocks.
+    Mapping from attestation data root to full AttestationData.
 
+    This allows reconstructing attestations from aggregated payloads.
+    Keyed by data_root_bytes() of AttestationData.
+    """
+
+    latest_new_aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {}
+    """
+    Aggregated signature proofs that are pending processing.
+
+    - These payloads are "new" and do not yet contribute to fork choice.
+    - They migrate to `latest_known_aggregated_payloads` via interval ticks.
+    - Keyed by SignatureKey(validator_id, attestation_data_root).
+    - Values are lists of AggregatedSignatureProof, each containing the participants
+      bitfield indicating which validators signed.
+    - Populated from blocks (on_block) or gossip (on_gossip_aggregated_attestation).
+    """
+
+    latest_known_aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {}
+    """
+    Aggregated signature proofs that have been processed.
+
+    - These payloads are "known" and contribute to fork choice weights.
     - Keyed by SignatureKey(validator_id, attestation_data_root).
     - Values are lists of AggregatedSignatureProof, each containing the participants
       bitfield indicating which validators signed.
     - Used for recursive signature aggregation when building blocks.
-    - Populated by on_block.
     """
 
     @classmethod
@@ -332,9 +333,11 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
-        # Store signature for later aggregation if applicable.
-        #
+        # Store signature and attestation data for later aggregation
         new_commitee_sigs = dict(self.gossip_signatures)
+        new_attestation_data_by_root = dict(self.attestation_data_by_root)
+        data_root = attestation_data.data_root_bytes()
+
         if is_aggregator:
             assert self.validator_id is not None, "Current validator ID must be set for aggregation"
             current_validator_subnet = compute_subnet_id(
@@ -345,142 +348,17 @@ class Store(Container):
                 # Not part of our committee; ignore for committee aggregation.
                 pass
             else:
-                sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
+                sig_key = SignatureKey(validator_id, data_root)
                 new_commitee_sigs[sig_key] = signature
 
-        # Process the attestation data
-        store = self.on_attestation(attestation=attestation, is_from_block=False)
+        # Store attestation data for later extraction
+        new_attestation_data_by_root[data_root] = attestation_data
 
-        # Return store with updated signature maps
-        return store.model_copy(update={"gossip_signatures": new_commitee_sigs})
-
-    def on_attestation(
-        self,
-        attestation: Attestation,
-        is_from_block: bool = False,
-    ) -> "Store":
-        """
-        Process a new attestation and place it into the correct attestation stage.
-
-        This is the core attestation processing logic that updates the attestation
-        maps used for fork choice. Signatures are handled separately via
-        on_gossip_attestation and on_block.
-
-        Attestations can come from:
-        - a block body (on-chain, `is_from_block=True`), or
-        - the gossip network (off-chain, `is_from_block=False`).
-
-        The Attestation Pipeline
-        -------------------------
-        Attestations always live in exactly one of two dictionaries:
-
-        Stage 1: latest new attestations
-            - Holds *pending* attestation data that is not yet counted in fork choice.
-            - Includes the proposer's attestation for the block they just produced.
-            - Await activation by an interval tick before they influence weights.
-
-        Stage 2: latest known attestations
-            - Contains all *active* attestation data used by LMD-GHOST.
-            - Updated during interval ticks, which promote new → known.
-            - Directly contributes to fork-choice subtree weights.
-
-        Key Behaviors
-        --------------
-        Migration:
-            - Attestations always move forward (new → known), never backwards.
-
-        Superseding:
-            - For each validator, only the attestation from the highest slot is kept.
-            - A newer attestation overwrites an older one in either dictionary.
-
-        Accumulation:
-            - Attestations from different validators accumulate independently.
-            - Only same-validator comparisons result in replacement.
-
-        Args:
-            attestation:
-                The attestation to ingest (without signature).
-            is_from_block:
-                - True if embedded in a block body (on-chain),
-                - False if from gossip.
-
-        Returns:
-            A new Store with updated attestation sets.
-        """
-        # First, ensure the attestation is structurally and temporally valid.
-        self.validate_attestation(attestation)
-
-        # Extract the validator index that produced this attestation.
-        validator_id = attestation.validator_id
-
-        # Extract the attestation data and slot
-        attestation_data = attestation.data
-        attestation_slot = attestation_data.slot
-
-        # Copy the known attestation map:
-        # - we build a new Store immutably,
-        # - changes are applied on this local copy.
-        new_known = dict(self.latest_known_attestations)
-
-        # Copy the new attestation map:
-        # - holds pending attestations that are not yet active.
-        new_new = dict(self.latest_new_attestations)
-
-        if is_from_block:
-            # On-chain attestation processing
-            #
-            # These are historical attestations from other validators included by the proposer.
-            # - They are processed immediately as "known" attestations,
-            # - They contribute to fork choice weights.
-
-            # Fetch the currently known attestation for this validator, if any.
-            latest_known = new_known.get(validator_id)
-
-            # Update the known attestation for this validator if:
-            # - there is no known attestation yet, or
-            # - this attestation is from a later slot than the known one.
-            if latest_known is None or latest_known.slot < attestation_slot:
-                new_known[validator_id] = attestation_data
-
-            # Fetch any pending ("new") attestation for this validator.
-            existing_new = new_new.get(validator_id)
-
-            # Remove the pending attestation if:
-            # - it exists, and
-            # - it is from an equal or earlier slot than this on-chain attestation.
-            #
-            # In that case, the on-chain attestation supersedes it.
-            if existing_new is not None and existing_new.slot <= attestation_slot:
-                del new_new[validator_id]
-        else:
-            # Network gossip attestation processing
-            #
-            # These are attestations received via the gossip network.
-            # - They enter the "new" stage,
-            # - They must wait for interval tick acceptance before
-            #   contributing to fork choice weights.
-
-            # Convert Store time to slots to check for "future" attestations.
-            time_slots = self.time // INTERVALS_PER_SLOT
-
-            # Reject the attestation if:
-            # - its slot is strictly greater than our current slot.
-            assert attestation_slot <= time_slots, "Attestation from future slot"
-
-            # Fetch the previously stored "new" attestation for this validator.
-            latest_new = new_new.get(validator_id)
-
-            # Update the pending attestation for this validator if:
-            # - there is no pending attestation yet, or
-            # - this one is from a later slot than the pending one.
-            if latest_new is None or latest_new.slot < attestation_slot:
-                new_new[validator_id] = attestation_data
-
-        # Return a new Store with updated "known" and "new" attestation maps.
+        # Return store with updated signature maps and attestation data
         return self.model_copy(
             update={
-                "latest_known_attestations": new_known,
-                "latest_new_attestations": new_new,
+                "gossip_signatures": new_commitee_sigs,
+                "attestation_data_by_root": new_attestation_data_by_root,
             }
         )
 
@@ -541,8 +419,12 @@ class Store(Container):
 
         # Copy the aggregated proof map for updates
         # Must deep copy the lists to maintain immutability of previous store snapshots
-        new_aggregated_payloads = copy.deepcopy(self.aggregated_payloads)
+        new_aggregated_payloads = copy.deepcopy(self.latest_new_aggregated_payloads)
         data_root = data.data_root_bytes()
+
+        # Store attestation data by root for later retrieval
+        new_attestation_data_by_root = dict(self.attestation_data_by_root)
+        new_attestation_data_by_root[data_root] = data
 
         store = self
         for vid in validator_ids:
@@ -552,17 +434,13 @@ class Store(Container):
             key = SignatureKey(vid, data_root)
             new_aggregated_payloads.setdefault(key, []).append(proof)
 
-            # Process the attestation data. Since it's from gossip, is_from_block=False.
-            # Note, we could have already processed individual attestations from this aggregation,
-            # during votes propagation into attestation topic, but it's safe to re-process here as
-            # on_attestation has idempotent behavior.
-            store = store.on_attestation(
-                attestation=Attestation(validator_id=vid, data=data),
-                is_from_block=False,
-            )
-
-        # Return store with updated aggregated payloads
-        return store.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
+        # Return store with updated aggregated payloads and attestation data
+        return store.model_copy(
+            update={
+                "latest_new_aggregated_payloads": new_aggregated_payloads,
+                "attestation_data_by_root": new_attestation_data_by_root,
+            }
+        )
 
     def on_block(
         self,
@@ -671,29 +549,39 @@ class Store(Container):
 
         # Copy the aggregated proof map for updates
         # Must deep copy the lists to maintain immutability of previous store snapshots
-        new_block_proofs: dict[SignatureKey, list[AggregatedSignatureProof]] = copy.deepcopy(
-            store.aggregated_payloads
+        # Block attestations go directly to "known" payloads (like is_from_block=True)
+        block_proofs: dict[SignatureKey, list[AggregatedSignatureProof]] = copy.deepcopy(
+            store.latest_known_aggregated_payloads
         )
+
+        # Store attestation data by root for later retrieval
+        new_attestation_data_by_root = dict(store.attestation_data_by_root)
 
         for att, proof in zip(aggregated_attestations, attestation_signatures, strict=True):
             validator_ids = att.aggregation_bits.to_validator_indices()
             data_root = att.data.data_root_bytes()
+
+            # Store the attestation data
+            new_attestation_data_by_root[data_root] = att.data
 
             for vid in validator_ids:
                 # Update Proof Map
                 #
                 # Store the proof so future block builders can reuse this aggregation
                 key = SignatureKey(vid, data_root)
-                new_block_proofs.setdefault(key, []).append(proof)
+                block_proofs.setdefault(key, []).append(proof)
 
-                # Register the vote immediately (historical/on-chain)
-                store = store.on_attestation(
-                    attestation=Attestation(validator_id=vid, data=att.data),
-                    is_from_block=True,
-                )
+        # Store proposer attestation data as well
+        proposer_data_root = proposer_attestation.data.data_root_bytes()
+        new_attestation_data_by_root[proposer_data_root] = proposer_attestation.data
 
-        # Update store with new aggregated proofs
-        store = store.model_copy(update={"aggregated_payloads": new_block_proofs})
+        # Update store with new aggregated proofs and attestation data
+        store = store.model_copy(
+            update={
+                "latest_known_aggregated_payloads": block_proofs,
+                "attestation_data_by_root": new_attestation_data_by_root,
+            }
+        )
 
         # Update forkchoice head based on new block and attestations
         #
@@ -701,13 +589,10 @@ class Store(Container):
         # to prevent the proposer from gaining circular weight advantage.
         store = store.update_head()
 
-        # Process proposer attestation as if received via gossip
+        # Process proposer signature for future aggregation
         #
         # The proposer casts their attestation in interval 1, after block
-        # proposal. This attestation should:
-        # 1. NOT affect this block's fork choice position (processed as "new")
-        # 2. Be available for inclusion in future blocks
-        # 3. Influence fork choice only after interval 3 (end of slot)
+        # proposal. Store the signature so it can be aggregated later.
 
         new_gossip_sigs = dict(store.gossip_signatures)
 
@@ -730,15 +615,49 @@ class Store(Container):
                     signed_block_with_attestation.signature.proposer_signature
                 )
 
-        store = store.on_attestation(
-            attestation=proposer_attestation,
-            is_from_block=False,
-        )
-
         # Update store with proposer signature
         store = store.model_copy(update={"gossip_signatures": new_gossip_sigs})
 
         return store
+
+    def _extract_attestations_from_aggregated_payloads(
+        self, aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]]
+    ) -> dict[ValidatorIndex, AttestationData]:
+        """
+        Extract attestations from aggregated payloads.
+
+        Given a mapping of aggregated signature proofs, extract the attestation data
+        for each validator that participated in the aggregation.
+
+        Args:
+            aggregated_payloads: Mapping from SignatureKey to list of aggregated proofs.
+
+        Returns:
+            Mapping from ValidatorIndex to AttestationData for each validator.
+        """
+        attestations: dict[ValidatorIndex, AttestationData] = {}
+
+        for sig_key, proofs in aggregated_payloads.items():
+            # Get the attestation data from the data root in the signature key
+            data_root = sig_key.data_root
+            attestation_data = self.attestation_data_by_root.get(data_root)
+
+            if attestation_data is None:
+                # Skip if we don't have the attestation data
+                continue
+
+            # Extract all validator IDs from all proofs for this signature key
+            for proof in proofs:
+                validator_ids = proof.participants.to_validator_indices()
+                for vid in validator_ids:
+                    # Store the attestation data for this validator
+                    # If multiple attestations exist for same validator,
+                    # keep the latest (highest slot)
+                    existing = attestations.get(vid)
+                    if existing is None or existing.slot < attestation_data.slot:
+                        attestations[vid] = attestation_data
+
+        return attestations
 
     def _compute_lmd_ghost_head(
         self,
@@ -851,13 +770,18 @@ class Store(Container):
             New Store with updated head.
 
         """
+        # Extract attestations from known aggregated payloads
+        attestations = self._extract_attestations_from_aggregated_payloads(
+            self.latest_known_aggregated_payloads
+        )
+
         # Run LMD-GHOST fork choice algorithm
         #
         # Selects canonical head by walking the tree from the justified root,
         # choosing the heaviest child at each fork based on attestation weights.
         new_head = self._compute_lmd_ghost_head(
             start_root=self.latest_justified.root,
-            attestations=self.latest_known_attestations,
+            attestations=attestations,
         )
 
         # Return new Store instance with updated values (immutable update)
@@ -869,15 +793,15 @@ class Store(Container):
 
     def accept_new_attestations(self) -> "Store":
         """
-        Process pending attestations and update forkchoice head.
+        Process pending aggregated payloads and update forkchoice head.
 
-        Moves attestations from latest_new_attestations to latest_known_attestations,
-        making them eligible to contribute to fork choice weights. This migration
-        happens at specific interval ticks.
+        Moves aggregated payloads from latest_new_aggregated_payloads to
+        latest_known_aggregated_payloads, making them eligible to contribute to
+        fork choice weights. This migration happens at specific interval ticks.
 
         The Interval Tick System
         -------------------------
-        Attestations progress through intervals:
+        Aggregated payloads progress through intervals:
         - Interval 0: Block proposal
         - Interval 1: Validators cast attestations (enter "new")
         - Interval 2: Safe target update
@@ -887,18 +811,26 @@ class Store(Container):
         influence on fork choice decisions.
 
         Returns:
-            New Store with migrated attestations and updated head.
+            New Store with migrated aggregated payloads and updated head.
         """
-        # Create store with migrated attestations
+        # Merge new aggregated payloads into known aggregated payloads
+        merged_aggregated_payloads = dict(self.latest_known_aggregated_payloads)
+        for sig_key, proofs in self.latest_new_aggregated_payloads.items():
+            if sig_key in merged_aggregated_payloads:
+                # Merge proof lists for the same signature key
+                merged_aggregated_payloads[sig_key] = merged_aggregated_payloads[sig_key] + proofs
+            else:
+                merged_aggregated_payloads[sig_key] = proofs
+
+        # Create store with migrated aggregated payloads
         store = self.model_copy(
             update={
-                "latest_known_attestations": self.latest_known_attestations
-                | self.latest_new_attestations,
-                "latest_new_attestations": {},
+                "latest_known_aggregated_payloads": merged_aggregated_payloads,
+                "latest_new_aggregated_payloads": {},
             }
         )
 
-        # Update head with newly accepted attestations
+        # Update head with newly accepted aggregated payloads
         return store.update_head()
 
     def update_safe_target(self) -> "Store":
@@ -926,10 +858,15 @@ class Store(Container):
         # Calculate 2/3 majority threshold (ceiling division)
         min_target_score = -(-num_validators * 2 // 3)
 
+        # Extract attestations from new aggregated payloads
+        attestations = self._extract_attestations_from_aggregated_payloads(
+            self.latest_new_aggregated_payloads
+        )
+
         # Find head with minimum attestation threshold
         safe_target = self._compute_lmd_ghost_head(
             start_root=self.latest_justified.root,
-            attestations=self.latest_new_attestations,
+            attestations=attestations,
             min_score=min_target_score,
         )
 
@@ -939,19 +876,27 @@ class Store(Container):
         """
         Aggregate committee signatures for attestations in committee_signatures.
 
-        This method aggregates signatures from the gossip_signatures map
+        This method aggregates signatures from the gossip_signatures map.
+        Attestations are reconstructed from gossip_signatures using attestation_data_by_root.
 
         Returns:
-            New Store with updated aggregated_payloads.
+            New Store with updated latest_new_aggregated_payloads.
         """
-        new_aggregated_payloads = dict(self.aggregated_payloads)
+        new_aggregated_payloads = dict(self.latest_new_aggregated_payloads)
 
-        attestations = self.latest_new_attestations
+        # Extract attestations from gossip_signatures
+        # Each SignatureKey contains (validator_id, data_root)
+        # We look up the full AttestationData from attestation_data_by_root
+        attestation_list: list[Attestation] = []
+        for sig_key in self.gossip_signatures.keys():
+            data_root = sig_key.data_root
+            attestation_data = self.attestation_data_by_root.get(data_root)
+            if attestation_data is not None:
+                attestation_list.append(
+                    Attestation(validator_id=sig_key.validator_id, data=attestation_data)
+                )
+
         committee_signatures = self.gossip_signatures
-
-        attestation_list = [
-            Attestation(validator_id=vid, data=data) for vid, data in attestations.items()
-        ]
 
         head_state = self.states[self.head]
         # Perform aggregation
@@ -977,7 +922,7 @@ class Store(Container):
                 if sig_key not in new_aggregated_payloads:
                     new_aggregated_payloads[sig_key] = []
                 new_aggregated_payloads[sig_key].append(aggregated_signature)
-        return self.model_copy(update={"aggregated_payloads": new_aggregated_payloads})
+        return self.model_copy(update={"latest_new_aggregated_payloads": new_aggregated_payloads})
 
     def tick_interval(self, has_proposal: bool, is_aggregator: bool = False) -> "Store":
         """
@@ -1256,11 +1201,15 @@ class Store(Container):
 
         # Gather attestations from the store.
         #
-        # Known attestations have already influenced fork choice.
+        # Extract attestations from known aggregated payloads.
+        # These attestations have already influenced fork choice.
         # Including them in the block makes them permanent on-chain.
+        attestation_data_map = store._extract_attestations_from_aggregated_payloads(
+            store.latest_known_aggregated_payloads
+        )
         available_attestations = [
             Attestation(validator_id=validator_id, data=attestation_data)
-            for validator_id, attestation_data in store.latest_known_attestations.items()
+            for validator_id, attestation_data in attestation_data_map.items()
         ]
 
         # Build the block.
@@ -1273,7 +1222,7 @@ class Store(Container):
             parent_root=head_root,
             available_attestations=available_attestations,
             known_block_roots=set(store.blocks.keys()),
-            aggregated_payloads=store.aggregated_payloads,
+            aggregated_payloads=store.latest_known_aggregated_payloads,
         )
 
         # Compute block hash for storage.
