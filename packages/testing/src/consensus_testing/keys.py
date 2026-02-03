@@ -196,27 +196,6 @@ _LAZY_KEY_CACHE: dict[str, LazyKeyDict] = {}
 """Cache for lazy key dictionaries by scheme name."""
 
 
-def load_keys(scheme_name: str) -> LazyKeyDict:
-    """
-    Get a lazy-loading key dictionary for the given scheme.
-
-    Keys are loaded individually on first access, not all at once.
-    Reduces memory from ~4.8 GB to ~400 MB per key for prod scheme.
-
-    Args:
-        scheme_name: Name of the signature scheme.
-
-    Returns:
-        Lazy-loading dictionary mapping validator index to key pair.
-
-    Raises:
-        FileNotFoundError: If keys directory is missing.
-    """
-    if scheme_name not in _LAZY_KEY_CACHE:
-        _LAZY_KEY_CACHE[scheme_name] = LazyKeyDict(scheme_name)
-    return _LAZY_KEY_CACHE[scheme_name]
-
-
 class XmssKeyManager:
     """
     Stateful manager for XMSS signing operations.
@@ -253,7 +232,9 @@ class XmssKeyManager:
     @property
     def keys(self) -> LazyKeyDict:
         """Lazy access to immutable base keys."""
-        return load_keys(self.scheme_name)
+        if self.scheme_name not in _LAZY_KEY_CACHE:
+            _LAZY_KEY_CACHE[self.scheme_name] = LazyKeyDict(self.scheme_name)
+        return _LAZY_KEY_CACHE[self.scheme_name]
 
     def __getitem__(self, idx: ValidatorIndex) -> KeyPair:
         """Get key pair, returning advanced state if available."""
