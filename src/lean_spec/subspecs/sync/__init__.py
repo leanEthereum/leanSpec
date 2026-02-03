@@ -43,6 +43,10 @@ __all__ = [
     # Head sync
     "HeadSync",
     "HeadSyncResult",
+    # Checkpoint sync
+    "CheckpointSyncError",
+    "fetch_finalized_state",
+    "verify_checkpoint_state",
     # Configuration constants
     "MAX_BLOCKS_PER_REQUEST",
     "MAX_CONCURRENT_REQUESTS",
@@ -53,6 +57,11 @@ __all__ = [
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache, PendingBlock
+from .checkpoint_sync import (
+    CheckpointSyncError,
+    fetch_finalized_state,
+    verify_checkpoint_state,
+)
 from .config import (
     MAX_BACKFILL_DEPTH,
     MAX_BLOCKS_PER_REQUEST,

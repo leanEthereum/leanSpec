@@ -131,6 +131,7 @@ test = [
     "hypothesis>=6.138.14",
     "lean-ethereum-testing",
     "lean-multisig-py>=0.1.0",
+    "pycryptodome>=3.20.0,<4",
 ]
 lint = [
     "ty>=0.0.1a34",

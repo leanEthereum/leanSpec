@@ -10,6 +10,7 @@ from lean_spec.subspecs.networking.config import (
 from lean_spec.subspecs.networking.gossipsub import (
     ControlMessage,
     FanoutEntry,
+    ForkMismatchError,
     GossipsubMessage,
     GossipsubParameters,
     GossipTopic,
@@ -188,6 +189,60 @@ class TestControlMessages:
 
         non_empty = ControlMessage(grafts=[Graft(topic_id="topic")])
         assert not non_empty.is_empty()
+
+
+class TestTopicForkValidation:
+    """Test suite for topic fork compatibility validation."""
+
+    def test_is_fork_compatible_matching(self) -> None:
+        """Test is_fork_compatible returns True for matching fork_digest."""
+        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+        assert topic.is_fork_compatible("0x12345678")
+
+    def test_is_fork_compatible_mismatched(self) -> None:
+        """Test is_fork_compatible returns False for mismatched fork_digest."""
+        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+        assert not topic.is_fork_compatible("0xdeadbeef")
+
+    def test_validate_fork_success(self) -> None:
+        """Test validate_fork passes for matching fork_digest."""
+        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+        topic.validate_fork("0x12345678")  # Should not raise
+
+    def test_validate_fork_raises_on_mismatch(self) -> None:
+        """Test validate_fork raises ForkMismatchError on mismatch."""
+        from lean_spec.subspecs.networking.gossipsub import ForkMismatchError
+
+        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+        with pytest.raises(ForkMismatchError) as exc_info:
+            topic.validate_fork("0xdeadbeef")
+
+        assert exc_info.value.expected == "0xdeadbeef"
+        assert exc_info.value.actual == "0x12345678"
+
+    def test_from_string_validated_success(self) -> None:
+        """Test from_string_validated parses and validates successfully."""
+        topic = GossipTopic.from_string_validated(
+            "/leanconsensus/0x12345678/block/ssz_snappy",
+            expected_fork_digest="0x12345678",
+        )
+        assert topic.kind == TopicKind.BLOCK
+        assert topic.fork_digest == "0x12345678"
+
+    def test_from_string_validated_raises_on_mismatch(self) -> None:
+        """Test from_string_validated raises ForkMismatchError on mismatch."""
+        from lean_spec.subspecs.networking.gossipsub import ForkMismatchError
+
+        with pytest.raises(ForkMismatchError):
+            GossipTopic.from_string_validated(
+                "/leanconsensus/0x12345678/block/ssz_snappy",
+                expected_fork_digest="0xdeadbeef",
+            )
+
+    def test_from_string_validated_raises_on_invalid_topic(self) -> None:
+        """Test from_string_validated raises ValueError for invalid topics."""
+        with pytest.raises(ValueError, match="expected 4 parts"):
+            GossipTopic.from_string_validated("/invalid/topic", "0x12345678")
 
 
 class TestTopicFormatting:
@@ -804,3 +859,51 @@ class TestRPCProtobufEncoding:
         assert len(decoded.publish) == 1
         assert len(decoded.publish[0].data) == 100_000
         assert decoded.publish[0].data == large_data
+
+
+class TestGossipHandlerForkValidation:
+    """Test suite for GossipHandler fork compatibility validation."""
+
+    def test_decode_message_rejects_wrong_fork(self) -> None:
+        """GossipHandler.decode_message() raises ForkMismatchError for wrong fork."""
+        from lean_spec.subspecs.networking.client.event_source import GossipHandler
+
+        handler = GossipHandler(fork_digest="0x12345678")
+
+        # Topic with different fork_digest
+        wrong_fork_topic = "/leanconsensus/0xdeadbeef/block/ssz_snappy"
+
+        with pytest.raises(ForkMismatchError) as exc_info:
+            handler.decode_message(wrong_fork_topic, b"dummy_data")
+
+        assert exc_info.value.expected == "0x12345678"
+        assert exc_info.value.actual == "0xdeadbeef"
+
+    def test_get_topic_rejects_wrong_fork(self) -> None:
+        """GossipHandler.get_topic() raises ForkMismatchError for wrong fork."""
+        from lean_spec.subspecs.networking.client.event_source import GossipHandler
+
+        handler = GossipHandler(fork_digest="0x12345678")
+
+        # Topic with different fork_digest
+        wrong_fork_topic = "/leanconsensus/0xdeadbeef/attestation/ssz_snappy"
+
+        with pytest.raises(ForkMismatchError) as exc_info:
+            handler.get_topic(wrong_fork_topic)
+
+        assert exc_info.value.expected == "0x12345678"
+        assert exc_info.value.actual == "0xdeadbeef"
+
+    def test_get_topic_accepts_matching_fork(self) -> None:
+        """GossipHandler.get_topic() returns topic for matching fork."""
+        from lean_spec.subspecs.networking.client.event_source import GossipHandler
+
+        handler = GossipHandler(fork_digest="0x12345678")
+
+        # Topic with matching fork_digest
+        matching_topic = "/leanconsensus/0x12345678/block/ssz_snappy"
+
+        topic = handler.get_topic(matching_topic)
+
+        assert topic.kind == TopicKind.BLOCK
+        assert topic.fork_digest == "0x12345678"

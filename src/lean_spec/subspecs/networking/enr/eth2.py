@@ -26,7 +26,7 @@ See: https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-inter
 
 from typing import ClassVar
 
-from lean_spec.subspecs.networking.types import ForkDigest
+from lean_spec.subspecs.networking.types import ForkDigest, Version
 from lean_spec.types import StrictBaseModel, Uint64
 from lean_spec.types.bitfields import BaseBitvector
 from lean_spec.types.boolean import Boolean
@@ -45,18 +45,18 @@ class Eth2Data(StrictBaseModel):
     fork_digest: ForkDigest
     """Current active fork identifier (4 bytes)."""
 
-    next_fork_version: ForkDigest
-    """Fork version of next scheduled fork. Equals current if none scheduled."""
+    next_fork_version: Version
+    """Fork version of next scheduled fork. Equals current version if none scheduled."""
 
     next_fork_epoch: Uint64
     """Epoch when next fork activates. FAR_FUTURE_EPOCH if none scheduled."""
 
     @classmethod
-    def no_scheduled_fork(cls, current_digest: ForkDigest) -> "Eth2Data":
-        """Create Eth2Data with no scheduled fork."""
+    def no_scheduled_fork(cls, current_digest: ForkDigest, current_version: Version) -> "Eth2Data":
+        """Create Eth2Data indicating no scheduled fork."""
         return cls(
             fork_digest=current_digest,
-            next_fork_version=current_digest,
+            next_fork_version=current_version,
             next_fork_epoch=FAR_FUTURE_EPOCH,
         )
 
@@ -74,32 +74,32 @@ class AttestationSubnets(BaseBitvector):
     @classmethod
     def none(cls) -> "AttestationSubnets":
         """No subscriptions."""
-        return cls(data=[Boolean(False)] * 64)
+        return cls(data=[Boolean(False)] * cls.LENGTH)
 
     @classmethod
     def all(cls) -> "AttestationSubnets":
         """Subscribe to all 64 subnets."""
-        return cls(data=[Boolean(True)] * 64)
+        return cls(data=[Boolean(True)] * cls.LENGTH)
 
     @classmethod
     def from_subnet_ids(cls, subnet_ids: list[int]) -> "AttestationSubnets":
         """Subscribe to specific subnets."""
-        bits = [Boolean(False)] * 64
+        bits = [Boolean(False)] * cls.LENGTH
         for sid in subnet_ids:
-            if not 0 <= sid < 64:
+            if not 0 <= sid < cls.LENGTH:
                 raise ValueError(f"Subnet ID must be 0-63, got {sid}")
             bits[sid] = Boolean(True)
         return cls(data=bits)
 
     def is_subscribed(self, subnet_id: int) -> bool:
         """Check if subscribed to a subnet."""
-        if not 0 <= subnet_id < 64:
+        if not 0 <= subnet_id < self.LENGTH:
             raise ValueError(f"Subnet ID must be 0-63, got {subnet_id}")
         return bool(self.data[subnet_id])
 
     def subscribed_subnets(self) -> list[int]:
         """List of subscribed subnet IDs."""
-        return [i for i in range(64) if self.data[i]]
+        return [i for i in range(self.LENGTH) if self.data[i]]
 
     def subscription_count(self) -> int:
         """Number of subscribed subnets."""
@@ -119,15 +119,33 @@ class SyncCommitteeSubnets(BaseBitvector):
     @classmethod
     def none(cls) -> "SyncCommitteeSubnets":
         """No subscriptions."""
-        return cls(data=[Boolean(False)] * 4)
+        return cls(data=[Boolean(False)] * cls.LENGTH)
 
     @classmethod
     def all(cls) -> "SyncCommitteeSubnets":
         """Subscribe to all 4 subnets."""
-        return cls(data=[Boolean(True)] * 4)
+        return cls(data=[Boolean(True)] * cls.LENGTH)
+
+    @classmethod
+    def from_subnet_ids(cls, subnet_ids: list[int]) -> "SyncCommitteeSubnets":
+        """Subscribe to specific sync subnets."""
+        bits = [Boolean(False)] * cls.LENGTH
+        for sid in subnet_ids:
+            if not 0 <= sid < cls.LENGTH:
+                raise ValueError(f"Sync subnet ID must be 0-3, got {sid}")
+            bits[sid] = Boolean(True)
+        return cls(data=bits)
 
     def is_subscribed(self, subnet_id: int) -> bool:
         """Check if subscribed to a sync subnet."""
-        if not 0 <= subnet_id < 4:
+        if not 0 <= subnet_id < self.LENGTH:
             raise ValueError(f"Sync subnet ID must be 0-3, got {subnet_id}")
         return bool(self.data[subnet_id])
+
+    def subscribed_subnets(self) -> list[int]:
+        """List of subscribed sync subnet IDs."""
+        return [i for i in range(self.LENGTH) if self.data[i]]
+
+    def subscription_count(self) -> int:
+        """Number of subscribed sync subnets."""
+        return sum(1 for b in self.data if b)

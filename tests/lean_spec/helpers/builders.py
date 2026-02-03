@@ -7,6 +7,8 @@ Each function creates minimal valid instances suitable for unit tests.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from lean_spec.subspecs.containers import (
     Attestation,
     AttestationData,
@@ -37,6 +39,9 @@ from lean_spec.subspecs.xmss.types import (
     Randomness,
 )
 from lean_spec.types import Bytes32, Bytes52, Uint64
+
+if TYPE_CHECKING:
+    from lean_spec.subspecs.networking.reqresp.message import Status
 
 # -----------------------------------------------------------------------------
 # Primitive Builders
@@ -276,4 +281,29 @@ def make_signed_attestation(
         validator_id=validator,
         message=attestation_data,
         signature=make_mock_signature(),
+    )
+
+
+# -----------------------------------------------------------------------------
+# Networking Test Builders
+# -----------------------------------------------------------------------------
+
+
+def make_test_status() -> Status:
+    """Create a valid Status message for testing."""
+    from lean_spec.subspecs.networking.reqresp.message import Status
+
+    return Status(
+        finalized=Checkpoint(root=Bytes32(b"\x01" * 32), slot=Slot(100)),
+        head=Checkpoint(root=Bytes32(b"\x02" * 32), slot=Slot(200)),
+    )
+
+
+def make_test_block(slot: int = 1, seed: int = 0) -> SignedBlockWithAttestation:
+    """Create a SignedBlockWithAttestation with convenient defaults for testing."""
+    return make_signed_block(
+        slot=Slot(slot),
+        proposer_index=ValidatorIndex(0),
+        parent_root=Bytes32(bytes([seed]) * 32),
+        state_root=Bytes32(bytes([seed + 1]) * 32),
     )

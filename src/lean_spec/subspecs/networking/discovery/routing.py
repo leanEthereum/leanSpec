@@ -51,12 +51,15 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
-from lean_spec.subspecs.networking.types import NodeId, SeqNumber
+from lean_spec.subspecs.networking.types import ForkDigest, NodeId, SeqNumber
 
 from .config import BUCKET_COUNT, K_BUCKET_SIZE
 from .messages import Distance
+
+if TYPE_CHECKING:
+    from lean_spec.subspecs.networking.enr import ENR
 
 
 def xor_distance(a: NodeId, b: NodeId) -> int:
@@ -129,6 +132,9 @@ class NodeEntry:
 
     verified: bool = False
     """True if node has responded to at least one PING. Required for relay."""
+
+    enr: ENR | None = None
+    """Full ENR record. Contains fork data for compatibility checks."""
 
 
 @dataclass
@@ -247,25 +253,35 @@ class RoutingTable:
     """
     Kademlia routing table for Discovery v5.
 
-    Organizes nodes into 256 k-buckets by XOR distance from the local node.
+    Organizes nodes into 256 k-buckets by XOR distance.
     Bucket i contains nodes with log2(distance) == i + 1.
+
+    Fork Filtering
+    --------------
+
+    When local_fork_digest is set:
+
+    - Only peers with matching fork_digest are accepted
+    - Prevents storing peers on incompatible forks
+    - Requires eth2 ENR data to be present
 
     Lookup Algorithm
     ----------------
-    A 'lookup' locates the k closest nodes to a target ID. The initiator
-    starts by picking alpha (typically 3) closest nodes from the local table.
-    It then sends FINDNODE requests to those nodes. As NODES responses are
-    received, the initiator resends FINDNODE to nodes learned from previous
-    queries, progressively approaching the target.
 
-    The lookup terminates when the initiator has queried and gotten responses
-    from the k closest nodes it has seen.
+    Locates the k closest nodes to a target ID:
+
+    1. Pick alpha (3) closest nodes from local table
+    2. Send FINDNODE to each
+    3. Add responses to routing table
+    4. Repeat with next closest unqueried nodes
+    5. Stop when k closest have been queried
 
     Table Maintenance
     -----------------
-    Nodes are expected to keep track of their close neighbors and regularly
-    refresh their information. A lookup targeting the least recently refreshed
-    bucket should be performed at regular intervals.
+
+    - Track close neighbors
+    - Regularly refresh stale buckets
+    - Perform lookup for least-recently-refreshed bucket
     """
 
     local_id: NodeId
@@ -273,6 +289,9 @@ class RoutingTable:
 
     buckets: list[KBucket] = field(default_factory=lambda: [KBucket() for _ in range(BUCKET_COUNT)])
     """256 k-buckets indexed by log2 distance minus one."""
+
+    local_fork_digest: ForkDigest | None = None
+    """Our fork_digest for filtering incompatible peers. None disables filtering."""
 
     def bucket_index(self, node_id: NodeId) -> int:
         """
@@ -293,19 +312,52 @@ class RoutingTable:
         """Get the k-bucket containing nodes at this distance."""
         return self.buckets[self.bucket_index(node_id)]
 
+    def is_fork_compatible(self, entry: NodeEntry) -> bool:
+        """
+        Check if a node entry is fork-compatible.
+
+        If local_fork_digest is set, the entry must have an ENR with
+        eth2 data containing the same fork_digest.
+
+        Args:
+            entry: Node entry to check.
+
+        Returns:
+            - True if compatible or filtering disabled,
+            - False if fork_digest mismatch or missing eth2 data.
+        """
+        if self.local_fork_digest is None:
+            return True
+
+        if entry.enr is None:
+            return False
+
+        eth2_data = entry.enr.eth2_data
+        if eth2_data is None:
+            return False
+
+        return eth2_data.fork_digest == self.local_fork_digest
+
     def add(self, entry: NodeEntry) -> bool:
         """
         Add a node to the routing table.
+
+        Rejects nodes that are on incompatible forks when fork filtering
+        is enabled (local_fork_digest is set).
 
         Args:
             entry: Node entry to add.
 
         Returns:
             - True if added/updated,
-            - False if bucket full or adding self.
+            - False if bucket full, adding self, or fork incompatible.
         """
         if entry.node_id == self.local_id:
             return False
+
+        if not self.is_fork_compatible(entry):
+            return False
+
         return self.get_bucket(entry.node_id).add(entry)
 
     def remove(self, node_id: NodeId) -> bool:

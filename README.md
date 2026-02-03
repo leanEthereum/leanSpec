@@ -115,6 +115,10 @@ uv run pytest -m "not slow"
 #   --fork   Target fork (default: devnet)
 #   --output Optional directory for filled fixtures
 uv run fill --clean --fork=devnet
+
+# Run API conformance tests against an external client implementation
+# Usage: uv run apitest <server-url> [pytest-args]
+uv run apitest http://localhost:5052
 ```
 
 ### Code Quality
@@ -221,6 +225,7 @@ def test_withdrawal_amount_above_uint64_max():
 | Serve docs                                    | `uv run mkdocs serve`                                  |
 | Run everything (checks + tests + docs)        | `uvx tox`                                              |
 | Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                                |
+| Test external client API conformance          | `uv run apitest http://localhost:5052`                 |
 | Run consensus node                            | `uv run python -m lean_spec --genesis config.yaml`     |
 | Build Docker test image                       | `docker build -t lean-spec:test .`                     |
 | Build Docker node image                       | `docker build --target node -t lean-spec:node .`       |

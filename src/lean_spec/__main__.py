@@ -86,6 +86,16 @@ def resolve_bootnode(bootnode: str) -> str:
 
         enr = ENR.from_string(bootnode)
 
+        # Verify structural validity (correct scheme, public key present).
+        if not enr.is_valid():
+            raise ValueError(f"ENR structurally invalid: {enr}")
+
+        # Cryptographically verify signature to ensure authenticity.
+        #
+        # This prevents attackers from forging ENRs to redirect connections.
+        if not enr.verify_signature():
+            raise ValueError(f"ENR signature verification failed: {enr}")
+
         # ENR.multiaddr() returns None when the record lacks IP or TCP port.
         #
         # This happens with discovery-only ENRs that only contain UDP info.
@@ -223,7 +233,7 @@ async def _init_from_checkpoint(
     Returns:
         A fully initialized Node if successful, None if checkpoint sync failed.
     """
-    from lean_spec.subspecs.api.client import (
+    from lean_spec.subspecs.sync.checkpoint_sync import (
         CheckpointSyncError,
         fetch_finalized_state,
         verify_checkpoint_state,

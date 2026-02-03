@@ -20,6 +20,9 @@ NodeId = Bytes32
 ForkDigest = Bytes4
 """4-byte fork identifier ensuring network isolation between forks."""
 
+Version = Bytes4
+"""4-byte fork version number (e.g., 0x01000000 for Phase0)."""
+
 SeqNumber = Uint64
 """Sequence number used in ENR records, metadata, and ping messages."""
 

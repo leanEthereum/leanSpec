@@ -233,6 +233,12 @@ class Bytes32(BaseBytes):
     LENGTH = 32
 
 
+class Bytes33(BaseBytes):
+    """Fixed-size byte array of exactly 33 bytes (compressed secp256k1 public key)."""
+
+    LENGTH = 33
+
+
 ZERO_HASH: Bytes32 = Bytes32.zero()
 """All-zero hash (32 bytes of zeros)."""
 
@@ -247,6 +253,12 @@ class Bytes52(BaseBytes):
     """Fixed-size byte array of exactly 52 bytes."""
 
     LENGTH = 52
+
+
+class Bytes64(BaseBytes):
+    """Fixed-size byte array of exactly 64 bytes (secp256k1 signature)."""
+
+    LENGTH = 64
 
 
 class Bytes96(BaseBytes):

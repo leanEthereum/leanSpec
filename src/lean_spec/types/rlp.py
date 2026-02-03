@@ -72,7 +72,7 @@ LONG_LIST_BASE = 0xF7
 """Base for long list prefix. Final prefix = 0xf7 + length_of_length."""
 
 
-def encode(item: RLPItem) -> bytes:
+def encode_rlp(item: RLPItem) -> bytes:
     """
     Encode an item using RLP.
 
@@ -124,7 +124,7 @@ def _encode_list(items: list[RLPItem]) -> bytes:
     Long lists (>55 bytes payload) use prefix 0xf7 + length-of-length, then length.
     """
     # Recursively encode all items.
-    payload = b"".join(encode(item) for item in items)
+    payload = b"".join(encode_rlp(item) for item in items)
     length = len(payload)
 
     # Short list: 0-55 bytes payload.
@@ -153,7 +153,7 @@ class RLPDecodingError(Exception):
     """Error during RLP decoding."""
 
 
-def decode(data: bytes) -> RLPItem:
+def decode_rlp(data: bytes) -> RLPItem:
     """
     Decode RLP-encoded bytes.
 
@@ -177,7 +177,7 @@ def decode(data: bytes) -> RLPItem:
     return item
 
 
-def decode_list(data: bytes) -> list[bytes]:
+def decode_rlp_list(data: bytes) -> list[bytes]:
     """
     Decode RLP data as a flat list of byte items.
 
@@ -193,7 +193,7 @@ def decode_list(data: bytes) -> list[bytes]:
     Raises:
         RLPDecodingError: If data is not a list or contains nested lists.
     """
-    item = decode(data)
+    item = decode_rlp(data)
 
     if not isinstance(item, list):
         raise RLPDecodingError("Expected RLP list")

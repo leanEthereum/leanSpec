@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
 from dataclasses import dataclass, field
-from typing import TypeVar
 
 from lean_spec.subspecs.containers import Checkpoint, SignedBlockWithAttestation
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking.reqresp.codec import (
     ResponseCode,
     encode_request,
@@ -25,12 +22,11 @@ from lean_spec.subspecs.networking.reqresp.message import (
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,
     BlocksByRootRequest,
+    RequestedBlockRoots,
     Status,
 )
 from lean_spec.types import Bytes32
-from tests.lean_spec.helpers import make_signed_block
-
-_T = TypeVar("_T")
+from tests.lean_spec.helpers import make_test_block, make_test_status, run_async
 
 # -----------------------------------------------------------------------------
 # Mock Classes
@@ -107,34 +103,6 @@ class MockResponseStream:
     async def finish(self) -> None:
         """Mark stream as finished."""
         self.finished = True
-
-
-# -----------------------------------------------------------------------------
-# Test Helpers
-# -----------------------------------------------------------------------------
-
-
-def make_test_status() -> Status:
-    """Create a valid Status message for testing."""
-    return Status(
-        finalized=Checkpoint(root=Bytes32(b"\x01" * 32), slot=Slot(100)),
-        head=Checkpoint(root=Bytes32(b"\x02" * 32), slot=Slot(200)),
-    )
-
-
-def make_test_block(slot: int = 1, seed: int = 0) -> SignedBlockWithAttestation:
-    """Create a valid SignedBlockWithAttestation for testing."""
-    return make_signed_block(
-        slot=Slot(slot),
-        proposer_index=ValidatorIndex(0),
-        parent_root=Bytes32(bytes([seed]) * 32),
-        state_root=Bytes32(bytes([seed + 1]) * 32),
-    )
-
-
-def run_async(coro: Coroutine[object, object, _T]) -> _T:
-    """Run an async coroutine synchronously."""
-    return asyncio.run(coro)
 
 
 # -----------------------------------------------------------------------------
@@ -352,7 +320,9 @@ class TestDefaultRequestHandlerBlocksByRoot:
             handler = DefaultRequestHandler(block_lookup=lookup)
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            request = BlocksByRootRequest(
+                roots=RequestedBlockRoots(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            )
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -387,10 +357,12 @@ class TestDefaultRequestHandlerBlocksByRoot:
 
             # Request two blocks, only one exists
             request = BlocksByRootRequest(
-                data=[
-                    Bytes32(b"\x11" * 32),  # exists
-                    Bytes32(b"\x99" * 32),  # missing
-                ]
+                roots=RequestedBlockRoots(
+                    data=[
+                        Bytes32(b"\x11" * 32),  # exists
+                        Bytes32(b"\x99" * 32),  # missing
+                    ]
+                )
             )
 
             await handler.handle_blocks_by_root(request, response)
@@ -410,7 +382,7 @@ class TestDefaultRequestHandlerBlocksByRoot:
             handler = DefaultRequestHandler()  # No block_lookup set
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[Bytes32(b"\x11" * 32)])
+            request = BlocksByRootRequest(roots=RequestedBlockRoots(data=[Bytes32(b"\x11" * 32)]))
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -433,7 +405,7 @@ class TestDefaultRequestHandlerBlocksByRoot:
             handler = DefaultRequestHandler(block_lookup=lookup)
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[])
+            request = BlocksByRootRequest(roots=RequestedBlockRoots(data=[]))
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -461,7 +433,9 @@ class TestDefaultRequestHandlerBlocksByRoot:
             response = MockResponseStream()
 
             # First block causes error, second succeeds
-            request = BlocksByRootRequest(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            request = BlocksByRootRequest(
+                roots=RequestedBlockRoots(data=[Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)])
+            )
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -537,7 +511,7 @@ class TestReqRespServer:
             server = ReqRespServer(handler=handler)
 
             # Build wire-format request
-            request = BlocksByRootRequest(data=[root1])
+            request = BlocksByRootRequest(roots=RequestedBlockRoots(data=[root1]))
             request_bytes = encode_request(request.encode_bytes())
 
             stream = MockStream(request_data=request_bytes)
@@ -785,7 +759,7 @@ class TestIntegration:
             server = ReqRespServer(handler=handler)
 
             # Client side: encode request
-            request = BlocksByRootRequest(data=[root1, root2])
+            request = BlocksByRootRequest(roots=RequestedBlockRoots(data=[root1, root2]))
             request_wire = encode_request(request.encode_bytes())
 
             # Server side: handle request
@@ -826,7 +800,7 @@ class TestIntegration:
             server = ReqRespServer(handler=handler)
 
             # Request two blocks, only one exists
-            request = BlocksByRootRequest(data=[root1, root_missing])
+            request = BlocksByRootRequest(roots=RequestedBlockRoots(data=[root1, root_missing]))
             request_wire = encode_request(request.encode_bytes())
 
             stream = MockStream(request_data=request_wire)
@@ -1179,7 +1153,7 @@ class TestDefaultRequestHandlerEdgeCases:
             handler = DefaultRequestHandler(block_lookup=lookup)
             response = MockResponseStream()
 
-            request = BlocksByRootRequest(data=[root])
+            request = BlocksByRootRequest(roots=RequestedBlockRoots(data=[root]))
 
             await handler.handle_blocks_by_root(request, response)
 
@@ -1204,11 +1178,13 @@ class TestDefaultRequestHandlerEdgeCases:
             response = MockResponseStream()
 
             request = BlocksByRootRequest(
-                data=[
-                    Bytes32(b"\x11" * 32),
-                    Bytes32(b"\x22" * 32),
-                    Bytes32(b"\x33" * 32),
-                ]
+                roots=RequestedBlockRoots(
+                    data=[
+                        Bytes32(b"\x11" * 32),
+                        Bytes32(b"\x22" * 32),
+                        Bytes32(b"\x33" * 32),
+                    ]
+                )
             )
 
             await handler.handle_blocks_by_root(request, response)
@@ -1240,11 +1216,13 @@ class TestDefaultRequestHandlerEdgeCases:
             response = MockResponseStream()
 
             request = BlocksByRootRequest(
-                data=[
-                    Bytes32(b"\x11" * 32),
-                    Bytes32(b"\x22" * 32),
-                    Bytes32(b"\x33" * 32),
-                ]
+                roots=RequestedBlockRoots(
+                    data=[
+                        Bytes32(b"\x11" * 32),
+                        Bytes32(b"\x22" * 32),
+                        Bytes32(b"\x33" * 32),
+                    ]
+                )
             )
 
             await handler.handle_blocks_by_root(request, response)
@@ -1358,7 +1336,9 @@ class TestConcurrentRequestHandling:
             status_stream = MockStream(request_data=status_request)
 
             # BlocksByRoot request
-            blocks_request = encode_request(BlocksByRootRequest(data=[root]).encode_bytes())
+            blocks_request = encode_request(
+                BlocksByRootRequest(roots=RequestedBlockRoots(data=[root])).encode_bytes()
+            )
             blocks_stream = MockStream(request_data=blocks_request)
 
             # Handle concurrently

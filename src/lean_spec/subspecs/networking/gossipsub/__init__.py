@@ -89,6 +89,7 @@ from .topic import (
     BLOCK_TOPIC_NAME,
     ENCODING_POSTFIX,
     TOPIC_PREFIX,
+    ForkMismatchError,
     GossipTopic,
     TopicKind,
     format_topic_string,
@@ -114,6 +115,7 @@ __all__ = [
     "TOPIC_PREFIX",
     "ENCODING_POSTFIX",
     "BLOCK_TOPIC_NAME",
+    "ForkMismatchError",
     "format_topic_string",
     "parse_topic_string",
     # Parameters

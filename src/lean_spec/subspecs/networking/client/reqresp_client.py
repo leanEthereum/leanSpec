@@ -42,6 +42,7 @@ from lean_spec.subspecs.networking.reqresp.message import (
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,
     BlocksByRootRequest,
+    RequestedBlockRoots,
     Status,
 )
 from lean_spec.subspecs.networking.transport import PeerId
@@ -161,7 +162,7 @@ class ReqRespClient:
 
         try:
             # Build and send the request.
-            request = BlocksByRootRequest(data=list(roots))
+            request = BlocksByRootRequest(roots=RequestedBlockRoots(data=roots))
             request_bytes = encode_request(request.encode_bytes())
             await stream.write(request_bytes)
 

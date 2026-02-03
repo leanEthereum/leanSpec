@@ -7,7 +7,7 @@ References:
     - https://github.com/ethereum/devp2p/blob/master/discv5/discv5-theory.md
 """
 
-from typing_extensions import Final
+from typing import Final
 
 from lean_spec.types import StrictBaseModel
 

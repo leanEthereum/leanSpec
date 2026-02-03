@@ -318,34 +318,3 @@ class WhoAreYouAuthdata(StrictBaseModel):
 
     enr_seq: SeqNumber
     """Recipient's known ENR sequence for the sender. 0 if unknown."""
-
-
-class HandshakeAuthdata(StrictBaseModel):
-    """
-    Authdata for handshake packets (flag=2).
-
-    Variable size depending on identity scheme. For "v4" scheme:
-    - sig_size = 64 bytes
-    - eph_key_size = 33 bytes (compressed secp256k1)
-    - record = optional, included if enr_seq in WHOAREYOU was stale
-
-    Total size: 34 + sig_size + eph_key_size + len(record).
-    """
-
-    src_id: bytes
-    """Sender's 32-byte node ID."""
-
-    sig_size: Uint8
-    """Size of the ID signature. 64 for "v4" scheme."""
-
-    eph_key_size: Uint8
-    """Size of the ephemeral public key. 33 for "v4" scheme."""
-
-    id_signature: bytes
-    """Identity proof signature. Length specified by sig_size."""
-
-    eph_pubkey: bytes
-    """Ephemeral public key for ECDH. Length specified by eph_key_size."""
-
-    record: bytes | None = None
-    """Sender's ENR. Included only if recipient's enr_seq was stale."""

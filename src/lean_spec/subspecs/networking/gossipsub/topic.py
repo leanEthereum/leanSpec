@@ -61,6 +61,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+
+class ForkMismatchError(ValueError):
+    """Raised when a topic's fork_digest does not match the expected value."""
+
+    def __init__(self, expected: str, actual: str) -> None:
+        """Initialize with expected and actual fork digests."""
+        self.expected = expected
+        self.actual = actual
+        super().__init__(f"Fork mismatch: expected {expected}, got {actual}")
+
+
 TOPIC_PREFIX: str = "leanconsensus"
 """Network prefix for Lean consensus gossip topics.
 
@@ -165,6 +176,31 @@ class GossipTopic:
         """
         return str(self).encode("utf-8")
 
+    def validate_fork(self, expected_fork_digest: str) -> None:
+        """
+        Validate that the topic's fork_digest matches expected.
+
+        Args:
+            expected_fork_digest: Expected fork digest (0x-prefixed hex).
+
+        Raises:
+            ForkMismatchError: If fork_digest does not match.
+        """
+        if self.fork_digest != expected_fork_digest:
+            raise ForkMismatchError(expected_fork_digest, self.fork_digest)
+
+    def is_fork_compatible(self, expected_fork_digest: str) -> bool:
+        """
+        Check if this topic is compatible with the expected fork.
+
+        Args:
+            expected_fork_digest: Expected fork digest (0x-prefixed hex).
+
+        Returns:
+            True if fork_digest matches, False otherwise.
+        """
+        return self.fork_digest == expected_fork_digest
+
     @classmethod
     def from_string(cls, topic_str: str) -> GossipTopic:
         """Parse a topic string into a GossipTopic.
@@ -215,6 +251,28 @@ class GossipTopic:
             raise ValueError(f"Unknown topic: '{topic_name}'") from None
 
         return cls(kind=kind, fork_digest=fork_digest)
+
+    @classmethod
+    def from_string_validated(cls, topic_str: str, expected_fork_digest: str) -> GossipTopic:
+        """Parse a topic string and validate fork compatibility.
+
+        Combines parsing and fork validation into a single operation.
+        Use this when receiving gossip messages to reject wrong-fork topics early.
+
+        Args:
+            topic_str: Full topic string to parse.
+            expected_fork_digest: Expected fork digest (0x-prefixed hex).
+
+        Returns:
+            Parsed GossipTopic instance.
+
+        Raises:
+            ValueError: If the topic string is malformed.
+            ForkMismatchError: If fork_digest does not match expected.
+        """
+        topic = cls.from_string(topic_str)
+        topic.validate_fork(expected_fork_digest)
+        return topic
 
     @classmethod
     def block(cls, fork_digest: str) -> GossipTopic:

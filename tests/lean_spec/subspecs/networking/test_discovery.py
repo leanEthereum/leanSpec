@@ -1,5 +1,7 @@
 """Tests for Discovery v5 Protocol Specification"""
 
+from typing import TYPE_CHECKING
+
 from lean_spec.subspecs.networking.discovery import (
     MAX_REQUEST_ID_LENGTH,
     PROTOCOL_ID,
@@ -43,6 +45,9 @@ from lean_spec.subspecs.networking.discovery.routing import (
 )
 from lean_spec.subspecs.networking.types import NodeId, SeqNumber
 from lean_spec.types.uint import Uint8, Uint16, Uint64
+
+if TYPE_CHECKING:
+    from lean_spec.subspecs.networking.enr import ENR
 
 
 class TestProtocolConstants:
@@ -690,6 +695,100 @@ class TestRoutingTable:
         assert table.nodes_at_distance(Distance(257)) == []
 
 
+class TestRoutingTableForkFiltering:
+    """Tests for routing table fork compatibility filtering."""
+
+    def _make_enr_with_eth2(self, fork_digest_hex: str) -> "ENR":
+        """Create a minimal ENR with eth2 data for testing."""
+        from lean_spec.subspecs.networking.enr import ENR
+        from lean_spec.subspecs.networking.enr.eth2 import FAR_FUTURE_EPOCH
+        from lean_spec.types import Bytes64
+        from lean_spec.types.byte_arrays import Bytes4
+
+        # Create eth2 bytes: fork_digest(4) + next_fork_version(4) + next_fork_epoch(8)
+        fork_digest = Bytes4(bytes.fromhex(fork_digest_hex))
+        eth2_bytes = (
+            bytes(fork_digest) + bytes(fork_digest) + int(FAR_FUTURE_EPOCH).to_bytes(8, "little")
+        )
+        enr = ENR(
+            signature=Bytes64(b"\x00" * 64),
+            seq=SeqNumber(1),
+            pairs={"eth2": eth2_bytes, "id": b"v4"},
+        )
+        return enr
+
+    def test_no_filtering_without_local_fork_digest(self) -> None:
+        """Nodes are accepted when local_fork_digest is not set."""
+        local_id = NodeId(b"\x00" * 32)
+        table = RoutingTable(local_id=local_id)  # No fork_digest
+
+        entry = NodeEntry(node_id=NodeId(b"\x01" * 32))  # No ENR
+        assert table.add(entry)
+        assert table.contains(entry.node_id)
+
+    def test_filtering_rejects_node_without_enr(self) -> None:
+        """Node without ENR is rejected when fork filtering is enabled."""
+        from lean_spec.types.byte_arrays import Bytes4
+
+        local_id = NodeId(b"\x00" * 32)
+        fork_digest = Bytes4(bytes.fromhex("12345678"))
+        table = RoutingTable(local_id=local_id, local_fork_digest=fork_digest)
+
+        entry = NodeEntry(node_id=NodeId(b"\x01" * 32))  # No ENR
+        assert not table.add(entry)
+        assert not table.contains(entry.node_id)
+
+    def test_filtering_rejects_mismatched_fork(self) -> None:
+        """Node with different fork_digest is rejected."""
+        from lean_spec.types.byte_arrays import Bytes4
+
+        local_id = NodeId(b"\x00" * 32)
+        local_fork = Bytes4(bytes.fromhex("12345678"))
+        table = RoutingTable(local_id=local_id, local_fork_digest=local_fork)
+
+        enr = self._make_enr_with_eth2("deadbeef")  # Different fork
+        entry = NodeEntry(node_id=NodeId(b"\x01" * 32), enr=enr)
+
+        assert not table.add(entry)
+        assert not table.contains(entry.node_id)
+
+    def test_filtering_accepts_matching_fork(self) -> None:
+        """Node with matching fork_digest is accepted."""
+        from lean_spec.types.byte_arrays import Bytes4
+
+        local_id = NodeId(b"\x00" * 32)
+        local_fork = Bytes4(bytes.fromhex("12345678"))
+        table = RoutingTable(local_id=local_id, local_fork_digest=local_fork)
+
+        enr = self._make_enr_with_eth2("12345678")  # Same fork
+        entry = NodeEntry(node_id=NodeId(b"\x01" * 32), enr=enr)
+
+        assert table.add(entry)
+        assert table.contains(entry.node_id)
+
+    def test_is_fork_compatible_method(self) -> None:
+        """Test is_fork_compatible method directly."""
+        from lean_spec.types.byte_arrays import Bytes4
+
+        local_id = NodeId(b"\x00" * 32)
+        local_fork = Bytes4(bytes.fromhex("12345678"))
+        table = RoutingTable(local_id=local_id, local_fork_digest=local_fork)
+
+        # Compatible entry
+        compatible_enr = self._make_enr_with_eth2("12345678")
+        compatible_entry = NodeEntry(node_id=NodeId(b"\x01" * 32), enr=compatible_enr)
+        assert table.is_fork_compatible(compatible_entry)
+
+        # Incompatible entry (different fork)
+        incompatible_enr = self._make_enr_with_eth2("deadbeef")
+        incompatible_entry = NodeEntry(node_id=NodeId(b"\x02" * 32), enr=incompatible_enr)
+        assert not table.is_fork_compatible(incompatible_entry)
+
+        # Entry without ENR
+        no_enr_entry = NodeEntry(node_id=NodeId(b"\x03" * 32))
+        assert not table.is_fork_compatible(no_enr_entry)
+
+
 class TestNodeEntry:
     """Tests for NodeEntry dataclass."""
 
@@ -702,6 +801,7 @@ class TestNodeEntry:
         assert entry.last_seen == 0.0
         assert entry.endpoint is None
         assert entry.verified is False
+        assert entry.enr is None
 
     def test_full_construction(self) -> None:
         """NodeEntry accepts all fields."""

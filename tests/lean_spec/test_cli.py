@@ -11,6 +11,10 @@ import base64
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from Crypto.Hash import keccak
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import Prehashed, decode_dss_signature
 
 from lean_spec.__main__ import create_anchor_block, is_enr_string, resolve_bootnode
 from lean_spec.subspecs.containers import Block, BlockBody
@@ -18,68 +22,88 @@ from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
-from lean_spec.types.rlp import encode as rlp_encode
+from lean_spec.types.rlp import encode_rlp
 from tests.lean_spec.helpers import make_genesis_state
 
+# Generate a test keypair once for all ENR tests.
+_TEST_PRIVATE_KEY = ec.generate_private_key(ec.SECP256K1())
+_TEST_PUBLIC_KEY = _TEST_PRIVATE_KEY.public_key()
+_TEST_COMPRESSED_PUBKEY = _TEST_PUBLIC_KEY.public_bytes(
+    encoding=serialization.Encoding.X962,
+    format=serialization.PublicFormat.CompressedPoint,
+)
 
-# Valid ENR with IPv4 and TCP port (derived from EIP-778 test vector structure)
-# This ENR has: ip=192.168.1.1, tcp=9000
+
+def _sign_enr_content(content_items: list[bytes]) -> bytes:
+    """Sign ENR content and return 64-byte r||s signature."""
+    content_rlp = encode_rlp(content_items)
+
+    k = keccak.new(digest_bits=256)
+    k.update(content_rlp)
+    digest = k.digest()
+
+    signature_der = _TEST_PRIVATE_KEY.sign(digest, ec.ECDSA(Prehashed(hashes.SHA256())))
+    r, s = decode_dss_signature(signature_der)
+    return r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
 def _make_enr_with_tcp(ip_bytes: bytes, tcp_port: int) -> str:
-    """Create a minimal ENR string with IPv4 and TCP port."""
-    rlp_data = rlp_encode(
-        [
-            b"\x00" * 64,  # signature
-            b"\x01",  # seq = 1
-            b"id",
-            b"v4",
-            b"ip",
-            ip_bytes,
-            b"secp256k1",
-            b"\x02" + b"\x00" * 32,  # compressed pubkey
-            b"tcp",
-            tcp_port.to_bytes(2, "big"),
-        ]
-    )
+    """Create a properly signed ENR string with IPv4 and TCP port."""
+    # Content items (keys must be sorted).
+    content_items: list[bytes] = [
+        b"\x01",  # seq = 1
+        b"id",
+        b"v4",
+        b"ip",
+        ip_bytes,
+        b"secp256k1",
+        _TEST_COMPRESSED_PUBKEY,
+        b"tcp",
+        tcp_port.to_bytes(2, "big"),
+    ]
+    signature = _sign_enr_content(content_items)
+
+    rlp_data = encode_rlp([signature] + content_items)
     b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
     return f"enr:{b64_content}"
 
 
 def _make_enr_with_ipv6_tcp(ip6_bytes: bytes, tcp_port: int) -> str:
-    """Create a minimal ENR string with IPv6 and TCP port."""
-    rlp_data = rlp_encode(
-        [
-            b"\x00" * 64,  # signature
-            b"\x01",  # seq = 1
-            b"id",
-            b"v4",
-            b"ip6",
-            ip6_bytes,
-            b"secp256k1",
-            b"\x02" + b"\x00" * 32,  # compressed pubkey
-            b"tcp",
-            tcp_port.to_bytes(2, "big"),
-        ]
-    )
+    """Create a properly signed ENR string with IPv6 and TCP port."""
+    content_items: list[bytes] = [
+        b"\x01",  # seq = 1
+        b"id",
+        b"v4",
+        b"ip6",
+        ip6_bytes,
+        b"secp256k1",
+        _TEST_COMPRESSED_PUBKEY,
+        b"tcp",
+        tcp_port.to_bytes(2, "big"),
+    ]
+    signature = _sign_enr_content(content_items)
+
+    rlp_data = encode_rlp([signature] + content_items)
     b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
     return f"enr:{b64_content}"
 
 
 def _make_enr_without_tcp(ip_bytes: bytes) -> str:
-    """Create an ENR string with IPv4 but no TCP port (UDP only)."""
-    rlp_data = rlp_encode(
-        [
-            b"\x00" * 64,  # signature
-            b"\x01",  # seq = 1
-            b"id",
-            b"v4",
-            b"ip",
-            ip_bytes,
-            b"secp256k1",
-            b"\x02" + b"\x00" * 32,  # compressed pubkey
-            b"udp",
-            (30303).to_bytes(2, "big"),  # UDP only, no TCP
-        ]
-    )
+    """Create a properly signed ENR string with IPv4 but no TCP port (UDP only)."""
+    content_items: list[bytes] = [
+        b"\x01",  # seq = 1
+        b"id",
+        b"v4",
+        b"ip",
+        ip_bytes,
+        b"secp256k1",
+        _TEST_COMPRESSED_PUBKEY,
+        b"udp",
+        (30303).to_bytes(2, "big"),  # UDP only, no TCP
+    ]
+    signature = _sign_enr_content(content_items)
+
+    rlp_data = encode_rlp([signature] + content_items)
     b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
     return f"enr:{b64_content}"
 
@@ -358,12 +382,12 @@ class TestInitFromCheckpoint:
 
             with (
                 patch(
-                    "lean_spec.subspecs.api.client.fetch_finalized_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                     new_callable=AsyncMock,
                     return_value=checkpoint_state,
                 ),
                 patch(
-                    "lean_spec.subspecs.api.client.verify_checkpoint_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
                     new_callable=AsyncMock,
                     return_value=True,
                 ),
@@ -400,12 +424,12 @@ class TestInitFromCheckpoint:
 
             with (
                 patch(
-                    "lean_spec.subspecs.api.client.fetch_finalized_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                     new_callable=AsyncMock,
                     return_value=checkpoint_state,
                 ),
                 patch(
-                    "lean_spec.subspecs.api.client.verify_checkpoint_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
                     new_callable=AsyncMock,
                     return_value=False,  # Verification fails
                 ),
@@ -427,8 +451,8 @@ class TestInitFromCheckpoint:
 
         async def run_test() -> None:
             from lean_spec.__main__ import _init_from_checkpoint
-            from lean_spec.subspecs.api.client import CheckpointSyncError
             from lean_spec.subspecs.genesis import GenesisConfig
+            from lean_spec.subspecs.sync.checkpoint_sync import CheckpointSyncError
 
             # Arrange
             local_genesis = GenesisConfig.model_validate(
@@ -441,7 +465,7 @@ class TestInitFromCheckpoint:
             mock_event_source = AsyncMock()
 
             with patch(
-                "lean_spec.subspecs.api.client.fetch_finalized_state",
+                "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                 new_callable=AsyncMock,
                 side_effect=CheckpointSyncError("Network error: connection refused"),
             ):
@@ -482,12 +506,12 @@ class TestInitFromCheckpoint:
 
             with (
                 patch(
-                    "lean_spec.subspecs.api.client.fetch_finalized_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                     new_callable=AsyncMock,
                     return_value=checkpoint_state,
                 ),
                 patch(
-                    "lean_spec.subspecs.api.client.verify_checkpoint_state",
+                    "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
                     new_callable=AsyncMock,
                     return_value=True,
                 ),
@@ -513,8 +537,8 @@ class TestInitFromCheckpoint:
 
         async def run_test() -> None:
             from lean_spec.__main__ import _init_from_checkpoint
-            from lean_spec.subspecs.api.client import CheckpointSyncError
             from lean_spec.subspecs.genesis import GenesisConfig
+            from lean_spec.subspecs.sync.checkpoint_sync import CheckpointSyncError
 
             # Arrange
             local_genesis = GenesisConfig.model_validate(
@@ -527,7 +551,7 @@ class TestInitFromCheckpoint:
             mock_event_source = AsyncMock()
 
             with patch(
-                "lean_spec.subspecs.api.client.fetch_finalized_state",
+                "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
                 new_callable=AsyncMock,
                 side_effect=CheckpointSyncError("HTTP error 404: Not Found"),
             ):
