@@ -44,7 +44,7 @@ jobs:
         run: uv run python -m consensus_testing.keys --download --scheme prod
 
       - name: Fill production test fixtures
-        run: uv run fill --fork=Devnet --scheme prod --clean -n 2
+        run: uv run fill --fork=Devnet --scheme prod --clean -n auto
 
       - name: Upload production test fixtures
         uses: actions/upload-artifact@v4
