@@ -76,7 +76,7 @@ class _ServerThread(threading.Thread):
             body=BlockBody(attestations=AggregatedAttestations(data=[])),
         )
 
-        store = Store.get_forkchoice_store(genesis_state, genesis_block)
+        store = Store.get_forkchoice_store(genesis_state, genesis_block, None)
 
         config = ApiServerConfig(host="127.0.0.1", port=self.port)
         return ApiServer(config=config, store_getter=lambda: store)

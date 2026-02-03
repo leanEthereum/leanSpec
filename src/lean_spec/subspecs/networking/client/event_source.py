@@ -117,12 +117,7 @@ from lean_spec.subspecs.networking.gossipsub.behavior import (
     GossipsubMessageEvent,
 )
 from lean_spec.subspecs.networking.gossipsub.parameters import GossipsubParameters
-from lean_spec.subspecs.networking.gossipsub.topic import (
-    ForkMismatchError,
-    GossipTopic,
-    TopicKind,
-)
-from lean_spec.subspecs.networking.peer import PeerInfo
+from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic, TopicKind
 from lean_spec.subspecs.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
     BlockLookup,
@@ -352,15 +347,13 @@ class GossipHandler:
         Raises:
             GossipMessageError: If the message cannot be decoded.
         """
-        # Step 1: Parse topic and validate fork compatibility.
+        # Step 1: Parse topic to determine message type.
         #
         # The topic string contains the fork digest and message kind.
-        # Invalid topics and wrong-fork messages are rejected before decompression.
-        # This prevents wasting CPU on malformed or incompatible messages.
+        # Invalid topics are rejected before any decompression work.
+        # This prevents wasting CPU on malformed messages.
         try:
-            topic = GossipTopic.from_string_validated(topic_str, self.fork_digest)
-        except ForkMismatchError:
-            raise  # Re-raise ForkMismatchError without wrapping
+            topic = GossipTopic.from_string(topic_str)
         except ValueError as e:
             raise GossipMessageError(f"Invalid topic: {e}") from e
 
@@ -406,13 +399,10 @@ class GossipHandler:
             Parsed GossipTopic.
 
         Raises:
-            ForkMismatchError: If the topic's fork_digest doesn't match.
             GossipMessageError: If the topic is invalid.
         """
         try:
-            return GossipTopic.from_string_validated(topic_str, self.fork_digest)
-        except ForkMismatchError:
-            raise  # Re-raise ForkMismatchError without wrapping
+            return GossipTopic.from_string(topic_str)
         except ValueError as e:
             raise GossipMessageError(f"Invalid topic: {e}") from e
 
@@ -627,12 +617,6 @@ class LiveNetworkEventSource:
     Supports both yamux (TCP) and QUIC connection types.
     """
 
-    _peer_info: dict[PeerId, PeerInfo] = field(default_factory=dict)
-    """Cache of peer information including status and ENR.
-
-    Populated after status exchange. Used for fork compatibility checks.
-    """
-
     _our_status: Status | None = None
     """Our current chain status for handshakes.
 
@@ -753,18 +737,6 @@ class LiveNetworkEventSource:
         """
         self._reqresp_handler.block_lookup = lookup
 
-    def get_peer_info(self, peer_id: PeerId) -> PeerInfo | None:
-        """
-        Get cached peer info.
-
-        Args:
-            peer_id: Peer identifier.
-
-        Returns:
-            PeerInfo if cached, None otherwise.
-        """
-        return self._peer_info.get(peer_id)
-
     def subscribe_gossip_topic(self, topic: str) -> None:
         """
         Subscribe to a gossip topic.
@@ -833,8 +805,6 @@ class LiveNetworkEventSource:
 
             logger.debug("Processed gossipsub message %s from %s", topic.kind.value, event.peer_id)
 
-        except ForkMismatchError as e:
-            logger.warning("Rejected gossip from wrong fork: %s", e)
         except GossipMessageError as e:
             logger.warning("Failed to process gossipsub message: %s", e)
 
@@ -1071,12 +1041,6 @@ class LiveNetworkEventSource:
             peer_status = await self.reqresp_client.send_status(peer_id, self._our_status)
 
             if peer_status is not None:
-                # Cache peer's status for fork compatibility checks.
-                if peer_id not in self._peer_info:
-                    self._peer_info[peer_id] = PeerInfo(peer_id=peer_id)
-                self._peer_info[peer_id].status = peer_status
-                self._peer_info[peer_id].update_last_seen()
-
                 await self._events.put(PeerStatusEvent(peer_id=peer_id, status=peer_status))
                 logger.debug(
                     "Received status from %s: head=%s",
@@ -1125,7 +1089,6 @@ class LiveNetworkEventSource:
             peer_id: Peer to disconnect.
         """
         conn = self._connections.pop(peer_id, None)
-        self._peer_info.pop(peer_id, None)  # Clean up peer info cache
         if conn is not None:
             self.reqresp_client.unregister_connection(peer_id)
             await conn.close()
