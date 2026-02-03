@@ -132,9 +132,7 @@ def _get_keys_dir(scheme_name: str) -> Path:
 
 
 class LazyKeyDict:
-    """
-    Load pre-generated keys from disk (cached after first call).
-    """
+    """Load pre-generated keys from disk (cached after first call)."""
 
     def __init__(self, scheme_name: str) -> None:
         """Initialize with scheme name for locating key files."""
