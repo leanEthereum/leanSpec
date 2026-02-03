@@ -354,7 +354,7 @@ class Store(Container):
         # Store attestation data for later extraction
         new_attestation_data_by_root[data_root] = attestation_data
 
-        # Return store with updated signature maps and attestation data
+        # Return store with updated signature map and attestation data
         return self.model_copy(
             update={
                 "gossip_signatures": new_commitee_sigs,

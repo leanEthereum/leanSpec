@@ -117,7 +117,11 @@ from lean_spec.subspecs.networking.gossipsub.behavior import (
     GossipsubMessageEvent,
 )
 from lean_spec.subspecs.networking.gossipsub.parameters import GossipsubParameters
-from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic, TopicKind
+from lean_spec.subspecs.networking.gossipsub.topic import (
+    ForkMismatchError,
+    GossipTopic,
+    TopicKind,
+)
 from lean_spec.subspecs.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
     BlockLookup,
@@ -331,11 +335,13 @@ class GossipHandler:
         Processing proceeds in order:
 
         1. Parse topic to determine message type.
-        2. Decompress Snappy-framed data.
-        3. Decode SSZ bytes using the appropriate schema.
+        2. Validate fork digest.
+        3. Decompress Snappy-framed data.
+        4. Decode SSZ bytes using the appropriate schema.
 
         Each step can fail independently. Failures are wrapped in
-        GossipMessageError for uniform handling.
+        GossipMessageError for uniform handling. Fork mismatches raise
+        ForkMismatchError.
 
         Args:
             topic_str: Full topic string (e.g., "/leanconsensus/0x.../block/ssz_snappy").
@@ -345,16 +351,20 @@ class GossipHandler:
             Decoded block or attestation.
 
         Raises:
+            ForkMismatchError: If fork_digest does not match.
             GossipMessageError: If the message cannot be decoded.
         """
-        # Step 1: Parse topic to determine message type.
+        # Step 1: Parse topic to determine message type and validate fork.
         #
         # The topic string contains the fork digest and message kind.
         # Invalid topics are rejected before any decompression work.
-        # This prevents wasting CPU on malformed messages.
+        # Fork mismatch is checked early to prevent cross-fork attacks.
+        # This prevents wasting CPU on malformed or cross-fork messages.
         try:
-            topic = GossipTopic.from_string(topic_str)
-        except ValueError as e:
+            topic = GossipTopic.from_string_validated(topic_str, self.fork_digest)
+        except (ValueError, ForkMismatchError) as e:
+            if isinstance(e, ForkMismatchError):
+                raise
             raise GossipMessageError(f"Invalid topic: {e}") from e
 
         # Step 2: Decompress Snappy-framed data.
@@ -399,11 +409,14 @@ class GossipHandler:
             Parsed GossipTopic.
 
         Raises:
+            ForkMismatchError: If fork_digest does not match.
             GossipMessageError: If the topic is invalid.
         """
         try:
-            return GossipTopic.from_string(topic_str)
-        except ValueError as e:
+            return GossipTopic.from_string_validated(topic_str, self.fork_digest)
+        except (ValueError, ForkMismatchError) as e:
+            if isinstance(e, ForkMismatchError):
+                raise
             raise GossipMessageError(f"Invalid topic: {e}") from e
 
 
