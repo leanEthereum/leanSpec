@@ -5,7 +5,7 @@ import pytest
 from lean_spec.subspecs.chain import Interval, SlotClock
 from lean_spec.subspecs.chain.config import (
     MILLISECONDS_PER_INTERVAL,
-    MILLISECONDS_PER_SLOT,
+    SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import Slot
 from lean_spec.types import Uint64
@@ -27,10 +27,10 @@ class TestCurrentSlot:
         assert clock.current_slot() == Slot(0)
 
     def test_progression(self) -> None:
-        """Slot increments every 4 seconds (MILLISECONDS_PER_SLOT / 1000)."""
+        """Slot increments every 4 seconds (SECONDS_PER_SLOT)."""
         genesis = Uint64(1700000000)
         for expected_slot in range(5):
-            slot_duration_seconds = (Uint64(expected_slot) * MILLISECONDS_PER_SLOT) // Uint64(1000)
+            slot_duration_seconds = Uint64(expected_slot) * SECONDS_PER_SLOT
             time = genesis + slot_duration_seconds
             clock = SlotClock(genesis_time=genesis, time_fn=lambda t=time: float(t))
             assert clock.current_slot() == Slot(expected_slot)
@@ -38,7 +38,7 @@ class TestCurrentSlot:
     def test_mid_slot(self) -> None:
         """Slot remains constant within a slot."""
         genesis = Uint64(1700000000)
-        slot_3_seconds = (Uint64(3) * MILLISECONDS_PER_SLOT) // Uint64(1000)
+        slot_3_seconds = Uint64(3) * SECONDS_PER_SLOT
         time = genesis + slot_3_seconds + Uint64(2)
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: float(time))
         assert clock.current_slot() == Slot(3)
@@ -46,7 +46,7 @@ class TestCurrentSlot:
     def test_at_slot_boundary_minus_one(self) -> None:
         """Slot does not increment until boundary is reached."""
         genesis = Uint64(1700000000)
-        slot_duration_seconds = MILLISECONDS_PER_SLOT // Uint64(1000)
+        slot_duration_seconds = SECONDS_PER_SLOT
         time = genesis + slot_duration_seconds - Uint64(1)
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: float(time))
         assert clock.current_slot() == Slot(0)
@@ -89,7 +89,7 @@ class TestCurrentInterval:
     def test_wraps_at_slot_boundary(self) -> None:
         """Interval resets to 0 at next slot."""
         genesis = Uint64(1700000000)
-        slot_duration_seconds = MILLISECONDS_PER_SLOT // Uint64(1000)
+        slot_duration_seconds = SECONDS_PER_SLOT
         time = genesis + slot_duration_seconds
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: float(time))
         assert clock.current_interval() == Interval(0)

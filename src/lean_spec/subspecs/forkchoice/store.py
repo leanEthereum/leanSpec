@@ -20,6 +20,7 @@ from lean_spec.subspecs.chain.config import (
     JUSTIFICATION_LOOKBACK_SLOTS,
     MILLISECONDS_PER_INTERVAL,
     MILLISECONDS_PER_SLOT,
+    SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -1041,7 +1042,7 @@ class Store(Container):
             Tuple of (new Store with updated time, head root for building).
         """
         # Calculate time corresponding to this slot
-        slot_duration_seconds = (slot * MILLISECONDS_PER_SLOT) // Uint64(1000)
+        slot_duration_seconds = slot * SECONDS_PER_SLOT
         slot_time = self.config.genesis_time + slot_duration_seconds
 
         # Advance time to current slot (ticking intervals)

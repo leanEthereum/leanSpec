@@ -180,7 +180,7 @@ class TestNodeFromGenesis:
         assert store is not None
         expected_time = Uint64(test_slot * patched_intervals)
         assert store.time == expected_time, (
-            f"Store.time should use INTERVALS_PER_SLOT, not MILLISECONDS_PER_SLOT. "
+            f"Store.time should use INTERVALS_PER_SLOT, not SECONDS_PER_SLOT. "
             f"Expected time={expected_time} (slot={test_slot} * intervals={patched_intervals}), "
             f"got time={store.time}"
         )

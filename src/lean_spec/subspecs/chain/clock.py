@@ -16,7 +16,7 @@ from typing import Callable
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Uint64
 
-from .config import MILLISECONDS_PER_INTERVAL, MILLISECONDS_PER_SLOT
+from .config import MILLISECONDS_PER_INTERVAL, MILLISECONDS_PER_SLOT, SECONDS_PER_SLOT
 
 Interval = Uint64
 """Interval count since genesis (matches ``Store.time``)."""
@@ -49,7 +49,7 @@ class SlotClock:
 
     def current_slot(self) -> Slot:
         """Get the current slot number (0 if before genesis)."""
-        return Slot(self._milliseconds_since_genesis() // MILLISECONDS_PER_SLOT)
+        return Slot(self._seconds_since_genesis() // SECONDS_PER_SLOT)
 
     def current_interval(self) -> Interval:
         """Get the current interval within the slot (0-4)."""

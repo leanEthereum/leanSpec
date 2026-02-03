@@ -59,7 +59,7 @@ References:
 
 from __future__ import annotations
 
-from lean_spec.subspecs.chain.config import JUSTIFICATION_LOOKBACK_SLOTS, MILLISECONDS_PER_SLOT
+from lean_spec.subspecs.chain.config import JUSTIFICATION_LOOKBACK_SLOTS, SECONDS_PER_SLOT
 from lean_spec.subspecs.networking.config import GOSSIPSUB_DEFAULT_PROTOCOL_ID
 from lean_spec.types import StrictBaseModel
 
@@ -152,9 +152,7 @@ class GossipsubParameters(StrictBaseModel):
     be retrieved via IWANT but won't be actively gossiped.
     """
 
-    seen_ttl_secs: int = (
-        (int(MILLISECONDS_PER_SLOT) // 1000) * int(JUSTIFICATION_LOOKBACK_SLOTS) * 2
-    )
+    seen_ttl_secs: int = int(SECONDS_PER_SLOT) * int(JUSTIFICATION_LOOKBACK_SLOTS) * 2
     """Time-to-live for seen message IDs in seconds.
 
     Message IDs are tracked to detect duplicates. This should

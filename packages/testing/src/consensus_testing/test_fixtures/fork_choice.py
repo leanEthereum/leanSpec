@@ -11,7 +11,7 @@ from typing import ClassVar, Self
 
 from pydantic import model_validator
 
-from lean_spec.subspecs.chain.config import MILLISECONDS_PER_SLOT
+from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
@@ -262,8 +262,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                     # Store rejects blocks from the future.
                     # This tick includes a block (has proposal).
                     # Always act as aggregator to ensure gossip signatures are aggregated
-                    slot_ms = block.slot * Uint64(MILLISECONDS_PER_SLOT)
-                    slot_duration_seconds = slot_ms // Uint64(1000)
+                    slot_duration_seconds = block.slot * SECONDS_PER_SLOT
                     block_time = store.config.genesis_time + slot_duration_seconds
                     store = store.on_tick(block_time, has_proposal=True, is_aggregator=True)
 
