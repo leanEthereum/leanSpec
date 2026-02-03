@@ -735,10 +735,9 @@ class State(Container):
                     continue
 
                 # We can only include an attestation if we have some way to later provide
-                # an aggregated proof for its group.
-                #
-                # We strictly rely on existing aggregated proofs learned from blocks.
-                # We do NOT aggregate fresh gossip signatures during block production.
+                # an aggregated proof for its group:
+                # - at least one aggregated proof learned from a block that references
+                #   this validator+data.
                 has_block_proof = bool(aggregated_payloads and sig_key in aggregated_payloads)
 
                 if has_block_proof:
@@ -757,7 +756,7 @@ class State(Container):
             aggregated_payloads=aggregated_payloads,
         )
 
-        # Create the final block with aggregated attestations and proofs
+        # Create the final block with aggregated attestations
         final_block = Block(
             slot=slot,
             proposer_index=proposer_index,

@@ -271,7 +271,6 @@ class ForkChoiceTest(BaseConsensusFixture):
                     # This validates, applies state transition, and updates head.
                     store = store.on_block(
                         signed_block,
-                        current_validator=DEFAULT_VALIDATOR_ID,
                         scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                     )
 
