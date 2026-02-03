@@ -802,8 +802,9 @@ class Store(Container):
         Aggregated payloads progress through intervals:
         - Interval 0: Block proposal
         - Interval 1: Validators cast attestations (enter "new")
-        - Interval 2: Safe target update
-        - Interval 3: Process accumulated attestations
+        - Interval 2: Aggregators create proofs & broadcast
+        - Interval 3: Safe target update
+        - Interval 4: Process accumulated attestations
 
         This staged progression ensures proper timing and prevents premature
         influence on fork choice decisions.
