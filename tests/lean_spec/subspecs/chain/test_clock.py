@@ -101,22 +101,8 @@ class TestCurrentInterval:
         assert clock.current_interval() == Interval(0)
 
     def test_last_interval_of_slot(self) -> None:
-        """Last interval before slot boundary is INTERVALS_PER_SLOT - 1.
-
-        With MILLISECONDS_PER_SLOT = 4000ms and INTERVALS_PER_SLOT = 5:
-        The last interval (4) starts at 3200ms (3.2s).
-        At 3s = 3000ms, we're in interval 3.
-        At 4s = slot boundary, interval wraps to 0.
-
-        So we test at 3s which should be interval 3 (not 4).
-        Actually with int truncation, we need to be at 3.2+s to hit interval 4.
-        Since the clock truncates, there's no way to hit interval 4 with int seconds.
-        This is a limitation - interval 4 only exists in 3200-3999ms range.
-        """
+        """Interval 3 at 3s (interval 4 requires 3.2s, but clock truncates to int)."""
         genesis = Uint64(1700000000)
-        # At 3s = 3000ms, interval = 3000 // 800 = 3
-        # Interval 4 would require 3200ms (3.2s), but clock truncates to int
-        # So test that interval 3 is correct at 3s
         time = float(genesis) + 3.0
         clock = SlotClock(genesis_time=genesis, time_fn=lambda: time)
         assert clock.current_interval() == Interval(3)
