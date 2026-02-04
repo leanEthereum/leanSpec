@@ -54,10 +54,10 @@ class GenesisConfig(StrictBaseModel):
 
     num_validators: int | None = Field(default=None, alias="NUM_VALIDATORS")
     """
-    Number of validators (optional, for ream compatibility).
+    Number of validators (optional).
 
-    This field is informational and may be included in ream config files.
-    The actual validator count is derived from the genesis_validators list.
+    This field is informational and may be included in config files.
+    The actual validator count is derived from the genesis validator list.
     """
 
     genesis_validators: list[Bytes52] = Field(alias="GENESIS_VALIDATORS")

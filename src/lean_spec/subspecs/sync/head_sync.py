@@ -44,6 +44,7 @@ crash. A single invalid block should not halt synchronization.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -55,6 +56,8 @@ from lean_spec.types import Bytes32
 
 from .backfill_sync import BackfillSync
 from .block_cache import BlockCache
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -161,9 +164,18 @@ class HeadSync:
         block_inner = block.message.block
         block_root = hash_tree_root(block_inner)
         parent_root = block_inner.parent_root
+        slot = block_inner.slot
+
+        logger.debug(
+            "on_gossip_block: slot=%s root=%s parent=%s",
+            slot,
+            block_root.hex()[:8],
+            parent_root.hex()[:8],
+        )
 
         # Skip if already processing (reentrant call).
         if block_root in self._processing:
+            logger.debug("on_gossip_block: skipping - already processing")
             return HeadSyncResult(
                 processed=False,
                 cached=False,
@@ -173,6 +185,7 @@ class HeadSync:
 
         # Skip if already in store (duplicate).
         if block_root in store.blocks:
+            logger.debug("on_gossip_block: skipping - already in store")
             return HeadSyncResult(
                 processed=False,
                 cached=False,
@@ -183,6 +196,7 @@ class HeadSync:
         # Check if parent exists in store.
         if parent_root in store.blocks:
             # Parent known. Process immediately.
+            logger.debug("on_gossip_block: parent found, processing")
             return await self._process_block_with_descendants(
                 block=block,
                 peer_id=peer_id,
@@ -190,6 +204,10 @@ class HeadSync:
             )
         else:
             # Parent unknown. Cache and trigger backfill.
+            logger.debug(
+                "on_gossip_block: parent NOT found, caching. store has %d blocks",
+                len(store.blocks),
+            )
             return await self._cache_and_backfill(
                 block=block,
                 peer_id=peer_id,
@@ -217,13 +235,25 @@ class HeadSync:
             Result and updated store.
         """
         block_root = hash_tree_root(block.message.block)
+        slot = block.message.block.slot
         self._processing.add(block_root)
 
         try:
             # Process the main block.
             try:
+                logger.debug("_process_block: calling process_block for slot %s", slot)
                 store = self.process_block(store, block)
+                logger.debug(
+                    "_process_block_with_descendants: SUCCESS for slot %s, store now has %d blocks",
+                    slot,
+                    len(store.blocks),
+                )
             except Exception as e:
+                logger.debug(
+                    "_process_block_with_descendants: FAILED for slot %s: %s",
+                    slot,
+                    e,
+                )
                 return HeadSyncResult(
                     processed=False,
                     cached=False,

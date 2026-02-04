@@ -4,20 +4,14 @@ from __future__ import annotations
 
 from lean_spec.subspecs.metrics import (
     REGISTRY,
-    attestations_invalid,
     attestations_produced,
-    attestations_received,
-    attestations_valid,
     block_processing_time,
     blocks_processed,
     blocks_proposed,
-    current_slot,
     finalized_slot,
     generate_metrics,
     head_slot,
     justified_slot,
-    peers_connected,
-    reorgs,
     validators_count,
 )
 
@@ -59,7 +53,6 @@ class TestMetricDefinitions:
     def test_node_information_gauges_exist(self) -> None:
         """Node information gauges are defined."""
         assert head_slot is not None
-        assert current_slot is not None
         assert justified_slot is not None
         assert finalized_slot is not None
         assert validators_count is not None
@@ -68,20 +61,6 @@ class TestMetricDefinitions:
         """Block processing metrics are defined."""
         assert blocks_processed is not None
         assert block_processing_time is not None
-
-    def test_attestation_metrics_exist(self) -> None:
-        """Attestation metrics are defined."""
-        assert attestations_received is not None
-        assert attestations_valid is not None
-        assert attestations_invalid is not None
-
-    def test_network_metrics_exist(self) -> None:
-        """Network metrics are defined."""
-        assert peers_connected is not None
-
-    def test_consensus_event_metrics_exist(self) -> None:
-        """Consensus event metrics are defined."""
-        assert reorgs is not None
 
     def test_validator_production_metrics_exist(self) -> None:
         """Validator production metrics are defined."""
@@ -104,8 +83,6 @@ class TestPrometheusOutput:
         assert "lean_head_slot" in output
         assert "lean_blocks_processed_total" in output
         assert "lean_block_processing_seconds" in output
-        assert "lean_attestations_received_total" in output
-        assert "lean_peers_connected" in output
 
     def test_output_contains_help_text(self) -> None:
         """Output contains HELP lines for metrics."""

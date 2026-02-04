@@ -1,10 +1,9 @@
 """Reusable type definitions for the Lean Ethereum specification."""
 
 from .base import CamelModel, StrictBaseModel
-from .basispt import BasisPoint
 from .bitfields import BaseBitlist
 from .boolean import Boolean
-from .byte_arrays import ZERO_HASH, Bytes12, Bytes16, Bytes20, Bytes32, Bytes33, Bytes52, Bytes64
+from .byte_arrays import ZERO_HASH, Bytes16, Bytes20, Bytes32, Bytes33, Bytes52, Bytes64
 from .collections import SSZList, SSZVector
 from .container import Container
 from .exceptions import (
@@ -21,8 +20,6 @@ __all__ = [
     # Core types
     "BaseBitlist",
     "Uint64",
-    "BasisPoint",
-    "Bytes12",
     "Bytes16",
     "Bytes20",
     "Bytes32",

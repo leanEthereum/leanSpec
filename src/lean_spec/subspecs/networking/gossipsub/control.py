@@ -138,13 +138,6 @@ class ControlMessage(StrictBaseModel):
     Multiple control messages are batched into a single RPC
     for efficiency. An RPC can contain any combination of
     control message types.
-
-    Example::
-
-        control = ControlMessage(
-            grafts=[Graft(topic_id="blocks")],
-            ihaves=[IHave(topic_id="blocks", message_ids=[msg_id])],
-        )
     """
 
     grafts: list[Graft] = []

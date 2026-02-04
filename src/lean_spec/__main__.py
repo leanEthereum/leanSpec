@@ -466,7 +466,7 @@ async def run_node(
         elif validator_registry is not None:
             logger.warning("No validators assigned to node %s", node_id)
 
-    event_source = LiveNetworkEventSource.create()
+    event_source = await LiveNetworkEventSource.create()
 
     # Subscribe to gossip topics.
     #

@@ -62,6 +62,9 @@ def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
     - With limit >= len(chunks): pad to next power of two of limit
     - limit < len(chunks): raises ValueError
     - Empty chunks: returns ZERO_HASH (or zero-subtree root if limit provided)
+
+    Uses pre-computed zero subtree roots for efficient padding.
+    Avoids materializing large zero-filled arrays.
     """
     n = len(chunks)
     if n == 0:
@@ -80,17 +83,67 @@ def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
     if width == 1:
         return chunks[0]
 
-    # Start with the leaf layer: provided chunks + ZERO padding
-    level: list[Bytes32] = list(chunks) + [ZERO_HASH] * (width - n)
+    # Use efficient algorithm that avoids materializing zero-filled arrays.
+    #
+    # The idea: instead of padding with ZERO_HASH and hashing pairwise,
+    # we use pre-computed zero subtree roots for missing sections.
+    return _merkleize_efficient(list(chunks), width)
 
-    # Reduce bottom-up: pairwise hash until a single root remains
+
+def _merkleize_efficient(chunks: list[Bytes32], width: int) -> Bytes32:
+    """Efficient merkleization using pre-computed zero subtree roots.
+
+    Instead of materializing width-n zero hashes and hashing them all,
+    this algorithm only processes actual data and uses pre-computed
+    zero subtree roots for padding.
+
+    Time complexity: O(n * log(width)) instead of O(width * log(width))
+    Space complexity: O(n) instead of O(width)
+    """
+    # Current level of nodes (starts with the input chunks)
+    level = chunks
+    # Current subtree size (starts at 1, doubles each level)
+    subtree_size = 1
+
+    while subtree_size < width:
+        next_level: list[Bytes32] = []
+        i = 0
+
+        while i < len(level):
+            left = level[i]
+            i += 1
+
+            if i < len(level):
+                # We have a right sibling from actual data
+                right = level[i]
+                i += 1
+            else:
+                # No right sibling - use zero subtree of current size
+                right = _zero_tree_root(subtree_size)
+
+            next_level.append(hash_nodes(left, right))
+
+        # If we have fewer nodes than needed for this level,
+        # the remaining pairs are all zeros - but we only add
+        # nodes that will eventually be paired with real data.
+        level = next_level
+        subtree_size *= 2
+
+    # After the loop, we should have exactly one root
+    if len(level) == 1:
+        return level[0]
+
+    # If still more than one, continue pairing with zero subtrees
     while len(level) > 1:
-        it = iter(level)
-        # Pair up elements: hash each (a, b) pair
-        level = [
-            hash_nodes(a, next(it, ZERO_HASH)) for a in it
-        ]  # Safe: even-length implied by padding
-    return level[0]
+        next_level = []
+        for j in range(0, len(level), 2):
+            left = level[j]
+            right = level[j + 1] if j + 1 < len(level) else _zero_tree_root(subtree_size)
+            next_level.append(hash_nodes(left, right))
+        level = next_level
+        subtree_size *= 2
+
+    return level[0] if level else _zero_tree_root(width)
 
 
 def merkleize_progressive(chunks: Sequence[Bytes32], num_leaves: int = 1) -> Bytes32:

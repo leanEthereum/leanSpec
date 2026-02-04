@@ -30,6 +30,8 @@ from lean_spec.snappy import frame_compress
 from lean_spec.subspecs.containers import SignedBlockWithAttestation
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic
+from lean_spec.subspecs.networking.peer.info import PeerInfo
+from lean_spec.subspecs.networking.types import ConnectionState
 
 from .events import (
     GossipAttestationEvent,
@@ -135,6 +137,10 @@ class NetworkService:
                 # SyncService will either:
                 # - process immediately (if parent known) or
                 # - cache and trigger backfill (if parent unknown).
+                logger.debug(
+                    "Routing GossipBlockEvent to sync_service.on_gossip_block from %s",
+                    peer_id,
+                )
                 await self.sync_service.on_gossip_block(block, peer_id)
 
             case GossipAttestationEvent(attestation=attestation, peer_id=peer_id):
@@ -152,11 +158,23 @@ class NetworkService:
                 # determine if we need to start/continue syncing.
                 await self.sync_service.on_peer_status(peer_id, status)
 
-            case PeerConnectedEvent() | PeerDisconnectedEvent():
-                # Peer lifecycle events are not yet handled.
+            case PeerConnectedEvent(peer_id=peer_id):
+                # Add connected peer to the peer manager.
                 #
-                # Future: update peer manager, track connection metrics.
-                pass
+                # This allows the sync service to track available peers
+                # for block requests and network consensus estimation.
+                peer_info = PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED)
+                self.sync_service.peer_manager.add_peer(peer_info)
+                peer_count = len(self.sync_service.peer_manager)
+                logger.info("Peer connected: %s (total: %d)", peer_id, peer_count)
+
+            case PeerDisconnectedEvent(peer_id=peer_id):
+                # Remove disconnected peer from the peer manager.
+                #
+                # Prevents the sync service from attempting requests
+                # to peers that are no longer reachable.
+                self.sync_service.peer_manager.remove_peer(peer_id)
+                logger.info("Peer disconnected: %s", peer_id)
 
     def stop(self) -> None:
         """

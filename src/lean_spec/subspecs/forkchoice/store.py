@@ -863,7 +863,7 @@ class Store(Container):
             self.latest_new_aggregated_payloads
         )
 
-        # Find head with minimum attestation threshold
+        # Find head with minimum attestation threshold.
         safe_target = self._compute_lmd_ghost_head(
             start_root=self.latest_justified.root,
             attestations=attestations,
@@ -1109,6 +1109,7 @@ class Store(Container):
 
         # Create checkpoint from selected target block
         target_block = self.blocks[target_block_root]
+
         return Checkpoint(root=hash_tree_root(target_block), slot=target_block.slot)
 
     def produce_attestation_data(self, slot: Slot) -> AttestationData:

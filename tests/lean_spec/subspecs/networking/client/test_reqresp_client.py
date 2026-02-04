@@ -21,7 +21,6 @@ from lean_spec.subspecs.networking.reqresp.message import (
     Status,
 )
 from lean_spec.subspecs.networking.transport import PeerId
-from lean_spec.subspecs.networking.transport.connection.manager import ConnectionManager
 from lean_spec.types import Bytes32
 from tests.lean_spec.helpers import make_test_block, make_test_status, run_async
 
@@ -29,6 +28,9 @@ from tests.lean_spec.helpers import make_test_block, make_test_status, run_async
 @dataclass
 class MockStream:
     """Mock stream for testing ReqRespClient."""
+
+    stream_id: int = 0
+    """Mock stream ID."""
 
     protocol_id: str = STATUS_PROTOCOL_V1
     """The negotiated protocol ID."""
@@ -110,8 +112,9 @@ class MockConnection:
 
 def make_client() -> ReqRespClient:
     """Create a ReqRespClient with a mock connection manager."""
-    manager = ConnectionManager.create()
-    return ReqRespClient(connection_manager=manager)
+    # Tests use mock connections directly, not the connection manager.
+    # We just need something to satisfy the type.
+    return ReqRespClient(connection_manager=None)  # type: ignore[arg-type]
 
 
 class TestReqRespClientConnectionManagement:

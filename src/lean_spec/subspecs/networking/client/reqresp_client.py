@@ -19,7 +19,7 @@ Response::
 
 Protocol Flow
 -------------
-1. Open a new yamux stream
+1. Open a new QUIC stream
 2. Negotiate the protocol via multistream-select
 3. Send SSZ-encoded, Snappy-compressed request
 4. Read SSZ-encoded, Snappy-compressed response
@@ -46,11 +46,10 @@ from lean_spec.subspecs.networking.reqresp.message import (
     Status,
 )
 from lean_spec.subspecs.networking.transport import PeerId
-from lean_spec.subspecs.networking.transport.connection.manager import (
+from lean_spec.subspecs.networking.transport.connection import (
     ConnectionManager,
-    YamuxConnection,
+    QuicConnection,
 )
-from lean_spec.subspecs.networking.transport.quic.connection import QuicConnection
 from lean_spec.types import Bytes32
 
 logger = logging.getLogger(__name__)
@@ -65,7 +64,7 @@ class ReqRespClient:
     Implements NetworkRequester using ConnectionManager.
 
     Provides methods for sending BlocksByRoot and Status requests to peers.
-    Uses the existing transport stack (yamux + noise) and codec (SSZ + Snappy).
+    Uses the existing transport stack (QUIC) and codec (SSZ + Snappy).
 
     Thread Safety
     -------------
@@ -76,19 +75,19 @@ class ReqRespClient:
     connection_manager: ConnectionManager
     """Connection manager providing transport."""
 
-    _connections: dict[PeerId, YamuxConnection | QuicConnection] = field(default_factory=dict)
+    _connections: dict[PeerId, QuicConnection] = field(default_factory=dict)
     """Active connections by peer ID."""
 
     timeout: float = REQUEST_TIMEOUT_SECONDS
     """Request timeout in seconds."""
 
-    def register_connection(self, peer_id: PeerId, conn: YamuxConnection | QuicConnection) -> None:
+    def register_connection(self, peer_id: PeerId, conn: QuicConnection) -> None:
         """
         Register a connection for req/resp use.
 
         Args:
             peer_id: Peer identifier.
-            conn: Established yamux or QUIC connection.
+            conn: Established QUIC connection.
         """
         self._connections[peer_id] = conn
 
@@ -141,7 +140,7 @@ class ReqRespClient:
 
     async def _do_blocks_by_root_request(
         self,
-        conn: YamuxConnection | QuicConnection,
+        conn: QuicConnection,
         roots: list[Bytes32],
     ) -> list[SignedBlockWithAttestation]:
         """
@@ -151,7 +150,7 @@ class ReqRespClient:
         and reads all response chunks.
 
         Args:
-            conn: Connection to use.
+            conn: QuicConnection to use.
             roots: Block roots to request.
 
         Returns:
@@ -240,7 +239,7 @@ class ReqRespClient:
 
     async def _do_status_request(
         self,
-        conn: YamuxConnection | QuicConnection,
+        conn: QuicConnection,
         status: Status,
         retry_count: int = 0,
     ) -> Status | None:
@@ -248,7 +247,7 @@ class ReqRespClient:
         Execute a Status request.
 
         Args:
-            conn: Connection to use.
+            conn: QuicConnection to use.
             status: Our status to send.
             retry_count: Number of retries attempted (internal).
 

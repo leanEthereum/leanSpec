@@ -1,5 +1,7 @@
 """State Container for the Lean Ethereum consensus specification."""
 
+from __future__ import annotations
+
 from typing import AbstractSet, Collection, Iterable
 
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -145,7 +147,7 @@ class State(Container):
         # Work on a local variable. Do not mutate self.
         state = self
 
-        # Step through each missing slot:
+        # Step through each missing slot.
         while state.slot < target_slot:
             # Per-Slot Housekeeping & Slot Increment
             #
@@ -169,13 +171,18 @@ class State(Container):
             #
             # 2. Slot Increment:
             #    It always increments the slot number by one.
+            needs_state_root = state.latest_block_header.state_root == Bytes32.zero()
+            cached_state_root = (
+                hash_tree_root(state) if needs_state_root else state.latest_block_header.state_root
+            )
+
             state = state.model_copy(
                 update={
                     "latest_block_header": (
                         state.latest_block_header.model_copy(
-                            update={"state_root": hash_tree_root(state)}
+                            update={"state_root": cached_state_root}
                         )
-                        if state.latest_block_header.state_root == Bytes32.zero()
+                        if needs_state_root
                         else state.latest_block_header
                     ),
                     "slot": Slot(state.slot + Slot(1)),
@@ -435,10 +442,9 @@ class State(Container):
             if root not in root_to_slot or slot > root_to_slot[root]:
                 root_to_slot[root] = slot
 
-        # Process each attestation independently
+        # Process each attestation independently.
         #
         # Every attestation is a claim:
-        #
         # "I vote to extend the chain from SOURCE to TARGET."
         #
         # The rules below filter out invalid or irrelevant votes.
@@ -446,14 +452,14 @@ class State(Container):
             source = attestation.data.source
             target = attestation.data.target
 
-            # Check that the source is already trusted
+            # Check that the source is already trusted.
             #
             # A vote may only originate from a point in history that is already justified.
             # A source that lacks existing justification cannot be used to anchor a new vote.
             if not justified_slots.is_slot_justified(finalized_slot, source.slot):
                 continue
 
-            # Ignore votes for targets that have already reached consensus
+            # Ignore votes for targets that have already reached consensus.
             #
             # If a block is already justified, additional votes do not change anything.
             # We simply skip them.
@@ -464,20 +470,30 @@ class State(Container):
             if source.root == ZERO_HASH or target.root == ZERO_HASH:
                 continue
 
-            # Ensure the vote refers to blocks that actually exist on our chain
+            # Ensure the vote refers to blocks that actually exist on our chain.
             #
             # The attestation must match our canonical chain.
             # Both the source root and target root must equal the recorded block roots
             # stored for those slots in history.
             #
             # This prevents votes about unknown or conflicting forks.
-            if (
-                source.root != self.historical_block_hashes[source.slot]
-                or target.root != self.historical_block_hashes[target.slot]
-            ):
+            source_slot_int = int(source.slot)
+            target_slot_int = int(target.slot)
+            source_matches = (
+                source.root == self.historical_block_hashes[source_slot_int]
+                if source_slot_int < len(self.historical_block_hashes)
+                else False
+            )
+            target_matches = (
+                target.root == self.historical_block_hashes[target_slot_int]
+                if target_slot_int < len(self.historical_block_hashes)
+                else False
+            )
+
+            if not source_matches or not target_matches:
                 continue
 
-            # Ensure time flows forward
+            # Ensure time flows forward.
             #
             # A target must always lie strictly after its source slot.
             # Otherwise the vote makes no chronological sense.
@@ -500,7 +516,7 @@ class State(Container):
             if not target.slot.is_justifiable_after(self.latest_finalized.slot):
                 continue
 
-            # Record the vote
+            # Record the vote.
             #
             # If this is the first vote for the target block, create a fresh tally sheet:
             # - one boolean per validator, all initially False.
@@ -515,7 +531,7 @@ class State(Container):
                 if not justifications[target.root][validator_id]:
                     justifications[target.root][validator_id] = Boolean(True)
 
-            # Check whether the vote count crosses the supermajority threshold
+            # Check whether the vote count crosses the supermajority threshold.
             #
             # A block becomes justified when more than two-thirds of validators
             # have voted for it.
@@ -688,12 +704,12 @@ class State(Container):
         # Initialize empty attestation set for iterative collection.
         attestations = list(attestations or [])
 
-        # Iteratively collect valid attestations using fixed-point algorithm
+        # Iteratively collect valid attestations using fixed-point algorithm.
         #
         # Continue until no new attestations can be added to the block.
         # This ensures we include the maximal valid attestation set.
         while True:
-            # Create candidate block with current attestation set
+            # Create candidate block with current attestation set.
             candidate_block = Block(
                 slot=slot,
                 proposer_index=proposer_index,
@@ -706,14 +722,15 @@ class State(Container):
                 ),
             )
 
-            # Apply state transition to get the post-block state
-            post_state = self.process_slots(slot).process_block(candidate_block)
+            # Apply state transition to get the post-block state.
+            slots_state = self.process_slots(slot)
+            post_state = slots_state.process_block(candidate_block)
 
-            # No attestation source provided: done after computing post_state
+            # No attestation source provided: done after computing post_state.
             if available_attestations is None or known_block_roots is None:
                 break
 
-            # Find new valid attestations matching post-state justification
+            # Find new valid attestations matching post-state justification.
             new_attestations: list[Attestation] = []
 
             for attestation in available_attestations:
@@ -722,15 +739,15 @@ class State(Container):
                 data_root = data.data_root_bytes()
                 sig_key = SignatureKey(validator_id, data_root)
 
-                # Skip if target block is unknown
+                # Skip if target block is unknown.
                 if data.head.root not in known_block_roots:
                     continue
 
-                # Skip if attestation source does not match post-state's latest justified
+                # Skip if attestation source does not match post-state's latest justified.
                 if data.source != post_state.latest_justified:
                     continue
 
-                # Avoid adding duplicates of attestations already in the candidate set
+                # Avoid adding duplicates of attestations already in the candidate set.
                 if attestation in attestations:
                     continue
 
@@ -743,11 +760,11 @@ class State(Container):
                 if has_block_proof:
                     new_attestations.append(attestation)
 
-            # Fixed point reached: no new attestations found
+            # Fixed point reached: no new attestations found.
             if not new_attestations:
                 break
 
-            # Add new attestations and continue iteration
+            # Add new attestations and continue iteration.
             attestations.extend(new_attestations)
 
         # Select aggregated attestations and proofs for the final block.
@@ -756,7 +773,7 @@ class State(Container):
             aggregated_payloads=aggregated_payloads,
         )
 
-        # Create the final block with aggregated attestations
+        # Create the final block with aggregated attestations.
         final_block = Block(
             slot=slot,
             proposer_index=proposer_index,
@@ -769,9 +786,8 @@ class State(Container):
             ),
         )
 
-        # Recompute state from the final block
+        # Recompute state from the final block.
         post_state = self.process_slots(slot).process_block(final_block)
-
         final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures

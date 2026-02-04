@@ -35,7 +35,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from lean_spec.subspecs import metrics
 from lean_spec.subspecs.chain.clock import Interval, SlotClock
@@ -53,11 +53,11 @@ from lean_spec.subspecs.containers.block import (
     BlockWithAttestation,
 )
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
+from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Uint64
 
-from .registry import ValidatorRegistry
+from .registry import ValidatorEntry, ValidatorRegistry
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.sync import SyncService
@@ -111,6 +111,9 @@ class ValidatorService:
     _attestations_produced: int = field(default=0, repr=False)
     """Counter for produced attestations."""
 
+    _attested_slots: set[int] = field(default_factory=set, repr=False)
+    """Slots for which we've already produced attestations (prevents duplicates)."""
+
     async def run(self) -> None:
         """
         Main loop - check duties every interval.
@@ -154,22 +157,72 @@ class ValidatorService:
             slot = self.clock.current_slot()
             interval = self.clock.current_interval()
 
+            my_indices = list(self.registry.indices())
+            logger.debug(
+                "ValidatorService: slot=%d interval=%d total_interval=%d my_indices=%s",
+                slot,
+                interval,
+                total_interval,
+                my_indices,
+            )
+
             if interval == Uint64(0):
                 # Block production interval.
                 #
                 # Check if any of our validators is the proposer.
+                logger.debug("ValidatorService: checking block production for slot %d", slot)
                 await self._maybe_produce_block(slot)
+                logger.debug("ValidatorService: done block production check for slot %d", slot)
 
-            elif interval == Uint64(1):
-                # Attestation interval.
+                # Re-fetch interval after block production.
                 #
-                # All validators should attest to current head.
-                await self._produce_attestations(slot)
+                # Block production can take time (signing, network calls, etc.).
+                # If we've moved past interval 0, we should check attestation production
+                # in this same iteration rather than sleeping and missing it.
+                interval = self.clock.current_interval()
 
-            # Intervals 2-4 have no validator duties.
+            # Attestation check - produce if we haven't attested for this slot yet.
+            #
+            # Non-proposers attest at interval 1. Proposers bundle their attestation
+            # in the block (interval 0). But if we missed interval 1 due to timing,
+            # we should still attest as soon as we can within the same slot.
+            #
+            # We track attested slots to prevent duplicate attestations.
+            slot_int = int(slot)
+            logger.debug(
+                "ValidatorService: attestation check interval=%d slot_int=%d attested=%s",
+                interval,
+                slot_int,
+                slot_int in self._attested_slots,
+            )
+            if interval >= Uint64(1) and slot_int not in self._attested_slots:
+                logger.debug(
+                    "ValidatorService: producing attestations for slot %d (interval %d)",
+                    slot,
+                    interval,
+                )
+                await self._produce_attestations(slot)
+                logger.debug("ValidatorService: done producing attestations for slot %d", slot)
+                self._attested_slots.add(slot_int)
+
+                # Prune old entries to prevent unbounded growth.
+                #
+                # Keep only recent slots (current slot - 4) to bound memory usage.
+                # We never need to attest for slots that far in the past.
+                prune_threshold = max(0, slot_int - 4)
+                self._attested_slots = {s for s in self._attested_slots if s >= prune_threshold}
+
+            # Intervals 2-4 have no additional validator duties.
 
             # Mark this interval as handled.
-            last_handled_total_interval = total_interval
+            #
+            # Use the current total interval, not the one from loop start.
+            # This prevents re-handling intervals we've already covered.
+            last_handled_total_interval = self.clock.total_intervals()
+            logger.debug(
+                "ValidatorService: end of iteration, last_handled=%d, sleeping...",
+                last_handled_total_interval,
+            )
 
     async def _maybe_produce_block(self, slot: Slot) -> None:
         """
@@ -188,9 +241,19 @@ class ValidatorService:
         store = self.sync_service.store
         head_state = store.states.get(store.head)
         if head_state is None:
+            logger.debug("Block production: no head state for slot %d", slot)
             return
 
         num_validators = len(head_state.validators)
+        my_indices = list(self.registry.indices())
+        expected_proposer = int(slot) % num_validators
+        logger.debug(
+            "Block production check: slot=%d num_validators=%d expected_proposer=%d my_indices=%s",
+            slot,
+            num_validators,
+            expected_proposer,
+            my_indices,
+        )
 
         # Check each validator we control.
         #
@@ -326,6 +389,9 @@ class ValidatorService:
         if entry is None:
             raise ValueError(f"No secret key for validator {validator_index}")
 
+        # Ensure the XMSS secret key is prepared for this epoch.
+        entry = self._ensure_prepared_for_epoch(entry, block.slot)
+
         proposer_signature = TARGET_SIGNATURE_SCHEME.sign(
             entry.secret_key,
             block.slot,
@@ -375,6 +441,9 @@ class ValidatorService:
         if entry is None:
             raise ValueError(f"No secret key for validator {validator_index}")
 
+        # Ensure the XMSS secret key is prepared for this epoch.
+        entry = self._ensure_prepared_for_epoch(entry, attestation_data.slot)
+
         # Sign the attestation data root.
         #
         # Uses XMSS one-time signature for the current epoch (slot).
@@ -389,6 +458,47 @@ class ValidatorService:
             message=attestation_data,
             signature=signature,
         )
+
+    def _ensure_prepared_for_epoch(
+        self,
+        entry: ValidatorEntry,
+        epoch: Slot,
+    ) -> ValidatorEntry:
+        """
+        Ensure the secret key is prepared for signing at the given epoch.
+
+        XMSS uses a sliding window of prepared epochs. If the requested epoch
+        is outside this window, we advance the preparation by computing
+        additional bottom trees until the epoch is covered.
+
+        Args:
+            entry: Validator entry containing the secret key.
+            epoch: The epoch (slot) at which we need to sign.
+
+        Returns:
+            The entry, possibly with an updated secret key.
+        """
+        scheme = cast(GeneralizedXmssScheme, TARGET_SIGNATURE_SCHEME)
+        get_prepared_interval = scheme.get_prepared_interval(entry.secret_key)
+
+        # If epoch is already in the prepared interval, no action needed.
+        epoch_int = int(epoch)
+        if epoch_int in get_prepared_interval:
+            return entry
+
+        # Advance preparation until the epoch is covered.
+        secret_key = entry.secret_key
+        while epoch_int not in scheme.get_prepared_interval(secret_key):
+            secret_key = scheme.advance_preparation(secret_key)
+
+        # Update the registry with the new secret key.
+        updated_entry = ValidatorEntry(
+            index=entry.index,
+            secret_key=secret_key,
+        )
+        self.registry.add(updated_entry)
+
+        return updated_entry
 
     async def _sleep_until_next_interval(self) -> None:
         """

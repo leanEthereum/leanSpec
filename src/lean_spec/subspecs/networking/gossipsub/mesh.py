@@ -139,22 +139,6 @@ class MeshState:
     Central data structure managing mesh topology across all topics.
     Provides operations for subscription management, peer tracking,
     and gossip peer selection.
-
-    Example::
-
-        state = MeshState(params=GossipsubParameters())
-
-        # Subscribe and build mesh
-        state.subscribe("blocks")
-        state.add_to_mesh("blocks", "peer1")
-        state.add_to_mesh("blocks", "peer2")
-
-        # Get mesh peers for message forwarding
-        peers = state.get_mesh_peers("blocks")  # {"peer1", "peer2"}
-
-        # Select peers for IHAVE gossip
-        all_peers = {"peer1", "peer2", "peer3", "peer4"}
-        gossip_peers = state.select_peers_for_gossip("blocks", all_peers)
     """
 
     params: GossipsubParameters

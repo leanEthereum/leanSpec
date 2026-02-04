@@ -33,6 +33,11 @@ class Stream(Protocol):
     """
 
     @property
+    def stream_id(self) -> int:
+        """Stream identifier within the connection."""
+        ...
+
+    @property
     def protocol_id(self) -> str:
         """
         The negotiated protocol for this stream.
@@ -94,11 +99,11 @@ class Connection(Protocol):
     """
     A secure, multiplexed connection to a peer.
 
-    Connections wrap the full TCP -> Noise -> yamux stack. Once
-    established, streams can be opened for different protocols.
+    Connections wrap the QUIC transport stack. Once established, streams
+    can be opened for different protocols.
 
     Example usage:
-        connection = await transport.connect("/ip4/127.0.0.1/tcp/9000")
+        connection = await transport.connect("/ip4/127.0.0.1/udp/9000/quic-v1")
         stream = await connection.open_stream("/leanconsensus/req/status/1/ssz_snappy")
         # ... use stream ...
         await connection.close()
@@ -109,7 +114,7 @@ class Connection(Protocol):
         """
         Remote peer's ID.
 
-        Derived from their public key during Noise handshake.
+        Derived from their public key during TLS handshake.
         Format: Base58-encoded multihash (e.g., "12D3KooW...")
         """
         ...
@@ -119,7 +124,7 @@ class Connection(Protocol):
         """
         Remote address in multiaddr format.
 
-        Example: "/ip4/192.168.1.1/tcp/9000"
+        Example: "/ip4/192.168.1.1/udp/9000/quic-v1"
         """
         ...
 
@@ -141,11 +146,22 @@ class Connection(Protocol):
         """
         ...
 
+    async def accept_stream(self) -> Stream:
+        """
+        Accept an incoming stream from the peer.
+
+        Blocks until a new stream is opened by the remote side.
+
+        Returns:
+            New stream opened by peer.
+        """
+        ...
+
     async def close(self) -> None:
         """
         Close the connection gracefully.
 
-        All streams are closed and the underlying TCP connection
+        All streams are closed and the underlying QUIC connection
         is terminated.
         """
         ...

@@ -311,6 +311,10 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
         2. Route events to QuicConnection
     """
 
+    # Instance-specific callback for handling new connections.
+    # Set by the server's protocol factory for inbound connections.
+    _on_handshake: Callable[[LibP2PQuicProtocol], None] | None = None
+
     def __init__(self, *args, **kwargs) -> None:
         """Initialize the libp2p QUIC protocol handler."""
         super().__init__(*args, **kwargs)
@@ -335,6 +339,11 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
                 self.peer_identity = None
 
             self.handshake_complete.set()
+
+            # For server-side connections, invoke the handshake callback.
+            # This MUST happen BEFORE forwarding events so connection is set up.
+            if self._on_handshake is not None and self.connection is None:
+                self._on_handshake(self)
 
         # Forward events to connection handler.
         if self.connection:
@@ -582,8 +591,9 @@ class QuicConnectionManager:
             key_path = self._temp_dir / "key.pem"
             server_config.load_cert_chain(str(cert_path), str(key_path))
 
-        async def handle_handshake(protocol: LibP2PQuicProtocol) -> None:
-            """Handle completed handshake for inbound connection."""
+        # Callback to set up connection when handshake completes.
+        # Captures this manager's state (self, on_connection, host, port).
+        def handle_handshake(protocol_instance: LibP2PQuicProtocol) -> None:
             from ..identity import IdentityKeypair
 
             temp_key = IdentityKeypair.generate()
@@ -591,38 +601,33 @@ class QuicConnectionManager:
 
             remote_addr = f"/ip4/{host}/udp/{port}/quic-v1/p2p/{remote_peer_id}"
             conn = QuicConnection(
-                _protocol=protocol,
+                _protocol=protocol_instance,
                 _peer_id=remote_peer_id,
                 _remote_addr=remote_addr,
             )
-            protocol.connection = conn
+            protocol_instance.connection = conn
             self._connections[remote_peer_id] = conn
-            await on_connection(conn)
 
-        # Override the protocol's handshake handler.
-        original_handler = LibP2PQuicProtocol.quic_event_received
+            # Invoke callback asynchronously so it doesn't block event processing.
+            asyncio.ensure_future(on_connection(conn))
 
-        def patched_handler(protocol, event: QuicEvent) -> None:
-            original_handler(protocol, event)
-            if isinstance(event, HandshakeCompleted):
-                asyncio.create_task(handle_handshake(protocol))
-
-        LibP2PQuicProtocol.quic_event_received = patched_handler  # type: ignore[method-assign]
+        # Protocol factory that attaches our callback to each new instance.
+        def create_protocol(*args, **kwargs) -> LibP2PQuicProtocol:
+            protocol = LibP2PQuicProtocol(*args, **kwargs)
+            protocol._on_handshake = handle_handshake
+            return protocol
 
         # Create a shutdown event to allow graceful termination.
         shutdown_event = asyncio.Event()
 
-        try:
-            await quic_serve(
-                host,
-                port,
-                configuration=server_config,
-                create_protocol=LibP2PQuicProtocol,
-            )
-            # Keep running until shutdown is requested.
-            await shutdown_event.wait()
-        finally:
-            LibP2PQuicProtocol.quic_event_received = original_handler  # type: ignore[method-assign]
+        await quic_serve(
+            host,
+            port,
+            configuration=server_config,
+            create_protocol=create_protocol,
+        )
+        # Keep running until shutdown is requested.
+        await shutdown_event.wait()
 
 
 # =============================================================================

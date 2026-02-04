@@ -95,23 +95,6 @@ class MessageCache:
 
     - **IWANT responses**: Retrieve full messages by ID
     - **IHAVE gossip**: Get message IDs for advertisement
-
-    Example::
-
-        cache = MessageCache(mcache_len=6, mcache_gossip=3)
-
-        # Add messages
-        cache.put("blocks", msg1)
-        cache.put("blocks", msg2)
-
-        # Get message IDs for IHAVE
-        ids = cache.get_gossip_ids("blocks")
-
-        # Respond to IWANT
-        msg = cache.get(requested_id)
-
-        # Shift window (called each heartbeat)
-        evicted = cache.shift()
     """
 
     mcache_len: int = 6

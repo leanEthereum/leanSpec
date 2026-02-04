@@ -10,22 +10,15 @@ from lean_spec.subspecs.networking.discovery import (
     Distance,
     FindNode,
     IdNonce,
-    IPv4,
-    IPv6,
-    KBucket,
     MessageType,
     Nodes,
     Nonce,
-    PacketFlag,
     Ping,
     Pong,
-    Port,
     RequestId,
     RoutingTable,
-    StaticHeader,
     TalkReq,
     TalkResp,
-    WhoAreYouAuthdata,
 )
 from lean_spec.subspecs.networking.discovery.config import (
     ALPHA,
@@ -38,7 +31,16 @@ from lean_spec.subspecs.networking.discovery.config import (
     MIN_PACKET_SIZE,
     REQUEST_TIMEOUT_SECS,
 )
+from lean_spec.subspecs.networking.discovery.messages import (
+    IPv4,
+    IPv6,
+    PacketFlag,
+    Port,
+    StaticHeader,
+    WhoAreYouAuthdata,
+)
 from lean_spec.subspecs.networking.discovery.routing import (
+    KBucket,
     NodeEntry,
     log2_distance,
     xor_distance,

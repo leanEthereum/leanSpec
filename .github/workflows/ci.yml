@@ -77,3 +77,29 @@ jobs:
 
       - name: Fill test fixtures
         run: uv run fill --fork=Devnet --clean -n auto
+
+  interop-tests:
+    name: Interop tests - Multi-node consensus
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout leanSpec
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+          python-version: "3.12"
+
+      - name: Run interop tests
+        run: |
+          uv run pytest tests/interop/ \
+            -v \
+            --timeout=120 \
+            -x \
+            --tb=short \
+            --log-cli-level=INFO
+        env:
+          LEAN_ENV: test

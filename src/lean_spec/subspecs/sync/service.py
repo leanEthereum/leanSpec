@@ -37,6 +37,7 @@ State Machine
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -61,6 +62,8 @@ from .states import SyncState
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.storage import Database
+
+logger = logging.getLogger(__name__)
 
 BlockProcessor = Callable[[Store, SignedBlockWithAttestation], Store]
 
@@ -358,7 +361,14 @@ class SyncService:
         # - IDLE state does not accept gossip because we have no peer information.
         # - SYNCING and SYNCED states accept gossip for different reasons.
         if not self._state.accepts_gossip:
+            logger.debug(
+                "Rejecting gossip block from %s: state %s does not accept gossip",
+                peer_id,
+                self._state.name,
+            )
             return
+
+        logger.debug("Processing gossip block from %s in state %s", peer_id, self._state.name)
 
         if self._head_sync is None:
             raise RuntimeError("HeadSync not initialized")

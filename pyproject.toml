@@ -99,11 +99,19 @@ addopts = [
     # These are only run via the 'fill' command
     "--ignore=tests/consensus",
     "--ignore=tests/execution",
+    # Exclude interop tests from regular test runs
+    # Run explicitly with: uv run pytest tests/interop/ -v
+    "--ignore=tests/interop",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "valid_until: marks tests as valid until a specific fork version",
+    "interop: integration tests for multiple leanSpec nodes",
+    "num_validators: number of validators for interop test cluster",
 ]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+timeout = 300
 
 [tool.coverage.run]
 source = ["src"]
@@ -128,6 +136,8 @@ test = [
     "pytest>=8.3.3,<9",
     "pytest-cov>=6.0.0,<7",
     "pytest-xdist>=3.6.1,<4",
+    "pytest-asyncio>=0.24.0,<1",
+    "pytest-timeout>=2.2.0,<3",
     "hypothesis>=6.138.14",
     "lean-ethereum-testing",
     "lean-multisig-py>=0.1.0",

@@ -30,12 +30,6 @@ head_slot = Gauge(
     registry=REGISTRY,
 )
 
-current_slot = Gauge(
-    "lean_current_slot",
-    "Current time slot",
-    registry=REGISTRY,
-)
-
 justified_slot = Gauge(
     "lean_justified_slot",
     "Latest justified slot",
@@ -68,48 +62,6 @@ block_processing_time = Histogram(
     "lean_block_processing_seconds",
     "Block processing duration",
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
-    registry=REGISTRY,
-)
-
-# -----------------------------------------------------------------------------
-# Attestations
-# -----------------------------------------------------------------------------
-
-attestations_received = Counter(
-    "lean_attestations_received_total",
-    "Total attestations received",
-    registry=REGISTRY,
-)
-
-attestations_valid = Counter(
-    "lean_attestations_valid_total",
-    "Valid attestations",
-    registry=REGISTRY,
-)
-
-attestations_invalid = Counter(
-    "lean_attestations_invalid_total",
-    "Invalid attestations",
-    registry=REGISTRY,
-)
-
-# -----------------------------------------------------------------------------
-# Network
-# -----------------------------------------------------------------------------
-
-peers_connected = Gauge(
-    "lean_peers_connected",
-    "Connected peers",
-    registry=REGISTRY,
-)
-
-# -----------------------------------------------------------------------------
-# Consensus Events
-# -----------------------------------------------------------------------------
-
-reorgs = Counter(
-    "lean_reorgs_total",
-    "Chain reorganizations",
     registry=REGISTRY,
 )
 

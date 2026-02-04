@@ -9,7 +9,6 @@ from lean_spec.subspecs.networking.config import (
 )
 from lean_spec.subspecs.networking.gossipsub import (
     ControlMessage,
-    FanoutEntry,
     ForkMismatchError,
     GossipsubMessage,
     GossipsubParameters,
@@ -18,15 +17,13 @@ from lean_spec.subspecs.networking.gossipsub import (
     IDontWant,
     IHave,
     IWant,
-    MeshState,
-    MessageCache,
     Prune,
-    SeenCache,
     TopicKind,
-    TopicMesh,
     format_topic_string,
     parse_topic_string,
 )
+from lean_spec.subspecs.networking.gossipsub.mcache import MessageCache, SeenCache
+from lean_spec.subspecs.networking.gossipsub.mesh import FanoutEntry, MeshState, TopicMesh
 
 
 def peer(name: str) -> PeerId:
@@ -502,7 +499,7 @@ class TestRPCProtobufEncoding:
 
     def test_varint_encoding(self) -> None:
         """Test varint encoding matches protobuf spec."""
-        from lean_spec.subspecs.networking.gossipsub import encode_varint
+        from lean_spec.subspecs.networking.varint import encode_varint
 
         # Single byte varints (0-127)
         assert encode_varint(0) == b"\x00"
@@ -519,7 +516,7 @@ class TestRPCProtobufEncoding:
 
     def test_varint_decoding(self) -> None:
         """Test varint decoding matches protobuf spec."""
-        from lean_spec.subspecs.networking.gossipsub import decode_varint
+        from lean_spec.subspecs.networking.varint import decode_varint
 
         # Single byte
         value, pos = decode_varint(b"\x00", 0)
@@ -541,7 +538,7 @@ class TestRPCProtobufEncoding:
 
     def test_varint_roundtrip(self) -> None:
         """Test varint encode/decode roundtrip."""
-        from lean_spec.subspecs.networking.gossipsub import decode_varint, encode_varint
+        from lean_spec.subspecs.networking.varint import decode_varint, encode_varint
 
         test_values = [0, 1, 127, 128, 255, 256, 16383, 16384, 2097151, 268435455]
         for value in test_values:
@@ -551,7 +548,7 @@ class TestRPCProtobufEncoding:
 
     def test_subopts_encode_decode(self) -> None:
         """Test SubOpts (subscription) encoding/decoding."""
-        from lean_spec.subspecs.networking.gossipsub import SubOpts
+        from lean_spec.subspecs.networking.gossipsub.rpc import SubOpts
 
         # Subscribe
         sub = SubOpts(subscribe=True, topic_id="/leanconsensus/0x12345678/block/ssz_snappy")
@@ -571,7 +568,7 @@ class TestRPCProtobufEncoding:
 
     def test_message_encode_decode(self) -> None:
         """Test Message encoding/decoding."""
-        from lean_spec.subspecs.networking.gossipsub import RPCMessage
+        from lean_spec.subspecs.networking.gossipsub.rpc import Message as RPCMessage
 
         msg = RPCMessage(
             from_peer=b"peer123",
@@ -593,7 +590,7 @@ class TestRPCProtobufEncoding:
 
     def test_message_minimal(self) -> None:
         """Test Message with only required fields."""
-        from lean_spec.subspecs.networking.gossipsub import RPCMessage
+        from lean_spec.subspecs.networking.gossipsub.rpc import Message as RPCMessage
 
         msg = RPCMessage(topic="/test/topic", data=b"payload")
         encoded = msg.encode()
@@ -606,7 +603,7 @@ class TestRPCProtobufEncoding:
 
     def test_control_graft_encode_decode(self) -> None:
         """Test ControlGraft encoding/decoding."""
-        from lean_spec.subspecs.networking.gossipsub import RPCControlGraft
+        from lean_spec.subspecs.networking.gossipsub.rpc import ControlGraft as RPCControlGraft
 
         graft = RPCControlGraft(topic_id="/test/blocks")
         encoded = graft.encode()
@@ -616,7 +613,7 @@ class TestRPCProtobufEncoding:
 
     def test_control_prune_encode_decode(self) -> None:
         """Test ControlPrune encoding/decoding with backoff."""
-        from lean_spec.subspecs.networking.gossipsub import RPCControlPrune
+        from lean_spec.subspecs.networking.gossipsub.rpc import ControlPrune as RPCControlPrune
 
         prune = RPCControlPrune(topic_id="/test/blocks", backoff=60)
         encoded = prune.encode()
@@ -627,7 +624,7 @@ class TestRPCProtobufEncoding:
 
     def test_control_ihave_encode_decode(self) -> None:
         """Test ControlIHave encoding/decoding."""
-        from lean_spec.subspecs.networking.gossipsub import RPCControlIHave
+        from lean_spec.subspecs.networking.gossipsub.rpc import ControlIHave as RPCControlIHave
 
         msg_ids = [b"msgid1234567890ab", b"msgid2345678901bc", b"msgid3456789012cd"]
         ihave = RPCControlIHave(topic_id="/test/blocks", message_ids=msg_ids)
@@ -639,7 +636,7 @@ class TestRPCProtobufEncoding:
 
     def test_control_iwant_encode_decode(self) -> None:
         """Test ControlIWant encoding/decoding."""
-        from lean_spec.subspecs.networking.gossipsub import RPCControlIWant
+        from lean_spec.subspecs.networking.gossipsub.rpc import ControlIWant as RPCControlIWant
 
         msg_ids = [b"msgid1234567890ab", b"msgid2345678901bc"]
         iwant = RPCControlIWant(message_ids=msg_ids)
@@ -650,7 +647,9 @@ class TestRPCProtobufEncoding:
 
     def test_control_idontwant_encode_decode(self) -> None:
         """Test ControlIDontWant encoding/decoding (v1.2)."""
-        from lean_spec.subspecs.networking.gossipsub import RPCControlIDontWant
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlIDontWant as RPCControlIDontWant,
+        )
 
         msg_ids = [b"msgid1234567890ab"]
         idontwant = RPCControlIDontWant(message_ids=msg_ids)
@@ -661,11 +660,17 @@ class TestRPCProtobufEncoding:
 
     def test_control_message_aggregate(self) -> None:
         """Test ControlMessage with multiple control types."""
-        from lean_spec.subspecs.networking.gossipsub import (
-            RPCControlGraft,
-            RPCControlIHave,
-            RPCControlMessage,
-            RPCControlPrune,
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlGraft as RPCControlGraft,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlIHave as RPCControlIHave,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlMessage as RPCControlMessage,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlPrune as RPCControlPrune,
         )
 
         ctrl = RPCControlMessage(
@@ -686,7 +691,7 @@ class TestRPCProtobufEncoding:
 
     def test_rpc_subscription_only(self) -> None:
         """Test RPC with only subscriptions."""
-        from lean_spec.subspecs.networking.gossipsub import RPC, SubOpts
+        from lean_spec.subspecs.networking.gossipsub.rpc import RPC, SubOpts
 
         rpc = RPC(
             subscriptions=[
@@ -705,7 +710,8 @@ class TestRPCProtobufEncoding:
 
     def test_rpc_publish_only(self) -> None:
         """Test RPC with only published messages."""
-        from lean_spec.subspecs.networking.gossipsub import RPC, RPCMessage
+        from lean_spec.subspecs.networking.gossipsub.rpc import RPC
+        from lean_spec.subspecs.networking.gossipsub.rpc import Message as RPCMessage
 
         rpc = RPC(
             publish=[
@@ -723,10 +729,14 @@ class TestRPCProtobufEncoding:
 
     def test_rpc_control_only(self) -> None:
         """Test RPC with only control messages."""
-        from lean_spec.subspecs.networking.gossipsub import (
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
             RPC,
-            RPCControlGraft,
-            RPCControlMessage,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlGraft as RPCControlGraft,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlMessage as RPCControlMessage,
         )
 
         rpc = RPC(control=RPCControlMessage(graft=[RPCControlGraft(topic_id="/blocks")]))
@@ -739,13 +749,21 @@ class TestRPCProtobufEncoding:
 
     def test_rpc_full_message(self) -> None:
         """Test RPC with all message types (full gossipsub exchange)."""
-        from lean_spec.subspecs.networking.gossipsub import (
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
             RPC,
-            RPCControlGraft,
-            RPCControlIHave,
-            RPCControlMessage,
-            RPCMessage,
             SubOpts,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlGraft as RPCControlGraft,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlIHave as RPCControlIHave,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            ControlMessage as RPCControlMessage,
+        )
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
+            Message as RPCMessage,
         )
 
         rpc = RPC(
@@ -772,7 +790,7 @@ class TestRPCProtobufEncoding:
 
     def test_rpc_empty_check(self) -> None:
         """Test RPC is_empty method."""
-        from lean_spec.subspecs.networking.gossipsub import RPC, SubOpts
+        from lean_spec.subspecs.networking.gossipsub.rpc import RPC, SubOpts
 
         empty_rpc = RPC()
         assert empty_rpc.is_empty()
@@ -782,7 +800,7 @@ class TestRPCProtobufEncoding:
 
     def test_rpc_helper_functions(self) -> None:
         """Test RPC creation helper functions."""
-        from lean_spec.subspecs.networking.gossipsub import (
+        from lean_spec.subspecs.networking.gossipsub.rpc import (
             create_graft_rpc,
             create_ihave_rpc,
             create_iwant_rpc,
@@ -829,7 +847,7 @@ class TestRPCProtobufEncoding:
         This test verifies that our encoding produces the same bytes as
         a reference implementation would for simple cases.
         """
-        from lean_spec.subspecs.networking.gossipsub import RPC, SubOpts
+        from lean_spec.subspecs.networking.gossipsub.rpc import RPC, SubOpts
 
         # A subscription RPC with a simple topic
         rpc = RPC(subscriptions=[SubOpts(subscribe=True, topic_id="test")])
@@ -847,7 +865,8 @@ class TestRPCProtobufEncoding:
 
     def test_large_message_encoding(self) -> None:
         """Test encoding of large messages (typical block size)."""
-        from lean_spec.subspecs.networking.gossipsub import RPC, RPCMessage
+        from lean_spec.subspecs.networking.gossipsub.rpc import RPC
+        from lean_spec.subspecs.networking.gossipsub.rpc import Message as RPCMessage
 
         # Simulate a large block payload (100KB)
         large_data = b"x" * 100_000

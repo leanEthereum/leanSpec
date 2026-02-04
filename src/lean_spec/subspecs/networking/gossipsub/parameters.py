@@ -159,17 +159,3 @@ class GossipsubParameters(StrictBaseModel):
     be long enough to cover network propagation delays but
     short enough to bound memory usage.
     """
-
-    # -------------------------------------------------------------------------
-    # IDONTWANT Optimization (v1.2)
-    # -------------------------------------------------------------------------
-
-    idontwant_message_size_threshold: int = 1000
-    """Minimum message size in bytes to trigger IDONTWANT.
-
-    When receiving a message larger than this threshold,
-    immediately send IDONTWANT to mesh peers to prevent
-    redundant transmissions.
-
-    Set to 1KB by default.
-    """

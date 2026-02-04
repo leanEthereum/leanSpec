@@ -222,8 +222,6 @@ class ValidatorRegistry:
         2. Read manifest to get key file paths
         3. Load secret keys from SSZ files
 
-        Compatible with ream's YAML format.
-
         Args:
             node_id: Identifier for this node in validators.yaml.
             validators_path: Path to validators.yaml.

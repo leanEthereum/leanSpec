@@ -1,1 +1,0 @@
-"""SSZ Merkle related functionality."""

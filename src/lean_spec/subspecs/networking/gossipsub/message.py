@@ -73,17 +73,6 @@ class SnappyDecompressor(Protocol):
 
     Any callable matching this signature can be used for decompression.
     The function should raise an exception if decompression fails.
-
-    Example::
-
-        import snappy
-
-        # Using python-snappy library
-        msg = GossipsubMessage(
-            topic=b"/leanconsensus/...",
-            raw_data=compressed_data,
-            snappy_decompress=snappy.decompress,
-        )
     """
 
     def __call__(self, data: bytes) -> bytes:
@@ -194,14 +183,6 @@ class GossipsubMessage:
 
         Returns:
             20-byte message ID.
-
-        Example::
-
-            msg_id = GossipsubMessage.compute_id(
-                topic=b"/leanconsensus/0x12345678/block/ssz_snappy",
-                data=block_bytes,
-                snappy_decompress=snappy.decompress,
-            )
         """
         if snappy_decompress is not None:
             try:

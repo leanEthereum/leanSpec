@@ -35,7 +35,7 @@ from tests.lean_spec.helpers import make_test_block, make_test_status, run_async
 
 @dataclass
 class MockStream:
-    """Mock yamux stream for testing ReqRespServer."""
+    """Mock QUIC stream for testing ReqRespServer."""
 
     request_data: bytes = b""
     """Data to return when read() is called."""
@@ -48,6 +48,14 @@ class MockStream:
 
     _read_offset: int = 0
     """Internal offset for simulating chunked reads."""
+
+    _stream_id: int = 0
+    """Mock stream identifier."""
+
+    @property
+    def stream_id(self) -> int:
+        """Mock stream ID."""
+        return self._stream_id
 
     @property
     def protocol_id(self) -> str:
@@ -981,6 +989,12 @@ class MockChunkedStream:
         self.chunk_index = 0
         self.written: list[bytes] = []
         self.closed = False
+        self._stream_id = 0
+
+    @property
+    def stream_id(self) -> int:
+        """Mock stream ID."""
+        return self._stream_id
 
     @property
     def protocol_id(self) -> str:
@@ -1390,6 +1404,12 @@ class MockFailingStream:
         self.written: list[bytes] = []
         self.closed = False
         self.close_attempts = 0
+        self._stream_id = 0
+
+    @property
+    def stream_id(self) -> int:
+        """Mock stream ID."""
+        return self._stream_id
 
     @property
     def protocol_id(self) -> str:
