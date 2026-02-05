@@ -28,25 +28,21 @@ class SignatureKey:
     Key for looking up individual validator signatures.
 
     Used to index signature caches by (validator, message) pairs.
-
-    The validator_id is normalized to int for consistent hashing.
-    This ensures lookups work regardless of whether the input is
-    ValidatorIndex, Uint64, or plain int.
     """
 
-    _validator_id: int
-    """The validator who produced the signature (normalized to int)."""
+    _validator_id: ValidatorIndex
+    """The validator who produced the signature."""
 
     data_root: Bytes32
     """The hash of the signed data (e.g., attestation data root)."""
 
     def __init__(self, validator_id: int | ValidatorIndex, data_root: Bytes32) -> None:
-        """Create a SignatureKey with normalized validator_id."""
-        object.__setattr__(self, "_validator_id", int(validator_id))
+        """Create a SignatureKey with the given validator_id and data_root."""
+        object.__setattr__(self, "_validator_id", ValidatorIndex(validator_id))
         object.__setattr__(self, "data_root", data_root)
 
     @property
-    def validator_id(self) -> int:
+    def validator_id(self) -> ValidatorIndex:
         """The validator who produced the signature."""
         return self._validator_id
 
