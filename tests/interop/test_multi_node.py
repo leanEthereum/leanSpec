@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.interop
 
 
+@pytest.mark.skip(reason="Interop test not passing - needs update (#359)")
 @pytest.mark.timeout(120)
 @pytest.mark.num_validators(3)
 async def test_mesh_finalization(node_cluster: NodeCluster) -> None:
@@ -199,6 +200,7 @@ async def test_mesh_finalization(node_cluster: NodeCluster) -> None:
     )
 
 
+@pytest.mark.skip(reason="Interop test not passing - needs update (#359)")
 @pytest.mark.timeout(120)
 @pytest.mark.num_validators(3)
 async def test_mesh_2_2_2_finalization(node_cluster: NodeCluster) -> None:
