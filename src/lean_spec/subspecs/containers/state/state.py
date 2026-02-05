@@ -843,7 +843,6 @@ class State(Container):
             gossip_keys: list[PublicKey] = []
             gossip_ids: list[ValidatorIndex] = []
 
-
             # Attempt to collect each validator's signature from gossip.
             #
             # Signatures are keyed by (validator ID, data root).
