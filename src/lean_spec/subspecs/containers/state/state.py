@@ -843,9 +843,6 @@ class State(Container):
             gossip_keys: list[PublicKey] = []
             gossip_ids: list[ValidatorIndex] = []
 
-            # Track validators we couldn't find signatures for.
-            #
-            # These will need to be covered by Phase 2 (existing proofs).
 
             # Attempt to collect each validator's signature from gossip.
             #
