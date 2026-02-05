@@ -310,19 +310,13 @@ class BlockCache:
         Returns:
             List of parent block roots to fetch via BlocksByRoot requests.
         """
-        missing_parents: set[Bytes32] = set()
-
-        for root in self._orphans:
-            pending = self._blocks.get(root)
-            if pending is not None:
-                # Only add if parent is not already in the cache.
-                #
-                # If parent is in cache, the orphan is not truly orphaned;
-                # it just has not been processed yet.
-                if pending.parent_root not in self._blocks:
-                    missing_parents.add(pending.parent_root)
-
-        return list(missing_parents)
+        return list(
+            {
+                pending.parent_root
+                for root in self._orphans
+                if (pending := self._blocks.get(root)) and pending.parent_root not in self._blocks
+            }
+        )
 
     def get_children(self, parent_root: Bytes32) -> list[PendingBlock]:
         """

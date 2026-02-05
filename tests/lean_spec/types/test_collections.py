@@ -8,10 +8,11 @@ from typing_extensions import Type
 
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.types.boolean import Boolean
+from lean_spec.types.byte_arrays import Bytes32
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.exceptions import SSZTypeError, SSZValueError
-from lean_spec.types.uint import Uint8, Uint16, Uint32, Uint256
+from lean_spec.types.uint import Uint8, Uint16, Uint32
 
 # Type alias for errors that can be SSZValueError or wrapped in ValidationError
 ValueOrValidationError = (SSZValueError, ValidationError)
@@ -94,14 +95,14 @@ class Uint32List128(SSZList[Uint32]):
     LIMIT = 128
 
 
-class Uint256List32(SSZList[Uint256]):
-    """A list with up to 32 Uint256 values."""
+class Bytes32List32(SSZList[Bytes32]):
+    """A list with up to 32 Bytes32 values."""
 
     LIMIT = 32
 
 
-class Uint256List128(SSZList[Uint256]):
-    """A list with up to 128 Uint256 values."""
+class Bytes32List128(SSZList[Bytes32]):
+    """A list with up to 128 Bytes32 values."""
 
     LIMIT = 128
 
@@ -397,8 +398,12 @@ class TestSSZListSerialization:
             (Uint8List10, (0, 1, 2, 3, 4, 5, 6), "00010203040506"),
             (Uint32List128, (0xAABB, 0xC0AD, 0xEEFF), "bbaa0000adc00000ffee0000"),
             (
-                Uint256List32,
-                (0xAABB, 0xC0AD, 0xEEFF),
+                Bytes32List32,
+                (
+                    b"\xbb\xaa" + b"\x00" * 30,
+                    b"\xad\xc0" + b"\x00" * 30,
+                    b"\xff\xee" + b"\x00" * 30,
+                ),
                 (
                     "bbaa000000000000000000000000000000000000000000000000000000000000"
                     "adc0000000000000000000000000000000000000000000000000000000000000"
@@ -406,8 +411,8 @@ class TestSSZListSerialization:
                 ),
             ),
             (
-                Uint256List128,
-                tuple(range(1, 20)),
+                Bytes32List128,
+                tuple(i.to_bytes(32, "little") for i in range(1, 20)),
                 "".join(i.to_bytes(32, "little").hex() for i in range(1, 20)),
             ),
             (

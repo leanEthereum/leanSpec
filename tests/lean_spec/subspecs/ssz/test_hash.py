@@ -10,8 +10,7 @@ import pytest
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
-from lean_spec.types.byte import Byte
-from lean_spec.types.byte_arrays import BaseByteList, Bytes48
+from lean_spec.types.byte_arrays import BaseByteList, Bytes32, Bytes48
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.uint import (
@@ -20,8 +19,6 @@ from lean_spec.types.uint import (
     Uint16,
     Uint32,
     Uint64,
-    Uint128,
-    Uint256,
 )
 from lean_spec.types.union import SSZUnion
 
@@ -43,7 +40,7 @@ class Uint32List128(SSZList[Uint32]):
     LIMIT = 128
 
 
-class Uint256List32(SSZList[Uint256]):
+class Bytes32List32(SSZList[Bytes32]):
     LIMIT = 32
 
 
@@ -150,15 +147,6 @@ def _chunk_hex(payload_hex: str) -> str:
         # uint64
         (Uint64, 0x0000000000000000, _le_hex(0x0000000000000000, 8)),
         (Uint64, 0x0123456789ABCDEF, _le_hex(0x0123456789ABCDEF, 8)),
-        # uint128
-        (Uint128, 0x0, _le_hex(0x0, 16)),
-        (
-            Uint128,
-            0x11223344556677880123456789ABCDEF,
-            _le_hex(0x11223344556677880123456789ABCDEF, 16),
-        ),
-        # uint256
-        (Uint256, 0x0, _le_hex(0x0, 32)),
     ],
 )
 def test_hash_tree_root_uints(uint_type: Type[BaseUint], value_int: int, le_hex: str) -> None:
@@ -523,16 +511,22 @@ def test_hash_tree_root_list_uint32_large_limit() -> None:
     assert hash_tree_root(test_list).hex() == expected
 
 
-def test_hash_tree_root_list_uint256() -> None:
+def test_hash_tree_root_list_bytes32() -> None:
     """
     Tests a `List` where each element is itself a 32-byte chunk.
     """
-    # Create a list of three Uint256 elements.
-    test_list = Uint256List32(data=(Uint256(0xAABB), Uint256(0xC0AD), Uint256(0xEEFF)))
-    # Each Uint256 is a 32-byte leaf. We have 3 leaves.
-    a = chunk("bbaa")  # 0xAABB
-    b = chunk("adc0")  # 0xC0AD
-    c = chunk("ffee")  # 0xEEFF
+    # Create a list of three Bytes32 elements.
+    test_list = Bytes32List32(
+        data=(
+            Bytes32(b"\xbb\xaa" + b"\x00" * 30),
+            Bytes32(b"\xad\xc0" + b"\x00" * 30),
+            Bytes32(b"\xff\xee" + b"\x00" * 30),
+        )
+    )
+    # Each Bytes32 is a 32-byte leaf. We have 3 leaves.
+    a = chunk("bbaa")  # first two bytes
+    b = chunk("adc0")  # first two bytes
+    c = chunk("ffee")  # first two bytes
     # Merkleize the three leaves, padding to 4 with a zero chunk.
     base = h(h(a, b), h(c, chunk("")))
     # The list capacity is 32 elements, so the tree depth is 5 (2^5=32).
@@ -594,7 +588,7 @@ class UnionUint16Uint32(SSZUnion):
 
 # Define SSZ Container types for testing.
 class SingleField(Container):
-    A: Byte
+    A: Uint8
 
 
 class Small(Container):
@@ -634,7 +628,7 @@ def test_hash_tree_root_container_singlefield() -> None:
     Tests the hash tree root of a container with a single basic field.
     """
     # For a container with one basic field, the root is just the chunk of that field.
-    v = SingleField(A=Byte(0xAB))
+    v = SingleField(A=Uint8(0xAB))
     expected = chunk("ab")
     assert hash_tree_root(v).hex() == expected
 

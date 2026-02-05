@@ -49,9 +49,7 @@ class SyncPeer:
 
     def has_slot(self, slot: Slot) -> bool:
         """Check if peer likely has data for given slot."""
-        if self.status is None:
-            return False
-        return self.status.head.slot >= slot
+        return self.status is not None and self.status.head.slot >= slot
 
     def on_request_start(self) -> None:
         """Mark that a request has been sent to this peer."""

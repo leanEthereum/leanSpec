@@ -17,12 +17,12 @@ from typing import (
     IO,
     Any,
     ClassVar,
+    Self,
     Sequence,
     overload,
 )
 
 from pydantic import Field, field_validator
-from typing_extensions import Self
 
 from .boolean import Boolean
 from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError

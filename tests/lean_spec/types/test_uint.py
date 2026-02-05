@@ -13,11 +13,9 @@ from lean_spec.types.uint import (
     Uint16,
     Uint32,
     Uint64,
-    Uint128,
-    Uint256,
 )
 
-ALL_UINT_TYPES = (Uint8, Uint16, Uint32, Uint64, Uint128, Uint256)
+ALL_UINT_TYPES = (Uint8, Uint16, Uint32, Uint64)
 """A collection of all Uint types to test against."""
 
 
@@ -38,21 +36,11 @@ class Uint64Model(BaseModel):
     value: Uint64
 
 
-class Uint128Model(BaseModel):
-    value: Uint128
-
-
-class Uint256Model(BaseModel):
-    value: Uint256
-
-
 UINT_MODELS: dict[Type[BaseUint], Type[BaseModel]] = {
     Uint8: Uint8Model,
     Uint16: Uint16Model,
     Uint32: Uint32Model,
     Uint64: Uint64Model,
-    Uint128: Uint128Model,
-    Uint256: Uint256Model,
 }
 """Mapping from Uint types to their corresponding Pydantic model classes."""
 
@@ -378,9 +366,6 @@ class TestUintSSZ:
             (Uint32, 0x01234567, "67452301"),
             (Uint64, 0x0000000000000000, "0000000000000000"),
             (Uint64, 0x0123456789ABCDEF, "efcdab8967452301"),
-            (Uint128, 0x0, "00000000000000000000000000000000"),
-            (Uint128, 0x11223344556677880123456789ABCDEF, "efcdab89674523018877665544332211"),
-            (Uint256, 0x0, "00" * 32),
         ],
     )
     def test_encode_decode_roundtrip(

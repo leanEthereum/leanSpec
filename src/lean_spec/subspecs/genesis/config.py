@@ -89,14 +89,7 @@ class GenesisConfig(StrictBaseModel):
         if not isinstance(v, list):
             raise ValueError(f"genesis_validators must be a list, got {type(v).__name__}")
 
-        result = []
-        for pk in v:
-            if isinstance(pk, int):
-                # YAML parsed 0x... as integer, convert back to hex string.
-                # Pad to 52 bytes (104 hex chars).
-                pk = f"0x{pk:0104x}"
-            result.append(Bytes52(pk))
-        return result
+        return [Bytes52(f"0x{pk:0104x}" if isinstance(pk, int) else pk) for pk in v]
 
     @model_validator(mode="after")
     def validate_num_validators_consistency(self) -> GenesisConfig:

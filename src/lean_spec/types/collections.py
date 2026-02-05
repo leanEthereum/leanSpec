@@ -9,6 +9,7 @@ from typing import (
     ClassVar,
     Generic,
     Iterator,
+    Self,
     Sequence,
     TypeVar,
     cast,
@@ -16,7 +17,6 @@ from typing import (
 )
 
 from pydantic import Field, field_serializer, field_validator
-from typing_extensions import Self
 
 from lean_spec.types.constants import OFFSET_BYTE_LENGTH
 

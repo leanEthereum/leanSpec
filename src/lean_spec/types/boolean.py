@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import IO, Any
+from typing import IO, Any, Self
 
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
-from typing_extensions import Self
 
 from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from .ssz_base import SSZType

@@ -9,12 +9,11 @@ This module provides two parameterized SSZ types:
 
 from __future__ import annotations
 
-from typing import IO, Any, ClassVar, Iterable, SupportsIndex
+from typing import IO, Any, ClassVar, Iterable, Self, SupportsIndex
 
 from pydantic import Field, field_serializer, field_validator
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
-from typing_extensions import Self
 
 from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from .ssz_base import SSZModel, SSZType

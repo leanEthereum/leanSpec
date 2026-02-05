@@ -52,9 +52,7 @@ References:
 from __future__ import annotations
 
 import base64
-from typing import ClassVar
-
-from typing_extensions import Self
+from typing import ClassVar, Self
 
 from lean_spec.subspecs.networking.types import Multiaddr, NodeId, SeqNumber
 from lean_spec.types import (

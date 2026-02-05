@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import io
 from abc import ABC, abstractmethod
-from typing import IO, Any, Sequence
-
-from typing_extensions import Self
+from typing import IO, Any, Self, Sequence
 
 from .base import StrictBaseModel
 

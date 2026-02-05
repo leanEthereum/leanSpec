@@ -200,12 +200,6 @@ class Fp(SSZType):
 
         Returns:
             4-byte little-endian representation of the field element.
-
-        Example:
-            >>> fp = Fp(value=42)
-            >>> data = bytes(fp)
-            >>> len(data) == 4
-            True
         """
         return self.encode_bytes()
 
@@ -225,12 +219,6 @@ class Fp(SSZType):
 
         Raises:
             ValueError: If data has incorrect length or represents an invalid field value.
-
-        Example:
-            >>> fp = Fp(value=42)
-            >>> recovered = Fp.from_bytes(bytes(fp))
-            >>> recovered == fp
-            True
         """
         return cls.decode_bytes(data)
 
@@ -247,12 +235,6 @@ class Fp(SSZType):
 
         Returns:
             Concatenated bytes of all field elements.
-
-        Example:
-            >>> elements = [Fp(value=1), Fp(value=2), Fp(value=3)]
-            >>> data = Fp.serialize_list(elements)
-            >>> len(data) == 3 * P_BYTES
-            True
         """
         return b"".join(bytes(elem) for elem in elements)
 
@@ -270,13 +252,6 @@ class Fp(SSZType):
 
         Raises:
             ValueError: If data length doesn't match expected count.
-
-        Example:
-            >>> elements = [Fp(value=1), Fp(value=2), Fp(value=3)]
-            >>> data = Fp.serialize_list(elements)
-            >>> recovered = Fp.deserialize_list(data, 3)
-            >>> recovered == elements
-            True
         """
         expected_len = count * P_BYTES
         if len(data) != expected_len:

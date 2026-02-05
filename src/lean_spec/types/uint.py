@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import IO, Any, ClassVar, Literal, SupportsIndex, SupportsInt
+from typing import IO, Any, ClassVar, Literal, Self, SupportsIndex, SupportsInt
 
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
-from typing_extensions import Self
 
 from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from .ssz_base import SSZType
@@ -419,15 +418,3 @@ class Uint64(BaseUint):
     """A type representing a 64-bit unsigned integer (uint64)."""
 
     BITS = 64
-
-
-class Uint128(BaseUint):
-    """A type representing a 128-bit unsigned integer (uint128)."""
-
-    BITS = 128
-
-
-class Uint256(BaseUint):
-    """A type representing a 256-bit unsigned integer (uint256)."""
-
-    BITS = 256

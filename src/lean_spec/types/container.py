@@ -11,9 +11,7 @@ from __future__ import annotations
 
 import inspect
 import io
-from typing import IO, Any
-
-from typing_extensions import Self
+from typing import IO, Any, Self
 
 from .constants import OFFSET_BYTE_LENGTH
 from .exceptions import SSZSerializationError, SSZTypeError

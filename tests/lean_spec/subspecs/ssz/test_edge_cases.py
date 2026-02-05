@@ -10,7 +10,7 @@ from lean_spec.types.boolean import Boolean
 from lean_spec.types.byte_arrays import BaseByteList, Bytes32
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
-from lean_spec.types.uint import BaseUint, Uint8, Uint16, Uint32, Uint64, Uint128, Uint256
+from lean_spec.types.uint import BaseUint, Uint8, Uint16, Uint32, Uint64
 
 # Test type definitions
 
@@ -254,8 +254,6 @@ class TestZeroValues:
             (Uint16, 2),
             (Uint32, 4),
             (Uint64, 8),
-            (Uint128, 16),
-            (Uint256, 32),
         ],
     )
     def test_zero_uint_roundtrip(self, uint_type: type[BaseUint], byte_length: int) -> None:
@@ -292,8 +290,6 @@ class TestMaximumValues:
             (Uint16, 0xFFFF),
             (Uint32, 0xFFFFFFFF),
             (Uint64, 0xFFFFFFFFFFFFFFFF),
-            (Uint128, (1 << 128) - 1),
-            (Uint256, (1 << 256) - 1),
         ],
     )
     def test_max_uint_roundtrip(self, uint_type: type[BaseUint], max_value: int) -> None:

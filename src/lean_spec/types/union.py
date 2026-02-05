@@ -8,13 +8,11 @@ from typing import (
     Any,
     ClassVar,
     Final,
-    Tuple,
-    Type,
+    Self,
     cast,
 )
 
 from pydantic import model_validator
-from typing_extensions import Self
 
 from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 from .ssz_base import SSZModel, SSZType
@@ -44,18 +42,12 @@ class SSZUnion(SSZModel):
     SSZ encoding: selector byte followed by serialized value.
     """
 
-    OPTIONS: ClassVar[Tuple[Type[SSZType] | None, ...]]
+    OPTIONS: ClassVar[tuple[type[SSZType] | None, ...]]
     """Tuple of possible types for this Union.
 
     Each position corresponds to a selector index.
     Only index 0 may be None.
     All non-None options must implement the SSZType protocol.
-
-    Example:
-        OPTIONS = (None, Uint16, Uint32) allows:
-        - selector=0 -> None (null variant)
-        - selector=1 -> Uint16 values
-        - selector=2 -> Uint32 values
     """
 
     selector: int
@@ -119,12 +111,12 @@ class SSZUnion(SSZModel):
             ) from e
 
     @property
-    def selected_type(self) -> Type[SSZType] | None:
+    def selected_type(self) -> type[SSZType] | None:
         """The type class of the currently selected option."""
         return self.OPTIONS[self.selector]
 
     @classmethod
-    def options(cls) -> Tuple[Type[SSZType] | None, ...]:
+    def options(cls) -> tuple[type[SSZType] | None, ...]:
         """Get the tuple of possible types for this Union."""
         return cls.OPTIONS
 
