@@ -145,6 +145,8 @@ class Store(Container):
 
     This allows reconstructing attestations from aggregated payloads.
     Keyed by data_root_bytes() of AttestationData.
+
+    # TODO(kamilsa): #361 Consider pruning old entries based on justification/finalization.
     """
 
     latest_new_aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {}
