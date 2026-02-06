@@ -150,6 +150,9 @@ class SyncService:
     database: Database | None = field(default=None)
     """Optional database for persisting blocks and states."""
 
+    is_aggregator: bool = field(default=False)
+    """Whether this node functions as an aggregator."""
+
     process_block: BlockProcessor = field(default=default_block_processor)
     """Block processor function. Defaults to Store.on_block()."""
 
@@ -425,7 +428,10 @@ class SyncService:
         from lean_spec.subspecs.node.helpers import is_aggregator
 
         # Check if we are an aggregator
-        is_aggregator_role = is_aggregator(self.store.validator_id)
+        is_aggregator_role = is_aggregator(
+            self.store.validator_id,
+            node_is_aggregator=self.is_aggregator,
+        )
 
         # Integrate the attestation into forkchoice state.
         #

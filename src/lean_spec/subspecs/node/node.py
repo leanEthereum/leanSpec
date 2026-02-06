@@ -230,6 +230,7 @@ class Node:
             clock=clock,
             network=config.network,
             database=database,
+            is_aggregator=config.is_aggregator,
         )
 
         chain_service = ChainService(sync_service=sync_service, clock=clock)
