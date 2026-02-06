@@ -397,6 +397,13 @@ class TestOnGossipAttestationSubnetFiltering:
             signature=key_manager.sign_attestation_data(attester_validator, attestation_data),
         )
 
+        # Verify signature does NOT exist before calling the method
+        data_root = attestation_data.data_root_bytes()
+        sig_key = SignatureKey(attester_validator, data_root)
+        assert sig_key not in store.gossip_signatures, (
+            "Precondition: signature should not exist before calling method"
+        )
+
         # Patch ATTESTATION_COMMITTEE_COUNT to 4 so we can test subnet filtering
         with mock.patch(
             "lean_spec.subspecs.forkchoice.store.ATTESTATION_COMMITTEE_COUNT", Uint64(4)
@@ -406,9 +413,7 @@ class TestOnGossipAttestationSubnetFiltering:
                 is_aggregator=True,
             )
 
-        # Verify signature was stored
-        data_root = attestation_data.data_root_bytes()
-        sig_key = SignatureKey(attester_validator, data_root)
+        # Verify signature NOW exists after calling the method
         assert sig_key in updated_store.gossip_signatures, (
             "Signature from same-subnet validator should be stored"
         )
