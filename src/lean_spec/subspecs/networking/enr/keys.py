@@ -47,3 +47,6 @@ ATTNETS: Final[EnrKey] = "attnets"
 
 SYNCNETS: Final[EnrKey] = "syncnets"
 """Sync committee subnet subscriptions (1 byte bitvector)."""
+
+IS_AGGREGATOR: Final[EnrKey] = "is_aggregator"
+"""Aggregator capability flag (1 byte: 0x00 = false, 0x01 = true)."""

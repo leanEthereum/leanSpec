@@ -94,6 +94,18 @@ class NodeConfig:
     For devnet testing with ream, use "devnet0".
     """
 
+    is_aggregator: bool = field(default=False)
+    """
+    Whether this node functions as an aggregator.
+
+    When True:
+    - The node performs attestation aggregation operations
+    - The ENR advertises aggregator capability to peers
+
+    When False (default):
+    - The node runs in standard validator or passive mode
+    """
+
 
 def get_local_validator_id(registry: ValidatorRegistry | None) -> ValidatorIndex | None:
     """
@@ -225,6 +237,7 @@ class Node:
             sync_service=sync_service,
             event_source=config.event_source,
             fork_digest=config.fork_digest,
+            is_aggregator=config.is_aggregator,
         )
 
         # Create API server if configured

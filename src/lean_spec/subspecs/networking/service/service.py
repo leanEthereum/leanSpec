@@ -75,6 +75,9 @@ class NetworkService:
     fork_digest: str = field(default="0x00000000")
     """Fork digest for gossip topics (4-byte hex string)."""
 
+    is_aggregator: bool = field(default=False)
+    """Whether this node functions as an aggregator."""
+
     _running: bool = field(default=False, repr=False)
     """Whether the event loop is running."""
 
