@@ -327,11 +327,6 @@ def test_on_block_preserves_immutability_of_aggregated_payloads() -> None:
     )
 
 
-# =============================================================================
-# Unit Tests: on_gossip_attestation with is_aggregator flag
-# =============================================================================
-
-
 def _create_store_with_validators(
     key_manager: XmssKeyManager,
     num_validators: int,
@@ -521,17 +516,18 @@ class TestOnGossipAttestationSubnetFiltering:
                 is_aggregator=True,
             )
 
-        # Verify attestation data was stored even though signature wasn't
+        # Verify signature was NOT stored (cross-subnet filtered)
         data_root = attestation_data.data_root_bytes()
+        sig_key = SignatureKey(attester_validator, data_root)
+        assert sig_key not in updated_store.gossip_signatures, (
+            "Signature should NOT be stored for cross-subnet validator"
+        )
+
+        # Verify attestation data WAS stored even though signature wasn't
         assert data_root in updated_store.attestation_data_by_root, (
             "Attestation data should always be stored"
         )
         assert updated_store.attestation_data_by_root[data_root] == attestation_data
-
-
-# =============================================================================
-# Unit Tests: on_gossip_aggregated_attestation
-# =============================================================================
 
 
 class TestOnGossipAggregatedAttestation:
@@ -703,12 +699,10 @@ class TestOnGossipAggregatedAttestation:
 
         # Validator 1 should have BOTH proofs
         sig_key = SignatureKey(ValidatorIndex(1), data_root)
-        assert len(store.latest_new_aggregated_payloads[sig_key]) == 2
-
-
-# =============================================================================
-# Integration Tests: aggregate_committee_signatures
-# =============================================================================
+        stored_proofs = store.latest_new_aggregated_payloads[sig_key]
+        assert len(stored_proofs) == 2
+        assert proof_1 in stored_proofs, "First proof should be stored"
+        assert proof_2 in stored_proofs, "Second proof should be stored"
 
 
 def _create_store_with_gossip_signatures(
@@ -938,11 +932,6 @@ class TestAggregateCommitteeSignatures:
         assert sig_key_2 in updated_store.latest_new_aggregated_payloads
 
 
-# =============================================================================
-# Integration Tests: tick_interval aggregation trigger
-# =============================================================================
-
-
 class TestTickIntervalAggregation:
     """
     Integration tests for interval-triggered aggregation.
@@ -1092,11 +1081,6 @@ class TestTickIntervalAggregation:
         assert updated_store.time == Uint64(5)
         # Interval should now be 0
         assert updated_store.time % INTERVALS_PER_SLOT == Uint64(0)
-
-
-# =============================================================================
-# End-to-End Integration Test
-# =============================================================================
 
 
 class TestEndToEndAggregationFlow:
