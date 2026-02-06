@@ -980,6 +980,7 @@ class Store(Container):
             # Note: here we should broadcast the aggregated signature to committee_aggregators topic
 
         # Compute new aggregated payloads
+        new_gossip_sigs = dict(self.gossip_signatures)
         for aggregated_attestation, aggregated_signature in aggregated_results:
             data_root = aggregated_attestation.data.data_root_bytes()
             validator_ids = aggregated_signature.participants.to_validator_indices()
@@ -988,7 +989,17 @@ class Store(Container):
                 if sig_key not in new_aggregated_payloads:
                     new_aggregated_payloads[sig_key] = []
                 new_aggregated_payloads[sig_key].append(aggregated_signature)
-        return self.model_copy(update={"latest_new_aggregated_payloads": new_aggregated_payloads})
+
+                # Prune successfully aggregated signature from gossip map
+                if sig_key in new_gossip_sigs:
+                    del new_gossip_sigs[sig_key]
+
+        return self.model_copy(
+            update={
+                "latest_new_aggregated_payloads": new_aggregated_payloads,
+                "gossip_signatures": new_gossip_sigs,
+            }
+        )
 
     def tick_interval(self, has_proposal: bool, is_aggregator: bool = False) -> "Store":
         """
