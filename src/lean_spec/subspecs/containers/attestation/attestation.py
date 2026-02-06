@@ -8,8 +8,7 @@ Each attestation specifies:
 - What is already justified (source)
 - What should be justified next (target)
 
-Attestations can be aggregated to save space, but the current specification
-doesn't do this yet.
+Attestations can be aggregated by common data to save space and bandwidth.
 """
 
 from __future__ import annotations

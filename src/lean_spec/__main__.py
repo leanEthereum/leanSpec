@@ -9,6 +9,7 @@ Usage::
     python -m lean_spec --genesis config.yaml --bootnode enr:-IS4QHCYrYZbAKW...
     python -m lean_spec --genesis config.yaml --checkpoint-sync-url http://localhost:5052
     python -m lean_spec --genesis config.yaml --validator-keys ./keys --node-id lean_spec_0
+    python -m lean_spec --genesis config.yaml --validator-keys ./keys --is-aggregator
 
 Options:
     --genesis              Path to genesis YAML file (required)
@@ -17,6 +18,7 @@ Options:
     --checkpoint-sync-url  URL to fetch finalized checkpoint state for fast sync
     --validator-keys       Path to validator keys directory
     --node-id              Node identifier for validator assignment (default: lean_spec_0)
+    --is-aggregator        Enable aggregator mode for attestation aggregation (default: false)
 """
 
 from __future__ import annotations
@@ -163,6 +165,7 @@ def _init_from_genesis(
     genesis: GenesisConfig,
     event_source: LiveNetworkEventSource,
     validator_registry: ValidatorRegistry | None = None,
+    is_aggregator: bool = False,
 ) -> Node:
     """
     Initialize a node from genesis configuration.
@@ -171,6 +174,7 @@ def _init_from_genesis(
         genesis: Genesis configuration with time and validators.
         event_source: Network transport for the node.
         validator_registry: Optional registry with validator secret keys.
+        is_aggregator: Enable aggregator mode for attestation aggregation.
 
     Returns:
         A fully initialized Node starting from genesis.
@@ -192,6 +196,7 @@ def _init_from_genesis(
         network=event_source.reqresp_client,
         validator_registry=validator_registry,
         fork_digest=GOSSIP_FORK_DIGEST,
+        is_aggregator=is_aggregator,
     )
 
     # Create and return the node.
@@ -203,6 +208,7 @@ async def _init_from_checkpoint(
     genesis: GenesisConfig,
     event_source: LiveNetworkEventSource,
     validator_registry: ValidatorRegistry | None = None,
+    is_aggregator: bool = False,
 ) -> Node | None:
     """
     Initialize a node from a checkpoint state fetched from a remote node.
@@ -229,6 +235,7 @@ async def _init_from_checkpoint(
         genesis: Local genesis configuration for validation.
         event_source: Network transport for the node.
         validator_registry: Optional registry with validator secret keys.
+        is_aggregator: Enable aggregator mode for attestation aggregation.
 
     Returns:
         A fully initialized Node if successful, None if checkpoint sync failed.
@@ -301,6 +308,7 @@ async def _init_from_checkpoint(
             network=event_source.reqresp_client,
             validator_registry=validator_registry,
             fork_digest=GOSSIP_FORK_DIGEST,
+            is_aggregator=is_aggregator,
         )
 
         # Create node and inject checkpoint store.
@@ -392,6 +400,7 @@ async def run_node(
     validator_keys_path: Path | None = None,
     node_id: str = "lean_spec_0",
     genesis_time_now: bool = False,
+    is_aggregator: bool = False,
 ) -> None:
     """
     Run the lean consensus node.
@@ -404,6 +413,7 @@ async def run_node(
         validator_keys_path: Optional path to validator keys directory.
         node_id: Node identifier for validator assignment.
         genesis_time_now: Override genesis time to current time for testing.
+        is_aggregator: Enable aggregator mode for attestation aggregation.
     """
     import time
 
@@ -430,6 +440,10 @@ async def run_node(
         genesis.genesis_time,
         len(genesis.genesis_validators),
     )
+
+    # Log aggregator mode if enabled
+    if is_aggregator:
+        logger.info("Aggregator mode enabled - node will perform attestation aggregation")
 
     # Load validator keys if path provided.
     #
@@ -504,6 +518,7 @@ async def run_node(
             genesis=genesis,
             event_source=event_source,
             validator_registry=validator_registry,
+            is_aggregator=is_aggregator,
         )
         if node is None:
             # Checkpoint sync failed. Exit rather than falling back.
@@ -516,6 +531,7 @@ async def run_node(
             genesis=genesis,
             event_source=event_source,
             validator_registry=validator_registry,
+            is_aggregator=is_aggregator,
         )
 
     logger.info("Node initialized, peer_id=%s", event_source.connection_manager.peer_id)
@@ -646,6 +662,11 @@ def main() -> None:
         action="store_true",
         help="Override genesis time to current time (for testing)",
     )
+    parser.add_argument(
+        "--is-aggregator",
+        action="store_true",
+        help="Enable aggregator mode (node performs attestation aggregation)",
+    )
 
     args = parser.parse_args()
 
@@ -663,6 +684,7 @@ def main() -> None:
                 args.validator_keys,
                 args.node_id,
                 args.genesis_time_now,
+                args.is_aggregator,
             )
         )
     except KeyboardInterrupt:

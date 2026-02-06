@@ -186,6 +186,14 @@ class ENR(StrictBaseModel):
             return SyncCommitteeSubnets.decode_bytes(syncnets)
         return None
 
+    @property
+    def is_aggregator(self) -> bool:
+        """Check if node advertises aggregator capability."""
+        aggregator_bytes = self.get(keys.IS_AGGREGATOR)
+        if aggregator_bytes and len(aggregator_bytes) == 1:
+            return aggregator_bytes[0] == 0x01
+        return False
+
     def is_valid(self) -> bool:
         """
         Check structural validity (does NOT verify cryptographic signature).
