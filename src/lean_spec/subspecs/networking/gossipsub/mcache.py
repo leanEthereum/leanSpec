@@ -267,16 +267,11 @@ class SeenCache:
         - short enough to bound memory usage.
     """
 
-    _seen: set[MessageId] = field(default_factory=set, repr=False)
-    """Set of message IDs that have been seen.
-
-    Provides O(1) membership testing.
-    """
-
     _timestamps: dict[MessageId, Timestamp] = field(default_factory=dict, repr=False)
     """Timestamp when each message was first seen.
 
-    Used to determine expiry during cleanup.
+    Used for both membership testing (O(1) dict lookup) and
+    expiry during cleanup.
     """
 
     def add(self, msg_id: MessageId, timestamp: Timestamp) -> bool:
@@ -289,10 +284,9 @@ class SeenCache:
         Returns:
             True if newly seen (not a duplicate).
         """
-        if msg_id in self._seen:
+        if msg_id in self._timestamps:
             return False
 
-        self._seen.add(msg_id)
         self._timestamps[msg_id] = timestamp
         return True
 
@@ -305,7 +299,7 @@ class SeenCache:
         Returns:
             True if the message has been seen.
         """
-        return msg_id in self._seen
+        return msg_id in self._timestamps
 
     def cleanup(self, current_time: float) -> int:
         """Remove expired entries.
@@ -323,20 +317,18 @@ class SeenCache:
         expired = [msg_id for msg_id, ts in self._timestamps.items() if ts < cutoff]
 
         for msg_id in expired:
-            self._seen.discard(msg_id)
             del self._timestamps[msg_id]
 
         return len(expired)
 
     def clear(self) -> None:
         """Clear all seen entries."""
-        self._seen.clear()
         self._timestamps.clear()
 
     def __len__(self) -> int:
         """Return the number of seen message IDs."""
-        return len(self._seen)
+        return len(self._timestamps)
 
     def __contains__(self, msg_id: MessageId) -> bool:
         """Check if a message ID has been seen."""
-        return msg_id in self._seen
+        return msg_id in self._timestamps

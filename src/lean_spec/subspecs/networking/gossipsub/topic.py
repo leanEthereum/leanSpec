@@ -214,12 +214,7 @@ class GossipTopic:
         Raises:
             ValueError: If the topic string is malformed.
         """
-        parts = topic_str.lstrip("/").split("/")
-
-        if len(parts) != 4:
-            raise ValueError(f"Invalid topic format: expected 4 parts, got {len(parts)}")
-
-        prefix, fork_digest, topic_name, encoding = parts
+        prefix, fork_digest, topic_name, encoding = parse_topic_string(topic_str)
 
         if prefix != TOPIC_PREFIX:
             raise ValueError(f"Invalid prefix: expected '{TOPIC_PREFIX}', got '{prefix}'")
@@ -316,8 +311,8 @@ def format_topic_string(
 ) -> str:
     """Format a complete gossip topic string.
 
-    Low-level function for constructing topic strings. For most cases,
-    use `GossipTopic` instead.
+    Low-level function for constructing topic strings.
+    Prefer the dataclass representation for most use cases.
 
     Args:
         topic_name: Message type (e.g., "block", "attestation").
@@ -334,8 +329,8 @@ def format_topic_string(
 def parse_topic_string(topic_str: str) -> tuple[str, str, str, str]:
     """Parse a topic string into its components.
 
-    Low-level function for deconstructing topic strings. For most cases,
-    use ``GossipTopic.from_string()`` instead.
+    Low-level function for deconstructing topic strings.
+    Prefer the dataclass parser for most use cases.
 
     Args:
         topic_str: Topic string to parse.

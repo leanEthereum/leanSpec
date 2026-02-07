@@ -55,8 +55,8 @@ References:
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
 
 from lean_spec.subspecs.networking.config import (
     MESSAGE_DOMAIN_INVALID_SNAPPY,
@@ -66,33 +66,11 @@ from lean_spec.types import Bytes20
 
 from .types import MessageId
 
+SnappyDecompressor = Callable[[bytes], bytes]
+"""Callable that decompresses snappy-compressed data.
 
-@runtime_checkable
-class SnappyDecompressor(Protocol):
-    """Protocol for snappy decompression functions.
-
-    Any callable matching this signature can be used for decompression.
-    The function should raise an exception if decompression fails.
-    """
-
-    def __call__(self, data: bytes) -> bytes:
-        """Decompress snappy-compressed data.
-
-        Args:
-            data: Compressed bytes.
-
-        Returns:
-            Decompressed bytes.
-
-        Raises:
-            Exception: If decompression fails.
-        """
-        ...
-
-
-# =============================================================================
-# Gossipsub Message
-# =============================================================================
+Should raise an exception if decompression fails.
+"""
 
 
 @dataclass(slots=True)
@@ -113,10 +91,7 @@ class GossipsubMessage:
     """
 
     topic: bytes
-    """Topic string as UTF-8 encoded bytes.
-
-    Example: ``b"/leanconsensus/0x12345678/block/ssz_snappy"``
-    """
+    """Topic string as UTF-8 encoded bytes."""
 
     raw_data: bytes
     """Raw message payload.

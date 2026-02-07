@@ -8,16 +8,16 @@ from lean_spec.subspecs.networking.config import (
     MESSAGE_DOMAIN_VALID_SNAPPY,
 )
 from lean_spec.subspecs.networking.gossipsub import (
+    ControlGraft,
+    ControlIDontWant,
+    ControlIHave,
+    ControlIWant,
     ControlMessage,
+    ControlPrune,
     ForkMismatchError,
     GossipsubMessage,
     GossipsubParameters,
     GossipTopic,
-    Graft,
-    IDontWant,
-    IHave,
-    IWant,
-    Prune,
     TopicKind,
     format_topic_string,
     parse_topic_string,
@@ -132,12 +132,12 @@ class TestControlMessages:
 
     def test_graft_creation(self) -> None:
         """Test GRAFT message creation."""
-        graft = Graft(topic_id="test_topic")
+        graft = ControlGraft(topic_id="test_topic")
         assert graft.topic_id == "test_topic"
 
     def test_prune_creation(self) -> None:
         """Test PRUNE message creation."""
-        prune = Prune(topic_id="test_topic")
+        prune = ControlPrune(topic_id="test_topic")
         assert prune.topic_id == "test_topic"
 
     def test_ihave_creation(self) -> None:
@@ -145,7 +145,7 @@ class TestControlMessages:
         from lean_spec.types import Bytes20
 
         msg_ids = [Bytes20(b"12345678901234567890"), Bytes20(b"abcdefghijklmnopqrst")]
-        ihave = IHave(topic_id="test_topic", message_ids=msg_ids)
+        ihave = ControlIHave(topic_id="test_topic", message_ids=msg_ids)
 
         assert ihave.topic_id == "test_topic"
         assert len(ihave.message_ids) == 2
@@ -155,7 +155,7 @@ class TestControlMessages:
         from lean_spec.types import Bytes20
 
         msg_ids = [Bytes20(b"12345678901234567890")]
-        iwant = IWant(message_ids=msg_ids)
+        iwant = ControlIWant(message_ids=msg_ids)
 
         assert len(iwant.message_ids) == 1
 
@@ -164,19 +164,19 @@ class TestControlMessages:
         from lean_spec.types import Bytes20
 
         msg_ids = [Bytes20(b"12345678901234567890")]
-        idontwant = IDontWant(message_ids=msg_ids)
+        idontwant = ControlIDontWant(message_ids=msg_ids)
 
         assert len(idontwant.message_ids) == 1
 
     def test_control_message_aggregation(self) -> None:
         """Test aggregated control message container."""
-        graft = Graft(topic_id="topic1")
-        prune = Prune(topic_id="topic2")
+        graft = ControlGraft(topic_id="topic1")
+        prune = ControlPrune(topic_id="topic2")
 
-        control = ControlMessage(grafts=[graft], prunes=[prune])
+        control = ControlMessage(graft=[graft], prune=[prune])
 
-        assert len(control.grafts) == 1
-        assert len(control.prunes) == 1
+        assert len(control.graft) == 1
+        assert len(control.prune) == 1
         assert not control.is_empty()
 
     def test_control_message_empty_check(self) -> None:
@@ -184,7 +184,7 @@ class TestControlMessages:
         empty_control = ControlMessage()
         assert empty_control.is_empty()
 
-        non_empty = ControlMessage(grafts=[Graft(topic_id="topic")])
+        non_empty = ControlMessage(graft=[ControlGraft(topic_id="topic")])
         assert not non_empty.is_empty()
 
 
@@ -307,10 +307,10 @@ class TestMeshState:
         params = GossipsubParameters(d=8, d_low=6, d_high=12, d_lazy=6)
         mesh = MeshState(params=params)
 
-        assert mesh.d == 8
-        assert mesh.d_low == 6
-        assert mesh.d_high == 12
-        assert mesh.d_lazy == 6
+        assert mesh.params.d == 8
+        assert mesh.params.d_low == 6
+        assert mesh.params.d_high == 12
+        assert mesh.params.d_lazy == 6
 
     def test_subscribe_and_unsubscribe(self) -> None:
         """Test topic subscription."""
@@ -488,6 +488,124 @@ class TestFanoutEntry:
 
         assert not entry.is_stale(current_time=1050.0, ttl=60.0)
         assert entry.is_stale(current_time=1070.0, ttl=60.0)
+
+
+class TestFanoutOperations:
+    """Tests for fanout management in MeshState."""
+
+    def test_update_fanout_creates_entry(self) -> None:
+        """update_fanout creates a new fanout entry if none exists."""
+        mesh = MeshState(params=GossipsubParameters(d=3))
+        topic = "fanout_topic"
+
+        available = {peer("p1"), peer("p2"), peer("p3"), peer("p4")}
+        result = mesh.update_fanout(topic, available)
+
+        assert len(result) <= 3  # Up to D peers
+        assert len(result) > 0
+
+    def test_update_fanout_returns_mesh_if_subscribed(self) -> None:
+        """update_fanout returns mesh peers for subscribed topics."""
+        mesh = MeshState(params=GossipsubParameters(d=3))
+        topic = "sub_topic"
+
+        mesh.subscribe(topic)
+        p1 = peer("p1")
+        mesh.add_to_mesh(topic, p1)
+
+        result = mesh.update_fanout(topic, {p1, peer("p2")})
+        assert p1 in result
+
+    def test_update_fanout_fills_to_d(self) -> None:
+        """update_fanout fills fanout up to D peers."""
+        mesh = MeshState(params=GossipsubParameters(d=4))
+        topic = "fanout_topic"
+
+        names = ["pA", "pB", "pC", "pD", "pE", "pF", "pG", "pH", "pJ", "pK"]
+        available = {peer(n) for n in names}
+        result = mesh.update_fanout(topic, available)
+
+        assert len(result) == 4
+
+    def test_cleanup_fanouts_removes_stale(self) -> None:
+        """cleanup_fanouts removes stale entries."""
+        mesh = MeshState(params=GossipsubParameters())
+        topic = "old_topic"
+
+        mesh.update_fanout(topic, {peer("p1")})
+        # Make it stale
+        mesh._fanouts[topic].last_published = 0.0
+
+        removed = mesh.cleanup_fanouts(ttl=60.0)
+        assert removed == 1
+        assert topic not in mesh._fanouts
+
+    def test_cleanup_fanouts_keeps_fresh(self) -> None:
+        """cleanup_fanouts keeps recent entries."""
+        mesh = MeshState(params=GossipsubParameters())
+        topic = "fresh_topic"
+
+        mesh.update_fanout(topic, {peer("p1")})
+        # last_published is set to time.time() by update_fanout
+
+        removed = mesh.cleanup_fanouts(ttl=60.0)
+        assert removed == 0
+        assert topic in mesh._fanouts
+
+    def test_subscribe_promotes_fanout_to_mesh(self) -> None:
+        """Subscribing to a topic promotes fanout peers to mesh."""
+        mesh = MeshState(params=GossipsubParameters())
+        topic = "promote_topic"
+
+        p1 = peer("p1")
+        mesh.update_fanout(topic, {p1})
+        assert topic in mesh._fanouts
+
+        mesh.subscribe(topic)
+
+        # Fanout should be removed, peers promoted to mesh
+        assert topic not in mesh._fanouts
+        assert p1 in mesh.get_mesh_peers(topic)
+
+    def test_unsubscribe_returns_mesh_peers(self) -> None:
+        """Unsubscribing returns the set of mesh peers (for PRUNE)."""
+        mesh = MeshState(params=GossipsubParameters())
+        topic = "unsub_topic"
+
+        mesh.subscribe(topic)
+        p1 = peer("p1")
+        p2 = peer("p2")
+        mesh.add_to_mesh(topic, p1)
+        mesh.add_to_mesh(topic, p2)
+
+        result = mesh.unsubscribe(topic)
+        assert result == {p1, p2}
+
+    def test_select_peers_for_gossip_respects_d_lazy(self) -> None:
+        """Gossip peer selection returns at most d_lazy peers."""
+        params = GossipsubParameters(d_lazy=2)
+        mesh = MeshState(params=params)
+        mesh.subscribe("topic")
+
+        names = ["gA", "gB", "gC", "gD", "gE", "gF", "gG", "gH", "gJ", "gK"]
+        all_peers = {peer(n) for n in names}
+        result = mesh.select_peers_for_gossip("topic", all_peers)
+
+        assert len(result) <= 2
+
+    def test_select_peers_for_gossip_excludes_mesh(self) -> None:
+        """Gossip peer selection excludes mesh peers."""
+        params = GossipsubParameters(d_lazy=5)
+        mesh = MeshState(params=params)
+        mesh.subscribe("topic")
+
+        mesh_peer = peer("mesh1")
+        mesh.add_to_mesh("topic", mesh_peer)
+
+        all_peers = {mesh_peer, peer("p1"), peer("p2")}
+        result = mesh.select_peers_for_gossip("topic", all_peers)
+
+        assert mesh_peer not in result
 
 
 class TestRPCProtobufEncoding:

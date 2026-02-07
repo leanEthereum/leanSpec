@@ -14,11 +14,12 @@ from .exceptions import (
 )
 from .rlp import RLPDecodingError, RLPItem, decode_rlp, decode_rlp_list, encode_rlp
 from .ssz_base import SSZType
-from .uint import Uint64
+from .uint import Uint16, Uint64
 
 __all__ = [
     # Core types
     "BaseBitlist",
+    "Uint16",
     "Uint64",
     "Bytes16",
     "Bytes20",
