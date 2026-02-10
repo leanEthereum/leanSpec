@@ -17,7 +17,6 @@ from lean_spec.subspecs.xmss.types import (
     HashTreeOpening,
     Parameter,
     PRFKey,
-    Randomness,
 )
 from lean_spec.types import Boolean, Uint64
 from lean_spec.types.byte_arrays import ByteListMiB
@@ -30,10 +29,6 @@ pytestmark = pytest.mark.valid_until("Devnet")
 
 def _zero_hash_digest_vector() -> HashDigestVector:
     return HashDigestVector(data=[Fp(0) for _ in range(HASH_DIGEST_LENGTH)])
-
-
-def _zero_randomness() -> Randomness:
-    return Randomness(data=[Fp(0) for _ in range(Randomness.LENGTH)])
 
 
 def _zero_parameter() -> Parameter:
@@ -53,33 +48,28 @@ def test_public_key_zero(ssz: SSZTestFiller) -> None:
 
 # --- Signature ---
 
+# Empty path: path=[], rho=zeros, hashes=[]
+SIGNATURE_EMPTY_PATH = bytes.fromhex(
+    "24000000000000000000000000000000000000000000000000000000000000002800000004000000"
+)
+
+# With siblings: path=[zero, zero], rho=zeros, hashes=[zero]
+SIGNATURE_WITH_SIBLINGS = bytes.fromhex(
+    "24000000000000000000000000000000000000000000000000000000000000006800000004000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+)
+
 
 def test_signature_empty_path(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for Signature with empty authentication path."""
-    ssz(
-        type_name="Signature",
-        value=Signature(
-            path=HashTreeOpening(siblings=HashDigestList(data=[])),
-            rho=_zero_randomness(),
-            hashes=HashDigestList(data=[]),
-        ),
-    )
+    ssz(type_name="Signature", value=Signature.decode_bytes(SIGNATURE_EMPTY_PATH))
 
 
 def test_signature_with_siblings(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for Signature with authentication path siblings."""
-    ssz(
-        type_name="Signature",
-        value=Signature(
-            path=HashTreeOpening(
-                siblings=HashDigestList(
-                    data=[_zero_hash_digest_vector(), _zero_hash_digest_vector()]
-                )
-            ),
-            rho=_zero_randomness(),
-            hashes=HashDigestList(data=[_zero_hash_digest_vector()]),
-        ),
-    )
+    ssz(type_name="Signature", value=Signature.decode_bytes(SIGNATURE_WITH_SIBLINGS))
 
 
 # --- SecretKey ---

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Mapping, NamedTuple
 
+from pydantic import model_serializer
+
 from ...types import Bytes32, Uint64
 from ...types.container import Container
 from .subtree import HashSubTree
@@ -66,6 +68,11 @@ class Signature(Container):
     """The randomness used to successfully encode the message."""
     hashes: HashDigestList
     """The one-time signature itself: a list of intermediate Winternitz chain hashes."""
+
+    @model_serializer(mode="plain", when_used="json")
+    def _serialize_as_bytes(self) -> str:
+        """Serialize as hex-encoded SSZ bytes for JSON output."""
+        return "0x" + self.encode_bytes().hex()
 
     def verify(
         self,

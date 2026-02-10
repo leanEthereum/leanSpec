@@ -33,14 +33,8 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
     Validators,
 )
-from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.xmss import Signature
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
-from lean_spec.subspecs.xmss.types import (
-    HashDigestList,
-    HashTreeOpening,
-    Randomness,
-)
 from lean_spec.types import Boolean, Bytes32, Bytes52, Uint64
 from lean_spec.types.byte_arrays import ByteListMiB
 
@@ -66,12 +60,14 @@ def _typical_attestation_data() -> AttestationData:
     return AttestationData(slot=Slot(100), head=head, target=target, source=source)
 
 
-def _zero_signature() -> Signature:
-    return Signature(
-        path=HashTreeOpening(siblings=HashDigestList(data=[])),
-        rho=Randomness(data=[Fp(0) for _ in range(Randomness.LENGTH)]),
-        hashes=HashDigestList(data=[]),
-    )
+# Empty signature: path=[], rho=zeros, hashes=[]
+EMPTY_SIGNATURE_BYTES = bytes.fromhex(
+    "24000000000000000000000000000000000000000000000000000000000000002800000004000000"
+)
+
+
+def _empty_signature() -> Signature:
+    return Signature.decode_bytes(EMPTY_SIGNATURE_BYTES)
 
 
 # --- Checkpoint ---
@@ -132,7 +128,7 @@ def test_signed_attestation_minimal(ssz: SSZTestFiller) -> None:
         value=SignedAttestation(
             validator_id=ValidatorIndex(0),
             message=_zero_attestation_data(),
-            signature=_zero_signature(),
+            signature=_empty_signature(),
         ),
     )
 
@@ -291,7 +287,7 @@ def test_block_signatures_empty(ssz: SSZTestFiller) -> None:
         type_name="BlockSignatures",
         value=BlockSignatures(
             attestation_signatures=AttestationSignatures(data=[]),
-            proposer_signature=_zero_signature(),
+            proposer_signature=_empty_signature(),
         ),
     )
 
@@ -309,7 +305,7 @@ def test_block_signatures_with_attestation(ssz: SSZTestFiller) -> None:
                     )
                 ]
             ),
-            proposer_signature=_zero_signature(),
+            proposer_signature=_empty_signature(),
         ),
     )
 
@@ -330,7 +326,7 @@ def test_signed_block_with_attestation_minimal(ssz: SSZTestFiller) -> None:
     message = BlockWithAttestation(block=block, proposer_attestation=attestation)
     signature = BlockSignatures(
         attestation_signatures=AttestationSignatures(data=[]),
-        proposer_signature=_zero_signature(),
+        proposer_signature=_empty_signature(),
     )
     ssz(
         type_name="SignedBlockWithAttestation",
