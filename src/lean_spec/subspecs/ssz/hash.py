@@ -14,6 +14,7 @@ from __future__ import annotations
 from functools import singledispatch
 from math import ceil
 
+from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.constants import BITS_PER_CHUNK, BYTES_PER_CHUNK
 from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
@@ -50,6 +51,12 @@ def _htr_uint(value: BaseUint) -> Bytes32:
 
 @hash_tree_root.register
 def _htr_boolean(value: Boolean) -> Bytes32:
+    return merkleize(pack_bytes(value.encode_bytes()))
+
+
+@hash_tree_root.register
+def _htr_fp(value: Fp) -> Bytes32:
+    """KoalaBear field elements: pack bytes into chunks and merkleize."""
     return merkleize(pack_bytes(value.encode_bytes()))
 
 
@@ -104,9 +111,9 @@ def _htr_bitlist_base(value: BaseBitlist) -> Bytes32:
 def _htr_vector(value: SSZVector) -> Bytes32:
     elem_t, length = type(value).ELEMENT_TYPE, type(value).LENGTH
 
-    if issubclass(elem_t, (BaseUint, Boolean)):
+    if issubclass(elem_t, (BaseUint, Boolean, Fp)):
         # BASIC elements: pack serialized bytes
-        elem_size = elem_t.get_byte_length() if issubclass(elem_t, BaseUint) else 1
+        elem_size = elem_t.get_byte_length()
         # Compute limit in chunks: ceil((length * elem_size) / BYTES_PER_CHUNK)
         limit_chunks = (length * elem_size + BYTES_PER_CHUNK - 1) // BYTES_PER_CHUNK
         return merkleize(
@@ -122,9 +129,9 @@ def _htr_vector(value: SSZVector) -> Bytes32:
 def _htr_list(value: SSZList) -> Bytes32:
     elem_t, limit = type(value).ELEMENT_TYPE, type(value).LIMIT
 
-    if issubclass(elem_t, (BaseUint, Boolean)):
+    if issubclass(elem_t, (BaseUint, Boolean, Fp)):
         # BASIC elements: pack serialized bytes
-        elem_size = elem_t.get_byte_length() if issubclass(elem_t, BaseUint) else 1
+        elem_size = elem_t.get_byte_length()
         # Compute limit in chunks: ceil((limit * elem_size) / BYTES_PER_CHUNK)
         limit_chunks = (limit * elem_size + BYTES_PER_CHUNK - 1) // BYTES_PER_CHUNK
         root = merkleize(
