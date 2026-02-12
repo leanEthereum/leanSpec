@@ -2,6 +2,7 @@
 
 from .base import BaseConsensusFixture
 from .fork_choice import ForkChoiceTest
+from .ssz import SSZTest
 from .state_transition import StateTransitionTest
 from .verify_signatures import VerifySignaturesTest
 
@@ -10,4 +11,5 @@ __all__ = [
     "StateTransitionTest",
     "ForkChoiceTest",
     "VerifySignaturesTest",
+    "SSZTest",
 ]

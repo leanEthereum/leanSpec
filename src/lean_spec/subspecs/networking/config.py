@@ -80,3 +80,6 @@ MESSAGE_ID_SIZE: Final[int] = 20
 
 Per Ethereum spec, message IDs are the first 20 bytes of SHA256(domain + topic_len + topic + data).
 """
+
+MAX_ERROR_MESSAGE_SIZE: Final[int] = 256
+"""Maximum error message size in bytes per Ethereum P2P spec (ErrorMessage: List[byte, 256])."""

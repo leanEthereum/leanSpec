@@ -18,6 +18,7 @@ from lean_spec.subspecs.networking.discovery.routing import (
     xor_distance,
 )
 from lean_spec.subspecs.networking.enr import ENR
+from lean_spec.subspecs.networking.enr.eth2 import FAR_FUTURE_EPOCH
 from lean_spec.subspecs.networking.types import NodeId, SeqNumber
 from lean_spec.types import Bytes64, Uint64
 from lean_spec.types.byte_arrays import Bytes4
@@ -467,6 +468,85 @@ class TestForkCompatibility:
         entry = NodeEntry(node_id=remote_node_id, enr=enr)
 
         assert not table.is_fork_compatible(entry)
+
+    def test_fork_filter_rejects_mismatched_fork(self, local_node_id, remote_node_id):
+        """Node with different fork_digest is rejected."""
+
+        local_fork = Bytes4(bytes.fromhex("12345678"))
+        table = RoutingTable(local_id=local_node_id, local_fork_digest=local_fork)
+
+        # Build eth2 bytes with a different fork digest.
+        remote_digest = bytes.fromhex("deadbeef")
+        eth2_bytes = remote_digest + remote_digest + int(FAR_FUTURE_EPOCH).to_bytes(8, "little")
+        enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={"eth2": eth2_bytes, "id": b"v4"},
+        )
+        entry = NodeEntry(node_id=remote_node_id, enr=enr)
+
+        assert not table.add(entry)
+        assert not table.contains(remote_node_id)
+
+    def test_fork_filter_accepts_matching_fork(self, local_node_id, remote_node_id):
+        """Node with matching fork_digest is accepted."""
+
+        local_fork = Bytes4(bytes.fromhex("12345678"))
+        table = RoutingTable(local_id=local_node_id, local_fork_digest=local_fork)
+
+        # Build eth2 bytes with the same fork digest.
+        eth2_bytes = (
+            bytes.fromhex("12345678")
+            + bytes.fromhex("12345678")
+            + int(FAR_FUTURE_EPOCH).to_bytes(8, "little")
+        )
+        enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={"eth2": eth2_bytes, "id": b"v4"},
+        )
+        entry = NodeEntry(node_id=remote_node_id, enr=enr)
+
+        assert table.add(entry)
+        assert table.contains(remote_node_id)
+
+    def test_is_fork_compatible_method(self, local_node_id):
+        """Verify is_fork_compatible for compatible, incompatible, and no-ENR entries."""
+
+        local_fork = Bytes4(bytes.fromhex("12345678"))
+        table = RoutingTable(local_id=local_node_id, local_fork_digest=local_fork)
+
+        # Compatible entry.
+        eth2_match = (
+            bytes.fromhex("12345678")
+            + bytes.fromhex("12345678")
+            + int(FAR_FUTURE_EPOCH).to_bytes(8, "little")
+        )
+        compatible_enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={"eth2": eth2_match, "id": b"v4"},
+        )
+        compatible_entry = NodeEntry(node_id=NodeId(b"\x01" * 32), enr=compatible_enr)
+        assert table.is_fork_compatible(compatible_entry)
+
+        # Incompatible entry (different fork).
+        eth2_mismatch = (
+            bytes.fromhex("deadbeef")
+            + bytes.fromhex("deadbeef")
+            + int(FAR_FUTURE_EPOCH).to_bytes(8, "little")
+        )
+        incompatible_enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={"eth2": eth2_mismatch, "id": b"v4"},
+        )
+        incompatible_entry = NodeEntry(node_id=NodeId(b"\x02" * 32), enr=incompatible_enr)
+        assert not table.is_fork_compatible(incompatible_entry)
+
+        # Entry without ENR.
+        no_enr_entry = NodeEntry(node_id=NodeId(b"\x03" * 32))
+        assert not table.is_fork_compatible(no_enr_entry)
 
 
 class TestIPDensityTracking:

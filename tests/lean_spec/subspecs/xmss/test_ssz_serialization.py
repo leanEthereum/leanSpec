@@ -1,7 +1,7 @@
 """Tests for SSZ serialization of XMSS types."""
 
 from lean_spec.subspecs.xmss.constants import TEST_CONFIG
-from lean_spec.subspecs.xmss.containers import PublicKey, Signature
+from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME
 from lean_spec.types import Bytes32, Uint64
 
@@ -63,8 +63,6 @@ def test_secret_key_ssz_roundtrip() -> None:
     sk_bytes = secret_key.encode_bytes()
 
     # Deserialize from bytes
-    from lean_spec.subspecs.xmss.containers import SecretKey
-
     recovered_sk = SecretKey.decode_bytes(sk_bytes)
 
     # Verify the recovered secret key matches the original

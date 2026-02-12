@@ -48,7 +48,7 @@ which domain byte to use.
 
 References:
 ----------
-- `Ethereum P2P spec <https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md>`_
+- `Ethereum P2P spec <https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md>`_
 - `Gossipsub v1.0 <https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.0.md>`_
 """
 

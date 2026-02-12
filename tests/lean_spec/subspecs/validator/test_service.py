@@ -8,6 +8,7 @@ import pytest
 from consensus_testing.keys import XmssKeyManager, get_shared_key_manager
 
 from lean_spec.subspecs.chain.clock import SlotClock
+from lean_spec.subspecs.chain.config import MILLISECONDS_PER_INTERVAL
 from lean_spec.subspecs.containers import (
     AttestationData,
     Block,
@@ -15,6 +16,7 @@ from lean_spec.subspecs.containers import (
     SignedBlockWithAttestation,
     ValidatorIndex,
 )
+from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -24,7 +26,7 @@ from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
 from lean_spec.subspecs.validator.registry import ValidatorEntry
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
-from lean_spec.subspecs.xmss.aggregation import SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
 from lean_spec.types import Bytes32, Uint64
 from tests.lean_spec.helpers import TEST_VALIDATOR_ID, MockNetworkRequester, make_store
 
@@ -190,8 +192,6 @@ class TestIntervalSleep:
         sync_service: SyncService,
     ) -> None:
         """Sleep duration is calculated correctly mid-interval."""
-        from lean_spec.subspecs.chain.config import MILLISECONDS_PER_INTERVAL
-
         genesis = Uint64(1000)
         interval_seconds = float(MILLISECONDS_PER_INTERVAL) / 1000.0
         # Half way into first interval
@@ -698,10 +698,6 @@ class TestValidatorServiceIntegration:
         store = real_sync_service.store
         attestation_data = store.produce_attestation_data(Slot(0))
         data_root = attestation_data.data_root_bytes()
-
-        # Simulate aggregated payloads for validators 3 and 4
-        from lean_spec.subspecs.containers.attestation import AggregationBits
-        from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 
         attestation_map: dict[ValidatorIndex, AttestationData] = {}
         signatures = []

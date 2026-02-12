@@ -37,7 +37,7 @@ def node_config() -> NodeConfig:
     return NodeConfig(
         genesis_time=Uint64(1704067200),
         validators=make_validators(3),
-        event_source=MockEventSource(),
+        event_source=MockEventSource(),  # type: ignore[arg-type]
         network=MockNetworkRequester(),
         time_fn=lambda: 1704067200.0,
     )

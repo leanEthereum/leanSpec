@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import time
+
+from prometheus_client import REGISTRY as DEFAULT_REGISTRY
+
 from lean_spec.subspecs.metrics import (
     REGISTRY,
     attestations_produced,
@@ -106,8 +110,6 @@ class TestRegistryIsolation:
 
     def test_registry_is_dedicated(self) -> None:
         """Our registry is separate from default prometheus registry."""
-        from prometheus_client import REGISTRY as DEFAULT_REGISTRY
-
         assert REGISTRY is not DEFAULT_REGISTRY
 
     def test_metrics_registered_to_custom_registry(self) -> None:
@@ -124,8 +126,6 @@ class TestHistogramTiming:
 
     def test_time_context_manager_records_duration(self) -> None:
         """Histogram time() context manager records duration."""
-        import time
-
         # Get initial values from samples
         initial_samples = list(block_processing_time.collect())[0].samples
         initial_count = next(s.value for s in initial_samples if s.name.endswith("_count"))

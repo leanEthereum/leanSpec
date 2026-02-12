@@ -1,8 +1,7 @@
 """
-Ethereum Node Records (EIP-778)
+Ethereum Node Records (EIP-778).
 
 References:
-----------
 - EIP-778: https://eips.ethereum.org/EIPS/eip-778
 """
 

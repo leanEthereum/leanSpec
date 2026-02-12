@@ -19,12 +19,13 @@ or a well-known provider).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 
-if TYPE_CHECKING:
-    from lean_spec.subspecs.containers import State
+from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
+from lean_spec.subspecs.containers import Slot, State
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +126,6 @@ async def verify_checkpoint_state(state: "State") -> bool:
     Returns:
         True if valid, False otherwise.
     """
-    # Lazy imports to avoid circular dependency with containers
-    from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
-    from lean_spec.subspecs.containers import Slot
-    from lean_spec.subspecs.ssz.hash import hash_tree_root
-
     try:
         # Sanity check: slot must be non-negative.
         if state.slot < Slot(0):

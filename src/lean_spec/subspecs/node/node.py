@@ -16,7 +16,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import SlotClock
@@ -29,14 +28,13 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
-from lean_spec.subspecs.networking import NetworkEventSource, NetworkService
+from lean_spec.subspecs.networking import NetworkService
+from lean_spec.subspecs.networking.client.event_source import LiveNetworkEventSource
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.storage import Database, SQLiteDatabase
 from lean_spec.subspecs.sync import BlockCache, NetworkRequester, PeerManager, SyncService
 from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
 from lean_spec.types import Bytes32, Uint64
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.storage import Database
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +51,7 @@ class NodeConfig:
     validators: Validators
     """Initial validator set for genesis state."""
 
-    event_source: NetworkEventSource
+    event_source: LiveNetworkEventSource
     """Source of network events."""
 
     network: NetworkRequester
@@ -305,8 +303,6 @@ class Node:
         Returns:
             Database instance ready for use.
         """
-        from lean_spec.subspecs.storage import SQLiteDatabase
-
         # SQLite handles its own caching at the filesystem level.
         return SQLiteDatabase(path)
 

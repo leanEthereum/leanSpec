@@ -53,6 +53,23 @@ uvx tox                  # Everything (checks + tests + docs)
 
 ### Import Style
 
+**All imports must be at the top of the file.** Never place imports inside functions, methods, or conditional blocks. This applies to both source code and tests. If a circular dependency exists, restructure the code to break the cycle rather than using a lazy import.
+
+Bad:
+```python
+def process(data):
+    from lean_spec.subspecs.ssz import hash_tree_root
+    return hash_tree_root(data)
+```
+
+Good:
+```python
+from lean_spec.subspecs.ssz import hash_tree_root
+
+def process(data):
+    return hash_tree_root(data)
+```
+
 **Avoid confusing import renames.** When an external library exports a name that conflicts with a local type, prefer restructuring over renaming.
 
 Bad:

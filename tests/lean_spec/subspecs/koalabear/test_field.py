@@ -2,6 +2,9 @@
 Tests for the KoalaBear prime field Fp.
 """
 
+import io
+import random
+
 import pytest
 
 from lean_spec.subspecs.koalabear.field import (
@@ -157,8 +160,6 @@ def test_deserialize_list() -> None:
 
 def test_serialize_list_roundtrip_property() -> None:
     """Property test: serialization round-trip should preserve values."""
-    import random
-
     random.seed(42)
 
     for _ in range(100):
@@ -185,8 +186,6 @@ def test_ssz_type_properties() -> None:
 
 def test_ssz_serialize() -> None:
     """Test SSZ serialization using the serialize method."""
-    import io
-
     fp = Fp(value=42)
 
     # Test serialize to stream
@@ -198,8 +197,6 @@ def test_ssz_serialize() -> None:
 
 def test_ssz_deserialize() -> None:
     """Test SSZ deserialization using the deserialize method."""
-    import io
-
     # Test successful deserialization
     data = b"\x2a\x00\x00\x00"  # 42 in LE
     stream = io.BytesIO(data)
@@ -209,8 +206,6 @@ def test_ssz_deserialize() -> None:
 
 def test_ssz_deserialize_wrong_scope() -> None:
     """Test deserialize error when scope doesn't match P_BYTES."""
-    import io
-
     data = b"\x2a\x00\x00\x00"
     stream = io.BytesIO(data)
     with pytest.raises(ValueError, match="Expected 4 bytes for Fp, got 3"):
@@ -219,8 +214,6 @@ def test_ssz_deserialize_wrong_scope() -> None:
 
 def test_ssz_deserialize_short_data() -> None:
     """Test deserialize error when stream has insufficient data."""
-    import io
-
     stream = io.BytesIO(b"\x01\x02\x03")  # Only 3 bytes
     with pytest.raises(ValueError, match="Expected 4 bytes for Fp, got 3"):
         Fp.deserialize(stream, 4)
@@ -228,8 +221,6 @@ def test_ssz_deserialize_short_data() -> None:
 
 def test_ssz_deserialize_exceeds_modulus() -> None:
     """Test deserialize error when value exceeds field modulus."""
-    import io
-
     # P = 2^31 - 2^24 + 1 = 2130706433
     # Encode a value >= P (use P itself)
     invalid_data = P.to_bytes(4, byteorder="little")
@@ -261,8 +252,6 @@ def test_ssz_encode_decode_bytes() -> None:
 
 def test_ssz_roundtrip() -> None:
     """Comprehensive SSZ roundtrip test with many values."""
-    import random
-
     random.seed(12345)
 
     for _ in range(100):

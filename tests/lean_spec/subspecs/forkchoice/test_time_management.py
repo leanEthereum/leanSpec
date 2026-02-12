@@ -3,7 +3,12 @@
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
+from lean_spec.subspecs.chain.config import (
+    INTERVALS_PER_SLOT,
+    MILLISECONDS_PER_INTERVAL,
+    MILLISECONDS_PER_SLOT,
+    SECONDS_PER_SLOT,
+)
 from lean_spec.subspecs.containers import Block, State
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
@@ -127,8 +132,6 @@ class TestIntervalTicking:
 
     def test_tick_interval_actions_by_phase(self, sample_store: Store) -> None:
         """Test different actions performed based on interval phase."""
-        from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
-
         # Reset store to known state
         initial_time = Uint64(0)
         object.__setattr__(sample_store, "time", initial_time)
@@ -234,13 +237,6 @@ class TestTimeConstants:
 
     def test_time_constants_consistency(self) -> None:
         """Test that time constants are consistent with each other."""
-        from lean_spec.subspecs.chain.config import (
-            INTERVALS_PER_SLOT,
-            MILLISECONDS_PER_INTERVAL,
-            MILLISECONDS_PER_SLOT,
-            SECONDS_PER_SLOT,
-        )
-
         # MILLISECONDS_PER_SLOT should equal INTERVALS_PER_SLOT * MILLISECONDS_PER_INTERVAL
         expected_milliseconds_per_slot = INTERVALS_PER_SLOT * MILLISECONDS_PER_INTERVAL
         assert MILLISECONDS_PER_SLOT == expected_milliseconds_per_slot
@@ -256,8 +252,6 @@ class TestTimeConstants:
 
     def test_interval_slot_relationship(self) -> None:
         """Test the relationship between intervals and slots."""
-        from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
-
         # Should have multiple intervals per slot
         assert INTERVALS_PER_SLOT >= Uint64(2)  # At least 2 intervals per slot
 

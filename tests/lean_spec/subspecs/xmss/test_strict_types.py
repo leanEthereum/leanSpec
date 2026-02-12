@@ -8,6 +8,7 @@ ensuring only approved implementations are used.
 import pytest
 from pydantic import ValidationError
 
+from lean_spec.subspecs.poseidon2.permutation import Poseidon2Params
 from lean_spec.subspecs.xmss.constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
 from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme
 from lean_spec.subspecs.xmss.message_hash import PROD_MESSAGE_HASHER, MessageHasher
@@ -327,7 +328,6 @@ class TestPoseidonXmssStrictTypes:
 
     def test_poseidon_rejects_subclass_params16(self) -> None:
         """PoseidonXmss rejects Poseidon2Params subclass for params16."""
-        from lean_spec.subspecs.poseidon2.permutation import Poseidon2Params
 
         class CustomParams(Poseidon2Params):
             pass
@@ -340,7 +340,6 @@ class TestPoseidonXmssStrictTypes:
 
     def test_poseidon_rejects_subclass_params24(self) -> None:
         """PoseidonXmss rejects Poseidon2Params subclass for params24."""
-        from lean_spec.subspecs.poseidon2.permutation import Poseidon2Params
 
         class CustomParams(Poseidon2Params):
             pass

@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.containers import Checkpoint, Validator
@@ -24,13 +24,10 @@ from lean_spec.subspecs.networking.types import ConnectionState
 from lean_spec.subspecs.node import Node, NodeConfig
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.subspecs.validator.registry import ValidatorEntry
-from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
+from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME, SecretKey
 from lean_spec.types import Bytes32, Bytes52, Uint64
 
 from .port_allocator import PortAllocator
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.xmss import SecretKey
 
 logger = logging.getLogger(__name__)
 

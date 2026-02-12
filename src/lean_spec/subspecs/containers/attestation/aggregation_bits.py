@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
+from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.types import Boolean
 from lean_spec.types.bitfields import BaseBitlist
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 
 
 class AggregationBits(BaseBitlist):
@@ -40,9 +36,6 @@ class AggregationBits(BaseBitlist):
             AssertionError: If no indices are provided.
             AssertionError: If any index is outside the supported LIMIT.
         """
-        # Import here to avoid circular dependency
-        from lean_spec.subspecs.containers.validator import ValidatorIndices
-
         # Extract list from ValidatorIndices if needed
         index_list = indices.data if isinstance(indices, ValidatorIndices) else indices
 
@@ -74,9 +67,6 @@ class AggregationBits(BaseBitlist):
         Raises:
             AssertionError: If no bits are set.
         """
-        # Import here to avoid circular dependency
-        from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
-
         # Extract indices where bit is set; fail if none found.
         indices = [ValidatorIndex(i) for i, bit in enumerate(self.data) if bool(bit)]
         if not indices:

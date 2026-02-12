@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
+
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.forkchoice import Store
 
@@ -65,8 +67,6 @@ class TestFinalizedStateEndpoint:
 
     async def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
-        import httpx
-
         config = ApiServerConfig(port=15054)
         server = ApiServer(config=config)
 
@@ -88,8 +88,6 @@ class TestJustifiedCheckpointEndpoint:
 
     async def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
-        import httpx
-
         config = ApiServerConfig(port=15057)
         server = ApiServer(config=config)
 

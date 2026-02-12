@@ -1,27 +1,19 @@
 """
-Ethereum Consensus ENR Extensions
-=================================
+Ethereum Consensus ENR Extensions.
 
 Ethereum consensus clients extend ENR with additional keys for fork
 compatibility and subnet discovery.
 
-eth2 Key Structure
-------------------
+The "eth2" key contains 16 bytes:
+- fork_digest (4 bytes): current fork identifier
+- next_fork_version (4 bytes): version of next scheduled fork
+- next_fork_epoch (8 bytes): epoch when next fork activates (little-endian)
 
-The `eth2` key contains 16 bytes::
-
-    fork_digest       (4 bytes) - Current fork identifier
-    next_fork_version (4 bytes) - Version of next scheduled fork
-    next_fork_epoch   (8 bytes) - Epoch when next fork activates (little-endian)
-
-attnets / syncnets
-------------------
-
-SSZ Bitvectors indicating subnet subscriptions:
+Subnet subscription keys (SSZ Bitvectors):
 - attnets: Bitvector[64] - attestation subnets (bit i = subscribed to subnet i)
 - syncnets: Bitvector[4] - sync committee subnets
 
-See: https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md
+See: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
 """
 
 from typing import ClassVar

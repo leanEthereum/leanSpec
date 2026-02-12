@@ -1,17 +1,16 @@
 """
-Network Event Types and Source Protocol.
+Network Event Types.
 
-This module defines the event types that flow from the network layer to the
-sync service, plus the abstract protocol that event sources must implement.
+Event types that flow from the network layer to the sync service.
 
 Event Flow
 ----------
-The network layer (libp2p or test mock) produces events as an async stream.
+The network layer produces events as an async stream.
 The network service consumes these events and routes them to sync handlers.
 
 ::
 
-    Event Source (async iterator)
+    LiveNetworkEventSource (async iterator)
            |
     Network Service (pattern matching dispatch)
            |
@@ -23,7 +22,6 @@ The network service consumes these events and routes them to sync handlers.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
 
 from lean_spec.subspecs.containers import SignedBlockWithAttestation
 from lean_spec.subspecs.containers.attestation import SignedAggregatedAttestation, SignedAttestation
@@ -140,57 +138,3 @@ NetworkEvent = (
     | PeerDisconnectedEvent
 )
 """Union of all network event types for pattern matching dispatch."""
-
-
-@runtime_checkable
-class NetworkEventSource(Protocol):
-    """
-    Abstract source of network events.
-
-    This protocol defines the interface that network implementations must
-    provide. It is an async iterator that yields NetworkEvent objects and
-    supports publishing outbound messages.
-
-    Any class that implements async iteration over NetworkEvent can serve
-    as a source.
-
-    Usage
-    -----
-    ::
-
-        async for event in event_source:
-            await handle_event(event)
-
-    The source controls backpressure. When the consumer is slow, the
-    source naturally pauses due to async iteration semantics.
-    """
-
-    def __aiter__(self) -> NetworkEventSource:
-        """Return self as async iterator."""
-        ...
-
-    async def __anext__(self) -> NetworkEvent:
-        """
-        Yield the next network event.
-
-        Blocks until an event is available.
-
-        Returns:
-            Next event from the network.
-
-        Raises:
-            StopAsyncIteration: When no more events will arrive.
-        """
-        ...
-
-    async def publish(self, topic: str, data: bytes) -> None:
-        """
-        Publish a message to all connected peers on a topic.
-
-        Used to broadcast locally-produced blocks and attestations.
-
-        Args:
-            topic: Gossip topic string.
-            data: Message bytes to publish.
-        """
-        ...

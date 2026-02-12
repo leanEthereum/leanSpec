@@ -24,6 +24,8 @@ import time
 from dataclasses import dataclass, field
 from threading import Lock
 
+from lean_spec.subspecs.networking.types import NodeId
+
 from .config import BOND_EXPIRY_SECS
 
 DEFAULT_SESSION_TIMEOUT_SECS = 86400
@@ -42,7 +44,7 @@ class Session:
     Keys are directional: we use different keys for send vs receive.
     """
 
-    node_id: bytes
+    node_id: NodeId
     """Peer's 32-byte node ID."""
 
     send_key: bytes
@@ -69,17 +71,26 @@ class Session:
         self.last_seen = time.time()
 
 
+type SessionKey = tuple[NodeId, str, int]
+"""Session cache key: (node_id, ip, port).
+
+Per spec, sessions are tied to a specific UDP endpoint.
+This prevents session confusion if a node changes IP or port.
+"""
+
+
 @dataclass
 class SessionCache:
     """
     Cache of active sessions with peers.
 
     Thread-safe session storage with automatic expiration cleanup.
-    Sessions are keyed by node ID.
+    Sessions are keyed by (node_id, ip, port) per spec requirement
+    that sessions are tied to a specific UDP endpoint.
     """
 
-    sessions: dict[bytes, Session] = field(default_factory=dict)
-    """Node ID -> Session mapping."""
+    sessions: dict[SessionKey, Session] = field(default_factory=dict)
+    """(node_id, ip, port) -> Session mapping."""
 
     timeout_secs: float = DEFAULT_SESSION_TIMEOUT_SECS
     """Session expiration timeout."""
@@ -90,40 +101,45 @@ class SessionCache:
     _lock: Lock = field(default_factory=Lock)
     """Thread safety lock."""
 
-    def get(self, node_id: bytes) -> Session | None:
+    def get(self, node_id: NodeId, ip: str = "", port: int = 0) -> Session | None:
         """
-        Get an active session for a node.
+        Get an active session for a node at a specific endpoint.
 
         Returns None if no session exists or if it has expired.
 
         Args:
             node_id: 32-byte peer node ID.
+            ip: Peer IP address.
+            port: Peer UDP port.
 
         Returns:
             Active session or None.
         """
+        key: SessionKey = (node_id, ip, port)
         with self._lock:
-            session = self.sessions.get(node_id)
+            session = self.sessions.get(key)
             if session is None:
                 return None
 
             if session.is_expired(self.timeout_secs):
-                del self.sessions[node_id]
+                del self.sessions[key]
                 return None
 
             return session
 
     def create(
         self,
-        node_id: bytes,
+        node_id: NodeId,
         send_key: bytes,
         recv_key: bytes,
         is_initiator: bool,
+        ip: str = "",
+        port: int = 0,
     ) -> Session:
         """
         Create and store a new session.
 
-        If a session already exists for this node, it is replaced.
+        If a session already exists for this endpoint, it is replaced.
         If the cache is full, the oldest session is evicted.
 
         Args:
@@ -131,6 +147,8 @@ class SessionCache:
             send_key: 16-byte encryption key for outgoing messages.
             recv_key: 16-byte decryption key for incoming messages.
             is_initiator: True if we initiated the handshake.
+            ip: Peer IP address.
+            port: Peer UDP port.
 
         Returns:
             The newly created session.
@@ -142,6 +160,7 @@ class SessionCache:
         if len(recv_key) != 16:
             raise ValueError(f"Recv key must be 16 bytes, got {len(recv_key)}")
 
+        key: SessionKey = (node_id, ip, port)
         now = time.time()
         session = Session(
             node_id=node_id,
@@ -154,44 +173,54 @@ class SessionCache:
 
         with self._lock:
             # Evict oldest if at capacity.
-            if len(self.sessions) >= self.max_sessions and node_id not in self.sessions:
+            if len(self.sessions) >= self.max_sessions and key not in self.sessions:
                 self._evict_oldest()
 
-            self.sessions[node_id] = session
+            self.sessions[key] = session
 
         return session
 
-    def remove(self, node_id: bytes) -> bool:
+    def remove(self, node_id: NodeId, ip: str = "", port: int = 0) -> bool:
         """
         Remove a session.
 
         Args:
             node_id: 32-byte peer node ID.
+            ip: Peer IP address.
+            port: Peer UDP port.
 
         Returns:
             True if session was removed, False if not found.
         """
+        key: SessionKey = (node_id, ip, port)
         with self._lock:
-            if node_id in self.sessions:
-                del self.sessions[node_id]
+            if key in self.sessions:
+                del self.sessions[key]
                 return True
             return False
 
-    def touch(self, node_id: bytes) -> bool:
+    def touch(self, node_id: NodeId, ip: str = "", port: int = 0) -> bool:
         """
         Update the last_seen timestamp for a session.
 
+        Holds the lock across lookup and mutation to prevent a concurrent
+        thread from evicting the session between the two operations.
+
         Args:
             node_id: 32-byte peer node ID.
+            ip: Peer IP address.
+            port: Peer UDP port.
 
         Returns:
             True if session was updated, False if not found.
         """
-        session = self.get(node_id)
-        if session is not None:
-            session.touch()
-            return True
-        return False
+        key: SessionKey = (node_id, ip, port)
+        with self._lock:
+            session = self.sessions.get(key)
+            if session is not None and not session.is_expired(self.timeout_secs):
+                session.touch()
+                return True
+            return False
 
     def cleanup_expired(self) -> int:
         """
@@ -202,12 +231,12 @@ class SessionCache:
         """
         with self._lock:
             expired = [
-                node_id
-                for node_id, session in self.sessions.items()
+                key
+                for key, session in self.sessions.items()
                 if session.is_expired(self.timeout_secs)
             ]
-            for node_id in expired:
-                del self.sessions[node_id]
+            for key in expired:
+                del self.sessions[key]
             return len(expired)
 
     def count(self) -> int:
@@ -216,12 +245,12 @@ class SessionCache:
             return len(self.sessions)
 
     def _evict_oldest(self) -> None:
-        """Evict the oldest session. Must be called with lock held."""
+        """Evict the least recently used session. Must be called with lock held."""
         if not self.sessions:
             return
 
-        oldest_id = min(self.sessions, key=lambda k: self.sessions[k].created_at)
-        del self.sessions[oldest_id]
+        oldest_key = min(self.sessions, key=lambda k: self.sessions[k].last_seen)
+        del self.sessions[oldest_key]
 
 
 @dataclass
@@ -236,7 +265,7 @@ class BondCache:
     even if the session expires.
     """
 
-    bonds: dict[bytes, float] = field(default_factory=dict)
+    bonds: dict[NodeId, float] = field(default_factory=dict)
     """Node ID -> timestamp of last successful PONG."""
 
     expiry_secs: float = BOND_EXPIRY_SECS
@@ -245,7 +274,7 @@ class BondCache:
     _lock: Lock = field(default_factory=Lock)
     """Thread safety lock."""
 
-    def is_bonded(self, node_id: bytes) -> bool:
+    def is_bonded(self, node_id: NodeId) -> bool:
         """Check if we have a valid bond with a node."""
         with self._lock:
             timestamp = self.bonds.get(node_id)
@@ -256,12 +285,12 @@ class BondCache:
                 return False
             return True
 
-    def add_bond(self, node_id: bytes) -> None:
+    def add_bond(self, node_id: NodeId) -> None:
         """Record a successful bond with a node."""
         with self._lock:
             self.bonds[node_id] = time.time()
 
-    def remove_bond(self, node_id: bytes) -> bool:
+    def remove_bond(self, node_id: NodeId) -> bool:
         """Remove a bond."""
         with self._lock:
             if node_id in self.bonds:

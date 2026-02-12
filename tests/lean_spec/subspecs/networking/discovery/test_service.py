@@ -11,6 +11,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from lean_spec.subspecs.networking.discovery.config import DiscoveryConfig
+from lean_spec.subspecs.networking.discovery.messages import (
+    Distance,
+    FindNode,
+    Ping,
+    Pong,
+    RequestId,
+    TalkReq,
+    TalkResp,
+)
 from lean_spec.subspecs.networking.discovery.routing import NodeEntry
 from lean_spec.subspecs.networking.discovery.service import (
     DiscoveryService,
@@ -19,6 +28,7 @@ from lean_spec.subspecs.networking.discovery.service import (
 from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.types import NodeId, SeqNumber
 from lean_spec.types import Bytes64, Uint64
+from tests.lean_spec.subspecs.networking.discovery.conftest import NODE_B_PUBKEY
 
 
 class TestDiscoveryServiceInit:
@@ -172,7 +182,7 @@ class TestLookupResult:
 
     def test_create_lookup_result(self):
         """LookupResult stores all fields."""
-        target = bytes(32)
+        target = NodeId(bytes(32))
         nodes = [NodeEntry(node_id=NodeId(bytes(32)), enr_seq=SeqNumber(1))]
 
         result = LookupResult(target=target, nodes=nodes, queried=5)
@@ -183,7 +193,7 @@ class TestLookupResult:
 
     def test_empty_lookup_result(self):
         """LookupResult can have empty nodes list."""
-        result = LookupResult(target=bytes(32), nodes=[], queried=0)
+        result = LookupResult(target=NodeId(bytes(32)), nodes=[], queried=0)
 
         assert result.nodes == []
         assert result.queried == 0
@@ -271,7 +281,7 @@ class TestFindNode:
         )
 
         with pytest.raises(ValueError, match="32 bytes"):
-            await service.find_node(b"too short")
+            await service.find_node(b"too short")  # type: ignore[arg-type]
 
     @pytest.mark.anyio
     async def test_find_node_empty_table(self, local_enr, local_private_key):
@@ -281,9 +291,9 @@ class TestFindNode:
             private_key=local_private_key,
         )
 
-        result = await service.find_node(bytes(32))
+        result = await service.find_node(NodeId(bytes(32)))
 
-        assert result.target == bytes(32)
+        assert result.target == NodeId(bytes(32))
         assert result.nodes == []
         assert result.queried == 0
 
@@ -298,9 +308,7 @@ class TestENRAddressExtraction:
             seq=Uint64(1),
             pairs={
                 "id": b"v4",
-                "secp256k1": bytes.fromhex(
-                    "0317931e6e0840220642f230037d285d122bc59063221ef3226b1f403ddc69ca91"
-                ),
+                "secp256k1": NODE_B_PUBKEY,
                 "ip": bytes([127, 0, 0, 1]),
                 "udp": (9000).to_bytes(2, "big"),
             },
@@ -320,9 +328,7 @@ class TestENRAddressExtraction:
             seq=Uint64(1),
             pairs={
                 "id": b"v4",
-                "secp256k1": bytes.fromhex(
-                    "0317931e6e0840220642f230037d285d122bc59063221ef3226b1f403ddc69ca91"
-                ),
+                "secp256k1": NODE_B_PUBKEY,
                 "ip6": ipv6_bytes,
                 "udp6": (9000).to_bytes(2, "big"),
             },
@@ -341,9 +347,7 @@ class TestENRAddressExtraction:
             seq=Uint64(1),
             pairs={
                 "id": b"v4",
-                "secp256k1": bytes.fromhex(
-                    "0317931e6e0840220642f230037d285d122bc59063221ef3226b1f403ddc69ca91"
-                ),
+                "secp256k1": NODE_B_PUBKEY,
                 "ip": bytes([192, 168, 1, 1]),
                 "udp": (9000).to_bytes(2, "big"),
                 "ip6": ipv6_bytes,
@@ -362,9 +366,7 @@ class TestENRAddressExtraction:
             seq=Uint64(1),
             pairs={
                 "id": b"v4",
-                "secp256k1": bytes.fromhex(
-                    "0317931e6e0840220642f230037d285d122bc59063221ef3226b1f403ddc69ca91"
-                ),
+                "secp256k1": NODE_B_PUBKEY,
             },
         )
 
@@ -446,7 +448,7 @@ class TestLookupAlgorithm:
             private_key=local_private_key,
         )
 
-        target = bytes(32)
+        target = NodeId(bytes(32))
         result = await service.find_node(target)
 
         assert result.target == target
@@ -456,7 +458,7 @@ class TestLookupAlgorithm:
     def test_lookup_result_tracks_queries(self, local_enr, local_private_key):
         """LookupResult tracks number of queries made."""
         result = LookupResult(
-            target=bytes(32),
+            target=NodeId(bytes(32)),
             nodes=[],
             queried=5,
         )
@@ -465,12 +467,10 @@ class TestLookupAlgorithm:
 
     def test_lookup_result_contains_nodes(self, local_enr, local_private_key):
         """LookupResult contains found nodes."""
-        from lean_spec.subspecs.networking.types import NodeId
-
         nodes = [NodeEntry(node_id=NodeId(bytes([i]) + bytes(31))) for i in range(3)]
 
         result = LookupResult(
-            target=bytes(32),
+            target=NodeId(bytes(32)),
             nodes=nodes,
             queried=3,
         )
@@ -549,3 +549,403 @@ class TestBootstrap:
         )
 
         assert len(service._bootnodes) == 0
+
+
+class TestHandlePing:
+    """Tests for _handle_ping message handler."""
+
+    @pytest.mark.anyio
+    async def test_handle_ping_sends_pong(self, local_enr, local_private_key, remote_node_id):
+        """PING triggers a PONG response."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        ping = Ping(request_id=RequestId(data=b"\x01\x02"), enr_seq=Uint64(1))
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(
+            service._transport, "send_response", new=AsyncMock(return_value=True)
+        ) as mock_send:
+            await service._handle_ping(remote_node_id, ping, addr)
+
+            mock_send.assert_called_once()
+            sent_msg = mock_send.call_args[0][2]
+            assert isinstance(sent_msg, Pong)
+            assert bytes(sent_msg.request_id) == b"\x01\x02"
+
+    @pytest.mark.anyio
+    async def test_handle_ping_establishes_bond(self, local_enr, local_private_key, remote_node_id):
+        """Successful PONG response establishes bond."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        ping = Ping(request_id=RequestId(data=b"\x01"), enr_seq=Uint64(1))
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(service._transport, "send_response", new=AsyncMock(return_value=True)):
+            await service._handle_ping(remote_node_id, ping, addr)
+
+        assert service._bond_cache.is_bonded(remote_node_id)
+
+    @pytest.mark.anyio
+    async def test_handle_ping_no_bond_when_send_fails(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """No bond established when PONG send fails."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        ping = Ping(request_id=RequestId(data=b"\x01"), enr_seq=Uint64(1))
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(service._transport, "send_response", new=AsyncMock(return_value=False)):
+            await service._handle_ping(remote_node_id, ping, addr)
+
+        assert not service._bond_cache.is_bonded(remote_node_id)
+
+    @pytest.mark.anyio
+    async def test_handle_ping_pong_includes_recipient_endpoint(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """PONG includes the sender's observed IP and port."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        ping = Ping(request_id=RequestId(data=b"\x01"), enr_seq=Uint64(1))
+        addr = ("10.0.0.5", 9001)
+
+        with patch.object(
+            service._transport, "send_response", new=AsyncMock(return_value=True)
+        ) as mock_send:
+            await service._handle_ping(remote_node_id, ping, addr)
+
+            sent_pong = mock_send.call_args[0][2]
+            assert int(sent_pong.recipient_port) == 9001
+
+
+class TestHandleFindNode:
+    """Tests for _handle_findnode message handler."""
+
+    @pytest.mark.anyio
+    async def test_findnode_from_unbonded_node_ignored(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """FINDNODE from unbonded node is silently ignored."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        findnode = FindNode(
+            request_id=RequestId(data=b"\x01"),
+            distances=[Distance(1)],
+        )
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(service._transport, "send_response", new=AsyncMock()) as mock_send:
+            await service._handle_findnode(remote_node_id, findnode, addr)
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_findnode_from_bonded_node_sends_nodes(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """FINDNODE from bonded node sends NODES response."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        # Establish bond first.
+        service._bond_cache.add_bond(remote_node_id)
+
+        findnode = FindNode(
+            request_id=RequestId(data=b"\x01"),
+            distances=[Distance(128)],
+        )
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(
+            service._transport, "send_response", new=AsyncMock(return_value=True)
+        ) as mock_send:
+            await service._handle_findnode(remote_node_id, findnode, addr)
+
+            mock_send.assert_called_once()
+            from lean_spec.subspecs.networking.discovery.messages import Nodes
+
+            sent_msg = mock_send.call_args[0][2]
+            assert isinstance(sent_msg, Nodes)
+            assert bytes(sent_msg.request_id) == b"\x01"
+
+    @pytest.mark.anyio
+    async def test_findnode_distance_zero_returns_local_enr(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """FINDNODE with distance=0 returns our own ENR."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        service._bond_cache.add_bond(remote_node_id)
+
+        findnode = FindNode(
+            request_id=RequestId(data=b"\x01"),
+            distances=[Distance(0)],
+        )
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(
+            service._transport, "send_response", new=AsyncMock(return_value=True)
+        ) as mock_send:
+            await service._handle_findnode(remote_node_id, findnode, addr)
+
+            sent_msg = mock_send.call_args[0][2]
+            # Distance 0 means our own ENR, so there should be at least 1 ENR.
+            assert len(sent_msg.enrs) >= 1
+
+
+class TestHandleTalkReq:
+    """Tests for _handle_talkreq message handler."""
+
+    @pytest.mark.anyio
+    async def test_talkreq_unknown_protocol_sends_empty_response(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """TALKREQ for unknown protocol sends empty TALKRESP."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        talkreq = TalkReq(
+            request_id=RequestId(data=b"\x01"),
+            protocol=b"unknown",
+            request=b"data",
+        )
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(
+            service._transport, "send_response", new=AsyncMock(return_value=True)
+        ) as mock_send:
+            await service._handle_talkreq(remote_node_id, talkreq, addr)
+
+            mock_send.assert_called_once()
+            sent_msg = mock_send.call_args[0][2]
+            assert isinstance(sent_msg, TalkResp)
+            assert sent_msg.response == b""
+
+    @pytest.mark.anyio
+    async def test_talkreq_dispatches_to_registered_handler(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """TALKREQ dispatches to the registered protocol handler."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        handler = MagicMock(return_value=b"handler-response")
+        service.register_talk_handler(b"eth2", handler)
+
+        talkreq = TalkReq(
+            request_id=RequestId(data=b"\x01"),
+            protocol=b"eth2",
+            request=b"request-data",
+        )
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(
+            service._transport, "send_response", new=AsyncMock(return_value=True)
+        ) as mock_send:
+            await service._handle_talkreq(remote_node_id, talkreq, addr)
+
+            handler.assert_called_once_with(remote_node_id, b"request-data")
+            sent_msg = mock_send.call_args[0][2]
+            assert sent_msg.response == b"handler-response"
+
+    @pytest.mark.anyio
+    async def test_talkreq_handler_exception_sends_empty_response(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """TALKREQ handler that raises sends empty response."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        handler = MagicMock(side_effect=RuntimeError("handler error"))
+        service.register_talk_handler(b"eth2", handler)
+
+        talkreq = TalkReq(
+            request_id=RequestId(data=b"\x01"),
+            protocol=b"eth2",
+            request=b"request-data",
+        )
+        addr = ("192.168.1.1", 30303)
+
+        with patch.object(
+            service._transport, "send_response", new=AsyncMock(return_value=True)
+        ) as mock_send:
+            await service._handle_talkreq(remote_node_id, talkreq, addr)
+
+            sent_msg = mock_send.call_args[0][2]
+            assert sent_msg.response == b""
+
+
+class TestSendTalkRequest:
+    """Tests for send_talk_request method."""
+
+    @pytest.mark.anyio
+    async def test_send_talk_request_returns_none_for_unknown_node(
+        self, local_enr, local_private_key
+    ):
+        """send_talk_request returns None when node address is unknown."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        unknown_id = NodeId(bytes(32))
+        result = await service.send_talk_request(unknown_id, b"eth2", b"request")
+
+        assert result is None
+
+    @pytest.mark.anyio
+    async def test_send_talk_request_delegates_to_transport(
+        self, local_enr, local_private_key, remote_node_id
+    ):
+        """send_talk_request delegates to transport when address is known."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        service._transport.register_node_address(remote_node_id, ("192.168.1.1", 30303))
+
+        with patch.object(
+            service._transport, "send_talkreq", new=AsyncMock(return_value=b"response")
+        ) as mock_send:
+            result = await service.send_talk_request(remote_node_id, b"eth2", b"request")
+
+            assert result == b"response"
+            mock_send.assert_called_once_with(
+                remote_node_id, ("192.168.1.1", 30303), b"eth2", b"request"
+            )
+
+
+class TestBootstrapFlow:
+    """Tests for _bootstrap method."""
+
+    @pytest.mark.anyio
+    async def test_bootstrap_registers_bootnode_addresses(self, local_enr, local_private_key):
+        """Bootstrap registers bootnode addresses and ENRs."""
+        # Derived from NODE_A_PRIVKEY — a valid secp256k1 compressed pubkey.
+        node_a_pubkey = bytes.fromhex(
+            "0313d14211e0287b2361a1615890a9b5212080546d0a257ae4cff96cf534992cb9"
+        )
+        bootnode = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={
+                "id": b"v4",
+                "secp256k1": node_a_pubkey,
+                "ip": bytes([192, 168, 1, 1]),
+                "udp": (30303).to_bytes(2, "big"),
+            },
+        )
+
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+            bootnodes=[bootnode],
+        )
+
+        with patch.object(service._transport, "send_ping", new=AsyncMock(return_value=None)):
+            await service._bootstrap()
+
+        # Bootnode should be in routing table.
+        assert service.node_count() >= 1
+
+    @pytest.mark.anyio
+    async def test_bootstrap_skips_bootnodes_without_ip(self, local_enr, local_private_key):
+        """Bootstrap skips bootnodes that lack IP/port."""
+        node_a_pubkey = bytes.fromhex(
+            "0313d14211e0287b2361a1615890a9b5212080546d0a257ae4cff96cf534992cb9"
+        )
+        bootnode = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={
+                "id": b"v4",
+                "secp256k1": node_a_pubkey,
+            },
+        )
+
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+            bootnodes=[bootnode],
+        )
+
+        with patch.object(
+            service._transport, "send_ping", new=AsyncMock(return_value=None)
+        ) as mock_ping:
+            await service._bootstrap()
+
+            mock_ping.assert_not_called()
+
+
+class TestProcessDiscoveredEnr:
+    """Tests for _process_discovered_enr method."""
+
+    def test_invalid_enr_bytes_are_skipped(self, local_enr, local_private_key):
+        """Invalid RLP bytes are silently skipped."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        seen: dict[NodeId, NodeEntry] = {}
+        # Should not raise.
+        service._process_discovered_enr(b"\xff\xff\xff", seen)
+
+    def test_enr_with_wrong_distance_is_dropped(self, local_enr, local_private_key):
+        """ENR that doesn't match requested distances is dropped."""
+        service = DiscoveryService(
+            local_enr=local_enr,
+            private_key=local_private_key,
+        )
+
+        # Create a valid ENR.
+        enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={
+                "id": b"v4",
+                "secp256k1": bytes.fromhex(
+                    "02a448f24c6d18e575453db13171562b71999873db5b286df957af199ec94617f7"
+                ),
+                "ip": bytes([10, 0, 0, 1]),
+                "udp": (9000).to_bytes(2, "big"),
+            },
+        )
+        enr_bytes = enr.to_rlp()
+
+        queried_id = NodeId(bytes(32))
+        seen: dict[NodeId, NodeEntry] = {}
+
+        # Request only distance 1 — the actual distance is unlikely to be 1.
+        service._process_discovered_enr(enr_bytes, seen, queried_id, [1])
+
+        # ENR should not be added since distance doesn't match.
+        assert len(seen) == 0

@@ -9,6 +9,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.reqresp.message import Status
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.sync.states import SyncState
 from lean_spec.types import Bytes32
@@ -208,8 +209,6 @@ class TestGossipBlockHandling:
             parent_root=Bytes32(b"\x01" * 32),
             state_root=Bytes32.zero(),
         )
-        from lean_spec.subspecs.ssz.hash import hash_tree_root
-
         block_root = hash_tree_root(block.message.block)
 
         await sync_service.on_gossip_block(block, peer_id)

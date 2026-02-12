@@ -81,7 +81,7 @@ class GoodbyeReason(IntEnum):
 
     References:
     -----------
-    - Goodbye spec: https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md#goodbye-v1
+    - Goodbye spec: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md#goodbye-v1
     """
 
     CLIENT_SHUTDOWN = 1

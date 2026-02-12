@@ -20,6 +20,8 @@ References:
 
 from __future__ import annotations
 
+import os
+
 from lean_spec.subspecs.networking.types import SeqNumber
 from lean_spec.types import Uint64, decode_rlp, encode_rlp
 from lean_spec.types.rlp import RLPDecodingError
@@ -38,7 +40,7 @@ from .messages import (
     TalkResp,
 )
 
-DiscoveryMessage = Ping | Pong | FindNode | Nodes | TalkReq | TalkResp
+type DiscoveryMessage = Ping | Pong | FindNode | Nodes | TalkReq | TalkResp
 """Union of all Discovery v5 protocol messages."""
 
 
@@ -62,19 +64,21 @@ def encode_message(msg: DiscoveryMessage) -> bytes:
     Returns:
         Encoded message bytes.
     """
-    if isinstance(msg, Ping):
-        return _encode_ping(msg)
-    if isinstance(msg, Pong):
-        return _encode_pong(msg)
-    if isinstance(msg, FindNode):
-        return _encode_findnode(msg)
-    if isinstance(msg, Nodes):
-        return _encode_nodes(msg)
-    if isinstance(msg, TalkReq):
-        return _encode_talkreq(msg)
-    if isinstance(msg, TalkResp):
-        return _encode_talkresp(msg)
-    raise MessageEncodingError(f"Unknown message type: {type(msg).__name__}")
+    match msg:
+        case Ping():
+            return _encode_ping(msg)
+        case Pong():
+            return _encode_pong(msg)
+        case FindNode():
+            return _encode_findnode(msg)
+        case Nodes():
+            return _encode_nodes(msg)
+        case TalkReq():
+            return _encode_talkreq(msg)
+        case TalkResp():
+            return _encode_talkresp(msg)
+        case _:
+            raise MessageEncodingError(f"Unknown message type: {type(msg).__name__}")
 
 
 def decode_message(data: bytes) -> DiscoveryMessage:
@@ -97,19 +101,21 @@ def decode_message(data: bytes) -> DiscoveryMessage:
     payload = data[1:]
 
     try:
-        if msg_type == MessageType.PING:
-            return _decode_ping(payload)
-        if msg_type == MessageType.PONG:
-            return _decode_pong(payload)
-        if msg_type == MessageType.FINDNODE:
-            return _decode_findnode(payload)
-        if msg_type == MessageType.NODES:
-            return _decode_nodes(payload)
-        if msg_type == MessageType.TALKREQ:
-            return _decode_talkreq(payload)
-        if msg_type == MessageType.TALKRESP:
-            return _decode_talkresp(payload)
-        raise MessageDecodingError(f"Unknown message type: {msg_type:#x}")
+        match msg_type:
+            case MessageType.PING:
+                return _decode_ping(payload)
+            case MessageType.PONG:
+                return _decode_pong(payload)
+            case MessageType.FINDNODE:
+                return _decode_findnode(payload)
+            case MessageType.NODES:
+                return _decode_nodes(payload)
+            case MessageType.TALKREQ:
+                return _decode_talkreq(payload)
+            case MessageType.TALKRESP:
+                return _decode_talkresp(payload)
+            case _:
+                raise MessageDecodingError(f"Unknown message type: {msg_type:#x}")
     except RLPDecodingError as e:
         raise MessageDecodingError(f"Invalid RLP: {e}") from e
     except (IndexError, ValueError) as e:
@@ -298,6 +304,4 @@ def _decode_talkresp(payload: bytes) -> TalkResp:
 
 def generate_request_id() -> RequestId:
     """Generate a random request ID."""
-    import os
-
     return RequestId(data=os.urandom(8))

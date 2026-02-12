@@ -28,7 +28,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 
+from Crypto.Hash import keccak
+
 from lean_spec.types import Bytes16, Bytes32, Bytes33
+
+from .crypto import ecdh_agree, pubkey_to_uncompressed
 
 DISCV5_KEY_AGREEMENT_INFO = b"discovery v5 key agreement"
 """Info string used in HKDF expansion for Discovery v5 key derivation."""
@@ -99,10 +103,8 @@ def derive_keys(
     # SHA-256 outputs 32 bytes, so one round suffices.
     t1 = hmac.new(prk, info + b"\x01", hashlib.sha256).digest()
 
-    keys = t1[:32]
-
-    initiator_key = Bytes16(keys[:SESSION_KEY_SIZE])
-    recipient_key = Bytes16(keys[SESSION_KEY_SIZE : SESSION_KEY_SIZE * 2])
+    initiator_key = Bytes16(t1[:SESSION_KEY_SIZE])
+    recipient_key = Bytes16(t1[SESSION_KEY_SIZE : SESSION_KEY_SIZE * 2])
 
     return initiator_key, recipient_key
 
@@ -134,8 +136,6 @@ def derive_keys_from_pubkey(
         - send_key: Use to encrypt outgoing messages.
         - recv_key: Use to decrypt incoming messages.
     """
-    from .crypto import ecdh_agree
-
     # Compute shared secret.
     secret = ecdh_agree(local_private_key, remote_public_key)
 
@@ -170,10 +170,6 @@ def compute_node_id(public_key_bytes: bytes) -> Bytes32:
     Returns:
         32-byte node ID.
     """
-    from Crypto.Hash import keccak
-
-    from .crypto import pubkey_to_uncompressed
-
     # Ensure uncompressed format.
     uncompressed = pubkey_to_uncompressed(public_key_bytes)
 

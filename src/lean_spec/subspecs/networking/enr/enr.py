@@ -1,51 +1,38 @@
 """
-Ethereum Node Record (EIP-778)
-==============================
+Ethereum Node Record (EIP-778).
 
 ENR is an open format for p2p connectivity information that improves upon
 the node discovery v4 protocol by providing:
 
-1. **Flexibility**: Arbitrary key/value pairs for any transport protocol
-2. **Cryptographic Agility**: Support for multiple identity schemes
-3. **Authoritative Updates**: Sequence numbers to determine record freshness
+1. Flexibility: arbitrary key/value pairs for any transport protocol
+2. Cryptographic agility: support for multiple identity schemes
+3. Authoritative updates: sequence numbers to determine record freshness
 
-Record Structure
-----------------
+Record structure
 
-An ENR is an RLP-encoded list::
+An ENR is an RLP-encoded list:
 
     record = [signature, seq, k1, v1, k2, v2, ...]
 
 Where:
-- `signature`: 64-byte secp256k1 signature (r || s, no recovery id)
-- `seq`: 64-bit sequence number (increases on each update)
-- `k, v`: Sorted key/value pairs (keys are lexicographically ordered)
+- signature: 64-byte secp256k1 signature (r || s, no recovery id)
+- seq: 64-bit sequence number (increases on each update)
+- k, v: sorted key/value pairs (keys are lexicographically ordered)
 
-The signature covers the content `[seq, k1, v1, k2, v2, ...]` (excluding itself).
+The signature covers the content [seq, k1, v1, k2, v2, ...] (excluding itself).
 
-Size Limit
-----------
+Size limit: maximum encoded size is 300 bytes.
+This ensures ENRs fit in a single UDP packet and can be included
+in size-constrained protocols like DNS.
 
-Maximum encoded size is **300 bytes**. This ensures ENRs fit in a single
-UDP packet and can be included in size-constrained protocols like DNS.
+Text encoding: URL-safe base64 with "enr:" prefix.
 
-Text Encoding
--------------
-
-Text form is URL-safe base64 with `enr:` prefix::
-
-    enr:-IS4QHCYrYZbAKWCBRlAy5zzaDZXJBGkcnh4MHcBFZntXNFrdvJjX04jRzjz...
-
-"v4" Identity Scheme
---------------------
-
-The default scheme uses secp256k1:
-- **Sign**: keccak256(content), then secp256k1 signature
-- **Verify**: Check signature against `secp256k1` key in record
-- **Node ID**: keccak256(uncompressed_public_key)
+"v4" identity scheme (default, uses secp256k1):
+- Sign: keccak256(content), then secp256k1 signature
+- Verify: check signature against secp256k1 key in record
+- Node ID: keccak256(uncompressed_public_key)
 
 References:
-----------
 - EIP-778: https://eips.ethereum.org/EIPS/eip-778
 """
 
@@ -53,6 +40,15 @@ from __future__ import annotations
 
 import base64
 from typing import ClassVar, Self
+
+from Crypto.Hash import keccak
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    Prehashed,
+    encode_dss_signature,
+)
 
 from lean_spec.subspecs.networking.types import Multiaddr, NodeId, SeqNumber
 from lean_spec.types import (
@@ -74,7 +70,16 @@ ENR_PREFIX = "enr:"
 
 
 class ENR(StrictBaseModel):
-    """Ethereum Node Record (EIP-778)."""
+    """
+    Ethereum Node Record (EIP-778).
+
+    Key invariants:
+    - Sequence number increases on every record update
+    - Key/value pairs are sorted lexicographically by key
+    - Maximum RLP-encoded size is 300 bytes
+    - Only the "v4" identity scheme (secp256k1) is supported
+    - Signature covers [seq, k1, v1, k2, v2, ...] (excludes itself)
+    """
 
     MAX_SIZE: ClassVar[int] = 300
     """Maximum RLP-encoded size in bytes (EIP-778)."""
@@ -193,7 +198,7 @@ class ENR(StrictBaseModel):
         """
         return self.identity_scheme == self.SCHEME and self.public_key is not None
 
-    def is_compatible_with(self, other: "ENR") -> bool:
+    def is_compatible_with(self, other: ENR) -> bool:
         """Check fork compatibility via eth2 fork digest."""
         self_eth2, other_eth2 = self.eth2_data, other.eth2_data
         if self_eth2 is None or other_eth2 is None:
@@ -237,14 +242,6 @@ class ENR(StrictBaseModel):
 
         Returns True if signature is valid, False otherwise.
         """
-        from Crypto.Hash import keccak
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives.asymmetric.utils import (
-            Prehashed,
-            encode_dss_signature,
-        )
-
         if self.public_key is None:
             return False
 
@@ -269,7 +266,7 @@ class ENR(StrictBaseModel):
             # SHA256 is used as the algorithm marker since it has the same 32-byte digest size.
             public_key.verify(der_signature, digest, ec.ECDSA(Prehashed(hashes.SHA256())))
             return True
-        except Exception:
+        except (InvalidSignature, ValueError):
             return False
 
     def compute_node_id(self) -> NodeId | None:
@@ -279,10 +276,6 @@ class ENR(StrictBaseModel):
         Per EIP-778 "v4" identity scheme: keccak256(uncompressed_pubkey).
         The hash is computed over the 64-byte x||y coordinates.
         """
-        from Crypto.Hash import keccak
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import ec
-
         if self.public_key is None:
             return None
 
@@ -300,7 +293,7 @@ class ENR(StrictBaseModel):
             k = keccak.new(digest_bits=256)
             k.update(uncompressed[1:])
             return Bytes32(k.digest())
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     def to_rlp(self) -> bytes:
@@ -351,15 +344,16 @@ class ENR(StrictBaseModel):
         Raises:
             ValueError: If the RLP data is malformed.
         """
+        # EIP-778 requires ENRs to be at most 300 bytes.
+        # Check before RLP decode to avoid wasting cycles on oversized input.
+        if len(rlp_data) > cls.MAX_SIZE:
+            raise ValueError(f"ENR exceeds max size: {len(rlp_data)} > {cls.MAX_SIZE}")
+
         # RLP decode: [signature, seq, k1, v1, k2, v2, ...]
         try:
             items = rlp.decode_rlp_list(rlp_data)
         except rlp.RLPDecodingError as e:
             raise ValueError(f"Invalid RLP encoding: {e}") from e
-
-        # EIP-778 requires ENRs to be at most 300 bytes.
-        if len(rlp_data) > cls.MAX_SIZE:
-            raise ValueError(f"ENR exceeds max size: {len(rlp_data)} > {cls.MAX_SIZE}")
 
         if len(items) < 2:
             raise ValueError("ENR must have at least signature and seq")

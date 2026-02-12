@@ -3,13 +3,13 @@
 import asyncio
 import threading
 import time
-from typing import TYPE_CHECKING, Generator
+from typing import Generator
 
 import httpx
 import pytest
 
-if TYPE_CHECKING:
-    from lean_spec.subspecs.api import ApiServer
+from lean_spec.subspecs.api import ApiServer, ApiServerConfig
+from tests.lean_spec.helpers import make_store
 
 # Default port for auto-started local server
 DEFAULT_PORT = 15099
@@ -45,11 +45,8 @@ class _ServerThread(threading.Thread):
             if self.loop:
                 self.loop.close()
 
-    def _create_server(self) -> "ApiServer":
+    def _create_server(self) -> ApiServer:
         """Create the API server with a test store."""
-        from lean_spec.subspecs.api import ApiServer, ApiServerConfig
-        from tests.lean_spec.helpers import make_store
-
         store = make_store(num_validators=3, validator_id=None, genesis_time=int(time.time()))
 
         config = ApiServerConfig(host="127.0.0.1", port=self.port)

@@ -1,8 +1,7 @@
 """
 Network Client Module.
 
-Bridges the transport layer to the sync service by implementing
-the NetworkRequester and NetworkEventSource protocols.
+Bridges the transport layer to the sync service.
 
 Components
 ----------
@@ -11,7 +10,6 @@ ReqRespClient
     Handles BlocksByRoot and Status requests.
 
 LiveNetworkEventSource
-    Implements NetworkEventSource.
     Bridges connection events to NetworkService events.
 """
 

@@ -18,6 +18,7 @@ from lean_spec.subspecs.containers import (
 )
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block import BlockSignatures
+from lean_spec.subspecs.containers.block.types import AttestationSignatures
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
@@ -573,9 +574,6 @@ class TestIntegrationScenarios:
             proposer_attestation.validator_id,
             proposer_attestation.data,
         )
-
-        # Create signed block for on_block processing
-        from lean_spec.subspecs.containers.block.types import AttestationSignatures
 
         signed_block = SignedBlockWithAttestation(
             message=BlockWithAttestation(

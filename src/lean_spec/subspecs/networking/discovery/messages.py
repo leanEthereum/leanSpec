@@ -175,7 +175,7 @@ class Pong(StrictBaseModel):
     enr_seq: SeqNumber
     """Responder's ENR sequence number."""
 
-    recipient_ip: bytes
+    recipient_ip: IPv4 | IPv6
     """Sender's IP as seen by responder. 4 bytes (IPv4) or 16 bytes (IPv6)."""
 
     recipient_port: Port
@@ -266,45 +266,3 @@ class TalkResp(StrictBaseModel):
 
     response: bytes
     """Protocol-specific response. Empty if protocol unknown."""
-
-
-class StaticHeader(StrictBaseModel):
-    """
-    Fixed-size portion of the packet header.
-
-    Total size: 23 bytes (6 + 2 + 1 + 12 + 2).
-
-    The header is masked using AES-CTR with masking-key = dest-id[:16].
-    """
-
-    protocol_id: bytes = PROTOCOL_ID
-    """Protocol identifier. Must be b"discv5" (6 bytes)."""
-
-    version: Uint16 = Uint16(PROTOCOL_VERSION)
-    """Protocol version. Currently 0x0001."""
-
-    flag: Uint8
-    """Packet type: 0=message, 1=whoareyou, 2=handshake."""
-
-    nonce: Nonce
-    """96-bit message nonce. Must be unique per packet."""
-
-    authdata_size: Uint16
-    """Byte length of the authdata section following this header."""
-
-
-class WhoAreYouAuthdata(StrictBaseModel):
-    """
-    Authdata for WHOAREYOU packets (flag=1).
-
-    Sent when the recipient cannot decrypt an incoming message packet.
-    The nonce in the packet header is set to the nonce of the failed message.
-
-    Total size: 24 bytes (16 + 8).
-    """
-
-    id_nonce: IdNonce
-    """128-bit random value for identity verification."""
-
-    enr_seq: SeqNumber
-    """Recipient's known ENR sequence for the sender. 0 if unknown."""

@@ -15,11 +15,19 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import Prehashed, decode_dss_signature
 
-from lean_spec.__main__ import create_anchor_block, is_enr_string, resolve_bootnode
+from lean_spec.__main__ import (
+    _init_from_checkpoint,
+    create_anchor_block,
+    is_enr_string,
+    resolve_bootnode,
+)
 from lean_spec.subspecs.containers import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.genesis import GenesisConfig
+from lean_spec.subspecs.node import Node
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.sync.checkpoint_sync import CheckpointSyncError
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.rlp import encode_rlp
 from tests.lean_spec.helpers import make_genesis_state
@@ -353,9 +361,6 @@ class TestInitFromCheckpoint:
 
     async def test_checkpoint_sync_genesis_time_mismatch_returns_none(self) -> None:
         """Returns None when checkpoint state genesis time differs from local config."""
-        from lean_spec.__main__ import _init_from_checkpoint
-        from lean_spec.subspecs.genesis import GenesisConfig
-
         # Arrange: Create checkpoint state with genesis_time=1000
         checkpoint_state = make_genesis_state(num_validators=3, genesis_time=1000)
 
@@ -372,12 +377,12 @@ class TestInitFromCheckpoint:
 
         with (
             patch(
-                "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
+                "lean_spec.__main__.fetch_finalized_state",
                 new_callable=AsyncMock,
                 return_value=checkpoint_state,
             ),
             patch(
-                "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
+                "lean_spec.__main__.verify_checkpoint_state",
                 new_callable=AsyncMock,
                 return_value=True,
             ),
@@ -394,9 +399,6 @@ class TestInitFromCheckpoint:
 
     async def test_checkpoint_sync_verification_failure_returns_none(self) -> None:
         """Returns None when checkpoint state verification fails."""
-        from lean_spec.__main__ import _init_from_checkpoint
-        from lean_spec.subspecs.genesis import GenesisConfig
-
         # Arrange
         checkpoint_state = make_genesis_state(num_validators=3, genesis_time=1000)
         local_genesis = GenesisConfig.model_validate(
@@ -410,12 +412,12 @@ class TestInitFromCheckpoint:
 
         with (
             patch(
-                "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
+                "lean_spec.__main__.fetch_finalized_state",
                 new_callable=AsyncMock,
                 return_value=checkpoint_state,
             ),
             patch(
-                "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
+                "lean_spec.__main__.verify_checkpoint_state",
                 new_callable=AsyncMock,
                 return_value=False,  # Verification fails
             ),
@@ -432,10 +434,6 @@ class TestInitFromCheckpoint:
 
     async def test_checkpoint_sync_network_error_returns_none(self) -> None:
         """Returns None when network error occurs during fetch."""
-        from lean_spec.__main__ import _init_from_checkpoint
-        from lean_spec.subspecs.genesis import GenesisConfig
-        from lean_spec.subspecs.sync.checkpoint_sync import CheckpointSyncError
-
         # Arrange
         local_genesis = GenesisConfig.model_validate(
             {
@@ -447,7 +445,7 @@ class TestInitFromCheckpoint:
         mock_event_source = AsyncMock()
 
         with patch(
-            "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
+            "lean_spec.__main__.fetch_finalized_state",
             new_callable=AsyncMock,
             side_effect=CheckpointSyncError("Network error: connection refused"),
         ):
@@ -463,10 +461,6 @@ class TestInitFromCheckpoint:
 
     async def test_checkpoint_sync_success_returns_node(self) -> None:
         """Successful checkpoint sync returns initialized Node."""
-        from lean_spec.__main__ import _init_from_checkpoint
-        from lean_spec.subspecs.genesis import GenesisConfig
-        from lean_spec.subspecs.node import Node
-
         # Arrange: Create matching genesis times
         genesis_time = 1000
         checkpoint_state = make_genesis_state(num_validators=3, genesis_time=genesis_time)
@@ -484,12 +478,12 @@ class TestInitFromCheckpoint:
 
         with (
             patch(
-                "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
+                "lean_spec.__main__.fetch_finalized_state",
                 new_callable=AsyncMock,
                 return_value=checkpoint_state,
             ),
             patch(
-                "lean_spec.subspecs.sync.checkpoint_sync.verify_checkpoint_state",
+                "lean_spec.__main__.verify_checkpoint_state",
                 new_callable=AsyncMock,
                 return_value=True,
             ),
@@ -510,10 +504,6 @@ class TestInitFromCheckpoint:
 
     async def test_checkpoint_sync_http_status_error_returns_none(self) -> None:
         """Returns None when HTTP status error occurs."""
-        from lean_spec.__main__ import _init_from_checkpoint
-        from lean_spec.subspecs.genesis import GenesisConfig
-        from lean_spec.subspecs.sync.checkpoint_sync import CheckpointSyncError
-
         # Arrange
         local_genesis = GenesisConfig.model_validate(
             {
@@ -525,7 +515,7 @@ class TestInitFromCheckpoint:
         mock_event_source = AsyncMock()
 
         with patch(
-            "lean_spec.subspecs.sync.checkpoint_sync.fetch_finalized_state",
+            "lean_spec.__main__.fetch_finalized_state",
             new_callable=AsyncMock,
             side_effect=CheckpointSyncError("HTTP error 404: Not Found"),
         ):

@@ -53,7 +53,7 @@ Topic Types
 
 References:
 ----------
-- Ethereum P2P: https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md
+- Ethereum P2P: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
 """
 
 from __future__ import annotations

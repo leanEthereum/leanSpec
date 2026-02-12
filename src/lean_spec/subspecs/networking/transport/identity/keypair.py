@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -142,8 +143,6 @@ def verify_signature(
     Returns:
         True if signature is valid, False otherwise.
     """
-    from cryptography.exceptions import InvalidSignature
-
     public_key = ec.EllipticCurvePublicKey.from_encoded_point(
         ec.SECP256K1(),
         public_key_bytes,

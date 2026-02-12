@@ -4,7 +4,7 @@ Discovery v5 Routing Table
 Kademlia-style routing table for Node Discovery Protocol v5.1.
 
 Node Table Structure
---------------------
+
 Nodes keep information about other nodes in their neighborhood. Neighbor nodes
 are stored in a routing table consisting of 'k-buckets'. For each 0 <= i < 256,
 every node keeps a k-bucket for nodes of logdistance(self, n) == i.
@@ -14,7 +14,7 @@ Entries are sorted by time last seen: least-recently seen at head, most-recently
 seen at tail.
 
 Distance Metric
----------------
+
 The 'distance' between two node IDs is the bitwise XOR of the IDs, interpreted
 as a big-endian number:
 
@@ -26,7 +26,7 @@ bucket assignment:
     logdistance(n1, n2) = log2(distance(n1, n2))
 
 Bucket Eviction Policy
-----------------------
+
 When a new node N1 is encountered, it can be inserted into the corresponding
 bucket.
 
@@ -37,7 +37,7 @@ node N2 must be revalidated. If no reply is received from N2, it is considered d
 removed, and N1 added to the front of the bucket.
 
 Liveness Verification
----------------------
+
 Implementations should perform liveness checks asynchronously and occasionally
 verify that a random node in a random bucket is live by sending PING. When
 responding to FINDNODE, implementations must avoid relaying any nodes whose
@@ -50,16 +50,14 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Iterator
 
+from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.types import ForkDigest, NodeId, SeqNumber
 
 from .config import BUCKET_COUNT, K_BUCKET_SIZE
 from .messages import Distance
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.networking.enr import ENR
 
 
 def xor_distance(a: NodeId, b: NodeId) -> int:
@@ -109,7 +107,7 @@ def log2_distance(a: NodeId, b: NodeId) -> Distance:
     return Distance(distance.bit_length())
 
 
-@dataclass
+@dataclass(slots=True)
 class NodeEntry:
     """
     Entry in the routing table representing a discovered node.
@@ -137,7 +135,7 @@ class NodeEntry:
     """Full ENR record. Contains fork data for compatibility checks."""
 
 
-@dataclass
+@dataclass(slots=True)
 class KBucket:
     """
     K-bucket holding nodes at a specific log2 distance range.
@@ -148,13 +146,13 @@ class KBucket:
     - New nodes added to tail, eviction candidates at head
 
     Eviction Policy
-    ---------------
+
     When full, ping the head node (least-recently seen).
     - If it responds, keep it and discard the new node.
     - If it fails, evict it and add the new node.
 
     Replacement Cache
-    -----------------
+
     Implementations should maintain a 'replacement cache' alongside each bucket.
     This cache holds recently-seen nodes which would fall into the corresponding
     bucket but cannot become a member because it is at capacity. Once a bucket
@@ -248,7 +246,7 @@ class KBucket:
         return self.nodes[-1] if self.nodes else None
 
 
-@dataclass
+@dataclass(slots=True)
 class RoutingTable:
     """
     Kademlia routing table for Discovery v5.
@@ -257,7 +255,6 @@ class RoutingTable:
     Bucket i contains nodes with log2(distance) == i + 1.
 
     Fork Filtering
-    --------------
 
     When local_fork_digest is set:
 
@@ -266,7 +263,6 @@ class RoutingTable:
     - Requires eth2 ENR data to be present
 
     Lookup Algorithm
-    ----------------
 
     Locates the k closest nodes to a target ID:
 
@@ -277,7 +273,6 @@ class RoutingTable:
     5. Stop when k closest have been queried
 
     Table Maintenance
-    -----------------
 
     - Track close neighbors
     - Regularly refresh stale buckets

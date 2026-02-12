@@ -26,6 +26,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
+import sys
+import time
 from pathlib import Path
 
 from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
@@ -35,10 +38,16 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.genesis import GenesisConfig
 from lean_spec.subspecs.networking.client import LiveNetworkEventSource
+from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.gossipsub import GossipTopic
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.node import Node, NodeConfig, get_local_validator_id
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.sync.checkpoint_sync import (
+    CheckpointSyncError,
+    fetch_finalized_state,
+    verify_checkpoint_state,
+)
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.types import Bytes32, Uint64
 
@@ -83,8 +92,6 @@ def resolve_bootnode(bootnode: str) -> str:
         ValueError: If ENR is malformed or has no UDP connection info.
     """
     if is_enr_string(bootnode):
-        from lean_spec.subspecs.networking.enr import ENR
-
         enr = ENR.from_string(bootnode)
 
         # Verify structural validity (correct scheme, public key present).
@@ -238,12 +245,6 @@ async def _init_from_checkpoint(
     Returns:
         A fully initialized Node if successful, None if checkpoint sync failed.
     """
-    from lean_spec.subspecs.sync.checkpoint_sync import (
-        CheckpointSyncError,
-        fetch_finalized_state,
-        verify_checkpoint_state,
-    )
-
     try:
         logger.info("Fetching checkpoint state from %s", checkpoint_sync_url)
         state = await fetch_finalized_state(checkpoint_sync_url, State)
@@ -413,8 +414,6 @@ async def run_node(
         genesis_time_now: Override genesis time to current time for testing.
         is_aggregator: Enable aggregator mode for attestation aggregation.
     """
-    import time
-
     logger.info("Loading genesis from %s", genesis_path)
     genesis = GenesisConfig.from_yaml_file(genesis_path)
 
@@ -691,9 +690,6 @@ def main() -> None:
     finally:
         # Force exit to ensure all threads/sockets are released.
         # This is important for QUIC which may have background threads.
-        import os
-        import sys
-
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(0)

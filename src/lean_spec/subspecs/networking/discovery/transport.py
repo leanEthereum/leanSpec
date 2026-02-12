@@ -17,21 +17,38 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
 
-from lean_spec.types import Uint64
+from cryptography.exceptions import InvalidTag
+
+from lean_spec.subspecs.networking.enr import ENR
+from lean_spec.subspecs.networking.types import NodeId
+from lean_spec.types import Bytes16, Uint64
 
 from .codec import (
     DiscoveryMessage,
+    MessageDecodingError,
     decode_message,
     encode_message,
     generate_request_id,
 )
 from .config import DiscoveryConfig
-from .handshake import HandshakeManager
-from .messages import FindNode, Nonce, PacketFlag, Ping, Pong, TalkReq
+from .handshake import HandshakeError, HandshakeManager
+from .messages import (
+    Distance,
+    FindNode,
+    Nodes,
+    Nonce,
+    PacketFlag,
+    Ping,
+    Pong,
+    TalkReq,
+    TalkResp,
+)
 from .packet import (
+    PacketHeader,
     decode_handshake_authdata,
     decode_message_authdata,
     decode_packet_header,
@@ -39,12 +56,10 @@ from .packet import (
     decrypt_message,
     encode_message_authdata,
     encode_packet,
+    encode_static_header,
     generate_nonce,
 )
 from .session import SessionCache
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.networking.enr import ENR
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +71,7 @@ class PendingRequest:
     request_id: bytes
     """Request ID for matching responses."""
 
-    dest_node_id: bytes
+    dest_node_id: NodeId
     """Destination node ID."""
 
     sent_at: float
@@ -68,7 +83,7 @@ class PendingRequest:
     message: DiscoveryMessage
     """Original message (for retransmission after handshake)."""
 
-    future: asyncio.Future
+    future: asyncio.Future[DiscoveryMessage | None]
     """Future to complete when response arrives."""
 
 
@@ -83,7 +98,7 @@ class PendingMultiRequest:
     request_id: bytes
     """Request ID for matching responses."""
 
-    dest_node_id: bytes
+    dest_node_id: NodeId
     """Destination node ID."""
 
     sent_at: float
@@ -95,7 +110,7 @@ class PendingMultiRequest:
     message: DiscoveryMessage
     """Original message (for retransmission after handshake)."""
 
-    response_queue: asyncio.Queue
+    response_queue: asyncio.Queue[DiscoveryMessage]
     """Queue to collect multiple responses."""
 
     expected_total: int | None
@@ -106,15 +121,15 @@ class PendingMultiRequest:
 
 
 class DiscoveryProtocol(asyncio.DatagramProtocol):
-    """Async UDP protocol handler for Discovery v5."""
+    """
+    Async UDP protocol handler for Discovery v5.
+
+    Args:
+        transport_handler: Parent transport for packet handling.
+    """
 
     def __init__(self, transport_handler: DiscoveryTransport):
-        """
-        Initialize the protocol handler.
-
-        Args:
-            transport_handler: Parent transport for packet handling.
-        """
+        """Initialize protocol handler."""
         self._handler = transport_handler
         self._transport: asyncio.DatagramTransport | None = None
 
@@ -145,24 +160,22 @@ class DiscoveryTransport:
     - Session management
     - Handshake orchestration
     - Request/response matching
+
+    Args:
+        local_node_id: Our 32-byte node ID.
+        local_private_key: Our 32-byte secp256k1 private key.
+        local_enr: Our ENR.
+        config: Optional protocol configuration.
     """
 
     def __init__(
         self,
-        local_node_id: bytes,
+        local_node_id: NodeId,
         local_private_key: bytes,
         local_enr: ENR,
         config: DiscoveryConfig | None = None,
     ):
-        """
-        Initialize the transport.
-
-        Args:
-            local_node_id: Our 32-byte node ID.
-            local_private_key: Our 32-byte secp256k1 private key.
-            local_enr: Our ENR.
-            config: Optional protocol configuration.
-        """
+        """Initialize discovery transport."""
         self._local_node_id = local_node_id
         self._local_private_key = local_private_key
         self._local_enr = local_enr
@@ -181,21 +194,11 @@ class DiscoveryTransport:
         self._transport: asyncio.DatagramTransport | None = None
         self._pending_requests: dict[bytes, PendingRequest] = {}
         self._pending_multi_requests: dict[bytes, PendingMultiRequest] = {}
-        self._node_addresses: dict[bytes, tuple[str, int]] = {}
+        self._node_addresses: dict[NodeId, tuple[str, int]] = {}
 
-        # ENR cache for handshake verification.
-        #
-        # When receiving WHOAREYOU, we must prove our identity by signing
-        # with our private key. When sending HANDSHAKE, we need the remote's
-        # public key to derive session keys via ECDH.
-        #
-        # This cache stores ENRs learned from NODES responses.
-        # It mirrors the handshake manager's cache but provides transport-level access.
-        self._enr_cache: dict[bytes, ENR] = {}
-
-        self._message_handler: Callable[[bytes, DiscoveryMessage, tuple[str, int]], None] | None = (
-            None
-        )
+        self._message_handler: (
+            Callable[[NodeId, DiscoveryMessage, tuple[str, int]], None] | None
+        ) = None
 
         self._running = False
 
@@ -243,20 +246,20 @@ class DiscoveryTransport:
 
     def set_message_handler(
         self,
-        handler: Callable[[bytes, DiscoveryMessage, tuple[str, int]], None],
+        handler: Callable[[NodeId, DiscoveryMessage, tuple[str, int]], None],
     ) -> None:
         """Set handler for incoming messages."""
         self._message_handler = handler
 
-    def register_node_address(self, node_id: bytes, address: tuple[str, int]) -> None:
+    def register_node_address(self, node_id: NodeId, address: tuple[str, int]) -> None:
         """Register a node's UDP address."""
         self._node_addresses[node_id] = address
 
-    def get_node_address(self, node_id: bytes) -> tuple[str, int] | None:
+    def get_node_address(self, node_id: NodeId) -> tuple[str, int] | None:
         """Get a node's registered UDP address."""
         return self._node_addresses.get(node_id)
 
-    def register_enr(self, node_id: bytes, enr: ENR) -> None:
+    def register_enr(self, node_id: NodeId, enr: ENR) -> None:
         """
         Cache an ENR for future handshake completion.
 
@@ -265,17 +268,15 @@ class DiscoveryTransport:
         - ECDH key derivation during session establishment
         - Verifying id-nonce signatures in handshake responses
 
-        Caches in both the transport and handshake manager to ensure
-        availability regardless of which component needs it first.
+        The handshake manager is the single owner of the ENR cache.
 
         Args:
             node_id: 32-byte node ID (keccak256 of public key).
             enr: The node's ENR.
         """
-        self._enr_cache[node_id] = enr
         self._handshake_manager.register_enr(node_id, enr)
 
-    def get_enr(self, node_id: bytes) -> ENR | None:
+    def get_enr(self, node_id: NodeId) -> ENR | None:
         """
         Retrieve a cached ENR by node ID.
 
@@ -285,9 +286,9 @@ class DiscoveryTransport:
         Returns:
             The cached ENR, or None if unknown.
         """
-        return self._enr_cache.get(node_id)
+        return self._handshake_manager.get_cached_enr(node_id)
 
-    async def send_ping(self, dest_node_id: bytes, dest_addr: tuple[str, int]) -> Pong | None:
+    async def send_ping(self, dest_node_id: NodeId, dest_addr: tuple[str, int]) -> Pong | None:
         """
         Send a PING and wait for PONG.
 
@@ -311,7 +312,7 @@ class DiscoveryTransport:
 
     async def send_findnode(
         self,
-        dest_node_id: bytes,
+        dest_node_id: NodeId,
         dest_addr: tuple[str, int],
         distances: list[int],
     ) -> list[bytes]:
@@ -330,8 +331,6 @@ class DiscoveryTransport:
         Returns:
             List of RLP-encoded ENRs from all NODES responses.
         """
-        from .messages import Distance, Nodes
-
         request_id = generate_request_id()
         findnode = FindNode(
             request_id=request_id,
@@ -351,7 +350,7 @@ class DiscoveryTransport:
 
     async def _send_multi_response_request(
         self,
-        dest_node_id: bytes,
+        dest_node_id: NodeId,
         dest_addr: tuple[str, int],
         message: DiscoveryMessage,
     ) -> list[DiscoveryMessage]:
@@ -369,49 +368,16 @@ class DiscoveryTransport:
         Returns:
             List of response messages (may be empty on timeout/error).
         """
-        from .messages import Nodes
-
         if self._transport is None:
             raise RuntimeError("Transport not started")
 
         # Register address for responses.
         self._node_addresses[dest_node_id] = dest_addr
 
-        # Get or create session.
-        session = self._session_cache.get(dest_node_id)
+        # Build and send packet.
         nonce = generate_nonce()
-
-        # Encode message.
         message_bytes = encode_message(message)
-
-        if session is not None:
-            authdata = encode_message_authdata(self._local_node_id)
-            packet = encode_packet(
-                dest_node_id=dest_node_id,
-                src_node_id=self._local_node_id,
-                flag=PacketFlag.MESSAGE,
-                nonce=bytes(nonce),
-                authdata=authdata,
-                message=message_bytes,
-                encryption_key=session.send_key,
-            )
-        else:
-            # Trigger handshake via deliberate decryption failure.
-            self._handshake_manager.start_handshake(dest_node_id)
-            authdata = encode_message_authdata(self._local_node_id)
-
-            import os
-
-            dummy_key = os.urandom(16)
-            packet = encode_packet(
-                dest_node_id=dest_node_id,
-                src_node_id=self._local_node_id,
-                flag=PacketFlag.MESSAGE,
-                nonce=bytes(nonce),
-                authdata=authdata,
-                message=message_bytes,
-                encryption_key=dummy_key,
-            )
+        packet = self._build_message_packet(dest_node_id, dest_addr, nonce, message_bytes)
 
         # Create collector for multiple responses.
         loop = asyncio.get_running_loop()
@@ -471,7 +437,7 @@ class DiscoveryTransport:
 
     async def send_talkreq(
         self,
-        dest_node_id: bytes,
+        dest_node_id: NodeId,
         dest_addr: tuple[str, int],
         protocol: bytes,
         request: bytes,
@@ -488,8 +454,6 @@ class DiscoveryTransport:
         Returns:
             Response payload or None on timeout/error.
         """
-        from .messages import TalkResp
-
         request_id = generate_request_id()
         talkreq = TalkReq(
             request_id=request_id,
@@ -504,7 +468,7 @@ class DiscoveryTransport:
 
     async def _send_request(
         self,
-        dest_node_id: bytes,
+        dest_node_id: NodeId,
         dest_addr: tuple[str, int],
         message: DiscoveryMessage,
     ) -> DiscoveryMessage | None:
@@ -519,53 +483,10 @@ class DiscoveryTransport:
         # Register address for responses.
         self._node_addresses[dest_node_id] = dest_addr
 
-        # Get or create session.
-        session = self._session_cache.get(dest_node_id)
+        # Build and send packet.
         nonce = generate_nonce()
-
-        # Encode message.
         message_bytes = encode_message(message)
-
-        if session is not None:
-            # Have session, send encrypted message.
-            authdata = encode_message_authdata(self._local_node_id)
-            packet = encode_packet(
-                dest_node_id=dest_node_id,
-                src_node_id=self._local_node_id,
-                flag=PacketFlag.MESSAGE,
-                nonce=bytes(nonce),
-                authdata=authdata,
-                message=message_bytes,
-                encryption_key=session.send_key,
-            )
-        else:
-            # Deliberate decryption failure triggers handshake.
-            #
-            # Discovery v5's handshake is initiated by failure:
-            #
-            # 1. We send a MESSAGE with random encryption key
-            # 2. Recipient cannot decrypt (they don't have the key)
-            # 3. Recipient responds with WHOAREYOU challenge
-            # 4. We complete handshake with HANDSHAKE packet
-            #
-            # This approach avoids the need for session negotiation
-            # before sending the first message.
-            self._handshake_manager.start_handshake(dest_node_id)
-
-            authdata = encode_message_authdata(self._local_node_id)
-
-            import os
-
-            dummy_key = os.urandom(16)
-            packet = encode_packet(
-                dest_node_id=dest_node_id,
-                src_node_id=self._local_node_id,
-                flag=PacketFlag.MESSAGE,
-                nonce=bytes(nonce),
-                authdata=authdata,
-                message=message_bytes,
-                encryption_key=dummy_key,
-            )
+        packet = self._build_message_packet(dest_node_id, dest_addr, nonce, message_bytes)
 
         # Create pending request.
         loop = asyncio.get_running_loop()
@@ -596,25 +517,87 @@ class DiscoveryTransport:
         finally:
             self._pending_requests.pop(request_id_bytes, None)
 
+    def _build_message_packet(
+        self,
+        dest_node_id: NodeId,
+        dest_addr: tuple[str, int],
+        nonce: Nonce,
+        message_bytes: bytes,
+    ) -> bytes:
+        """
+        Build a MESSAGE packet, using session key if available or a dummy key
+        to trigger handshake.
+
+        Args:
+            dest_node_id: 32-byte destination node ID.
+            dest_addr: (ip, port) tuple.
+            nonce: 12-byte message nonce.
+            message_bytes: Encoded message payload.
+
+        Returns:
+            Encoded packet bytes.
+        """
+        ip, port = dest_addr
+        session = self._session_cache.get(dest_node_id, ip, port)
+
+        authdata = encode_message_authdata(self._local_node_id)
+
+        if session is not None:
+            return encode_packet(
+                dest_node_id=dest_node_id,
+                flag=PacketFlag.MESSAGE,
+                nonce=bytes(nonce),
+                authdata=authdata,
+                message=message_bytes,
+                encryption_key=session.send_key,
+            )
+
+        # Deliberate decryption failure triggers handshake.
+        #
+        # Discovery v5's handshake is initiated by failure:
+        #
+        # 1. We send a MESSAGE with random encryption key
+        # 2. Recipient cannot decrypt (they don't have the key)
+        # 3. Recipient responds with WHOAREYOU challenge
+        # 4. We complete handshake with HANDSHAKE packet
+        #
+        # This approach avoids the need for session negotiation
+        # before sending the first message.
+        self._handshake_manager.start_handshake(dest_node_id)
+        dummy_key = os.urandom(16)
+        return encode_packet(
+            dest_node_id=dest_node_id,
+            flag=PacketFlag.MESSAGE,
+            nonce=bytes(nonce),
+            authdata=authdata,
+            message=message_bytes,
+            encryption_key=dummy_key,
+        )
+
     async def _handle_packet(self, data: bytes, addr: tuple[str, int]) -> None:
-        """Handle a received UDP packet."""
+        """
+        Decode and dispatch a received UDP packet.
+
+        Unmasking the header reveals the packet type (MESSAGE, WHOAREYOU,
+        or HANDSHAKE) and routes to the appropriate handler.
+        """
         try:
             # Decode packet header.
-            header, message_bytes = decode_packet_header(self._local_node_id, data)
+            header, message_bytes, message_ad = decode_packet_header(self._local_node_id, data)
 
             if header.flag == PacketFlag.WHOAREYOU:
                 await self._handle_whoareyou(header, message_bytes, addr, data)
             elif header.flag == PacketFlag.HANDSHAKE:
-                await self._handle_handshake(header, message_bytes, addr, data)
+                await self._handle_handshake(header, message_bytes, addr, message_ad)
             else:
-                await self._handle_message(header, message_bytes, addr, data)
+                await self._handle_message(header, message_bytes, addr, message_ad)
 
-        except Exception as e:
+        except (ValueError, MessageDecodingError, HandshakeError) as e:
             logger.debug("Error handling packet from %s: %s", addr, e)
 
     async def _handle_whoareyou(
         self,
-        header,
+        header: PacketHeader,
         message_bytes: bytes,
         addr: tuple[str, int],
         raw_packet: bytes,
@@ -661,17 +644,9 @@ class DiscoveryTransport:
         # - authdata: 24 bytes (id-nonce 16 + enr-seq 8)
         #
         # We use the unmasked header, which we can reconstruct from the decoded values.
-        import struct
-
-        from .messages import PROTOCOL_ID, PROTOCOL_VERSION
-
         masking_iv = raw_packet[:16]
-        static_header = (
-            PROTOCOL_ID
-            + struct.pack(">H", PROTOCOL_VERSION)
-            + bytes([PacketFlag.WHOAREYOU])
-            + bytes(header.nonce)
-            + struct.pack(">H", len(header.authdata))
+        static_header = encode_static_header(
+            PacketFlag.WHOAREYOU, bytes(header.nonce), len(header.authdata)
         )
         challenge_data = masking_iv + static_header + header.authdata
 
@@ -679,7 +654,7 @@ class DiscoveryTransport:
         #
         # Session key derivation requires ECDH between our ephemeral private key
         # and the remote's static public key. Without their ENR, we cannot proceed.
-        remote_enr = self._enr_cache.get(remote_node_id)
+        remote_enr = self._handshake_manager.get_cached_enr(remote_node_id)
         if remote_enr is None or remote_enr.public_key is None:
             logger.debug("No ENR for %s, cannot complete handshake", remote_node_id.hex()[:16])
             return
@@ -688,11 +663,14 @@ class DiscoveryTransport:
 
         # Build and send the HANDSHAKE response.
         try:
+            ip, port = addr
             authdata, send_key, recv_key = self._handshake_manager.create_handshake_response(
                 remote_node_id=remote_node_id,
                 whoareyou=whoareyou,
                 remote_pubkey=remote_pubkey,
                 challenge_data=challenge_data,
+                remote_ip=ip,
+                remote_port=port,
             )
 
             # Re-send the original message, now encrypted with the new session key.
@@ -705,7 +683,6 @@ class DiscoveryTransport:
 
             packet = encode_packet(
                 dest_node_id=remote_node_id,
-                src_node_id=self._local_node_id,
                 flag=PacketFlag.HANDSHAKE,
                 nonce=bytes(nonce),
                 authdata=authdata,
@@ -717,88 +694,97 @@ class DiscoveryTransport:
                 self._transport.sendto(packet, addr)
                 logger.debug("Sent HANDSHAKE to %s", remote_node_id.hex()[:16])
 
-        except Exception as e:
+        except (HandshakeError, ValueError) as e:
             logger.debug("Failed to create handshake response: %s", e)
 
     async def _handle_handshake(
         self,
-        header,
+        header: PacketHeader,
         message_bytes: bytes,
         addr: tuple[str, int],
-        raw_packet: bytes,
+        message_ad: bytes,
     ) -> None:
-        """Handle a HANDSHAKE packet."""
+        """
+        Complete a handshake initiated by our WHOAREYOU.
+
+        Verifies the remote's identity signature, derives session keys
+        via ECDH, and decrypts the included message payload.
+        """
         handshake_authdata = decode_handshake_authdata(header.authdata)
         remote_node_id = handshake_authdata.src_id
 
         try:
-            result = self._handshake_manager.handle_handshake(remote_node_id, handshake_authdata)
+            ip, port = addr
+            result = self._handshake_manager.handle_handshake(
+                remote_node_id, handshake_authdata, remote_ip=ip, remote_port=port
+            )
             logger.debug("Handshake completed with %s", remote_node_id.hex()[:16])
 
             # Decrypt the included message.
             if len(message_bytes) > 0:
-                # Extract masked header for AAD.
-                masked_header = raw_packet[16 : 16 + 23 + len(header.authdata)]
-
                 plaintext = decrypt_message(
                     encryption_key=result.session.recv_key,
                     nonce=bytes(header.nonce),
                     ciphertext=message_bytes,
-                    masked_header=masked_header,
+                    message_ad=message_ad,
                 )
 
                 message = decode_message(plaintext)
                 await self._handle_decoded_message(remote_node_id, message, addr)
 
-        except Exception as e:
+        except (HandshakeError, ValueError) as e:
             logger.debug("Handshake failed: %s", e)
 
     async def _handle_message(
         self,
-        header,
+        header: PacketHeader,
         message_bytes: bytes,
         addr: tuple[str, int],
-        raw_packet: bytes,
+        message_ad: bytes,
     ) -> None:
-        """Handle an ordinary MESSAGE packet."""
+        """
+        Decrypt and process an ordinary MESSAGE packet using session keys.
+
+        If no session exists or decryption fails, sends WHOAREYOU
+        to initiate a handshake with the sender.
+        """
         message_authdata = decode_message_authdata(header.authdata)
         remote_node_id = message_authdata.src_id
 
-        # Get session.
-        session = self._session_cache.get(remote_node_id)
+        # Get session keyed by (node_id, ip, port).
+        ip, port = addr
+        session = self._session_cache.get(remote_node_id, ip, port)
         if session is None:
             # Can't decrypt - send WHOAREYOU.
             await self._send_whoareyou(remote_node_id, header.nonce, addr)
             return
 
         try:
-            # Extract masked header for AAD.
-            masked_header = raw_packet[16 : 16 + 23 + len(header.authdata)]
-
             plaintext = decrypt_message(
                 encryption_key=session.recv_key,
                 nonce=bytes(header.nonce),
                 ciphertext=message_bytes,
-                masked_header=masked_header,
+                message_ad=message_ad,
             )
 
             message = decode_message(plaintext)
             await self._handle_decoded_message(remote_node_id, message, addr)
 
-        except Exception as e:
+        except (InvalidTag, ValueError, MessageDecodingError) as e:
             # Decryption failed - send WHOAREYOU.
             logger.debug("Decryption failed, sending WHOAREYOU: %s", e)
             await self._send_whoareyou(remote_node_id, header.nonce, addr)
 
     async def _handle_decoded_message(
         self,
-        remote_node_id: bytes,
+        remote_node_id: NodeId,
         message: DiscoveryMessage,
         addr: tuple[str, int],
     ) -> None:
         """Process a successfully decoded message."""
         # Update session activity.
-        self._session_cache.touch(remote_node_id)
+        ip, port = addr
+        self._session_cache.touch(remote_node_id, ip, port)
 
         # Check if this is a response to a pending request.
         request_id = bytes(message.request_id)
@@ -821,18 +807,21 @@ class DiscoveryTransport:
 
     async def _send_whoareyou(
         self,
-        remote_node_id: bytes,
+        remote_node_id: NodeId,
         request_nonce: Nonce,
         addr: tuple[str, int],
     ) -> None:
         """Send a WHOAREYOU packet."""
-        import os
-
         if self._transport is None:
             return
 
-        # Get last known ENR seq for this node (0 if unknown).
-        remote_enr_seq = 0
+        # Look up the cached ENR sequence for this node.
+        #
+        # If we know their ENR, send the current seq so they can skip
+        # including the full ENR in the handshake response, saving bandwidth.
+        # Fall back to 0 if unknown, which forces the remote to include their ENR.
+        cached_enr = self._handshake_manager.get_cached_enr(remote_node_id)
+        remote_enr_seq = int(cached_enr.seq) if cached_enr is not None else 0
 
         # Generate masking IV for the WHOAREYOU packet.
         #
@@ -849,12 +838,12 @@ class DiscoveryTransport:
 
         packet = encode_packet(
             dest_node_id=remote_node_id,
-            src_node_id=self._local_node_id,
             flag=PacketFlag.WHOAREYOU,
             nonce=nonce,
             authdata=authdata,
             message=b"",
             encryption_key=None,
+            masking_iv=Bytes16(masking_iv),
         )
 
         self._transport.sendto(packet, addr)
@@ -862,7 +851,7 @@ class DiscoveryTransport:
 
     async def send_response(
         self,
-        dest_node_id: bytes,
+        dest_node_id: NodeId,
         dest_addr: tuple[str, int],
         message: DiscoveryMessage,
     ) -> bool:
@@ -889,7 +878,8 @@ class DiscoveryTransport:
         #
         # The requester initiated the handshake.
         # By the time we respond, session keys must exist.
-        session = self._session_cache.get(dest_node_id)
+        ip, port = dest_addr
+        session = self._session_cache.get(dest_node_id, ip, port)
         if session is None:
             logger.debug("No session for response to %s", dest_node_id.hex()[:16])
             return False
@@ -901,7 +891,6 @@ class DiscoveryTransport:
 
         packet = encode_packet(
             dest_node_id=dest_node_id,
-            src_node_id=self._local_node_id,
             flag=PacketFlag.MESSAGE,
             nonce=bytes(nonce),
             authdata=authdata,

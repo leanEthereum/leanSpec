@@ -4,6 +4,7 @@ import pytest
 
 from lean_spec.subspecs.networking.discovery.crypto import (
     generate_secp256k1_keypair,
+    pubkey_to_uncompressed,
 )
 from lean_spec.subspecs.networking.discovery.keys import (
     compute_node_id,
@@ -161,7 +162,6 @@ class TestComputeNodeId:
 
     def test_accepts_uncompressed_pubkey(self):
         """Test that uncompressed public key format is accepted."""
-        from lean_spec.subspecs.networking.discovery.crypto import pubkey_to_uncompressed
 
         _, compressed = generate_secp256k1_keypair()
         uncompressed = pubkey_to_uncompressed(compressed)
@@ -172,7 +172,6 @@ class TestComputeNodeId:
 
     def test_compressed_and_uncompressed_produce_same_id(self):
         """Test that both formats produce the same node ID."""
-        from lean_spec.subspecs.networking.discovery.crypto import pubkey_to_uncompressed
 
         _, compressed = generate_secp256k1_keypair()
         uncompressed = pubkey_to_uncompressed(compressed)

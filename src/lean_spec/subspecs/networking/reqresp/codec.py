@@ -64,7 +64,7 @@ This prevents decompression bombs (small compressed → huge uncompressed).
 
 References:
     Ethereum P2P spec:
-        https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md
+        https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
     LEB128 encoding:
         https://en.wikipedia.org/wiki/LEB128
     Snappy framing:
@@ -90,78 +90,6 @@ class CodecError(Exception):
       - Snappy decompression failures
       - Length mismatches after decompression
     """
-
-
-class ForkDigestMismatchError(CodecError):
-    """Raised when context bytes (fork_digest) do not match expected value.
-
-    Context bytes are 4 bytes prepended to each response chunk in
-    protocols that return fork-specific data (BlocksByRange, BlobSidecars).
-    """
-
-    def __init__(self, expected: bytes, actual: bytes) -> None:
-        """Initialize with expected and actual fork digests."""
-        self.expected = expected
-        self.actual = actual
-        super().__init__(f"Fork digest mismatch: expected {expected.hex()}, got {actual.hex()}")
-
-
-CONTEXT_BYTES_LENGTH: int = 4
-"""Length of context bytes (fork_digest) in responses."""
-
-
-def validate_context_bytes(data: bytes, expected_fork_digest: bytes) -> bytes:
-    """
-    Validate and strip context bytes from a response chunk.
-
-    Some req/resp protocols prepend a 4-byte fork_digest (context bytes)
-    to each response chunk. This allows clients to verify they're receiving
-    data for the expected fork.
-
-    Args:
-        data: Response data with context bytes prepended.
-        expected_fork_digest: Expected 4-byte fork_digest.
-
-    Returns:
-        Response data with context bytes stripped.
-
-    Raises:
-        CodecError: If data is too short to contain context bytes.
-        ForkDigestMismatchError: If context bytes don't match expected.
-    """
-    if len(data) < CONTEXT_BYTES_LENGTH:
-        raise CodecError(
-            f"Response too short for context bytes: {len(data)} < {CONTEXT_BYTES_LENGTH}"
-        )
-
-    context_bytes = data[:CONTEXT_BYTES_LENGTH]
-    if context_bytes != expected_fork_digest:
-        raise ForkDigestMismatchError(expected_fork_digest, context_bytes)
-
-    return data[CONTEXT_BYTES_LENGTH:]
-
-
-def prepend_context_bytes(data: bytes, fork_digest: bytes) -> bytes:
-    """
-    Prepend context bytes (fork_digest) to a response chunk.
-
-    Used when sending responses for protocols that require context bytes.
-
-    Args:
-        data: Response data to send.
-        fork_digest: 4-byte fork_digest to prepend.
-
-    Returns:
-        Response data with context bytes prepended.
-
-    Raises:
-        ValueError: If fork_digest is not exactly 4 bytes.
-    """
-    if len(fork_digest) != CONTEXT_BYTES_LENGTH:
-        raise ValueError(
-            f"Fork digest must be {CONTEXT_BYTES_LENGTH} bytes, got {len(fork_digest)}"
-        )
-    return fork_digest + data
 
 
 def encode_request(ssz_data: bytes) -> bytes:
@@ -282,7 +210,7 @@ class ResponseCode(IntEnum):
       - Codes 128-255: Treated as INVALID_REQUEST (invalid range).
 
     Reference:
-        https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md
+        https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
     """
 
     SUCCESS = 0

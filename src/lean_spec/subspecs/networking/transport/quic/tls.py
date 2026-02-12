@@ -22,6 +22,7 @@ References:
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -105,8 +106,6 @@ def generate_libp2p_certificate(
     #
     # SKI is the SHA-256 hash of the TLS public key, truncated to 20 bytes.
     # This matches webpki's expected format for self-signed certificates.
-    import hashlib
-
     ski_digest = hashlib.sha256(tls_public_bytes).digest()[:20]
 
     cert = (
@@ -381,14 +380,12 @@ def _verify_identity_signature(
     Raises:
         ValueError: If signature is invalid.
     """
-    from cryptography.hazmat.primitives.asymmetric import ec as ec_module
-
     # Reconstruct the secp256k1 public key.
     #
     # Compressed public key is 33 bytes (02/03 prefix + 32 byte X coordinate).
     try:
-        public_key = ec_module.EllipticCurvePublicKey.from_encoded_point(
-            ec_module.SECP256K1(),
+        public_key = ec.EllipticCurvePublicKey.from_encoded_point(
+            ec.SECP256K1(),
             public_key_bytes,
         )
     except Exception as e:
@@ -402,7 +399,7 @@ def _verify_identity_signature(
         public_key.verify(
             signature,  # DER-encoded
             to_verify,
-            ec_module.ECDSA(hashes.SHA256()),
+            ec.ECDSA(hashes.SHA256()),
         )
     except Exception as e:
         raise ValueError(f"Signature verification failed: {e}") from e

@@ -9,12 +9,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING
 
 from lean_spec.types import Bytes32
 
-if TYPE_CHECKING:
-    from .node_runner import NodeCluster, TestNode
+from .node_runner import NodeCluster, TestNode
 
 logger = logging.getLogger(__name__)
 

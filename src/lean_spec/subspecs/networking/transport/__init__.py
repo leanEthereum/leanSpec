@@ -12,7 +12,7 @@ Architecture:
 Components:
     - quic/: QUIC transport with libp2p-tls authentication
     - multistream/: Protocol negotiation
-    - connection/: Connection abstractions (re-exports QUIC types)
+    - connection/: Stream protocol and re-exports of QUIC types
     - identity/: secp256k1 keypairs and identity proofs
 
 QUIC provides encryption and multiplexing natively, eliminating the need
@@ -24,7 +24,7 @@ References:
     - libp2p/specs quic, tls, multistream-select
 """
 
-from .connection import Connection, ConnectionManager, Stream
+from .connection import ConnectionManager, Stream
 from .identity import (
     NOISE_IDENTITY_PREFIX,
     IdentityKeypair,
@@ -44,7 +44,6 @@ from .quic import QuicConnection, QuicConnectionManager, generate_libp2p_certifi
 
 __all__ = [
     # Connection management
-    "Connection",
     "Stream",
     "ConnectionManager",
     # QUIC transport

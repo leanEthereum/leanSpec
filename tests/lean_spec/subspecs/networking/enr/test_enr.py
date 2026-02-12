@@ -9,11 +9,22 @@ References:
 
 from __future__ import annotations
 
+import base64
+
 import pytest
+from Crypto.Hash import keccak
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    Prehashed,
+    decode_dss_signature,
+)
 
 from lean_spec.subspecs.networking.enr import ENR, keys
 from lean_spec.subspecs.networking.enr.enr import ENR_PREFIX
-from lean_spec.types import Bytes64, Uint64
+from lean_spec.types import Bytes64, SSZValueError, Uint64
+from lean_spec.types.byte_arrays import Bytes4
+from lean_spec.types.rlp import encode_rlp
 
 # From: https://eips.ethereum.org/EIPS/eip-778
 #
@@ -116,10 +127,6 @@ class TestOfficialEIP778Vector:
         The hash is computed over the 64-byte x||y coordinates,
         excluding the 0x04 uncompressed point prefix.
         """
-        from Crypto.Hash import keccak
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import ec
-
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
 
         # Get the compressed 33-byte secp256k1 public key
@@ -195,10 +202,6 @@ class TestRLPStructureValidation:
     def test_minimum_fields_required(self) -> None:
         """ENR must have at least signature and seq."""
         # Create RLP for just signature (missing seq)
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # RLP list with only signature
         rlp_data = encode_rlp([b"\x00" * 64])
         b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
@@ -208,10 +211,6 @@ class TestRLPStructureValidation:
 
     def test_odd_number_of_kv_pairs_rejected(self) -> None:
         """ENR key/value pairs must be even count."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # [signature, seq, key1] - odd number after signature/seq
         rlp_data = encode_rlp([b"\x00" * 64, b"\x01", b"id"])
         b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
@@ -221,8 +220,6 @@ class TestRLPStructureValidation:
 
     def test_empty_rlp_rejected(self) -> None:
         """Empty RLP data is rejected."""
-        import base64
-
         b64_content = base64.urlsafe_b64encode(b"").decode("utf-8").rstrip("=")
 
         with pytest.raises(ValueError, match=r"Invalid RLP"):
@@ -230,8 +227,6 @@ class TestRLPStructureValidation:
 
     def test_malformed_rlp_rejected(self) -> None:
         """Malformed RLP is rejected."""
-        import base64
-
         # Invalid RLP: truncated list
         malformed = bytes([0xC5, 0x01, 0x02])  # Claims 5 bytes but only has 2
         b64_content = base64.urlsafe_b64encode(malformed).decode("utf-8").rstrip("=")
@@ -241,10 +236,6 @@ class TestRLPStructureValidation:
 
     def test_valid_minimal_enr(self) -> None:
         """Minimal valid ENR with only required fields parses."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # [signature(64), seq(1), "id", "v4", "secp256k1", pubkey(33)]
         rlp_data = encode_rlp(
             [
@@ -476,10 +467,6 @@ class TestValidationMethods:
 
     def test_construction_fails_for_wrong_signature_length(self) -> None:
         """ENR construction fails when signature is not exactly 64 bytes."""
-        import pytest
-
-        from lean_spec.types import SSZValueError
-
         # 63 bytes should fail - Bytes64 enforces exactly 64 bytes
         with pytest.raises(SSZValueError, match="requires exactly 64 bytes"):
             ENR(
@@ -649,10 +636,6 @@ class TestEdgeCases:
 
     def test_enr_with_only_required_fields(self) -> None:
         """ENR with minimum required fields is valid."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         rlp_data = encode_rlp(
             [
                 b"\x00" * 64,  # signature
@@ -672,10 +655,6 @@ class TestEdgeCases:
 
     def test_enr_with_ipv6_only(self) -> None:
         """ENR with IPv6 but no IPv4 parses correctly."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         ipv6_bytes = bytes.fromhex("20010db8000000000000000000000001")  # 2001:db8::1
         rlp_data = encode_rlp(
             [
@@ -705,10 +684,6 @@ class TestEdgeCases:
 
     def test_enr_with_udp_port(self) -> None:
         """ENR with UDP port generates QUIC multiaddr correctly."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         rlp_data = encode_rlp(
             [
                 b"\x00" * 64,
@@ -731,10 +706,6 @@ class TestEdgeCases:
 
     def test_sequence_number_zero(self) -> None:
         """ENR with sequence number 0 is valid."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         rlp_data = encode_rlp(
             [
                 b"\x00" * 64,
@@ -752,10 +723,6 @@ class TestEdgeCases:
 
     def test_large_sequence_number(self) -> None:
         """ENR with large sequence number parses correctly."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         large_seq = (2**32).to_bytes(5, "big")
         rlp_data = encode_rlp(
             [
@@ -794,8 +761,6 @@ class TestEth2DataProperty:
 
     def test_eth2_data_parses_from_enr(self) -> None:
         """eth2_data property parses 16-byte eth2 key."""
-        from lean_spec.types.byte_arrays import Bytes4
-
         # 4 bytes fork_digest + 4 bytes next_fork_version + 8 bytes next_fork_epoch
         eth2_bytes = b"\x12\x34\x56\x78" + b"\x02\x00\x00\x00" + b"\x00\x00\x00\x00\x00\x00\x00\x01"
         enr = ENR(
@@ -996,10 +961,6 @@ class TestMaxSizeEnforcement:
 
     def test_enr_exactly_300_bytes_succeeds(self) -> None:
         """ENR with exactly 300 bytes RLP parses successfully."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # Build an ENR that is exactly 300 bytes
         # Start with minimal structure and add padding in a value
         signature = b"\x00" * 64
@@ -1066,10 +1027,6 @@ class TestMaxSizeEnforcement:
 
     def test_enr_301_bytes_rejected(self) -> None:
         """ENR with 301 bytes RLP is rejected."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # Build an ENR that is exactly 301 bytes
         signature = b"\x00" * 64
         seq = b"\x01"
@@ -1132,10 +1089,6 @@ class TestKeyOrderingEnforcement:
 
     def test_sorted_keys_accepted(self) -> None:
         """ENR with lexicographically sorted keys parses successfully."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # Keys in sorted order: id, ip, secp256k1
         rlp = encode_rlp(
             [
@@ -1155,10 +1108,6 @@ class TestKeyOrderingEnforcement:
 
     def test_unsorted_keys_rejected(self) -> None:
         """ENR with unsorted keys is rejected."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # Keys out of order: secp256k1 before id
         rlp = encode_rlp(
             [
@@ -1177,10 +1126,6 @@ class TestKeyOrderingEnforcement:
 
     def test_duplicate_keys_rejected(self) -> None:
         """ENR with duplicate keys is rejected."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         # Duplicate "id" key
         rlp = encode_rlp(
             [
@@ -1213,10 +1158,6 @@ class TestRoundTripSerialization:
 
     def test_roundtrip_preserves_all_fields(self) -> None:
         """Round-trip preserves all ENR fields."""
-        import base64
-
-        from lean_spec.types.rlp import encode_rlp
-
         rlp = encode_rlp(
             [
                 b"\xab" * 64,  # signature
@@ -1267,16 +1208,6 @@ class TestSignatureVerification:
 
     def test_self_signed_enr_verifies(self) -> None:
         """ENR signed with cryptography library verifies correctly."""
-        from Crypto.Hash import keccak
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives.asymmetric.utils import (
-            Prehashed,
-            decode_dss_signature,
-        )
-
-        from lean_spec.types.rlp import encode_rlp
-
         # Generate a test keypair using cryptography library.
         private_key = ec.generate_private_key(ec.SECP256K1())
         public_key = private_key.public_key()

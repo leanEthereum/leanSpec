@@ -32,6 +32,7 @@ from lean_spec.subspecs.networking.transport.multistream.negotiation import (
     StreamReaderProtocol,
     StreamWriterProtocol,
 )
+from lean_spec.subspecs.networking.varint import decode_varint, encode_varint
 
 
 class TestConstants:
@@ -428,8 +429,6 @@ class _MockWriter:
 
 async def _write_message(writer: StreamWriterProtocol, message: str) -> None:
     """Write a multistream message."""
-    from lean_spec.subspecs.networking.varint import encode_varint
-
     payload = message.encode("utf-8") + b"\n"
     length_prefix = encode_varint(len(payload))
     writer.write(length_prefix + payload)
@@ -447,8 +446,6 @@ async def _read_message(reader: StreamReaderProtocol) -> str:
         length_bytes.append(byte[0])
         if byte[0] & 0x80 == 0:
             break
-
-    from lean_spec.subspecs.networking.varint import decode_varint
 
     length, _ = decode_varint(bytes(length_bytes))
 

@@ -6,6 +6,7 @@ from . import forks
 from .test_fixtures import (
     BaseConsensusFixture,
     ForkChoiceTest,
+    SSZTest,
     StateTransitionTest,
     VerifySignaturesTest,
 )
@@ -27,6 +28,7 @@ from .test_types import (
 StateTransitionTestFiller = Type[StateTransitionTest]
 ForkChoiceTestFiller = Type[ForkChoiceTest]
 VerifySignaturesTestFiller = Type[VerifySignaturesTest]
+SSZTestFiller = Type[SSZTest]
 
 __all__ = [
     # Public API
@@ -40,6 +42,7 @@ __all__ = [
     "StateTransitionTest",
     "ForkChoiceTest",
     "VerifySignaturesTest",
+    "SSZTest",
     # Test types
     "BaseForkChoiceStep",
     "TickStep",
@@ -54,4 +57,5 @@ __all__ = [
     "StateTransitionTestFiller",
     "ForkChoiceTestFiller",
     "VerifySignaturesTestFiller",
+    "SSZTestFiller",
 ]

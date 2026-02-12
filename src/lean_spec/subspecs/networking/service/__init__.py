@@ -8,7 +8,6 @@ from .events import (
     GossipAttestationEvent,
     GossipBlockEvent,
     NetworkEvent,
-    NetworkEventSource,
     PeerConnectedEvent,
     PeerDisconnectedEvent,
     PeerStatusEvent,
@@ -18,8 +17,6 @@ from .service import NetworkService
 __all__ = [
     # Service
     "NetworkService",
-    # Protocol
-    "NetworkEventSource",
     # Events
     "GossipAttestationEvent",
     "GossipBlockEvent",

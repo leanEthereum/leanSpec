@@ -1,6 +1,7 @@
 """Unsigned Integer Type Tests."""
 
 import io
+import operator
 from typing import Any, Type
 
 import pytest
@@ -308,8 +309,6 @@ def test_index_hex_bin_oct(uint_class: Type[BaseUint]) -> None:
 @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
 def test_index_operator_index(uint_class: Type[BaseUint]) -> None:
     """Tests that operator.index() works with Uint types."""
-    import operator
-
     val = uint_class(42)
     assert operator.index(val) == 42
     assert isinstance(operator.index(val), int)

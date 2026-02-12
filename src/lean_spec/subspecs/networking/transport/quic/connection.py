@@ -26,7 +26,6 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from aioquic.asyncio import QuicConnectionProtocol
 from aioquic.asyncio import connect as quic_connect
@@ -40,12 +39,10 @@ from aioquic.quic.events import (
     StreamReset,
 )
 
+from ..identity import IdentityKeypair
 from ..multistream import negotiate_lazy_client
 from ..peer_id import PeerId
 from .tls import generate_libp2p_certificate
-
-if TYPE_CHECKING:
-    from ..identity import IdentityKeypair
 
 
 class QuicTransportError(Exception):
@@ -528,8 +525,6 @@ class QuicConnectionManager:
             else:
                 # Generate a random peer ID for now.
                 # This is NOT correct for production but allows testing.
-                from ..identity import IdentityKeypair
-
                 temp_key = IdentityKeypair.generate()
                 peer_id = temp_key.to_peer_id()
 
@@ -590,8 +585,6 @@ class QuicConnectionManager:
         # Callback to set up connection when handshake completes.
         # Captures this manager's state (self, on_connection, host, port).
         def handle_handshake(protocol_instance: LibP2PQuicProtocol) -> None:
-            from ..identity import IdentityKeypair
-
             temp_key = IdentityKeypair.generate()
             remote_peer_id = temp_key.to_peer_id()
 

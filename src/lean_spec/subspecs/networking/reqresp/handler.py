@@ -20,19 +20,6 @@ The flows mirror each other but have different responsibilities:
 Keeping them separate makes each flow easier to understand and test.
 
 
-WHY HANDLERS USE ResponseStream ABSTRACTION
--------------------------------------------
-Handlers receive a ResponseStream instead of a raw transport stream.
-This design provides three benefits:
-
-1. Testability: Unit tests provide mock streams without network I/O.
-2. Flexibility: Different transports (yamux, memory, etc.) work with the same handlers.
-3. Clarity: Handlers focus on protocol logic, not wire format encoding.
-
-The ResponseStream translates high-level operations (send success, send error) into the
-wire format defined in codec.py.
-
-
 WIRE FORMAT
 -----------
 All responses use the same wire format from codec.py:
@@ -65,7 +52,7 @@ The protocol ID determines:
 
 References:
     Ethereum P2P spec:
-        https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md
+        https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
     Wire format details:
         See codec.py in this package
 """
@@ -73,15 +60,14 @@ References:
 from __future__ import annotations
 
 import logging
-from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import Protocol
+from dataclasses import dataclass
 
-from lean_spec.snappy import frame_decompress
+from lean_spec.snappy import SnappyDecompressionError, frame_decompress
 from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.networking.config import MAX_ERROR_MESSAGE_SIZE
 from lean_spec.subspecs.networking.transport.connection.types import Stream
-from lean_spec.subspecs.networking.varint import decode_varint
+from lean_spec.subspecs.networking.varint import VarintError, decode_varint
 from lean_spec.types import Bytes32
 
 from .codec import ResponseCode
@@ -94,176 +80,38 @@ from .message import (
 
 logger = logging.getLogger(__name__)
 
-REQUEST_TIMEOUT_SECONDS: float = 10.0
-"""Default timeout for processing inbound requests."""
-
-
-class ResponseStream(Protocol):
-    """
-    Protocol for sending chunked responses to peers.
-
-    Abstracts the underlying stream transport, allowing handlers to send
-    responses without knowing the wire format details.
-
-    Response Types
-    --------------
-    - Success: Contains SSZ-encoded response data.
-    - Error: Contains UTF-8 error message.
-
-    Both types are encoded using the same wire format from codec.py.
-    """
-
-    async def send_success(self, ssz_data: bytes) -> None:
-        """
-        Send a SUCCESS response chunk.
-
-        Args:
-            ssz_data: SSZ-encoded response payload.
-        """
-        ...
-
-    async def send_error(self, code: ResponseCode, message: str) -> None:
-        """
-        Send an error response and close the stream.
-
-        Args:
-            code: Error code (INVALID_REQUEST, SERVER_ERROR, RESOURCE_UNAVAILABLE).
-            message: Human-readable error description.
-        """
-        ...
-
-    async def finish(self) -> None:
-        """
-        Signal end of response stream.
-
-        Called after all response chunks have been sent.
-        Closes the stream gracefully.
-        """
-        ...
-
 
 @dataclass(slots=True)
-class YamuxResponseStream:
-    """
-    ResponseStream implementation wrapping a yamux stream.
-
-    Encodes responses using the wire format from codec.py and writes
+class StreamResponseAdapter:
+    """Encodes responses using the wire format from codec.py and writes
     them to the underlying stream.
     """
 
     _stream: Stream
-    """Underlying yamux stream."""
+    """Underlying transport stream."""
 
     async def send_success(self, ssz_data: bytes) -> None:
-        """
-        Send a SUCCESS response chunk.
+        """Send a SUCCESS response chunk.
 
         Args:
             ssz_data: SSZ-encoded response payload.
         """
-        # Encode the response using the protocol wire format.
-        #
-        # ResponseCode.SUCCESS (0x00) tells the peer this chunk contains valid data.
-        # The encode method handles:
-        #
-        # 1. Prepending the response code byte
-        # 2. Adding the varint length prefix
-        # 3. Compressing with Snappy framing
         encoded = ResponseCode.SUCCESS.encode(ssz_data)
-
-        # Write using sync write + async drain for compatibility with both
-        # raw QUIC streams (async write) and wrapper streams (sync write + drain).
-        write_result = self._stream.write(encoded)
-        if hasattr(write_result, "__await__"):
-            await write_result
-        drain = getattr(self._stream, "drain", None)
-        if drain is not None:
-            await drain()
+        await self._stream.write(encoded)
 
     async def send_error(self, code: ResponseCode, message: str) -> None:
-        """
-        Send an error response.
+        """Send an error response.
 
         Args:
             code: Error code.
             message: Human-readable error description.
         """
-        # Error messages must be UTF-8 encoded per the Ethereum P2P spec.
-        #
-        # The spec mandates UTF-8 for interoperability across clients.
-        # Common error codes:
-        #
-        # - INVALID_REQUEST (1): Malformed request, bad SSZ, protocol violation
-        # - SERVER_ERROR (2): Internal failure, handler exception
-        # - RESOURCE_UNAVAILABLE (3): Block/blob not found
-        encoded = code.encode(message.encode("utf-8"))
-
-        # Write using sync write + async drain for compatibility.
-        write_result = self._stream.write(encoded)
-        if hasattr(write_result, "__await__"):
-            await write_result
-        drain = getattr(self._stream, "drain", None)
-        if drain is not None:
-            await drain()
+        encoded = code.encode(message.encode("utf-8")[:MAX_ERROR_MESSAGE_SIZE])
+        await self._stream.write(encoded)
 
     async def finish(self) -> None:
         """Close the stream gracefully."""
         await self._stream.close()
-
-
-class RequestHandler(ABC):
-    """
-    Abstract base for request handlers.
-
-    Implementations provide the logic for responding to specific request types.
-    The sync service or network layer implements this to provide chain data.
-
-
-    HANDLER CONTRACT
-    ----------------
-    Handlers MUST:
-
-    - Send at least one response (success or error) via ResponseStream.
-    - Not raise exceptions (errors should be sent as error responses).
-    - Be idempotent (same request may arrive multiple times).
-
-
-    CONCURRENCY
-    -----------
-    Handlers may be called concurrently for different requests.
-    Implementations should be thread-safe if accessing shared state.
-    """
-
-    @abstractmethod
-    async def handle_status(self, request: Status, response: ResponseStream) -> None:
-        """
-        Handle incoming Status request.
-
-        The handler should respond with our current chain status.
-
-        Args:
-            request: Peer's status message.
-            response: Stream for sending our status response.
-        """
-        ...
-
-    @abstractmethod
-    async def handle_blocks_by_root(
-        self,
-        request: BlocksByRootRequest,
-        response: ResponseStream,
-    ) -> None:
-        """
-        Handle incoming BlocksByRoot request.
-
-        The handler should send each requested block as a separate response chunk.
-        Blocks we do not have should be skipped (or RESOURCE_UNAVAILABLE sent).
-
-        Args:
-            request: List of block roots being requested.
-            response: Stream for sending block responses.
-        """
-        ...
 
 
 BlockLookup = Callable[[Bytes32], Awaitable[SignedBlockWithAttestation | None]]
@@ -274,12 +122,11 @@ Takes a block root and returns the block if available, None otherwise.
 
 
 @dataclass(slots=True)
-class DefaultRequestHandler(RequestHandler):
+class RequestHandler:
     """
-    Default request handler implementation.
+    Request handler for inbound peer requests.
 
     Uses callbacks to retrieve chain data.
-    Suitable for use with NetworkEventSource.
 
 
     STATUS HANDLING
@@ -301,7 +148,7 @@ class DefaultRequestHandler(RequestHandler):
     block_lookup: BlockLookup | None = None
     """Callback to look up blocks by root."""
 
-    async def handle_status(self, request: Status, response: ResponseStream) -> None:
+    async def handle_status(self, request: Status, response: StreamResponseAdapter) -> None:
         """
         Handle incoming Status request.
 
@@ -335,7 +182,7 @@ class DefaultRequestHandler(RequestHandler):
     async def handle_blocks_by_root(
         self,
         request: BlocksByRootRequest,
-        response: ResponseStream,
+        response: StreamResponseAdapter,
     ) -> None:
         """
         Handle incoming BlocksByRoot request.
@@ -409,7 +256,7 @@ class ReqRespServer:
     2. Decode the request (remove length prefix, decompress Snappy).
     3. Deserialize SSZ bytes to the appropriate type.
     4. Dispatch to handler.
-    5. Handler sends response(s) via ResponseStream.
+    5. Handler sends response(s) via StreamResponseAdapter.
     6. Close stream.
 
 
@@ -425,13 +272,6 @@ class ReqRespServer:
     handler: RequestHandler
     """Handler for processing requests."""
 
-    _pending_data: dict[int, bytearray] = field(default_factory=dict)
-    """Buffer for accumulating request data by stream ID.
-
-    Request data may arrive in multiple chunks. We accumulate until
-    the stream closes, then process the complete request.
-    """
-
     async def handle_stream(self, stream: Stream, protocol_id: str) -> None:
         """
         Handle an incoming ReqResp stream.
@@ -439,10 +279,10 @@ class ReqRespServer:
         Reads the request, decodes it, and dispatches to the appropriate handler.
 
         Args:
-            stream: Incoming yamux stream.
+            stream: Incoming transport stream.
             protocol_id: Negotiated protocol ID.
         """
-        response = YamuxResponseStream(_stream=stream)
+        response = StreamResponseAdapter(_stream=stream)
 
         try:
             # Step 1: Read and decode the request.
@@ -523,20 +363,27 @@ class ReqRespServer:
             # Try to decode the varint
             try:
                 declared_length, varint_size = decode_varint(bytes(buffer))
-            except Exception:
+            except VarintError:
                 # Need more data for varint
                 continue
+
+        # Guard against unbounded compressed data.
+        # Snappy's worst-case expansion is ~(n + n/6 + 1024).
+        max_compressed = declared_length + declared_length // 6 + 1024
 
         # Now read until we can successfully decompress
         compressed_data = buffer[varint_size:]
 
         while True:
+            if len(compressed_data) > max_compressed:
+                return b""
+
             try:
                 decompressed = frame_decompress(bytes(compressed_data))
                 if len(decompressed) == declared_length:
                     return decompressed
                 # Length mismatch - need more data
-            except Exception:
+            except SnappyDecompressionError:
                 # Decompression failed - need more data
                 pass
 
@@ -545,7 +392,7 @@ class ReqRespServer:
                 # Stream closed, try one more decompress
                 try:
                     return frame_decompress(bytes(compressed_data))
-                except Exception:
+                except SnappyDecompressionError:
                     return bytes(buffer)
             compressed_data.extend(chunk)
 
@@ -553,7 +400,7 @@ class ReqRespServer:
         self,
         protocol_id: str,
         ssz_bytes: bytes,
-        response: ResponseStream,
+        response: StreamResponseAdapter,
     ) -> None:
         """
         Dispatch a request to the appropriate handler.

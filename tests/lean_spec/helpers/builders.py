@@ -7,8 +7,12 @@ Each function creates minimal valid instances suitable for unit tests.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple, cast
 
+from consensus_testing.keys import XmssKeyManager, get_shared_key_manager
+
+from lean_spec.subspecs.chain.clock import SlotClock
+from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
 from lean_spec.subspecs.containers import (
     Attestation,
     AttestationData,
@@ -27,8 +31,17 @@ from lean_spec.subspecs.containers.block.types import AggregatedAttestations, At
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.koalabear import Fp
+from lean_spec.subspecs.networking import PeerId
+from lean_spec.subspecs.networking.peer.info import PeerInfo
+from lean_spec.subspecs.networking.reqresp.message import Status
+from lean_spec.subspecs.networking.types import ConnectionState
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.sync.block_cache import BlockCache
+from lean_spec.subspecs.sync.peer_manager import PeerManager
+from lean_spec.subspecs.sync.service import SyncService
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
 from lean_spec.subspecs.xmss.constants import PROD_CONFIG
 from lean_spec.subspecs.xmss.containers import PublicKey, Signature
 from lean_spec.subspecs.xmss.types import (
@@ -40,14 +53,7 @@ from lean_spec.subspecs.xmss.types import (
 )
 from lean_spec.types import Bytes32, Bytes52, Uint64
 
-if TYPE_CHECKING:
-    from consensus_testing.keys import XmssKeyManager
-
-    from lean_spec.subspecs.forkchoice import Store
-    from lean_spec.subspecs.networking import PeerId
-    from lean_spec.subspecs.networking.reqresp.message import Status
-    from lean_spec.subspecs.sync.service import SyncService
-    from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from .mocks import MockForkchoiceStore, MockNetworkRequester
 
 
 def make_bytes32(seed: int) -> Bytes32:
@@ -308,8 +314,6 @@ def make_signed_attestation(
 
 def make_test_status() -> Status:
     """Create a valid Status message for testing."""
-    from lean_spec.subspecs.networking.reqresp.message import Status
-
     return Status(
         finalized=Checkpoint(root=Bytes32(b"\x01" * 32), slot=Slot(100)),
         head=Checkpoint(root=Bytes32(b"\x02" * 32), slot=Slot(200)),
@@ -359,8 +363,6 @@ def make_genesis_data(
     validator_id: ValidatorIndex | None = _DEFAULT_VALIDATOR_ID,
 ) -> GenesisData:
     """Create a forkchoice store with genesis state and block, returning all three."""
-    from lean_spec.subspecs.forkchoice import Store
-
     if key_manager is not None:
         validators = make_validators_from_key_manager(key_manager, num_validators)
     else:
@@ -410,8 +412,6 @@ def make_store_with_gossip_signatures(
     attestation_slot: Slot = _DEFAULT_ATTESTATION_SLOT,
 ) -> tuple[Store, AttestationData]:
     """Create a store pre-populated with gossip signatures for testing aggregation."""
-    from lean_spec.subspecs.xmss.aggregation import SignatureKey
-
     store, attestation_data = make_store_with_attestation_data(
         key_manager,
         num_validators,
@@ -453,8 +453,6 @@ def make_keyed_genesis_state(
 ) -> State:
     """Create a genesis state with real XMSS keys from the shared key manager."""
     if key_manager is None:
-        from consensus_testing.keys import get_shared_key_manager
-
         key_manager = get_shared_key_manager()
     validators = make_validators_from_key_manager(key_manager, num_validators)
     return make_genesis_state(validators=validators)
@@ -466,8 +464,6 @@ def make_aggregated_proof(
     attestation_data: AttestationData,
 ) -> AggregatedSignatureProof:
     """Create a valid aggregated signature proof for the given participants."""
-    from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
-
     data_root = attestation_data.data_root_bytes()
     return AggregatedSignatureProof.aggregate(
         participants=AggregationBits.from_validator_indices(participants),
@@ -490,8 +486,6 @@ def make_signed_block_from_store(
 
     Returns the updated store (with time advanced) and the signed block.
     """
-    from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
-
     _, block, _ = store.produce_block_with_signatures(slot, proposer_index)
     block_root = hash_tree_root(block)
     parent_state = store.states[block.parent_root]
@@ -533,19 +527,6 @@ def make_signed_block_from_store(
 
 def create_mock_sync_service(peer_id: PeerId) -> SyncService:
     """Create a SyncService with mock dependencies for integration testing."""
-    from typing import cast
-
-    from lean_spec.subspecs.chain.clock import SlotClock
-    from lean_spec.subspecs.forkchoice import Store
-    from lean_spec.subspecs.networking.peer.info import PeerInfo
-    from lean_spec.subspecs.networking.types import ConnectionState
-    from lean_spec.subspecs.sync.block_cache import BlockCache
-    from lean_spec.subspecs.sync.peer_manager import PeerManager
-    from lean_spec.subspecs.sync.service import SyncService
-    from lean_spec.types import Uint64
-
-    from .mocks import MockForkchoiceStore, MockNetworkRequester
-
     mock_store = MockForkchoiceStore(head_slot=0)
     peer_manager = PeerManager()
     peer_manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))

@@ -1,9 +1,9 @@
 """
 Network event source bridging transport to sync service.
 
-This module implements NetworkEventSource, producing events from real
-network connections. It bridges the gap between the low-level transport
-layer (QUIC ConnectionManager) and the high-level sync service.
+This module produces events from real network connections. It bridges the
+gap between the low-level transport layer (QUIC ConnectionManager) and the
+high-level sync service.
 
 
 WHY THIS MODULE EXISTS
@@ -92,7 +92,7 @@ Key v1.1 features used:
 
 
 References:
-    - Ethereum P2P spec: https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md
+    - Ethereum P2P spec: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
     - Gossipsub v1.1: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md
     - SSZ spec: https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md
     - Snappy format: https://github.com/google/snappy/blob/main/format_description.txt
@@ -125,8 +125,8 @@ from lean_spec.subspecs.networking.gossipsub.topic import (
 from lean_spec.subspecs.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
     BlockLookup,
-    DefaultRequestHandler,
     ReqRespServer,
+    RequestHandler,
 )
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.service.events import (
@@ -140,6 +140,7 @@ from lean_spec.subspecs.networking.service.events import (
 )
 from lean_spec.subspecs.networking.transport import PeerId
 from lean_spec.subspecs.networking.transport.connection import ConnectionManager, Stream
+from lean_spec.subspecs.networking.transport.identity import IdentityKeypair
 from lean_spec.subspecs.networking.transport.multistream import (
     NegotiationError,
     negotiate_server,
@@ -553,7 +554,6 @@ class LiveNetworkEventSource:
     """
     Produces NetworkEvent objects from real network connections.
 
-    Implements the NetworkEventSource protocol for use with NetworkService.
     Bridges the transport layer (ConnectionManager) to the event-driven
     sync layer.
 
@@ -660,7 +660,7 @@ class LiveNetworkEventSource:
     Tracked for cleanup on shutdown. Tasks remove themselves on completion.
     """
 
-    _reqresp_handler: DefaultRequestHandler = field(init=False)
+    _reqresp_handler: RequestHandler = field(init=False)
     """Handler for inbound ReqResp requests.
 
     Provides chain data to peers requesting Status or BlocksByRoot.
@@ -685,7 +685,7 @@ class LiveNetworkEventSource:
     def __post_init__(self) -> None:
         """Initialize handlers with current configuration."""
         object.__setattr__(self, "_gossip_handler", GossipHandler(fork_digest=self._fork_digest))
-        object.__setattr__(self, "_reqresp_handler", DefaultRequestHandler())
+        object.__setattr__(self, "_reqresp_handler", RequestHandler())
         object.__setattr__(self, "_reqresp_server", ReqRespServer(handler=self._reqresp_handler))
         object.__setattr__(
             self, "_gossipsub_behavior", GossipsubBehavior(params=GossipsubParameters())
@@ -706,8 +706,6 @@ class LiveNetworkEventSource:
             Initialized event source.
         """
         if connection_manager is None:
-            from lean_spec.subspecs.networking.transport.identity import IdentityKeypair
-
             identity_key = IdentityKeypair.generate()
             connection_manager = await ConnectionManager.create(identity_key)
 

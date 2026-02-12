@@ -78,7 +78,7 @@ class TestBlockRoutingToForkchoice:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -113,7 +113,7 @@ class TestBlockRoutingToForkchoice:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -147,7 +147,7 @@ class TestBlockRoutingToForkchoice:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -194,7 +194,7 @@ class TestAttestationRoutingToForkchoice:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -237,7 +237,7 @@ class TestAttestationRoutingToForkchoice:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -270,7 +270,7 @@ class TestPeerStatusStateTransitions:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -296,7 +296,7 @@ class TestPeerStatusStateTransitions:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -351,7 +351,7 @@ class TestIntegrationEventSequence:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -397,7 +397,7 @@ class TestIntegrationEventSequence:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()
@@ -442,7 +442,7 @@ class TestIntegrationEventSequence:
         source = MockEventSource(events=events)
         network_service = NetworkService(
             sync_service=sync_service,
-            event_source=source,
+            event_source=source,  # type: ignore[arg-type]
         )
 
         await network_service.run()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Iterator
 
@@ -238,8 +239,6 @@ class TestSelfPatternExtension:
 
     def test_exhaustive_self_patterns(self) -> None:
         """Exhaustive test of self-extending patterns with various sizes."""
-        import random
-
         random.seed(42)  # Deterministic for reproducibility
 
         for pattern_size in range(1, 19):
@@ -269,8 +268,6 @@ class TestMaxBlowup:
 
     def test_max_blowup(self) -> None:
         """Test worst-case compression expansion (lots of four-byte copies)."""
-        import random
-
         random.seed(42)
 
         # Build input with random bytes

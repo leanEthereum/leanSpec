@@ -4,17 +4,67 @@ import time
 
 import pytest
 
-from lean_spec.subspecs.networking.discovery.crypto import generate_secp256k1_keypair
+from lean_spec.subspecs.networking.discovery.crypto import (
+    generate_secp256k1_keypair,
+    sign_id_nonce,
+)
 from lean_spec.subspecs.networking.discovery.handshake import (
+    HandshakeError,
     HandshakeManager,
+    HandshakeResult,
     HandshakeState,
     PendingHandshake,
 )
 from lean_spec.subspecs.networking.discovery.keys import compute_node_id
+from lean_spec.subspecs.networking.discovery.messages import IdNonce
 from lean_spec.subspecs.networking.discovery.packet import (
+    HandshakeAuthdata,
+    WhoAreYouAuthdata,
+    decode_handshake_authdata,
     decode_whoareyou_authdata,
+    encode_handshake_authdata,
 )
 from lean_spec.subspecs.networking.discovery.session import SessionCache
+from lean_spec.subspecs.networking.enr import ENR
+from lean_spec.subspecs.networking.types import NodeId
+from lean_spec.types import Bytes32, Bytes33, Bytes64, Uint64
+from tests.lean_spec.subspecs.networking.discovery.conftest import NODE_B_PUBKEY
+
+
+@pytest.fixture
+def local_keypair():
+    """Generate a local keypair for testing."""
+    priv, pub = generate_secp256k1_keypair()
+    node_id = compute_node_id(pub)
+    return priv, pub, node_id
+
+
+@pytest.fixture
+def remote_keypair():
+    """Generate a remote keypair for testing."""
+    priv, pub = generate_secp256k1_keypair()
+    node_id = compute_node_id(pub)
+    return priv, pub, node_id
+
+
+@pytest.fixture
+def session_cache():
+    """Create a session cache."""
+    return SessionCache()
+
+
+@pytest.fixture
+def manager(local_keypair, session_cache):
+    """Create a handshake manager."""
+    priv, pub, node_id = local_keypair
+
+    return HandshakeManager(
+        local_node_id=node_id,
+        local_private_key=priv,
+        local_enr_rlp=b"mock_enr",
+        local_enr_seq=1,
+        session_cache=session_cache,
+    )
 
 
 class TestPendingHandshake:
@@ -24,7 +74,7 @@ class TestPendingHandshake:
         """Test creating a pending handshake."""
         pending = PendingHandshake(
             state=HandshakeState.IDLE,
-            remote_node_id=bytes(32),
+            remote_node_id=NodeId(bytes(32)),
         )
 
         assert pending.state == HandshakeState.IDLE
@@ -35,7 +85,7 @@ class TestPendingHandshake:
         """Test that new handshake is not expired."""
         pending = PendingHandshake(
             state=HandshakeState.IDLE,
-            remote_node_id=bytes(32),
+            remote_node_id=NodeId(bytes(32)),
         )
 
         assert not pending.is_expired(timeout_secs=1.0)
@@ -44,7 +94,7 @@ class TestPendingHandshake:
         """Test that old handshake is expired."""
         pending = PendingHandshake(
             state=HandshakeState.IDLE,
-            remote_node_id=bytes(32),
+            remote_node_id=NodeId(bytes(32)),
             started_at=time.time() - 10,
         )
 
@@ -53,37 +103,6 @@ class TestPendingHandshake:
 
 class TestHandshakeManager:
     """Tests for HandshakeManager."""
-
-    @pytest.fixture
-    def local_keypair(self):
-        """Generate a local keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
-
-    @pytest.fixture
-    def remote_keypair(self):
-        """Generate a remote keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
-
-    @pytest.fixture
-    def manager(self, local_keypair):
-        """Create a handshake manager."""
-        priv, pub, node_id = local_keypair
-        session_cache = SessionCache()
-
-        # Create a mock ENR RLP
-        local_enr_rlp = b"mock_enr"
-
-        return HandshakeManager(
-            local_node_id=bytes(node_id),
-            local_private_key=priv,
-            local_enr_rlp=local_enr_rlp,
-            local_enr_seq=1,
-            session_cache=session_cache,
-        )
 
     def test_start_handshake(self, manager):
         """Test starting a handshake as initiator."""
@@ -174,7 +193,7 @@ class TestHandshakeManager:
         """Test that invalid local node ID raises ValueError."""
         with pytest.raises(ValueError, match="Local node ID must be 32 bytes"):
             HandshakeManager(
-                local_node_id=bytes(31),
+                local_node_id=bytes(31),  # type: ignore[arg-type]
                 local_private_key=bytes(32),
                 local_enr_rlp=b"enr",
                 local_enr_seq=1,
@@ -185,7 +204,7 @@ class TestHandshakeManager:
         """Test that invalid local private key raises ValueError."""
         with pytest.raises(ValueError, match="Local private key must be 32 bytes"):
             HandshakeManager(
-                local_node_id=bytes(32),
+                local_node_id=NodeId(bytes(32)),
                 local_private_key=bytes(31),
                 local_enr_rlp=b"enr",
                 local_enr_seq=1,
@@ -217,35 +236,6 @@ class TestHandshakeState:
 
 class TestHandshakeStateTransitions:
     """Verify all state machine transitions."""
-
-    @pytest.fixture
-    def local_keypair(self):
-        """Generate a local keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
-
-    @pytest.fixture
-    def remote_keypair(self):
-        """Generate a remote keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
-
-    @pytest.fixture
-    def manager(self, local_keypair):
-        """Create a handshake manager."""
-        priv, pub, node_id = local_keypair
-        session_cache = SessionCache()
-        local_enr_rlp = b"mock_enr"
-
-        return HandshakeManager(
-            local_node_id=bytes(node_id),
-            local_private_key=priv,
-            local_enr_rlp=local_enr_rlp,
-            local_enr_seq=1,
-            session_cache=session_cache,
-        )
 
     def test_idle_to_sent_ordinary_on_start_handshake(self, manager):
         """Starting a handshake transitions to SENT_ORDINARY state.
@@ -331,50 +321,13 @@ class TestHandshakeStateTransitions:
 class TestHandshakeValidation:
     """Handshake security validation tests."""
 
-    @pytest.fixture
-    def local_keypair(self):
-        """Generate a local keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
-
-    @pytest.fixture
-    def remote_keypair(self):
-        """Generate a remote keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
-
-    @pytest.fixture
-    def session_cache(self):
-        """Create a session cache."""
-        return SessionCache()
-
-    @pytest.fixture
-    def manager(self, local_keypair, session_cache):
-        """Create a handshake manager."""
-        priv, pub, node_id = local_keypair
-        local_enr_rlp = b"mock_enr"
-
-        return HandshakeManager(
-            local_node_id=bytes(node_id),
-            local_private_key=priv,
-            local_enr_rlp=local_enr_rlp,
-            local_enr_seq=1,
-            session_cache=session_cache,
-        )
-
     def test_handle_handshake_requires_pending_state(self, manager, remote_keypair):
         """Handshake fails if no pending state exists for the remote."""
-        from lean_spec.subspecs.networking.discovery.handshake import HandshakeError
-
         remote_priv, remote_pub, remote_node_id = remote_keypair
 
         # Create fake handshake authdata.
-        from lean_spec.subspecs.networking.discovery.packet import HandshakeAuthdata
-
         fake_authdata = HandshakeAuthdata(
-            src_id=bytes(remote_node_id),
+            src_id=NodeId(remote_node_id),
             sig_size=64,
             eph_key_size=33,
             id_signature=bytes(64),
@@ -384,21 +337,17 @@ class TestHandshakeValidation:
 
         # Should fail because no WHOAREYOU was sent.
         with pytest.raises(HandshakeError, match="No pending handshake"):
-            manager.handle_handshake(bytes(remote_node_id), fake_authdata)
+            manager.handle_handshake(NodeId(remote_node_id), fake_authdata)
 
     def test_handle_handshake_requires_sent_whoareyou_state(self, manager, remote_keypair):
         """Handshake fails if not in SENT_WHOAREYOU state."""
-        from lean_spec.subspecs.networking.discovery.handshake import HandshakeError
-
         remote_priv, remote_pub, remote_node_id = remote_keypair
 
         # Start handshake (puts in SENT_ORDINARY state).
-        manager.start_handshake(bytes(remote_node_id))
-
-        from lean_spec.subspecs.networking.discovery.packet import HandshakeAuthdata
+        manager.start_handshake(NodeId(remote_node_id))
 
         fake_authdata = HandshakeAuthdata(
-            src_id=bytes(remote_node_id),
+            src_id=NodeId(remote_node_id),
             sig_size=64,
             eph_key_size=33,
             id_signature=bytes(64),
@@ -408,26 +357,22 @@ class TestHandshakeValidation:
 
         # Should fail because we're in SENT_ORDINARY, not SENT_WHOAREYOU.
         with pytest.raises(HandshakeError, match="Unexpected handshake state"):
-            manager.handle_handshake(bytes(remote_node_id), fake_authdata)
+            manager.handle_handshake(NodeId(remote_node_id), fake_authdata)
 
     def test_handle_handshake_rejects_src_id_mismatch(self, manager, remote_keypair):
         """Handshake fails if src_id doesn't match expected remote."""
-        from lean_spec.subspecs.networking.discovery.handshake import HandshakeError
-
         remote_priv, remote_pub, remote_node_id = remote_keypair
 
         # Set up WHOAREYOU state.
         manager.create_whoareyou(
-            bytes(remote_node_id),
+            NodeId(remote_node_id),
             bytes(12),
             0,
             bytes(16),
         )
 
         # Create authdata with different src_id.
-        from lean_spec.subspecs.networking.discovery.packet import HandshakeAuthdata
-
-        wrong_src_id = bytes([0xFF] * 32)
+        wrong_src_id = NodeId(bytes([0xFF] * 32))
         fake_authdata = HandshakeAuthdata(
             src_id=wrong_src_id,
             sig_size=64,
@@ -439,7 +384,7 @@ class TestHandshakeValidation:
 
         # Should fail due to source ID mismatch.
         with pytest.raises(HandshakeError, match="Source ID mismatch"):
-            manager.handle_handshake(bytes(remote_node_id), fake_authdata)
+            manager.handle_handshake(NodeId(remote_node_id), fake_authdata)
 
     def test_handle_handshake_requires_enr_when_seq_zero(self, manager, remote_keypair):
         """Handshake fails if enr_seq=0 and no ENR included.
@@ -447,23 +392,19 @@ class TestHandshakeValidation:
         When we don't know the remote's ENR (signaled by enr_seq=0 in WHOAREYOU),
         the remote MUST include their ENR in the HANDSHAKE response.
         """
-        from lean_spec.subspecs.networking.discovery.handshake import HandshakeError
-
         remote_priv, remote_pub, remote_node_id = remote_keypair
 
         # Set up WHOAREYOU with enr_seq=0 (unknown).
         manager.create_whoareyou(
-            bytes(remote_node_id),
+            NodeId(remote_node_id),
             bytes(12),
             0,  # enr_seq = 0 means we don't know remote's ENR
             bytes(16),
         )
 
-        from lean_spec.subspecs.networking.discovery.packet import HandshakeAuthdata
-
         # Create authdata without ENR record.
         fake_authdata = HandshakeAuthdata(
-            src_id=bytes(remote_node_id),
+            src_id=NodeId(remote_node_id),
             sig_size=64,
             eph_key_size=33,
             id_signature=bytes(64),
@@ -473,33 +414,95 @@ class TestHandshakeValidation:
 
         # Should fail because ENR is required.
         with pytest.raises(HandshakeError, match="ENR required"):
-            manager.handle_handshake(bytes(remote_node_id), fake_authdata)
+            manager.handle_handshake(NodeId(remote_node_id), fake_authdata)
+
+    def test_successful_handshake_with_signature_verification(
+        self, manager, remote_keypair, session_cache
+    ):
+        """Full handshake succeeds when signature is valid.
+
+        Exercises the complete WHOAREYOU -> HANDSHAKE -> session flow.
+        """
+        remote_priv, remote_pub, remote_node_id = remote_keypair
+
+        # Node A (manager) creates WHOAREYOU for remote.
+        masking_iv = bytes(16)
+        id_nonce, authdata, nonce, challenge_data = manager.create_whoareyou(
+            NodeId(remote_node_id), bytes(12), 0, masking_iv
+        )
+
+        # Remote creates handshake response.
+        eph_priv, eph_pub = generate_secp256k1_keypair()
+        local_node_id = manager._local_node_id
+
+        # Remote signs the id_nonce proving ownership.
+        id_signature = sign_id_nonce(
+            Bytes32(remote_priv),
+            challenge_data,
+            Bytes33(eph_pub),
+            Bytes32(local_node_id),
+        )
+
+        # Remote includes their ENR since enr_seq=0.
+        remote_enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={"id": b"v4", "secp256k1": bytes(remote_pub)},
+        )
+
+        authdata_bytes = encode_handshake_authdata(
+            src_id=NodeId(remote_node_id),
+            id_signature=id_signature,
+            eph_pubkey=eph_pub,
+            record=remote_enr.to_rlp(),
+        )
+
+        handshake = decode_handshake_authdata(authdata_bytes)
+
+        # Manager processes handshake - should succeed.
+        result = manager.handle_handshake(NodeId(remote_node_id), handshake)
+
+        assert result is not None
+        assert isinstance(result, HandshakeResult)
+        assert result.session is not None
+        assert len(result.session.send_key) == 16
+        assert len(result.session.recv_key) == 16
+
+    def test_handle_handshake_rejects_invalid_signature(
+        self, manager, remote_keypair, session_cache
+    ):
+        """Handshake fails when signature is invalid."""
+        remote_priv, remote_pub, remote_node_id = remote_keypair
+
+        # Set up WHOAREYOU state.
+        masking_iv = bytes(16)
+        manager.create_whoareyou(NodeId(remote_node_id), bytes(12), 0, masking_iv)
+
+        # Generate ephemeral key.
+        _eph_priv, eph_pub = generate_secp256k1_keypair()
+
+        # Create authdata with INVALID signature (all-zero 64 bytes).
+        remote_enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=Uint64(1),
+            pairs={"id": b"v4", "secp256k1": bytes(remote_pub)},
+        )
+
+        authdata_bytes = encode_handshake_authdata(
+            src_id=NodeId(remote_node_id),
+            id_signature=bytes(64),  # Wrong signature.
+            eph_pubkey=eph_pub,
+            record=remote_enr.to_rlp(),
+        )
+
+        handshake = decode_handshake_authdata(authdata_bytes)
+
+        with pytest.raises(HandshakeError, match="Invalid ID signature"):
+            manager.handle_handshake(NodeId(remote_node_id), handshake)
 
 
 class TestHandshakeConcurrency:
     """Concurrent handshake handling tests."""
-
-    @pytest.fixture
-    def local_keypair(self):
-        """Generate a local keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
-
-    @pytest.fixture
-    def manager(self, local_keypair):
-        """Create a handshake manager."""
-        priv, pub, node_id = local_keypair
-        session_cache = SessionCache()
-        local_enr_rlp = b"mock_enr"
-
-        return HandshakeManager(
-            local_node_id=bytes(node_id),
-            local_private_key=priv,
-            local_enr_rlp=local_enr_rlp,
-            local_enr_seq=1,
-            session_cache=session_cache,
-        )
 
     def test_multiple_handshakes_independent(self, manager):
         """Handshakes to different peers don't interfere."""
@@ -585,47 +588,95 @@ class TestHandshakeConcurrency:
         assert id_nonce1 != id_nonce2
 
 
-class TestHandshakeENRCache:
-    """Tests for ENR caching in handshake manager."""
+class TestHandshakeEnrInclusion:
+    """Tests for ENR inclusion/exclusion in HANDSHAKE responses."""
 
-    @pytest.fixture
-    def local_keypair(self):
-        """Generate a local keypair for testing."""
-        priv, pub = generate_secp256k1_keypair()
-        node_id = compute_node_id(pub)
-        return priv, pub, node_id
+    def test_enr_included_when_remote_seq_is_stale(self, local_keypair, remote_keypair):
+        """HANDSHAKE includes our ENR when remote's known seq is lower than ours.
 
-    @pytest.fixture
-    def manager(self, local_keypair):
-        """Create a handshake manager."""
-        priv, pub, node_id = local_keypair
+        When the WHOAREYOU's enr_seq < our local_enr_seq, the remote has a
+        stale copy of our ENR. We include our current ENR so they can update.
+        """
+        local_priv, local_pub, local_node_id = local_keypair
+        remote_priv, remote_pub, remote_node_id = remote_keypair
+
         session_cache = SessionCache()
-        local_enr_rlp = b"mock_enr"
-
-        return HandshakeManager(
-            local_node_id=bytes(node_id),
-            local_private_key=priv,
-            local_enr_rlp=local_enr_rlp,
-            local_enr_seq=1,
+        manager = HandshakeManager(
+            local_node_id=local_node_id,
+            local_private_key=local_priv,
+            local_enr_rlp=b"mock_enr_data",
+            local_enr_seq=5,
             session_cache=session_cache,
         )
 
+        # Remote creates WHOAREYOU with enr_seq=0 (stale).
+        whoareyou = WhoAreYouAuthdata(
+            id_nonce=IdNonce(bytes(16)),
+            enr_seq=Uint64(0),
+        )
+
+        challenge_data = bytes(63)
+        authdata, _, _ = manager.create_handshake_response(
+            remote_node_id=NodeId(remote_node_id),
+            whoareyou=whoareyou,
+            remote_pubkey=bytes(remote_pub),
+            challenge_data=challenge_data,
+        )
+
+        # Decode authdata and verify ENR is present.
+        decoded = decode_handshake_authdata(authdata)
+        assert decoded.record is not None
+
+    def test_enr_excluded_when_remote_seq_is_current(self, local_keypair, remote_keypair):
+        """HANDSHAKE excludes our ENR when remote's known seq >= ours.
+
+        When the remote already has our current ENR, sending it again
+        wastes bandwidth. The handshake packet should omit the record.
+        """
+        local_priv, local_pub, local_node_id = local_keypair
+        remote_priv, remote_pub, remote_node_id = remote_keypair
+
+        session_cache = SessionCache()
+        manager = HandshakeManager(
+            local_node_id=local_node_id,
+            local_private_key=local_priv,
+            local_enr_rlp=b"mock_enr_data",
+            local_enr_seq=5,
+            session_cache=session_cache,
+        )
+
+        # Remote creates WHOAREYOU with enr_seq=5 (current).
+        whoareyou = WhoAreYouAuthdata(
+            id_nonce=IdNonce(bytes(16)),
+            enr_seq=Uint64(5),
+        )
+
+        challenge_data = bytes(63)
+        authdata, _, _ = manager.create_handshake_response(
+            remote_node_id=NodeId(remote_node_id),
+            whoareyou=whoareyou,
+            remote_pubkey=bytes(remote_pub),
+            challenge_data=challenge_data,
+        )
+
+        # Decode authdata and verify ENR is absent.
+        decoded = decode_handshake_authdata(authdata)
+        assert decoded.record is None
+
+
+class TestHandshakeENRCache:
+    """Tests for ENR caching in handshake manager."""
+
     def test_register_enr_stores_in_cache(self, manager):
         """Registered ENRs are retrievable from cache."""
-        from lean_spec.subspecs.networking.enr import ENR
-        from lean_spec.types import Bytes64, Uint64
-
-        remote_pub = bytes.fromhex(
-            "0317931e6e0840220642f230037d285d122bc59063221ef3226b1f403ddc69ca91"
-        )
-        remote_node_id = bytes(compute_node_id(remote_pub))
+        remote_node_id = compute_node_id(NODE_B_PUBKEY)
 
         enr = ENR(
             signature=Bytes64(bytes(64)),
             seq=Uint64(1),
             pairs={
                 "id": b"v4",
-                "secp256k1": remote_pub,
+                "secp256k1": NODE_B_PUBKEY,
             },
         )
 
