@@ -80,7 +80,7 @@ jobs:
 
   interop-tests:
     name: Interop tests - Multi-node consensus
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - name: Checkout leanSpec

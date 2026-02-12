@@ -366,6 +366,8 @@ class NodeCluster:
         # Validators only subscribe to the subnets they are assigned to.
         # This matches the Ethereum gossip specification.
         if validator_indices:
+            from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
+
             for idx in validator_indices:
                 subnet_id = idx % int(ATTESTATION_COMMITTEE_COUNT)
                 topic = f"/leanconsensus/{self.fork_digest}/attestation_{subnet_id}/ssz_snappy"
@@ -468,8 +470,7 @@ class NodeCluster:
         # 3. GRAFT messages to be sent and processed
         #
         # A longer delay ensures proper mesh formation before block production.
-        # CI machines need more time due to lower CPU/scheduling priority.
-        await asyncio.sleep(10.0)
+        await asyncio.sleep(5.0)
 
         # Phase 4: Start node services (validators, chain service, etc).
         #
