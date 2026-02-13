@@ -70,11 +70,11 @@ PRF calls for generating domain elements, preventing any potential collisions
 between the two use cases.
 """
 
-PRF_BYTES_PER_FE: int = 8
+PRF_BYTES_PER_FE: int = 16
 """
 The number of bytes of SHAKE128 output used to generate one field element.
 
-We use 8 bytes (64 bits) of pseudorandom output, which is then reduced
+We use 16 bytes (128 bits) of pseudorandom output, which is then reduced
 modulo the 31-bit field prime `P`. This provides a significant statistical
 safety margin to ensure the resulting field element is close to uniformly
 random.
@@ -164,7 +164,7 @@ class Prf(StrictBaseModel):
             PRF_DOMAIN_SEP
             + PRF_DOMAIN_SEP_DOMAIN_ELEMENT
             + key
-            + int(epoch).to_bytes(4, "big")
+            + epoch.to_bytes(4, "big")
             + chain_index.to_bytes(8, "big")
         )
 
@@ -222,9 +222,9 @@ class Prf(StrictBaseModel):
             PRF_DOMAIN_SEP
             + PRF_DOMAIN_SEP_RANDOMNESS
             + key
-            + int(epoch).to_bytes(4, "big")
+            + epoch.to_bytes(4, "big")
             + message
-            + int(counter).to_bytes(8, "big")
+            + counter.to_bytes(8, "big")
         )
 
         # Extract enough bytes for RAND_LEN_FE field elements
