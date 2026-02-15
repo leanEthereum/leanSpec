@@ -13,8 +13,6 @@ from lean_spec.subspecs.chain.config import (
     ATTESTATION_COMMITTEE_COUNT,
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
-    MILLISECONDS_PER_INTERVAL,
-    SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -905,41 +903,106 @@ class Store(Container):
 
     def update_safe_target(self) -> "Store":
         """
-        Update the safe target for attestations.
+        Compute the deepest block that has 2/3+ supermajority attestation weight.
 
-        Computes target that has sufficient (2/3+ majority) attestation support.
-        The safe target represents a block with enough attestation weight to be
-        considered "safe" for validators to attest to.
+        The safe target is the furthest-from-genesis block where enough validators
+        agree. Validators use it to decide which block is safe to attest to.
+        Only blocks meeting the supermajority threshold qualify.
 
-        Algorithm
-        ---------
-        1. Get validator count from head state
-        2. Calculate 2/3 majority threshold (ceiling division)
-        3. Run fork choice with minimum score requirement
-        4. Return new Store with updated safe_target
+        This runs at interval 3 of the slot cycle:
+
+        - Interval 0: Block proposal
+        - Interval 1: Validators cast attestation votes
+        - Interval 2: Aggregators create proofs, broadcast via gossip
+        - Interval 3: Safe target update (HERE)
+        - Interval 4: New attestations migrate to "known" pool
+
+        Because interval 4 has not yet run, attestations live in two pools:
+
+        - "new": freshly received from gossipsub aggregation this slot
+        - "known": from block attestations and previously accepted gossip
+
+        Both pools must be merged to get the full attestation picture.
+        Using only one pool undercounts support. See inline comments for
+        concrete scenarios where this matters.
+
+        Note: the Ream reference implementation uses only the "new" pool.
+        Our merge approach is more conservative. It ensures the safe target
+        reflects every attestation the node knows about.
 
         Returns:
             New Store with updated safe_target.
         """
-        # Get validator count from head state
+        # Look up the post-state of the current head block.
+        #
+        # The validator registry in this state tells us how many active
+        # validators exist. We need that count to compute the threshold.
         head_state = self.states[self.head]
         num_validators = len(head_state.validators)
 
-        # Calculate 2/3 majority threshold (ceiling division)
+        # Compute the 2/3 supermajority threshold.
+        #
+        # A block needs at least this many attestation votes to be "safe".
+        # The ceiling division (negation trick) ensures we round UP.
+        # For example, 100 validators => threshold is 67, not 66.
         min_target_score = -(-num_validators * 2 // 3)
 
-        # Extract attestations from new aggregated payloads
-        attestations = self.extract_attestations_from_aggregated_payloads(
-            self.latest_new_aggregated_payloads
+        # Merge both attestation pools into a single unified view.
+        #
+        # Why merge? At interval 3, the migration step (interval 4) has not
+        # run yet. Attestations can enter the "known" pool through paths that
+        # bypass gossipsub entirely:
+        #
+        # 1. Proposer's own attestation: the block proposer bundles their
+        #    attestation directly in the block body. When the block is
+        #    processed, this attestation lands in "known" immediately.
+        #    It never appears in "new" because it was never gossipped.
+        #
+        # 2. Self-attestation: a node's own gossip attestation does not
+        #    loop back through gossipsub to itself. The node records it
+        #    locally in "known" without going through the "new" pipeline.
+        #
+        # Without this merge, those attestations would be invisible to the
+        # safe target calculation, causing it to undercount support.
+        #
+        # The technique: start with a shallow copy of "known", then overlay
+        # every entry from "new" on top. When both pools contain proofs for
+        # the same signature key, concatenate the proof lists.
+        all_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = dict(
+            self.latest_known_aggregated_payloads
         )
+        for sig_key, proofs in self.latest_new_aggregated_payloads.items():
+            if sig_key in all_payloads:
+                # Both pools have proofs for this key. Combine them.
+                all_payloads[sig_key] = [*all_payloads[sig_key], *proofs]
+            else:
+                # Only "new" has proofs for this key. Add them directly.
+                all_payloads[sig_key] = proofs
 
-        # Find head with minimum attestation threshold.
+        # Convert the merged aggregated payloads into per-validator votes.
+        #
+        # Each proof encodes which validators participated.
+        # This step unpacks those bitfields into a flat mapping of validator -> vote.
+        attestations = self.extract_attestations_from_aggregated_payloads(all_payloads)
+
+        # Run LMD GHOST with the supermajority threshold.
+        #
+        # The walk starts from the latest justified checkpoint and descends
+        # through the block tree. At each fork, only children with at least
+        # `min_target_score` attestation weight are considered. The result
+        # is the deepest block that clears the 2/3 bar.
+        #
+        # If no child meets the threshold at some fork, the walk stops
+        # early. The safe target is then shallower than the actual head.
         safe_target = self._compute_lmd_ghost_head(
             start_root=self.latest_justified.root,
             attestations=attestations,
             min_score=min_target_score,
         )
 
+        # Return a new Store with only the safe target updated.
+        #
+        # The head and attestation pools remain unchanged.
         return self.model_copy(update={"safe_target": safe_target})
 
     def aggregate_committee_signatures(self) -> tuple["Store", list[SignedAggregatedAttestation]]:
@@ -1076,17 +1139,17 @@ class Store(Container):
         return store, new_aggregates
 
     def on_tick(
-        self, time: Uint64, has_proposal: bool, is_aggregator: bool = False
+        self, target_interval: Uint64, has_proposal: bool, is_aggregator: bool = False
     ) -> tuple["Store", list[SignedAggregatedAttestation]]:
         """
-        Advance forkchoice store time to given timestamp.
+        Advance forkchoice store time to given interval count.
 
         Ticks store forward interval by interval, performing appropriate
         actions for each interval type. This method handles time progression
         incrementally to ensure all interval-specific actions are performed.
 
         Args:
-            time: Target time as Unix timestamp in seconds.
+            target_interval: Target time as intervals since genesis.
             has_proposal: Whether node has proposal for current slot.
             is_aggregator: Whether the node is an aggregator.
 
@@ -1094,16 +1157,13 @@ class Store(Container):
             Tuple of (new store with time advanced,
             list of all produced signed aggregated attestation).
         """
-        # Calculate target time in intervals
-        time_delta_ms = (time - self.config.genesis_time) * Uint64(1000)
-        tick_interval_time = time_delta_ms // MILLISECONDS_PER_INTERVAL
-
-        # Tick forward one interval at a time
         store = self
         all_new_aggregates: list[SignedAggregatedAttestation] = []
-        while store.time < tick_interval_time:
+
+        # Tick forward one interval at a time
+        while store.time < target_interval:
             # Check if proposal should be signaled for next interval
-            should_signal_proposal = has_proposal and (store.time + Uint64(1)) == tick_interval_time
+            should_signal_proposal = has_proposal and (store.time + Uint64(1)) == target_interval
 
             # Advance by one interval with appropriate signaling
             store, new_aggregates = store.tick_interval(should_signal_proposal, is_aggregator)
@@ -1132,12 +1192,9 @@ class Store(Container):
         Returns:
             Tuple of (new Store with updated time, head root for building).
         """
-        # Calculate time corresponding to this slot
-        slot_duration_seconds = slot * SECONDS_PER_SLOT
-        slot_time = self.config.genesis_time + slot_duration_seconds
-
-        # Advance time to current slot (ticking intervals)
-        store, _ = self.on_tick(slot_time, True)
+        # Advance time to this slot's first interval
+        target_interval = Uint64(slot * INTERVALS_PER_SLOT)
+        store, _ = self.on_tick(target_interval, True)
 
         # Process any pending attestations before proposal
         store = store.accept_new_attestations()

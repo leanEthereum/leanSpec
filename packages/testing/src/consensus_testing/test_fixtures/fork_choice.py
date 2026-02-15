@@ -11,7 +11,10 @@ from typing import ClassVar, Self
 
 from pydantic import model_validator
 
-from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
+from lean_spec.subspecs.chain.config import (
+    INTERVALS_PER_SLOT,
+    MILLISECONDS_PER_INTERVAL,
+)
 from lean_spec.subspecs.containers.attestation import (
     Attestation,
     AttestationData,
@@ -239,8 +242,13 @@ class ForkChoiceTest(BaseConsensusFixture):
                         # Time advancement may trigger slot boundaries.
                         # At slot boundaries, pending attestations may become active.
                         # Always act as aggregator to ensure gossip signatures are aggregated
+                        #
+                        # TickStep.time is a Unix timestamp in seconds.
+                        # Convert to intervals since genesis for the store.
+                        delta_ms = (Uint64(step.time) - store.config.genesis_time) * Uint64(1000)
+                        target_interval = delta_ms // MILLISECONDS_PER_INTERVAL
                         store, _ = store.on_tick(
-                            Uint64(step.time), has_proposal=False, is_aggregator=True
+                            target_interval, has_proposal=False, is_aggregator=True
                         )
 
                     case BlockStep():
@@ -268,9 +276,10 @@ class ForkChoiceTest(BaseConsensusFixture):
                         # Store rejects blocks from the future.
                         # This tick includes a block (has proposal).
                         # Always act as aggregator to ensure gossip signatures are aggregated
-                        slot_duration_seconds = block.slot * SECONDS_PER_SLOT
-                        block_time = store.config.genesis_time + slot_duration_seconds
-                        store, _ = store.on_tick(block_time, has_proposal=True, is_aggregator=True)
+                        target_interval = block.slot * INTERVALS_PER_SLOT
+                        store, _ = store.on_tick(
+                            target_interval, has_proposal=True, is_aggregator=True
+                        )
 
                         # Process the block through Store.
                         # This validates, applies state transition, and updates head.

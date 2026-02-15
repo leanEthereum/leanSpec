@@ -57,9 +57,10 @@ class TestOnTick:
     def test_on_tick_basic(self, sample_store: Store) -> None:
         """Test basic on_tick."""
         initial_time = sample_store.time
-        target_time = sample_store.config.genesis_time + Uint64(200)  # Much later time
+        # 200 seconds = 200*1000/800 = 250 intervals
+        target_interval = Uint64(200) * Uint64(1000) // MILLISECONDS_PER_INTERVAL
 
-        sample_store, _ = sample_store.on_tick(target_time, has_proposal=True)
+        sample_store, _ = sample_store.on_tick(target_interval, has_proposal=True)
 
         # Time should advance
         assert sample_store.time > initial_time
@@ -67,34 +68,32 @@ class TestOnTick:
     def test_on_tick_no_proposal(self, sample_store: Store) -> None:
         """Test on_tick without proposal."""
         initial_time = sample_store.time
-        target_time = sample_store.config.genesis_time + Uint64(100)
+        # 100 seconds = 125 intervals
+        target_interval = Uint64(100) * Uint64(1000) // MILLISECONDS_PER_INTERVAL
 
-        sample_store, _ = sample_store.on_tick(target_time, has_proposal=False)
+        sample_store, _ = sample_store.on_tick(target_interval, has_proposal=False)
 
         # Time should still advance
         assert sample_store.time >= initial_time
 
     def test_on_tick_already_current(self, sample_store: Store) -> None:
-        """Test on_tick when already at target time."""
+        """Test on_tick when already at target time (should be no-op)."""
         initial_time = sample_store.time
-        current_target = sample_store.config.genesis_time + initial_time
 
-        # Try to advance to current time (should be no-op)
-        sample_store, _ = sample_store.on_tick(current_target, has_proposal=True)
+        sample_store, _ = sample_store.on_tick(initial_time, has_proposal=True)
 
-        # Should not change significantly (time can only increase)
-        # Tolerance increased for 5-interval per slot system
-        assert sample_store.time - initial_time <= Uint64(30)
+        # No-op: target equals current time
+        assert sample_store.time == initial_time
 
     def test_on_tick_small_increment(self, sample_store: Store) -> None:
-        """Test on_tick with small time increment."""
+        """Test on_tick with small interval increment."""
         initial_time = sample_store.time
-        target_time = sample_store.config.genesis_time + initial_time + Uint64(1)
+        target_interval = initial_time + Uint64(1)
 
-        sample_store, _ = sample_store.on_tick(target_time, has_proposal=False)
+        sample_store, _ = sample_store.on_tick(target_interval, has_proposal=False)
 
-        # Should advance by small amount
-        assert sample_store.time >= initial_time
+        # Should advance by exactly one interval
+        assert sample_store.time == target_interval
 
 
 class TestIntervalTicking:

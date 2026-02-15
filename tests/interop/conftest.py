@@ -9,14 +9,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
 
 import pytest
 
 from .helpers import NodeCluster, PortAllocator
 
-if TYPE_CHECKING:
-    pass
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,11 +41,7 @@ async def node_cluster(
     """
     Provide a node cluster with automatic cleanup.
 
-    Configure via pytest markers::
-
-        @pytest.mark.num_validators(3)
-        def test_example(node_cluster): ...
-
+    Validator count is configurable via the ``num_validators`` marker.
     Default: 3 validators.
     """
     marker = request.node.get_closest_marker("num_validators")
@@ -58,36 +52,13 @@ async def node_cluster(
     try:
         yield cluster
     finally:
-        await cluster.stop_all()
-
-
-@pytest.fixture
-async def two_node_cluster(
-    port_allocator: PortAllocator,
-) -> AsyncGenerator[NodeCluster, None]:
-    """Provide a two-node cluster with one validator each."""
-    cluster = NodeCluster(num_validators=2, port_allocator=port_allocator)
-
-    try:
-        yield cluster
-    finally:
-        await cluster.stop_all()
-
-
-@pytest.fixture
-async def three_node_cluster(
-    port_allocator: PortAllocator,
-) -> AsyncGenerator[NodeCluster, None]:
-    """Provide a three-node cluster with one validator each."""
-    cluster = NodeCluster(num_validators=3, port_allocator=port_allocator)
-
-    try:
-        yield cluster
-    finally:
-        await cluster.stop_all()
-
-
-@pytest.fixture
-def event_loop_policy():
-    """Use default event loop policy."""
-    return asyncio.DefaultEventLoopPolicy()
+        # Hard timeout on teardown to prevent QUIC listener cleanup hangs.
+        # If graceful shutdown exceeds the budget, force-cancel remaining tasks.
+        try:
+            await asyncio.wait_for(cluster.stop_all(), timeout=10.0)
+        except (asyncio.TimeoutError, Exception):
+            logger.warning("Cluster teardown timed out, force-cancelling tasks")
+            for node in cluster.nodes:
+                for task in [node._task, node._listener_task]:
+                    if task and not task.done():
+                        task.cancel()

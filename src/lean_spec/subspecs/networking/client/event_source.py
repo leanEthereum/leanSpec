@@ -699,11 +699,15 @@ class LiveNetworkEventSource:
                     break
                 if isinstance(event, GossipsubMessageEvent):
                     # Decode the message and emit appropriate event.
-                    await self._handle_gossipsub_message(event)
+                    #
+                    # Catch per-message exceptions to prevent one bad message
+                    # from killing the entire forwarding loop.
+                    try:
+                        await self._handle_gossipsub_message(event)
+                    except Exception as e:
+                        logger.warning("Error handling gossipsub message: %s", e)
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.warning("Error forwarding gossipsub events: %s", e)
 
     async def _handle_gossipsub_message(self, event: GossipsubMessageEvent) -> None:
         """

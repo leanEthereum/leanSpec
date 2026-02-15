@@ -16,6 +16,7 @@ from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.containers import Checkpoint, Validator
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.client import LiveNetworkEventSource
 from lean_spec.subspecs.networking.peer.info import PeerInfo
@@ -25,8 +26,9 @@ from lean_spec.subspecs.node import Node, NodeConfig
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.subspecs.validator.registry import ValidatorEntry
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME, SecretKey
-from lean_spec.types import Bytes32, Bytes52, Uint64
+from lean_spec.types import Bytes52, Uint64
 
+from .diagnostics import PipelineDiagnostics
 from .port_allocator import PortAllocator
 
 logger = logging.getLogger(__name__)
@@ -49,9 +51,6 @@ class TestNode:
     listen_addr: str
     """P2P listen address (e.g., '/ip4/127.0.0.1/udp/20600/quic-v1')."""
 
-    api_port: int
-    """HTTP API port."""
-
     index: int
     """Node index in the cluster."""
 
@@ -62,7 +61,7 @@ class TestNode:
     """Background task for the QUIC listener."""
 
     @property
-    def _store(self):
+    def _store(self) -> Store:
         """Get the live store from sync_service (not the stale node.store snapshot)."""
         return self.node.sync_service.store
 
@@ -86,15 +85,33 @@ class TestNode:
     def peer_count(self) -> int:
         """Number of connected peers.
 
-        Uses event_source._connections for consistency with disconnect_all().
-        The peer_manager is updated asynchronously and may lag behind.
+        Reads the raw connection map rather than the peer manager,
+        which is updated asynchronously and may lag behind.
         """
         return len(self.event_source._connections)
 
-    @property
-    def head_root(self) -> Bytes32:
-        """Current head root."""
-        return self._store.head
+    def diagnostics(self) -> PipelineDiagnostics:
+        """
+        Take a point-in-time snapshot of this node's pipeline state.
+
+        Values are read from the live mutable store and may differ between calls.
+        """
+        store = self._store
+
+        # The safe target may not have a corresponding block yet
+        # (e.g., during early startup before any blocks are produced).
+        safe_block = store.blocks.get(store.safe_target)
+
+        return PipelineDiagnostics(
+            head_slot=self.head_slot,
+            safe_target_slot=int(safe_block.slot) if safe_block else 0,
+            finalized_slot=self.finalized_slot,
+            justified_slot=self.justified_slot,
+            gossip_signatures_count=len(store.gossip_signatures),
+            new_aggregated_count=len(store.latest_new_aggregated_payloads),
+            known_aggregated_count=len(store.latest_known_aggregated_payloads),
+            block_count=len(store.blocks),
+        )
 
     async def start(self) -> None:
         """Start the node in background."""
@@ -148,26 +165,6 @@ class TestNode:
         except asyncio.TimeoutError:
             logger.warning("Dial to %s timed out after %.1fs", addr, timeout)
             return False
-
-    @property
-    def connected_peers(self) -> list[PeerId]:
-        """List of currently connected peer IDs."""
-        return list(self.event_source._connections.keys())
-
-    async def disconnect_peer(self, peer_id: PeerId) -> None:
-        """
-        Disconnect from a specific peer.
-
-        Args:
-            peer_id: Peer to disconnect.
-        """
-        await self.event_source.disconnect(peer_id)
-        logger.info("Node %d disconnected from peer %s", self.index, peer_id)
-
-    async def disconnect_all(self) -> None:
-        """Disconnect from all peers."""
-        for peer_id in list(self.connected_peers):
-            await self.disconnect_peer(peer_id)
 
 
 @dataclass(slots=True)
@@ -248,7 +245,7 @@ class NodeCluster:
         Args:
             node_index: Index for this node (for logging/identification).
             validator_indices: Which validators this node controls.
-            is_aggregator: Whether this node is aggregator
+            is_aggregator: Whether this node is an aggregator.
             bootnodes: Addresses to connect to on startup.
             start_services: If True, start the node's services immediately.
                 If False, call test_node.start() manually after mesh is stable.
@@ -256,7 +253,7 @@ class NodeCluster:
         Returns:
             Started TestNode.
         """
-        p2p_port, api_port = self.port_allocator.allocate_ports()
+        p2p_port = self.port_allocator.allocate_port()
         # QUIC over UDP is the only supported transport.
         # QUIC provides native multiplexing, flow control, and TLS 1.3 encryption.
         listen_addr = f"/ip4/127.0.0.1/udp/{p2p_port}/quic-v1"
@@ -325,7 +322,6 @@ class NodeCluster:
             node=node,
             event_source=event_source,
             listen_addr=listen_addr,
-            api_port=api_port,
             index=node_index,
         )
 
@@ -386,10 +382,9 @@ class NodeCluster:
         # Log node startup with gossipsub instance ID for debugging.
         gs_id = event_source._gossipsub_behavior._instance_id % 0xFFFF
         logger.info(
-            "Started node %d on %s (API: %d, validators: %s, services=%s, GS=%x)",
+            "Started node %d on %s (validators: %s, services=%s, GS=%x)",
             node_index,
             listen_addr,
-            api_port,
             validator_indices,
             "running" if start_services else "pending",
             gs_id,
@@ -422,9 +417,10 @@ class NodeCluster:
         # Set genesis time to coincide with service start.
         #
         # Phases 1-3 (node creation, connection, mesh stabilization) take ~10s.
-        # Setting genesis in the future prevents wasting slots during setup.
-        # The first block will be produced at slot 1, shortly after services start.
-        self._genesis_time = int(time.time()) + 10
+        # Setting genesis 15s in the future provides margin for slow environments
+        # (CI, heavy load) where setup may exceed 10s.
+        # Prevents wasting slots before the mesh is ready.
+        self._genesis_time = int(time.time()) + 15
 
         # Phase 1: Create nodes with networking ready but services not running.
         #
@@ -576,19 +572,33 @@ class NodeCluster:
 
         return False
 
-    def get_multiaddr(self, node_index: int) -> str:
+    def log_diagnostics(self, phase: str) -> list[PipelineDiagnostics]:
         """
-        Get the multiaddr for a node.
+        Snapshot and log pipeline state for every node in the cluster.
+
+        Takes a point-in-time snapshot of each node's consensus pipeline
+        and logs a single summary line per node. Returns the snapshots
+        for use in subsequent assertions.
 
         Args:
-            node_index: Index of the node.
+            phase: Human-readable label for the current test phase (appears in log output).
 
         Returns:
-            Multiaddr string for connecting to the node.
+            One diagnostic snapshot per node, in node index order.
         """
-        if node_index >= len(self.nodes):
-            raise IndexError(f"Node index {node_index} out of range")
-
-        node = self.nodes[node_index]
-        peer_id = node.event_source.connection_manager.peer_id
-        return f"{node.listen_addr}/p2p/{peer_id}"
+        diags = [node.diagnostics() for node in self.nodes]
+        for i, d in enumerate(diags):
+            logger.info(
+                "[%s] Node %d: head=%d safe=%d just=%d fin=%d blocks=%d gsigs=%d nagg=%d kagg=%d",
+                phase,
+                i,
+                d.head_slot,
+                d.safe_target_slot,
+                d.justified_slot,
+                d.finalized_slot,
+                d.block_count,
+                d.gossip_signatures_count,
+                d.new_aggregated_count,
+                d.known_aggregated_count,
+            )
+        return diags

@@ -2,6 +2,8 @@
 Assertion helpers for interop tests.
 
 Provides async-friendly assertions for consensus state verification.
+Each polling helper reads node state until a condition is met or a timeout expires.
+Synchronous helpers verify structural invariants on the current state.
 """
 
 from __future__ import annotations
@@ -9,10 +11,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Literal
 
-from lean_spec.types import Bytes32
-
-from .node_runner import NodeCluster, TestNode
+from .diagnostics import PipelineDiagnostics
+from .node_runner import NodeCluster
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,7 @@ async def assert_heads_consistent(
     while time.monotonic() - start < timeout:
         head_slots = [node.head_slot for node in cluster.nodes]
 
+        # Skip empty clusters (no nodes started yet).
         if not head_slots:
             await asyncio.sleep(0.5)
             continue
@@ -71,12 +74,14 @@ async def assert_heads_consistent(
         min_slot = min(head_slots)
         max_slot = max(head_slots)
 
+        # All nodes within the allowed divergence window.
         if max_slot - min_slot <= max_slot_diff:
             logger.debug("Heads consistent: slots %s", head_slots)
             return
 
         await asyncio.sleep(0.5)
 
+    # Final read after timeout for the error message.
     head_slots = [node.head_slot for node in cluster.nodes]
     raise AssertionError(
         f"Head consistency timeout: slots {head_slots} differ by more than {max_slot_diff}"
@@ -104,62 +109,29 @@ async def assert_peer_connections(
     while time.monotonic() - start < timeout:
         peer_counts = [node.peer_count for node in cluster.nodes]
 
+        # Every node must meet the minimum before we return success.
         if all(count >= min_peers for count in peer_counts):
             logger.debug("Peer connections satisfied: %s (min: %d)", peer_counts, min_peers)
             return
 
         await asyncio.sleep(0.5)
 
+    # Final read after timeout for the error message.
     peer_counts = [node.peer_count for node in cluster.nodes]
     raise AssertionError(
         f"Peer connection timeout: counts {peer_counts}, required minimum {min_peers}"
     )
 
 
-async def assert_block_propagated(
-    cluster: NodeCluster,
-    block_root: Bytes32,
-    timeout: float = 10.0,
-    poll_interval: float = 0.2,
-) -> None:
-    """
-    Assert a block propagates to all nodes.
-
-    Args:
-        cluster: Node cluster to check.
-        block_root: Root of the block to check for.
-        timeout: Maximum wait time.
-        poll_interval: Time between checks.
-
-    Raises:
-        AssertionError: If block not found on all nodes within timeout.
-    """
-    start = time.monotonic()
-
-    while time.monotonic() - start < timeout:
-        found = [block_root in node.node.store.blocks for node in cluster.nodes]
-
-        if all(found):
-            logger.debug("Block %s propagated to all nodes", block_root.hex()[:8])
-            return
-
-        await asyncio.sleep(poll_interval)
-
-    found = [block_root in node.node.store.blocks for node in cluster.nodes]
-    raise AssertionError(
-        f"Block propagation timeout: {block_root.hex()[:8]} found on nodes {found}"
-    )
-
-
 async def assert_same_finalized_checkpoint(
-    nodes: list[TestNode],
+    cluster: NodeCluster,
     timeout: float = 30.0,
 ) -> None:
     """
     Assert all nodes agree on the finalized checkpoint.
 
     Args:
-        nodes: List of nodes to check.
+        cluster: Node cluster to check.
         timeout: Maximum wait time.
 
     Raises:
@@ -168,11 +140,14 @@ async def assert_same_finalized_checkpoint(
     start = time.monotonic()
 
     while time.monotonic() - start < timeout:
+        # Compare (slot, root) tuples.
+        # Tuples are hashable, so deduplication via set detects disagreement.
         checkpoints = [
             (node.node.store.latest_finalized.slot, node.node.store.latest_finalized.root)
-            for node in nodes
+            for node in cluster.nodes
         ]
 
+        # All nodes agree when there is exactly one unique checkpoint.
         if len(set(checkpoints)) == 1:
             slot, root = checkpoints[0]
             logger.debug(
@@ -184,43 +159,95 @@ async def assert_same_finalized_checkpoint(
 
         await asyncio.sleep(0.5)
 
-    checkpoints = []
-    for node in nodes:
+    # Build a readable summary for the error message.
+    checkpoints_summary = []
+    for node in cluster.nodes:
         slot = int(node.node.store.latest_finalized.slot)
         root_hex = node.node.store.latest_finalized.root.hex()[:8]
-        checkpoints.append((slot, root_hex))
-    raise AssertionError(f"Finalized checkpoint disagreement: {checkpoints}")
+        checkpoints_summary.append((slot, root_hex))
+    raise AssertionError(f"Finalized checkpoint disagreement: {checkpoints_summary}")
 
 
-async def assert_chain_progressing(
+def assert_head_descends_from(
     cluster: NodeCluster,
-    duration: float = 20.0,
-    min_slot_increase: int = 2,
+    checkpoint: Literal["finalized", "justified"],
 ) -> None:
     """
-    Assert the chain is making progress.
+    Verify the fork choice invariant: head must descend from a checkpoint.
+
+    The fork choice algorithm starts from the checkpoint root and walks
+    forward. If head is not a descendant, the algorithm is broken.
+
+    Walks backward from head toward genesis on each node.
+    The checkpoint root must appear on this path.
 
     Args:
         cluster: Node cluster to check.
-        duration: Time to observe progress.
-        min_slot_increase: Minimum slot increase expected.
+        checkpoint: Which checkpoint to verify ancestry against.
 
     Raises:
-        AssertionError: If chain doesn't progress as expected.
+        AssertionError: If any node's head is not a descendant of the checkpoint.
     """
-    if not cluster.nodes:
-        raise AssertionError("No nodes in cluster")
+    for node in cluster.nodes:
+        store = node._store
 
-    initial_slots = [node.head_slot for node in cluster.nodes]
-    await asyncio.sleep(duration)
-    final_slots = [node.head_slot for node in cluster.nodes]
+        cp = store.latest_finalized if checkpoint == "finalized" else store.latest_justified
+        cp_root = cp.root
+        cp_slot = int(cp.slot)
 
-    increases = [final - initial for initial, final in zip(initial_slots, final_slots, strict=True)]
+        # Walk backward from head toward genesis.
+        # The checkpoint root must appear on this path.
+        current_root = store.head
+        found = False
+        while current_root in store.blocks:
+            if current_root == cp_root:
+                found = True
+                break
+            block = store.blocks[current_root]
+            # Reached genesis without finding the checkpoint.
+            if int(block.slot) == 0:
+                break
+            current_root = block.parent_root
 
-    if not all(inc >= min_slot_increase for inc in increases):
-        raise AssertionError(
-            f"Chain not progressing: slot increases {increases}, "
-            f"expected at least {min_slot_increase}"
+        assert found, (
+            f"Node {node.index}: head {store.head.hex()[:8]} is not a descendant "
+            f"of {checkpoint} root {cp_root.hex()[:8]} at slot {cp_slot}"
         )
 
-    logger.debug("Chain progressing: slot increases %s", increases)
+
+def assert_checkpoint_monotonicity(
+    checkpoint_history: list[list[PipelineDiagnostics]],
+) -> None:
+    """
+    Verify checkpoint slots never decrease across test phases.
+
+    A regression in justified or finalized slot would indicate
+    a fork choice or state transition bug. Checks every node
+    independently across the ordered sequence of phase snapshots.
+
+    Args:
+        checkpoint_history: Diagnostics snapshots from each phase, in order.
+
+    Raises:
+        AssertionError: If any node's checkpoint slot decreased between phases.
+    """
+    if not checkpoint_history:
+        return
+
+    num_nodes = len(checkpoint_history[0])
+
+    for node_idx in range(num_nodes):
+        prev_justified = 0
+        prev_finalized = 0
+        for phase_idx, phase_diags in enumerate(checkpoint_history):
+            d = phase_diags[node_idx]
+            assert d.justified_slot >= prev_justified, (
+                f"Node {node_idx} justified_slot regressed: "
+                f"{prev_justified} -> {d.justified_slot} at phase {phase_idx}"
+            )
+            assert d.finalized_slot >= prev_finalized, (
+                f"Node {node_idx} finalized_slot regressed: "
+                f"{prev_finalized} -> {d.finalized_slot} at phase {phase_idx}"
+            )
+            prev_justified = d.justified_slot
+            prev_finalized = d.finalized_slot

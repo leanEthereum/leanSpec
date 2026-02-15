@@ -6,8 +6,8 @@ import pytest
 from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain.config import (
+    INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
-    SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import (
     Attestation,
@@ -23,7 +23,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Uint64
+from lean_spec.types import Bytes32
 from tests.lean_spec.helpers import make_store
 
 
@@ -588,8 +588,8 @@ class TestIntegrationScenarios:
 
         # Process block via on_block on a fresh consumer store
         consumer_store = observer_store
-        block_time = consumer_store.config.genesis_time + block.slot * Uint64(SECONDS_PER_SLOT)
-        consumer_store, _ = consumer_store.on_tick(block_time, has_proposal=True)
+        target_interval = block.slot * INTERVALS_PER_SLOT
+        consumer_store, _ = consumer_store.on_tick(target_interval, has_proposal=True)
         consumer_store = consumer_store.on_block(signed_block)
 
         # Get attestation target after on_block

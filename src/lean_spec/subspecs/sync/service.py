@@ -181,6 +181,22 @@ class SyncService:
     _sync_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     """Lock to prevent concurrent sync operations."""
 
+    _pending_attestations: list[SignedAttestation] = field(default_factory=list)
+    """Attestations awaiting block processing.
+
+    When an attestation arrives before its referenced block, it cannot be validated.
+    Rather than dropping it permanently, we buffer it here and retry after the next
+    block is processed.
+    """
+
+    _pending_aggregated_attestations: list[SignedAggregatedAttestation] = field(
+        default_factory=list
+    )
+    """Aggregated attestations awaiting block processing.
+
+    Same buffering strategy as individual attestations.
+    """
+
     def __post_init__(self) -> None:
         """Initialize sync components."""
         self._init_components()
@@ -402,6 +418,7 @@ class SyncService:
         # A block may be cached instead of processed if its parent is unknown.
         if result.processed:
             self.store = new_store
+            self._replay_pending_attestations()
 
         # Each processed block might complete our sync.
         #
@@ -450,15 +467,12 @@ class SyncService:
                 is_aggregator=is_aggregator_role,
             )
         except (AssertionError, KeyError):
-            # Attestation validation failed.
+            # Attestation references a block not yet in our store.
             #
-            # Common causes:
-            # - Unknown blocks (source/target/head not in store yet)
-            # - Attestation for future slot (clock drift)
-            # - Invalid signature
-            #
-            # These are expected during normal operation and don't indicate bugs.
-            pass
+            # Buffer it for replay after the next block is processed.
+            # This handles the common case where attestations arrive
+            # slightly before the block they reference.
+            self._pending_attestations.append(attestation)
 
     async def on_gossip_aggregated_attestation(
         self,
@@ -479,8 +493,38 @@ class SyncService:
 
         try:
             self.store = self.store.on_gossip_aggregated_attestation(signed_attestation)
-        except (AssertionError, KeyError) as e:
-            logger.warning("Aggregated attestation validation failed: %s", e)
+        except (AssertionError, KeyError):
+            # Target block not yet processed. Buffer for replay.
+            self._pending_aggregated_attestations.append(signed_attestation)
+
+    def _replay_pending_attestations(self) -> None:
+        """Retry buffered attestations after a block is processed.
+
+        Drains both pending queues, attempting each attestation against the
+        updated store. Attestations that still fail (e.g., referencing a block
+        not yet received) are discarded — they will arrive again via gossip
+        or be included in a future block.
+        """
+        is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
+
+        pending = self._pending_attestations
+        self._pending_attestations = []
+        for attestation in pending:
+            try:
+                self.store = self.store.on_gossip_attestation(
+                    signed_attestation=attestation,
+                    is_aggregator=is_aggregator_role,
+                )
+            except (AssertionError, KeyError):
+                pass
+
+        pending_agg = self._pending_aggregated_attestations
+        self._pending_aggregated_attestations = []
+        for signed_attestation in pending_agg:
+            try:
+                self.store = self.store.on_gossip_aggregated_attestation(signed_attestation)
+            except (AssertionError, KeyError):
+                pass
 
     async def publish_aggregated_attestation(
         self,

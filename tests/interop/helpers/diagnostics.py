@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .node_runner import TestNode
-
 
 @dataclass(frozen=True, slots=True)
 class PipelineDiagnostics:
@@ -40,19 +38,3 @@ class PipelineDiagnostics:
 
     block_count: int
     """Total blocks in the store."""
-
-    @classmethod
-    def from_node(cls, node: TestNode) -> PipelineDiagnostics:
-        """Capture diagnostics from a test node."""
-        store = node._store
-        safe_block = store.blocks.get(store.safe_target)
-        return cls(
-            head_slot=node.head_slot,
-            safe_target_slot=int(safe_block.slot) if safe_block else 0,
-            finalized_slot=node.finalized_slot,
-            justified_slot=node.justified_slot,
-            gossip_signatures_count=len(store.gossip_signatures),
-            new_aggregated_count=len(store.latest_new_aggregated_payloads),
-            known_aggregated_count=len(store.latest_known_aggregated_payloads),
-            block_count=len(store.blocks),
-        )

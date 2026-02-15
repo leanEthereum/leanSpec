@@ -373,6 +373,24 @@ class ValidatorService:
             self._attestations_produced += 1
             metrics.attestations_produced.inc()
 
+            # Process attestation locally before publishing.
+            #
+            # Gossipsub does not deliver messages back to the sender.
+            # Without local processing, the aggregator node never sees its own
+            # validator's attestation in gossip_signatures, reducing the
+            # aggregation count below the 2/3 safe-target threshold.
+            is_aggregator_role = (
+                self.sync_service.store.validator_id is not None and self.sync_service.is_aggregator
+            )
+            try:
+                self.sync_service.store = self.sync_service.store.on_gossip_attestation(
+                    signed_attestation=signed_attestation,
+                    is_aggregator=is_aggregator_role,
+                )
+            except Exception:
+                # Best-effort: the attestation always goes via gossip regardless.
+                pass
+
             # Emit the attestation for network propagation.
             await self.on_attestation(signed_attestation)
 

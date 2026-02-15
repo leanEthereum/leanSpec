@@ -12,7 +12,7 @@ from typing import NamedTuple, cast
 from consensus_testing.keys import XmssKeyManager, get_shared_key_manager
 
 from lean_spec.subspecs.chain.clock import SlotClock
-from lean_spec.subspecs.chain.config import SECONDS_PER_SLOT
+from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers import (
     Attestation,
     AttestationData,
@@ -518,9 +518,8 @@ def make_signed_block_from_store(
         ),
     )
 
-    slot_duration = block.slot * SECONDS_PER_SLOT
-    block_time = store.config.genesis_time + slot_duration
-    advanced_store, _ = store.on_tick(block_time, has_proposal=True)
+    target_interval = block.slot * INTERVALS_PER_SLOT
+    advanced_store, _ = store.on_tick(target_interval, has_proposal=True)
 
     return advanced_store, signed_block
 
