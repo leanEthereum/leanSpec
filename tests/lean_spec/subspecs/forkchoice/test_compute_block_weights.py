@@ -5,7 +5,7 @@ from __future__ import annotations
 from lean_spec.subspecs.containers.attestation import AggregationBits, AttestationData
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
@@ -16,7 +16,7 @@ from tests.lean_spec.helpers import make_bytes32, make_signed_block
 def _make_empty_proof(participants: list[ValidatorIndex]) -> AggregatedSignatureProof:
     """Create an aggregated proof with empty proof data for testing."""
     return AggregatedSignatureProof(
-        participants=AggregationBits.from_validator_indices(participants),
+        participants=AggregationBits.from_validator_indices(ValidatorIndices(data=participants)),
         proof_data=ByteListMiB(data=b""),
     )
 
