@@ -102,3 +102,24 @@ class TestJustifiedCheckpointEndpoint:
         finally:
             server.stop()
             await asyncio.sleep(0.1)
+
+
+class TestForkChoiceEndpoint:
+    """Tests for the /lean/v0/fork_choice endpoint error handling."""
+
+    async def test_returns_503_when_store_not_initialized(self) -> None:
+        """Endpoint returns 503 Service Unavailable when store is not set."""
+        config = ApiServerConfig(port=15058)
+        server = ApiServer(config=config)
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:15058/lean/v0/fork_choice")
+
+                assert response.status_code == 503
+
+        finally:
+            server.stop()
+            await asyncio.sleep(0.1)

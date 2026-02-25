@@ -645,6 +645,33 @@ class Store(Container):
 
         return attestations
 
+    def compute_block_weights(self) -> dict[Bytes32, int]:
+        """
+        Compute attestation-based weight for each block above the finalized slot.
+
+        Walks backward from each validator's latest head vote, incrementing weight
+        for every ancestor above the finalized slot.
+
+        Returns:
+            Mapping from block root to accumulated attestation weight.
+        """
+        attestations = self.extract_attestations_from_aggregated_payloads(
+            self.latest_known_aggregated_payloads
+        )
+
+        start_slot = self.latest_finalized.slot
+
+        weights: dict[Bytes32, int] = defaultdict(int)
+
+        for attestation_data in attestations.values():
+            current_root = attestation_data.head.root
+
+            while current_root in self.blocks and self.blocks[current_root].slot > start_slot:
+                weights[current_root] += 1
+                current_root = self.blocks[current_root].parent_root
+
+        return dict(weights)
+
     def _compute_lmd_ghost_head(
         self,
         start_root: Bytes32,
