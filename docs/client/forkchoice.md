@@ -52,7 +52,7 @@ consistent views.
 Validators need to know where they can safely submit an attestation. The safe target mechanism
 finds the latest block that has enough support.
 
-A block needs attestations from 2/3 of validators to be safe. This threshold ensures
+A block needs attestations from at least 2/3 of validators to be safe. This threshold ensures
 that conflicting blocks can't both be safe simultaneously.
 
 ## Computing Attestation Targets
