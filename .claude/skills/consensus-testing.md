@@ -69,8 +69,7 @@ genesis <- B1 -+
 The 2/3 supermajority threshold is critical:
 
 **Justification tests:**
-- More than 2/3 participation -> should justify
-- Exactly 2/3 participation -> should NOT justify (strict supermajority)
+- Exactly 2/3 participation -> should justify
 - One less than 2/3 -> should NOT justify
 - Validators with different effective balances (weighted voting)
 - Justification with gaps (skip epochs)
@@ -122,7 +121,7 @@ def test_competing_branches(fork_choice_test: ForkChoiceTestFiller) -> None:
 
 ```python
 def test_justification_threshold(state_transition_test: StateTransitionTestFiller) -> None:
-    """State justifies checkpoint when more than 2/3 validators attest."""
+    """State justifies checkpoint when 2/3 validators attest."""
     # Create state with 8 validators
     state = create_state_with_validators(count=8)
 

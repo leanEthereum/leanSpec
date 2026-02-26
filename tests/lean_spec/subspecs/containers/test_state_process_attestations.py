@@ -52,7 +52,7 @@ from lean_spec.subspecs.containers.state.types import (
 )
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.types import Boolean
-from tests.lean_spec.helpers import make_aggregated_attestation, make_bytes32, make_genesis_state
+from tests.lean_spec.helpers import make_bytes32, make_genesis_state
 
 
 class TestProcessAttestationsBoundsCheck:
@@ -230,89 +230,3 @@ class TestProcessAttestationsBoundsCheck:
         # The bounds check prevents the crash before root comparison.
         assert len(result_state.justifications_roots) == 0
         assert len(result_state.justifications_validators) == 0
-
-
-class TestProcessAttestationsSupermajority:
-    """Verify the supermajority threshold requires strictly more than two-thirds."""
-
-    def test_exact_two_thirds_does_not_justify(self) -> None:
-        """
-        Exactly 2/3 of validators voting for a target must NOT justify it.
-
-        Scenario
-        --------
-
-        A network has 6 validators. An attestation carries votes from exactly
-        4 of them (indices 0-3). The ratio 4/6 equals exactly 2/3.
-
-        The supermajority rule requires STRICTLY more than two-thirds:
-
-            3 * count > 2 * total_validators
-
-        With 4 votes out of 6: 3*4 = 12, 2*6 = 12. Since 12 is not strictly
-        greater than 12, the target must remain unjustified.
-
-        Expected Behavior
-        -----------------
-
-        - Attestation is processed without error
-        - Votes are recorded in the justification tracking
-        - The target is NOT justified (threshold not met)
-        - latest_justified remains at its initial value
-        """
-        # Create a genesis state with 6 validators.
-        state = make_genesis_state(num_validators=6)
-
-        source_root = make_bytes32(1)
-        target_root = make_bytes32(2)
-
-        # Build a state at slot 2 with history covering both source and target.
-        #
-        # Key setup:
-        #
-        # - historical_block_hashes[0] = source_root (for source at slot 0)
-        # - historical_block_hashes[1] = target_root (for target at slot 1)
-        # - justified_slots covers the window after finalized_slot=0
-        # - Source at slot 0 is implicitly justified (<= finalized_slot)
-        # - Target at slot 1 is justifiable (delta=1 from finalized=0)
-        state = state.model_copy(
-            update={
-                "slot": Slot(2),
-                "historical_block_hashes": HistoricalBlockHashes(data=[source_root, target_root]),
-                "justified_slots": JustifiedSlots(data=[Boolean(False)] * 2),
-            }
-        )
-
-        # Record the initial checkpoint for comparison after processing.
-        initial_justified = state.latest_justified
-
-        # Create an attestation with exactly 4 out of 6 validators.
-        #
-        # 4/6 = 2/3 exactly. This is the boundary condition:
-        # a correct strict-supermajority check rejects this.
-        source = Checkpoint(root=source_root, slot=Slot(0))
-        target = Checkpoint(root=target_root, slot=Slot(1))
-
-        attestation = make_aggregated_attestation(
-            participant_ids=[
-                ValidatorIndex(0),
-                ValidatorIndex(1),
-                ValidatorIndex(2),
-                ValidatorIndex(3),
-            ],
-            attestation_slot=Slot(1),
-            source=source,
-            target=target,
-        )
-
-        # Process the attestation.
-        result_state = state.process_attestations([attestation])
-
-        # The target must NOT be justified.
-        #
-        # With 4/6 votes the threshold is not met:
-        #
-        #   3 * 4 = 12, 2 * 6 = 12 -> 12 > 12 is False
-        #
-        # latest_justified must remain unchanged.
-        assert result_state.latest_justified == initial_justified

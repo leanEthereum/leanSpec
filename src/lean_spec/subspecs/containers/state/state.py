@@ -607,10 +607,10 @@ class State(Container):
             #
             # We compare integers to avoid floating-point division:
             #
-            # 3 * (number of votes) > 2 * (total validators)
+            # 3 * (number of votes) ≥ 2 * (total validators)
             count = sum(bool(justified) for justified in justifications[target.root])
 
-            if 3 * count > (2 * len(self.validators)):
+            if 3 * count >= (2 * len(self.validators)):
                 # The block becomes justified
                 #
                 # The chain now considers this block part of its safe head.
