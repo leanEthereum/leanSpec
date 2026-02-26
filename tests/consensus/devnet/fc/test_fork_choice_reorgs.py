@@ -804,7 +804,7 @@ def test_reorg_on_newly_justified_slot(
     - Safety guarantees maintained during reorgs
     """
     fork_choice_test(
-        # Using 9 validators: 3 for Fork A and 6 for Fork B to achieve 2/3rd for Fork B
+        # Using 9 validators: 2 for Fork A and 7 for Fork B to achieve >2/3 for Fork B
         anchor_state=generate_pre_state(num_validators=9),
         steps=[
             # Common base at slot 1
@@ -855,7 +855,7 @@ def test_reorg_on_newly_justified_slot(
             # Validator 5 justified fork_b_1 in slot 5
             # Validator 6 justifying fork_b_2 in slot 6
             # Add extra justifications on fork_b_1 from validator 0, 1, 7, 8
-            # This makes fork_b_1 justified by 2/3rd of validators: 0, 1, 5, 6, 7, 8
+            # This makes fork_b_1 justified by >2/3 of validators: 0, 1, 2, 5, 6, 7, 8
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(6),
@@ -871,6 +871,7 @@ def test_reorg_on_newly_justified_slot(
                             validator_ids=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
+                                ValidatorIndex(2),
                                 ValidatorIndex(5),
                                 ValidatorIndex(6),
                                 ValidatorIndex(7),
