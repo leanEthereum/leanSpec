@@ -91,7 +91,7 @@ checkpoint.
 
 ### Why Attest
 
-Attestations drive justification and finalization. When 2/3 of validators attestation for the
+Attestations drive justification and finalization. When more than 2/3 of validators attestation for the
 same target, it becomes justified. Justification eventually leads to
 finalization.
 

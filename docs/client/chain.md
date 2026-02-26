@@ -75,7 +75,7 @@ configuration.
 ## Chain Justification
 
 Blocks become justified when enough validators attestation for them. Justification
-happens when 2/3 of validators agree.
+happens when more than 2/3 of validators agree.
 
 Not every slot can be justified. Certain slots are special based on how far
 they are from the last finalized slot. Recent slots are always valid. For
