@@ -42,7 +42,7 @@ def test_justified_slots_do_not_include_finalized_boundary() -> None:
 
 
 def test_justified_slots_rebases_when_finalization_advances() -> None:
-    # Use 3 validators so a 2-of-3 aggregation is a supermajority.
+    # Use 3 validators so a 3-of-3 aggregation is a strict supermajority (>2/3).
     state = make_genesis_state(num_validators=3)
 
     # Block 1 (slot 1): initializes history (stores slot 0 root), but no justified_slots bits yet.
@@ -57,7 +57,7 @@ def test_justified_slots_rebases_when_finalization_advances() -> None:
     source_0 = Checkpoint(root=block_1.parent_root, slot=Slot(0))
     target_1 = Checkpoint(root=block_2.parent_root, slot=Slot(1))
     att_0_to_1 = make_aggregated_attestation(
-        participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
+        participant_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
         attestation_slot=Slot(2),
         source=source_0,
         target=target_1,
@@ -73,7 +73,7 @@ def test_justified_slots_rebases_when_finalization_advances() -> None:
     source_1 = Checkpoint(root=block_2.parent_root, slot=Slot(1))
     target_2 = Checkpoint(root=block_3.parent_root, slot=Slot(2))
     att_1_to_2 = make_aggregated_attestation(
-        participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
+        participant_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
         attestation_slot=Slot(3),
         source=source_1,
         target=target_2,
@@ -112,7 +112,7 @@ def test_pruning_keeps_pending_justifications() -> None:
     3. Trigger finalization to run the pruning logic
     4. Verify the pending justification survives correctly
     """
-    # Two of three validators form a supermajority.
+    # All three validators form a strict supermajority (>2/3).
     state = make_genesis_state(num_validators=3)
 
     # Phase 1: Build a chain and justify slot 1.
@@ -128,7 +128,7 @@ def test_pruning_keeps_pending_justifications() -> None:
     source_0 = Checkpoint(root=block_1.parent_root, slot=Slot(0))
     target_1 = Checkpoint(root=block_2.parent_root, slot=Slot(1))
     att_0_to_1 = make_aggregated_attestation(
-        participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
+        participant_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
         attestation_slot=Slot(2),
         source=source_0,
         target=target_1,
@@ -179,7 +179,7 @@ def test_pruning_keeps_pending_justifications() -> None:
     source_1 = Checkpoint(root=state.historical_block_hashes[1], slot=Slot(1))
     target_2 = Checkpoint(root=state.historical_block_hashes[2], slot=Slot(2))
     att_1_to_2 = make_aggregated_attestation(
-        participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
+        participant_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
         attestation_slot=Slot(5),
         source=source_1,
         target=target_2,
