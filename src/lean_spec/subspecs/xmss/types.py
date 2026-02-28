@@ -1,10 +1,10 @@
 """Base types for the XMSS signature scheme."""
 
-from typing import Final
+from typing import ClassVar, Final
 
 from lean_spec.subspecs.koalabear import Fp
 
-from ...types import Uint64
+from ...types import ByteListMiB, SSZUnion, Uint64
 from ...types.byte_arrays import BaseBytes
 from ...types.collections import SSZList, SSZVector
 from ...types.container import Container
@@ -111,6 +111,16 @@ class HashTreeOpening(Container):
 
     siblings: HashDigestList
     """SSZ-compliant list of sibling hashes, from bottom to top."""
+
+
+class BytecodePointOption(SSZUnion):
+    """
+    Optional ByteListMiB for recursive aggregation.
+
+    SSZ Union: selector 0 = None (non-recursive), selector 1 = ByteListMiB (recursive).
+    """
+
+    OPTIONS: ClassVar[tuple[type[ByteListMiB] | None, ...]] = (None, ByteListMiB)
 
 
 class HashTreeLayer(Container):
