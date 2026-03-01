@@ -281,6 +281,7 @@ class SyncService:
         Persist block and its post-state to the database.
 
         Called after successful block processing to ensure data survives restarts.
+        All writes are committed atomically to prevent partial persistence on crash.
 
         Args:
             store: The updated store containing the new block and state.
@@ -291,23 +292,36 @@ class SyncService:
 
         block_root = hash_tree_root(block)
 
-        # Persist block
-        self.database.put_block(block, block_root)
+        # Atomic write ensures all-or-nothing persistence.
+        #
+        # A crash between individual writes would leave the database
+        # inconsistent (e.g., block stored but head root not updated).
+        with self.database.batch_write():
+            self.database.put_block(block, block_root)
 
-        # Persist post-state
-        post_state = store.states.get(block_root)
-        if post_state is not None:
-            self.database.put_state(post_state, block_root)
+            post_state = store.states.get(block_root)
+            if post_state is not None:
+                self.database.put_state(post_state, block_root)
 
-        # Update slot index for historical queries
-        self.database.put_block_root_by_slot(block.slot, block_root)
+                # Index state root → block root for checkpoint sync lookups.
+                state_root = hash_tree_root(post_state)
+                self.database.put_block_root_by_state_root(state_root, block_root)
 
-        # Update head root
-        self.database.put_head_root(store.head)
+            self.database.put_block_root_by_slot(block.slot, block_root)
+            self.database.put_head_root(store.head)
+            self.database.put_justified_checkpoint(store.latest_justified)
+            self.database.put_finalized_checkpoint(store.latest_finalized)
 
-        # Update checkpoints
-        self.database.put_justified_checkpoint(store.latest_justified)
-        self.database.put_finalized_checkpoint(store.latest_finalized)
+            # Prune old data when finalization advances.
+            #
+            # Blocks and states before the finalized slot are no longer needed
+            # for consensus, except the finalized block itself.
+            finalized_slot = store.latest_finalized.slot
+            if finalized_slot > Slot(0):
+                self.database.prune_before_slot(
+                    finalized_slot,
+                    keep_roots=frozenset({store.latest_finalized.root}),
+                )
 
     @property
     def state(self) -> SyncState:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -44,7 +45,10 @@ async def network() -> AsyncGenerator[GossipsubTestNetwork]:
     """
     net = GossipsubTestNetwork()
     yield net
-    await net.stop_all()
+    try:
+        await asyncio.wait_for(net.stop_all(), timeout=10.0)
+    except asyncio.TimeoutError:
+        pass
 
 
 @pytest.fixture

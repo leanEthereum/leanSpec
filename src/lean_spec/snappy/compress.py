@@ -271,7 +271,7 @@ def _compute_table_bits(block_size: int) -> int:
     while (1 << bits) < target and bits < MAX_HASH_TABLE_BITS:
         bits += 1
 
-    return max(MIN_HASH_TABLE_BITS, min(bits, MAX_HASH_TABLE_BITS))
+    return bits
 
 
 def _hash_4_bytes(data: bytes, pos: int, table_bits: int) -> int:
@@ -451,26 +451,4 @@ def _emit_literal(literal_data: bytes) -> bytes:
     if not literal_data:
         return b""
 
-    output = bytearray()
-    offset = 0
-
-    # Maximum literal length per tag (format limit).
-    # In practice, never hit this since blocks are 64KB max.
-    max_literal = 1 << 32
-
-    while offset < len(literal_data):
-        # Determine chunk size.
-        chunk_size = min(len(literal_data) - offset, max_literal)
-        chunk = literal_data[offset : offset + chunk_size]
-
-        # Emit: [tag] [raw bytes].
-        #
-        # The tag encodes the length. See encode_literal_tag() for format details.
-        # Short literals (1-60 bytes) need only 1 tag byte.
-        # Longer literals need additional length bytes.
-        output.extend(encode_literal_tag(len(chunk)))
-        output.extend(chunk)
-
-        offset += chunk_size
-
-    return bytes(output)
+    return bytes(encode_literal_tag(len(literal_data))) + literal_data

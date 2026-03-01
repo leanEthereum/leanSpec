@@ -209,14 +209,20 @@ class Node:
             store = state.to_forkchoice_store(block, validator_id)
 
             # Persist genesis to database if available.
+            #
+            # Atomic write ensures a crash during genesis persistence
+            # does not leave the database in a partial state.
             if database is not None:
                 block_root = hash_tree_root(block)
-                database.put_block(block, block_root)
-                database.put_state(state, block_root)
-                database.put_head_root(block_root)
-                database.put_justified_checkpoint(store.latest_justified)
-                database.put_finalized_checkpoint(store.latest_finalized)
-                database.put_block_root_by_slot(block.slot, block_root)
+                with database.batch_write():
+                    database.put_block(block, block_root)
+                    database.put_state(state, block_root)
+                    database.put_head_root(block_root)
+                    database.put_justified_checkpoint(store.latest_justified)
+                    database.put_finalized_checkpoint(store.latest_finalized)
+                    database.put_block_root_by_slot(block.slot, block_root)
+                    database.put_block_root_by_state_root(hash_tree_root(state), block_root)
+                    database.put_genesis_time(config.genesis_time)
 
         # Create shared dependencies.
         clock = SlotClock(genesis_time=config.genesis_time, time_fn=config.time_fn)
@@ -352,6 +358,12 @@ class Node:
 
         if justified is None or finalized is None:
             return None
+
+        # Fall back to genesis time stored in the database.
+        #
+        # This enables self-contained restarts without external config.
+        if genesis_time is None:
+            genesis_time = database.get_genesis_time()
 
         # Compute store time from wall clock to avoid post-restart drift.
         #

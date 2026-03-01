@@ -375,6 +375,10 @@ class BaseByteList(SSZModel):
         """Return whether the two byte lists are equal."""
         return isinstance(other, type(self)) and self.data == other.data
 
+    def __ne__(self, other: object) -> bool:
+        """Return whether the two byte lists are not equal."""
+        return not self.__eq__(other)
+
     def __hash__(self) -> int:
         """Return the hash of the byte list."""
         return hash((type(self), self.data))

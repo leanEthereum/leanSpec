@@ -15,6 +15,8 @@ Reference: https://github.com/google/snappy/blob/main/format_description.txt
 
 from __future__ import annotations
 
+from typing import Literal
+
 from .constants import (
     COPY_1_BYTE_OFFSET,
     COPY_2_BYTE_OFFSET,
@@ -32,6 +34,9 @@ from .constants import (
     VARINT_CONTINUATION_BIT,
     VARINT_DATA_MASK,
 )
+
+type TagType = Literal["literal", "copy"]
+"""Snappy tag type: either a literal (raw bytes) or a copy (back-reference)."""
 
 # Varint Encoding
 #
@@ -601,7 +606,7 @@ def _encode_copy_4(length: int, offset: int) -> bytes:
 # Same as Copy Type 2, but with a 32-bit offset for large files.
 
 
-def decode_tag(data: bytes, offset: int = 0) -> tuple[str, int, int, int]:
+def decode_tag(data: bytes, offset: int = 0) -> tuple[TagType, int, int, int]:
     """Decode a tag at the given offset in the data.
 
     Parses the tag byte and any following length/offset bytes to determine
@@ -637,7 +642,7 @@ def decode_tag(data: bytes, offset: int = 0) -> tuple[str, int, int, int]:
         return _decode_copy_4_tag(data, offset, tag)
 
 
-def _decode_literal_tag(data: bytes, offset: int, tag: int) -> tuple[str, int, int, int]:
+def _decode_literal_tag(data: bytes, offset: int, tag: int) -> tuple[TagType, int, int, int]:
     """Decode a literal tag and return (type, length, 0, bytes_consumed)."""
     # Upper 6 bits encode the length indicator.
     length_indicator = tag >> 2
@@ -680,7 +685,7 @@ def _decode_literal_tag(data: bytes, offset: int, tag: int) -> tuple[str, int, i
         return ("literal", length + 1, 0, 5)
 
 
-def _decode_copy_1_tag(data: bytes, offset: int, tag: int) -> tuple[str, int, int, int]:
+def _decode_copy_1_tag(data: bytes, offset: int, tag: int) -> tuple[TagType, int, int, int]:
     """Decode a copy-1 tag and return (type, length, offset, bytes_consumed)."""
     if offset + 1 >= len(data):
         raise ValueError("Truncated copy-1 tag: expected offset byte")
@@ -696,7 +701,7 @@ def _decode_copy_1_tag(data: bytes, offset: int, tag: int) -> tuple[str, int, in
     return ("copy", length, copy_offset, 2)
 
 
-def _decode_copy_2_tag(data: bytes, offset: int, tag: int) -> tuple[str, int, int, int]:
+def _decode_copy_2_tag(data: bytes, offset: int, tag: int) -> tuple[TagType, int, int, int]:
     """Decode a copy-2 tag and return (type, length, offset, bytes_consumed)."""
     if offset + 2 >= len(data):
         raise ValueError("Truncated copy-2 tag: expected 2 offset bytes")
@@ -710,7 +715,7 @@ def _decode_copy_2_tag(data: bytes, offset: int, tag: int) -> tuple[str, int, in
     return ("copy", length, copy_offset, 3)
 
 
-def _decode_copy_4_tag(data: bytes, offset: int, tag: int) -> tuple[str, int, int, int]:
+def _decode_copy_4_tag(data: bytes, offset: int, tag: int) -> tuple[TagType, int, int, int]:
     """Decode a copy-4 tag and return (type, length, offset, bytes_consumed)."""
     if offset + 4 >= len(data):
         raise ValueError("Truncated copy-4 tag: expected 4 offset bytes")

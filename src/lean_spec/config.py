@@ -7,12 +7,12 @@ This module contains environment-specific settings that apply across all subspec
 from __future__ import annotations
 
 import os
-from typing import Final, Literal, cast
+from typing import Final, Literal, cast, get_args
 
 type LeanEnvMode = Literal["test", "prod"]
 """The supported environment modes."""
 
-_SUPPORTED_LEAN_ENVS: set[str] = {"prod", "test"}
+_SUPPORTED_LEAN_ENVS: Final[set[str]] = set(get_args(LeanEnvMode.__value__))
 
 _raw_env = os.environ.get("LEAN_ENV", "prod").lower()
 

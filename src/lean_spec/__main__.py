@@ -684,6 +684,11 @@ def main() -> None:
     except KeyboardInterrupt:
         # asyncio.run() handles task cancellation, but we log for clarity.
         logger.info("Shutting down...")
+    except Exception:
+        logger.exception("Node failed to start")
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
     finally:
         # Force exit to ensure all threads/sockets are released.
         # This is important for QUIC which may have background threads.

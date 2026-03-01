@@ -209,7 +209,7 @@ class KeyPair(NamedTuple):
     secret: SecretKey
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, str]) -> "KeyPair":
+    def from_dict(cls, data: Mapping[str, str]) -> KeyPair:
         """Deserialize from JSON-compatible dict with hex-encoded SSZ."""
         return cls(
             public=PublicKey.decode_bytes(bytes.fromhex(data["public"])),

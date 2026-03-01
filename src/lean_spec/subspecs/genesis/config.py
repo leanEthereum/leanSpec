@@ -39,7 +39,12 @@ class GenesisConfig(StrictBaseModel):
 
     Field names use UPPERCASE to match cross-client YAML convention.
     Pydantic aliases map them to snake_case Python attributes.
+
+    Extra YAML keys (e.g. ACTIVE_EPOCH, VALIDATOR_COUNT) are ignored so configs
+    from lean-quickstart and other generators load without error.
     """
+
+    model_config = StrictBaseModel.model_config | {"extra": "ignore"}
 
     genesis_time: Uint64 = Field(alias="GENESIS_TIME")
     """

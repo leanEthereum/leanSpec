@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Final
 
+from lean_spec.subspecs.networking.types import Port
 from lean_spec.types import StrictBaseModel
 
 K_BUCKET_SIZE: Final = 16
@@ -39,6 +40,9 @@ MAX_PACKET_SIZE: Final = 1280
 
 MIN_PACKET_SIZE: Final = 63
 """Minimum valid packet size in bytes."""
+
+DEFAULT_PORT: Final = Port(0)
+"""Default port value for optional port parameters."""
 
 
 class DiscoveryConfig(StrictBaseModel):

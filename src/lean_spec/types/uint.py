@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import IO, Any, ClassVar, Literal, Self, SupportsIndex, SupportsInt, override
+from typing import IO, Any, ClassVar, Literal, NoReturn, Self, SupportsIndex, SupportsInt, override
 
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
@@ -197,7 +197,7 @@ class BaseUint(int, SSZType):
         actual_length = self.BITS // 8 if length is None else int(length)
         return super().to_bytes(length=actual_length, byteorder=byteorder, signed=signed)
 
-    def _raise_type_error(self, other: Any, op_symbol: str) -> None:
+    def _raise_type_error(self, other: Any, op_symbol: str) -> NoReturn:
         """Helper to raise a consistent TypeError."""
         raise TypeError(
             f"Unsupported operand type(s) for {op_symbol}: "
@@ -206,7 +206,7 @@ class BaseUint(int, SSZType):
 
     def _validate_int_operand(self, other: Any, op_symbol: str) -> None:
         """Helper to ensure an operand is a true integer, not a bool."""
-        if type(other) is not int:
+        if not isinstance(other, int) or isinstance(other, bool):
             raise TypeError(
                 f"Unsupported operand type for {op_symbol}: "
                 f"expected 'int' but got '{type(other).__name__}'"

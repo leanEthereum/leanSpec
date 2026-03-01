@@ -15,7 +15,7 @@ from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, Generaliz
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
-from ...xmss.containers import Signature as XmssSignature
+from ...xmss.containers import Signature
 from ..attestation import Attestation
 from .types import (
     AggregatedAttestations,
@@ -92,7 +92,7 @@ class BlockSignatures(Container):
     attestation_signatures: AttestationSignatures
     """Aggregated signatures for attestations in the block body."""
 
-    proposer_signature: XmssSignature
+    proposer_signature: Signature
     """Signature for the proposer's attestation."""
 
 

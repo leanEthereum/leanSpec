@@ -602,7 +602,7 @@ class State(Container):
 
             # Check whether the vote count crosses the supermajority threshold.
             #
-            # A block becomes justified when more than two-thirds of validators
+            # A block becomes justified when at least two-thirds of validators
             # have voted for it.
             #
             # We compare integers to avoid floating-point division:

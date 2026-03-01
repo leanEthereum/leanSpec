@@ -8,11 +8,7 @@ from lean_spec.types.byte_arrays import Bytes32
 
 
 def get_power_of_two_ceil(x: int) -> int:
-    """
-    Calculates the smallest power of two greater than or equal to x.
-
-    Examples: 0->1, 1->1, 2->2, 3->4, 4->4, 5->8.
-    """
+    """Calculates the smallest power of two greater than or equal to x."""
     if x <= 1:
         return 1
     return 1 << (x - 1).bit_length()

@@ -169,7 +169,7 @@ def _crc32c_table() -> list[int]:
 
 
 # Pre-compute the table at module load time.
-_CRC32C_TABLE: tuple[int, ...] = tuple(_crc32c_table())
+_CRC32C_TABLE: Final[tuple[int, ...]] = tuple(_crc32c_table())
 
 
 def _crc32c(data: bytes) -> int:

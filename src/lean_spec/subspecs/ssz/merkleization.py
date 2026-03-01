@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Final
 
 from lean_spec.subspecs.ssz.utils import get_power_of_two_ceil, hash_nodes
 from lean_spec.types import ZERO_HASH
 from lean_spec.types.byte_arrays import Bytes32
 
-_MAX_ZERO_HASH_DEPTH: int = 64
+_MAX_ZERO_HASH_DEPTH: Final = 64
 """Maximum depth of pre-computed zero hashes (supports trees up to 2^64 leaves)."""
 
 

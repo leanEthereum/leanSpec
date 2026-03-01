@@ -156,7 +156,7 @@ class PeerState:
     peer_id: PeerId
     """Peer identifier."""
 
-    subscriptions: set[str] = field(default_factory=set)
+    subscriptions: set[TopicId] = field(default_factory=set)
     """Topics this peer is subscribed to."""
 
     outbound_stream: QuicStreamAdapter | None = None
@@ -171,7 +171,7 @@ class PeerState:
     last_rpc_time: float = 0.0
     """Timestamp of last RPC exchange."""
 
-    backoff: dict[str, float] = field(default_factory=dict)
+    backoff: dict[TopicId, float] = field(default_factory=dict)
     """Per-topic backoff expiry times (from PRUNE)."""
 
     dont_want_ids: set[MessageId] = field(default_factory=set)

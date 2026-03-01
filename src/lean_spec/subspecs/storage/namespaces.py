@@ -86,6 +86,9 @@ class CheckpointNamespace:
     KEY_HEAD: str = "head"
     """Key for head block root."""
 
+    KEY_GENESIS_TIME: str = "genesis_time"
+    """Key for genesis time. Enables self-contained restarts without external config."""
+
     CREATE_TABLE: str = """
         CREATE TABLE IF NOT EXISTS checkpoints (
             key TEXT PRIMARY KEY,
@@ -137,9 +140,41 @@ class SlotIndexNamespace:
     """SQL to create slot index table."""
 
 
-# Singleton instances for convenient access
+@dataclass(frozen=True, slots=True)
+class StateRootIndexNamespace:
+    """
+    Namespace for state root to block root mapping.
+
+    Enables lookup of block root by state root.
+    Needed for checkpoint sync and API queries by state root.
+    """
+
+    TABLE_NAME: str = "state_root_index"
+    """Table name for state root index."""
+
+    CREATE_TABLE: str = """
+        CREATE TABLE IF NOT EXISTS state_root_index (
+            state_root BLOB PRIMARY KEY,
+            block_root BLOB NOT NULL
+        )
+    """
+    """SQL to create state root index table."""
+
+
 BLOCKS: Final = BlockNamespace()
+"""Block storage namespace."""
+
 STATES: Final = StateNamespace()
+"""State storage namespace."""
+
 CHECKPOINTS: Final = CheckpointNamespace()
+"""Checkpoint tracking namespace."""
+
 ATTESTATIONS: Final = AttestationNamespace()
+"""Attestation storage namespace."""
+
 SLOT_INDEX: Final = SlotIndexNamespace()
+"""Slot-to-root index namespace."""
+
+STATE_ROOT_INDEX: Final = StateRootIndexNamespace()
+"""State root to block root index namespace."""

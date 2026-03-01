@@ -17,6 +17,7 @@ TOPIC = TopicId("test/stress")
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(60)
 async def test_peer_churn(
     network: GossipsubTestNetwork,
 ) -> None:

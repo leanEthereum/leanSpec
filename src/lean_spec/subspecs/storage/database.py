@@ -7,6 +7,8 @@ Uses structural subtyping for flexibility.
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -14,7 +16,7 @@ if TYPE_CHECKING:
     from lean_spec.subspecs.containers.attestation import AttestationData
     from lean_spec.subspecs.containers.slot import Slot
     from lean_spec.subspecs.containers.validator import ValidatorIndex
-    from lean_spec.types import Bytes32
+    from lean_spec.types import Bytes32, Uint64
 
 
 class Database(Protocol):
@@ -26,10 +28,11 @@ class Database(Protocol):
 
     Storage Organization
     --------------------
-    - Blocks: Indexed by root hash
-    - States: Indexed by root hash
+    - Blocks: Indexed by block root hash
+    - States: Indexed by associated block root hash (not state root)
     - Checkpoints: Justified and finalized tracking
     - Attestations: Latest attestation per validator
+    - State root index: Maps state roots to block roots
     """
 
     # Block Operations
@@ -72,10 +75,10 @@ class Database(Protocol):
 
     def get_state(self, root: Bytes32) -> State | None:
         """
-        Retrieve a state by its root hash.
+        Retrieve a state by its associated block root.
 
         Args:
-            root: SSZ hash tree root of the state.
+            root: Block root hash associated with this state.
 
         Returns:
             State if found, None otherwise.
@@ -84,11 +87,11 @@ class Database(Protocol):
 
     def put_state(self, state: State, root: Bytes32) -> None:
         """
-        Store a state with its root hash.
+        Store a state indexed by its associated block root.
 
         Args:
             state: State to store.
-            root: Pre-computed root hash (avoids recomputation).
+            root: Block root hash associated with this state.
         """
         ...
 
@@ -97,7 +100,7 @@ class Database(Protocol):
         Check if a state exists in storage.
 
         Args:
-            root: SSZ hash tree root of the state.
+            root: Block root hash associated with the state.
 
         Returns:
             True if state exists.
@@ -220,6 +223,93 @@ class Database(Protocol):
         Args:
             slot: Slot of the block.
             root: Root hash of the block.
+        """
+        ...
+
+    # State Root Index Operations
+
+    def get_block_root_by_state_root(self, state_root: Bytes32) -> Bytes32 | None:
+        """
+        Look up the block root associated with a state root.
+
+        Needed for checkpoint sync and API endpoints that query by state root.
+
+        Args:
+            state_root: SSZ hash tree root of the state.
+
+        Returns:
+            Associated block root, or None if not indexed.
+        """
+        ...
+
+    def put_block_root_by_state_root(self, state_root: Bytes32, block_root: Bytes32) -> None:
+        """
+        Index a block root by the state root it produced.
+
+        Args:
+            state_root: SSZ hash tree root of the post-state.
+            block_root: Root of the block that produced this state.
+        """
+        ...
+
+    # Genesis Time
+
+    def get_genesis_time(self) -> Uint64 | None:
+        """
+        Retrieve the stored genesis time.
+
+        Enables self-contained restarts without external genesis config.
+
+        Returns:
+            Genesis time as Unix timestamp, or None if not set.
+        """
+        ...
+
+    def put_genesis_time(self, genesis_time: Uint64) -> None:
+        """
+        Store genesis time for future restarts.
+
+        Args:
+            genesis_time: Unix timestamp of genesis (slot 0).
+        """
+        ...
+
+    # Transaction Control
+
+    def commit(self) -> None:
+        """
+        Commit pending writes to durable storage.
+
+        All writes via put_* methods are buffered until commit() or batch_write().
+        Callers must explicitly commit after writes.
+        """
+        ...
+
+    @contextmanager
+    def batch_write(self) -> Generator[None]:
+        """
+        Context manager for atomic multi-write operations.
+
+        All writes within the block are committed atomically on exit.
+        Rolls back on exception to prevent partial writes.
+        """
+        ...
+
+    # Pruning
+
+    def prune_before_slot(self, slot: Slot, keep_roots: frozenset[Bytes32]) -> int:
+        """
+        Remove blocks and states with slots strictly before the given slot.
+
+        Preserves entries whose roots are in keep_roots (e.g., the finalized block).
+        Cleans up associated slot index entries.
+
+        Args:
+            slot: Prune entries with slots strictly below this value.
+            keep_roots: Roots to preserve regardless of slot.
+
+        Returns:
+            Total number of entries pruned across all tables.
         """
         ...
 

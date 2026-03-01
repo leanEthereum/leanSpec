@@ -8,6 +8,7 @@ from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.gossipsub.behavior import GossipsubBehavior, PeerState
 from lean_spec.subspecs.networking.gossipsub.parameters import GossipsubParameters
 from lean_spec.subspecs.networking.gossipsub.rpc import RPC
+from lean_spec.subspecs.networking.gossipsub.types import TopicId
 
 
 def make_peer(name: str) -> PeerId:
@@ -55,7 +56,7 @@ def make_behavior(
 def add_peer(
     behavior: GossipsubBehavior,
     name: str,
-    subscriptions: set[str] | None = None,
+    subscriptions: set[TopicId] | None = None,
     with_stream: bool = True,
 ) -> PeerId:
     """Add a peer directly to behavior state."""

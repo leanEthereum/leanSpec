@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import MagicMock
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
@@ -77,5 +76,4 @@ class TestCheckpointSyncClientServerIntegration:
             assert is_valid is True
 
         finally:
-            server.stop()
-            await asyncio.sleep(0.1)
+            await server.aclose()

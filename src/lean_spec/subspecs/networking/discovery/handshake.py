@@ -35,7 +35,7 @@ from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.types import NodeId, Port, SeqNumber
 from lean_spec.types import Bytes16, Bytes32, Bytes33
 
-from .config import HANDSHAKE_TIMEOUT_SECS
+from .config import DEFAULT_PORT, HANDSHAKE_TIMEOUT_SECS
 from .crypto import (
     generate_secp256k1_keypair,
     sign_id_nonce,
@@ -51,9 +51,6 @@ from .packet import (
     encode_whoareyou_authdata,
 )
 from .session import Session, SessionCache
-
-_DEFAULT_PORT: Final = Port(0)
-"""Default port value for optional port parameters."""
 
 MAX_PENDING_HANDSHAKES: Final = 100
 """Hard cap on concurrent pending handshakes to prevent resource exhaustion."""
@@ -253,7 +250,7 @@ class HandshakeManager:
         remote_pubkey: Bytes33,
         challenge_data: bytes,
         remote_ip: str = "",
-        remote_port: Port = _DEFAULT_PORT,
+        remote_port: Port = DEFAULT_PORT,
     ) -> tuple[bytes, Bytes16, Bytes16]:
         """
         Create a HANDSHAKE packet in response to WHOAREYOU.
@@ -336,7 +333,7 @@ class HandshakeManager:
         remote_node_id: NodeId,
         handshake: HandshakeAuthdata,
         remote_ip: str = "",
-        remote_port: Port = _DEFAULT_PORT,
+        remote_port: Port = DEFAULT_PORT,
     ) -> HandshakeResult:
         """
         Process a received HANDSHAKE packet.

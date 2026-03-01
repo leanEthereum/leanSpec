@@ -6,13 +6,14 @@ Uses SQLite for simplicity and correctness.
 """
 
 from .database import Database
-from .namespaces import BlockNamespace, CheckpointNamespace, StateNamespace
+from .exceptions import StorageCorruptionError, StorageError, StorageReadError, StorageWriteError
 from .sqlite import SQLiteDatabase
 
 __all__ = [
     "Database",
     "SQLiteDatabase",
-    "BlockNamespace",
-    "StateNamespace",
-    "CheckpointNamespace",
+    "StorageCorruptionError",
+    "StorageError",
+    "StorageReadError",
+    "StorageWriteError",
 ]

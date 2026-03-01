@@ -645,6 +645,33 @@ class Store(Container):
 
         return attestations
 
+    def compute_block_weights(self) -> dict[Bytes32, int]:
+        """
+        Compute attestation-based weight for each block above the finalized slot.
+
+        Walks backward from each validator's latest head vote, incrementing weight
+        for every ancestor above the finalized slot.
+
+        Returns:
+            Mapping from block root to accumulated attestation weight.
+        """
+        attestations = self.extract_attestations_from_aggregated_payloads(
+            self.latest_known_aggregated_payloads
+        )
+
+        start_slot = self.latest_finalized.slot
+
+        weights: dict[Bytes32, int] = defaultdict(int)
+
+        for attestation_data in attestations.values():
+            current_root = attestation_data.head.root
+
+            while current_root in self.blocks and self.blocks[current_root].slot > start_slot:
+                weights[current_root] += 1
+                current_root = self.blocks[current_root].parent_root
+
+        return dict(weights)
+
     def _compute_lmd_ghost_head(
         self,
         start_root: Bytes32,
@@ -893,7 +920,7 @@ class Store(Container):
         for sig_key, proofs in self.latest_new_aggregated_payloads.items():
             if sig_key in all_payloads:
                 # Both pools have proofs for this key. Combine them.
-                all_payloads[sig_key] = [*all_payloads[sig_key], *proofs]
+                all_payloads[sig_key] = all_payloads[sig_key] + proofs
             else:
                 # Only "new" has proofs for this key. Add them directly.
                 all_payloads[sig_key] = proofs
@@ -969,9 +996,7 @@ class Store(Container):
             validator_ids = aggregated_signature.participants.to_validator_indices()
             for vid in validator_ids:
                 sig_key = SignatureKey(vid, data_root)
-                if sig_key not in new_aggregated_payloads:
-                    new_aggregated_payloads[sig_key] = []
-                new_aggregated_payloads[sig_key].append(aggregated_signature)
+                new_aggregated_payloads.setdefault(sig_key, []).append(aggregated_signature)
 
                 # Prune successfully aggregated signature from gossip map
                 if sig_key in new_gossip_sigs:
