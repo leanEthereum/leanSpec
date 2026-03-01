@@ -1,0 +1,48 @@
+# Build and publish leanSpec node image when a PR targets a devnet branch.
+# Image is tagged with the base branch name (e.g. ghcr.io/leanethereum/leanspec-node:devnet3).
+name: Docker (devnet)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.base_ref }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  docker-devnet:
+    name: Build and push Docker image (devnet)
+    runs-on: ubuntu-latest
+    if: startsWith(github.base_ref, 'devnet')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: node
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/leanethereum/leanspec-node:${{ github.base_ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
