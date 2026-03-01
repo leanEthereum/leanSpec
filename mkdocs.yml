@@ -1,10 +1,10 @@
 site_name: Lean Ethereum Specifications
 site_description: Reference implementations of the Lean Ethereum protocol
 site_author: Ethereum Foundation
-site_url: https://leanethereum.github.io/lean-spec/
+site_url: https://leanethereum.github.io/leanSpec/
 
-repo_name: leanEthereum/lean-spec
-repo_url: https://github.com/leanEthereum/lean-spec
+repo_name: leanEthereum/leanSpec
+repo_url: https://github.com/leanEthereum/leanSpec
 edit_uri: edit/main/docs/
 
 theme:
@@ -63,7 +63,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/leanEthereum/lean-spec
+      link: https://github.com/leanEthereum/leanSpec
 
 copyright: |
   &copy; 2025 Ethereum Foundation
