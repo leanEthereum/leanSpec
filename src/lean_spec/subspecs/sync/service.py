@@ -420,7 +420,12 @@ class SyncService:
             )
             return
 
-        logger.debug("Processing gossip block from %s in state %s", peer_id, self._state.name)
+        logger.info(
+            "Block received from peer %s slot=%s (state=%s)",
+            peer_id,
+            block.message.block.slot,
+            self._state.name,
+        )
 
         if self._head_sync is None:
             raise RuntimeError("HeadSync not initialized")
@@ -440,6 +445,14 @@ class SyncService:
         #
         # A block may be cached instead of processed if its parent is unknown.
         if result.processed:
+            slot = block.message.block.slot
+            block_root = hash_tree_root(block.message.block)
+            logger.info(
+                "Block processed slot=%s root=%s from peer %s",
+                slot,
+                block_root.hex()[:16] + "…",
+                peer_id,
+            )
             self.store = new_store
             self._replay_pending_attestations()
 
@@ -452,6 +465,7 @@ class SyncService:
     async def on_gossip_attestation(
         self,
         attestation: SignedAttestation,
+        peer_id: PeerId | None = None,
     ) -> None:
         """
         Handle attestation received via gossip.
@@ -465,6 +479,7 @@ class SyncService:
 
         Args:
             attestation: The signed attestation received.
+            peer_id: Peer that propagated the attestation (None if produced locally).
         """
         # Guard: Only process gossip in states that accept it.
         #
@@ -472,6 +487,16 @@ class SyncService:
         # of incoming attestations. IDLE state waits for peer discovery.
         if not self._state.accepts_gossip:
             return
+
+        slot = attestation.data.slot
+        validator_id = attestation.validator_id
+        peer_str = str(peer_id) if peer_id is not None else "local"
+        logger.info(
+            "Attestation received from peer %s slot=%s validator=%s",
+            peer_str,
+            slot,
+            validator_id,
+        )
 
         # Check if we are an aggregator.
         #
@@ -489,7 +514,20 @@ class SyncService:
                 signed_attestation=attestation,
                 is_aggregator=is_aggregator_role,
             )
-        except (AssertionError, KeyError):
+            logger.info(
+                "Attestation from peer %s slot=%s validator=%s: validation and signature ok",
+                peer_str,
+                slot,
+                validator_id,
+            )
+        except (AssertionError, KeyError) as e:
+            logger.warning(
+                "Attestation from peer %s slot=%s validator=%s: validation or signature failed: %s",
+                peer_str,
+                slot,
+                validator_id,
+                e,
+            )
             # Attestation references a block not yet in our store.
             #
             # Buffer it for replay after the next block is processed.
@@ -502,6 +540,7 @@ class SyncService:
     async def on_gossip_aggregated_attestation(
         self,
         signed_attestation: SignedAggregatedAttestation,
+        peer_id: PeerId | None = None,
     ) -> None:
         """
         Handle aggregated attestation received via gossip.
@@ -512,13 +551,33 @@ class SyncService:
 
         Args:
             signed_attestation: The signed aggregated attestation received.
+            peer_id: Peer that propagated the attestation (None if produced locally).
         """
         if not self._state.accepts_gossip:
             return
 
+        slot = signed_attestation.data.slot
+        peer_str = str(peer_id) if peer_id is not None else "local"
+        logger.info(
+            "Aggregated attestation received from peer %s slot=%s",
+            peer_str,
+            slot,
+        )
+
         try:
             self.store = self.store.on_gossip_aggregated_attestation(signed_attestation)
-        except (AssertionError, KeyError):
+            logger.info(
+                "Aggregated attestation from peer %s slot=%s: validation and signature ok",
+                peer_str,
+                slot,
+            )
+        except (AssertionError, KeyError) as e:
+            logger.warning(
+                "Aggregated attestation from peer %s slot=%s: validation or signature failed: %s",
+                peer_str,
+                slot,
+                e,
+            )
             # Target block not yet processed. Buffer for replay.
             self._pending_aggregated_attestations.append(signed_attestation)
             if len(self._pending_aggregated_attestations) > MAX_PENDING_ATTESTATIONS:

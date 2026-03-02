@@ -11,6 +11,7 @@ concurrent execution.
 from __future__ import annotations
 
 import asyncio
+import logging
 import signal
 import time
 from collections.abc import Callable
@@ -41,6 +42,11 @@ from lean_spec.subspecs.storage import Database, SQLiteDatabase
 from lean_spec.subspecs.sync import BlockCache, NetworkRequester, PeerManager, SyncService
 from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
 from lean_spec.types import Bytes32, Uint64
+
+logger = logging.getLogger(__name__)
+
+# Interval in seconds for periodic justified/finalized slot logging.
+_JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC: Final = 10.0
 
 _ZERO_TIME: Final = Uint64(0)
 """Default genesis time for database loading when no genesis time is available."""
@@ -424,6 +430,7 @@ class Node:
                     tg.create_task(self.api_server.run())
                 if self.validator_service is not None:
                     tg.create_task(self.validator_service.run())
+                tg.create_task(self._log_justified_finalized_periodically())
                 tg.create_task(self._wait_shutdown())
         finally:
             if self.database is not None:
@@ -445,6 +452,36 @@ class Node:
         except (ValueError, RuntimeError):
             # Cannot add handlers outside main thread.
             pass
+
+    async def _log_justified_finalized_periodically(self) -> None:
+        """
+        Log latest justified and finalized slot periodically.
+
+        Runs every _JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC seconds to aid
+        monitoring and debugging of consensus progress.
+        """
+        while not self._shutdown.is_set():
+            await asyncio.sleep(_JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC)
+            if self._shutdown.is_set():
+                break
+            store = self.sync_service.store
+            peers_connected = sum(
+                1
+                for p in self.sync_service.peer_manager.get_all_peers()
+                if p.is_connected()
+            )
+            j = store.latest_justified
+            f = store.latest_finalized
+            j_root = j.root.hex()[:16] + "…" if hasattr(j.root, "hex") else str(j.root)[:20]
+            f_root = f.root.hex()[:16] + "…" if hasattr(f.root, "hex") else str(f.root)[:20]
+            logger.info(
+                "Peers=%s | Justified slot=%s root=%s | Finalized slot=%s root=%s",
+                peers_connected,
+                j.slot,
+                j_root,
+                f.slot,
+                f_root,
+            )
 
     async def _wait_shutdown(self) -> None:
         """
