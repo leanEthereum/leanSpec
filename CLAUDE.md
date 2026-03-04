@@ -20,7 +20,8 @@ subspecifications that the Lean Ethereum protocol relies on.
 ```bash
 uv sync                           # Install dependencies
 uv run pytest                     # Run unit tests
-uv run fill --fork=devnet --clean -n auto # Generate test vectors
+uv run fill --fork=devnet --clean -n auto                # Generate test vectors
+uv run fill --fork=devnet --clean -n auto --scheme=prod  # Generate test vectors with production scheme
 # Note: execution layer support is planned for future, infrastructure is ready
 # for now, `--layer=consensus` is default and the only value used.
 ```

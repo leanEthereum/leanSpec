@@ -110,11 +110,13 @@ uv run pytest -n 4
 uv run pytest -m "not slow"
 
 # Fill test vectors from pytest specs.
-# Usage: uv run fill --clean --fork=devnet [--output=<dir>]
+# Usage: uv run fill --clean --fork=devnet [--scheme=<scheme>] [--output=<dir>]
 #   --clean  Overwrite existing fixtures
 #   --fork   Target fork (default: devnet)
+#   --scheme XMSS signature scheme: "test" (default, fast) or "prod" (prod config, slower)
 #   --output Optional directory for filled fixtures
 uv run fill --clean --fork=devnet
+uv run fill --clean --fork=devnet --scheme=prod
 
 # Run API conformance tests against an external client implementation
 # Usage: uv run apitest <server-url> [pytest-args]

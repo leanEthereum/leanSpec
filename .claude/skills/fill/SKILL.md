@@ -17,6 +17,7 @@ uvx tox -e fill
 
 Pass additional arguments after `--`:
 
+- `/fill -- --scheme=prod` - Use production signature scheme (slower)
 - `/fill -- --fork=Electra` - Generate for Electra fork
 - `/fill -- path/to/test.py` - Generate fixtures for specific test file
 
