@@ -7,7 +7,7 @@ Validates Store responses to blocks, attestations, and time progression.
 
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import ClassVar, Mapping, Self
 
 from pydantic import model_validator
 
@@ -38,7 +38,6 @@ from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import SignatureKey
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Uint64
 
@@ -381,20 +380,23 @@ class ForkChoiceTest(BaseConsensusFixture):
         #
         # Attestations vote for blocks and influence fork choice weight.
         # The spec may include attestations to include in this block.
-        attestations, attestation_signatures, valid_signature_keys = (
-            self._build_attestations_from_spec(
-                spec, store, block_registry, parent_root, key_manager
-            )
+        (
+            attestations,
+            attestation_signatures,
+            valid_attestations,
+        ) = self._build_attestations_from_spec(
+            spec, store, block_registry, parent_root, key_manager
         )
 
-        # Merge per-attestation signatures into the Store's gossip signature cache.
-        # Required so the Store can aggregate committee signatures later when building payloads.
+        # Merge valid attestation signatures into the Store's gossip cache.
+        # Only attestations with valid (non-dummy) signatures are merged.
         working_store = store
-        for attestation in attestations:
-            sig_key = SignatureKey(attestation.validator_id, attestation.data.data_root_bytes())
-            if sig_key not in valid_signature_keys:
-                continue
-            if (signature := attestation_signatures.get(sig_key)) is None:
+        for attestation in valid_attestations:
+            sigs_for_data = attestation_signatures.get(attestation.data)
+            if (
+                sigs_for_data is None
+                or (signature := sigs_for_data.get(attestation.validator_id)) is None
+            ):
                 continue
             working_store = working_store.on_gossip_attestation(
                 SignedAttestation(
@@ -564,7 +566,11 @@ class ForkChoiceTest(BaseConsensusFixture):
         block_registry: dict[str, Block],
         parent_root: Bytes32,
         key_manager: XmssKeyManager,
-    ) -> tuple[list[Attestation], dict[SignatureKey, Signature], set[SignatureKey]]:
+    ) -> tuple[
+        list[Attestation],
+        Mapping[AttestationData, Mapping[ValidatorIndex, Signature]],
+        set[Attestation],
+    ]:
         """
         Build attestations and signatures from block specification.
 
@@ -580,7 +586,7 @@ class ForkChoiceTest(BaseConsensusFixture):
             key_manager: Key manager for signing.
 
         Returns:
-            Tuple of (attestations list, signature lookup dict, valid signature keys).
+            Tuple of (attestations list, signature lookup by data, valid attestations).
         """
         # No attestations specified means empty block body.
         if spec.attestations is None:
@@ -588,8 +594,8 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         parent_state = store.states[parent_root]
         attestations = []
-        signature_lookup: dict[SignatureKey, Signature] = {}
-        valid_signature_keys: set[SignatureKey] = set()
+        signature_lookup: Mapping[AttestationData, Mapping[ValidatorIndex, Signature]] = {}
+        valid_attestations: set[Attestation] = set()
 
         for aggregated_spec in spec.attestations:
             # Build attestation data once.
@@ -614,19 +620,19 @@ class ForkChoiceTest(BaseConsensusFixture):
                         validator_id,
                         attestation_data,
                     )
+                    valid_attestations.add(attestation)
                 else:
                     # Dummy signature for testing invalid signature handling.
                     # The Store should reject attestations with bad signatures.
                     signature = create_dummy_signature()
 
-                # Index signature by validator and data root.
-                # This enables lookup during signature aggregation.
-                sig_key = SignatureKey(validator_id, attestation_data.data_root_bytes())
-                signature_lookup[sig_key] = signature
-                if aggregated_spec.valid_signature:
-                    valid_signature_keys.add(sig_key)
+                # Index signature by attestation data and validator ID.
+                signature_lookup.setdefault(attestation_data, {}).setdefault(
+                    validator_id,
+                    signature,
+                )
 
-        return attestations, signature_lookup, valid_signature_keys
+        return attestations, signature_lookup, valid_attestations
 
     def _build_attestation_data_from_spec(
         self,

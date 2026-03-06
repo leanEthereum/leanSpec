@@ -53,8 +53,9 @@ from lean_spec.subspecs.containers.block import (
     BlockWithAttestation,
 )
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.forkchoice import GossipSignatureEntry
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Uint64
 
 from .registry import ValidatorEntry, ValidatorRegistry
@@ -528,20 +529,15 @@ class ValidatorService:
 
         proposer_attestation = signed_block.message.proposer_attestation
         proposer_signature = signed_block.signature.proposer_signature
-        data_root = proposer_attestation.data.data_root_bytes()
 
-        sig_key = SignatureKey(validator_index, data_root)
-        new_gossip_sigs = dict(store.gossip_signatures)
-        new_gossip_sigs[sig_key] = proposer_signature
-
-        # Also store the attestation data for later extraction during aggregation.
-        new_attestation_data_by_root = dict(store.attestation_data_by_root)
-        new_attestation_data_by_root[data_root] = proposer_attestation.data
+        new_gossip_sigs = {k: set(v) for k, v in store.gossip_signatures.items()}
+        new_gossip_sigs.setdefault(proposer_attestation.data, set()).add(
+            GossipSignatureEntry(validator_index, proposer_signature)
+        )
 
         self.sync_service.store = store.model_copy(
             update={
                 "gossip_signatures": new_gossip_sigs,
-                "attestation_data_by_root": new_attestation_data_by_root,
             }
         )
 

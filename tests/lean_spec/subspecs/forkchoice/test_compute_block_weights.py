@@ -8,7 +8,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types.byte_arrays import ByteListMiB
 from tests.lean_spec.helpers import make_bytes32, make_signed_block
 
@@ -61,11 +61,9 @@ def test_linear_chain_weight_accumulates_upward(base_store: Store) -> None:
         target=Checkpoint(root=block2_root, slot=Slot(2)),
         source=Checkpoint(root=genesis_root, slot=Slot(0)),
     )
-    data_root = att_data.data_root_bytes()
-
     proof = _make_empty_proof([ValidatorIndex(0)])
     aggregated_payloads = {
-        SignatureKey(ValidatorIndex(0), data_root): [proof],
+        att_data: {proof},
     }
 
     store = base_store.model_copy(
@@ -74,7 +72,6 @@ def test_linear_chain_weight_accumulates_upward(base_store: Store) -> None:
             "states": new_states,
             "head": block2_root,
             "latest_known_aggregated_payloads": aggregated_payloads,
-            "attestation_data_by_root": {data_root: att_data},
         }
     )
 
@@ -110,12 +107,10 @@ def test_multiple_attestations_accumulate(base_store: Store) -> None:
         target=Checkpoint(root=block1_root, slot=Slot(1)),
         source=Checkpoint(root=genesis_root, slot=Slot(0)),
     )
-    data_root = att_data.data_root_bytes()
 
     proof = _make_empty_proof([ValidatorIndex(0), ValidatorIndex(1)])
     aggregated_payloads = {
-        SignatureKey(ValidatorIndex(0), data_root): [proof],
-        SignatureKey(ValidatorIndex(1), data_root): [proof],
+        att_data: {proof},
     }
 
     store = base_store.model_copy(
@@ -124,7 +119,6 @@ def test_multiple_attestations_accumulate(base_store: Store) -> None:
             "states": new_states,
             "head": block1_root,
             "latest_known_aggregated_payloads": aggregated_payloads,
-            "attestation_data_by_root": {data_root: att_data},
         }
     )
 

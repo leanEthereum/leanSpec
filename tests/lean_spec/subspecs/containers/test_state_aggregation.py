@@ -11,8 +11,8 @@ from lean_spec.subspecs.containers.attestation import (
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+from lean_spec.subspecs.forkchoice import GossipSignatureEntry
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
 from tests.lean_spec.helpers import (
     make_aggregated_proof,
     make_attestation_data_simple,
@@ -30,12 +30,14 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
         Slot(2), make_bytes32(3), make_bytes32(4), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
-    data_root = att_data.data_root_bytes()
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(i), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(i), att_data
-        )
-        for i in range(2)
+        att_data: {
+            GossipSignatureEntry(
+                ValidatorIndex(i),
+                container_key_manager.sign_attestation_data(ValidatorIndex(i), att_data),
+            )
+            for i in range(2)
+        }
     }
 
     results = state.aggregate_gossip_signatures(
@@ -57,7 +59,7 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     public_keys = [container_key_manager.get_public_key(ValidatorIndex(i)) for i in range(2)]
     aggregated_proofs[0].verify(
         public_keys=public_keys,
-        message=data_root,
+        message=att_data.data_root_bytes(),
         slot=att_data.slot,
     )
 
@@ -72,11 +74,13 @@ def test_aggregate_signatures_splits_when_needed(
         Slot(3), make_bytes32(5), make_bytes32(6), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
-    data_root = att_data.data_root_bytes()
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        )
+        att_data: {
+            GossipSignatureEntry(
+                ValidatorIndex(0),
+                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
+            )
+        }
     }
 
     block_proof = make_aggregated_proof(
@@ -84,8 +88,7 @@ def test_aggregate_signatures_splits_when_needed(
     )
 
     aggregated_payloads = {
-        SignatureKey(ValidatorIndex(1), data_root): [block_proof],
-        SignatureKey(ValidatorIndex(2), data_root): [block_proof],
+        att_data: {block_proof},
     }
 
     gossip_results = state.aggregate_gossip_signatures(
@@ -116,7 +119,7 @@ def test_aggregate_signatures_splits_when_needed(
         if participants == [ValidatorIndex(0)]:
             proof.verify(
                 public_keys=[container_key_manager.get_public_key(ValidatorIndex(0))],
-                message=data_root,
+                message=att_data.data_root_bytes(),
                 slot=att_data.slot,
             )
 
@@ -142,7 +145,7 @@ def test_build_block_collects_valid_available_attestations(
     data_root = att_data.data_root_bytes()
 
     proof = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
-    aggregated_payloads = {SignatureKey(ValidatorIndex(0), data_root): [proof]}
+    aggregated_payloads = {att_data: {proof}}
 
     block, post_state, aggregated_atts, aggregated_proofs = state.build_block(
         slot=Slot(1),
@@ -240,22 +243,27 @@ def test_aggregated_signatures_with_multiple_data_groups(
         Attestation(validator_id=ValidatorIndex(3), data=att_data2),
     ]
 
-    data_root1 = att_data1.data_root_bytes()
-    data_root2 = att_data2.data_root_bytes()
-
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root1): (
-            container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data1)
-        ),
-        SignatureKey(ValidatorIndex(1), data_root1): (
-            container_key_manager.sign_attestation_data(ValidatorIndex(1), att_data1)
-        ),
-        SignatureKey(ValidatorIndex(2), data_root2): (
-            container_key_manager.sign_attestation_data(ValidatorIndex(2), att_data2)
-        ),
-        SignatureKey(ValidatorIndex(3), data_root2): (
-            container_key_manager.sign_attestation_data(ValidatorIndex(3), att_data2)
-        ),
+        att_data1: {
+            GossipSignatureEntry(
+                ValidatorIndex(0),
+                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data1),
+            ),
+            GossipSignatureEntry(
+                ValidatorIndex(1),
+                container_key_manager.sign_attestation_data(ValidatorIndex(1), att_data1),
+            ),
+        },
+        att_data2: {
+            GossipSignatureEntry(
+                ValidatorIndex(2),
+                container_key_manager.sign_attestation_data(ValidatorIndex(2), att_data2),
+            ),
+            GossipSignatureEntry(
+                ValidatorIndex(3),
+                container_key_manager.sign_attestation_data(ValidatorIndex(3), att_data2),
+            ),
+        },
     }
 
     results = state.aggregate_gossip_signatures(
@@ -290,22 +298,21 @@ def test_aggregated_signatures_falls_back_to_block_payload(
         Slot(11), make_bytes32(28), make_bytes32(29), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
-    data_root = att_data.data_root_bytes()
 
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        )
+        att_data: {
+            GossipSignatureEntry(
+                ValidatorIndex(0),
+                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
+            )
+        }
     }
 
     block_proof = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
     )
 
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(0), data_root): [block_proof],
-        SignatureKey(ValidatorIndex(1), data_root): [block_proof],
-    }
+    aggregated_payloads = {att_data: {block_proof}}
 
     gossip_results = state.aggregate_gossip_signatures(
         attestations,
@@ -329,7 +336,7 @@ def test_aggregated_signatures_falls_back_to_block_payload(
         if participants == [ValidatorIndex(0)]:
             proof.verify(
                 public_keys=[container_key_manager.get_public_key(ValidatorIndex(0))],
-                message=data_root,
+                message=att_data.data_root_bytes(),
                 slot=att_data.slot,
             )
 
@@ -378,7 +385,6 @@ def test_build_block_state_root_valid_when_signatures_split(
         target=target,
         source=source,
     )
-    data_root = att_data.data_root_bytes()
 
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
 
@@ -387,11 +393,7 @@ def test_build_block_state_root_valid_when_signatures_split(
     fallback_proof = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(1), ValidatorIndex(2)], att_data
     )
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(0), data_root): [proof_0],
-        SignatureKey(ValidatorIndex(1), data_root): [fallback_proof],
-        SignatureKey(ValidatorIndex(2), data_root): [fallback_proof],
-    }
+    aggregated_payloads = {att_data: {proof_0, fallback_proof}}
 
     block, post_state, aggregated_atts, _ = pre_state.build_block(
         slot=Slot(1),
@@ -447,7 +449,6 @@ def test_greedy_selects_proof_with_maximum_overlap(
         Slot(12), make_bytes32(61), make_bytes32(62), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(4)]
-    data_root = att_data.data_root_bytes()
 
     proof_a = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
@@ -459,12 +460,7 @@ def test_greedy_selects_proof_with_maximum_overlap(
     )
     proof_c = make_aggregated_proof(container_key_manager, [ValidatorIndex(3)], att_data)
 
-    aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {
-        SignatureKey(ValidatorIndex(0), data_root): [proof_a],
-        SignatureKey(ValidatorIndex(1), data_root): [proof_a, proof_b],
-        SignatureKey(ValidatorIndex(2), data_root): [proof_b],
-        SignatureKey(ValidatorIndex(3), data_root): [proof_b, proof_c],
-    }
+    aggregated_payloads = {att_data: {proof_a, proof_b, proof_c}}
 
     aggregated_atts, aggregated_proofs = state.select_aggregated_proofs(
         attestations,
@@ -505,25 +501,25 @@ def test_greedy_stops_when_no_useful_proofs_remain(
         Slot(13), make_bytes32(71), make_bytes32(72), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(5)]
-    data_root = att_data.data_root_bytes()
 
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        ),
-        SignatureKey(ValidatorIndex(1), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(1), att_data
-        ),
+        att_data: {
+            GossipSignatureEntry(
+                ValidatorIndex(0),
+                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
+            ),
+            GossipSignatureEntry(
+                ValidatorIndex(1),
+                container_key_manager.sign_attestation_data(ValidatorIndex(1), att_data),
+            ),
+        }
     }
 
     proof_23 = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(2), ValidatorIndex(3)], att_data
     )
 
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(2), data_root): [proof_23],
-        SignatureKey(ValidatorIndex(3), data_root): [proof_23],
-    }
+    aggregated_payloads = {att_data: {proof_23}}
 
     gossip_results = state.aggregate_gossip_signatures(
         attestations,
@@ -576,12 +572,14 @@ def test_greedy_handles_overlapping_proof_chains(
         Slot(14), make_bytes32(81), make_bytes32(82), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(5)]
-    data_root = att_data.data_root_bytes()
 
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        ),
+        att_data: {
+            GossipSignatureEntry(
+                ValidatorIndex(0),
+                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
+            ),
+        }
     }
 
     proof_a = make_aggregated_proof(
@@ -594,12 +592,7 @@ def test_greedy_handles_overlapping_proof_chains(
         container_key_manager, [ValidatorIndex(3), ValidatorIndex(4)], att_data
     )
 
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(1), data_root): [proof_a],
-        SignatureKey(ValidatorIndex(2), data_root): [proof_a, proof_b],
-        SignatureKey(ValidatorIndex(3), data_root): [proof_b, proof_c],
-        SignatureKey(ValidatorIndex(4), data_root): [proof_c],
-    }
+    aggregated_payloads = {att_data: {proof_a, proof_b, proof_c}}
 
     gossip_results = state.aggregate_gossip_signatures(
         attestations,
@@ -646,16 +639,13 @@ def test_greedy_single_validator_proofs(
         Slot(15), make_bytes32(91), make_bytes32(92), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
-    data_root = att_data.data_root_bytes()
 
     proofs = [
         make_aggregated_proof(container_key_manager, [ValidatorIndex(i)], att_data)
         for i in range(3)
     ]
 
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(i), data_root): [proofs[i]] for i in range(3)
-    }
+    aggregated_payloads = {att_data: set(proofs)}
 
     aggregated_atts, aggregated_proofs = state.select_aggregated_proofs(
         attestations,
@@ -705,22 +695,21 @@ def test_validator_in_both_gossip_and_fallback_proof(
         Slot(16), make_bytes32(101), make_bytes32(102), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
-    data_root = att_data.data_root_bytes()
 
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        ),
+        att_data: {
+            GossipSignatureEntry(
+                ValidatorIndex(0),
+                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
+            ),
+        }
     }
 
     fallback_proof = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
     )
 
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(0), data_root): [fallback_proof],
-        SignatureKey(ValidatorIndex(1), data_root): [fallback_proof],
-    }
+    aggregated_payloads = {att_data: {fallback_proof}}
 
     gossip_results = state.aggregate_gossip_signatures(
         attestations,
@@ -746,7 +735,11 @@ def test_validator_in_both_gossip_and_fallback_proof(
     for proof in aggregated_proofs:
         participants = proof.participants.to_validator_indices()
         public_keys = [container_key_manager.get_public_key(vid) for vid in participants]
-        proof.verify(public_keys=public_keys, message=data_root, slot=att_data.slot)
+        proof.verify(
+            public_keys=public_keys,
+            message=att_data.data_root_bytes(),
+            slot=att_data.slot,
+        )
 
 
 def test_gossip_none_and_aggregated_payloads_none(
@@ -804,7 +797,7 @@ def test_aggregated_payloads_only_no_gossip(
         att_data,
     )
 
-    aggregated_payloads = {SignatureKey(ValidatorIndex(i), data_root): [proof] for i in range(3)}
+    aggregated_payloads = {att_data: {proof}}
 
     aggregated_atts, aggregated_proofs = state.select_aggregated_proofs(
         attestations,
@@ -846,21 +839,21 @@ def test_proof_with_extra_validators_beyond_needed(
         Slot(19), make_bytes32(131), make_bytes32(132), source=source
     )
     attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
-    data_root = att_data.data_root_bytes()
 
     gossip_signatures = {
-        SignatureKey(ValidatorIndex(0), data_root): container_key_manager.sign_attestation_data(
-            ValidatorIndex(0), att_data
-        ),
+        att_data: {
+            GossipSignatureEntry(
+                ValidatorIndex(0),
+                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
+            ),
+        }
     }
 
     proof = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(i) for i in range(4)], att_data
     )
 
-    aggregated_payloads = {
-        SignatureKey(ValidatorIndex(1), data_root): [proof],
-    }
+    aggregated_payloads = {att_data: {proof}}
 
     gossip_results = state.aggregate_gossip_signatures(
         attestations,

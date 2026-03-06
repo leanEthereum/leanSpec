@@ -9,10 +9,7 @@ from typing import TYPE_CHECKING
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import (
-    AggregatedSignatureProof,
-    SignatureKey,
-)
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.containers import PublicKey, Signature
 from lean_spec.types import (
     ZERO_HASH,
@@ -22,7 +19,7 @@ from lean_spec.types import (
     Uint64,
 )
 
-from ..attestation import AggregatedAttestation, AggregationBits, Attestation
+from ..attestation import AggregatedAttestation, AggregationBits, Attestation, AttestationData
 from ..block import Block, BlockBody, BlockHeader
 from ..block.types import AggregatedAttestations
 from ..checkpoint import Checkpoint
@@ -38,7 +35,7 @@ from .types import (
 )
 
 if TYPE_CHECKING:
-    from lean_spec.subspecs.forkchoice import Store
+    from lean_spec.subspecs.forkchoice import GossipSignatureEntry, Store
 
 
 class State(Container):
@@ -741,7 +738,7 @@ class State(Container):
         attestations: list[Attestation] | None = None,
         available_attestations: Iterable[Attestation] | None = None,
         known_block_roots: AbstractSet[Bytes32] | None = None,
-        aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
+        aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] | None = None,
     ) -> tuple[Block, State, list[AggregatedAttestation], list[AggregatedSignatureProof]]:
         """
         Build a valid block on top of this state.
@@ -754,9 +751,6 @@ class State(Container):
         processing attestations may update the justified checkpoint, which may
         make additional attestations valid.
 
-        Signatures are looked up from the provided signature maps using
-        (validator_id, attestation_data_root) as the key.
-
         Args:
             slot: Target slot for the block.
             proposer_index: Validator index of the proposer.
@@ -764,8 +758,7 @@ class State(Container):
             attestations: Initial attestations to include.
             available_attestations: Pool of attestations to collect from.
             known_block_roots: Set of known block roots for attestation validation.
-            gossip_signatures: Per-validator XMSS signatures learned from gossip.
-            aggregated_payloads: Aggregated signature payloads learned from blocks.
+            aggregated_payloads: Aggregated signature payloads keyed by attestation data.
 
         Returns:
             Tuple of (Block, post-State, collected attestations, signatures).
@@ -804,9 +797,6 @@ class State(Container):
 
             for attestation in available_attestations:
                 data = attestation.data
-                validator_id = attestation.validator_id
-                data_root = data.data_root_bytes()
-                sig_key = SignatureKey(validator_id, data_root)
 
                 # Skip if target block is unknown.
                 if data.head.root not in known_block_roots:
@@ -821,12 +811,20 @@ class State(Container):
                     continue
 
                 # We can only include an attestation if we have some way to later provide
-                # an aggregated proof for its group:
-                # - at least one aggregated proof learned from a block that references
-                #   this validator+data.
-                has_block_proof = bool(aggregated_payloads and sig_key in aggregated_payloads)
+                # an aggregated proof for this attestation.
+                # - at least one proof for the attestation data with this validator's
+                #  participation bit set
+                if not aggregated_payloads or data not in aggregated_payloads:
+                    continue
 
-                if has_block_proof:
+                vid = attestation.validator_id
+                has_proof_for_validator = any(
+                    int(vid) < len(proof.participants.data)
+                    and bool(proof.participants.data[int(vid)])
+                    for proof in aggregated_payloads[data]
+                )
+
+                if has_proof_for_validator:
                     new_attestations.append(attestation)
 
             # Fixed point reached: no new attestations found.
@@ -864,7 +862,7 @@ class State(Container):
     def aggregate_gossip_signatures(
         self,
         attestations: Collection[Attestation],
-        gossip_signatures: dict[SignatureKey, "Signature"] | None = None,
+        gossip_signatures: dict[AttestationData, set[GossipSignatureEntry]] | None = None,
     ) -> list[tuple[AggregatedAttestation, AggregatedSignatureProof]]:
         """
         Collect aggregated signatures from gossip network and aggregate them.
@@ -877,8 +875,9 @@ class State(Container):
         ----------
         attestations : Collection[Attestation]
             Individual attestations to aggregate and sign.
-        gossip_signatures : dict[SignatureKey, Signature] | None
-            Per-validator XMSS signatures learned from the gossip network.
+        gossip_signatures : dict[AttestationData, set[GossipSignatureEntry]] | None
+            Per-validator XMSS signatures learned from the gossip network,
+            keyed by the attestation data they signed.
 
         Returns:
         -------
@@ -912,18 +911,14 @@ class State(Container):
             gossip_keys: list[PublicKey] = []
             gossip_ids: list[ValidatorIndex] = []
 
-            # Attempt to collect each validator's signature from gossip.
-            #
-            # Signatures are keyed by (validator ID, data root).
-            # - If a signature exists, we add it to our collection.
-            if gossip_signatures:
-                for vid in validator_ids:
-                    key = SignatureKey(vid, data_root)
-                    if (sig := gossip_signatures.get(key)) is not None:
-                        # Found a signature: collect it along with the public key.
-                        gossip_sigs.append(sig)
-                        gossip_keys.append(self.validators[vid].get_pubkey())
-                        gossip_ids.append(vid)
+            # Look up signatures by attestation data directly.
+            # Sort by validator ID for deterministic aggregation order.
+            if gossip_signatures and (entries := gossip_signatures.get(data)):
+                for entry in sorted(entries, key=lambda e: e.validator_id):
+                    if entry.validator_id in validator_ids:
+                        gossip_sigs.append(entry.signature)
+                        gossip_keys.append(self.validators[entry.validator_id].get_pubkey())
+                        gossip_ids.append(entry.validator_id)
 
             # If we collected any gossip signatures, aggregate them into a proof.
             #
@@ -948,27 +943,24 @@ class State(Container):
     def select_aggregated_proofs(
         self,
         attestations: list[Attestation],
-        aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] | None = None,
+        aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] | None = None,
     ) -> tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]:
         """
         Select aggregated proofs for a set of attestations.
 
         This method selects aggregated proofs from aggregated_payloads,
-        prioritizing proofs from the most recent blocks.
+        using a greedy set-cover approach to minimize the number of proofs.
 
         Strategy:
-        1. For each attestation group, aggregate as many signatures as possible
-           from the most recent block's proofs.
-        2. If remaining validators exist after step 1, include proofs from
-           previous blocks that cover them.
+        For each attestation group, greedily pick proofs that cover the most
+        remaining validators until all are covered or no more proofs exist.
 
         Parameters:
         ----------
         attestations : list[Attestation]
             Individual attestations to aggregate and sign.
-        aggregated_payloads : dict[SignatureKey, list[AggregatedSignatureProof]] | None
-            Aggregated proofs learned from previously-seen blocks.
-            The list for each key should be ordered with most recent proofs first.
+        aggregated_payloads : dict[AttestationData, set[AggregatedSignatureProof]] | None
+            Aggregated proofs keyed by attestation data.
 
         Returns:
         -------
@@ -980,87 +972,36 @@ class State(Container):
         # Group individual attestations by data
         for aggregated in AggregatedAttestation.aggregate_by_data(attestations):
             data = aggregated.data
-            data_root = data.data_root_bytes()
-            validator_ids = (
-                aggregated.aggregation_bits.to_validator_indices()
-            )  # validators contributed to this attestation
+            validator_ids = aggregated.aggregation_bits.to_validator_indices()
 
-            # Validators that are missing in the current aggregation are put into remaining.
+            # Validators that still need proof coverage.
             remaining: set[ValidatorIndex] = set(validator_ids)
 
-            # Fallback to existing proofs
-            #
-            # Some validators may not have broadcast their signatures over gossip,
-            # but we might have seen proofs for them in previously-received blocks.
-            #
-            # Example scenario:
-            #
-            #   - We need signatures from validators {0, 1, 2, 3, 4}.
-            #   - Gossip gave us signatures for {0, 1}.
-            #   - Remaining: {2, 3, 4}.
-            #   - From old blocks, we have:
-            #       • Proof A covering {2, 3}
-            #       • Proof B covering {3, 4}
-            #       • Proof C covering {4}
-            #
-            # We want to cover {2, 3, 4} with as few proofs as possible.
-            # A greedy approach: always pick the proof with the largest overlap.
-            #
-            #   - Iteration 1: Proof A covers {2, 3} (2 validators). Pick it.
-            #                  Remaining: {4}.
-            #   - Iteration 2: Proof B covers {4} (1 validator). Pick it.
-            #                  Remaining: {} → done.
-            #
-            # Result: 2 proofs instead of 3.
+            # Look up all proofs for this attestation data directly.
+            candidates = sorted(
+                (aggregated_payloads.get(data, set()) if aggregated_payloads else set()),
+                key=lambda p: -len(p.participants.to_validator_indices()),
+            )
 
-            while remaining and aggregated_payloads:
-                # Step 1: Find candidate proofs for a remaining validator.
-                #
-                # Proofs are indexed by (validator ID, data root). We pick any
-                # validator still in the remaining set and look up proofs that
-                # include them.
-                target_id = next(iter(remaining))
-                candidates = aggregated_payloads.get(SignatureKey(target_id, data_root), [])
+            if not candidates:
+                continue
 
-                # No proofs found for this validator.
-                # Remove it and try another validator.
-                if not candidates:
-                    remaining.discard(target_id)
-                    continue
-
-                # Step 2: Pick the proof covering the most remaining validators.
-                #
-                # At each step, we select the single proof that eliminates the highest
-                # number of *currently missing* validators from our list.
-                #
-                # The 'score' of a candidate proof is defined as the size of the
-                # intersection between:
-                #   A. The validators inside the proof (`p.participants`)
-                #   B. The validators we still need (`remaining`)
-                #
-                # Example:
-                #   Remaining needed : {Alice, Bob, Charlie}
-                #   Proof 1 covers   : {Alice, Dave}         -> Score: 1 (Only Alice counts)
-                #   Proof 2 covers   : {Bob, Charlie, Eve}   -> Score: 2 (Bob & Charlie count)
-                #   -> Result: We pick Proof 2 because it has the highest score.
-                best, covered = max(
-                    ((p, set(p.participants.to_validator_indices())) for p in candidates),
-                    # Calculate the intersection size (A ∩ B) for every candidate.
-                    key=lambda pair: len(pair[1] & remaining),
-                )
-
-                # Guard: If the best proof has zero overlap with remaining, stop.
-                if covered.isdisjoint(remaining):
+            # Greedy set-cover: candidates are pre-sorted by participant count
+            # (most validators first). Iterate in order and pick any proof that
+            # overlaps with remaining validators.
+            #
+            # TODO: We don't support recursive aggregation yet.
+            # In the future, we should be able to aggregate the proofs into a single proof.
+            for proof in candidates:
+                if not remaining:
                     break
-
-                # Step 3: Record the proof and remove covered validators.
-                #
-                # TODO: We don't support recursive aggregation yet.
-                # In the future, we should be able to aggregate the proofs into a single proof.
+                covered = set(proof.participants.to_validator_indices())
+                if covered.isdisjoint(remaining):
+                    continue
                 results.append(
                     (
-                        AggregatedAttestation(aggregation_bits=best.participants, data=data),
-                        best,
+                        AggregatedAttestation(aggregation_bits=proof.participants, data=data),
+                        proof,
                     )
                 )
                 remaining -= covered

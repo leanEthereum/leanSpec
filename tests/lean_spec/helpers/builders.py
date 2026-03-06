@@ -31,7 +31,7 @@ from lean_spec.subspecs.containers.block.types import AggregatedAttestations, At
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
-from lean_spec.subspecs.forkchoice import Store
+from lean_spec.subspecs.forkchoice import GossipSignatureEntry, Store
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.peer import PeerInfo
@@ -41,7 +41,7 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.subspecs.sync.service import SyncService
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import (
@@ -389,15 +389,15 @@ def make_store_with_gossip_signatures(
         validator_id,
         attestation_slot,
     )
-    data_root = attestation_data.data_root_bytes()
     gossip_signatures = {
-        SignatureKey(vid, data_root): key_manager.sign_attestation_data(vid, attestation_data)
-        for vid in attesting_validators
+        attestation_data: {
+            GossipSignatureEntry(vid, key_manager.sign_attestation_data(vid, attestation_data))
+            for vid in attesting_validators
+        },
     }
     store = store.model_copy(
         update={
             "gossip_signatures": gossip_signatures,
-            "attestation_data_by_root": {data_root: attestation_data},
         }
     )
     return store, attestation_data
