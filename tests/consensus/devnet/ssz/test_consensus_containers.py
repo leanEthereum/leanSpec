@@ -2,6 +2,7 @@
 
 import pytest
 from consensus_testing import SSZTestFiller
+from consensus_testing.keys import create_dummy_signature
 
 from lean_spec.subspecs.containers import (
     AggregatedAttestation,
@@ -33,7 +34,6 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
     Validators,
 )
-from lean_spec.subspecs.xmss import Signature
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Boolean, ByteListMiB, Bytes32, Bytes52, Uint64
 
@@ -57,16 +57,6 @@ def _typical_attestation_data() -> AttestationData:
     target = Checkpoint(root=Bytes32(b"\x02" * 32), slot=Slot(99))
     source = Checkpoint(root=Bytes32(b"\x03" * 32), slot=Slot(50))
     return AttestationData(slot=Slot(100), head=head, target=target, source=source)
-
-
-# Empty signature: path=[], rho=zeros, hashes=[]
-EMPTY_SIGNATURE_BYTES = bytes.fromhex(
-    "24000000000000000000000000000000000000000000000000000000000000002800000004000000"
-)
-
-
-def _empty_signature() -> Signature:
-    return Signature.decode_bytes(EMPTY_SIGNATURE_BYTES)
 
 
 # --- Checkpoint ---
@@ -127,7 +117,7 @@ def test_signed_attestation_minimal(ssz: SSZTestFiller) -> None:
         value=SignedAttestation(
             validator_id=ValidatorIndex(0),
             data=_zero_attestation_data(),
-            signature=_empty_signature(),
+            signature=create_dummy_signature(),
         ),
     )
 
@@ -286,7 +276,7 @@ def test_block_signatures_empty(ssz: SSZTestFiller) -> None:
         type_name="BlockSignatures",
         value=BlockSignatures(
             attestation_signatures=AttestationSignatures(data=[]),
-            proposer_signature=_empty_signature(),
+            proposer_signature=create_dummy_signature(),
         ),
     )
 
@@ -304,7 +294,7 @@ def test_block_signatures_with_attestation(ssz: SSZTestFiller) -> None:
                     )
                 ]
             ),
-            proposer_signature=_empty_signature(),
+            proposer_signature=create_dummy_signature(),
         ),
     )
 
@@ -325,7 +315,7 @@ def test_signed_block_with_attestation_minimal(ssz: SSZTestFiller) -> None:
     message = BlockWithAttestation(block=block, proposer_attestation=attestation)
     signature = BlockSignatures(
         attestation_signatures=AttestationSignatures(data=[]),
-        proposer_signature=_empty_signature(),
+        proposer_signature=create_dummy_signature(),
     )
     ssz(
         type_name="SignedBlockWithAttestation",

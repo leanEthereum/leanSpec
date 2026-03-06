@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import override
+
 import pytest
 
 from lean_spec.subspecs.containers.slot import Slot
@@ -34,6 +36,18 @@ class ProdSignature(Container):
     path: ProdHashTreeOpening
     rho: Randomness
     hashes: ProdHashDigestList
+
+    @classmethod
+    @override
+    def is_fixed_size(cls) -> bool:
+        """Report as fixed-size, matching ream's `FixedBytes<3112>`."""
+        return True
+
+    @classmethod
+    @override
+    def get_byte_length(cls) -> int:
+        """Return the prod signature byte length."""
+        return PROD_CONFIG.SIGNATURE_LEN_BYTES
 
 
 REAM_PUBLIC_KEY_HEX = (

@@ -8,7 +8,7 @@ Base types (HashDigestVector, Parameter, etc.) are defined in types.py.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, override
 
 from pydantic import model_serializer
 
@@ -16,6 +16,7 @@ from lean_spec.subspecs.containers.slot import Slot
 
 from ...types import Bytes32, Uint64
 from ...types.container import Container
+from .constants import TARGET_CONFIG
 from .subtree import HashSubTree
 from .types import (
     HashDigestList,
@@ -62,10 +63,12 @@ class Signature(Container):
     - rho: Vector[Fp, RAND_LEN_FE]
     - hashes: List[Vector[Fp, HASH_DIGEST_LENGTH], NODE_LIST_LIMIT]
 
-    This is a variable-size Container because path and hashes are variable-size
-    fields. The field dimensions are determined by the scheme parameters, so in
-    practice every valid signature serializes to the same byte count, but the SSZ
-    type system correctly classifies it as variable-size.
+    Although the fields are internally variable-size SSZ types, every valid
+    signature serializes to exactly `SIGNATURE_LEN_BYTES`. This class overrides
+    `is_fixed_size()` to report as fixed-size so that parent containers treat
+    it as an opaque byte blob. This avoids leaking internal structure (field
+    count, offset layout) into the wire format, keeping the signature scheme
+    an implementation detail that can evolve independently.
     """
 
     path: HashTreeOpening
@@ -74,6 +77,23 @@ class Signature(Container):
     """The randomness used to successfully encode the message."""
     hashes: HashDigestList
     """The one-time signature itself: a list of intermediate Winternitz chain hashes."""
+
+    @classmethod
+    @override
+    def is_fixed_size(cls) -> bool:
+        """
+        Report as fixed-size for cross-client SSZ interoperability.
+
+        Ream serializes XMSS signatures as `FixedBytes<3112>`, so parent
+        containers must inline the bytes without an offset pointer.
+        """
+        return True
+
+    @classmethod
+    @override
+    def get_byte_length(cls) -> int:
+        """Return the fixed byte length of the SSZ-encoded signature."""
+        return TARGET_CONFIG.SIGNATURE_LEN_BYTES
 
     @model_serializer(mode="plain", when_used="json")
     def _serialize_as_bytes(self) -> str:
