@@ -275,6 +275,20 @@ class ValidatorService:
                     validator_index=validator_index,
                 )
 
+                # Diagnostic: log parent details so we can verify interop.
+                parent_block = store.blocks.get(block.parent_root)
+                parent_slot = parent_block.slot if parent_block else "UNKNOWN"
+                parent_proposer = parent_block.proposer_index if parent_block else "?"
+                logger.info(
+                    "Produced block slot=%d proposer=%d parent_root=%s "
+                    "parent_slot=%s parent_proposer=%s",
+                    slot,
+                    validator_index,
+                    block.parent_root.hex()[:16],
+                    parent_slot,
+                    parent_proposer,
+                )
+
                 # Update the store through sync service.
                 #
                 # This ensures the block is integrated into forkchoice.

@@ -309,15 +309,15 @@ class TestENRAddressExtraction:
             seq=SeqNumber(1),
             pairs={
                 EnrKey("id"): b"v4",
-                EnrKey("secp256k1"): NODE_B_PUBKEY,
                 EnrKey("ip"): bytes([127, 0, 0, 1]),
-                EnrKey("udp"): (9000).to_bytes(2, "big"),
+                EnrKey("quic"): (9000).to_bytes(2, "big"),
+                EnrKey("secp256k1"): NODE_B_PUBKEY,
             },
         )
 
         # Check IPv4 extraction.
         assert enr.ip4 == "127.0.0.1"
-        assert enr.udp_port == Port(9000)
+        assert enr.quic_port == Port(9000)
 
     def test_enr_ip6_extraction(self, local_private_key):
         """Extract IPv6 address from ENR."""
@@ -329,9 +329,9 @@ class TestENRAddressExtraction:
             seq=SeqNumber(1),
             pairs={
                 EnrKey("id"): b"v4",
-                EnrKey("secp256k1"): NODE_B_PUBKEY,
                 EnrKey("ip6"): ipv6_bytes,
-                EnrKey("udp6"): (9000).to_bytes(2, "big"),
+                EnrKey("quic6"): (9000).to_bytes(2, "big"),
+                EnrKey("secp256k1"): NODE_B_PUBKEY,
             },
         )
 
@@ -348,11 +348,11 @@ class TestENRAddressExtraction:
             seq=SeqNumber(1),
             pairs={
                 EnrKey("id"): b"v4",
-                EnrKey("secp256k1"): NODE_B_PUBKEY,
                 EnrKey("ip"): bytes([192, 168, 1, 1]),
-                EnrKey("udp"): (9000).to_bytes(2, "big"),
                 EnrKey("ip6"): ipv6_bytes,
-                EnrKey("udp6"): (9001).to_bytes(2, "big"),
+                EnrKey("quic"): (9000).to_bytes(2, "big"),
+                EnrKey("quic6"): (9001).to_bytes(2, "big"),
+                EnrKey("secp256k1"): NODE_B_PUBKEY,
             },
         )
 
@@ -372,7 +372,7 @@ class TestENRAddressExtraction:
         )
 
         assert enr.ip4 is None
-        assert enr.udp_port is None
+        assert enr.quic_port is None
 
 
 class TestServiceIPAddressEncoding:
@@ -489,11 +489,11 @@ class TestBootstrap:
             seq=SeqNumber(1),
             pairs={
                 EnrKey("id"): b"v4",
+                EnrKey("ip"): bytes([192, 168, 1, 1]),
+                EnrKey("quic"): (30303).to_bytes(2, "big"),
                 EnrKey("secp256k1"): bytes.fromhex(
                     "02a448f24c6d18e575453db13171562b71999873db5b286df957af199ec94617f7"
                 ),
-                EnrKey("ip"): bytes([192, 168, 1, 1]),
-                EnrKey("udp"): (30303).to_bytes(2, "big"),
             },
         )
 
@@ -514,11 +514,11 @@ class TestBootstrap:
                 seq=SeqNumber(i + 1),
                 pairs={
                     EnrKey("id"): b"v4",
+                    EnrKey("ip"): bytes([192, 168, 1, i + 1]),
+                    EnrKey("quic"): (30303 + i).to_bytes(2, "big"),
                     EnrKey("secp256k1"): bytes.fromhex(
                         "02a448f24c6d18e575453db13171562b71999873db5b286df957af199ec94617f7"
                     ),
-                    EnrKey("ip"): bytes([192, 168, 1, i + 1]),
-                    EnrKey("udp"): (30303 + i).to_bytes(2, "big"),
                 },
             )
             bootnodes.append(bootnode)
@@ -859,9 +859,9 @@ class TestBootstrapFlow:
             seq=SeqNumber(1),
             pairs={
                 EnrKey("id"): b"v4",
-                EnrKey("secp256k1"): node_a_pubkey,
                 EnrKey("ip"): bytes([192, 168, 1, 1]),
-                EnrKey("udp"): (30303).to_bytes(2, "big"),
+                EnrKey("quic"): (30303).to_bytes(2, "big"),
+                EnrKey("secp256k1"): node_a_pubkey,
             },
         )
 

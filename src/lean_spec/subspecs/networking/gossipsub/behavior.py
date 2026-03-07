@@ -363,13 +363,19 @@ class GossipsubBehavior:
         """
         existing = self._peers.get(peer_id)
 
+        # Extract stream_id for diagnostics.
+        stream_id = getattr(getattr(stream, "_stream", None), "stream_id", "?")
+
         if inbound:
             # Peer opened an inbound stream to us — use for receiving.
             if existing is None:
                 state = PeerState(peer_id=peer_id, inbound_stream=stream)
                 self._peers[peer_id] = state
                 logger.info(
-                    "[GS %x] Added gossipsub peer %s (inbound first)", self._short_id, peer_id
+                    "[GS %x] Added gossipsub peer %s (inbound first, stream_id=%s)",
+                    self._short_id,
+                    peer_id,
+                    stream_id,
                 )
             else:
                 if existing.inbound_stream is not None:
@@ -377,7 +383,12 @@ class GossipsubBehavior:
                     return
                 existing.inbound_stream = stream
                 state = existing
-                logger.debug("Added inbound stream for peer %s", peer_id)
+                logger.debug(
+                    "[GS %x] Added inbound stream for peer %s (stream_id=%s)",
+                    self._short_id,
+                    peer_id,
+                    stream_id,
+                )
 
             state.receive_task = asyncio.create_task(self._receive_loop(peer_id, stream))
 
@@ -392,14 +403,22 @@ class GossipsubBehavior:
                 state = PeerState(peer_id=peer_id, outbound_stream=stream)
                 self._peers[peer_id] = state
                 logger.info(
-                    "[GS %x] Added gossipsub peer %s (outbound first)", self._short_id, peer_id
+                    "[GS %x] Added gossipsub peer %s (outbound first, stream_id=%s)",
+                    self._short_id,
+                    peer_id,
+                    stream_id,
                 )
             else:
                 if existing.outbound_stream is not None:
                     logger.debug("Peer %s already has outbound stream, ignoring", peer_id)
                     return
                 existing.outbound_stream = stream
-                logger.debug("Added outbound stream for peer %s", peer_id)
+                logger.debug(
+                    "[GS %x] Added outbound stream for peer %s (stream_id=%s)",
+                    self._short_id,
+                    peer_id,
+                    stream_id,
+                )
 
             if self.mesh.subscriptions:
                 rpc = RPC.subscription(list(self.mesh.subscriptions), subscribe=True)
@@ -935,7 +954,7 @@ class GossipsubBehavior:
         logger.debug("Starting receive loop for peer %s", peer_id)
 
         try:
-            while self._running and peer_id in self._peers:
+            while peer_id in self._peers:
                 try:
                     chunk = await stream.read(65536)
                     if not chunk:

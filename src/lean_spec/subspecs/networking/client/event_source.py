@@ -275,7 +275,7 @@ class GossipHandler:
         ForkMismatchError.
 
         Args:
-            topic_str: Full topic string (e.g., "/leanconsensus/0x.../blocks/ssz_snappy").
+            topic_str: Full topic string (e.g., "/leanconsensus/0x.../block/ssz_snappy").
             compressed_data: Snappy-compressed SSZ data.
 
         Returns:
@@ -686,7 +686,7 @@ class LiveNetworkEventSource:
         in mesh management via GRAFT/PRUNE.
 
         Args:
-            topic: Full topic string (e.g., "/leanconsensus/0x.../blocks/ssz_snappy").
+            topic: Full topic string (e.g., "/leanconsensus/0x.../block/ssz_snappy").
         """
         self._gossipsub_behavior.subscribe(topic)
         logger.debug("Subscribed to gossip topic %s", topic)
@@ -803,6 +803,11 @@ class LiveNetworkEventSource:
         Returns:
             Peer ID on success, None on failure.
         """
+        # Ensure _running is set so background tasks (like _accept_streams)
+        # can operate. Without this, _accept_streams exits immediately if
+        # dial() is called before listen().
+        self._running = True
+
         try:
             # Detect transport type and connect accordingly.
             if is_quic_multiaddr(multiaddr):
@@ -1028,6 +1033,11 @@ class LiveNetworkEventSource:
         try:
             # Open the gossipsub stream.
             stream = await conn.open_stream(GOSSIPSUB_DEFAULT_PROTOCOL_ID)
+            logger.info(
+                "Opened outbound gossipsub stream_id=%d to %s (expect odd=server-initiated)",
+                stream.stream_id,
+                peer_id,
+            )
 
             # Wrap in reader/writer for buffered I/O.
             wrapped_stream = QuicStreamAdapter(stream)
@@ -1035,7 +1045,11 @@ class LiveNetworkEventSource:
             # Add peer to the gossipsub behavior (outbound stream).
             await self._gossipsub_behavior.add_peer(peer_id, wrapped_stream, inbound=False)
 
-            logger.info("GossipSub stream established with %s", peer_id)
+            logger.info(
+                "GossipSub outbound stream established with %s (stream_id=%d)",
+                peer_id,
+                stream.stream_id,
+            )
 
         except Exception as e:
             logger.warning("Failed to setup gossipsub stream with %s: %s", peer_id, e)
@@ -1168,6 +1182,7 @@ class LiveNetworkEventSource:
         Each protocol has its own message format and semantics.
         """
         try:
+            logger.info("Stream acceptor started for peer %s", peer_id)
             # Main loop: accept streams until shutdown or disconnection.
             #
             # The loop continues as long as:
@@ -1199,7 +1214,7 @@ class LiveNetworkEventSource:
                     wrapper = QuicStreamAdapter(stream)
                     gs_id = self._gossipsub_behavior._instance_id % 0xFFFF
                     logger.debug(
-                        "[GS %x] Accepting stream %d from %s, attempting protocol negotiation",
+                        "[GS %x] Accepting inbound stream %d from %s, negotiating protocol...",
                         gs_id,
                         stream.stream_id,
                         peer_id,
@@ -1209,7 +1224,12 @@ class LiveNetworkEventSource:
                         timeout=RESP_TIMEOUT,
                     )
                     stream._protocol_id = protocol_id
-                    logger.debug("Negotiated protocol %s with %s", protocol_id, peer_id)
+                    logger.debug(
+                        "Negotiated protocol %s on stream %d with %s",
+                        protocol_id,
+                        stream.stream_id,
+                        peer_id,
+                    )
                 except asyncio.TimeoutError:
                     logger.debug(
                         "Protocol negotiation timeout for %s stream %d",
@@ -1293,12 +1313,35 @@ class LiveNetworkEventSource:
                     if not self._gossipsub_behavior.has_outbound_stream(peer_id):
 
                         async def setup_outbound_with_delay() -> None:
-                            await asyncio.sleep(0.1)  # Small delay to avoid contention
-                            await self._setup_gossipsub_stream(peer_id, conn)
+                            try:
+                                await asyncio.sleep(0.1)  # Small delay to avoid contention
+                                # Re-check BEFORE opening a stream. The dialer path
+                                # (dial → _setup_gossipsub_stream) may have set up the
+                                # outbound stream while we were sleeping. Opening a second
+                                # gossipsub stream would cause the gossipsub handler to
+                                # replace its inbound reader with the new (orphan) stream.
+                                if self._gossipsub_behavior.has_outbound_stream(peer_id):
+                                    logger.info(
+                                        "Peer %s already has outbound stream (set by dialer), "
+                                        "skipping duplicate setup",
+                                        peer_id,
+                                    )
+                                    return
+                                logger.info("Setting up outbound gossipsub stream for %s", peer_id)
+                                await self._setup_gossipsub_stream(peer_id, conn)
+                            except Exception as e:
+                                logger.warning(
+                                    "setup_outbound_with_delay failed for %s: %s", peer_id, e
+                                )
 
                         gossip_task = asyncio.create_task(setup_outbound_with_delay())
                         self._gossip_tasks.add(gossip_task)
                         gossip_task.add_done_callback(self._gossip_tasks.discard)
+                    else:
+                        logger.info(
+                            "Peer %s already has outbound gossipsub stream, skipping setup",
+                            peer_id,
+                        )
 
                 elif protocol_id in REQRESP_PROTOCOL_IDS:
                     # ReqResp stream: Status or BlocksByRoot request.

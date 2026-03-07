@@ -329,8 +329,8 @@ class DiscoveryService:
                 # The transport needs the ENR to complete handshakes.
                 # When we PING and receive WHOAREYOU, the transport looks up
                 # the remote's public key from its ENR cache.
-                if enr.ip4 and enr.udp_port:
-                    addr = (enr.ip4, int(enr.udp_port))
+                if enr.ip4 and enr.quic_port:
+                    addr = (enr.ip4, int(enr.quic_port))
                     self._transport.register_node_address(node_id, addr)
                     self._transport.register_enr(node_id, enr)
 
@@ -608,8 +608,8 @@ class DiscoveryService:
             raise ValueError("ENR has no valid node ID")
 
         endpoint = None
-        if enr.ip4 and enr.udp_port:
-            endpoint = f"{enr.ip4}:{enr.udp_port}"
+        if enr.ip4 and enr.quic_port:
+            endpoint = f"{enr.ip4}:{enr.quic_port}"
 
         return NodeEntry(
             node_id=node_id,
@@ -692,8 +692,8 @@ class DiscoveryService:
             self._transport.register_enr(node_id, enr)
 
             # Register address for communication.
-            if enr.ip4 and enr.udp_port:
-                addr = (enr.ip4, int(enr.udp_port))
+            if enr.ip4 and enr.quic_port:
+                addr = (enr.ip4, int(enr.quic_port))
                 self._transport.register_node_address(node_id, addr)
 
             logger.debug("Discovered node %s via NODES", node_id.hex()[:16])

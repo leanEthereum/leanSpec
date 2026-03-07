@@ -53,8 +53,8 @@ def _sign_enr_content(content_items: list[RLPItem]) -> bytes:
     return r.to_bytes(32, "big") + s.to_bytes(32, "big")
 
 
-def _make_enr_with_udp(ip_bytes: bytes, udp_port: int) -> str:
-    """Create a properly signed ENR string with IPv4 and UDP port."""
+def _make_enr_with_udp(ip_bytes: bytes, quic_port: int) -> str:
+    """Create a properly signed ENR string with IPv4 and quic port."""
     # Content items (keys must be sorted).
     content_items: list[RLPItem] = [
         b"\x01",  # seq = 1
@@ -62,10 +62,10 @@ def _make_enr_with_udp(ip_bytes: bytes, udp_port: int) -> str:
         b"v4",
         b"ip",
         ip_bytes,
+        b"quic",
+        quic_port.to_bytes(2, "big"),
         b"secp256k1",
         _TEST_COMPRESSED_PUBKEY,
-        b"udp",
-        udp_port.to_bytes(2, "big"),
     ]
     signature = _sign_enr_content(content_items)
 
@@ -75,17 +75,17 @@ def _make_enr_with_udp(ip_bytes: bytes, udp_port: int) -> str:
 
 
 def _make_enr_with_ipv6_udp(ip6_bytes: bytes, udp_port: int) -> str:
-    """Create a properly signed ENR string with IPv6 and UDP port."""
+    """Create a properly signed ENR string with IPv6 and quic6 port."""
     content_items: list[RLPItem] = [
         b"\x01",  # seq = 1
         b"id",
         b"v4",
         b"ip6",
         ip6_bytes,
+        b"quic6",
+        udp_port.to_bytes(2, "big"),
         b"secp256k1",
         _TEST_COMPRESSED_PUBKEY,
-        b"udp",
-        udp_port.to_bytes(2, "big"),
     ]
     signature = _sign_enr_content(content_items)
 

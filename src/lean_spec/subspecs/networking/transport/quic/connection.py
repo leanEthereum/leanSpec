@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import ssl
 import tempfile
 from collections.abc import Awaitable, Callable
@@ -46,6 +47,8 @@ from ..identity import IdentityKeypair
 from ..peer_id import PeerId
 from .stream_adapter import QuicStreamAdapter
 from .tls import generate_libp2p_certificate
+
+logger = logging.getLogger(__name__)
 
 
 class QuicTransportError(Exception):
@@ -282,6 +285,12 @@ class QuicConnection:
                 )
                 self._streams[stream_id] = stream
                 self._incoming_streams.put_nowait(stream)
+                logger.info(
+                    "[QUIC] New incoming stream %d queued (queue size: %d, data: %d bytes)",
+                    stream_id,
+                    self._incoming_streams.qsize(),
+                    len(event.data),
+                )
 
             self._streams[stream_id]._receive_data(event.data)
             if event.end_stream:
@@ -317,6 +326,7 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
         self.connection: QuicConnection | None = None
         self.peer_identity: bytes | None = None
         self.handshake_complete = asyncio.Event()
+        self._buffered_events: list[QuicEvent] = []
 
     def quic_event_received(self, event: QuicEvent) -> None:
         """Handle QUIC events."""
@@ -341,9 +351,24 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
             if self._on_handshake is not None and self.connection is None:
                 self._on_handshake(self)
 
-        # Forward events to connection handler.
+        # Forward events to connection handler, buffering if not yet set.
+        #
+        # After handshake completes, the peer may open streams immediately.
+        # The QuicConnection wrapper is created asynchronously after
+        # handshake_complete is set, so events arriving in between would
+        # be lost. Buffer them and replay once connection is assigned.
         if self.connection:
             self.connection._handle_event(event)
+        elif self.handshake_complete.is_set():
+            self._buffered_events.append(event)
+
+    def _replay_buffered_events(self) -> None:
+        """Replay events buffered between handshake and connection assignment."""
+        if self._buffered_events and self.connection:
+            logger.info("[QUIC] Replaying %d buffered events", len(self._buffered_events))
+            for event in self._buffered_events:
+                self.connection._handle_event(event)
+            self._buffered_events.clear()
 
 
 def is_quic_multiaddr(multiaddr: str) -> bool:
@@ -535,6 +560,7 @@ class QuicConnectionManager:
                 _remote_addr=multiaddr,
             )
             protocol.connection = conn
+            protocol._replay_buffered_events()
 
             self._connections[peer_id] = conn
             return conn
@@ -596,6 +622,7 @@ class QuicConnectionManager:
                 _remote_addr=remote_addr,
             )
             protocol_instance.connection = conn
+            protocol_instance._replay_buffered_events()
             self._connections[remote_peer_id] = conn
 
             # Invoke callback asynchronously so it doesn't block event processing.

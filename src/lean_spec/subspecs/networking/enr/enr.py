@@ -140,23 +140,23 @@ class ENR(StrictBaseModel):
         return None
 
     @property
-    def udp_port(self) -> Port | None:
-        """UDP port for discovery (applies to both unless udp6 is set)."""
-        raw = self.get(keys.UDP)
+    def quic_port(self) -> Port | None:
+        """QUIC port for QUIC connections."""
+        raw = self.get(keys.QUIC)
         return Port(int.from_bytes(raw, "big")) if raw else None
 
     @property
-    def udp6_port(self) -> Port | None:
-        """IPv6-specific UDP port. Falls back to udp_port if not set."""
-        raw = self.get(keys.UDP6)
+    def quic6_port(self) -> Port | None:
+        """IPv6-specific QUIC port."""
+        raw = self.get(keys.QUIC6)
         return Port(int.from_bytes(raw, "big")) if raw else None
 
     def multiaddr(self) -> Multiaddr | None:
         """Construct QUIC multiaddress from endpoint info."""
-        if self.ip4 and self.udp_port:
-            return Multiaddr(f"/ip4/{self.ip4}/udp/{self.udp_port}/quic-v1")
-        if self.ip6 and self.udp_port:
-            return Multiaddr(f"/ip6/{self.ip6}/udp/{self.udp_port}/quic-v1")
+        if self.ip4 and self.quic_port:
+            return Multiaddr(f"/ip4/{self.ip4}/udp/{self.quic_port}/quic-v1")
+        if self.ip6 and self.quic6_port:
+            return Multiaddr(f"/ip6/{self.ip6}/udp/{self.quic6_port}/quic-v1")
         return None
 
     @property
@@ -327,8 +327,8 @@ class ENR(StrictBaseModel):
         parts = [f"ENR(seq={self.seq}"]
         if self.ip4:
             parts.append(f"ip={self.ip4}")
-        if self.udp_port:
-            parts.append(f"udp={self.udp_port}")
+        if self.quic_port:
+            parts.append(f"quic={self.quic_port}")
         if eth2 := self.eth2_data:
             parts.append(f"fork={eth2.fork_digest.hex()}")
         return ", ".join(parts) + ")"
