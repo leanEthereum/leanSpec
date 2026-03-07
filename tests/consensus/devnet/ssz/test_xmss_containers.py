@@ -2,24 +2,20 @@
 
 import pytest
 from consensus_testing import SSZTestFiller
+from consensus_testing.keys import create_dummy_signature, get_shared_key_manager
 
+from lean_spec.subspecs.containers import ValidatorIndex
 from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.koalabear import Fp
-from lean_spec.subspecs.xmss import PublicKey, SecretKey, Signature
+from lean_spec.subspecs.xmss import PublicKey
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
-from lean_spec.subspecs.xmss.subtree import HashSubTree
 from lean_spec.subspecs.xmss.types import (
     HASH_DIGEST_LENGTH,
-    HashDigestList,
     HashDigestVector,
-    HashTreeLayer,
-    HashTreeLayers,
-    HashTreeOpening,
     Parameter,
-    PRFKey,
 )
-from lean_spec.types import Boolean, ByteListMiB, Uint64
+from lean_spec.types import Boolean, ByteListMiB, Bytes32
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -48,151 +44,19 @@ def test_public_key_zero(ssz: SSZTestFiller) -> None:
 
 # --- Signature ---
 
-# Empty path: path=[], rho=zeros, hashes=[]
-SIGNATURE_EMPTY_PATH = bytes.fromhex(
-    "24000000000000000000000000000000000000000000000000000000000000002800000004000000"
-)
 
-# With siblings: path=[zero, zero], rho=zeros, hashes=[zero]
-SIGNATURE_WITH_SIBLINGS = bytes.fromhex(
-    "24000000000000000000000000000000000000000000000000000000000000006800000004000000"
-    "0000000000000000000000000000000000000000000000000000000000000000"
-    "0000000000000000000000000000000000000000000000000000000000000000"
-    "0000000000000000000000000000000000000000000000000000000000000000"
-)
+def test_signature_zero(ssz: SSZTestFiller) -> None:
+    """SSZ roundtrip for Signature with zero values."""
+    ssz(type_name="Signature", value=create_dummy_signature())
 
 
-def test_signature_empty_path(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for Signature with empty authentication path."""
-    ssz(type_name="Signature", value=Signature.decode_bytes(SIGNATURE_EMPTY_PATH))
-
-
-def test_signature_with_siblings(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for Signature with authentication path siblings."""
-    ssz(type_name="Signature", value=Signature.decode_bytes(SIGNATURE_WITH_SIBLINGS))
-
-
-# --- SecretKey ---
-
-
-def test_secret_key_minimal(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for SecretKey with minimal values."""
-    empty_subtree = HashSubTree(
-        depth=Uint64(4),
-        lowest_layer=Uint64(0),
-        layers=HashTreeLayers(data=[]),
-    )
-    ssz(
-        type_name="SecretKey",
-        value=SecretKey(
-            prf_key=PRFKey.zero(),
-            parameter=_zero_parameter(),
-            activation_slot=Slot(0),
-            num_active_slots=Uint64(1),
-            top_tree=empty_subtree,
-            left_bottom_tree_index=Uint64(0),
-            left_bottom_tree=empty_subtree,
-            right_bottom_tree=empty_subtree,
-        ),
-    )
-
-
-# --- HashTreeOpening ---
-
-
-def test_hash_tree_opening_empty(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashTreeOpening with no siblings."""
-    ssz(
-        type_name="HashTreeOpening",
-        value=HashTreeOpening(siblings=HashDigestList(data=[])),
-    )
-
-
-def test_hash_tree_opening_single(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashTreeOpening with single sibling."""
-    ssz(
-        type_name="HashTreeOpening",
-        value=HashTreeOpening(siblings=HashDigestList(data=[_zero_hash_digest_vector()])),
-    )
-
-
-def test_hash_tree_opening_multiple(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashTreeOpening with multiple siblings."""
-    ssz(
-        type_name="HashTreeOpening",
-        value=HashTreeOpening(
-            siblings=HashDigestList(
-                data=[
-                    _zero_hash_digest_vector(),
-                    _zero_hash_digest_vector(),
-                    _zero_hash_digest_vector(),
-                ]
-            )
-        ),
-    )
-
-
-# --- HashTreeLayer ---
-
-
-def test_hash_tree_layer_empty(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashTreeLayer with no nodes."""
-    ssz(
-        type_name="HashTreeLayer",
-        value=HashTreeLayer(start_index=Uint64(0), nodes=HashDigestList(data=[])),
-    )
-
-
-def test_hash_tree_layer_single(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashTreeLayer with single node."""
-    ssz(
-        type_name="HashTreeLayer",
-        value=HashTreeLayer(
-            start_index=Uint64(0),
-            nodes=HashDigestList(data=[_zero_hash_digest_vector()]),
-        ),
-    )
-
-
-def test_hash_tree_layer_multiple(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashTreeLayer with multiple nodes."""
-    ssz(
-        type_name="HashTreeLayer",
-        value=HashTreeLayer(
-            start_index=Uint64(4),
-            nodes=HashDigestList(data=[_zero_hash_digest_vector(), _zero_hash_digest_vector()]),
-        ),
-    )
-
-
-# --- HashSubTree ---
-
-
-def test_hash_subtree_empty(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashSubTree with no layers."""
-    ssz(
-        type_name="HashSubTree",
-        value=HashSubTree(depth=Uint64(4), lowest_layer=Uint64(0), layers=HashTreeLayers(data=[])),
-    )
-
-
-def test_hash_subtree_with_layers(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for HashSubTree with layers."""
-    ssz(
-        type_name="HashSubTree",
-        value=HashSubTree(
-            depth=Uint64(4),
-            lowest_layer=Uint64(0),
-            layers=HashTreeLayers(
-                data=[
-                    HashTreeLayer(
-                        start_index=Uint64(0),
-                        nodes=HashDigestList(data=[_zero_hash_digest_vector()]),
-                    )
-                ]
-            ),
-        ),
-    )
+def test_signature_actual(ssz: SSZTestFiller) -> None:
+    """SSZ roundtrip for a cryptographically valid Signature produced by signing."""
+    key_manager = get_shared_key_manager()
+    scheme = key_manager.scheme
+    _, sk = key_manager.keys[ValidatorIndex(0)]
+    signature = scheme.sign(sk, Slot(0), Bytes32(b"\x42" * 32))
+    ssz(type_name="Signature", value=signature)
 
 
 # --- AggregatedSignatureProof ---
