@@ -1035,7 +1035,8 @@ class LiveNetworkEventSource:
             stream = await conn.open_stream(GOSSIPSUB_DEFAULT_PROTOCOL_ID)
             logger.info(
                 "Opened outbound gossipsub stream_id=%d to %s (expect odd=server-initiated)",
-                stream.stream_id, peer_id,
+                stream.stream_id,
+                peer_id,
             )
 
             # Wrap in reader/writer for buffered I/O.
@@ -1046,7 +1047,8 @@ class LiveNetworkEventSource:
 
             logger.info(
                 "GossipSub outbound stream established with %s (stream_id=%d)",
-                peer_id, stream.stream_id,
+                peer_id,
+                stream.stream_id,
             )
 
         except Exception as e:
@@ -1222,7 +1224,12 @@ class LiveNetworkEventSource:
                         timeout=RESP_TIMEOUT,
                     )
                     stream._protocol_id = protocol_id
-                    logger.debug("Negotiated protocol %s on stream %d with %s", protocol_id, stream.stream_id, peer_id)
+                    logger.debug(
+                        "Negotiated protocol %s on stream %d with %s",
+                        protocol_id,
+                        stream.stream_id,
+                        peer_id,
+                    )
                 except asyncio.TimeoutError:
                     logger.debug(
                         "Protocol negotiation timeout for %s stream %d",

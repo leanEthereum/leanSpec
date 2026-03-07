@@ -327,8 +327,8 @@ class ENR(StrictBaseModel):
         parts = [f"ENR(seq={self.seq}"]
         if self.ip4:
             parts.append(f"ip={self.ip4}")
-        if self.udp_port:
-            parts.append(f"udp={self.udp_port}")
+        if self.quic_port:
+            parts.append(f"quic={self.quic_port}")
         if eth2 := self.eth2_data:
             parts.append(f"fork={eth2.fork_digest.hex()}")
         return ", ".join(parts) + ")"
