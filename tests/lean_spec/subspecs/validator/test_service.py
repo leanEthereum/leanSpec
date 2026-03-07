@@ -27,7 +27,7 @@ from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
 from lean_spec.subspecs.validator.registry import ValidatorEntry
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof, SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Bytes32, Uint64
 from tests.lean_spec.helpers import TEST_VALIDATOR_ID, MockNetworkRequester, make_store
 
@@ -721,12 +721,11 @@ class TestValidatorServiceIntegration:
             slot=attestation_data.slot,
         )
 
-        aggregated_payloads = {SignatureKey(vid, data_root): [proof] for vid in participants}
+        aggregated_payloads = {attestation_data: {proof}}
 
-        # Update store with attestation data and aggregated payloads
+        # Update store with aggregated payloads
         updated_store = store.model_copy(
             update={
-                "attestation_data_by_root": {data_root: attestation_data},
                 "latest_known_aggregated_payloads": aggregated_payloads,
             }
         )

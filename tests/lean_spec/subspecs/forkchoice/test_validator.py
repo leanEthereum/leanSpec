@@ -15,9 +15,9 @@ from lean_spec.subspecs.containers import (
     ValidatorIndex,
 )
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.forkchoice import Store
+from lean_spec.subspecs.forkchoice import GossipSignatureEntry, Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import SignatureKey
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Bytes32, Uint64
 from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_aggregated_proof, make_store
 
@@ -82,29 +82,27 @@ class TestBlockProduction:
             signature=key_manager.sign_attestation_data(ValidatorIndex(6), data_6),
         )
 
-        data_root_5 = signed_5.data.data_root_bytes()
-        data_root_6 = signed_6.data.data_root_bytes()
-
         proof_5 = make_aggregated_proof(key_manager, [ValidatorIndex(5)], signed_5.data)
         proof_6 = make_aggregated_proof(key_manager, [ValidatorIndex(6)], signed_6.data)
 
-        sig_key_5 = SignatureKey(ValidatorIndex(5), data_root_5)
-        sig_key_6 = SignatureKey(ValidatorIndex(6), data_root_6)
+        # Build payloads keyed by attestation data.
+        # If data_5 == data_6 (same slot/head/target/source), they share a key.
+        known_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
+        known_payloads.setdefault(signed_5.data, set()).add(proof_5)
+        known_payloads.setdefault(signed_6.data, set()).add(proof_6)
+
+        gossip_sigs = {}
+        gossip_sigs.setdefault(signed_5.data, set()).add(
+            GossipSignatureEntry(ValidatorIndex(5), signed_5.signature)
+        )
+        gossip_sigs.setdefault(signed_6.data, set()).add(
+            GossipSignatureEntry(ValidatorIndex(6), signed_6.signature)
+        )
 
         sample_store = sample_store.model_copy(
             update={
-                "latest_known_aggregated_payloads": {
-                    sig_key_5: [proof_5],
-                    sig_key_6: [proof_6],
-                },
-                "attestation_data_by_root": {
-                    data_root_5: signed_5.data,
-                    data_root_6: signed_6.data,
-                },
-                "gossip_signatures": {
-                    sig_key_5: signed_5.signature,
-                    sig_key_6: signed_6.signature,
-                },
+                "latest_known_aggregated_payloads": known_payloads,
+                "gossip_signatures": gossip_sigs,
             }
         )
 
@@ -183,7 +181,6 @@ class TestBlockProduction:
         sample_store = sample_store.model_copy(
             update={
                 "latest_known_aggregated_payloads": {},
-                "attestation_data_by_root": {},
             }
         )
 
@@ -220,15 +217,14 @@ class TestBlockProduction:
             signature=key_manager.sign_attestation_data(ValidatorIndex(7), data_7),
         )
 
-        data_root_7 = signed_7.data.data_root_bytes()
         proof_7 = make_aggregated_proof(key_manager, [ValidatorIndex(7)], signed_7.data)
 
-        sig_key_7 = SignatureKey(ValidatorIndex(7), data_root_7)
         sample_store = sample_store.model_copy(
             update={
-                "latest_known_aggregated_payloads": {sig_key_7: [proof_7]},
-                "attestation_data_by_root": {data_root_7: signed_7.data},
-                "gossip_signatures": {sig_key_7: signed_7.signature},
+                "latest_known_aggregated_payloads": {signed_7.data: {proof_7}},
+                "gossip_signatures": {
+                    signed_7.data: {GossipSignatureEntry(ValidatorIndex(7), signed_7.signature)},
+                },
             }
         )
 

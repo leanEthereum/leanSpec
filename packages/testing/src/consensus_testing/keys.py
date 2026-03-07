@@ -46,10 +46,7 @@ from lean_spec.subspecs.containers.block.types import (
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.koalabear import Fp
-from lean_spec.subspecs.xmss.aggregation import (
-    AggregatedSignatureProof,
-    SignatureKey,
-)
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
 from lean_spec.subspecs.xmss.containers import KeyPair, PublicKey, Signature
 from lean_spec.subspecs.xmss.interface import (
@@ -333,7 +330,8 @@ class XmssKeyManager:
     def build_attestation_signatures(
         self,
         aggregated_attestations: AggregatedAttestations,
-        signature_lookup: Mapping[SignatureKey, Signature] | None = None,
+        signature_lookup: Mapping[AttestationData, Mapping[ValidatorIndex, Signature]]
+        | None = None,
     ) -> AttestationSignatures:
         """
         Build attestation signatures for already-aggregated attestations.
@@ -349,12 +347,12 @@ class XmssKeyManager:
             message = agg.data.data_root_bytes()
             slot = agg.data.slot
 
+            # Look up pre-computed signatures by attestation data and validator ID.
+            sigs_for_data = lookup.get(agg.data, {})
+
             public_keys: list[PublicKey] = [self.get_public_key(vid) for vid in validator_ids]
             signatures: list[Signature] = [
-                (
-                    lookup.get(SignatureKey(vid, message))
-                    or self.sign_attestation_data(vid, agg.data)
-                )
+                sigs_for_data.get(vid) or self.sign_attestation_data(vid, agg.data)
                 for vid in validator_ids
             ]
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Self
 
 from lean_multisig_py import (
@@ -16,35 +15,9 @@ from lean_multisig_py import (
 from lean_spec.config import LEAN_ENV, LeanEnvMode
 from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.types import ByteListMiB, Bytes32, Container
 
 from .containers import PublicKey, Signature
-
-
-@dataclass(frozen=True, slots=True)
-class SignatureKey:
-    """
-    Key for looking up individual validator signatures.
-
-    Used to index signature caches by (validator, message) pairs.
-    """
-
-    _validator_id: ValidatorIndex
-    """The validator who produced the signature."""
-
-    data_root: Bytes32
-    """The hash of the signed data (e.g., attestation data root)."""
-
-    def __init__(self, validator_id: int | ValidatorIndex, data_root: Bytes32) -> None:
-        """Create a SignatureKey with the given validator_id and data_root."""
-        object.__setattr__(self, "_validator_id", ValidatorIndex(validator_id))
-        object.__setattr__(self, "data_root", data_root)
-
-    @property
-    def validator_id(self) -> ValidatorIndex:
-        """The validator who produced the signature."""
-        return self._validator_id
 
 
 class AggregationError(Exception):

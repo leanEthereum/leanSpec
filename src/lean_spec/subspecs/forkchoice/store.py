@@ -4,9 +4,10 @@ Forkchoice store for tracking chain state and attestations.
 The Store tracks all information required for the LMD GHOST forkchoice algorithm.
 """
 
-__all__ = ["Store"]
+__all__ = ["GossipSignatureEntry", "Store"]
 
 from collections import defaultdict
+from typing import NamedTuple
 
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import (
@@ -32,7 +33,6 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
     AggregationError,
-    SignatureKey,
 )
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
@@ -42,6 +42,18 @@ from lean_spec.types import (
     Uint64,
 )
 from lean_spec.types.container import Container
+
+
+class GossipSignatureEntry(NamedTuple):
+    """
+    Single validator's XMSS signature for an attestation, as learned from gossip.
+
+    Used as an element in the gossip_signatures map: one entry per validator
+    that attested to the same AttestationData.
+    """
+
+    validator_id: ValidatorIndex
+    signature: Signature
 
 
 class Store(Container):
@@ -123,22 +135,14 @@ class Store(Container):
     validator_id: ValidatorIndex | None
     """Index of the validator running this store instance."""
 
-    gossip_signatures: dict[SignatureKey, Signature] = {}
+    gossip_signatures: dict[AttestationData, set[GossipSignatureEntry]] = {}
     """
     Per-validator XMSS signatures learned from committee attesters.
 
-    Keyed by SignatureKey(validator_id, attestation_data_root).
+    Keyed by AttestationData.
     """
 
-    attestation_data_by_root: dict[Bytes32, AttestationData] = {}
-    """
-    Mapping from attestation data root to full AttestationData.
-
-    This allows reconstructing attestations from aggregated payloads.
-    Entries are pruned once their target checkpoint falls at or before finalization.
-    """
-
-    latest_new_aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {}
+    latest_new_aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
     """
     Aggregated signature proofs pending processing.
 
@@ -147,7 +151,7 @@ class Store(Container):
     Populated from blocks or gossip aggregated attestations.
     """
 
-    latest_known_aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = {}
+    latest_known_aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
     """
     Aggregated signature proofs that have been processed.
 
@@ -175,54 +179,31 @@ class Store(Container):
         """
         finalized_slot = self.latest_finalized.slot
 
-        # Identify which attestations are stale.
-        #
-        # An attestation is stale if its target slot is at or before finalization.
-        # We collect all such roots in one pass to avoid repeated lookups.
-        stale_roots: set[Bytes32] = {
-            data_root
-            for data_root, data in self.attestation_data_by_root.items()
-            if data.target.slot <= finalized_slot
-        }
-
-        # Early return if nothing to prune.
-        #
-        # Return the same instance to avoid unnecessary object creation.
-        if not stale_roots:
-            return self
-
         # Filter out stale entries from all attestation-related mappings.
         #
-        # Each mapping is keyed by attestation data root, so we check membership
-        # against the stale set we computed above.
-
-        new_attestation_data = {
-            root: data
-            for root, data in self.attestation_data_by_root.items()
-            if root not in stale_roots
-        }
+        # Each mapping is keyed by attestation data, so we check membership by slot
+        # against the finalized slot.
 
         new_gossip_sigs = {
-            key: sig
-            for key, sig in self.gossip_signatures.items()
-            if key.data_root not in stale_roots
+            attestation_data: sigs
+            for attestation_data, sigs in self.gossip_signatures.items()
+            if attestation_data.target.slot > finalized_slot
         }
 
         new_aggregated_new = {
-            key: proofs
-            for key, proofs in self.latest_new_aggregated_payloads.items()
-            if key.data_root not in stale_roots
+            attestation_data: proofs
+            for attestation_data, proofs in self.latest_new_aggregated_payloads.items()
+            if attestation_data.target.slot > finalized_slot
         }
 
         new_aggregated_known = {
-            key: proofs
-            for key, proofs in self.latest_known_aggregated_payloads.items()
-            if key.data_root not in stale_roots
+            attestation_data: proofs
+            for attestation_data, proofs in self.latest_known_aggregated_payloads.items()
+            if attestation_data.target.slot > finalized_slot
         }
 
         return self.model_copy(
             update={
-                "attestation_data_by_root": new_attestation_data,
                 "gossip_signatures": new_gossip_sigs,
                 "latest_new_aggregated_payloads": new_aggregated_new,
                 "latest_known_aggregated_payloads": new_aggregated_known,
@@ -329,27 +310,23 @@ class Store(Container):
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
         ), "Signature verification failed"
 
-        # Store signature and attestation data for later aggregation
-        new_committee_sigs = dict(self.gossip_signatures)
-        new_attestation_data_by_root = dict(self.attestation_data_by_root)
-        data_root = attestation_data.data_root_bytes()
+        # Store signature and attestation data for later aggregation.
+        # Copy the inner sets so we can add to them without mutating the previous store.
+        new_committee_sigs = {k: set(v) for k, v in self.gossip_signatures.items()}
 
         if is_aggregator:
             assert self.validator_id is not None, "Current validator ID must be set for aggregation"
             current_subnet = self.validator_id.compute_subnet_id(ATTESTATION_COMMITTEE_COUNT)
             attester_subnet = validator_id.compute_subnet_id(ATTESTATION_COMMITTEE_COUNT)
             if current_subnet == attester_subnet:
-                sig_key = SignatureKey(validator_id, data_root)
-                new_committee_sigs[sig_key] = signature
-
-        # Store attestation data for later extraction
-        new_attestation_data_by_root[data_root] = attestation_data
+                new_committee_sigs.setdefault(attestation_data, set()).add(
+                    GossipSignatureEntry(validator_id, signature)
+                )
 
         # Return store with updated signature map and attestation data
         return self.model_copy(
             update={
                 "gossip_signatures": new_committee_sigs,
-                "attestation_data_by_root": new_attestation_data_by_root,
             }
         )
 
@@ -408,28 +385,16 @@ class Store(Container):
                 f"Committee aggregation signature verification failed: {exc}"
             ) from exc
 
-        # Shallow-copy the dict and its list values to maintain immutability
+        # Shallow-copy the dict and its inner sets to preserve immutability.
         new_aggregated_payloads = {
-            k: list(v) for k, v in self.latest_new_aggregated_payloads.items()
+            k: set(v) for k, v in self.latest_new_aggregated_payloads.items()
         }
-        data_root = data.data_root_bytes()
-
-        # Store attestation data by root for later retrieval
-        new_attestation_data_by_root = dict(self.attestation_data_by_root)
-        new_attestation_data_by_root[data_root] = data
-
-        for vid in validator_ids:
-            # Update Proof Map
-            #
-            # Store the proof so future block builders can reuse this aggregation
-            key = SignatureKey(vid, data_root)
-            new_aggregated_payloads.setdefault(key, []).append(proof)
+        new_aggregated_payloads.setdefault(data, set()).add(proof)
 
         # Return store with updated aggregated payloads and attestation data
         return self.model_copy(
             update={
                 "latest_new_aggregated_payloads": new_aggregated_payloads,
-                "attestation_data_by_root": new_attestation_data_by_root,
             }
         )
 
@@ -531,38 +496,19 @@ class Store(Container):
         )
 
         # Copy the aggregated proof map for updates
-        # Shallow-copy the dict and its list values to maintain immutability
+        # Shallow-copy the dict and its inner sets to preserve immutability.
         # Block attestations go directly to "known" payloads (like is_from_block=True)
-        block_proofs: dict[SignatureKey, list[AggregatedSignatureProof]] = {
-            k: list(v) for k, v in store.latest_known_aggregated_payloads.items()
+        block_proofs: dict[AttestationData, set[AggregatedSignatureProof]] = {
+            k: set(v) for k, v in store.latest_known_aggregated_payloads.items()
         }
 
-        # Store attestation data by root for later retrieval
-        new_attestation_data_by_root = dict(store.attestation_data_by_root)
-
         for att, proof in zip(aggregated_attestations, attestation_signatures, strict=True):
-            validator_ids = att.aggregation_bits.to_validator_indices()
-            data_root = att.data.data_root_bytes()
-
-            # Store the attestation data
-            new_attestation_data_by_root[data_root] = att.data
-
-            for vid in validator_ids:
-                # Update Proof Map
-                #
-                # Store the proof so future block builders can reuse this aggregation
-                key = SignatureKey(vid, data_root)
-                block_proofs.setdefault(key, []).append(proof)
-
-        # Store proposer attestation data as well
-        proposer_data_root = proposer_attestation.data.data_root_bytes()
-        new_attestation_data_by_root[proposer_data_root] = proposer_attestation.data
+            block_proofs.setdefault(att.data, set()).add(proof)
 
         # Update store with new aggregated proofs and attestation data
         store = store.model_copy(
             update={
                 "latest_known_aggregated_payloads": block_proofs,
-                "attestation_data_by_root": new_attestation_data_by_root,
             }
         )
 
@@ -577,7 +523,7 @@ class Store(Container):
         # The proposer casts their attestation in interval 1, after block
         # proposal. Store the signature so it can be aggregated later.
 
-        new_gossip_sigs = dict(store.gossip_signatures)
+        new_gossip_sigs = {k: set(v) for k, v in store.gossip_signatures.items()}
 
         # Store proposer signature for future lookup if it belongs to the same committee
         # as the current validator.
@@ -589,12 +535,9 @@ class Store(Container):
                 ATTESTATION_COMMITTEE_COUNT
             )
             if proposer_subnet_id == current_validator_subnet_id:
-                proposer_sig_key = SignatureKey(
-                    proposer_attestation.validator_id,
-                    proposer_attestation.data.data_root_bytes(),
-                )
-                new_gossip_sigs[proposer_sig_key] = (
-                    signed_block_with_attestation.signature.proposer_signature
+                sig = signed_block_with_attestation.signature.proposer_signature
+                new_gossip_sigs.setdefault(proposer_attestation.data, set()).add(
+                    GossipSignatureEntry(proposer_attestation.validator_id, sig)
                 )
 
         # Update store with proposer signature
@@ -607,7 +550,7 @@ class Store(Container):
         return store
 
     def extract_attestations_from_aggregated_payloads(
-        self, aggregated_payloads: dict[SignatureKey, list[AggregatedSignatureProof]]
+        self, aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]]
     ) -> dict[ValidatorIndex, AttestationData]:
         """
         Extract attestations from aggregated payloads.
@@ -616,33 +559,19 @@ class Store(Container):
         for each validator that participated in the aggregation.
 
         Args:
-            aggregated_payloads: Mapping from SignatureKey to list of aggregated proofs.
+            aggregated_payloads: Mapping from AttestationData to set of aggregated proofs.
 
         Returns:
             Mapping from ValidatorIndex to AttestationData for each validator.
         """
         attestations: dict[ValidatorIndex, AttestationData] = {}
 
-        for sig_key, proofs in aggregated_payloads.items():
-            # Get the attestation data from the data root in the signature key
-            data_root = sig_key.data_root
-            attestation_data = self.attestation_data_by_root.get(data_root)
-
-            if attestation_data is None:
-                # Skip if we don't have the attestation data
-                continue
-
-            # Extract all validator IDs from all proofs for this signature key
+        for attestation_data, proofs in aggregated_payloads.items():
             for proof in proofs:
-                validator_ids = proof.participants.to_validator_indices()
-                for vid in validator_ids:
-                    # Store the attestation data for this validator
-                    # If multiple attestations exist for same validator,
-                    # keep the latest (highest slot)
-                    existing = attestations.get(vid)
+                for validator_id in proof.participants.to_validator_indices():
+                    existing = attestations.get(validator_id)
                     if existing is None or existing.slot < attestation_data.slot:
-                        attestations[vid] = attestation_data
-
+                        attestations[validator_id] = attestation_data
         return attestations
 
     def compute_block_weights(self) -> dict[Bytes32, int]:
@@ -828,13 +757,12 @@ class Store(Container):
             New Store with migrated aggregated payloads and updated head.
         """
         # Merge new aggregated payloads into known aggregated payloads
-        merged_aggregated_payloads = dict(self.latest_known_aggregated_payloads)
-        for sig_key, proofs in self.latest_new_aggregated_payloads.items():
-            if sig_key in merged_aggregated_payloads:
-                # Merge proof lists for the same signature key
-                merged_aggregated_payloads[sig_key] = merged_aggregated_payloads[sig_key] + proofs
-            else:
-                merged_aggregated_payloads[sig_key] = proofs
+        merged_aggregated_payloads = {
+            attestation_data: set(proofs)
+            for attestation_data, proofs in self.latest_known_aggregated_payloads.items()
+        }
+        for attestation_data, proofs in self.latest_new_aggregated_payloads.items():
+            merged_aggregated_payloads.setdefault(attestation_data, set()).update(proofs)
 
         # Create store with migrated aggregated payloads
         store = self.model_copy(
@@ -913,17 +841,18 @@ class Store(Container):
         #
         # The technique: start with a shallow copy of "known", then overlay
         # every entry from "new" on top. When both pools contain proofs for
-        # the same signature key, concatenate the proof lists.
-        all_payloads: dict[SignatureKey, list[AggregatedSignatureProof]] = dict(
-            self.latest_known_aggregated_payloads
-        )
-        for sig_key, proofs in self.latest_new_aggregated_payloads.items():
-            if sig_key in all_payloads:
-                # Both pools have proofs for this key. Combine them.
-                all_payloads[sig_key] = all_payloads[sig_key] + proofs
+        # the same attestation data, merge the proof sets.
+        all_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {
+            attestation_data: set(proofs)
+            for attestation_data, proofs in self.latest_known_aggregated_payloads.items()
+        }
+        for attestation_data, proofs in self.latest_new_aggregated_payloads.items():
+            if attestation_data in all_payloads:
+                # Both pools have proofs for this attestation. Combine them.
+                all_payloads[attestation_data].update(proofs)
             else:
-                # Only "new" has proofs for this key. Add them directly.
-                all_payloads[sig_key] = proofs
+                # Only "new" has proofs for this attestation. Add them directly.
+                all_payloads[attestation_data] = set(proofs)
 
         # Convert the merged aggregated payloads into per-validator votes.
         #
@@ -956,26 +885,23 @@ class Store(Container):
         Aggregate committee signatures for attestations in committee_signatures.
 
         This method aggregates signatures from the gossip_signatures map.
-        Attestations are reconstructed from gossip_signatures using attestation_data_by_root.
 
         Returns:
             Tuple of (new Store with updated payloads, list of new SignedAggregatedAttestation).
         """
-        new_aggregated_payloads = dict(self.latest_new_aggregated_payloads)
-
-        # Extract attestations from gossip_signatures
-        # Each SignatureKey contains (validator_id, data_root)
-        # We look up the full AttestationData from attestation_data_by_root
-        attestation_list: list[Attestation] = []
-        for sig_key in self.gossip_signatures:
-            data_root = sig_key.data_root
-            attestation_data = self.attestation_data_by_root.get(data_root)
-            if attestation_data is not None:
-                attestation_list.append(
-                    Attestation(validator_id=sig_key.validator_id, data=attestation_data)
-                )
+        new_aggregated_payloads = {
+            attestation_data: set(proofs)
+            for attestation_data, proofs in self.latest_new_aggregated_payloads.items()
+        }
 
         committee_signatures = self.gossip_signatures
+
+        # Extract attestations from gossip_signatures
+        attestation_list: list[Attestation] = [
+            Attestation(validator_id=entry.validator_id, data=attestation_data)
+            for attestation_data, signatures in self.gossip_signatures.items()
+            for entry in signatures
+        ]
 
         head_state = self.states[self.head]
         # Perform aggregation
@@ -990,17 +916,22 @@ class Store(Container):
         ]
 
         # Compute new aggregated payloads
-        new_gossip_sigs = dict(self.gossip_signatures)
+        new_gossip_sigs = {
+            attestation_data: set(signatures)
+            for attestation_data, signatures in self.gossip_signatures.items()
+        }
         for aggregated_attestation, aggregated_signature in aggregated_results:
-            data_root = aggregated_attestation.data.data_root_bytes()
-            validator_ids = aggregated_signature.participants.to_validator_indices()
-            for vid in validator_ids:
-                sig_key = SignatureKey(vid, data_root)
-                new_aggregated_payloads.setdefault(sig_key, []).append(aggregated_signature)
+            attestation_data = aggregated_attestation.data
+            new_aggregated_payloads.setdefault(attestation_data, set()).add(aggregated_signature)
 
-                # Prune successfully aggregated signature from gossip map
-                if sig_key in new_gossip_sigs:
-                    del new_gossip_sigs[sig_key]
+            validator_ids = set(aggregated_signature.participants.to_validator_indices())
+            existing_entries = new_gossip_sigs.get(attestation_data)
+            if existing_entries:
+                remaining = {e for e in existing_entries if e.validator_id not in validator_ids}
+                if remaining:
+                    new_gossip_sigs[attestation_data] = remaining
+                else:
+                    del new_gossip_sigs[attestation_data]
 
         return self.model_copy(
             update={
