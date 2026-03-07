@@ -93,7 +93,7 @@ class MockStream:
 
 def make_block_topic(fork_digest: str = "0x00000000") -> str:
     """Create a valid block topic string."""
-    return f"/{TOPIC_PREFIX}/{fork_digest}/blocks/{ENCODING_POSTFIX}"
+    return f"/{TOPIC_PREFIX}/{fork_digest}/block/{ENCODING_POSTFIX}"
 
 
 def make_attestation_topic(fork_digest: str = "0x00000000", subnet_id: int = 0) -> str:
@@ -164,7 +164,7 @@ class TestGossipHandlerGetTopic:
     def test_valid_block_topic(self) -> None:
         """Parses valid block topic string."""
         handler = GossipHandler(fork_digest="0x12345678")
-        topic_str = "/leanconsensus/0x12345678/blocks/ssz_snappy"
+        topic_str = "/leanconsensus/0x12345678/block/ssz_snappy"
 
         topic = handler.get_topic(topic_str)
 
@@ -195,14 +195,14 @@ class TestGossipHandlerGetTopic:
         handler = GossipHandler(fork_digest="0x00000000")
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
-            handler.get_topic("/wrongprefix/0x00000000/blocks/ssz_snappy")
+            handler.get_topic("/wrongprefix/0x00000000/block/ssz_snappy")
 
     def test_invalid_topic_format_wrong_encoding(self) -> None:
         """Raises GossipMessageError for wrong encoding suffix."""
         handler = GossipHandler(fork_digest="0x00000000")
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
-            handler.get_topic("/leanconsensus/0x00000000/blocks/ssz")
+            handler.get_topic("/leanconsensus/0x00000000/block/ssz")
 
     def test_invalid_topic_format_unknown_topic_name(self) -> None:
         """Raises GossipMessageError for unknown topic name."""
@@ -511,7 +511,7 @@ class TestGossipReceptionEdgeCases:
         """Handler works with various fork digest formats."""
         for digest in ["0x00000000", "0xffffffff", "0x12345678", "0xabcdef01"]:
             handler = GossipHandler(fork_digest=digest)
-            topic_str = f"/{TOPIC_PREFIX}/{digest}/blocks/{ENCODING_POSTFIX}"
+            topic_str = f"/{TOPIC_PREFIX}/{digest}/block/{ENCODING_POSTFIX}"
             topic = handler.get_topic(topic_str)
             assert topic.fork_digest == digest
 
@@ -544,7 +544,7 @@ class TestGossipReceptionEdgeCases:
         """Handles messages with unusually long topic strings."""
         # Create a long but valid-format topic
         long_digest = "0x" + "a" * 100
-        topic = f"/{TOPIC_PREFIX}/{long_digest}/blocks/{ENCODING_POSTFIX}"
+        topic = f"/{TOPIC_PREFIX}/{long_digest}/block/{ENCODING_POSTFIX}"
         topic_bytes = topic.encode("utf-8")
         compressed = compress(b"test")
 
@@ -554,7 +554,7 @@ class TestGossipReceptionEdgeCases:
         stream = MockStream(data)
         parsed_topic, _ = await read_gossip_message(stream)
 
-        expected_topic = f"/{TOPIC_PREFIX}/{long_digest}/blocks/{ENCODING_POSTFIX}"
+        expected_topic = f"/{TOPIC_PREFIX}/{long_digest}/block/{ENCODING_POSTFIX}"
         assert parsed_topic == expected_topic
 
     @pytest.mark.parametrize(

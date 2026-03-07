@@ -17,7 +17,7 @@ Topics follow a structured format::
 
     /{prefix}/{fork_digest}/{topic_name}/{encoding}
 
-    Example: /leanconsensus/0x12345678/blocks/ssz_snappy
+    Example: /leanconsensus/0x12345678/block/ssz_snappy
 
 **Components:**
 
@@ -90,7 +90,7 @@ All Ethereum consensus gossip messages use SSZ serialization
 with Snappy compression.
 """
 
-BLOCK_TOPIC_NAME: Final = "blocks"
+BLOCK_TOPIC_NAME: Final = "block"
 """Topic name for block messages.
 
 Used in the topic string to identify signed beacon block messages.

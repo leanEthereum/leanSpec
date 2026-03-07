@@ -353,7 +353,7 @@ class NodeCluster:
 
         await event_source.start_gossipsub()
 
-        block_topic = TopicId(f"/leanconsensus/{self.fork_digest}/blocks/ssz_snappy")
+        block_topic = TopicId(f"/leanconsensus/{self.fork_digest}/block/ssz_snappy")
         aggregation_topic = TopicId(f"/leanconsensus/{self.fork_digest}/aggregation/ssz_snappy")
         event_source.subscribe_gossip_topic(block_topic)
         event_source.subscribe_gossip_topic(aggregation_topic)
