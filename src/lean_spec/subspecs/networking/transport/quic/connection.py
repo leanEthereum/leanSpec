@@ -29,8 +29,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from aioquic.asyncio import QuicConnectionProtocol
 from aioquic.asyncio import connect as quic_connect
 from aioquic.asyncio import serve as quic_serve
@@ -49,6 +47,8 @@ from ..identity import IdentityKeypair
 from ..peer_id import PeerId
 from .stream_adapter import QuicStreamAdapter
 from .tls import generate_libp2p_certificate
+
+logger = logging.getLogger(__name__)
 
 
 class QuicTransportError(Exception):

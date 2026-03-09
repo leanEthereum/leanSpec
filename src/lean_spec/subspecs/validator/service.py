@@ -280,7 +280,8 @@ class ValidatorService:
                 parent_slot = parent_block.slot if parent_block else "UNKNOWN"
                 parent_proposer = parent_block.proposer_index if parent_block else "?"
                 logger.info(
-                    "Produced block slot=%d proposer=%d parent_root=%s parent_slot=%s parent_proposer=%s",
+                    "Produced block slot=%d proposer=%d parent_root=%s "
+                    "parent_slot=%s parent_proposer=%s",
                     slot,
                     validator_index,
                     block.parent_root.hex()[:16],

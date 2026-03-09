@@ -364,7 +364,7 @@ class GossipsubBehavior:
         existing = self._peers.get(peer_id)
 
         # Extract stream_id for diagnostics.
-        stream_id = getattr(getattr(stream, '_stream', None), 'stream_id', '?')
+        stream_id = getattr(getattr(stream, "_stream", None), "stream_id", "?")
 
         if inbound:
             # Peer opened an inbound stream to us — use for receiving.
@@ -373,7 +373,9 @@ class GossipsubBehavior:
                 self._peers[peer_id] = state
                 logger.info(
                     "[GS %x] Added gossipsub peer %s (inbound first, stream_id=%s)",
-                    self._short_id, peer_id, stream_id,
+                    self._short_id,
+                    peer_id,
+                    stream_id,
                 )
             else:
                 if existing.inbound_stream is not None:
@@ -383,7 +385,9 @@ class GossipsubBehavior:
                 state = existing
                 logger.debug(
                     "[GS %x] Added inbound stream for peer %s (stream_id=%s)",
-                    self._short_id, peer_id, stream_id,
+                    self._short_id,
+                    peer_id,
+                    stream_id,
                 )
 
             state.receive_task = asyncio.create_task(self._receive_loop(peer_id, stream))
@@ -400,7 +404,9 @@ class GossipsubBehavior:
                 self._peers[peer_id] = state
                 logger.info(
                     "[GS %x] Added gossipsub peer %s (outbound first, stream_id=%s)",
-                    self._short_id, peer_id, stream_id,
+                    self._short_id,
+                    peer_id,
+                    stream_id,
                 )
             else:
                 if existing.outbound_stream is not None:
@@ -409,7 +415,9 @@ class GossipsubBehavior:
                 existing.outbound_stream = stream
                 logger.debug(
                     "[GS %x] Added outbound stream for peer %s (stream_id=%s)",
-                    self._short_id, peer_id, stream_id,
+                    self._short_id,
+                    peer_id,
+                    stream_id,
                 )
 
             if self.mesh.subscriptions:

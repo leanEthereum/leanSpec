@@ -29,14 +29,21 @@ SECP256K1: Final = EnrKey("secp256k1")
 IP: Final = EnrKey("ip")
 """IPv4 address (4 bytes)."""
 
-QUIC: Final = EnrKey("quic")
-"""QUIC port for QUIC connections (big-endian integer)."""
+UDP: Final = EnrKey("udp")
+"""UDP port for discovery (big-endian integer)."""
 
 IP6: Final = EnrKey("ip6")
 """IPv6 address (16 bytes)."""
 
+UDP6: Final = EnrKey("udp6")
+"""IPv6-specific UDP port (big-endian integer)."""
+
+# QUIC Keys
+QUIC: Final = EnrKey("quic")
+"""QUIC port for QUIC connections (big-endian integer)."""
+
 QUIC6: Final = EnrKey("quic6")
-"""IPv6-specific QUIC port."""
+"""IPv6-specific QUIC port (big-endian integer)."""
 
 # Ethereum Consensus Extensions
 ETH2: Final = EnrKey("eth2")
