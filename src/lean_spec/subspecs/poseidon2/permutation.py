@@ -4,14 +4,15 @@ A minimal Python specification for the Poseidon2 permutation.
 Based on "Poseidon2: A Faster Version of the Poseidon Hash Function".
 See https://eprint.iacr.org/2023/323.
 
-Uses numpy arrays for vectorized field operations.
+Uses Numba JIT compilation for native-speed permutation.
 """
 
 from __future__ import annotations
 
-from typing import Final, Self
+from typing import Self
 
 import numpy as np
+from numba import njit
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
@@ -22,24 +23,125 @@ from .constants import (
     ROUND_CONSTANTS_24,
 )
 
-type State = NDArray[np.int64]
-"""State vector as signed 64-bit integers."""
+
+@njit(cache=True)
+def _external_linear_layer_jit(state: NDArray[np.int64], width: int, p: int) -> None:
+    """
+    Apply the external linear layer (M_E) in-place.
+
+    Multiplies each 4-element chunk by the M4 circulant matrix,
+    then applies the outer circulant structure for global diffusion.
+    """
+    num_chunks = width // 4
+
+    # Apply M4 to each 4-element chunk.
+    for c in range(num_chunks):
+        base = c * 4
+        a = state[base]
+        b = state[base + 1]
+        c_val = state[base + 2]
+        d = state[base + 3]
+
+        s = (a + b + c_val + d) % p
+        state[base] = (s + a + 2 * b) % p
+        state[base + 1] = (s + b + 2 * c_val) % p
+        state[base + 2] = (s + c_val + 2 * d) % p
+        state[base + 3] = (s + 2 * a + d) % p
+
+    # Outer circulant: sum corresponding positions across chunks, add to each.
+    for i in range(4):
+        col_sum = np.int64(0)
+        for c in range(num_chunks):
+            col_sum += state[c * 4 + i]
+        for c in range(num_chunks):
+            state[c * 4 + i] = (state[c * 4 + i] + col_sum) % p
 
 
-_M4_T: Final[NDArray[np.int64]] = np.array(
-    [
-        [2, 3, 1, 1],
-        [1, 2, 3, 1],
-        [1, 1, 2, 3],
-        [3, 1, 1, 2],
-    ],
-    dtype=np.int64,
-).T
-"""
-Base 4x4 MDS matrix, pre-transposed.
+@njit(cache=True)
+def _internal_linear_layer_jit(
+    state: NDArray[np.int64], diag_vector: NDArray[np.int64], width: int, p: int
+) -> None:
+    """
+    Apply the internal linear layer (M_I) in-place.
 
-Pre-transposition enables efficient row-vector multiplication: `v @ M.T`.
-"""
+    M_I = J + D where J is the all-ones matrix and D is diagonal.
+    O(t) computation instead of O(t^2).
+    """
+    state_sum = np.int64(0)
+    for i in range(width):
+        state_sum += state[i]
+    state_sum = state_sum % p
+
+    for i in range(width):
+        state[i] = (state_sum + diag_vector[i] * state[i] % p) % p
+
+
+@njit(cache=True)
+def _permute_jit(
+    state: NDArray[np.int64],
+    round_constants: NDArray[np.int64],
+    diag_vector: NDArray[np.int64],
+    width: int,
+    half_rounds_f: int,
+    rounds_p: int,
+    p: int,
+) -> None:
+    """
+    Full Poseidon2 permutation, compiled to native code.
+
+    Modifies state array in-place.
+    S-box: x^3 computed as (x*x % p) * x % p to avoid int64 overflow.
+    """
+    const_idx = 0
+
+    # 1. Initial linear layer.
+    _external_linear_layer_jit(state, width, p)
+
+    # 2. First half of full rounds.
+    for _ in range(half_rounds_f):
+        for i in range(width):
+            state[i] = (state[i] + round_constants[const_idx + i]) % p
+        const_idx += width
+
+        for i in range(width):
+            x = state[i]
+            state[i] = (x * x % p) * x % p
+
+        _external_linear_layer_jit(state, width, p)
+
+    # 3. Partial rounds.
+    for _ in range(rounds_p):
+        state[0] = (state[0] + round_constants[const_idx]) % p
+        const_idx += 1
+
+        x = state[0]
+        state[0] = (x * x % p) * x % p
+
+        _internal_linear_layer_jit(state, diag_vector, width, p)
+
+    # 4. Second half of full rounds.
+    for _ in range(half_rounds_f):
+        for i in range(width):
+            state[i] = (state[i] + round_constants[const_idx + i]) % p
+        const_idx += width
+
+        for i in range(width):
+            x = state[i]
+            state[i] = (x * x % p) * x % p
+
+        _external_linear_layer_jit(state, width, p)
+
+
+# Trigger compilation on import so the first real call is fast.
+_permute_jit(
+    np.zeros(16, dtype=np.int64),
+    np.zeros(148, dtype=np.int64),
+    np.zeros(16, dtype=np.int64),
+    16,
+    4,
+    20,
+    2130706433,
+)
 
 
 class Poseidon2Params(StrictBaseModel):
@@ -134,113 +236,19 @@ class Poseidon2:
         if len(current_state) != self._width:
             raise ValueError(f"Input state must have length {self._width}")
 
-        # Local variable access is faster in Python loops.
-        width = self._width
-        p = P
-        const_idx = 0
-        constants = self._round_constants
-
-        # Convert input Fp elements to numpy array.
         state = np.array([fp.value for fp in current_state], dtype=np.int64)
 
-        # 1. Initial Linear Layer
-        #
-        # Prevents certain algebraic attacks.
-        # Ensures the permutation begins with a diffusion layer.
-        state = self._external_linear_layer(state)
+        _permute_jit(
+            state,
+            self._round_constants,
+            self._diag_vector,
+            self._width,
+            self._half_rounds_f,
+            self._rounds_p,
+            P,
+        )
 
-        # 2. First Half of Full Rounds (R_F / 2)
-        #
-        # Note: for S_BOX_DEGREE=3, state**3 would overflow int64 before modulo.
-        # Values reach up to 2^93, but int64 max is 2^63.
-        # Expand S-box to `(state*state % P) * state % P` to stay in range.
-        for _ in range(self._half_rounds_f):
-            # Add round constants to entire state.
-            state = (state + constants[const_idx : const_idx + width]) % p
-            const_idx += width
-
-            # Apply S-box (x -> x^d) to full state.
-            state = (state * state % p) * state % p
-
-            # Apply external linear layer for diffusion.
-            state = self._external_linear_layer(state)
-
-        # 3. Partial Rounds (R_P)
-        for _ in range(self._rounds_p):
-            # Add single round constant to first element.
-            state[0] = (state[0] + constants[const_idx]) % p
-            const_idx += 1
-
-            # Apply S-box to first element only.
-            # This is the main optimization of the Hades design.
-            state[0] = (state[0] * state[0] % p) * state[0] % p
-
-            # Apply internal linear layer.
-            state = self._internal_linear_layer(state)
-
-        # 4. Second Half of Full Rounds (R_F / 2)
-        for _ in range(self._half_rounds_f):
-            # Add round constants to entire state.
-            state = (state + constants[const_idx : const_idx + width]) % p
-            const_idx += width
-
-            # Apply S-box to full state.
-            state = (state * state % p) * state % p
-
-            # Apply external linear layer for diffusion.
-            state = self._external_linear_layer(state)
-
-        # Convert back to Fp objects.
         return [Fp(value=int(x)) for x in state]
-
-    def _external_linear_layer(self, state: State) -> State:
-        """
-        Apply the external linear layer (M_E).
-
-        Provides strong diffusion across the entire state.
-        Used in full rounds.
-
-        For state size t=4k, constructed from M4 to form a circulant-like matrix.
-        Efficient while ensuring any single element change affects all others.
-
-        See Appendix B of the paper.
-        """
-        # Apply M4 to each 4-element chunk.
-        # Provides strong local diffusion within each block.
-        chunks = state.reshape(-1, 4)
-        chunks = chunks @ _M4_T
-
-        # Apply outer circulant structure for global diffusion.
-        # Equivalent to multiplying by circ(2*I, I, ..., I) after M4 stage.
-        sums = chunks.sum(axis=0)
-
-        # Add corresponding sum to each element.
-        return (chunks + sums).reshape(-1) % P
-
-    def _internal_linear_layer(self, state: State) -> State:
-        """
-        Apply the internal linear layer (M_I).
-
-        Used during partial rounds.
-        Optimized for speed.
-
-        Matrix structure: M_I = J + D
-
-        - J is the all-ones matrix
-        - D is a diagonal matrix
-
-        This allows O(t) computation instead of O(t^2):
-
-            M_I * s = J*s + D*s
-
-        J*s is a vector where each element equals the sum of all elements in s.
-        """
-        # J*state: sum of all elements (broadcast to vector).
-        # D*state: element-wise multiplication with diagonal.
-        state_sum = state.sum()
-
-        # new_state[i] = state_sum + diag_vector[i] * state[i]
-        return (state_sum + (self._diag_vector * state)) % P
 
 
 # Parameters for WIDTH = 16
