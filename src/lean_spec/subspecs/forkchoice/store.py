@@ -946,65 +946,30 @@ class Store(StrictBaseModel):
         # The head and attestation pools remain unchanged.
         return self.model_copy(update={"safe_target": safe_target})
 
-    def aggregate_committee_signatures(self) -> tuple["Store", list[SignedAggregatedAttestation]]:
+    def aggregate_committee_signatures_and_payloads(self) -> tuple["Store", list[SignedAggregatedAttestation]]:
         """
-        Aggregate committee signatures for attestations in committee_signatures.
-
-        This method aggregates signatures from the gossip_signatures map.
+        Aggregate committee signatures and payloads together.
 
         Returns:
             Tuple of (new Store with updated payloads, list of new SignedAggregatedAttestation).
         """
-        new_aggregated_payloads = {
-            attestation_data: set(proofs)
-            for attestation_data, proofs in self.latest_new_aggregated_payloads.items()
-        }
-
-        committee_signatures = self.gossip_signatures
-
-        # Extract attestations from gossip_signatures
-        attestation_list: list[Attestation] = [
-            Attestation(validator_id=entry.validator_id, data=attestation_data)
-            for attestation_data, signatures in self.gossip_signatures.items()
-            for entry in signatures
-        ]
-
         head_state = self.states[self.head]
-        # Perform aggregation
-        aggregated_results = head_state.aggregate_gossip_signatures(
-            attestation_list,
-            committee_signatures,
+        aggregated_results = head_state.aggregate(
+            gossip_signatures=self.gossip_signatures,
+            new_payloads=self.latest_new_aggregated_payloads,
+            known_payloads=self.latest_known_aggregated_payloads,
         )
 
         # Create list of aggregated attestations for broadcasting
-        new_aggregates = [
-            SignedAggregatedAttestation(data=att.data, proof=sig) for att, sig in aggregated_results
-        ]
+        # and update the store with the new aggregated payloads
+        new_aggregates: list[SignedAggregatedAttestation] = []
+        new_aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
 
-        # Compute new aggregated payloads
-        new_gossip_sigs = {
-            attestation_data: set(signatures)
-            for attestation_data, signatures in self.gossip_signatures.items()
-        }
-        for aggregated_attestation, aggregated_signature in aggregated_results:
-            attestation_data = aggregated_attestation.data
-            new_aggregated_payloads.setdefault(attestation_data, set()).add(aggregated_signature)
+        for att, proof in aggregated_results:
+            new_aggregates.append(SignedAggregatedAttestation(data=att.data, proof=proof))
+            new_aggregated_payloads.setdefault(att.data, set()).add(proof)
 
-            validator_ids = set(aggregated_signature.participants.to_validator_indices())
-            existing_entries = new_gossip_sigs.get(attestation_data)
-            if existing_entries:
-                remaining = {e for e in existing_entries if e.validator_id not in validator_ids}
-                if remaining:
-                    new_gossip_sigs[attestation_data] = remaining
-                else:
-                    del new_gossip_sigs[attestation_data]
-
-        return self.model_copy(
-            update={
-                "latest_new_aggregated_payloads": new_aggregated_payloads,
-                "gossip_signatures": new_gossip_sigs,
-            }
-        ), new_aggregates
+        return self.model_copy(update={"latest_new_aggregated_payloads": new_aggregated_payloads, "gossip_signatures": {}}), new_aggregates
 
     def tick_interval(
         self, has_proposal: bool, is_aggregator: bool = False
@@ -1061,7 +1026,7 @@ class Store(StrictBaseModel):
             case 0 if has_proposal:
                 store = store.accept_new_attestations()
             case 2 if is_aggregator:
-                store, new_aggregates = store.aggregate_committee_signatures()
+                store, new_aggregates = store.aggregate_committee_signatures_and_payloads()
             case 3:
                 store = store.update_safe_target()
             case 4:

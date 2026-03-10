@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable
+from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from typing import TYPE_CHECKING
 
@@ -759,79 +759,89 @@ class State(Container):
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures
 
-    def aggregate_gossip_signatures(
+    def _extend_proofs_with_unique_participants(
+            proofs: set[AggregatedSignatureProof] | None,
+            selected: list[AggregatedSignatureProof],
+            covered: set[ValidatorIndex],
+        ) -> None:
+            if not proofs:
+                return
+            sorted_proofs = sorted(
+                proofs,
+                key=lambda proof: len(proof.participants.to_validator_indices()),
+                reverse=True,
+            )
+            for proof in sorted_proofs:
+                participants = set(proof.participants.to_validator_indices())
+                if participants - covered:
+                    selected.append(proof)
+                    covered.update(participants)
+
+    def aggregate(
         self,
-        attestations: Collection[Attestation],
         gossip_signatures: dict[AttestationData, set[GossipSignatureEntry]] | None = None,
+        new_payloads: dict[AttestationData, set[AggregatedSignatureProof]] | None = None,
+        known_payloads: dict[AttestationData, set[AggregatedSignatureProof]] | None = None,
     ) -> list[tuple[AggregatedAttestation, AggregatedSignatureProof]]:
         """
-        Collect aggregated signatures from gossip network and aggregate them.
-
-        For each attestation group, attempt to collect individual XMSS signatures
-        from the gossip network. These are fresh signatures that validators
-        broadcast when they attest.
+        Aggregate gossip signatures using new payloads, with known payloads as helpers.
 
         Args:
-            attestations: Individual attestations to aggregate and sign.
-            gossip_signatures: Per-validator XMSS signatures learned from
-                the gossip network, keyed by the attestation data they signed.
+            gossip_signatures: Raw XMSS signatures learned from gossip keyed by attestation data.
+            new_payloads: Aggregated proofs pending processing (child proofs).
+            known_payloads: Known aggregated proofs already accepted.
 
         Returns:
-            List of (attestation, proof) pairs from gossip collection.
+            List of (aggregated attestation, proof) pairs to broadcast.
         """
         results: list[tuple[AggregatedAttestation, AggregatedSignatureProof]] = []
 
-        # Group individual attestations by data
-        #
-        # Multiple validators may attest to the same data (slot, head, target, source).
-        # We aggregate them into groups so each group can share a single proof.
-        for aggregated in AggregatedAttestation.aggregate_by_data(list(attestations)):
-            # Extract the common attestation data and its hash.
-            #
-            # All validators in this group signed the same message (the data root).
-            data = aggregated.data
-            data_root = data.data_root_bytes()
+        gossip_signatures = gossip_signatures or {}
+        new_payloads = new_payloads or {}
+        known_payloads = known_payloads or {}
 
-            # Get the list of validators who attested to this data.
-            validator_ids = aggregated.aggregation_bits.to_validator_indices()
+        # Use only keys from new_payloads and gossip_signatures
+        # know_payloads can be used to extend the proof with new_payloads and gossip_signatures
+        # but known_payloads are not recursively aggregated into their own proofs
+        attestation_keys = set(new_payloads.keys()) | set(gossip_signatures.keys())
+        if not attestation_keys:
+            return results
 
-            # When a validator creates an attestation, it broadcasts the
-            # individual XMSS signature over the gossip network. If we have
-            # received these signatures, we can aggregate them ourselves.
-            #
-            # This is the preferred path: fresh signatures from the network.
+        # Aggregate the proofs for each attestation data
+        for data in attestation_keys:
+            child_proofs: list[AggregatedSignatureProof] = []
+            covered_validators: set[ValidatorIndex] = set()
 
-            # Parallel lists for signatures, public keys, and validator IDs.
-            gossip_sigs: list[Signature] = []
-            gossip_keys: list[PublicKey] = []
-            gossip_ids: list[ValidatorIndex] = []
+            self._extend_proofs_with_unique_participants(new_payloads.get(data), child_proofs, covered_validators)
+            self._extend_proofs_with_unique_participants(known_payloads.get(data), child_proofs, covered_validators)
 
-            # Look up signatures by attestation data directly.
-            # Sort by validator ID for deterministic aggregation order.
-            if gossip_signatures and (entries := gossip_signatures.get(data)):
-                for entry in sorted(entries, key=lambda e: e.validator_id):
-                    if entry.validator_id in validator_ids:
-                        gossip_sigs.append(entry.signature)
-                        gossip_keys.append(self.validators[entry.validator_id].get_pubkey())
-                        gossip_ids.append(entry.validator_id)
+            raw_entries: list[tuple[ValidatorIndex, PublicKey, Signature]] = []
+            for entry in sorted(gossip_signatures.get(data, set()), key=lambda e: e.validator_id):
+                if entry.validator_id in covered_validators:
+                    continue
+                if int(entry.validator_id) >= len(self.validators):
+                    continue
+                public_key = self.validators[entry.validator_id].get_pubkey()
+                raw_entries.append((entry.validator_id, public_key, entry.signature))
+                covered_validators.add(entry.validator_id)
 
-            # If we collected any gossip signatures, aggregate them into a proof.
-            #
-            # The aggregation combines multiple XMSS signatures into a single
-            # compact proof that can verify all participants signed the message.
-            if gossip_ids:
-                participants = AggregationBits.from_validator_indices(
-                    ValidatorIndices(data=gossip_ids)
-                )
-                proof = AggregatedSignatureProof.aggregate(
-                    participants=participants,
-                    public_keys=gossip_keys,
-                    signatures=gossip_sigs,
-                    message=data_root,
-                    slot=data.slot,
-                )
-                attestation = AggregatedAttestation(aggregation_bits=participants, data=data)
-                results.append((attestation, proof))
+            if not raw_entries and len(child_proofs) < 2:
+                results.append((data, child_proofs))
+                continue
+
+            raw_entries = sorted(raw_entries, key=lambda e: e.validator_id)
+            raw_xmss = [(pubkey, signature) for _, pubkey, signature in raw_entries]
+            xmss_participants = AggregationBits.from_validator_indices(ValidatorIndices(data=[e.validator_id for e in raw_entries]))
+
+            proof = AggregatedSignatureProof.aggregate(
+                xmss_participants=xmss_participants,
+                children=child_proofs,
+                raw_xmss=raw_xmss,
+                message=data.data_root_bytes(),
+                slot=data.slot,
+            )
+            attestation = AggregatedAttestation(aggregation_bits=proof.participants, data=data)
+            results.append((attestation, proof))
 
         return results
 
