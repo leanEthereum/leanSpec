@@ -51,7 +51,7 @@ def test_finalization_advances_mid_attestation_processing(
 
     Reference
     ---------
-    Fix: https://github.com/leanEthereum/leanSpec/pull/443
+    https://github.com/leanEthereum/leanSpec/pull/443
     """
     fork_choice_test(
         steps=[
