@@ -486,7 +486,7 @@ class State(Container):
             #
             # Any target outside this pattern is not eligible for justification,
             # so votes for it are simply ignored.
-            if not target.slot.is_justifiable_after(self.latest_finalized.slot):
+            if not target.slot.is_justifiable_after(finalized_slot):
                 continue
 
             # Record the vote.
@@ -540,7 +540,7 @@ class State(Container):
                 #
                 #     If there is no break in the chain, advance finalization.
                 if not any(
-                    Slot(slot).is_justifiable_after(self.latest_finalized.slot)
+                    Slot(slot).is_justifiable_after(finalized_slot)
                     for slot in range(source.slot + Slot(1), target.slot)
                 ):
                     old_finalized_slot = finalized_slot
