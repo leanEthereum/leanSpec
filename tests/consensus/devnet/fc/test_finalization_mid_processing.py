@@ -147,8 +147,7 @@ def test_finalization_advances_mid_attestation_processing(
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(8),
-                    # With the fix: B is processed -> slot 7 justified -> latest_justified=7
-                    # Without fix: B is skipped -> latest_justified stays at 2
+                    # B is processed -> slot 7 justified -> latest_justified=7
                     latest_justified_slot=Slot(7),
                     latest_finalized_slot=Slot(1),
                 ),
