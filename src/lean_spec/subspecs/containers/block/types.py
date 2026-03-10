@@ -54,6 +54,10 @@ class BlockLookup(dict[Bytes32, "Block"]):
             return cls(v)
         raise ValueError(f"expected dict or BlockLookup, got {type(v)}")
 
+    def __or__(self, other: dict[Bytes32, Block]) -> BlockLookup:
+        """Merge with another dict, preserving the BlockLookup type."""
+        return BlockLookup(super().__or__(other))
+
     def ancestors(self, root: Bytes32) -> Iterator[Bytes32]:
         """
         Walk the chain backward from a block toward genesis.
