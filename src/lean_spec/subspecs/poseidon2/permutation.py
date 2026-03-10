@@ -9,7 +9,7 @@ Uses Numba JIT compilation for native-speed permutation.
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Final, Self
 
 import numpy as np
 from numba import njit
@@ -23,31 +23,46 @@ from .constants import (
     ROUND_CONSTANTS_24,
 )
 
+_M4_T: Final[NDArray[np.int64]] = np.array(
+    [
+        [2, 3, 1, 1],
+        [1, 2, 3, 1],
+        [1, 1, 2, 3],
+        [3, 1, 1, 2],
+    ],
+    dtype=np.int64,
+).T
+"""
+Base 4x4 MDS matrix, pre-transposed.
+
+Pre-transposition enables efficient row-vector multiplication: `v @ M.T`.
+"""
+
 
 @njit(cache=True)
-def _m4_multiply(
-    chunks: NDArray[np.int64], p: int
-) -> NDArray[np.int64]:
+def _m4_multiply(chunks: NDArray[np.int64], m4t: NDArray[np.int64], p: int) -> NDArray[np.int64]:
     """
-    Multiply each row of `chunks` by the M4 circulant matrix.
+    Multiply each row of `chunks` by the M4 matrix.
 
-    Replaces `chunks @ M4.T` which requires scipy under Numba.
-    The circulant structure means each output is a linear combination
-    of `sum + one_extra_copy + two_extra_copies`.
+    Equivalent to `chunks @ m4t % p`.
+    Numba's `@` operator requires scipy and float arrays,
+    so we use an explicit loop instead. Numba unrolls these
+    small fixed-size loops, so overhead is ~12% vs native matmul.
     """
     result = np.empty_like(chunks)
     for c in range(chunks.shape[0]):
-        a, b, cv, d = chunks[c, 0], chunks[c, 1], chunks[c, 2], chunks[c, 3]
-        s = (a + b + cv + d) % p
-        result[c, 0] = (s + a + 2 * b) % p
-        result[c, 1] = (s + b + 2 * cv) % p
-        result[c, 2] = (s + cv + 2 * d) % p
-        result[c, 3] = (s + 2 * a + d) % p
+        for j in range(4):
+            s = np.int64(0)
+            for k in range(4):
+                s += chunks[c, k] * m4t[k, j]
+            result[c, j] = s % p
     return result
 
 
 @njit(cache=True)
-def _external_linear_layer_jit(state: NDArray[np.int64], p: int) -> NDArray[np.int64]:
+def _external_linear_layer_jit(
+    state: NDArray[np.int64], m4t: NDArray[np.int64], p: int
+) -> NDArray[np.int64]:
     """
     Apply the external linear layer (M_E).
 
@@ -62,7 +77,7 @@ def _external_linear_layer_jit(state: NDArray[np.int64], p: int) -> NDArray[np.i
     # Apply M4 to each 4-element chunk.
     # Provides strong local diffusion within each block.
     chunks = state.reshape(-1, 4)
-    chunks = _m4_multiply(chunks, p)
+    chunks = _m4_multiply(chunks, m4t, p)
 
     # Apply outer circulant structure for global diffusion.
     # Equivalent to multiplying by circ(2*I, I, ..., I) after M4 stage.
@@ -109,6 +124,7 @@ def _permute_jit(
     state: NDArray[np.int64],
     round_constants: NDArray[np.int64],
     diag_vector: NDArray[np.int64],
+    m4t: NDArray[np.int64],
     width: int,
     half_rounds_f: int,
     rounds_p: int,
@@ -126,7 +142,7 @@ def _permute_jit(
     #
     # Prevents certain algebraic attacks.
     # Ensures the permutation begins with a diffusion layer.
-    state[:] = _external_linear_layer_jit(state, p)
+    state[:] = _external_linear_layer_jit(state, m4t, p)
 
     # 2. First half of full rounds.
     #
@@ -142,7 +158,7 @@ def _permute_jit(
         state[:] = (state * state % p) * state % p
 
         # Apply external linear layer for diffusion.
-        state[:] = _external_linear_layer_jit(state, p)
+        state[:] = _external_linear_layer_jit(state, m4t, p)
 
     # 3. Partial rounds.
     for _ in range(rounds_p):
@@ -167,7 +183,7 @@ def _permute_jit(
         state[:] = (state * state % p) * state % p
 
         # Apply external linear layer for diffusion.
-        state[:] = _external_linear_layer_jit(state, p)
+        state[:] = _external_linear_layer_jit(state, m4t, p)
 
 
 # Trigger compilation on import so the first real call is fast.
@@ -175,6 +191,7 @@ _permute_jit(
     np.zeros(16, dtype=np.int64),
     np.zeros(148, dtype=np.int64),
     np.zeros(16, dtype=np.int64),
+    _M4_T,
     16,
     4,
     20,
@@ -280,6 +297,7 @@ class Poseidon2:
             state,
             self._round_constants,
             self._diag_vector,
+            _M4_T,
             self._width,
             self._half_rounds_f,
             self._rounds_p,
