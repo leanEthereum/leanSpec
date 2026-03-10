@@ -186,18 +186,6 @@ def _permute_jit(
         state[:] = _external_linear_layer_jit(state, m4t, p)
 
 
-# Trigger compilation on import so the first real call is fast.
-_permute_jit(
-    np.zeros(16, dtype=np.int64),
-    np.zeros(148, dtype=np.int64),
-    np.zeros(16, dtype=np.int64),
-    _M4_T,
-    16,
-    4,
-    20,
-    2130706433,
-)
-
 
 class Poseidon2Params(StrictBaseModel):
     """Parameters for a specific Poseidon2 instance."""
