@@ -41,23 +41,13 @@ def test_finalization_advances_mid_attestation_processing(
     - finalized=0: delta=7, NOT justifiable (7 > 5, not square, not pronic)
     - finalized=1: delta=6, IS justifiable (pronic = 2*3)
 
-    Expected Behavior (with fix)
+    Expected Behavior
     ----------------------------
 
     1. Attestation A justifies slot 2 and finalizes slot 1
     2. Attestation B sees updated finalized_slot=1, is justifiable, gets processed
     3. Attestation B justifies slot 7 (supermajority)
     4. latest_justified_slot = 7 (B processed after A)
-
-    Bug Behavior (without fix)
-    --------------------------
-
-    1. Attestation A justifies slot 2 and finalizes slot 1
-    2. Attestation B sees stale self.latest_finalized.slot=0, NOT justifiable
-    3. Attestation B is SKIPPED
-    4. latest_justified_slot = 2 (only A was processed)
-
-    This test FAILS without the fix (expects slot 7, gets slot 2).
 
     Reference
     ---------
