@@ -42,7 +42,7 @@ class TestDiscoveryProtocol:
         mock_handler = MagicMock()
         protocol = DiscoveryProtocol(mock_handler)
 
-        mock_transport = MagicMock()
+        mock_transport = MagicMock(spec=asyncio.DatagramTransport)
         protocol.connection_made(mock_transport)
 
         assert protocol._transport is mock_transport
@@ -189,8 +189,8 @@ class TestDiscoveryTransport:
         )
 
         # Mock the event loop's create_datagram_endpoint.
-        mock_transport_obj = MagicMock()
-        mock_protocol_obj = MagicMock()
+        mock_transport_obj = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol_obj = MagicMock(spec=DiscoveryProtocol)
 
         with patch.object(
             asyncio.get_event_loop(),
@@ -213,8 +213,8 @@ class TestDiscoveryTransport:
             local_enr=local_enr,
         )
 
-        mock_transport_obj = MagicMock()
-        mock_protocol_obj = MagicMock()
+        mock_transport_obj = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol_obj = MagicMock(spec=DiscoveryProtocol)
 
         with patch.object(
             asyncio.get_event_loop(),
@@ -238,8 +238,8 @@ class TestDiscoveryTransport:
             local_enr=local_enr,
         )
 
-        mock_transport_obj = MagicMock()
-        mock_protocol_obj = MagicMock()
+        mock_transport_obj = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol_obj = MagicMock(spec=DiscoveryProtocol)
 
         with patch.object(
             asyncio.get_event_loop(),
@@ -262,8 +262,8 @@ class TestDiscoveryTransport:
             local_enr=local_enr,
         )
 
-        mock_transport_obj = MagicMock()
-        mock_protocol_obj = MagicMock()
+        mock_transport_obj = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol_obj = MagicMock(spec=DiscoveryProtocol)
 
         with patch.object(
             asyncio.get_event_loop(),
@@ -347,8 +347,8 @@ class TestSendResponse:
             local_enr=local_enr,
         )
 
-        mock_transport_obj = MagicMock()
-        mock_protocol_obj = MagicMock()
+        mock_transport_obj = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol_obj = MagicMock(spec=DiscoveryProtocol)
 
         with patch.object(
             asyncio.get_event_loop(),
@@ -767,8 +767,8 @@ class TestPendingRequestsManagement:
             local_enr=local_enr,
         )
 
-        mock_transport_obj = MagicMock()
-        mock_protocol_obj = MagicMock()
+        mock_transport_obj = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol_obj = MagicMock(spec=DiscoveryProtocol)
 
         with patch.object(
             asyncio.get_event_loop(),
@@ -809,8 +809,8 @@ class TestPendingRequestsManagement:
             local_enr=local_enr,
         )
 
-        mock_transport_obj = MagicMock()
-        mock_protocol_obj = MagicMock()
+        mock_transport_obj = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol_obj = MagicMock(spec=DiscoveryProtocol)
 
         with patch.object(
             asyncio.get_event_loop(),
@@ -871,11 +871,11 @@ class TestSendPing:
             config=config,
         )
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 
@@ -899,11 +899,11 @@ class TestSendPing:
             config=config,
         )
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 
@@ -929,11 +929,11 @@ class TestSendPing:
             config=config,
         )
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 
@@ -975,11 +975,11 @@ class TestSendFindNode:
             config=config,
         )
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 
@@ -1003,11 +1003,11 @@ class TestSendFindNode:
             config=config,
         )
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 
@@ -1052,11 +1052,11 @@ class TestSendTalkReq:
             config=config,
         )
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 
@@ -1303,11 +1303,11 @@ class TestSendWhoareyou:
             local_enr=local_enr,
         )
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 
@@ -1338,11 +1338,11 @@ class TestSendWhoareyou:
         )
         transport.register_enr(remote_node_id, remote_enr)
 
-        mock_udp = MagicMock()
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
         with patch.object(
             asyncio.get_event_loop(),
             "create_datagram_endpoint",
-            new=AsyncMock(return_value=(mock_udp, MagicMock())),
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
         ):
             await transport.start("127.0.0.1", 9000)
 

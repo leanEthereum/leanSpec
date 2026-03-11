@@ -40,7 +40,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.chain.clock import SlotClock
 from lean_spec.subspecs.containers import (
@@ -162,7 +162,7 @@ class SyncService:
     )
     """Block processor function. Defaults to the store's block processing."""
 
-    _publish_agg_fn: Callable[[SignedAggregatedAttestation], Coroutine[Any, Any, None]] = field(
+    _publish_agg_fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]] = field(
         default=_noop_publish_agg
     )
     """Callback for publishing aggregated attestations to the network."""
@@ -202,7 +202,7 @@ class SyncService:
     """
 
     def set_publish_agg_fn(
-        self, fn: Callable[[SignedAggregatedAttestation], Coroutine[Any, Any, None]]
+        self, fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]]
     ) -> None:
         """Wire the aggregated attestation publisher after construction.
 

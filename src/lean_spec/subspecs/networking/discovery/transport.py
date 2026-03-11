@@ -135,7 +135,8 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
     def connection_made(self, transport: asyncio.transports.BaseTransport) -> None:
         """Called when UDP socket is ready."""
-        self._transport = transport  # type: ignore[assignment]
+        assert isinstance(transport, asyncio.DatagramTransport)
+        self._transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Called when a UDP packet is received."""
@@ -219,8 +220,10 @@ class DiscoveryTransport:
             lambda: DiscoveryProtocol(self),
             local_addr=(host, port),
         )
-        self._transport = transport  # type: ignore[assignment]
-        self._protocol = protocol  # type: ignore[assignment]
+        assert isinstance(transport, asyncio.DatagramTransport)
+        assert isinstance(protocol, DiscoveryProtocol)
+        self._transport = transport
+        self._protocol = protocol
 
         self._running = True
         logger.info("Discovery transport started on %s:%d", host, port)
