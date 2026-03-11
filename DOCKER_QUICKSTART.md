@@ -146,6 +146,33 @@ docker logs -f lean-spec-node
 docker stop lean-spec-node
 ```
 
+### 8. Metrics & Observability
+
+Enable Prometheus metrics and health endpoint:
+
+```bash
+docker run --rm \
+  -v /path/to/genesis:/app/data:ro \
+  -p 9000:9000 \
+  -p 8008:8008 \
+  lean-spec:node \
+  --genesis /app/data/config.yaml \
+  --metrics-port 8008 \
+  --log-format json
+```
+
+You can now access:
+- Metrics: `curl http://localhost:8008/metrics`
+- Health: `curl http://localhost:8008/health`
+
+#### Full Observability Stack
+
+A complete setup with Prometheus and Grafana is available:
+
+```bash
+docker-compose -f docker-compose.observability.yml up
+```
+
 ## Using with lean-quickstart Genesis
 
 If you have the lean-quickstart repo with generated genesis:
@@ -180,6 +207,9 @@ docker run --rm \
 | `--checkpoint-sync-url URL` | URL for checkpoint sync (e.g., `http://host:5052`) | No |
 | `--validator-keys PATH` | Path to validator keys directory | No |
 | `--node-id ID` | Node identifier for validator assignment (default: `lean_spec_0`) | No |
+| `--metrics-port PORT` | Port to expose Prometheus metrics and health endpoint | No |
+| `--log-format {text,json}` | Log output format (default: `text`) | No |
+| `--log-level LEVEL` | Log level (default: `INFO`) | No |
 | `-v, --verbose` | Enable debug logging | No |
 
 Run `docker run lean-spec:node --help` to see all available options.

@@ -1,11 +1,5 @@
 """
 Consensus node orchestrator.
-
-Wires together all services and runs them with structured concurrency.
-
-The Node is the top-level entry point for a minimal Ethereum consensus client.
-It initializes all components from genesis configuration and coordinates their
-concurrent execution.
 """
 
 from __future__ import annotations
@@ -17,14 +11,16 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
+from lean_spec.subspecs.metrics import Metrics
 from lean_spec.subspecs.chain import SlotClock
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import (
     ATTESTATION_COMMITTEE_COUNT,
     INTERVALS_PER_SLOT,
+    JUSTIFICATION_LOOKBACK_SLOTS,
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.chain.service import ChainService
@@ -157,6 +153,9 @@ class Node:
     database: Database | None = field(default=None)
     """Optional database reference for lifecycle management."""
 
+    metrics: Metrics = field(default_factory=Metrics.create)
+    """Prometheus metrics registry."""
+
     _shutdown: asyncio.Event = field(default_factory=asyncio.Event)
     """Event signaling shutdown request."""
 
@@ -239,6 +238,7 @@ class Node:
         #
         # Sync service is the hub. It owns the store and coordinates updates.
         # Chain and network services communicate through it.
+        metrics = Metrics.create()
         sync_service = SyncService(
             store=store,
             peer_manager=peer_manager,
@@ -248,6 +248,7 @@ class Node:
             database=database,
             is_aggregator=config.is_aggregator,
             genesis_start=True,
+            metrics=metrics,
         )
 
         chain_service = ChainService(sync_service=sync_service, clock=clock)
@@ -271,6 +272,8 @@ class Node:
             api_server = ApiServer(
                 config=config.api_config,
                 store_getter=lambda: sync_service.store,
+                sync_service_getter=lambda: sync_service,
+                metrics_getter=lambda: metrics,
             )
 
         # Create validator service if registry provided.
@@ -314,6 +317,7 @@ class Node:
             api_server=api_server,
             validator_service=validator_service,
             database=database,
+            metrics=sync_service.metrics if sync_service.metrics else Metrics.create(),
         )
 
     @staticmethod
@@ -472,6 +476,17 @@ class Node:
             f = store.latest_finalized
             j_root = j.root.hex() if hasattr(j.root, "hex") else str(j.root)
             f_root = f.root.hex() if hasattr(f.root, "hex") else str(f.root)
+
+            head_slot = int(j.slot)
+            epoch = head_slot // int(JUSTIFICATION_LOOKBACK_SLOTS)
+
+            log_extra = {
+                "slot": head_slot,
+                "epoch": epoch,
+                "peers": peers_connected,
+                "peer_id": str(self.network_service.peer_id) if hasattr(self.network_service, "peer_id") else None,
+            }
+
             logger.info("=" * 64)
             logger.info(
                 "Peers=%s | Justified slot=%s root=%s | Finalized slot=%s root=%s",
@@ -480,8 +495,21 @@ class Node:
                 j_root,
                 f.slot,
                 f_root,
+                extra=log_extra,
             )
             logger.info("=" * 64)
+
+            # Update metrics
+            self.metrics.slot_current.set(float(head_slot))
+            self.metrics.epoch_current.set(float(epoch))
+            self.metrics.peers_connected.set(float(peers_connected))
+
+            network_finalized = self.sync_service.peer_manager.get_network_finalized_slot()
+            if network_finalized is not None:
+                distance = max(0, int(network_finalized) - head_slot)
+                self.metrics.sync_distance.set(float(distance))
+            else:
+                self.metrics.sync_distance.set(0.0)
 
     async def _wait_shutdown(self) -> None:
         """

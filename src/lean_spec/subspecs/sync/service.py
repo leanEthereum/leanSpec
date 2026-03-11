@@ -54,6 +54,7 @@ from lean_spec.subspecs.forkchoice.store import Store
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.metrics import Metrics
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache
@@ -162,6 +163,9 @@ class SyncService:
     )
     """Block processor function. Defaults to the store's block processing."""
 
+    metrics: Metrics | None = field(default=None)
+    """Optional Prometheus metrics registry."""
+
     _publish_agg_fn: Callable[[SignedAggregatedAttestation], Coroutine[Any, Any, None]] = field(
         default=_noop_publish_agg
     )
@@ -266,6 +270,8 @@ class SyncService:
         #
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
+        if self.metrics:
+            self.metrics.blocks_imported_total.inc()
 
         # Persist block and state to database if available.
         #
@@ -514,6 +520,8 @@ class SyncService:
                 signed_attestation=attestation,
                 is_aggregator=is_aggregator_role,
             )
+            if self.metrics:
+                self.metrics.attestations_processed_total.inc()
             logger.info(
                 "Attestation from peer %s slot=%s validator=%s: validation and signature ok",
                 peer_str,
@@ -566,6 +574,8 @@ class SyncService:
 
         try:
             self.store = self.store.on_gossip_aggregated_attestation(signed_attestation)
+            if self.metrics:
+                self.metrics.attestations_processed_total.inc()
             logger.info(
                 "Aggregated attestation from peer %s slot=%s: validation and signature ok",
                 peer_str,

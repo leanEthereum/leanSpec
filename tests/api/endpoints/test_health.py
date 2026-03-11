@@ -31,7 +31,10 @@ def test_health_response_structure(server_url: str) -> None:
     data = response.json()
 
     assert "status" in data
-    assert data["status"] == health.STATUS_HEALTHY
+    assert data["status"] == "ok"
 
-    assert "service" in data
-    assert data["service"] == health.SERVICE_NAME
+    assert "slot" in data
+    assert isinstance(data["slot"], int)
+
+    assert "synced" in data
+    assert isinstance(data["synced"], bool)

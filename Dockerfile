@@ -118,6 +118,9 @@ RUN mkdir -p /app/data
 # Expose p2p port
 EXPOSE 9000
 
+# Expose metrics port
+EXPOSE 8008
+
 # Set entrypoint to lean_spec directly
 # Users can pass CLI arguments directly: docker run lean_spec --genesis /data/config.yaml --bootnode ...
 ENTRYPOINT ["uv", "run", "python", "-m", "lean_spec"]

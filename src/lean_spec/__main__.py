@@ -29,6 +29,7 @@ import logging
 import os
 import sys
 import time
+from pythonjsonlogger import jsonlogger
 from pathlib import Path
 from typing import Final
 
@@ -356,16 +357,29 @@ class ColoredFormatter(logging.Formatter):
         return f"{colored_time} {levelname} {name}: {message}"
 
 
-def setup_logging(verbose: bool = False, no_color: bool = False) -> None:
-    """Configure logging for the node with optional colors."""
-    level = logging.DEBUG if verbose else logging.INFO
+def setup_logging(
+    verbose: bool = False,
+    no_color: bool = False,
+    log_format: str = "text",
+    log_level: str | None = None,
+) -> None:
+    """Configure logging for the node."""
+    if log_level:
+        level = getattr(logging, log_level.upper(), logging.INFO)
+    else:
+        level = logging.DEBUG if verbose else logging.INFO
 
     # Create handler
     handler = logging.StreamHandler()
     handler.setLevel(level)
 
+    # Use JSON formatter if requested
+    if log_format == "json":
+        formatter = jsonlogger.JsonFormatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s"
+        )
     # Use colored formatter unless disabled
-    if no_color:
+    elif no_color:
         formatter = logging.Formatter(
             "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
@@ -390,6 +404,7 @@ async def run_node(
     node_id: str = "lean_spec_0",
     genesis_time_now: bool = False,
     is_aggregator: bool = False,
+    metrics_port: int | None = None,
 ) -> None:
     """
     Run the lean consensus node.
@@ -506,6 +521,11 @@ async def run_node(
     #   - Starts from block 0 with initial validator set
     #   - Must process every block to reach current head
     #   - Only practical for new or small networks
+    # Create API config if requested
+    api_config = None
+    if metrics_port is not None:
+        api_config = ApiServerConfig(port=metrics_port)
+
     node: Node | None
     if checkpoint_sync_url is not None:
         node = await _init_from_checkpoint(
@@ -515,6 +535,13 @@ async def run_node(
             validator_registry=validator_registry,
             is_aggregator=is_aggregator,
         )
+        if node is not None:
+            node.api_server = ApiServer(
+                config=api_config,
+                store_getter=lambda: node.sync_service.store if node else None,
+                sync_service_getter=lambda: node.sync_service if node else None,
+                metrics_getter=lambda: node.metrics if node else None,
+            ) if api_config else None
         if node is None:
             # Checkpoint sync failed. Exit rather than falling back.
             #
@@ -522,12 +549,17 @@ async def run_node(
             # They explicitly requested checkpoint sync for a reason.
             return
     else:
-        node = _init_from_genesis(
-            genesis=genesis,
+        node_conf = NodeConfig(
+            genesis_time=genesis.genesis_time,
+            validators=genesis.to_validators(),
             event_source=event_source,
+            network=event_source.reqresp_client,
             validator_registry=validator_registry,
+            fork_digest=GOSSIP_FORK_DIGEST,
             is_aggregator=is_aggregator,
+            api_config=api_config,
         )
+        node = Node.from_genesis(node_conf)
 
     logger.info("Node initialized, peer_id=%s", event_source.connection_manager.peer_id)
 
@@ -662,10 +694,27 @@ def main() -> None:
         action="store_true",
         help="Enable aggregator mode (node performs attestation aggregation)",
     )
+    parser.add_argument(
+        "--metrics-port",
+        type=int,
+        default=None,
+        help="Port to expose Prometheus metrics and health endpoint (default: disabled)",
+    )
+    parser.add_argument(
+        "--log-format",
+        choices=["text", "json"],
+        default="text",
+        help="Log output format (default: text)",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=os.environ.get("LEANSPEC_LOG_LEVEL", "INFO"),
+        help="Log level (default: INFO or LEANSPEC_LOG_LEVEL env var)",
+    )
 
     args = parser.parse_args()
 
-    setup_logging(args.verbose, args.no_color)
+    setup_logging(args.verbose, args.no_color, args.log_format, args.log_level)
 
     # Use asyncio.run with proper task cancellation on interrupt.
     # This ensures all tasks are cancelled and resources are released.
@@ -680,6 +729,7 @@ def main() -> None:
                 node_id=args.node_id,
                 genesis_time_now=args.genesis_time_now,
                 is_aggregator=args.is_aggregator,
+                metrics_port=args.metrics_port,
             )
         )
     except KeyboardInterrupt:

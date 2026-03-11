@@ -68,6 +68,12 @@ class ApiServer:
     store_getter: Callable[[], Store | None] | None = None
     """Callable that returns the current Store instance."""
 
+    sync_service_getter: Callable[[], object] | None = None
+    """Callable that returns the SyncService for health check state."""
+
+    metrics_getter: Callable[[], object] | None = None
+    """Callable that returns the Metrics instance for the /metrics endpoint."""
+
     _runner: web.AppRunner | None = field(default=None, init=False)
     """aiohttp application runner."""
 
@@ -87,8 +93,9 @@ class ApiServer:
 
         app = web.Application()
 
-        # Store the store_getter in app for handlers that need store access
         app["store_getter"] = self.store_getter
+        app["sync_service_getter"] = self.sync_service_getter
+        app["metrics_getter"] = self.metrics_getter
 
         # Add all routes
         app.add_routes(_routes)
