@@ -36,7 +36,12 @@ def generate_pre_state(**kwargs: Any) -> State:
     validators = Validators(
         data=[
             Validator(
-                pubkey=Bytes52(key_manager[ValidatorIndex(i)].public.encode_bytes()),
+                attestation_pubkey=Bytes52(
+                    key_manager[ValidatorIndex(i)].attestation_public.encode_bytes()
+                ),
+                proposal_pubkey=Bytes52(
+                    key_manager[ValidatorIndex(i)].proposal_public.encode_bytes()
+                ),
                 index=ValidatorIndex(i),
             )
             for i in range(num_validators)

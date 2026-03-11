@@ -4,7 +4,7 @@ Forkchoice store for tracking chain state and attestations.
 The Store tracks all information required for the LMD GHOST forkchoice algorithm.
 """
 
-__all__ = ["GossipSignatureEntry", "Store"]
+__all__ = ["AttestationSignatureEntry", "Store"]
 
 from collections import defaultdict
 from typing import NamedTuple
@@ -44,11 +44,11 @@ from lean_spec.types import (
 from lean_spec.types.base import StrictBaseModel
 
 
-class GossipSignatureEntry(NamedTuple):
+class AttestationSignatureEntry(NamedTuple):
     """
-    Single validator's XMSS signature for an attestation, as learned from gossip.
+    Single validator's XMSS signature for an attestation.
 
-    Used as an element in the gossip_signatures map: one entry per validator
+    Used as an element in the attestation_signatures map: one entry per validator
     that attested to the same AttestationData.
     """
 
@@ -135,11 +135,12 @@ class Store(StrictBaseModel):
     validator_id: ValidatorIndex | None
     """Index of the validator running this store instance."""
 
-    gossip_signatures: dict[AttestationData, set[GossipSignatureEntry]] = {}
+    attestation_signatures: dict[AttestationData, set[AttestationSignatureEntry]] = {}
     """
     Per-validator XMSS signatures learned from committee attesters.
 
-    Keyed by AttestationData.
+    Keyed by AttestationData. Includes signatures originating from gossip as well as
+    proposer attestation signatures extracted from block envelopes.
     """
 
     latest_new_aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
@@ -235,8 +236,7 @@ class Store(StrictBaseModel):
 
         Pruning removes all attestation-related data:
 
-        - Attestation data entries
-        - Gossip signatures
+        - Attestation signatures (gossip/proposer)
         - Pending aggregated payloads
         - Processed aggregated payloads
 
@@ -250,9 +250,9 @@ class Store(StrictBaseModel):
         # Each mapping is keyed by attestation data, so we check membership by slot
         # against the finalized slot.
 
-        new_gossip_sigs = {
+        new_attestation_sigs = {
             attestation_data: sigs
-            for attestation_data, sigs in self.gossip_signatures.items()
+            for attestation_data, sigs in self.attestation_signatures.items()
             if attestation_data.target.slot > finalized_slot
         }
 
@@ -270,7 +270,7 @@ class Store(StrictBaseModel):
 
         return self.model_copy(
             update={
-                "gossip_signatures": new_gossip_sigs,
+                "attestation_signatures": new_attestation_sigs,
                 "latest_new_aggregated_payloads": new_aggregated_new,
                 "latest_known_aggregated_payloads": new_aggregated_known,
             }
@@ -370,7 +370,7 @@ class Store(StrictBaseModel):
         assert validator_id.is_valid(Uint64(len(key_state.validators))), (
             f"Validator {validator_id} not found in state {attestation_data.target.root.hex()}"
         )
-        public_key = key_state.validators[validator_id].get_pubkey()
+        public_key = key_state.validators[validator_id].get_attestation_pubkey()
 
         assert signature.verify(
             public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
@@ -378,7 +378,7 @@ class Store(StrictBaseModel):
 
         # Store signature and attestation data for later aggregation.
         # Copy the inner sets so we can add to them without mutating the previous store.
-        new_committee_sigs = {k: set(v) for k, v in self.gossip_signatures.items()}
+        new_committee_sigs = {k: set(v) for k, v in self.attestation_signatures.items()}
 
         if is_aggregator:
             assert self.validator_id is not None, "Current validator ID must be set for aggregation"
@@ -386,13 +386,13 @@ class Store(StrictBaseModel):
             attester_subnet = validator_id.compute_subnet_id(ATTESTATION_COMMITTEE_COUNT)
             if current_subnet == attester_subnet:
                 new_committee_sigs.setdefault(attestation_data, set()).add(
-                    GossipSignatureEntry(validator_id, signature)
+                    AttestationSignatureEntry(validator_id, signature)
                 )
 
         # Return store with updated signature map and attestation data
         return self.model_copy(
             update={
-                "gossip_signatures": new_committee_sigs,
+                "attestation_signatures": new_committee_sigs,
             }
         )
 
@@ -437,7 +437,7 @@ class Store(StrictBaseModel):
             )
 
         # Prepare public keys for verification
-        public_keys = [validators[vid].get_pubkey() for vid in validator_ids]
+        public_keys = [validators[vid].get_attestation_pubkey() for vid in validator_ids]
 
         # Verify the leanVM aggregated proof
         try:
@@ -476,8 +476,8 @@ class Store(StrictBaseModel):
         1. Validating the block's parent exists
         2. Computing the post-state via the state transition function
         3. Processing attestations included in the block body (on-chain)
-        4. Updating the forkchoice head
-        5. Processing the proposer's attestation (as if gossiped)
+        4. Adding the proposer's attestation signature to the individual-signature pipeline
+        5. Updating the forkchoice head
 
         Algorithm Overview
         ------------------
@@ -488,17 +488,17 @@ class Store(StrictBaseModel):
             - They are historical and have already influenced prior fork choice
             - Processed immediately as "known" attestations
 
-        **Proposer Attestation** (processed as gossip):
+        **Proposer Attestation** (added to attestation_signatures):
             - The proposer's attestation for their own block
-            - Cast during interval 1 (after block proposal in interval 0)
-            - Should NOT influence this block's fork choice position
-            - Treated as pending until interval 3 (end of slot)
-            - Will be included in a future block
+            - Contains a real attestation-key signature
+            - Added directly to attestation_signatures so the proposer's vote flows
+              through the standard aggregation pipeline
+            - Ensures the vote counts even if the proposer crashes before re-gossiping
 
-        This separation ensures:
-        - The proposer's attestation doesn't create circular weight
-        - Fork choice head is computed before counting proposer attestation
-        - The attestation is available for the next block producer
+        This ensures:
+        - The proposer's vote is never lost (crash/partition resilience)
+        - Fork choice head is computed after storing all attestation data
+        - The attestation flows through normal aggregation like any gossip attestation
 
         Args:
             signed_block_with_attestation: Complete signed block with proposer attestation.
@@ -512,7 +512,6 @@ class Store(StrictBaseModel):
         """
         # Unpack block components
         block = signed_block_with_attestation.message.block
-        proposer_attestation = signed_block_with_attestation.message.proposer_attestation
         block_root = hash_tree_root(block)
 
         # Skip duplicate blocks (idempotent operation)
@@ -571,43 +570,21 @@ class Store(StrictBaseModel):
         for att, proof in zip(aggregated_attestations, attestation_signatures, strict=True):
             block_proofs.setdefault(att.data, set()).add(proof)
 
-        # Update store with new aggregated proofs and attestation data
-        store = store.model_copy(
-            update={
-                "latest_known_aggregated_payloads": block_proofs,
-            }
+        # Update store with new aggregated proofs.
+        store = store.model_copy(update={"latest_known_aggregated_payloads": block_proofs})
+
+        # Add the proposer's attestation signature to the individual-signature pipeline.
+        # This ensures the proposer's vote counts for fork choice even if they never
+        # re-gossip at interval 1 (crash resilience).
+        proposer_att = signed_block_with_attestation.message.proposer_attestation
+        att_sigs = {k: set(v) for k, v in store.attestation_signatures.items()}
+        att_sigs.setdefault(proposer_att.data, set()).add(
+            AttestationSignatureEntry(proposer_att.validator_id, proposer_att.signature)
         )
+        store = store.model_copy(update={"attestation_signatures": att_sigs})
 
         # Update forkchoice head based on new block and attestations
-        #
-        # IMPORTANT: This must happen BEFORE processing proposer attestation
-        # to prevent the proposer from gaining circular weight advantage.
         store = store.update_head()
-
-        # Process proposer signature for future aggregation
-        #
-        # The proposer casts their attestation in interval 1, after block
-        # proposal. Store the signature so it can be aggregated later.
-
-        new_gossip_sigs = {k: set(v) for k, v in store.gossip_signatures.items()}
-
-        # Store proposer signature for future lookup if it belongs to the same committee
-        # as the current validator.
-        if self.validator_id is not None:
-            proposer_subnet_id = proposer_attestation.validator_id.compute_subnet_id(
-                ATTESTATION_COMMITTEE_COUNT
-            )
-            current_validator_subnet_id = self.validator_id.compute_subnet_id(
-                ATTESTATION_COMMITTEE_COUNT
-            )
-            if proposer_subnet_id == current_validator_subnet_id:
-                sig = signed_block_with_attestation.signature.proposer_signature
-                new_gossip_sigs.setdefault(proposer_attestation.data, set()).add(
-                    GossipSignatureEntry(proposer_attestation.validator_id, sig)
-                )
-
-        # Update store with proposer signature
-        store = store.model_copy(update={"gossip_signatures": new_gossip_sigs})
 
         # Prune stale attestation data when finalization advances
         if store.latest_finalized.slot > self.latest_finalized.slot:
@@ -640,6 +617,25 @@ class Store(StrictBaseModel):
                         attestations[validator_id] = attestation_data
         return attestations
 
+    def _merge_individual_signature_votes(
+        self, attestations: dict[ValidatorIndex, AttestationData]
+    ) -> dict[ValidatorIndex, AttestationData]:
+        """
+        Merge votes from individual attestation signatures into a vote map.
+
+        Individual signatures in attestation_signatures include proposer attestations
+        extracted from block envelopes and gossip attestations awaiting aggregation.
+        If a validator already has a vote from the aggregation pipeline (newer or
+        same slot), the aggregated vote takes precedence.
+        """
+        merged = dict(attestations)
+        for att_data, entries in self.attestation_signatures.items():
+            for entry in entries:
+                existing = merged.get(entry.validator_id)
+                if existing is None or existing.slot < att_data.slot:
+                    merged[entry.validator_id] = att_data
+        return merged
+
     def compute_block_weights(self) -> dict[Bytes32, int]:
         """
         Compute attestation-based weight for each block above the finalized slot.
@@ -650,8 +646,10 @@ class Store(StrictBaseModel):
         Returns:
             Mapping from block root to accumulated attestation weight.
         """
-        attestations = self.extract_attestations_from_aggregated_payloads(
-            self.latest_known_aggregated_payloads
+        attestations = self._merge_individual_signature_votes(
+            self.extract_attestations_from_aggregated_payloads(
+                self.latest_known_aggregated_payloads
+            )
         )
 
         start_slot = self.latest_finalized.slot
@@ -778,9 +776,12 @@ class Store(StrictBaseModel):
             New Store with updated head.
 
         """
-        # Extract attestations from known aggregated payloads
-        attestations = self.extract_attestations_from_aggregated_payloads(
-            self.latest_known_aggregated_payloads
+        # Extract attestations from known aggregated payloads, merged with
+        # individual attestation signatures (including proposer attestations).
+        attestations = self._merge_individual_signature_votes(
+            self.extract_attestations_from_aggregated_payloads(
+                self.latest_known_aggregated_payloads
+            )
         )
 
         # Run LMD-GHOST fork choice algorithm
@@ -924,7 +925,11 @@ class Store(StrictBaseModel):
         #
         # Each proof encodes which validators participated.
         # This step unpacks those bitfields into a flat mapping of validator -> vote.
-        attestations = self.extract_attestations_from_aggregated_payloads(all_payloads)
+        # Also merge individual attestation signatures so proposer attestations
+        # from block envelopes contribute to safe target.
+        attestations = self._merge_individual_signature_votes(
+            self.extract_attestations_from_aggregated_payloads(all_payloads)
+        )
 
         # Run LMD GHOST with the supermajority threshold.
         #
@@ -950,7 +955,7 @@ class Store(StrictBaseModel):
         """
         Aggregate committee signatures for attestations in committee_signatures.
 
-        This method aggregates signatures from the gossip_signatures map.
+        This method aggregates signatures from the attestation_signatures map.
 
         Returns:
             Tuple of (new Store with updated payloads, list of new SignedAggregatedAttestation).
@@ -960,18 +965,19 @@ class Store(StrictBaseModel):
             for attestation_data, proofs in self.latest_new_aggregated_payloads.items()
         }
 
-        committee_signatures = self.gossip_signatures
+        committee_signatures = self.attestation_signatures
 
-        # Extract attestations from gossip_signatures
-        attestation_list: list[Attestation] = [
-            Attestation(validator_id=entry.validator_id, data=attestation_data)
-            for attestation_data, signatures in self.gossip_signatures.items()
-            for entry in signatures
-        ]
+        # Extract attestations from attestation_signatures
+        attestation_list: list[Attestation] = []
+        for attestation_data, signatures in self.attestation_signatures.items():
+            for entry in signatures:
+                attestation_list.append(
+                    Attestation(validator_id=entry.validator_id, data=attestation_data)
+                )
 
         head_state = self.states[self.head]
         # Perform aggregation
-        aggregated_results = head_state.aggregate_gossip_signatures(
+        aggregated_results = head_state.aggregate_attestation_signatures(
             attestation_list,
             committee_signatures,
         )
@@ -982,27 +988,27 @@ class Store(StrictBaseModel):
         ]
 
         # Compute new aggregated payloads
-        new_gossip_sigs = {
+        new_attestation_sigs = {
             attestation_data: set(signatures)
-            for attestation_data, signatures in self.gossip_signatures.items()
+            for attestation_data, signatures in self.attestation_signatures.items()
         }
         for aggregated_attestation, aggregated_signature in aggregated_results:
             attestation_data = aggregated_attestation.data
             new_aggregated_payloads.setdefault(attestation_data, set()).add(aggregated_signature)
 
             validator_ids = set(aggregated_signature.participants.to_validator_indices())
-            existing_entries = new_gossip_sigs.get(attestation_data)
+            existing_entries = new_attestation_sigs.get(attestation_data)
             if existing_entries:
                 remaining = {e for e in existing_entries if e.validator_id not in validator_ids}
                 if remaining:
-                    new_gossip_sigs[attestation_data] = remaining
+                    new_attestation_sigs[attestation_data] = remaining
                 else:
-                    del new_gossip_sigs[attestation_data]
+                    del new_attestation_sigs[attestation_data]
 
         return self.model_copy(
             update={
                 "latest_new_aggregated_payloads": new_aggregated_payloads,
-                "gossip_signatures": new_gossip_sigs,
+                "attestation_signatures": new_attestation_sigs,
             }
         ), new_aggregates
 

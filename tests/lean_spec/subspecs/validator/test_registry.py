@@ -14,9 +14,15 @@ from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.subspecs.validator.registry import ValidatorEntry, ValidatorManifestEntry
 
 
-def registry_state(registry: ValidatorRegistry) -> dict[ValidatorIndex, Any]:
-    """Extract full registry state as index → secret_key mapping."""
-    return {idx: registry.get(idx).secret_key for idx in registry.indices()}  # type: ignore[union-attr]
+def registry_state(registry: ValidatorRegistry) -> dict[ValidatorIndex, tuple[Any, Any]]:
+    """Extract full registry state as index → (att_sk, prop_sk) mapping."""
+    return {
+        idx: (
+            registry.get(idx).attestation_secret_key,  # type: ignore[union-attr]
+            registry.get(idx).proposal_secret_key,  # type: ignore[union-attr]
+        )
+        for idx in registry.indices()
+    }
 
 
 class TestValidatorEntry:
@@ -25,7 +31,9 @@ class TestValidatorEntry:
     def test_entry_is_frozen(self) -> None:
         """ValidatorEntry is immutable."""
         mock_key = MagicMock()
-        entry = ValidatorEntry(index=ValidatorIndex(0), secret_key=mock_key)
+        entry = ValidatorEntry(
+            index=ValidatorIndex(0), attestation_secret_key=mock_key, proposal_secret_key=mock_key
+        )
 
         with pytest.raises(AttributeError):
             entry.index = ValidatorIndex(1)  # type: ignore[misc]
@@ -45,9 +53,13 @@ class TestValidatorRegistry:
         """Single entry can be added and retrieved with correct key."""
         registry = ValidatorRegistry()
         key_42 = MagicMock(name="key_42")
-        registry.add(ValidatorEntry(index=ValidatorIndex(42), secret_key=key_42))
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(42), attestation_secret_key=key_42, proposal_secret_key=key_42
+            )
+        )
 
-        assert registry_state(registry) == {ValidatorIndex(42): key_42}
+        assert registry_state(registry) == {ValidatorIndex(42): (key_42, key_42)}
 
     def test_add_multiple_entries(self) -> None:
         """Multiple entries maintain correct index-to-key mapping."""
@@ -56,14 +68,26 @@ class TestValidatorRegistry:
         key_3 = MagicMock(name="key_3")
         key_4 = MagicMock(name="key_4")
 
-        registry.add(ValidatorEntry(index=ValidatorIndex(3), secret_key=key_3))
-        registry.add(ValidatorEntry(index=ValidatorIndex(1), secret_key=key_1))
-        registry.add(ValidatorEntry(index=ValidatorIndex(4), secret_key=key_4))
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(3), attestation_secret_key=key_3, proposal_secret_key=key_3
+            )
+        )
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(1), attestation_secret_key=key_1, proposal_secret_key=key_1
+            )
+        )
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(4), attestation_secret_key=key_4, proposal_secret_key=key_4
+            )
+        )
 
         assert registry_state(registry) == {
-            ValidatorIndex(1): key_1,
-            ValidatorIndex(3): key_3,
-            ValidatorIndex(4): key_4,
+            ValidatorIndex(1): (key_1, key_1),
+            ValidatorIndex(3): (key_3, key_3),
+            ValidatorIndex(4): (key_4, key_4),
         }
 
     def test_primary_index_returns_none_for_empty_registry(self) -> None:
@@ -75,15 +99,31 @@ class TestValidatorRegistry:
         """Primary index returns the first validator index."""
         registry = ValidatorRegistry()
         key = MagicMock(name="key_5")
-        registry.add(ValidatorEntry(index=ValidatorIndex(5), secret_key=key))
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(5), attestation_secret_key=key, proposal_secret_key=key
+            )
+        )
 
         assert registry.primary_index() == ValidatorIndex(5)
 
     def test_primary_index_with_multiple_validators(self) -> None:
         """Primary index returns the first inserted index."""
         registry = ValidatorRegistry()
-        registry.add(ValidatorEntry(index=ValidatorIndex(3), secret_key=MagicMock()))
-        registry.add(ValidatorEntry(index=ValidatorIndex(1), secret_key=MagicMock()))
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(3),
+                attestation_secret_key=MagicMock(),
+                proposal_secret_key=MagicMock(),
+            )
+        )
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(1),
+                attestation_secret_key=MagicMock(),
+                proposal_secret_key=MagicMock(),
+            )
+        )
 
         assert registry.primary_index() == ValidatorIndex(3)
 
@@ -93,10 +133,13 @@ class TestValidatorRegistry:
         key_2 = MagicMock(name="key_2")
 
         registry = ValidatorRegistry.from_secret_keys(
-            {ValidatorIndex(0): key_0, ValidatorIndex(2): key_2}
+            {ValidatorIndex(0): (key_0, key_0), ValidatorIndex(2): (key_2, key_2)}
         )
 
-        assert registry_state(registry) == {ValidatorIndex(0): key_0, ValidatorIndex(2): key_2}
+        assert registry_state(registry) == {
+            ValidatorIndex(0): (key_0, key_0),
+            ValidatorIndex(2): (key_2, key_2),
+        }
 
 
 class TestValidatorRegistryFromYaml:
@@ -119,23 +162,46 @@ class TestValidatorRegistryFromYaml:
                     "num_active_epochs": 32,
                     "num_validators": 3,
                     "validators": [
-                        {"index": 0, "pubkey_hex": "0x" + "00" * 52, "privkey_file": "key_0.ssz"},
-                        {"index": 1, "pubkey_hex": "0x" + "01" * 52, "privkey_file": "key_1.ssz"},
-                        {"index": 2, "pubkey_hex": "0x" + "02" * 52, "privkey_file": "key_2.ssz"},
+                        {
+                            "index": 0,
+                            "attestation_pubkey_hex": "0x" + "00" * 52,
+                            "proposal_pubkey_hex": "0x" + "00" * 52,
+                            "attestation_privkey_file": "att_key_0.ssz",
+                            "proposal_privkey_file": "prop_key_0.ssz",
+                        },
+                        {
+                            "index": 1,
+                            "attestation_pubkey_hex": "0x" + "01" * 52,
+                            "proposal_pubkey_hex": "0x" + "01" * 52,
+                            "attestation_privkey_file": "att_key_1.ssz",
+                            "proposal_privkey_file": "prop_key_1.ssz",
+                        },
+                        {
+                            "index": 2,
+                            "attestation_pubkey_hex": "0x" + "02" * 52,
+                            "proposal_pubkey_hex": "0x" + "02" * 52,
+                            "attestation_privkey_file": "att_key_2.ssz",
+                            "proposal_privkey_file": "prop_key_2.ssz",
+                        },
                     ],
                 }
             )
         )
 
-        (tmp_path / "key_0.ssz").write_bytes(b"key0")
-        (tmp_path / "key_1.ssz").write_bytes(b"key1")
+        (tmp_path / "att_key_0.ssz").write_bytes(b"att0")
+        (tmp_path / "prop_key_0.ssz").write_bytes(b"prop0")
+        (tmp_path / "att_key_1.ssz").write_bytes(b"att1")
+        (tmp_path / "prop_key_1.ssz").write_bytes(b"prop1")
 
         # Use side_effect to return different keys for each call
-        key_0 = MagicMock(name="key_0")
-        key_1 = MagicMock(name="key_1")
+        # Order: att_key_0, prop_key_0, att_key_1, prop_key_1
+        att_key_0 = MagicMock(name="att_key_0")
+        prop_key_0 = MagicMock(name="prop_key_0")
+        att_key_1 = MagicMock(name="att_key_1")
+        prop_key_1 = MagicMock(name="prop_key_1")
         with patch(
             "lean_spec.subspecs.xmss.SecretKey.decode_bytes",
-            side_effect=[key_0, key_1],
+            side_effect=[att_key_0, prop_key_0, att_key_1, prop_key_1],
         ):
             registry = ValidatorRegistry.from_yaml(
                 node_id="node_0",
@@ -143,7 +209,10 @@ class TestValidatorRegistryFromYaml:
                 manifest_path=manifest_file,
             )
 
-        assert registry_state(registry) == {ValidatorIndex(0): key_0, ValidatorIndex(1): key_1}
+        assert registry_state(registry) == {
+            ValidatorIndex(0): (att_key_0, prop_key_0),
+            ValidatorIndex(1): (att_key_1, prop_key_1),
+        }
 
     def test_from_yaml_unknown_node_returns_empty(self, tmp_path: Path) -> None:
         """Unknown node ID returns empty registry."""
@@ -191,18 +260,26 @@ class TestValidatorRegistryFromYaml:
                     "num_active_epochs": 32,
                     "num_validators": 1,
                     "validators": [
-                        {"index": 0, "pubkey_hex": "0x" + "00" * 52, "privkey_file": "key_0.ssz"},
+                        {
+                            "index": 0,
+                            "attestation_pubkey_hex": "0x" + "00" * 52,
+                            "proposal_pubkey_hex": "0x" + "00" * 52,
+                            "attestation_privkey_file": "att_key_0.ssz",
+                            "proposal_privkey_file": "prop_key_0.ssz",
+                        },
                     ],
                 }
             )
         )
 
-        (tmp_path / "key_0.ssz").write_bytes(b"key0")
+        (tmp_path / "att_key_0.ssz").write_bytes(b"att0")
+        (tmp_path / "prop_key_0.ssz").write_bytes(b"prop0")
 
-        key_0 = MagicMock(name="key_0")
+        att_key_0 = MagicMock(name="att_key_0")
+        prop_key_0 = MagicMock(name="prop_key_0")
         with patch(
             "lean_spec.subspecs.xmss.SecretKey.decode_bytes",
-            return_value=key_0,
+            side_effect=[att_key_0, prop_key_0],
         ):
             registry = ValidatorRegistry.from_yaml(
                 node_id="node_0",
@@ -211,7 +288,7 @@ class TestValidatorRegistryFromYaml:
             )
 
         # Only index 0 loaded (99 not in manifest)
-        assert registry_state(registry) == {ValidatorIndex(0): key_0}
+        assert registry_state(registry) == {ValidatorIndex(0): (att_key_0, prop_key_0)}
 
     def test_from_yaml_empty_file_returns_empty(self, tmp_path: Path) -> None:
         """Empty validators.yaml returns empty registry."""
@@ -259,13 +336,19 @@ class TestValidatorRegistryFromYaml:
                     "num_active_epochs": 32,
                     "num_validators": 1,
                     "validators": [
-                        {"index": 0, "pubkey_hex": "0x" + "00" * 52, "privkey_file": "missing.ssz"},
+                        {
+                            "index": 0,
+                            "attestation_pubkey_hex": "0x" + "00" * 52,
+                            "proposal_pubkey_hex": "0x" + "00" * 52,
+                            "attestation_privkey_file": "missing.ssz",
+                            "proposal_privkey_file": "prop.ssz",
+                        },
                     ],
                 }
             )
         )
 
-        with pytest.raises(ValueError, match="Private key file not found"):
+        with pytest.raises(ValueError, match="key file not found"):
             ValidatorRegistry.from_yaml(
                 node_id="node_0",
                 validators_path=validators_file,
@@ -289,7 +372,13 @@ class TestValidatorRegistryFromYaml:
                     "num_active_epochs": 32,
                     "num_validators": 1,
                     "validators": [
-                        {"index": 0, "pubkey_hex": "0x" + "00" * 52, "privkey_file": "invalid.ssz"},
+                        {
+                            "index": 0,
+                            "attestation_pubkey_hex": "0x" + "00" * 52,
+                            "proposal_pubkey_hex": "0x" + "00" * 52,
+                            "attestation_privkey_file": "invalid.ssz",
+                            "proposal_privkey_file": "prop.ssz",
+                        },
                     ],
                 }
             )
@@ -297,7 +386,7 @@ class TestValidatorRegistryFromYaml:
 
         (tmp_path / "invalid.ssz").write_bytes(b"not valid ssz")
 
-        with pytest.raises(ValueError, match="Failed to load private key"):
+        with pytest.raises(ValueError, match="Failed to load attestation key"):
             ValidatorRegistry.from_yaml(
                 node_id="node_0",
                 validators_path=validators_file,
@@ -312,26 +401,35 @@ class TestValidatorManifestEntry:
         """String pubkey_hex passes through unchanged."""
         entry = ValidatorManifestEntry(
             index=0,
-            pubkey_hex="0x" + "ab" * 52,
-            privkey_file="key.ssz",
+            attestation_pubkey_hex="0x" + "ab" * 52,
+            proposal_pubkey_hex="0x" + "cd" * 52,
+            attestation_privkey_file="att.ssz",
+            proposal_privkey_file="prop.ssz",
         )
-        assert entry.pubkey_hex == "0x" + "ab" * 52
+        assert entry.attestation_pubkey_hex == "0x" + "ab" * 52
+        assert entry.proposal_pubkey_hex == "0x" + "cd" * 52
 
     def test_parse_pubkey_hex_integer_conversion(self) -> None:
         """Integer pubkey_hex converts to padded hex string."""
         entry = ValidatorManifestEntry(
             index=0,
-            pubkey_hex=0x123,  # type: ignore[arg-type]
-            privkey_file="key.ssz",
+            attestation_pubkey_hex=0x123,  # type: ignore[arg-type]
+            proposal_pubkey_hex=0x456,  # type: ignore[arg-type]
+            attestation_privkey_file="att.ssz",
+            proposal_privkey_file="prop.ssz",
         )
         # Padded to 104 hex characters (52 bytes)
-        assert entry.pubkey_hex == "0x" + "0" * 101 + "123"
+        assert entry.attestation_pubkey_hex == "0x" + "0" * 101 + "123"
+        assert entry.proposal_pubkey_hex == "0x" + "0" * 101 + "456"
 
     def test_parse_pubkey_hex_zero(self) -> None:
         """Zero integer converts to all-zeros hex string."""
         entry = ValidatorManifestEntry(
             index=0,
-            pubkey_hex=0,  # type: ignore[arg-type]
-            privkey_file="key.ssz",
+            attestation_pubkey_hex=0,  # type: ignore[arg-type]
+            proposal_pubkey_hex=0,  # type: ignore[arg-type]
+            attestation_privkey_file="att.ssz",
+            proposal_privkey_file="prop.ssz",
         )
-        assert entry.pubkey_hex == "0x" + "0" * 104
+        assert entry.attestation_pubkey_hex == "0x" + "0" * 104
+        assert entry.proposal_pubkey_hex == "0x" + "0" * 104

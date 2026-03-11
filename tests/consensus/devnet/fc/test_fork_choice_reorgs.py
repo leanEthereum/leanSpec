@@ -381,8 +381,8 @@ def test_reorg_with_slot_gaps(
             BlockStep(
                 block=BlockSpec(slot=Slot(4), parent_label="base", label="fork_b_4"),
                 checks=StoreChecks(
-                    head_slot=Slot(3),
-                    head_root_label="fork_a_3",  # Tie-breaker
+                    head_slot=Slot(4),
+                    head_root_label="fork_b_4",  # Tie (1 vote each), fork_b wins by hash
                 ),
             ),
             # Fork A at slot 7 (missed slots 4-6)
@@ -401,8 +401,8 @@ def test_reorg_with_slot_gaps(
             BlockStep(
                 block=BlockSpec(slot=Slot(8), parent_label="fork_b_4", label="fork_b_8"),
                 checks=StoreChecks(
-                    head_slot=Slot(7),
-                    head_root_label="fork_a_7",  # Tie (both 2 blocks deep)
+                    head_slot=Slot(8),
+                    head_root_label="fork_b_8",  # Tie (2 votes each), fork_b wins by hash
                 ),
             ),
             # Fork B at slot 9 (overtakes with 3rd block)

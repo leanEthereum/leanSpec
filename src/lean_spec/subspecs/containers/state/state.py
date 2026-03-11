@@ -33,7 +33,7 @@ from .types import (
 )
 
 if TYPE_CHECKING:
-    from lean_spec.subspecs.forkchoice import GossipSignatureEntry
+    from lean_spec.subspecs.forkchoice import AttestationSignatureEntry
 
 
 class State(Container):
@@ -759,10 +759,10 @@ class State(Container):
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures
 
-    def aggregate_gossip_signatures(
+    def aggregate_attestation_signatures(
         self,
         attestations: Collection[Attestation],
-        gossip_signatures: dict[AttestationData, set[GossipSignatureEntry]] | None = None,
+        attestation_signatures: dict[AttestationData, set[AttestationSignatureEntry]] | None = None,
     ) -> list[tuple[AggregatedAttestation, AggregatedSignatureProof]]:
         """
         Collect aggregated signatures from gossip network and aggregate them.
@@ -773,8 +773,10 @@ class State(Container):
 
         Args:
             attestations: Individual attestations to aggregate and sign.
-            gossip_signatures: Per-validator XMSS signatures learned from
+            attestation_signatures: Per-validator XMSS signatures learned from
                 the gossip network, keyed by the attestation data they signed.
+                Proposer entries flagged in the map are ignored for aggregation
+                because they use the proposal key rather than the attestation key.
 
         Returns:
             List of (attestation, proof) pairs from gossip collection.
@@ -808,11 +810,13 @@ class State(Container):
 
             # Look up signatures by attestation data directly.
             # Sort by validator ID for deterministic aggregation order.
-            if gossip_signatures and (entries := gossip_signatures.get(data)):
+            if attestation_signatures and (entries := attestation_signatures.get(data)):
                 for entry in sorted(entries, key=lambda e: e.validator_id):
                     if entry.validator_id in validator_ids:
                         gossip_sigs.append(entry.signature)
-                        gossip_keys.append(self.validators[entry.validator_id].get_pubkey())
+                        gossip_keys.append(
+                            self.validators[entry.validator_id].get_attestation_pubkey()
+                        )
                         gossip_ids.append(entry.validator_id)
 
             # If we collected any gossip signatures, aggregate them into a proof.

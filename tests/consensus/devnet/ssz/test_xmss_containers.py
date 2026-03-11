@@ -54,7 +54,7 @@ def test_signature_actual(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for a cryptographically valid Signature produced by signing."""
     key_manager = get_shared_key_manager()
     scheme = key_manager.scheme
-    _, sk = key_manager.keys[ValidatorIndex(0)]
+    sk = key_manager.keys[ValidatorIndex(0)].attestation_secret
     signature = scheme.sign(sk, Slot(0), Bytes32(b"\x42" * 32))
     ssz(type_name="Signature", value=signature)
 

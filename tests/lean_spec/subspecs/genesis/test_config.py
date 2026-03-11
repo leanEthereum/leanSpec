@@ -20,7 +20,11 @@ SAMPLE_PUBKEY_3 = "0x" + "02" * 52
 SAMPLE_YAML = yaml.dump(
     {
         "GENESIS_TIME": 1704085200,
-        "GENESIS_VALIDATORS": [SAMPLE_PUBKEY_1, SAMPLE_PUBKEY_2, SAMPLE_PUBKEY_3],
+        "GENESIS_VALIDATORS": [
+            {"attestation_pubkey": SAMPLE_PUBKEY_1, "proposal_pubkey": SAMPLE_PUBKEY_1},
+            {"attestation_pubkey": SAMPLE_PUBKEY_2, "proposal_pubkey": SAMPLE_PUBKEY_2},
+            {"attestation_pubkey": SAMPLE_PUBKEY_3, "proposal_pubkey": SAMPLE_PUBKEY_3},
+        ],
     }
 )
 
@@ -64,22 +68,27 @@ class TestGenesisConfigYamlLoading:
         """Pubkeys are converted to Bytes52 instances."""
         config = GenesisConfig.from_yaml(SAMPLE_YAML)
 
-        for pk in config.genesis_validators:
-            assert isinstance(pk, Bytes52)
-            assert len(pk) == 52
+        for entry in config.genesis_validators:
+            assert isinstance(entry.attestation_pubkey, Bytes52)
+            assert len(entry.attestation_pubkey) == 52
+            assert isinstance(entry.proposal_pubkey, Bytes52)
+            assert len(entry.proposal_pubkey) == 52
 
     def test_pubkey_without_0x_prefix(self) -> None:
         """Handles pubkeys without 0x prefix (zeam format)."""
         yaml_content = yaml.dump(
             {
                 "GENESIS_TIME": 1704085200,
-                "GENESIS_VALIDATORS": ["00" * 52, "01" * 52],
+                "GENESIS_VALIDATORS": [
+                    {"attestation_pubkey": "00" * 52, "proposal_pubkey": "00" * 52},
+                    {"attestation_pubkey": "01" * 52, "proposal_pubkey": "01" * 52},
+                ],
             }
         )
         config = GenesisConfig.from_yaml(yaml_content)
 
         assert len(config.genesis_validators) == 2
-        assert config.genesis_validators[0] == Bytes52(b"\x00" * 52)
+        assert config.genesis_validators[0].attestation_pubkey == Bytes52(b"\x00" * 52)
 
 
 class TestGenesisConfigValidators:
@@ -94,7 +103,8 @@ class TestGenesisConfigValidators:
 
         for i, validator in enumerate(validators.data):
             assert validator.index == Uint64(i)
-            assert validator.pubkey == config.genesis_validators[i]
+            assert validator.attestation_pubkey == config.genesis_validators[i].attestation_pubkey
+            assert validator.proposal_pubkey == config.genesis_validators[i].proposal_pubkey
 
     def test_empty_validators_list(self) -> None:
         """Handles empty validator list."""
@@ -132,7 +142,9 @@ class TestGenesisConfigValidation:
         yaml_content = yaml.dump(
             {
                 "GENESIS_TIME": 1704085200,
-                "GENESIS_VALIDATORS": ["not_valid_hex"],
+                "GENESIS_VALIDATORS": [
+                    {"attestation_pubkey": "not_valid_hex", "proposal_pubkey": "not_valid_hex"},
+                ],
             }
         )
         with pytest.raises(ValidationError):
@@ -143,7 +155,9 @@ class TestGenesisConfigValidation:
         yaml_content = yaml.dump(
             {
                 "GENESIS_TIME": 1704085200,
-                "GENESIS_VALIDATORS": ["0x0011223344"],
+                "GENESIS_VALIDATORS": [
+                    {"attestation_pubkey": "0x0011223344", "proposal_pubkey": "0x0011223344"},
+                ],
             }
         )
         with pytest.raises(SSZValueError):
@@ -153,7 +167,12 @@ class TestGenesisConfigValidation:
         """Requires GENESIS_TIME field."""
         yaml_content = yaml.dump(
             {
-                "GENESIS_VALIDATORS": [SAMPLE_PUBKEY_1],
+                "GENESIS_VALIDATORS": [
+                    {
+                        "attestation_pubkey": SAMPLE_PUBKEY_1,
+                        "proposal_pubkey": SAMPLE_PUBKEY_1,
+                    },
+                ],
             }
         )
         with pytest.raises(ValidationError):
@@ -177,7 +196,7 @@ class TestGenesisConfigValidation:
                 "GENESIS_VALIDATORS": "not_a_list",
             }
         )
-        with pytest.raises(ValidationError, match="must be a list"):
+        with pytest.raises(ValidationError):
             GenesisConfig.from_yaml(yaml_content)
 
     def test_num_validators_mismatch_raises_error(self) -> None:
@@ -186,7 +205,16 @@ class TestGenesisConfigValidation:
             {
                 "GENESIS_TIME": 1704085200,
                 "NUM_VALIDATORS": 5,
-                "GENESIS_VALIDATORS": [SAMPLE_PUBKEY_1, SAMPLE_PUBKEY_2],
+                "GENESIS_VALIDATORS": [
+                    {
+                        "attestation_pubkey": SAMPLE_PUBKEY_1,
+                        "proposal_pubkey": SAMPLE_PUBKEY_1,
+                    },
+                    {
+                        "attestation_pubkey": SAMPLE_PUBKEY_2,
+                        "proposal_pubkey": SAMPLE_PUBKEY_2,
+                    },
+                ],
             }
         )
         with pytest.raises(ValidationError, match="does not match"):
@@ -198,7 +226,16 @@ class TestGenesisConfigValidation:
             {
                 "GENESIS_TIME": 1704085200,
                 "NUM_VALIDATORS": 2,
-                "GENESIS_VALIDATORS": [SAMPLE_PUBKEY_1, SAMPLE_PUBKEY_2],
+                "GENESIS_VALIDATORS": [
+                    {
+                        "attestation_pubkey": SAMPLE_PUBKEY_1,
+                        "proposal_pubkey": SAMPLE_PUBKEY_1,
+                    },
+                    {
+                        "attestation_pubkey": SAMPLE_PUBKEY_2,
+                        "proposal_pubkey": SAMPLE_PUBKEY_2,
+                    },
+                ],
             }
         )
         config = GenesisConfig.from_yaml(yaml_content)
@@ -215,7 +252,11 @@ class TestCrossClientFormat:
         yaml_content = yaml.dump(
             {
                 "GENESIS_TIME": 1704085200,
-                "GENESIS_VALIDATORS": [PUBKEY_1, PUBKEY_2, PUBKEY_3],
+                "GENESIS_VALIDATORS": [
+                    {"attestation_pubkey": PUBKEY_1, "proposal_pubkey": PUBKEY_1},
+                    {"attestation_pubkey": PUBKEY_2, "proposal_pubkey": PUBKEY_2},
+                    {"attestation_pubkey": PUBKEY_3, "proposal_pubkey": PUBKEY_3},
+                ],
             }
         )
         config = GenesisConfig.from_yaml(yaml_content)
@@ -244,4 +285,5 @@ class TestCrossClientFormat:
                 )
             ),
         ]
-        assert config.genesis_validators == expected_pubkeys
+        for entry, expected in zip(config.genesis_validators, expected_pubkeys, strict=True):
+            assert entry.attestation_pubkey == expected

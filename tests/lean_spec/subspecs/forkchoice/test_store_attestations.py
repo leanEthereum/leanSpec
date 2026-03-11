@@ -17,7 +17,7 @@ from lean_spec.subspecs.containers.attestation import (
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
-from lean_spec.subspecs.forkchoice import GossipSignatureEntry
+from lean_spec.subspecs.forkchoice import AttestationSignatureEntry
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Bytes32, Uint64
 from tests.lean_spec.helpers import (
@@ -26,7 +26,7 @@ from tests.lean_spec.helpers import (
     make_signed_block_from_store,
     make_store,
     make_store_with_attestation_data,
-    make_store_with_gossip_signatures,
+    make_store_with_attestation_signatures,
 )
 
 
@@ -81,7 +81,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
 
     gossip_sigs_1 = {
         attestation_data_1: {
-            GossipSignatureEntry(
+            AttestationSignatureEntry(
                 validator_id, key_manager.sign_attestation_data(validator_id, attestation_data_1)
             )
             for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
@@ -90,7 +90,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
 
     producer_store_1 = base_store.model_copy(
         update={
-            "gossip_signatures": gossip_sigs_1,
+            "attestation_signatures": gossip_sigs_1,
         }
     )
 
@@ -105,7 +105,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
 
     gossip_sigs_2 = {
         attestation_data_2: {
-            GossipSignatureEntry(
+            AttestationSignatureEntry(
                 validator_id, key_manager.sign_attestation_data(validator_id, attestation_data_2)
             )
             for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
@@ -114,7 +114,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
 
     producer_store_2 = store_after_block_1.model_copy(
         update={
-            "gossip_signatures": gossip_sigs_2,
+            "attestation_signatures": gossip_sigs_2,
         }
     )
 
@@ -177,7 +177,7 @@ class TestOnGossipAttestationSubnetFiltering:
         )
 
         # Verify signature does NOT exist before calling the method
-        assert attestation_data not in store.gossip_signatures, (
+        assert attestation_data not in store.attestation_signatures, (
             "Precondition: signature should not exist before calling method"
         )
 
@@ -191,7 +191,7 @@ class TestOnGossipAttestationSubnetFiltering:
             )
 
         # Verify signature NOW exists after calling the method
-        sigs = updated_store.gossip_signatures.get(attestation_data, set())
+        sigs = updated_store.attestation_signatures.get(attestation_data, set())
         assert any(entry.validator_id == attester_validator for entry in sigs), (
             "Signature from same-subnet validator should be stored"
         )
@@ -227,7 +227,7 @@ class TestOnGossipAttestationSubnetFiltering:
             )
 
         # Verify signature was NOT stored
-        sigs = updated_store.gossip_signatures.get(attestation_data, set())
+        sigs = updated_store.attestation_signatures.get(attestation_data, set())
         assert not any(entry.validator_id == attester_validator for entry in sigs), (
             "Signature from different-subnet validator should NOT be stored"
         )
@@ -261,17 +261,17 @@ class TestOnGossipAttestationSubnetFiltering:
             )
 
         # Verify signature was NOT stored even though same subnet
-        sigs = updated_store.gossip_signatures.get(attestation_data, set())
+        sigs = updated_store.attestation_signatures.get(attestation_data, set())
         assert not any(entry.validator_id == attester_validator for entry in sigs), (
             "Non-aggregator should never store gossip signatures"
         )
 
     def test_cross_subnet_does_not_create_gossip_entry(self, key_manager: XmssKeyManager) -> None:
         """
-        Cross-subnet attestation does not create a gossip_signatures entry.
+        Cross-subnet attestation does not create a attestation_signatures entry.
 
         When the attester is in a different subnet, no entry is created
-        for that attestation data in gossip_signatures.
+        for that attestation data in attestation_signatures.
         """
         current_validator = ValidatorIndex(0)
         attester_validator = ValidatorIndex(1)  # Different subnet
@@ -295,8 +295,8 @@ class TestOnGossipAttestationSubnetFiltering:
             )
 
         # Verify no gossip entry was created for this attestation data
-        assert attestation_data not in updated_store.gossip_signatures, (
-            "Cross-subnet attestation should not create a gossip_signatures entry"
+        assert attestation_data not in updated_store.attestation_signatures, (
+            "Cross-subnet attestation should not create a attestation_signatures entry"
         )
 
 
@@ -327,7 +327,7 @@ class TestOnGossipAggregatedAttestation:
             participants=AggregationBits.from_validator_indices(
                 ValidatorIndices(data=participants)
             ),
-            public_keys=[key_manager.get_public_key(vid) for vid in participants],
+            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants],
             signatures=[
                 key_manager.sign_attestation_data(vid, attestation_data) for vid in participants
             ],
@@ -368,7 +368,7 @@ class TestOnGossipAggregatedAttestation:
             participants=AggregationBits.from_validator_indices(
                 ValidatorIndices(data=participants)
             ),
-            public_keys=[key_manager.get_public_key(vid) for vid in participants],
+            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants],
             signatures=[
                 key_manager.sign_attestation_data(vid, attestation_data) for vid in participants
             ],
@@ -406,7 +406,7 @@ class TestOnGossipAggregatedAttestation:
             participants=AggregationBits.from_validator_indices(
                 ValidatorIndices(data=claimed_participants)
             ),
-            public_keys=[key_manager.get_public_key(vid) for vid in actual_signers],
+            public_keys=[key_manager.get_attestation_public_key(vid) for vid in actual_signers],
             signatures=[
                 key_manager.sign_attestation_data(vid, attestation_data) for vid in actual_signers
             ],
@@ -441,7 +441,7 @@ class TestOnGossipAggregatedAttestation:
             participants=AggregationBits.from_validator_indices(
                 ValidatorIndices(data=participants_1)
             ),
-            public_keys=[key_manager.get_public_key(vid) for vid in participants_1],
+            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants_1],
             signatures=[
                 key_manager.sign_attestation_data(vid, attestation_data) for vid in participants_1
             ],
@@ -455,7 +455,7 @@ class TestOnGossipAggregatedAttestation:
             participants=AggregationBits.from_validator_indices(
                 ValidatorIndices(data=participants_2)
             ),
-            public_keys=[key_manager.get_public_key(vid) for vid in participants_2],
+            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants_2],
             signatures=[
                 key_manager.sign_attestation_data(vid, attestation_data) for vid in participants_2
             ],
@@ -485,7 +485,9 @@ class TestAggregateCommitteeSignatures:
     and stored for later use.
     """
 
-    def test_aggregates_gossip_signatures_into_proof(self, key_manager: XmssKeyManager) -> None:
+    def test_aggregates_attestation_signatures_into_proof(
+        self, key_manager: XmssKeyManager
+    ) -> None:
         """
         Aggregation creates proofs from collected gossip signatures.
 
@@ -496,7 +498,7 @@ class TestAggregateCommitteeSignatures:
         """
         attesting_validators = [ValidatorIndex(1), ValidatorIndex(2)]
 
-        store, attestation_data = make_store_with_gossip_signatures(
+        store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
             validator_id=ValidatorIndex(0),
@@ -522,7 +524,7 @@ class TestAggregateCommitteeSignatures:
         """
         attesting_validators = [ValidatorIndex(1), ValidatorIndex(2)]
 
-        store, attestation_data = make_store_with_gossip_signatures(
+        store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
             validator_id=ValidatorIndex(0),
@@ -536,7 +538,7 @@ class TestAggregateCommitteeSignatures:
 
         # Extract participants from the proof
         participants = proof.participants.to_validator_indices()
-        public_keys = [key_manager.get_public_key(vid) for vid in participants]
+        public_keys = [key_manager.get_attestation_public_key(vid) for vid in participants]
 
         # Verify the proof is valid
         proof.verify(
@@ -545,13 +547,15 @@ class TestAggregateCommitteeSignatures:
             slot=attestation_data.slot,
         )
 
-    def test_empty_gossip_signatures_produces_no_proofs(self, key_manager: XmssKeyManager) -> None:
+    def test_empty_attestation_signatures_produces_no_proofs(
+        self, key_manager: XmssKeyManager
+    ) -> None:
         """
-        No proofs created when gossip_signatures is empty.
+        No proofs created when attestation_signatures is empty.
 
         This is the expected behavior when no attestations have been received.
         """
-        store, _ = make_store_with_gossip_signatures(
+        store, _ = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
             validator_id=ValidatorIndex(0),
@@ -588,14 +592,14 @@ class TestAggregateCommitteeSignatures:
         # Validators 1 attests to data_1, validator 2 attests to data_2
         sig_1 = key_manager.sign_attestation_data(ValidatorIndex(1), att_data_1)
         sig_2 = key_manager.sign_attestation_data(ValidatorIndex(2), att_data_2)
-        gossip_signatures = {
-            att_data_1: {GossipSignatureEntry(ValidatorIndex(1), sig_1)},
-            att_data_2: {GossipSignatureEntry(ValidatorIndex(2), sig_2)},
+        attestation_signatures = {
+            att_data_1: {AttestationSignatureEntry(ValidatorIndex(1), sig_1)},
+            att_data_2: {AttestationSignatureEntry(ValidatorIndex(2), sig_2)},
         }
 
         store = base_store.model_copy(
             update={
-                "gossip_signatures": gossip_signatures,
+                "attestation_signatures": attestation_signatures,
             }
         )
 
@@ -625,7 +629,7 @@ class TestTickIntervalAggregation:
         """
         attesting_validators = [ValidatorIndex(1), ValidatorIndex(2)]
 
-        store, attestation_data = make_store_with_gossip_signatures(
+        store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
             validator_id=ValidatorIndex(0),
@@ -655,7 +659,7 @@ class TestTickIntervalAggregation:
         """
         attesting_validators = [ValidatorIndex(1), ValidatorIndex(2)]
 
-        store, attestation_data = make_store_with_gossip_signatures(
+        store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
             validator_id=ValidatorIndex(0),
@@ -681,7 +685,7 @@ class TestTickIntervalAggregation:
         """
         attesting_validators = [ValidatorIndex(1), ValidatorIndex(2)]
 
-        store, attestation_data = make_store_with_gossip_signatures(
+        store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
             validator_id=ValidatorIndex(0),
@@ -774,7 +778,7 @@ class TestEndToEndAggregationFlow:
             )
 
         # Verify signatures were stored
-        sigs = store.gossip_signatures.get(attestation_data, set())
+        sigs = store.attestation_signatures.get(attestation_data, set())
         for vid in attesting_validators:
             assert any(entry.validator_id == vid for entry in sigs), (
                 f"Signature for {vid} should be stored"
@@ -792,7 +796,7 @@ class TestEndToEndAggregationFlow:
         # Step 4: Verify the proof is valid
         proof = next(iter(store.latest_new_aggregated_payloads[attestation_data]))
         participants = proof.participants.to_validator_indices()
-        public_keys = [key_manager.get_public_key(vid) for vid in participants]
+        public_keys = [key_manager.get_attestation_public_key(vid) for vid in participants]
 
         proof.verify(
             public_keys=public_keys,

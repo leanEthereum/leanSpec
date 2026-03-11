@@ -20,7 +20,9 @@ File format:
 
 - Each key pair is stored in a separate JSON file with hex-encoded SSZ.
 - Directory structure: ``test_keys/{scheme}_scheme/{index}.json``
-- Each file contains: ``{"public": "0a1b...", "secret": "2c3d..."}``
+- Each file has four hex-encoded SSZ fields:
+  ``attestation_public``, ``attestation_secret``,
+  ``proposal_public``, ``proposal_secret``
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from collections.abc import Iterator, Mapping
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
+from typing import Literal
 
 from lean_spec.config import LEAN_ENV
 from lean_spec.subspecs.containers import AttestationData, ValidatorIndex
@@ -48,7 +51,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
-from lean_spec.subspecs.xmss.containers import KeyPair, PublicKey, Signature
+from lean_spec.subspecs.xmss.containers import PublicKey, Signature, ValidatorKeyPair
 from lean_spec.subspecs.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
     TEST_SIGNATURE_SCHEME,
@@ -162,14 +165,14 @@ def get_keys_dir(scheme_name: str) -> Path:
     return Path(__file__).parent / "test_keys" / f"{scheme_name}_scheme"
 
 
-class LazyKeyDict(Mapping[ValidatorIndex, KeyPair]):
+class LazyKeyDict(Mapping[ValidatorIndex, ValidatorKeyPair]):
     """Load pre-generated keys from disk (cached after first call)."""
 
     def __init__(self, scheme_name: str) -> None:
         """Initialize with scheme name for locating key files."""
         self._scheme_name = scheme_name
         self._keys_dir = get_keys_dir(scheme_name)
-        self._cache: dict[ValidatorIndex, KeyPair] = {}
+        self._cache: dict[ValidatorIndex, ValidatorKeyPair] = {}
         self._available_indices: set[ValidatorIndex] | None = None
 
     def _ensure_dir_exists(self) -> None:
@@ -194,15 +197,15 @@ class LazyKeyDict(Mapping[ValidatorIndex, KeyPair]):
                 )
         return self._available_indices
 
-    def _load_key(self, idx: ValidatorIndex) -> KeyPair:
+    def _load_key(self, idx: ValidatorIndex) -> ValidatorKeyPair:
         """Load a single key from disk."""
         key_file = self._keys_dir / f"{idx}.json"
         if not key_file.exists():
             raise KeyError(f"Key file not found: {key_file}")
         data = json.loads(key_file.read_text())
-        return KeyPair.from_dict(data)
+        return ValidatorKeyPair.from_dict(data)
 
-    def __getitem__(self, idx: ValidatorIndex) -> KeyPair:
+    def __getitem__(self, idx: ValidatorIndex) -> ValidatorKeyPair:
         """Get key pair by validator index, loading from disk if needed."""
         if idx not in self._cache:
             self._cache[idx] = self._load_key(idx)
@@ -244,7 +247,7 @@ class XmssKeyManager:
         """Initialize the manager with optional custom configuration."""
         self.max_slot = max_slot
         self.scheme = scheme
-        self._state: dict[ValidatorIndex, KeyPair] = {}
+        self._state: dict[ValidatorIndex, ValidatorKeyPair] = {}
 
         try:
             self.scheme_name = next(
@@ -260,7 +263,7 @@ class XmssKeyManager:
             _LAZY_KEY_CACHE[self.scheme_name] = LazyKeyDict(self.scheme_name)
         return _LAZY_KEY_CACHE[self.scheme_name]
 
-    def __getitem__(self, idx: ValidatorIndex) -> KeyPair:
+    def __getitem__(self, idx: ValidatorIndex) -> ValidatorKeyPair:
         """Get key pair, returning advanced state if available."""
         if idx in self._state:
             return self._state[idx]
@@ -282,9 +285,49 @@ class XmssKeyManager:
         """Iterate over validator indices."""
         return iter(self.keys)
 
-    def get_public_key(self, idx: ValidatorIndex) -> PublicKey:
-        """Get a validator's public key."""
-        return self[idx].public
+    def get_attestation_public_key(self, idx: ValidatorIndex) -> PublicKey:
+        """Get a validator's attestation public key."""
+        return self[idx].attestation_public
+
+    def get_proposal_public_key(self, idx: ValidatorIndex) -> PublicKey:
+        """Get a validator's proposal public key."""
+        return self[idx].proposal_public
+
+    def _sign_with_secret(
+        self,
+        validator_id: ValidatorIndex,
+        attestation_data: AttestationData,
+        secret_field: Literal["attestation_secret", "proposal_secret"],
+    ) -> Signature:
+        """
+        Shared signing logic for attestation/proposal paths.
+
+        Handles XMSS state advancement until the requested slot is within the
+        prepared interval, caches the updated secret, and produces the signature.
+
+        Args:
+            validator_id: Validator index whose key should be used.
+            attestation_data: Data to sign.
+            secret_field: Which secret on the key pair should advance.
+        """
+        slot = attestation_data.slot
+        kp = self[validator_id]
+        sk = getattr(kp, secret_field)
+
+        # Advance key state until the slot is ready for signing.
+        prepared = self.scheme.get_prepared_interval(sk)
+        while int(slot) not in prepared:
+            activation = self.scheme.get_activation_interval(sk)
+            if prepared.stop >= activation.stop:
+                raise ValueError(f"Slot {slot} exceeds key lifetime {activation.stop}")
+            sk = self.scheme.advance_preparation(sk)
+            prepared = self.scheme.get_prepared_interval(sk)
+
+        # Cache advanced state (only the selected secret changes).
+        self._state[validator_id] = kp._replace(**{secret_field: sk})
+
+        message = attestation_data.data_root_bytes()
+        return self.scheme.sign(sk, slot, message)
 
     def sign_attestation_data(
         self,
@@ -292,10 +335,10 @@ class XmssKeyManager:
         attestation_data: AttestationData,
     ) -> Signature:
         """
-        Sign an attestation data with automatic key state advancement.
+        Sign attestation data with the attestation key.
 
-        XMSS is stateful: signing advances the internal key state.
-        This method handles advancement transparently.
+        XMSS is stateful: this delegates to the shared helper which advances the
+        attestation key state as needed while leaving the proposal key untouched.
 
         Args:
             validator_id: The validator index to sign the attestation data for.
@@ -307,25 +350,30 @@ class XmssKeyManager:
         Raises:
             ValueError: If slot exceeds key lifetime.
         """
-        slot = attestation_data.slot
-        kp = self[validator_id]
-        sk = kp.secret
+        return self._sign_with_secret(validator_id, attestation_data, "attestation_secret")
 
-        # Advance key state until slot is in prepared interval
-        prepared = self.scheme.get_prepared_interval(sk)
-        while int(slot) not in prepared:
-            activation = self.scheme.get_activation_interval(sk)
-            if prepared.stop >= activation.stop:
-                raise ValueError(f"Slot {slot} exceeds key lifetime {activation.stop}")
-            sk = self.scheme.advance_preparation(sk)
-            prepared = self.scheme.get_prepared_interval(sk)
+    def sign_proposal_data(
+        self,
+        validator_id: ValidatorIndex,
+        attestation_data: AttestationData,
+    ) -> Signature:
+        """
+        Sign proposer attestation data with the proposal key.
 
-        # Cache advanced state
-        self._state[validator_id] = kp._replace(secret=sk)
+        Delegates to the shared helper which advances only the proposal key, so
+        the attestation key remains unchanged.
 
-        # Sign hash tree root of the attestation data
-        message = attestation_data.data_root_bytes()
-        return self.scheme.sign(sk, slot, message)
+        Args:
+            validator_id: The validator index to sign the proposal for.
+            attestation_data: The attestation data to sign.
+
+        Returns:
+            XMSS signature.
+
+        Raises:
+            ValueError: If slot exceeds key lifetime.
+        """
+        return self._sign_with_secret(validator_id, attestation_data, "proposal_secret")
 
     def build_attestation_signatures(
         self,
@@ -350,7 +398,9 @@ class XmssKeyManager:
             # Look up pre-computed signatures by attestation data and validator ID.
             sigs_for_data = lookup.get(agg.data, {})
 
-            public_keys: list[PublicKey] = [self.get_public_key(vid) for vid in validator_ids]
+            public_keys: list[PublicKey] = [
+                self.get_attestation_public_key(vid) for vid in validator_ids
+            ]
             signatures: list[Signature] = [
                 sigs_for_data.get(vid) or self.sign_attestation_data(vid, agg.data)
                 for vid in validator_ids
@@ -374,10 +424,16 @@ class XmssKeyManager:
 def _generate_single_keypair(
     scheme: GeneralizedXmssScheme, num_slots: int, index: int
 ) -> dict[str, str]:
-    """Generate one key pair (module-level for pickling in ProcessPoolExecutor)."""
+    """Generate dual key pairs for one validator (module-level for pickling)."""
     print(f"Starting key #{index} generation...")
-    pk, sk = scheme.key_gen(Slot(0), Uint64(num_slots))
-    return KeyPair(public=pk, secret=sk).to_dict()
+    att_pk, att_sk = scheme.key_gen(Slot(0), Uint64(num_slots))
+    prop_pk, prop_sk = scheme.key_gen(Slot(0), Uint64(num_slots))
+    return ValidatorKeyPair(
+        attestation_public=att_pk,
+        attestation_secret=att_sk,
+        proposal_public=prop_pk,
+        proposal_secret=prop_sk,
+    ).to_dict()
 
 
 def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:

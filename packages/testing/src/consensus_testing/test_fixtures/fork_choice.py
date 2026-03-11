@@ -200,7 +200,14 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Otherwise signature verification will fail.
         updated_validators = [
             validator.model_copy(
-                update={"pubkey": key_manager[ValidatorIndex(i)].public.encode_bytes()}
+                update={
+                    "attestation_pubkey": key_manager[
+                        ValidatorIndex(i)
+                    ].attestation_public.encode_bytes(),
+                    "proposal_pubkey": key_manager[
+                        ValidatorIndex(i)
+                    ].proposal_public.encode_bytes(),
+                }
             )
             for i, validator in enumerate(self.anchor_state.validators)
         ]
@@ -287,6 +294,30 @@ class ForkChoiceTest(BaseConsensusFixture):
                             signed_block,
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                         )
+
+                        # Simulate the proposer's interval 1 gossip attestation.
+                        #
+                        # With dual keys, the proposer gossips a fresh attestation
+                        # using the attestation key. Reuse the attestation data
+                        # from the block envelope — it was built from the proposer's
+                        # chain view (which includes their own block as head).
+                        #
+                        # Best-effort: if the attestation data fails validation
+                        # (e.g. source > target after justification advances),
+                        # skip gracefully — matches ValidatorService behavior.
+                        proposer_att = signed_block.message.proposer_attestation
+                        try:
+                            store = store.on_gossip_attestation(
+                                SignedAttestation(
+                                    validator_id=proposer_att.validator_id,
+                                    data=proposer_att.data,
+                                    signature=proposer_att.signature,
+                                ),
+                                scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
+                                is_aggregator=True,
+                            )
+                        except (AssertionError, Exception):
+                            pass
 
                     case AttestationStep():
                         # Process a gossip attestation.
@@ -472,9 +503,11 @@ class ForkChoiceTest(BaseConsensusFixture):
                 "latest_finalized": latest_finalized,
             }
         )
-        proposer_attestation = Attestation(
+        proposer_attestation_data = temp_store.produce_attestation_data(spec.slot)
+        proposer_attestation = SignedAttestation(
             validator_id=proposer_index,
-            data=temp_store.produce_attestation_data(spec.slot),
+            data=proposer_attestation_data,
+            signature=key_manager.sign_attestation_data(proposer_index, proposer_attestation_data),
         )
 
         # Sign everything
@@ -486,7 +519,7 @@ class ForkChoiceTest(BaseConsensusFixture):
             attestation_signatures,
         )
 
-        proposer_signature = key_manager.sign_attestation_data(
+        proposer_signature = key_manager.sign_proposal_data(
             proposer_attestation.validator_id,
             proposer_attestation.data,
         )

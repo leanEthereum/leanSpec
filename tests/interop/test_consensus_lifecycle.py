@@ -181,7 +181,8 @@ async def test_consensus_lifecycle(node_cluster: NodeCluster) -> None:
     # Three validators each produce one attestation, so the sum of
     # all pipeline stages across all nodes must be at least 3.
     total_activity = sum(
-        d.gossip_signatures_count + d.new_aggregated_count + d.known_aggregated_count for d in diags
+        d.attestation_signatures_count + d.new_aggregated_count + d.known_aggregated_count
+        for d in diags
     )
     assert total_activity >= MIN_ATTESTATION_ACTIVITY, (
         f"Expected >= {MIN_ATTESTATION_ACTIVITY} attestation pipeline "
@@ -192,11 +193,11 @@ async def test_consensus_lifecycle(node_cluster: NodeCluster) -> None:
     # A node with zero activity indicates a gossip or subscription failure.
     for i, d in enumerate(diags):
         node_activity = (
-            d.gossip_signatures_count + d.new_aggregated_count + d.known_aggregated_count
+            d.attestation_signatures_count + d.new_aggregated_count + d.known_aggregated_count
         )
         assert node_activity >= 1, (
             f"Node {i}: zero attestation pipeline activity "
-            f"(gsigs={d.gossip_signatures_count}, "
+            f"(gsigs={d.attestation_signatures_count}, "
             f"nagg={d.new_aggregated_count}, "
             f"kagg={d.known_aggregated_count})"
         )

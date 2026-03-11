@@ -49,12 +49,19 @@ class ValidatorIndices(SSZList[ValidatorIndex]):
 class Validator(Container):
     """Represents a validator's static metadata and operational interface."""
 
-    pubkey: Bytes52
-    """XMSS one-time signature public key."""
+    attestation_pubkey: Bytes52
+    """XMSS public key for signing attestations."""
+
+    proposal_pubkey: Bytes52
+    """XMSS public key for signing proposer attestations in blocks."""
 
     index: ValidatorIndex = ValidatorIndex(0)
     """Validator index in the registry."""
 
-    def get_pubkey(self) -> PublicKey:
-        """Get the XMSS public key from this validator."""
-        return PublicKey.decode_bytes(bytes(self.pubkey))
+    def get_attestation_pubkey(self) -> PublicKey:
+        """Get the XMSS public key used for attestation verification."""
+        return PublicKey.decode_bytes(bytes(self.attestation_pubkey))
+
+    def get_proposal_pubkey(self) -> PublicKey:
+        """Get the XMSS public key used for proposer attestation verification."""
+        return PublicKey.decode_bytes(bytes(self.proposal_pubkey))

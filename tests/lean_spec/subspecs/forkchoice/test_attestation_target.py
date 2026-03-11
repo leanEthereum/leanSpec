@@ -562,16 +562,18 @@ class TestIntegrationScenarios:
         block_root = hash_tree_root(block)
 
         # Get attestation data for the block's slot
-        proposer_attestation = Attestation(
-            validator_id=proposer_1,
-            data=AttestationData(
-                slot=slot_1,
-                head=Checkpoint(root=block_root, slot=slot_1),
-                target=Checkpoint(root=block_root, slot=slot_1),
-                source=store.latest_justified,
-            ),
+        proposer_attestation_data = AttestationData(
+            slot=slot_1,
+            head=Checkpoint(root=block_root, slot=slot_1),
+            target=Checkpoint(root=block_root, slot=slot_1),
+            source=store.latest_justified,
         )
-        proposer_signature = key_manager.sign_attestation_data(
+        proposer_attestation = SignedAttestation(
+            validator_id=proposer_1,
+            data=proposer_attestation_data,
+            signature=key_manager.sign_attestation_data(proposer_1, proposer_attestation_data),
+        )
+        proposer_signature = key_manager.sign_proposal_data(
             proposer_attestation.validator_id,
             proposer_attestation.data,
         )

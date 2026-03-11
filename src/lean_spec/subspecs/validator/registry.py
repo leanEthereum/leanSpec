@@ -47,13 +47,19 @@ class ValidatorManifestEntry(BaseModel):
     index: int
     """Validator index in the registry."""
 
-    pubkey_hex: str
-    """Public key as hex string with 0x prefix."""
+    attestation_pubkey_hex: str
+    """Attestation public key as hex string with 0x prefix."""
 
-    privkey_file: str
-    """Filename of the private key file (e.g., validator_0_sk.ssz)."""
+    proposal_pubkey_hex: str
+    """Proposal public key as hex string with 0x prefix."""
 
-    @field_validator("pubkey_hex", mode="before")
+    attestation_privkey_file: str
+    """Filename of the attestation private key file."""
+
+    proposal_privkey_file: str
+    """Filename of the proposal private key file."""
+
+    @field_validator("attestation_pubkey_hex", "proposal_pubkey_hex", mode="before")
     @classmethod
     def parse_pubkey_hex(cls, v: str | int) -> str:
         """
@@ -138,14 +144,19 @@ class ValidatorEntry:
     """
     A single validator's key material.
 
-    Holds both the index and the secret key needed for signing.
+    Holds the index and both secret keys needed for signing.
+    Attestation and proposal keys are separate to allow independent
+    OTS signing within the same slot.
     """
 
     index: ValidatorIndex
     """Validator index in the registry."""
 
-    secret_key: SecretKey
-    """Secret key for signing operations."""
+    attestation_secret_key: SecretKey
+    """Secret key for signing attestations."""
+
+    proposal_secret_key: SecretKey
+    """Secret key for signing proposer attestations in blocks."""
 
 
 @dataclass(slots=True)
@@ -270,38 +281,58 @@ class ValidatorRegistry:
                 )
                 continue
 
-            # Load secret key from SSZ file.
-            privkey_path = manifest_dir / entry.privkey_file
+            # Load attestation secret key from SSZ file.
+            att_key_path = manifest_dir / entry.attestation_privkey_file
             try:
-                secret_key = SecretKey.decode_bytes(privkey_path.read_bytes())
+                attestation_secret_key = SecretKey.decode_bytes(att_key_path.read_bytes())
             except FileNotFoundError as e:
-                raise ValueError(f"Private key file not found: {privkey_path}") from e
+                raise ValueError(f"Attestation key file not found: {att_key_path}") from e
             except Exception as e:
-                raise ValueError(f"Failed to load private key for validator {index}: {e}") from e
+                raise ValueError(
+                    f"Failed to load attestation key for validator {index}: {e}"
+                ) from e
+
+            # Load proposal secret key from SSZ file.
+            prop_key_path = manifest_dir / entry.proposal_privkey_file
+            try:
+                proposal_secret_key = SecretKey.decode_bytes(prop_key_path.read_bytes())
+            except FileNotFoundError as e:
+                raise ValueError(f"Proposal key file not found: {prop_key_path}") from e
+            except Exception as e:
+                raise ValueError(f"Failed to load proposal key for validator {index}: {e}") from e
 
             registry.add(
                 ValidatorEntry(
                     index=ValidatorIndex(index),
-                    secret_key=secret_key,
+                    attestation_secret_key=attestation_secret_key,
+                    proposal_secret_key=proposal_secret_key,
                 )
             )
 
         return registry
 
     @classmethod
-    def from_secret_keys(cls, keys: dict[ValidatorIndex, SecretKey]) -> ValidatorRegistry:
+    def from_secret_keys(
+        cls, keys: dict[ValidatorIndex, tuple[SecretKey, SecretKey]]
+    ) -> ValidatorRegistry:
         """
-        Create registry from a dictionary of secret keys.
+        Create registry from a dictionary of secret key pairs.
 
         Convenience method for testing or programmatic key loading.
 
         Args:
-            keys: Mapping from validator index to signing key.
+            keys: Mapping from validator index to (attestation_secret_key, proposal_secret_key).
 
         Returns:
             Registry populated with provided keys.
         """
         registry = cls()
-        for index, secret_key in keys.items():
-            registry.add(ValidatorEntry(index=index, secret_key=secret_key))
+        for index, (att_sk, prop_sk) in keys.items():
+            registry.add(
+                ValidatorEntry(
+                    index=index,
+                    attestation_secret_key=att_sk,
+                    proposal_secret_key=prop_sk,
+                )
+            )
         return registry

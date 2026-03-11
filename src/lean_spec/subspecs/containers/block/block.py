@@ -16,7 +16,7 @@ from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
 from ...xmss.containers import Signature
-from ..attestation import Attestation
+from ..attestation import SignedAttestation
 from .types import (
     AggregatedAttestations,
     AttestationSignatures,
@@ -82,8 +82,8 @@ class BlockWithAttestation(Container):
     block: Block
     """The proposed block message."""
 
-    proposer_attestation: Attestation
-    """The proposer's attestation corresponding to this block."""
+    proposer_attestation: SignedAttestation
+    """The proposer's attestation corresponding to this block (attestation key)."""
 
 
 class BlockSignatures(Container):
@@ -160,9 +160,9 @@ class SignedBlockWithAttestation(Container):
                 num_validators = Uint64(len(validators))
                 assert validator_id.is_valid(num_validators), "Validator index out of range"
 
-            # Collect public keys for all participating validators.
+            # Collect attestation public keys for all participating validators.
             # Order matters: must match the order in the aggregated signature.
-            public_keys = [validators[vid].get_pubkey() for vid in validator_ids]
+            public_keys = [validators[vid].get_attestation_pubkey() for vid in validator_ids]
 
             # Verify the aggregated signature against all public keys.
             try:
@@ -193,10 +193,18 @@ class SignedBlockWithAttestation(Container):
         )
         proposer = validators[proposer_attestation.validator_id]
 
-        # Verify the proposer's individual XMSS signature.
-        # This is not aggregated since there's only one signer.
+        # Verify the proposer's attestation signature (attestation key).
+        assert proposer_attestation.signature.verify(
+            proposer.get_attestation_pubkey(),
+            proposer_attestation.data.slot,
+            proposer_attestation.data.data_root_bytes(),
+            scheme,
+        ), "Proposer attestation signature verification failed"
+
+        # Verify the proposer's individual XMSS signature (proposal key).
+        # Uses the proposal key, separate from the attestation key.
         assert proposer_signature.verify(
-            proposer.get_pubkey(),
+            proposer.get_proposal_pubkey(),
             proposer_attestation.data.slot,
             proposer_attestation.data.data_root_bytes(),
             scheme,

@@ -16,7 +16,8 @@ def test_genesis_block_hash_comparison() -> None:
     pubkeys1 = [Bytes52(bytes([i + 1] * 52)) for i in range(3)]
     validators1 = Validators(
         data=[
-            Validator(pubkey=pubkey, index=ValidatorIndex(i)) for i, pubkey in enumerate(pubkeys1)
+            Validator(attestation_pubkey=pubkey, proposal_pubkey=pubkey, index=ValidatorIndex(i))
+            for i, pubkey in enumerate(pubkeys1)
         ]
     )
 
@@ -61,7 +62,8 @@ def test_genesis_block_hash_comparison() -> None:
     pubkeys2 = [Bytes52(bytes([i + 10] * 52)) for i in range(3)]
     validators2 = Validators(
         data=[
-            Validator(pubkey=pubkey, index=ValidatorIndex(i)) for i, pubkey in enumerate(pubkeys2)
+            Validator(attestation_pubkey=pubkey, proposal_pubkey=pubkey, index=ValidatorIndex(i))
+            for i, pubkey in enumerate(pubkeys2)
         ]
     )
 
@@ -88,7 +90,8 @@ def test_genesis_block_hash_comparison() -> None:
     pubkeys3 = [Bytes52(bytes([i + 1] * 52)) for i in range(3)]
     validators3 = Validators(
         data=[
-            Validator(pubkey=pubkey, index=ValidatorIndex(i)) for i, pubkey in enumerate(pubkeys3)
+            Validator(attestation_pubkey=pubkey, proposal_pubkey=pubkey, index=ValidatorIndex(i))
+            for i, pubkey in enumerate(pubkeys3)
         ]
     )
 
@@ -112,10 +115,10 @@ def test_genesis_block_hash_comparison() -> None:
 
     # Compare genesis block hashes with expected hex values
     hash1_hex = f"0x{genesis_block_hash1.hex()}"
-    assert hash1_hex == "0xcc03f11dd80dd79a4add86265fad0a141d0a553812d43b8f2c03aa43e4b002e3"
+    assert hash1_hex == "0xf84d547a47ca863fac7cda4619d3a93a2d3e7f2afdeeb5e4571b393554e19c0d"
 
     hash2_hex = f"0x{genesis_block_hash2.hex()}"
-    assert hash2_hex == "0x6bd5347aa1397c63ed8558079fdd3042112a5f4258066e3a659a659ff75ba14f"
+    assert hash2_hex == "0x7b90004279c32942009320f284a92c8ec5914e9c4deb7a9c50e17dc22a7c6ce9"
 
     hash3_hex = f"0x{genesis_block_hash3.hex()}"
-    assert hash3_hex == "0xce48a709189aa2b23b6858800996176dc13eb49c0c95d717c39e60042de1ac91"
+    assert hash3_hex == "0xb66cb6371bde0209ffd63063f89d216feeb1f03328400cb083429d8aead481ff"

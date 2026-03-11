@@ -27,7 +27,7 @@ class PipelineDiagnostics:
     justified_slot: int
     """Latest justified slot."""
 
-    gossip_signatures_count: int
+    attestation_signatures_count: int
     """Number of pending gossip signatures (pre-aggregation)."""
 
     new_aggregated_count: int

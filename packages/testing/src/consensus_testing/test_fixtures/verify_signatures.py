@@ -11,6 +11,7 @@ from lean_spec.subspecs.containers.attestation import (
     AggregationBits,
     Attestation,
     AttestationData,
+    SignedAttestation,
 )
 from lean_spec.subspecs.containers.block import (
     BlockSignatures,
@@ -231,7 +232,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 # Valid proof but from wrong validators
                 # Sign with signer_ids but claim validator_ids as participants
                 signer_public_keys = [
-                    key_manager.get_public_key(vid) for vid in invalid_spec.signer_ids
+                    key_manager.get_attestation_public_key(vid) for vid in invalid_spec.signer_ids
                 ]
                 signer_signatures = [
                     key_manager.sign_attestation_data(vid, attestation_data)
@@ -276,24 +277,31 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Create proposer attestation for this block
         block_root = hash_tree_root(final_block)
-        proposer_attestation = Attestation(
-            validator_id=proposer_index,
-            data=AttestationData(
-                slot=spec.slot,
-                head=Checkpoint(root=block_root, slot=spec.slot),
-                target=Checkpoint(root=block_root, slot=spec.slot),
-                source=Checkpoint(root=parent_root, slot=parent_state.latest_block_header.slot),
-            ),
+        proposer_attestation_data = AttestationData(
+            slot=spec.slot,
+            head=Checkpoint(root=block_root, slot=spec.slot),
+            target=Checkpoint(root=block_root, slot=spec.slot),
+            source=Checkpoint(root=parent_root, slot=parent_state.latest_block_header.slot),
         )
-
-        # Sign proposer attestation - use valid or dummy signature based on spec
+        # Sign proposer attestation and proposer signature
+        # use valid or dummy signatures based on spec
         if spec.valid_signature:
-            proposer_attestation_signature = key_manager.sign_attestation_data(
-                proposer_attestation.validator_id,
-                proposer_attestation.data,
+            attestation_signature = key_manager.sign_attestation_data(
+                proposer_index, proposer_attestation_data
+            )
+            proposer_signature = key_manager.sign_proposal_data(
+                proposer_index,
+                proposer_attestation_data,
             )
         else:
-            proposer_attestation_signature = create_dummy_signature()
+            attestation_signature = create_dummy_signature()
+            proposer_signature = create_dummy_signature()
+
+        proposer_attestation = SignedAttestation(
+            validator_id=proposer_index,
+            data=proposer_attestation_data,
+            signature=attestation_signature,
+        )
 
         return SignedBlockWithAttestation(
             message=BlockWithAttestation(
@@ -302,7 +310,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
             ),
             signature=BlockSignatures(
                 attestation_signatures=attestation_signatures,
-                proposer_signature=proposer_attestation_signature,
+                proposer_signature=proposer_signature,
             ),
         )
 

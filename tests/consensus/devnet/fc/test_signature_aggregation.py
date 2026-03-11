@@ -271,27 +271,23 @@ def test_auto_collect_proposer_attestations(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Automatically collect previous proposers' attestations into block body.
+    Proposer gossip attestations ARE auto-collected into future block bodies.
 
     Scenario
     --------
     With automatic attestation collection enabled:
-    - Block 1: proposer 1 attests (attestation goes to Store)
-    - Block 2: auto-collects proposer 1's attestation into block body
+    - Block 1: proposer (validator 1) gossips attestation using attestation key
+    - Block 2: auto-collection picks up the proposer's gossip attestation
 
     Expected
     --------
-    Without explicit attestation specs, blocks automatically include
-    attestations from previous proposers whose signatures are available
-    and whose source matches the current justified checkpoint.
-
-    Note: Auto-collection only includes attestations whose source matches
-    the post-state's latest_justified checkpoint. Proposer attestations
-    reference their parent as source, which must match for inclusion.
+    With dual keys, proposers gossip a separate attestation using their
+    attestation key (in addition to the proposal-key signature in the block
+    envelope). This gossip attestation enters the normal aggregation pipeline
+    and gets auto-collected into the next block body.
     """
     fork_choice_test(
         steps=[
-            # Block 1: Proposer 1 attests (goes to the store gossiped signatures)
             BlockStep(
                 block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(
@@ -299,7 +295,6 @@ def test_auto_collect_proposer_attestations(
                     block_attestation_count=0,
                 ),
             ),
-            # Block 2: Auto-collect proposer 1's attestation
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(2),
@@ -308,9 +303,6 @@ def test_auto_collect_proposer_attestations(
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
-                    # Proposer 1's attestation should be auto-collected.
-                    # Target is genesis (slot 0) because the spec's attestation target
-                    # algorithm walks back from head toward safe_target.
                     block_attestation_count=1,
                     block_attestations=[
                         AggregatedAttestationCheck(
@@ -334,15 +326,15 @@ def test_auto_collect_combined_with_explicit_attestations(
     Scenario
     --------
     Block 2 uses both mechanisms:
-    - Auto-collection gathers proposer 1's attestation from Store
+    - Auto-collection picks up block 1's proposer gossip attestation (validator 1)
     - Explicit spec adds validators 0 and 3
 
     Expected
     --------
-    Block body contains attestations from all sources.
-    Proposer 1's attestation targets genesis (slot 0) via the spec's target
-    walk-back algorithm, while explicit attestations target block_1 (slot 1).
-    Different targets produce separate aggregation groups.
+    Block body contains both the auto-collected proposer gossip attestation
+    and the explicit attestations. The proposer's gossip attestation (attestation
+    key) enters the normal aggregation pipeline and merges with any explicit
+    attestations targeting the same data.
     """
     fork_choice_test(
         steps=[
@@ -365,7 +357,6 @@ def test_auto_collect_combined_with_explicit_attestations(
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
-                    # Two separate groups: proposer targets genesis, explicit targets block_1
                     block_attestation_count=2,
                     block_attestations=[
                         AggregatedAttestationCheck(

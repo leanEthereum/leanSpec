@@ -109,7 +109,7 @@ class TestNode:
             safe_target_slot=int(safe_block.slot) if safe_block else 0,
             finalized_slot=self.finalized_slot,
             justified_slot=self.justified_slot,
-            gossip_signatures_count=len(store.gossip_signatures),
+            attestation_signatures_count=len(store.attestation_signatures),
             new_aggregated_count=len(store.latest_new_aggregated_payloads),
             known_aggregated_count=len(store.latest_known_aggregated_payloads),
             block_count=len(store.blocks),
@@ -189,8 +189,10 @@ class NodeCluster:
     _validators: Validators | None = field(default=None, repr=False)
     """Shared validator set."""
 
-    _secret_keys: dict[ValidatorIndex, SecretKey] = field(default_factory=dict, repr=False)
-    """Secret keys by validator index."""
+    _secret_keys: dict[ValidatorIndex, tuple[SecretKey, SecretKey]] = field(
+        default_factory=dict, repr=False
+    )
+    """Attestation and proposal secret keys by validator index."""
 
     _genesis_time: int = field(default=0, repr=False)
     """Genesis time for all nodes."""
@@ -217,15 +219,20 @@ class NodeCluster:
         num_active_slots = int(scheme.config.LIFETIME)
 
         for i in range(self.num_validators):
-            keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
-            self._secret_keys[ValidatorIndex(i)] = keypair.secret
+            att_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
+            prop_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
+            self._secret_keys[ValidatorIndex(i)] = (att_keypair.secret, prop_keypair.secret)
 
-            pubkey_bytes = keypair.public.encode_bytes()[:52]
-            pubkey = Bytes52(pubkey_bytes.ljust(52, b"\x00"))
+            att_pubkey_bytes = att_keypair.public.encode_bytes()[:52]
+            att_pubkey = Bytes52(att_pubkey_bytes.ljust(52, b"\x00"))
+
+            prop_pubkey_bytes = prop_keypair.public.encode_bytes()[:52]
+            prop_pubkey = Bytes52(prop_pubkey_bytes.ljust(52, b"\x00"))
 
             validators.append(
                 Validator(
-                    pubkey=pubkey,
+                    attestation_pubkey=att_pubkey,
+                    proposal_pubkey=prop_pubkey,
                     index=ValidatorIndex(i),
                 )
             )
@@ -268,10 +275,12 @@ class NodeCluster:
             registry = ValidatorRegistry()
             for idx in validator_indices:
                 if idx in self._secret_keys:
+                    att_sk, prop_sk = self._secret_keys[idx]
                     registry.add(
                         ValidatorEntry(
                             index=ValidatorIndex(idx),
-                            secret_key=self._secret_keys[idx],
+                            attestation_secret_key=att_sk,
+                            proposal_secret_key=prop_sk,
                         )
                     )
             if len(registry) > 0:
@@ -601,7 +610,7 @@ class NodeCluster:
                 d.justified_slot,
                 d.finalized_slot,
                 d.block_count,
-                d.gossip_signatures_count,
+                d.attestation_signatures_count,
                 d.new_aggregated_count,
                 d.known_aggregated_count,
             )

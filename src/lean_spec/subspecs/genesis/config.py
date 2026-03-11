@@ -6,8 +6,10 @@ The expected YAML format matches the cross-client convention:
 
     GENESIS_TIME: 1704085200
     GENESIS_VALIDATORS:
-    - 0xe2a03c16122c7e0f940e2301aa460c54a2e1e8343968bb2782f26636f051e65e...
-    - 0x0767e65924063f79ae92ee1953685f06718b1756cc665a299bd61b4b82055e37...
+    - attestation_pubkey: 0xe2a03c16122c7e0f...
+      proposal_pubkey: 0x0767e65924063f79...
+    - attestation_pubkey: 0xabcdef0123456789...
+      proposal_pubkey: 0x9876543210fedcba...
 """
 
 from __future__ import annotations
@@ -22,6 +24,33 @@ from lean_spec.subspecs.containers import State, Validator
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes52, StrictBaseModel, Uint64
+
+
+def _parse_hex_pubkey(v: Any) -> Bytes52:
+    """Convert hex string or integer to Bytes52."""
+    if isinstance(v, int):
+        return Bytes52(f"0x{v:0104x}")
+    return Bytes52(v)
+
+
+class GenesisValidatorEntry(StrictBaseModel):
+    """A single validator's public keys in the genesis configuration."""
+
+    attestation_pubkey: Bytes52
+    """XMSS public key for signing attestations."""
+
+    proposal_pubkey: Bytes52
+    """XMSS public key for signing proposer attestations in blocks."""
+
+    @field_validator("attestation_pubkey", "proposal_pubkey", mode="before")
+    @classmethod
+    def parse_hex_pubkey(cls, v: Any) -> Bytes52:
+        """
+        Convert hex strings or integers to validated Bytes52 pubkeys.
+
+        YAML parsers may interpret 0x-prefixed values as integers.
+        """
+        return _parse_hex_pubkey(v)
 
 
 class GenesisConfig(StrictBaseModel):
@@ -65,36 +94,17 @@ class GenesisConfig(StrictBaseModel):
     The actual validator count is derived from the genesis validator list.
     """
 
-    genesis_validators: list[Bytes52] = Field(alias="GENESIS_VALIDATORS")
+    genesis_validators: list[GenesisValidatorEntry] = Field(alias="GENESIS_VALIDATORS")
     """
-    Public keys of validators trusted to secure the chain from slot 0.
+    Validators trusted to secure the chain from slot 0.
 
-    Bootstrap the proof-of-stake mechanism.
+    Each entry contains two XMSS public keys:
 
-    These validators can:
-
-    - Propose the first blocks
-    - Cast attestations for justification/finalization
-    - Form the supermajority needed for consensus
-
-    Each key is 52 bytes (XMSS format).
+    - attestation_pubkey: for signing attestations
+    - proposal_pubkey: for signing proposer attestations in blocks
 
     Security note: 2/3+ collusion controls the chain until new validators join.
     """
-
-    @field_validator("genesis_validators", mode="before")
-    @classmethod
-    def parse_hex_pubkeys(cls, v: Any) -> list[Bytes52]:
-        """
-        Convert hex strings or integers to validated Bytes52 pubkeys.
-
-        YAML parsers may interpret 0x-prefixed values as integers.
-        Handles both string and integer inputs for compatibility.
-        """
-        if not isinstance(v, list):
-            raise ValueError(f"genesis_validators must be a list, got {type(v).__name__}")
-
-        return [Bytes52(f"0x{pk:0104x}" if isinstance(pk, int) else pk) for pk in v]
 
     @model_validator(mode="after")
     def validate_num_validators_consistency(self) -> GenesisConfig:
@@ -117,8 +127,12 @@ class GenesisConfig(StrictBaseModel):
         """
         return Validators(
             data=[
-                Validator(pubkey=pk, index=ValidatorIndex(i))
-                for i, pk in enumerate(self.genesis_validators)
+                Validator(
+                    attestation_pubkey=entry.attestation_pubkey,
+                    proposal_pubkey=entry.proposal_pubkey,
+                    index=ValidatorIndex(i),
+                )
+                for i, entry in enumerate(self.genesis_validators)
             ]
         )
 

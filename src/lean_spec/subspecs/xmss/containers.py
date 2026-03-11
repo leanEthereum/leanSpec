@@ -218,27 +218,43 @@ class SecretKey(Container):
 
 class KeyPair(NamedTuple):
     """
-    Immutable XMSS key pair for a validator.
+    Immutable XMSS key pair produced by key generation.
 
-    Attributes:
-        public: Public key for signature verification.
-        secret: Secret key containing Merkle tree structures.
+    Used at the scheme level for a single public/secret pair.
     """
 
     public: PublicKey
     secret: SecretKey
 
+
+class ValidatorKeyPair(NamedTuple):
+    """
+    Immutable dual XMSS key pair for a validator.
+
+    Attestation and proposal keys are separate to allow independent signing
+    within the same slot. OTS requires a distinct key for each signing purpose.
+    """
+
+    attestation_public: PublicKey
+    attestation_secret: SecretKey
+    proposal_public: PublicKey
+    proposal_secret: SecretKey
+
     @classmethod
-    def from_dict(cls, data: Mapping[str, str]) -> KeyPair:
+    def from_dict(cls, data: Mapping[str, str]) -> ValidatorKeyPair:
         """Deserialize from JSON-compatible dict with hex-encoded SSZ."""
         return cls(
-            public=PublicKey.decode_bytes(bytes.fromhex(data["public"])),
-            secret=SecretKey.decode_bytes(bytes.fromhex(data["secret"])),
+            attestation_public=PublicKey.decode_bytes(bytes.fromhex(data["attestation_public"])),
+            attestation_secret=SecretKey.decode_bytes(bytes.fromhex(data["attestation_secret"])),
+            proposal_public=PublicKey.decode_bytes(bytes.fromhex(data["proposal_public"])),
+            proposal_secret=SecretKey.decode_bytes(bytes.fromhex(data["proposal_secret"])),
         )
 
     def to_dict(self) -> dict[str, str]:
         """Serialize to JSON-compatible dict with hex-encoded SSZ."""
         return {
-            "public": self.public.encode_bytes().hex(),
-            "secret": self.secret.encode_bytes().hex(),
+            "attestation_public": self.attestation_public.encode_bytes().hex(),
+            "attestation_secret": self.attestation_secret.encode_bytes().hex(),
+            "proposal_public": self.proposal_public.encode_bytes().hex(),
+            "proposal_secret": self.proposal_secret.encode_bytes().hex(),
         }

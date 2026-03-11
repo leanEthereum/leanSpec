@@ -246,7 +246,13 @@ class TestOptionalServiceWiring:
     def test_validator_service_created_when_registry_provided(self) -> None:
         """Validator service is created when validator_registry is set."""
         registry = ValidatorRegistry()
-        registry.add(ValidatorEntry(index=ValidatorIndex(0), secret_key=MagicMock()))
+        registry.add(
+            ValidatorEntry(
+                index=ValidatorIndex(0),
+                attestation_secret_key=MagicMock(),
+                proposal_secret_key=MagicMock(),
+            )
+        )
 
         config = NodeConfig(
             genesis_time=GENESIS_TIME,
