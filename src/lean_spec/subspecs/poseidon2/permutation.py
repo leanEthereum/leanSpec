@@ -186,7 +186,6 @@ def _permute_jit(
         state[:] = _external_linear_layer_jit(state, m4t, p)
 
 
-
 class Poseidon2Params(StrictBaseModel):
     """Parameters for a specific Poseidon2 instance."""
 
