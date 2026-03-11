@@ -946,7 +946,7 @@ class Store(StrictBaseModel):
         # The head and attestation pools remain unchanged.
         return self.model_copy(update={"safe_target": safe_target})
 
-    def aggregate_committee_signatures_and_payloads(self) -> tuple["Store", list[SignedAggregatedAttestation]]:
+    def aggregate_signatures_and_payloads(self) -> tuple["Store", list[SignedAggregatedAttestation]]:
         """
         Aggregate committee signatures and payloads together.
 
@@ -1026,7 +1026,7 @@ class Store(StrictBaseModel):
             case 0 if has_proposal:
                 store = store.accept_new_attestations()
             case 2 if is_aggregator:
-                store, new_aggregates = store.aggregate_committee_signatures_and_payloads()
+                store, new_aggregates = store.aggregate_signatures_and_payloads()
             case 3:
                 store = store.update_safe_target()
             case 4:

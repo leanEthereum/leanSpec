@@ -759,23 +759,27 @@ class State(Container):
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures
 
-    def _extend_proofs_with_unique_participants(
+    def _extend_proofs_greedily(
             proofs: set[AggregatedSignatureProof] | None,
             selected: list[AggregatedSignatureProof],
             covered: set[ValidatorIndex],
         ) -> None:
             if not proofs:
                 return
-            sorted_proofs = sorted(
-                proofs,
-                key=lambda proof: len(proof.participants.to_validator_indices()),
-                reverse=True,
-            )
-            for proof in sorted_proofs:
-                participants = set(proof.participants.to_validator_indices())
-                if participants - covered:
-                    selected.append(proof)
-                    covered.update(participants)
+            remaining = list(proofs)
+            while remaining:
+                best = max(
+                    remaining,
+                    key=lambda proof: len(
+                        set(proof.participants.to_validator_indices()) - covered
+                    ),
+                )
+                participants = set(best.participants.to_validator_indices())
+                if not (participants - covered):
+                    break
+                selected.append(best)
+                covered.update(participants)
+                remaining.remove(best)
 
     def aggregate(
         self,
@@ -812,8 +816,8 @@ class State(Container):
             child_proofs: list[AggregatedSignatureProof] = []
             covered_validators: set[ValidatorIndex] = set()
 
-            self._extend_proofs_with_unique_participants(new_payloads.get(data), child_proofs, covered_validators)
-            self._extend_proofs_with_unique_participants(known_payloads.get(data), child_proofs, covered_validators)
+            self._extend_proofs_greedily(new_payloads.get(data), child_proofs, covered_validators)
+            self._extend_proofs_greedily(known_payloads.get(data), child_proofs, covered_validators)
 
             raw_entries: list[tuple[ValidatorIndex, PublicKey, Signature]] = []
             for entry in sorted(gossip_signatures.get(data, set()), key=lambda e: e.validator_id):
