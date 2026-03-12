@@ -874,7 +874,8 @@ class LiveNetworkEventSource:
             QuicTransportError: If connection fails.
         """
         await self._ensure_quic_manager()
-        return await self.quic_manager.connect(multiaddr)  # type: ignore[union-attr]
+        assert self.quic_manager is not None
+        return await self.quic_manager.connect(multiaddr)
 
     async def listen(self, multiaddr: str) -> None:
         """Start listening for incoming connections.
@@ -905,7 +906,8 @@ class LiveNetworkEventSource:
             multiaddr: QUIC address to listen on.
         """
         await self._ensure_quic_manager()
-        await self.quic_manager.listen(  # type: ignore[union-attr]
+        assert self.quic_manager is not None
+        await self.quic_manager.listen(
             multiaddr,
             on_connection=self._handle_inbound_quic_connection,
         )

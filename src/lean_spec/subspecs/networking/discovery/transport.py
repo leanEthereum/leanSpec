@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 class PendingRequest:
     """Tracks a pending request awaiting response."""
 
-    request_id: bytes
+    request_id: RequestId
     """Request ID for matching responses."""
 
     dest_node_id: NodeId
@@ -95,7 +95,7 @@ class PendingMultiRequest:
     across UDP packets when results exceed MTU.
     """
 
-    request_id: bytes
+    request_id: RequestId
     """Request ID for matching responses."""
 
     dest_node_id: NodeId
