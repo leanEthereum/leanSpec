@@ -276,7 +276,7 @@ class TestDiscoveryTransport:
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         pending = PendingRequest(
-            request_id=b"\x01\x02\x03\x04",
+            request_id=RequestId(data=b"\x01\x02\x03\x04"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=loop.time(),
             nonce=Nonce(bytes(12)),
@@ -315,7 +315,7 @@ class TestPendingRequest:
         message = Ping(request_id=RequestId(data=b"\x01"), enr_seq=SeqNumber(1))
 
         pending = PendingRequest(
-            request_id=b"\x01\x02\x03\x04",
+            request_id=RequestId(data=b"\x01\x02\x03\x04"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=123.456,
             nonce=Nonce(bytes(12)),
@@ -407,7 +407,7 @@ class TestMultiPacketNodesCollection:
         queue: asyncio.Queue = asyncio.Queue()
 
         pending = PendingMultiRequest(
-            request_id=b"\x01\x02\x03\x04",
+            request_id=RequestId(data=b"\x01\x02\x03\x04"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=123.456,
             nonce=Nonce(bytes(12)),
@@ -430,7 +430,7 @@ class TestMultiPacketNodesCollection:
         queue: asyncio.Queue = asyncio.Queue()
 
         pending = PendingMultiRequest(
-            request_id=b"\x01\x02\x03\x04",
+            request_id=RequestId(data=b"\x01\x02\x03\x04"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=123.456,
             nonce=Nonce(bytes(12)),
@@ -466,7 +466,7 @@ class TestMultiPacketNodesCollection:
             queue: asyncio.Queue = asyncio.Queue()
 
             pending = PendingMultiRequest(
-                request_id=b"\x01\x02\x03\x04",
+                request_id=RequestId(data=b"\x01\x02\x03\x04"),
                 dest_node_id=NodeId(bytes(32)),
                 sent_at=123.456,
                 nonce=Nonce(bytes(12)),
@@ -572,7 +572,7 @@ class TestRequestResponseCorrelation:
         message = Ping(request_id=RequestId(data=b"\x01\x02\x03\x04"), enr_seq=SeqNumber(1))
 
         pending = PendingRequest(
-            request_id=b"\x01\x02\x03\x04",
+            request_id=RequestId(data=b"\x01\x02\x03\x04"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=123.456,
             nonce=Nonce(bytes(12)),
@@ -596,7 +596,7 @@ class TestRequestResponseCorrelation:
 
             message = Ping(request_id=RequestId(data=b"\x01"), enr_seq=SeqNumber(1))
             pending = PendingRequest(
-                request_id=b"\x01",
+                request_id=RequestId(data=b"\x01"),
                 dest_node_id=NodeId(bytes(32)),
                 sent_at=loop.time(),
                 nonce=Nonce(bytes(12)),
@@ -632,7 +632,7 @@ class TestRequestResponseCorrelation:
 
         message = Ping(request_id=RequestId(data=b"\x01"), enr_seq=SeqNumber(1))
         pending = PendingRequest(
-            request_id=b"\x01",
+            request_id=RequestId(data=b"\x01"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=loop.time(),
             nonce=Nonce(bytes(12)),
@@ -663,7 +663,7 @@ class TestRequestResponseCorrelation:
         message2 = Ping(request_id=RequestId(data=request_id_2), enr_seq=SeqNumber(2))
 
         pending1 = PendingRequest(
-            request_id=request_id_1,
+            request_id=RequestId(data=request_id_1),
             dest_node_id=NodeId(bytes(32)),
             sent_at=loop.time(),
             nonce=Nonce(bytes(12)),
@@ -672,7 +672,7 @@ class TestRequestResponseCorrelation:
         )
 
         pending2 = PendingRequest(
-            request_id=request_id_2,
+            request_id=RequestId(data=request_id_2),
             dest_node_id=NodeId(bytes(32)),
             sent_at=loop.time(),
             nonce=Nonce(bytes(12)),
@@ -703,7 +703,7 @@ class TestRequestResponseCorrelation:
 
         message = Ping(request_id=RequestId(data=b"\x01"), enr_seq=SeqNumber(1))
         pending = PendingRequest(
-            request_id=b"\x01",
+            request_id=RequestId(data=b"\x01"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=loop.time(),
             nonce=nonce,
@@ -724,7 +724,7 @@ class TestRequestResponseCorrelation:
 
         message = Ping(request_id=RequestId(data=b"\x01"), enr_seq=SeqNumber(42))
         pending = PendingRequest(
-            request_id=b"\x01",
+            request_id=RequestId(data=b"\x01"),
             dest_node_id=NodeId(bytes(32)),
             sent_at=loop.time(),
             nonce=Nonce(bytes(12)),
@@ -782,7 +782,7 @@ class TestPendingRequestsManagement:
         for i in range(3):
             future: asyncio.Future = loop.create_future()
             pending = PendingRequest(
-                request_id=bytes([i]),
+                request_id=RequestId(data=bytes([i])),
                 dest_node_id=NodeId(bytes(32)),
                 sent_at=loop.time(),
                 nonce=Nonce(bytes(12)),
@@ -825,7 +825,7 @@ class TestPendingRequestsManagement:
             future: asyncio.Future = loop.create_future()
             futures.append(future)
             pending = PendingRequest(
-                request_id=bytes([i]),
+                request_id=RequestId(data=bytes([i])),
                 dest_node_id=NodeId(bytes(32)),
                 sent_at=loop.time(),
                 nonce=Nonce(bytes(12)),
@@ -1086,7 +1086,7 @@ class TestHandleDecodedMessage:
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[Pong | None] = loop.create_future()
-        request_id = b"\x01\x02\x03\x04"
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
 
         pending = PendingRequest(
             request_id=request_id,
@@ -1099,7 +1099,7 @@ class TestHandleDecodedMessage:
         transport._pending_requests[request_id] = pending
 
         pong = Pong(
-            request_id=RequestId(data=request_id),
+            request_id=request_id,
             enr_seq=SeqNumber(1),
             recipient_ip=IPv4(b"\x7f\x00\x00\x01"),
             recipient_port=Port(9000),
@@ -1121,7 +1121,7 @@ class TestHandleDecodedMessage:
             local_enr=local_enr,
         )
 
-        request_id = b"\x01\x02\x03\x04"
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
         queue: asyncio.Queue = asyncio.Queue()
 
         multi_pending = PendingMultiRequest(
@@ -1137,7 +1137,7 @@ class TestHandleDecodedMessage:
         transport._pending_multi_requests[request_id] = multi_pending
 
         nodes = Nodes(
-            request_id=RequestId(data=request_id),
+            request_id=request_id,
             total=Uint8(1),
             enrs=[b"enr1"],
         )
