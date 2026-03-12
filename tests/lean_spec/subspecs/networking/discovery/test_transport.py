@@ -323,7 +323,7 @@ class TestPendingRequest:
             future=future,
         )
 
-        assert pending.request_id == b"\x01\x02\x03\x04"
+        assert pending.request_id == RequestId(data=b"\x01\x02\x03\x04")
         assert pending.dest_node_id == bytes(32)
         assert pending.sent_at == 123.456
         assert pending.nonce == bytes(12)
@@ -417,7 +417,7 @@ class TestMultiPacketNodesCollection:
             received_count=0,
         )
 
-        assert pending.request_id == b"\x01\x02\x03\x04"
+        assert pending.request_id == RequestId(data=b"\x01\x02\x03\x04")
         assert pending.expected_total is None
         assert pending.received_count == 0
 
@@ -581,8 +581,8 @@ class TestRequestResponseCorrelation:
         )
 
         # Request ID should be stored for matching.
-        assert pending.request_id == b"\x01\x02\x03\x04"
-        assert bytes(pending.message.request_id) == b"\x01\x02\x03\x04"
+        assert pending.request_id == RequestId(data=b"\x01\x02\x03\x04")
+        assert pending.message.request_id == RequestId(data=b"\x01\x02\x03\x04")
 
         loop.close()
 
