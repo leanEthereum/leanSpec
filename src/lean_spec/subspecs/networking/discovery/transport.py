@@ -384,12 +384,11 @@ class DiscoveryTransport:
 
         # Create collector for multiple responses.
         loop = asyncio.get_running_loop()
-        # request_id_bytes = bytes(message.request_id) # Removed as per instruction
 
         # Use a queue to collect multiple responses.
         response_queue: asyncio.Queue[DiscoveryMessage] = asyncio.Queue()
         pending = PendingMultiRequest(
-            request_id=message.request_id, # Changed to use RequestId object
+            request_id=message.request_id,
             dest_node_id=dest_node_id,
             sent_at=loop.time(),
             nonce=nonce,
@@ -398,7 +397,7 @@ class DiscoveryTransport:
             expected_total=None,
             received_count=0,
         )
-        self._pending_multi_requests[message.request_id] = pending # Changed to use RequestId object
+        self._pending_multi_requests[message.request_id] = pending
 
         # Send packet.
         self._transport.sendto(packet, dest_addr)
@@ -434,7 +433,7 @@ class DiscoveryTransport:
                     break
 
         finally:
-            self._pending_multi_requests.pop(message.request_id, None) # Changed to use RequestId object
+            self._pending_multi_requests.pop(message.request_id, None)
 
         return responses
 
@@ -517,7 +516,7 @@ class DiscoveryTransport:
         except asyncio.TimeoutError:
             return None
         finally:
-            self._pending_requests.pop(request_id, None) # Changed from request_id_bytes to request_id
+            self._pending_requests.pop(request_id, None)
 
     def _build_message_packet(
         self,
@@ -789,7 +788,7 @@ class DiscoveryTransport:
         self._session_cache.touch(remote_node_id, ip, Port(port))
 
         # Check if this is a response to a pending request.
-        request_id = message.request_id # Changed from bytes(message.request_id)
+        request_id = message.request_id
 
         # Check for multi-response requests first (e.g., FINDNODE -> NODES).
         multi_pending = self._pending_multi_requests.get(request_id)
