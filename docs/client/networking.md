@@ -68,7 +68,7 @@ Snappy-compressed message, which type is identified by the topic:
 
 | Topic Name | Message Type | Encoding |
 |------------------------------------------------------------|-----------------------------|--------------|
-| /leanconsensus/devnet3/blocks/ssz_snappy | SignedBlockWithAttestation | SSZ + Snappy |
+| /leanconsensus/devnet3/blocks/ssz_snappy | SignedBlock | SSZ + Snappy |
 | /leanconsensus/devnet3/attestation\_{subnet_id}/ssz_snappy | SignedAttestation | SSZ + Snappy |
 | /leanconsensus/devnet3/aggregation/ssz_snappy | SignedAggregatedAttestation | SSZ + Snappy |
 
@@ -76,7 +76,7 @@ Snappy-compressed message, which type is identified by the topic:
 
 Three main message types exist:
 
-- _Blocks_, defined by the `SignedBlockWithAttestation` type, are proposed by
+- _Blocks_, defined by the `SignedBlock` type, are proposed by
   validators and propagated on the block topic. Every node needs to see blocks
   quickly.
 

@@ -12,21 +12,21 @@ At specific intervals within each slot, validators must:
 This service drives validator duties by monitoring the slot clock
 and triggering production at the appropriate intervals.
 
-Dual-Key Attestation Design
-----------------------------
+Dual-Key Signing Design
+------------------------
 Each validator has two XMSS key pairs:
 
-- **Proposal key**: Signs the proposer signature while proposing a block
+- **Proposal key**: Signs the block root (hash_tree_root(block)) during proposal
 - **Attestation key**: Signs gossip attestations for aggregation
 
-Proposers produce two attestations per slot:
+Proposers produce two signatures per slot:
 
-1. Interval 0: Proposer signature inside the block (proposal key)
+1. Interval 0: Proposer signature over the block root (proposal key)
 2. Interval 1: Gossip attestation like all other validators (attestation key)
 
 These use independent keys, so OTS constraints do not conflict.
-The block envelope attestation is added directly to Store.attestation_signatures,
-flowing through the normal aggregation pipeline alongside gossip attestations.
+The proposer's attestation is not special — it flows through the normal
+gossip/aggregation pipeline and gets included in a future block.
 """
 
 from __future__ import annotations
@@ -42,20 +42,19 @@ from lean_spec.subspecs.containers import (
     AttestationData,
     Block,
     SignedAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
     ValidatorIndex,
 )
 from lean_spec.subspecs.containers.block import (
     AttestationSignatures,
     BlockSignatures,
-    BlockWithAttestation,
 )
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.forkchoice.store import AttestationSignatureEntry
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
-from lean_spec.types import Uint64
+from lean_spec.subspecs.xmss.containers import Signature
+from lean_spec.types import Bytes32, Uint64
 
 from .registry import ValidatorEntry, ValidatorRegistry
 
@@ -64,13 +63,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-type BlockPublisher = Callable[[SignedBlockWithAttestation], Awaitable[None]]
-"""Callback for publishing signed blocks with proposer attestations."""
+type BlockPublisher = Callable[[SignedBlock], Awaitable[None]]
+"""Callback for publishing signed blocks."""
 type AttestationPublisher = Callable[[SignedAttestation], Awaitable[None]]
 """Callback for publishing produced attestations."""
 
 
-async def _noop_block_publisher(block: SignedBlockWithAttestation) -> None:  # noqa: ARG001
+async def _noop_block_publisher(block: SignedBlock) -> None:  # noqa: ARG001
     """Default no-op block publisher."""
 
 
@@ -113,14 +112,6 @@ class ValidatorService:
 
     _attested_slots: set[Slot] = field(default_factory=set, repr=False)
     """Slots for which we've already produced attestations (prevents duplicates)."""
-
-    _cached_signed_attestations: dict[tuple[ValidatorIndex, Slot], SignedAttestation] = field(
-        default_factory=dict, repr=False
-    )
-    """
-    Cache of signed proposer attestations keyed by (validator, slot) so the same
-    attestation signature can be reused during the gossip step.
-    """
 
     async def run(self) -> None:
         """
@@ -270,20 +261,13 @@ class ValidatorService:
                 continue
 
             # We are the proposer for this slot.
-            #
-            # Block production includes two steps:
-            # 1. Create the block with aggregated attestations from the pool
-            # 2. Sign and bundle our own attestation into a block with attestation
-            #
-            # Our attestation goes in the block envelope, not the body.
-            # This separates "attestations we're including" from "our own vote".
             try:
                 new_store, block, signatures = store.produce_block_with_signatures(
                     slot=slot,
                     validator_index=validator_index,
                 )
 
-                # Diagnostic: log parent details so we can verify interop.
+                # Diagnostic: log parent details so we can verify interop tests.
                 parent_block = store.blocks.get(block.parent_root)
                 parent_slot = parent_block.slot if parent_block else "UNKNOWN"
                 parent_proposer = parent_block.proposer_index if parent_block else "?"
@@ -297,27 +281,10 @@ class ValidatorService:
                     parent_proposer,
                 )
 
-                # Update the store through sync service.
-                #
-                # This ensures the block is integrated into forkchoice.
                 self.sync_service.store = new_store
 
-                # Create signed block wrapper for publishing.
-                #
-                # This adds our attestation and signatures to the block.
+                # Sign the block: proposer_signature covers the block root.
                 signed_block = self._sign_block(block, validator_index, signatures)
-
-                # Add the proposer's attestation signature to the store so our
-                # local view matches what other nodes derive when processing the block.
-                proposer_att = signed_block.message.proposer_attestation
-                store = self.sync_service.store
-                att_sigs = {k: set(v) for k, v in store.attestation_signatures.items()}
-                att_sigs.setdefault(proposer_att.data, set()).add(
-                    AttestationSignatureEntry(proposer_att.validator_id, proposer_att.signature)
-                )
-                self.sync_service.store = store.model_copy(
-                    update={"attestation_signatures": att_sigs}
-                )
 
                 self._blocks_produced += 1
 
@@ -374,16 +341,8 @@ class ValidatorService:
             return
 
         for validator_index in self.registry.indices():
-            cache_key = (validator_index, slot)
-            signed_attestation = self._cached_signed_attestations.pop(cache_key, None)
-            if signed_attestation is None:
-                # Produce attestation data using Store's method.
-                #
-                # This calculates head, target, and source checkpoints.
-                attestation_data = store.produce_attestation_data(slot)
-
-                # Sign the attestation using our secret key.
-                signed_attestation = self._sign_attestation(attestation_data, validator_index)
+            attestation_data = store.produce_attestation_data(slot)
+            signed_attestation = self._sign_attestation(attestation_data, validator_index)
 
             self._attestations_produced += 1
 
@@ -413,12 +372,11 @@ class ValidatorService:
         block: Block,
         validator_index: ValidatorIndex,
         attestation_signatures: list[AggregatedSignatureProof],
-    ) -> SignedBlockWithAttestation:
+    ) -> SignedBlock:
         """
         Sign a block and wrap it for publishing.
 
-        Creates the proposer attestation, signs it, and wraps everything
-        in a signed block wrapper.
+        Signs hash_tree_root(block) with the proposer's proposal key.
 
         Args:
             block: The block to sign.
@@ -428,60 +386,26 @@ class ValidatorService:
         Returns:
             Signed block ready for publishing.
         """
-        # Create the proposer's attestation for this slot.
-        #
-        # Force the store view to treat the newly built block as head so the
-        # attestation votes for the block we are proposing.
-        block_root = hash_tree_root(block)
-        store_updates: dict[str, object] = {"head": block_root}
-        if block_root not in self.sync_service.store.blocks:
-            # When blocks are signed in tests they may not exist in the store yet.
-            store_updates["blocks"] = self.sync_service.store.blocks | {block_root: block}
-        attestation_store = self.sync_service.store.model_copy(update=store_updates)
-        proposer_attestation_data = attestation_store.produce_attestation_data(block.slot)
-        proposer_attestation = self._sign_attestation(
-            attestation_data=proposer_attestation_data,
-            validator_index=validator_index,
-        )
-
-        # Sign the proposer's attestation.
-        #
-        # Uses the proposal key, separate from the attestation key.
-        # This allows the proposer to also sign a regular attestation at the same slot.
         entry = self.registry.get(validator_index)
         if entry is None:
             raise ValueError(f"No secret key for validator {validator_index}")
 
-        # Ensure the proposal key is prepared for this slot.
-        entry = self._ensure_proposal_key_prepared(entry, block.slot)
-
-        proposer_signature = TARGET_SIGNATURE_SCHEME.sign(
-            entry.proposal_secret_key,
+        # Sign the block root with the proposal key.
+        block_root = hash_tree_root(block)
+        _, proposer_signature = self._sign_with_key(
+            entry,
             block.slot,
-            proposer_attestation_data.data_root_bytes(),
+            block_root,
+            "proposal_secret_key",
         )
 
-        # Cache the signed attestation for reuse during gossip.
-        self._cached_signed_attestations[(validator_index, block.slot)] = proposer_attestation
-
-        # Create the message wrapper.
-        #
-        # Bundles the block with the proposer's attestation.
-        message = BlockWithAttestation(
-            block=block,
-            proposer_attestation=proposer_attestation,
-        )
-
-        # Create the signature payload.
-        #
-        # Contains signatures for all included attestations plus the proposer's.
         signature = BlockSignatures(
             attestation_signatures=AttestationSignatures(data=attestation_signatures),
             proposer_signature=proposer_signature,
         )
 
-        return SignedBlockWithAttestation(
-            message=message,
+        return SignedBlock(
+            message=block,
             signature=signature,
         )
 
@@ -507,16 +431,12 @@ class ValidatorService:
         if entry is None:
             raise ValueError(f"No secret key for validator {validator_index}")
 
-        # Ensure the attestation key is prepared for this slot.
-        entry = self._ensure_attestation_key_prepared(entry, attestation_data.slot)
-
-        # Sign the attestation data root.
-        #
-        # Uses the attestation key, separate from the proposal key.
-        signature = TARGET_SIGNATURE_SCHEME.sign(
-            entry.attestation_secret_key,
+        # Sign the attestation data root with the attestation key.
+        _, signature = self._sign_with_key(
+            entry,
             attestation_data.slot,
             attestation_data.data_root_bytes(),
+            "attestation_secret_key",
         )
 
         return SignedAttestation(
@@ -525,77 +445,50 @@ class ValidatorService:
             signature=signature,
         )
 
-    def _ensure_attestation_key_prepared(
+    def _sign_with_key(
         self,
         entry: ValidatorEntry,
         slot: Slot,
-    ) -> ValidatorEntry:
+        message: Bytes32,
+        key_field: str,
+    ) -> tuple[ValidatorEntry, Signature]:
         """
-        Ensure the attestation secret key is prepared for signing at the given slot.
+        Prepare an XMSS key for the given slot, sign, and update the registry.
 
-        XMSS uses a sliding window of prepared slots. If the requested slot
-        is outside this window, we advance the preparation by computing
-        additional bottom trees until the slot is covered.
+        Handles the full lifecycle:
+
+        1. Advance the key until the slot is within its prepared interval
+        2. Sign the message
+        3. Persist the updated key state in the registry
 
         Args:
             entry: Validator entry containing the secret keys.
-            slot: The slot at which we need to sign.
+            slot: The slot to sign for.
+            message: The message bytes to sign.
+            key_field: Which secret key field to use and advance.
 
         Returns:
-            The entry, possibly with an updated attestation secret key.
+            Tuple of (updated entry, signature).
         """
         scheme = cast(GeneralizedXmssScheme, TARGET_SIGNATURE_SCHEME)
-        prepared_interval = scheme.get_prepared_interval(entry.attestation_secret_key)
+        secret_key = getattr(entry, key_field)
 
         slot_int = int(slot)
-        if slot_int in prepared_interval:
-            return entry
-
-        secret_key = entry.attestation_secret_key
         while slot_int not in scheme.get_prepared_interval(secret_key):
             secret_key = scheme.advance_preparation(secret_key)
 
-        updated_entry = ValidatorEntry(
-            index=entry.index,
-            attestation_secret_key=secret_key,
-            proposal_secret_key=entry.proposal_secret_key,
-        )
-        self.registry.add(updated_entry)
-        return updated_entry
-
-    def _ensure_proposal_key_prepared(
-        self,
-        entry: ValidatorEntry,
-        slot: Slot,
-    ) -> ValidatorEntry:
-        """
-        Ensure the proposal secret key is prepared for signing at the given slot.
-
-        Args:
-            entry: Validator entry containing the secret keys.
-            slot: The slot at which we need to sign.
-
-        Returns:
-            The entry, possibly with an updated proposal secret key.
-        """
-        scheme = cast(GeneralizedXmssScheme, TARGET_SIGNATURE_SCHEME)
-        prepared_interval = scheme.get_prepared_interval(entry.proposal_secret_key)
-
-        slot_int = int(slot)
-        if slot_int in prepared_interval:
-            return entry
-
-        secret_key = entry.proposal_secret_key
-        while slot_int not in scheme.get_prepared_interval(secret_key):
-            secret_key = scheme.advance_preparation(secret_key)
+        signature = scheme.sign(secret_key, slot, message)
 
         updated_entry = ValidatorEntry(
             index=entry.index,
-            attestation_secret_key=entry.attestation_secret_key,
-            proposal_secret_key=secret_key,
+            **{
+                "attestation_secret_key": entry.attestation_secret_key,
+                "proposal_secret_key": entry.proposal_secret_key,
+                key_field: secret_key,
+            },
         )
         self.registry.add(updated_entry)
-        return updated_entry
+        return updated_entry, signature
 
     def stop(self) -> None:
         """

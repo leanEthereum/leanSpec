@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
 from lean_spec.subspecs.containers.slot import Slot
@@ -23,7 +23,7 @@ class MockNetworkRequester:
 
     def __init__(self) -> None:
         """Initialize with empty block store and request log."""
-        self.blocks_by_root: dict[Bytes32, SignedBlockWithAttestation] = {}
+        self.blocks_by_root: dict[Bytes32, SignedBlock] = {}
         self.request_log: list[tuple[PeerId, list[Bytes32]]] = []
         self.should_fail: bool = False
 
@@ -31,7 +31,7 @@ class MockNetworkRequester:
         self,
         peer_id: PeerId,
         roots: list[Bytes32],
-    ) -> list[SignedBlockWithAttestation]:
+    ) -> list[SignedBlock]:
         """Return blocks for requested roots."""
         self.request_log.append((peer_id, roots))
         if self.should_fail:
@@ -42,13 +42,13 @@ class MockNetworkRequester:
         self,
         peer_id: PeerId,
         root: Bytes32,
-    ) -> SignedBlockWithAttestation | None:
+    ) -> SignedBlock | None:
         """Return a single block by root."""
         return self.blocks_by_root.get(root)
 
-    def add_block(self, block: SignedBlockWithAttestation) -> Bytes32:
+    def add_block(self, block: SignedBlock) -> Bytes32:
         """Add a block to the mock network. Returns its root."""
-        root = hash_tree_root(block.message.block)
+        root = hash_tree_root(block.message)
         self.blocks_by_root[root] = block
         return root
 
@@ -115,14 +115,14 @@ class MockForkchoiceStore:
 
     def on_block(
         self,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
         **kwargs: object,
     ) -> MockForkchoiceStore:
         """Track block additions. Returns self for assignment chaining."""
-        root = hash_tree_root(block.message.block)
-        self.blocks[root] = block.message.block
+        root = hash_tree_root(block.message)
+        self.blocks[root] = block.message
         self.head = root
-        self.head_slot = block.message.block.slot
+        self.head_slot = block.message.slot
         return self
 
     def on_gossip_attestation(

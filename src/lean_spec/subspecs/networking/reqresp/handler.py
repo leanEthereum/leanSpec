@@ -65,7 +65,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from lean_spec.snappy import SnappyDecompressionError, frame_decompress
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.networking.config import MAX_ERROR_MESSAGE_SIZE
 from lean_spec.subspecs.networking.transport.protocols import InboundStreamProtocol
 from lean_spec.subspecs.networking.types import ProtocolId
@@ -118,7 +118,7 @@ class StreamResponseAdapter:
         await self._stream.close()
 
 
-type AsyncBlockLookup = Callable[[Bytes32], Awaitable[SignedBlockWithAttestation | None]]
+type AsyncBlockLookup = Callable[[Bytes32], Awaitable[SignedBlock | None]]
 """Type alias for block lookup function.
 
 Takes a block root and returns the block if available, None otherwise.

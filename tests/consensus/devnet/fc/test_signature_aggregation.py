@@ -289,7 +289,11 @@ def test_auto_collect_proposer_attestations(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1"),
+                block=BlockSpec(
+                    slot=Slot(1),
+                    label="block_1",
+                    gossip_proposer_attestation=True,
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     block_attestation_count=0,
@@ -339,7 +343,11 @@ def test_auto_collect_combined_with_explicit_attestations(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1"),
+                block=BlockSpec(
+                    slot=Slot(1),
+                    label="block_1",
+                    gossip_proposer_attestation=True,
+                ),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
             BlockStep(

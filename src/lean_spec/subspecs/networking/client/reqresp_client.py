@@ -32,7 +32,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.networking.reqresp.codec import (
     CodecError,
     ResponseCode,
@@ -104,7 +104,7 @@ class ReqRespClient:
         self,
         peer_id: PeerId,
         roots: list[Bytes32],
-    ) -> list[SignedBlockWithAttestation]:
+    ) -> list[SignedBlock]:
         """
         Request blocks by root from a peer.
 
@@ -142,7 +142,7 @@ class ReqRespClient:
         self,
         conn: QuicConnection,
         roots: list[Bytes32],
-    ) -> list[SignedBlockWithAttestation]:
+    ) -> list[SignedBlock]:
         """
         Execute a BlocksByRoot request.
 
@@ -174,7 +174,7 @@ class ReqRespClient:
             #
             # Each block is sent as a separate response chunk.
             # We read until the stream closes or we get all blocks.
-            blocks: list[SignedBlockWithAttestation] = []
+            blocks: list[SignedBlock] = []
 
             for _ in range(len(roots)):
                 try:
@@ -186,7 +186,7 @@ class ReqRespClient:
                     code, ssz_bytes = ResponseCode.decode(response_data)
 
                     if code == ResponseCode.SUCCESS:
-                        block = SignedBlockWithAttestation.decode_bytes(ssz_bytes)
+                        block = SignedBlock.decode_bytes(ssz_bytes)
                         blocks.append(block)
                     elif code == ResponseCode.RESOURCE_UNAVAILABLE:
                         # Peer doesn't have this block, continue.

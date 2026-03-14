@@ -26,13 +26,6 @@ from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes52, StrictBaseModel, Uint64
 
 
-def _parse_hex_pubkey(v: Any) -> Bytes52:
-    """Convert hex string or integer to Bytes52."""
-    if isinstance(v, int):
-        return Bytes52(f"0x{v:0104x}")
-    return Bytes52(v)
-
-
 class GenesisValidatorEntry(StrictBaseModel):
     """A single validator's public keys in the genesis configuration."""
 
@@ -50,7 +43,9 @@ class GenesisValidatorEntry(StrictBaseModel):
 
         YAML parsers may interpret 0x-prefixed values as integers.
         """
-        return _parse_hex_pubkey(v)
+        if isinstance(v, int):
+            v = f"0x{v:0104x}"
+        return Bytes52(v)
 
 
 class GenesisConfig(StrictBaseModel):

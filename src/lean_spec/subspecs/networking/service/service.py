@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from lean_spec.snappy import compress
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.attestation import SignedAggregatedAttestation, SignedAttestation
 from lean_spec.subspecs.containers.validator import SubnetId
 from lean_spec.subspecs.networking.client.event_source import EventSource
@@ -197,7 +197,7 @@ class NetworkService:
         """Check if the event loop is currently running."""
         return self._running
 
-    async def publish_block(self, block: SignedBlockWithAttestation) -> None:
+    async def publish_block(self, block: SignedBlock) -> None:
         """
         Publish a block to the gossip network.
 
@@ -212,7 +212,7 @@ class NetworkService:
         compressed = compress(ssz_bytes)
 
         await self.event_source.publish(topic.to_topic_id(), compressed)
-        logger.debug("Published block at slot %s", block.message.block.slot)
+        logger.debug("Published block at slot %s", block.message.slot)
 
     async def publish_attestation(
         self, attestation: SignedAttestation, subnet_id: SubnetId

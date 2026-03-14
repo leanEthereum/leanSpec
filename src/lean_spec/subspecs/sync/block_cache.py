@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from time import time
 from typing import TYPE_CHECKING
 
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -61,7 +61,7 @@ class PendingBlock:
     """
     A block awaiting integration into the Store.
 
-    PendingBlock wraps a SignedBlockWithAttestation with metadata needed for
+    PendingBlock wraps a SignedBlock with metadata needed for
     cache management. This metadata answers key questions:
 
     - **Who sent it?** For peer scoring when we determine validity
@@ -75,8 +75,8 @@ class PendingBlock:
     3. They are determined to be invalid (rejected)
     """
 
-    block: SignedBlockWithAttestation
-    """The complete signed block with attestation payload."""
+    block: SignedBlock
+    """The complete signed block."""
 
     root: Bytes32
     """
@@ -165,7 +165,7 @@ class BlockCache:
 
     def add(
         self,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
         peer: PeerId | None,
         backfill_depth: int = 0,
     ) -> PendingBlock:
@@ -186,7 +186,7 @@ class BlockCache:
         Returns:
             The PendingBlock wrapper, either newly created or existing.
         """
-        block_inner = block.message.block
+        block_inner = block.message
         root = hash_tree_root(block_inner)
 
         # Deduplication: if we already have this block, return the existing entry.

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.attestation import SignedAggregatedAttestation, SignedAttestation
 from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic
 from lean_spec.subspecs.networking.reqresp.message import Status
@@ -39,8 +39,8 @@ class GossipBlockEvent:
     The block may or may not have a known parent in the store.
     """
 
-    block: SignedBlockWithAttestation
-    """The signed block with attestation proof."""
+    block: SignedBlock
+    """The signed block."""
 
     peer_id: PeerId
     """Peer that propagated this block to us."""

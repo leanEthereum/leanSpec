@@ -63,7 +63,7 @@ from lean_spec.subspecs.xmss.types import (
     HashTreeOpening,
     Randomness,
 )
-from lean_spec.types import Uint64
+from lean_spec.types import Bytes32, Uint64
 
 __all__ = [
     "CLI_DEFAULT_MAX_SLOT",
@@ -296,7 +296,8 @@ class XmssKeyManager:
     def _sign_with_secret(
         self,
         validator_id: ValidatorIndex,
-        attestation_data: AttestationData,
+        slot: Slot,
+        message: Bytes32,
         secret_field: Literal["attestation_secret", "proposal_secret"],
     ) -> Signature:
         """
@@ -307,10 +308,10 @@ class XmssKeyManager:
 
         Args:
             validator_id: Validator index whose key should be used.
-            attestation_data: Data to sign.
+            slot: The slot to sign for.
+            message: The message bytes to sign.
             secret_field: Which secret on the key pair should advance.
         """
-        slot = attestation_data.slot
         kp = self[validator_id]
         sk = getattr(kp, secret_field)
 
@@ -326,7 +327,6 @@ class XmssKeyManager:
         # Cache advanced state (only the selected secret changes).
         self._state[validator_id] = kp._replace(**{secret_field: sk})
 
-        message = attestation_data.data_root_bytes()
         return self.scheme.sign(sk, slot, message)
 
     def sign_attestation_data(
@@ -350,22 +350,29 @@ class XmssKeyManager:
         Raises:
             ValueError: If slot exceeds key lifetime.
         """
-        return self._sign_with_secret(validator_id, attestation_data, "attestation_secret")
+        return self._sign_with_secret(
+            validator_id,
+            attestation_data.slot,
+            attestation_data.data_root_bytes(),
+            "attestation_secret",
+        )
 
-    def sign_proposal_data(
+    def sign_block_root(
         self,
         validator_id: ValidatorIndex,
-        attestation_data: AttestationData,
+        slot: Slot,
+        block_root: Bytes32,
     ) -> Signature:
         """
-        Sign proposer attestation data with the proposal key.
+        Sign a block root with the proposal key.
 
-        Delegates to the shared helper which advances only the proposal key, so
-        the attestation key remains unchanged.
+        Advances the proposal key state until the requested slot is within the
+        prepared interval, then signs the block root.
 
         Args:
-            validator_id: The validator index to sign the proposal for.
-            attestation_data: The attestation data to sign.
+            validator_id: The validator index to sign the block for.
+            slot: The slot of the block being signed.
+            block_root: The hash_tree_root(block) to sign.
 
         Returns:
             XMSS signature.
@@ -373,7 +380,7 @@ class XmssKeyManager:
         Raises:
             ValueError: If slot exceeds key lifetime.
         """
-        return self._sign_with_secret(validator_id, attestation_data, "proposal_secret")
+        return self._sign_with_secret(validator_id, slot, block_root, "proposal_secret")
 
     def build_attestation_signatures(
         self,

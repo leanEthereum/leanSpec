@@ -17,10 +17,9 @@ from lean_spec.subspecs.containers import (
     AttestationData,
     Block,
     BlockBody,
-    BlockWithAttestation,
     Checkpoint,
     SignedAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
     State,
     Validator,
 )
@@ -204,12 +203,8 @@ def make_signed_block(
     proposer_index: ValidatorIndex,
     parent_root: Bytes32,
     state_root: Bytes32,
-) -> SignedBlockWithAttestation:
-    """
-    Create a signed block with minimal valid structure.
-
-    Includes a proposer attestation pointing to the new block.
-    """
+) -> SignedBlock:
+    """Create a signed block with minimal valid structure."""
     block = Block(
         slot=slot,
         proposer_index=proposer_index,
@@ -218,24 +213,8 @@ def make_signed_block(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    block_root = hash_tree_root(block)
-
-    attestation = SignedAttestation(
-        validator_id=proposer_index,
-        data=AttestationData(
-            slot=slot,
-            head=Checkpoint(root=block_root, slot=slot),
-            target=Checkpoint(root=block_root, slot=slot),
-            source=Checkpoint(root=parent_root, slot=Slot(0)),
-        ),
-        signature=make_mock_signature(),
-    )
-
-    return SignedBlockWithAttestation(
-        message=BlockWithAttestation(
-            block=block,
-            proposer_attestation=attestation,
-        ),
+    return SignedBlock(
+        message=block,
         signature=BlockSignatures(
             attestation_signatures=AttestationSignatures(data=[]),
             proposer_signature=make_mock_signature(),
@@ -301,8 +280,8 @@ def make_test_status() -> Status:
     )
 
 
-def make_test_block(slot: int = 1, seed: int = 0) -> SignedBlockWithAttestation:
-    """Create a SignedBlockWithAttestation with convenient defaults for testing."""
+def make_test_block(slot: int = 1, seed: int = 0) -> SignedBlock:
+    """Create a SignedBlock with convenient defaults for testing."""
     return make_signed_block(
         slot=Slot(slot),
         proposer_index=ValidatorIndex(0),
@@ -462,37 +441,18 @@ def make_signed_block_from_store(
     key_manager: XmssKeyManager,
     slot: Slot,
     proposer_index: ValidatorIndex,
-) -> tuple[Store, SignedBlockWithAttestation]:
+) -> tuple[Store, SignedBlock]:
     """Produce a signed block and advance the consumer store to accept it.
 
     Returns the updated store (with time advanced) and the signed block.
     """
     _, block, _ = store.produce_block_with_signatures(slot, proposer_index)
     block_root = hash_tree_root(block)
-    parent_state = store.states[block.parent_root]
-
-    proposer_attestation_data = AttestationData(
-        slot=slot,
-        head=Checkpoint(root=block_root, slot=slot),
-        target=Checkpoint(root=block_root, slot=slot),
-        source=Checkpoint(
-            root=block.parent_root,
-            slot=parent_state.latest_block_header.slot,
-        ),
-    )
-    proposer_attestation = SignedAttestation(
-        validator_id=proposer_index,
-        data=proposer_attestation_data,
-        signature=key_manager.sign_attestation_data(proposer_index, proposer_attestation_data),
-    )
-    proposer_signature = key_manager.sign_proposal_data(proposer_index, proposer_attestation.data)
+    proposer_signature = key_manager.sign_block_root(proposer_index, slot, block_root)
     attestation_signatures = key_manager.build_attestation_signatures(block.body.attestations)
 
-    signed_block = SignedBlockWithAttestation(
-        message=BlockWithAttestation(
-            block=block,
-            proposer_attestation=proposer_attestation,
-        ),
+    signed_block = SignedBlock(
+        message=block,
         signature=BlockSignatures(
             attestation_signatures=attestation_signatures,
             proposer_signature=proposer_signature,

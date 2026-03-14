@@ -13,7 +13,7 @@ from lean_spec.subspecs.containers import (
     AttestationData,
     Block,
     SignedAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
     ValidatorIndex,
     ValidatorIndices,
 )
@@ -119,9 +119,9 @@ class TestValidatorServiceDuties:
             )
         )
 
-        blocks_received: list[SignedBlockWithAttestation] = []
+        blocks_received: list[SignedBlock] = []
 
-        async def capture_block(block: SignedBlockWithAttestation) -> None:
+        async def capture_block(block: SignedBlock) -> None:
             blocks_received.append(block)
 
         service = ValidatorService(
@@ -491,9 +491,9 @@ class TestValidatorServiceIntegration:
         The signature must pass verification using the proposer's public key.
         """
         clock = SlotClock(genesis_time=Uint64(0))
-        blocks_produced: list[SignedBlockWithAttestation] = []
+        blocks_produced: list[SignedBlock] = []
 
-        async def capture_block(block: SignedBlockWithAttestation) -> None:
+        async def capture_block(block: SignedBlock) -> None:
             blocks_produced.append(block)
 
         service = ValidatorService(
@@ -510,30 +510,21 @@ class TestValidatorServiceIntegration:
         signed_block = blocks_produced[0]
 
         # Verify block structure
-        assert signed_block.message.block.slot == Slot(1)
-        assert signed_block.message.block.proposer_index == ValidatorIndex(1)
+        assert signed_block.message.slot == Slot(1)
+        assert signed_block.message.proposer_index == ValidatorIndex(1)
 
         # Verify proposer signature is cryptographically valid
-        proposer_index = signed_block.message.block.proposer_index
-        proposer_attestation_data = signed_block.message.proposer_attestation.data
-        message_bytes = proposer_attestation_data.data_root_bytes()
+        proposer_index = signed_block.message.proposer_index
+        block_root = hash_tree_root(signed_block.message)
         proposer_public_key = key_manager.get_proposal_public_key(proposer_index)
 
         is_valid = TARGET_SIGNATURE_SCHEME.verify(
             pk=proposer_public_key,
-            slot=signed_block.message.block.slot,
-            message=message_bytes,
+            slot=signed_block.message.slot,
+            message=block_root,
             sig=signed_block.signature.proposer_signature,
         )
         assert is_valid, "Proposer signature failed verification"
-
-        attestation_public_key = key_manager.get_attestation_public_key(proposer_index)
-        assert TARGET_SIGNATURE_SCHEME.verify(
-            pk=attestation_public_key,
-            slot=signed_block.message.block.slot,
-            message=message_bytes,
-            sig=signed_block.message.proposer_attestation.signature,
-        )
 
     async def test_produce_real_attestation_with_valid_signature(
         self,
@@ -622,22 +613,21 @@ class TestValidatorServiceIntegration:
             # Verify slot is correct
             assert data.slot == Slot(1)
 
-    async def test_proposer_attestation_bundled_in_block(
+    async def test_proposer_signature_in_block(
         self,
         key_manager: XmssKeyManager,
         real_sync_service: SyncService,
         real_registry: ValidatorRegistry,
     ) -> None:
         """
-        Verify the proposer's attestation is correctly embedded in the block.
+        Verify the proposer's signature over the block root is valid.
 
-        The proposer attests at interval 0, and their attestation is bundled
-        inside the signed block with attestation wrapper.
+        The proposer signs the block root with the proposal key at interval 0.
         """
         clock = SlotClock(genesis_time=Uint64(0))
-        blocks_produced: list[SignedBlockWithAttestation] = []
+        blocks_produced: list[SignedBlock] = []
 
-        async def capture_block(block: SignedBlockWithAttestation) -> None:
+        async def capture_block(block: SignedBlock) -> None:
             blocks_produced.append(block)
 
         service = ValidatorService(
@@ -652,35 +642,17 @@ class TestValidatorServiceIntegration:
         assert len(blocks_produced) == 1
         signed_block = blocks_produced[0]
 
-        # Proposer attestation should be included
-        proposer_attestation = signed_block.message.proposer_attestation
-
-        # Verify proposer attestation matches block proposer
-        proposer_index = signed_block.message.block.proposer_index
-        assert proposer_attestation.validator_id == proposer_index
-
-        # Verify proposer attestation slot matches block slot
-        assert proposer_attestation.data.slot == signed_block.message.block.slot
-
-        # Verify proposer attestation signature is valid
-        message_bytes = proposer_attestation.data.data_root_bytes()
+        proposer_index = signed_block.message.proposer_index
+        block_root = hash_tree_root(signed_block.message)
         public_key = key_manager.get_proposal_public_key(proposer_index)
 
         is_valid = TARGET_SIGNATURE_SCHEME.verify(
             pk=public_key,
-            slot=signed_block.message.block.slot,
-            message=message_bytes,
+            slot=signed_block.message.slot,
+            message=block_root,
             sig=signed_block.signature.proposer_signature,
         )
         assert is_valid
-
-        att_public_key = key_manager.get_attestation_public_key(proposer_index)
-        assert TARGET_SIGNATURE_SCHEME.verify(
-            pk=att_public_key,
-            slot=signed_block.message.block.slot,
-            message=message_bytes,
-            sig=proposer_attestation.signature,
-        )
 
     async def test_block_includes_pending_attestations(
         self,
@@ -731,9 +703,9 @@ class TestValidatorServiceIntegration:
         real_sync_service.store = updated_store
 
         clock = SlotClock(genesis_time=Uint64(0))
-        blocks_produced: list[SignedBlockWithAttestation] = []
+        blocks_produced: list[SignedBlock] = []
 
-        async def capture_block(block: SignedBlockWithAttestation) -> None:
+        async def capture_block(block: SignedBlock) -> None:
             blocks_produced.append(block)
 
         service = ValidatorService(
@@ -750,7 +722,7 @@ class TestValidatorServiceIntegration:
         signed_block = blocks_produced[0]
 
         # Block should contain the pending attestations
-        body_attestations = signed_block.message.block.body.attestations
+        body_attestations = signed_block.message.body.attestations
         assert len(body_attestations) > 0
 
         # Verify the attestation signatures are included and valid
@@ -810,10 +782,10 @@ class TestValidatorServiceIntegration:
         At interval 1, the proposer also gossips with the attestation key.
         """
         clock = SlotClock(genesis_time=Uint64(0))
-        blocks_produced: list[SignedBlockWithAttestation] = []
+        blocks_produced: list[SignedBlock] = []
         attestations_produced: list[SignedAttestation] = []
 
-        async def capture_block(block: SignedBlockWithAttestation) -> None:
+        async def capture_block(block: SignedBlock) -> None:
             blocks_produced.append(block)
 
         async def capture_attestation(attestation: SignedAttestation) -> None:
@@ -837,7 +809,7 @@ class TestValidatorServiceIntegration:
 
         # One block should be produced
         assert len(blocks_produced) == 1
-        assert blocks_produced[0].message.block.proposer_index == proposer_index
+        assert blocks_produced[0].message.proposer_index == proposer_index
 
         # ALL validators should have attested (including proposer)
         attestation_validator_ids = {att.validator_id for att in attestations_produced}
@@ -856,9 +828,9 @@ class TestValidatorServiceIntegration:
         after applying the block to the parent state.
         """
         clock = SlotClock(genesis_time=Uint64(0))
-        blocks_produced: list[SignedBlockWithAttestation] = []
+        blocks_produced: list[SignedBlock] = []
 
-        async def capture_block(block: SignedBlockWithAttestation) -> None:
+        async def capture_block(block: SignedBlock) -> None:
             blocks_produced.append(block)
 
         service = ValidatorService(
@@ -871,7 +843,7 @@ class TestValidatorServiceIntegration:
         await service._maybe_produce_block(Slot(4))
 
         assert len(blocks_produced) == 1
-        produced_block = blocks_produced[0].message.block
+        produced_block = blocks_produced[0].message
 
         # The state root should not be zero (it was computed)
         assert produced_block.state_root != Bytes32.zero()

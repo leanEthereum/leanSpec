@@ -775,8 +775,6 @@ class State(Container):
             attestations: Individual attestations to aggregate and sign.
             attestation_signatures: Per-validator XMSS signatures learned from
                 the gossip network, keyed by the attestation data they signed.
-                Proposer entries flagged in the map are ignored for aggregation
-                because they use the proposal key rather than the attestation key.
 
         Returns:
             List of (attestation, proof) pairs from gossip collection.

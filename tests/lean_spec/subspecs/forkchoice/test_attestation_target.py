@@ -13,9 +13,8 @@ from lean_spec.subspecs.chain.config import (
 from lean_spec.subspecs.containers import (
     Attestation,
     AttestationData,
-    BlockWithAttestation,
     Checkpoint,
-    SignedBlockWithAttestation,
+    SignedBlock,
 )
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block import BlockSignatures
@@ -561,28 +560,11 @@ class TestIntegrationScenarios:
         store, block, signatures = store.produce_block_with_signatures(slot_1, proposer_1)
         block_root = hash_tree_root(block)
 
-        # Get attestation data for the block's slot
-        proposer_attestation_data = AttestationData(
-            slot=slot_1,
-            head=Checkpoint(root=block_root, slot=slot_1),
-            target=Checkpoint(root=block_root, slot=slot_1),
-            source=store.latest_justified,
-        )
-        proposer_attestation = SignedAttestation(
-            validator_id=proposer_1,
-            data=proposer_attestation_data,
-            signature=key_manager.sign_attestation_data(proposer_1, proposer_attestation_data),
-        )
-        proposer_signature = key_manager.sign_proposal_data(
-            proposer_attestation.validator_id,
-            proposer_attestation.data,
-        )
+        # Sign the block root with the proposal key
+        proposer_signature = key_manager.sign_block_root(proposer_1, slot_1, block_root)
 
-        signed_block = SignedBlockWithAttestation(
-            message=BlockWithAttestation(
-                block=block,
-                proposer_attestation=proposer_attestation,
-            ),
+        signed_block = SignedBlock(
+            message=block,
             signature=BlockSignatures(
                 attestation_signatures=AttestationSignatures(data=signatures),
                 proposer_signature=proposer_signature,

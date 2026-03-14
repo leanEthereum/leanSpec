@@ -131,3 +131,13 @@ class BlockSpec(CamelModel):
 
     Enables more realistic test vectors without manual specification.
     """
+
+    gossip_proposer_attestation: bool = False
+    """
+    Simulate the proposer gossiping an attestation after block production.
+
+    In the real system, the proposer gossips an attestation at interval 1
+    using the attestation key, separate from the block's proposal-key
+    signature. This flag simulates that gossip so later blocks can
+    auto-collect it via include_store_attestations.
+    """

@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregationError
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
 from lean_spec.types import Bytes32, Uint64
 from lean_spec.types.container import Container
 
 from ...xmss.containers import Signature
-from ..attestation import SignedAttestation
 from .types import (
     AggregatedAttestations,
     AttestationSignatures,
@@ -76,16 +76,6 @@ class Block(Container):
     """The block's payload."""
 
 
-class BlockWithAttestation(Container):
-    """Bundle containing a block and the proposer's attestation."""
-
-    block: Block
-    """The proposed block message."""
-
-    proposer_attestation: SignedAttestation
-    """The proposer's attestation corresponding to this block (attestation key)."""
-
-
 class BlockSignatures(Container):
     """Aggregated signature payload for a block."""
 
@@ -93,14 +83,14 @@ class BlockSignatures(Container):
     """Aggregated signatures for attestations in the block body."""
 
     proposer_signature: Signature
-    """Signature for the proposer's attestation."""
+    """Signature over the block root using the proposer's proposal key."""
 
 
-class SignedBlockWithAttestation(Container):
-    """Envelope carrying a block, an attestation from proposer, and aggregated signatures."""
+class SignedBlock(Container):
+    """Envelope carrying a block and its aggregated signatures."""
 
-    message: BlockWithAttestation
-    """The block plus an attestation from proposer being signed."""
+    message: Block
+    """The block being signed."""
 
     signature: BlockSignatures
     """Aggregated signature payload for the block."""
@@ -113,8 +103,8 @@ class SignedBlockWithAttestation(Container):
 
         Checks that:
 
-        - Each attestation is signed by participating validators
-        - The proposer attestation is signed by the block proposer
+        - Each body attestation is signed by participating validators
+        - The proposer signed the block root with the proposal key
 
         Args:
             parent_state: State at parent block. Provides validator public keys.
@@ -126,14 +116,12 @@ class SignedBlockWithAttestation(Container):
         Raises:
             AssertionError: On verification failure.
         """
-        # Extract block components for verification.
-        block = self.message.block
+        block = self.message
         signatures = self.signature
         aggregated_attestations = block.body.attestations
         attestation_signatures = signatures.attestation_signatures
 
         # Each attestation in the body must have a corresponding signature entry.
-        # This ensures no attestation is missing cryptographic proof.
         assert len(aggregated_attestations) == len(attestation_signatures), (
             "Attestation signature groups must align with block body attestations"
         )
@@ -142,29 +130,21 @@ class SignedBlockWithAttestation(Container):
         validators = parent_state.validators
 
         # Attestations and signatures are parallel arrays.
-        # - Each attestation says "validators X, Y, Z voted for this data".
-        # - Each signature proves those validators actually signed.
         for aggregated_attestation, aggregated_signature in zip(
             aggregated_attestations, attestation_signatures, strict=True
         ):
-            # Extract which validators participated in this attestation.
-            # The aggregation bits encode validator indices as a bitfield.
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
 
             # The signed message is the attestation data root.
-            # All validators in this group signed this exact data.
             attestation_data_root = aggregated_attestation.data.data_root_bytes()
 
-            # Bounds check: all validators must exist in the registry.
             for validator_id in validator_ids:
                 num_validators = Uint64(len(validators))
                 assert validator_id.is_valid(num_validators), "Validator index out of range"
 
             # Collect attestation public keys for all participating validators.
-            # Order matters: must match the order in the aggregated signature.
             public_keys = [validators[vid].get_attestation_pubkey() for vid in validator_ids]
 
-            # Verify the aggregated signature against all public keys.
             try:
                 aggregated_signature.verify(
                     public_keys=public_keys,
@@ -176,38 +156,21 @@ class SignedBlockWithAttestation(Container):
                     f"Attestation aggregated signature verification failed: {exc}"
                 ) from exc
 
-        # Verify proposer attestation signature.
-        # The proposer includes their own attestation separate from the body.
-        proposer_attestation = self.message.proposer_attestation
-        proposer_signature = signatures.proposer_signature
+        # Verify the proposer's signature over the block root.
+        #
+        # The proposer signs hash_tree_root(block) with their proposal key.
+        # This proves the proposer endorsed this specific block.
+        proposer_index = block.proposer_index
+        assert proposer_index.is_valid(Uint64(len(validators))), "Proposer index out of range"
 
-        # Critical safety check: the attestation must be from the actual proposer.
-        # Without this, an attacker could substitute another validator's attestation.
-        assert proposer_attestation.validator_id == block.proposer_index, (
-            "Proposer attestation must be from the block proposer"
-        )
+        proposer = validators[proposer_index]
+        block_root = hash_tree_root(block)
 
-        # Bounds check: proposer must exist in the validator registry.
-        assert proposer_attestation.validator_id.is_valid(Uint64(len(validators))), (
-            "Proposer index out of range"
-        )
-        proposer = validators[proposer_attestation.validator_id]
-
-        # Verify the proposer's attestation signature (attestation key).
-        assert proposer_attestation.signature.verify(
-            proposer.get_attestation_pubkey(),
-            proposer_attestation.data.slot,
-            proposer_attestation.data.data_root_bytes(),
-            scheme,
-        ), "Proposer attestation signature verification failed"
-
-        # Verify the proposer's individual XMSS signature (proposal key).
-        # Uses the proposal key, separate from the attestation key.
-        assert proposer_signature.verify(
+        assert signatures.proposer_signature.verify(
             proposer.get_proposal_pubkey(),
-            proposer_attestation.data.slot,
-            proposer_attestation.data.data_root_bytes(),
+            block.slot,
+            block_root,
             scheme,
-        ), "Proposer signature verification failed"
+        ), "Proposer block signature verification failed"
 
         return True

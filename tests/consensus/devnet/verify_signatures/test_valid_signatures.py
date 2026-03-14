@@ -18,7 +18,7 @@ def test_proposer_signature(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
     """
-    Test valid proposer signature in SignedBlockWithAttestation.
+    Test valid proposer signature in SignedBlock.
 
     Scenario
     --------
@@ -27,7 +27,7 @@ def test_proposer_signature(
 
     Expected Behavior
     -----------------
-    1. Proposer's signature in SignedBlockWithAttestation can be verified against
+    1. Proposer's signature in SignedBlock can be verified against
        the validator's pubkey in the state
 
     Why This Matters
@@ -49,7 +49,7 @@ def test_proposer_and_attester_signatures(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
     """
-    Test valid proposer and attester signatures in SignedBlockWithAttestation.
+    Test valid proposer and attester signatures in SignedBlock.
 
     Scenario
     --------
@@ -60,7 +60,7 @@ def test_proposer_and_attester_signatures(
 
     Expected Behavior
     -----------------
-    1. Proposer's signature in SignedBlockWithAttestation can be verified against
+    1. Proposer's signature in SignedBlock can be verified against
        the validator's pubkey in the state
     2. Aggregated attestation signatures can be verified against the validators'
        pubkeys in the state

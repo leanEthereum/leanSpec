@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.containers import Checkpoint, SignedBlockWithAttestation
+from lean_spec.subspecs.containers import Checkpoint, SignedBlock
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.networking.config import MAX_ERROR_MESSAGE_SIZE
 from lean_spec.subspecs.networking.reqresp.codec import (
@@ -247,12 +247,12 @@ class TestRequestHandlerBlocksByRoot:
         block2 = make_test_block(slot=2, seed=2)
 
         # Create lookup that returns blocks for specific roots
-        block_roots: dict[bytes, SignedBlockWithAttestation] = {
+        block_roots: dict[bytes, SignedBlock] = {
             b"\x11" * 32: block1,
             b"\x22" * 32: block2,
         }
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             return block_roots.get(bytes(root))
 
         handler = RequestHandler(block_lookup=lookup)
@@ -268,18 +268,18 @@ class TestRequestHandlerBlocksByRoot:
         assert len(response.successes) == 2
 
         # Both blocks should be decodable
-        decoded1 = SignedBlockWithAttestation.decode_bytes(response.successes[0])
-        decoded2 = SignedBlockWithAttestation.decode_bytes(response.successes[1])
+        decoded1 = SignedBlock.decode_bytes(response.successes[0])
+        decoded2 = SignedBlock.decode_bytes(response.successes[1])
 
-        assert decoded1.message.block.slot == Slot(1)
-        assert decoded2.message.block.slot == Slot(2)
+        assert decoded1.message.slot == Slot(1)
+        assert decoded2.message.slot == Slot(2)
 
     async def test_handle_blocks_by_root_skips_missing_blocks(self) -> None:
         """Missing blocks are silently skipped."""
         block1 = make_test_block(slot=1, seed=1)
 
         # Only block1 exists
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             if bytes(root) == b"\x11" * 32:
                 return block1
             return None
@@ -320,7 +320,7 @@ class TestRequestHandlerBlocksByRoot:
     async def test_handle_blocks_by_root_empty_request(self) -> None:
         """Empty request returns no blocks and no errors."""
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             return None
 
         handler = RequestHandler(block_lookup=lookup)
@@ -337,7 +337,7 @@ class TestRequestHandlerBlocksByRoot:
         """Lookup exceptions are caught and processing continues."""
         block2 = make_test_block(slot=2, seed=2)
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             if bytes(root) == b"\x11" * 32:
                 raise RuntimeError("Database error")
             if bytes(root) == b"\x22" * 32:
@@ -358,8 +358,8 @@ class TestRequestHandlerBlocksByRoot:
         assert len(response.errors) == 0
         assert len(response.successes) == 1
 
-        decoded = SignedBlockWithAttestation.decode_bytes(response.successes[0])
-        assert decoded.message.block.slot == Slot(2)
+        decoded = SignedBlock.decode_bytes(response.successes[0])
+        assert decoded.message.slot == Slot(2)
 
 
 class TestReqRespServer:
@@ -400,7 +400,7 @@ class TestReqRespServer:
         block1 = make_test_block(slot=1, seed=1)
         root1 = Bytes32(b"\x11" * 32)
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             if bytes(root) == bytes(root1):
                 return block1
             return None
@@ -422,8 +422,8 @@ class TestReqRespServer:
         code, ssz_data = ResponseCode.decode(stream.written[0])
         assert code == ResponseCode.SUCCESS
 
-        returned_block = SignedBlockWithAttestation.decode_bytes(ssz_data)
-        assert returned_block.message.block.slot == Slot(1)
+        returned_block = SignedBlock.decode_bytes(ssz_data)
+        assert returned_block.message.slot == Slot(1)
 
     async def test_empty_request_returns_error(self) -> None:
         """Empty request data returns INVALID_REQUEST error."""
@@ -591,12 +591,12 @@ class TestIntegration:
         root1 = Bytes32(b"\xaa" * 32)
         root2 = Bytes32(b"\xbb" * 32)
 
-        blocks_by_root: dict[bytes, SignedBlockWithAttestation] = {
+        blocks_by_root: dict[bytes, SignedBlock] = {
             bytes(root1): block1,
             bytes(root2): block2,
         }
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             return blocks_by_root.get(bytes(root))
 
         handler = RequestHandler(block_lookup=lookup)
@@ -615,10 +615,10 @@ class TestIntegration:
         for response_wire in stream.written:
             code, ssz_bytes = ResponseCode.decode(response_wire)
             if code == ResponseCode.SUCCESS:
-                blocks.append(SignedBlockWithAttestation.decode_bytes(ssz_bytes))
+                blocks.append(SignedBlock.decode_bytes(ssz_bytes))
 
         assert len(blocks) == 2
-        slots = {b.message.block.slot for b in blocks}
+        slots = {b.message.slot for b in blocks}
         assert Slot(10) in slots
         assert Slot(20) in slots
 
@@ -629,7 +629,7 @@ class TestIntegration:
         root1 = Bytes32(b"\xaa" * 32)
         root_missing = Bytes32(b"\x00" * 32)
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             if bytes(root) == bytes(root1):
                 return block1
             return None
@@ -648,11 +648,11 @@ class TestIntegration:
         for response_wire in stream.written:
             code, ssz_bytes = ResponseCode.decode(response_wire)
             if code == ResponseCode.SUCCESS:
-                blocks.append(SignedBlockWithAttestation.decode_bytes(ssz_bytes))
+                blocks.append(SignedBlock.decode_bytes(ssz_bytes))
 
         # Only one block returned
         assert len(blocks) == 1
-        assert blocks[0].message.block.slot == Slot(10)
+        assert blocks[0].message.slot == Slot(10)
 
 
 class TestStreamResponseAdapterMultipleResponses:
@@ -814,7 +814,7 @@ class TestReqRespServerEdgeCases:
     async def test_invalid_blocks_by_root_ssz(self) -> None:
         """Invalid SSZ for BlocksByRoot returns INVALID_REQUEST."""
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             return None
 
         handler = RequestHandler(block_lookup=lookup)
@@ -860,7 +860,7 @@ class TestRequestHandlerEdgeCases:
         block = make_test_block(slot=999, seed=99)
         root = Bytes32(b"\x99" * 32)
 
-        async def lookup(r: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(r: Bytes32) -> SignedBlock | None:
             if bytes(r) == bytes(root):
                 return block
             return None
@@ -875,13 +875,13 @@ class TestRequestHandlerEdgeCases:
         assert len(response.errors) == 0
         assert len(response.successes) == 1
 
-        decoded = SignedBlockWithAttestation.decode_bytes(response.successes[0])
-        assert decoded.message.block.slot == Slot(999)
+        decoded = SignedBlock.decode_bytes(response.successes[0])
+        assert decoded.message.slot == Slot(999)
 
     async def test_blocks_by_root_all_missing(self) -> None:
         """Request where all blocks are missing returns no success responses."""
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             return None
 
         handler = RequestHandler(block_lookup=lookup)
@@ -907,13 +907,13 @@ class TestRequestHandlerEdgeCases:
         block1 = make_test_block(slot=1, seed=1)
         block3 = make_test_block(slot=3, seed=3)
 
-        blocks: dict[bytes, SignedBlockWithAttestation] = {
+        blocks: dict[bytes, SignedBlock] = {
             b"\x11" * 32: block1,
             # \x22 missing
             b"\x33" * 32: block3,
         }
 
-        async def lookup(root: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(root: Bytes32) -> SignedBlock | None:
             return blocks.get(bytes(root))
 
         handler = RequestHandler(block_lookup=lookup)
@@ -935,11 +935,11 @@ class TestRequestHandlerEdgeCases:
         assert len(response.successes) == 2
 
         # Verify order is preserved
-        decoded1 = SignedBlockWithAttestation.decode_bytes(response.successes[0])
-        decoded2 = SignedBlockWithAttestation.decode_bytes(response.successes[1])
+        decoded1 = SignedBlock.decode_bytes(response.successes[0])
+        decoded2 = SignedBlock.decode_bytes(response.successes[1])
 
-        assert decoded1.message.block.slot == Slot(1)
-        assert decoded2.message.block.slot == Slot(3)
+        assert decoded1.message.slot == Slot(1)
+        assert decoded2.message.slot == Slot(3)
 
     async def test_status_update_after_initialization(self) -> None:
         """Status can be updated after handler creation."""
@@ -1003,7 +1003,7 @@ class TestConcurrentRequestHandling:
         block = make_test_block(slot=42, seed=42)
         root = Bytes32(b"\x42" * 32)
 
-        async def lookup(r: Bytes32) -> SignedBlockWithAttestation | None:
+        async def lookup(r: Bytes32) -> SignedBlock | None:
             if bytes(r) == bytes(root):
                 return block
             return None
@@ -1036,10 +1036,10 @@ class TestConcurrentRequestHandling:
         # Decode block response
         code, ssz_data = ResponseCode.decode(blocks_stream.written[0])
         assert code == ResponseCode.SUCCESS
-        block_result = SignedBlockWithAttestation.decode_bytes(ssz_data)
+        block_result = SignedBlock.decode_bytes(ssz_data)
 
         assert status_result.head.slot == Slot(200)
-        assert block_result.message.block.slot == Slot(42)
+        assert block_result.message.slot == Slot(42)
 
 
 class MockFailingStream:

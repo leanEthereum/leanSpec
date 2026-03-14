@@ -48,7 +48,7 @@ from lean_spec.subspecs.containers import (
     Block,
     SignedAggregatedAttestation,
     SignedAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice.store import Store
@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 
 def default_block_processor(
     store: Store,
-    block: SignedBlockWithAttestation,
+    block: SignedBlock,
 ) -> Store:
     """Default block processor using store block processing."""
     return store.on_block(block)
@@ -159,9 +159,7 @@ class SyncService:
     is_aggregator: bool = field(default=False)
     """Whether this node functions as an aggregator."""
 
-    process_block: Callable[[Store, SignedBlockWithAttestation], Store] = field(
-        default=default_block_processor
-    )
+    process_block: Callable[[Store, SignedBlock], Store] = field(default=default_block_processor)
     """Block processor function. Defaults to the store's block processing."""
 
     _publish_agg_fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]] = field(
@@ -251,7 +249,7 @@ class SyncService:
     def _process_block_wrapper(
         self,
         store: Store,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
     ) -> Store:
         """
         Wrapper for block processing that updates counters and persists data.
@@ -274,7 +272,7 @@ class SyncService:
         # This is write-through: data is persisted synchronously after processing.
         # The database call is optional - nodes can run without persistence.
         if self.database is not None:
-            self._persist_block(new_store, block.message.block)
+            self._persist_block(new_store, block.message)
 
         return new_store
 
@@ -396,7 +394,7 @@ class SyncService:
 
     async def on_gossip_block(
         self,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
         peer_id: PeerId | None,
     ) -> None:
         """
@@ -425,7 +423,7 @@ class SyncService:
         logger.info(
             "Block received from peer %s slot=%s (state=%s)",
             peer_id,
-            block.message.block.slot,
+            block.message.slot,
             self._state.name,
         )
 
@@ -447,8 +445,8 @@ class SyncService:
         #
         # A block may be cached instead of processed if its parent is unknown.
         if result.processed:
-            slot = block.message.block.slot
-            block_root = hash_tree_root(block.message.block)
+            slot = block.message.slot
+            block_root = hash_tree_root(block.message)
             logger.info(
                 "Block processed slot=%s root=%s from peer %s",
                 slot,

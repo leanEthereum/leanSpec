@@ -28,7 +28,7 @@ from lean_spec.subspecs.chain.config import (
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.chain.service import ChainService
-from lean_spec.subspecs.containers import Block, BlockBody, SignedBlockWithAttestation, State
+from lean_spec.subspecs.containers import Block, BlockBody, SignedBlock, State
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
@@ -295,7 +295,7 @@ class Node:
                 await network_service.publish_attestation(attestation, subnet_id)
                 await sync_service.on_gossip_attestation(attestation)
 
-            async def publish_block_wrapper(block: SignedBlockWithAttestation) -> None:
+            async def publish_block_wrapper(block: SignedBlock) -> None:
                 await network_service.publish_block(block)
                 await sync_service.on_gossip_block(block, peer_id=None)
 

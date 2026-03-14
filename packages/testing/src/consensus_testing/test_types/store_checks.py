@@ -8,7 +8,7 @@ from lean_spec.types import Bytes32, CamelModel, Uint64
 
 if TYPE_CHECKING:
     from lean_spec.subspecs.containers import AttestationData
-    from lean_spec.subspecs.containers.block.block import Block, BlockWithAttestation
+    from lean_spec.subspecs.containers.block.block import Block
     from lean_spec.subspecs.forkchoice.store import Store
 
 
@@ -240,7 +240,7 @@ class StoreChecks(CamelModel):
         store: "Store",
         step_index: int,
         block_registry: dict[str, "Block"] | None = None,
-        filled_block: "BlockWithAttestation | None" = None,
+        filled_block: "Block | None" = None,
     ) -> None:
         """
         Validate these checks against actual Store state.
@@ -256,7 +256,7 @@ class StoreChecks(CamelModel):
             Index of the step being validated (for error messages).
         block_registry : dict[str, Block] | None
             Optional registry of labeled blocks for resolving head_root_label.
-        filled_block : BlockWithAttestation | None
+        filled_block : Block | None
             Optional filled block for validating block body attestations.
             Required if block_attestation_count or block_attestations is set.
 
@@ -465,11 +465,11 @@ class StoreChecks(CamelModel):
                         f"filled_block not provided to validate_against_store()"
                     )
 
-                actual_count = len(filled_block.block.body.attestations.data)
+                actual_count = len(filled_block.body.attestations.data)
                 if actual_count != expected_value:
                     # Build detailed info for error message
                     att_info = []
-                    for att in filled_block.block.body.attestations.data:
+                    for att in filled_block.body.attestations.data:
                         participants = att.aggregation_bits.to_validator_indices()
                         att_info.append(f"  - participants={list(participants)}")
 
@@ -488,7 +488,7 @@ class StoreChecks(CamelModel):
                         f"filled_block not provided to validate_against_store()"
                     )
 
-                actual_attestations = filled_block.block.body.attestations.data
+                actual_attestations = filled_block.body.attestations.data
                 actual_participants_list = [
                     {int(v) for v in att.aggregation_bits.to_validator_indices()}
                     for att in actual_attestations

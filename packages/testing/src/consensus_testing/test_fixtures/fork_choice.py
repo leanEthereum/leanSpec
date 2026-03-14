@@ -25,8 +25,7 @@ from lean_spec.subspecs.containers.block import (
     Block,
     BlockBody,
     BlockSignatures,
-    BlockWithAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
 )
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
@@ -265,12 +264,11 @@ class ForkChoiceTest(BaseConsensusFixture):
                             step.block, store, self._block_registry, key_manager
                         )
 
-                        # Store the filled Block for serialization
-                        block = signed_block.message.block
-                        step._filled_block = signed_block.message
+                        # Store the filled block for serialization.
+                        block = signed_block.message
+                        step._filled_block = block
 
                         # Register labeled blocks for fork building.
-                        # Later blocks can reference this one as their parent.
                         if step.block.label is not None:
                             if step.block.label in self._block_registry:
                                 raise ValueError(
@@ -280,44 +278,37 @@ class ForkChoiceTest(BaseConsensusFixture):
                             self._block_registry[step.block.label] = block
 
                         # Advance time to the block's slot.
-                        # Store rejects blocks from the future.
-                        # This tick includes a block (has proposal).
-                        # Always act as aggregator to ensure gossip signatures are aggregated
                         target_interval = Interval(block.slot * INTERVALS_PER_SLOT)
                         store, _ = store.on_tick(
                             target_interval, has_proposal=True, is_aggregator=True
                         )
 
                         # Process the block through Store.
-                        # This validates, applies state transition, and updates head.
+                        # This validates, applies state transition, and updates the store's head.
                         store = store.on_block(
                             signed_block,
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                         )
 
-                        # Simulate the proposer's interval 1 gossip attestation.
-                        #
-                        # With dual keys, the proposer gossips a fresh attestation
-                        # using the attestation key. Reuse the attestation data
-                        # from the block envelope — it was built from the proposer's
-                        # chain view (which includes their own block as head).
-                        #
-                        # Best-effort: if the attestation data fails validation
-                        # (e.g. source > target after justification advances),
-                        # skip gracefully — matches ValidatorService behavior.
-                        proposer_att = signed_block.message.proposer_attestation
-                        try:
-                            store = store.on_gossip_attestation(
-                                SignedAttestation(
-                                    validator_id=proposer_att.validator_id,
-                                    data=proposer_att.data,
-                                    signature=proposer_att.signature,
-                                ),
-                                scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
-                                is_aggregator=True,
-                            )
-                        except (AssertionError, Exception):
-                            pass
+                        # Optionally simulate the proposer's gossip attestation.
+                        if step.block.gossip_proposer_attestation:
+                            proposer_index = block.proposer_index
+                            proposer_att_data = store.produce_attestation_data(block.slot)
+                            try:
+                                proposer_gossip_att = SignedAttestation(
+                                    validator_id=proposer_index,
+                                    data=proposer_att_data,
+                                    signature=key_manager.sign_attestation_data(
+                                        proposer_index, proposer_att_data
+                                    ),
+                                )
+                                store = store.on_gossip_attestation(
+                                    proposer_gossip_att,
+                                    scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
+                                    is_aggregator=True,
+                                )
+                            except (AssertionError, Exception):
+                                pass
 
                     case AttestationStep():
                         # Process a gossip attestation.
@@ -371,7 +362,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         store: Store,
         block_registry: dict[str, Block],
         key_manager: XmssKeyManager,
-    ) -> SignedBlockWithAttestation:
+    ) -> SignedBlock:
         """
         Build a complete signed block from a lightweight specification.
 
@@ -480,58 +471,24 @@ class ForkChoiceTest(BaseConsensusFixture):
             aggregated_payloads=merged_store.latest_known_aggregated_payloads,
         )
 
-        # Create proposer attestation using the spec's attestation data production.
-        # Build a temporary store with the new block integrated so
-        # produce_attestation_data() sees the correct chain view.
-        block_root = hash_tree_root(final_block)
-        latest_justified = (
-            post_state.latest_justified
-            if post_state.latest_justified.slot > store.latest_justified.slot
-            else store.latest_justified
-        )
-        latest_finalized = (
-            post_state.latest_finalized
-            if post_state.latest_finalized.slot > store.latest_finalized.slot
-            else store.latest_finalized
-        )
-        temp_store = store.model_copy(
-            update={
-                "blocks": {**store.blocks, block_root: final_block},
-                "states": {**store.states, block_root: post_state},
-                "head": block_root,
-                "latest_justified": latest_justified,
-                "latest_finalized": latest_finalized,
-            }
-        )
-        proposer_attestation_data = temp_store.produce_attestation_data(spec.slot)
-        proposer_attestation = SignedAttestation(
-            validator_id=proposer_index,
-            data=proposer_attestation_data,
-            signature=key_manager.sign_attestation_data(proposer_index, proposer_attestation_data),
-        )
-
         # Sign everything
         #
-        # Aggregate signatures for all attestations in the block body.
-        # Sign the proposer's attestation separately.
+        # Aggregate signatures for attestations in the block body.
+        # Sign the block root with the proposer's proposal key.
         attestation_signatures_blob = key_manager.build_attestation_signatures(
             final_block.body.attestations,
             attestation_signatures,
         )
 
-        proposer_signature = key_manager.sign_proposal_data(
-            proposer_attestation.validator_id,
-            proposer_attestation.data,
+        proposer_signature = key_manager.sign_block_root(
+            proposer_index,
+            spec.slot,
+            hash_tree_root(final_block),
         )
 
-        # Assemble the signed block
-        #
-        # Combine block, proposer attestation, and all signatures.
-        return SignedBlockWithAttestation(
-            message=BlockWithAttestation(
-                block=final_block,
-                proposer_attestation=proposer_attestation,
-            ),
+        # Assemble the signed block.
+        return SignedBlock(
+            message=final_block,
             signature=BlockSignatures(
                 attestation_signatures=attestation_signatures_blob,
                 proposer_signature=proposer_signature,

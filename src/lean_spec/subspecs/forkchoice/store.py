@@ -23,7 +23,7 @@ from lean_spec.subspecs.containers import (
     Checkpoint,
     Config,
     SignedAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
     State,
     ValidatorIndex,
 )
@@ -141,8 +141,7 @@ class Store(StrictBaseModel):
     """
     Per-validator XMSS signatures learned from committee attesters.
 
-    Keyed by AttestationData. Includes signatures originating from gossip as well as
-    proposer attestation signatures extracted from block envelopes.
+    Keyed by AttestationData.
     """
 
     latest_new_aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
@@ -238,7 +237,7 @@ class Store(StrictBaseModel):
 
         Pruning removes all attestation-related data:
 
-        - Attestation signatures (gossip/proposer)
+        - Attestation signatures
         - Pending aggregated payloads
         - Processed aggregated payloads
 
@@ -468,7 +467,7 @@ class Store(StrictBaseModel):
 
     def on_block(
         self,
-        signed_block_with_attestation: SignedBlockWithAttestation,
+        signed_block: SignedBlock,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> "Store":
         """
@@ -478,32 +477,10 @@ class Store(StrictBaseModel):
         1. Validating the block's parent exists
         2. Computing the post-state via the state transition function
         3. Processing attestations included in the block body (on-chain)
-        4. Adding the proposer's attestation signature to the individual-signature pipeline
-        5. Updating the forkchoice head
-
-        Algorithm Overview
-        ------------------
-        The key insight is that blocks contain two types of attestations:
-
-        **Block Body Attestations** (processed as on-chain):
-            - These are attestations from other validators included by the proposer
-            - They are historical and have already influenced prior fork choice
-            - Processed immediately as "known" attestations
-
-        **Proposer Attestation** (added to attestation_signatures):
-            - The proposer's attestation for their own block
-            - Contains a real attestation-key signature
-            - Added directly to attestation_signatures so the proposer's vote flows
-              through the standard aggregation pipeline
-            - Ensures the vote counts even if the proposer crashes before re-gossiping
-
-        This ensures:
-        - The proposer's vote is never lost (crash/partition resilience)
-        - Fork choice head is computed after storing all attestation data
-        - The attestation flows through normal aggregation like any gossip attestation
+        4. Updating the forkchoice head
 
         Args:
-            signed_block_with_attestation: Complete signed block with proposer attestation.
+            signed_block: Complete signed block.
             scheme: XMSS signature scheme to use for signature verification.
 
         Returns:
@@ -512,8 +489,7 @@ class Store(StrictBaseModel):
         Raises:
             AssertionError: If parent block/state not found in store.
         """
-        # Unpack block components
-        block = signed_block_with_attestation.message.block
+        block = signed_block.message
         block_root = hash_tree_root(block)
 
         # Skip duplicate blocks (idempotent operation)
@@ -534,7 +510,7 @@ class Store(StrictBaseModel):
         )
 
         # Validate cryptographic signatures
-        valid_signatures = signed_block_with_attestation.verify_signatures(parent_state, scheme)
+        valid_signatures = signed_block.verify_signatures(parent_state, scheme)
 
         # Execute state transition function to compute post-block state
         state_transition_start = time.perf_counter()
@@ -551,7 +527,6 @@ class Store(StrictBaseModel):
             post_state.latest_finalized, self.latest_finalized, key=lambda c: c.slot
         )
 
-        # Create new store with the computed data.
         store = self.model_copy(
             update={
                 "blocks": self.blocks | {block_root: block},
@@ -562,16 +537,17 @@ class Store(StrictBaseModel):
         )
 
         # Process block body attestations and their signatures
-        aggregated_attestations = signed_block_with_attestation.message.block.body.attestations
-        attestation_signatures = signed_block_with_attestation.signature.attestation_signatures
+        # Block attestations go directly to "known" payloads
+        aggregated_attestations = block.body.attestations
+        attestation_signatures = signed_block.signature.attestation_signatures
 
         assert len(aggregated_attestations) == len(attestation_signatures), (
             "Attestation signature groups must match aggregated attestations"
         )
 
         # Copy the aggregated proof map for updates
-        # Shallow-copy the dict and its inner sets to preserve immutability.
-        # Block attestations go directly to "known" payloads (like is_from_block=True)
+        # Shallow-copy the dict and its inner sets to preserve immutability
+        # Block attestations go directly to "known" payloads (like is_from_block=True in the spec)
         block_proofs: dict[AttestationData, set[AggregatedSignatureProof]] = {
             k: set(v) for k, v in store.latest_known_aggregated_payloads.items()
         }
@@ -579,18 +555,8 @@ class Store(StrictBaseModel):
         for att, proof in zip(aggregated_attestations, attestation_signatures, strict=True):
             block_proofs.setdefault(att.data, set()).add(proof)
 
-        # Update store with new aggregated proofs.
+        # Update store with new aggregated proofs and attestation data
         store = store.model_copy(update={"latest_known_aggregated_payloads": block_proofs})
-
-        # Add the proposer's attestation signature to the individual-signature pipeline.
-        # This ensures the proposer's vote counts for fork choice even if they never
-        # re-gossip at interval 1 (crash resilience).
-        proposer_att = signed_block_with_attestation.message.proposer_attestation
-        att_sigs = {k: set(v) for k, v in store.attestation_signatures.items()}
-        att_sigs.setdefault(proposer_att.data, set()).add(
-            AttestationSignatureEntry(proposer_att.validator_id, proposer_att.signature)
-        )
-        store = store.model_copy(update={"attestation_signatures": att_sigs})
 
         # Update forkchoice head based on new block and attestations
         store = store.update_head()
@@ -650,25 +616,6 @@ class Store(StrictBaseModel):
                         attestations[validator_id] = attestation_data
         return attestations
 
-    def _merge_individual_signature_votes(
-        self, attestations: dict[ValidatorIndex, AttestationData]
-    ) -> dict[ValidatorIndex, AttestationData]:
-        """
-        Merge votes from individual attestation signatures into a vote map.
-
-        Individual signatures in attestation_signatures include proposer attestations
-        extracted from block envelopes and gossip attestations awaiting aggregation.
-        If a validator already has a vote from the aggregation pipeline (newer or
-        same slot), the aggregated vote takes precedence.
-        """
-        merged = dict(attestations)
-        for att_data, entries in self.attestation_signatures.items():
-            for entry in entries:
-                existing = merged.get(entry.validator_id)
-                if existing is None or existing.slot < att_data.slot:
-                    merged[entry.validator_id] = att_data
-        return merged
-
     def compute_block_weights(self) -> dict[Bytes32, int]:
         """
         Compute attestation-based weight for each block above the finalized slot.
@@ -679,10 +626,8 @@ class Store(StrictBaseModel):
         Returns:
             Mapping from block root to accumulated attestation weight.
         """
-        attestations = self._merge_individual_signature_votes(
-            self.extract_attestations_from_aggregated_payloads(
-                self.latest_known_aggregated_payloads
-            )
+        attestations = self.extract_attestations_from_aggregated_payloads(
+            self.latest_known_aggregated_payloads
         )
 
         start_slot = self.latest_finalized.slot
@@ -809,12 +754,9 @@ class Store(StrictBaseModel):
             New Store with updated head.
 
         """
-        # Extract attestations from known aggregated payloads, merged with
-        # individual attestation signatures (including proposer attestations).
-        attestations = self._merge_individual_signature_votes(
-            self.extract_attestations_from_aggregated_payloads(
-                self.latest_known_aggregated_payloads
-            )
+        # Extract attestations from known aggregated payloads
+        attestations = self.extract_attestations_from_aggregated_payloads(
+            self.latest_known_aggregated_payloads
         )
 
         # Run LMD-GHOST fork choice algorithm
@@ -958,11 +900,7 @@ class Store(StrictBaseModel):
         #
         # Each proof encodes which validators participated.
         # This step unpacks those bitfields into a flat mapping of validator -> vote.
-        # Also merge individual attestation signatures so proposer attestations
-        # from block envelopes contribute to safe target.
-        attestations = self._merge_individual_signature_votes(
-            self.extract_attestations_from_aggregated_payloads(all_payloads)
-        )
+        attestations = self.extract_attestations_from_aggregated_payloads(all_payloads)
 
         # Run LMD GHOST with the supermajority threshold.
         #

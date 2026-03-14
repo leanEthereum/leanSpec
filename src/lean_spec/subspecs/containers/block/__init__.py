@@ -5,8 +5,7 @@ from .block import (
     BlockBody,
     BlockHeader,
     BlockSignatures,
-    BlockWithAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
 )
 from .types import (
     AggregatedAttestations,
@@ -20,8 +19,7 @@ __all__ = [
     "BlockHeader",
     "BlockLookup",
     "BlockSignatures",
-    "BlockWithAttestation",
-    "SignedBlockWithAttestation",
+    "SignedBlock",
     "AggregatedAttestations",
     "AttestationSignatures",
 ]

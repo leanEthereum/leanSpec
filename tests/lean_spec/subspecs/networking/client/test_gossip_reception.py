@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from lean_spec.snappy import compress, decompress
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
@@ -101,7 +101,7 @@ def make_attestation_topic(fork_digest: str = "0x00000000", subnet_id: int = 0) 
     return f"/{TOPIC_PREFIX}/{fork_digest}/attestation_{subnet_id}/{ENCODING_POSTFIX}"
 
 
-def make_test_signed_block() -> SignedBlockWithAttestation:
+def make_test_signed_block() -> SignedBlock:
     """Create a minimal signed block for testing."""
     return make_signed_block(
         slot=Slot(1),
@@ -232,7 +232,7 @@ class TestGossipHandlerDecodeMessage:
 
         result = handler.decode_message(topic_str, compressed)
 
-        assert isinstance(result, SignedBlockWithAttestation)
+        assert isinstance(result, SignedBlock)
 
     def test_decode_valid_attestation_message(self) -> None:
         """Decodes valid attestation message correctly."""
@@ -449,7 +449,7 @@ class TestGossipReceptionIntegration:
         decoded = handler.decode_message(parsed_topic, compressed)
 
         # Step 3: Verify result
-        assert isinstance(decoded, SignedBlockWithAttestation)
+        assert isinstance(decoded, SignedBlock)
         assert decoded.encode_bytes() == original_block.encode_bytes()
 
     async def test_full_attestation_reception_flow(self) -> None:

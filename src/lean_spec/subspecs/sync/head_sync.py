@@ -48,7 +48,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -125,7 +125,7 @@ class HeadSync:
     backfill: BackfillSync
     """Backfill syncer for fetching missing parents."""
 
-    process_block: Callable[[Store, SignedBlockWithAttestation], Store]
+    process_block: Callable[[Store, SignedBlock], Store]
     """
     Function to process a block into the Store.
 
@@ -142,7 +142,7 @@ class HeadSync:
 
     async def on_gossip_block(
         self,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
         peer_id: PeerId | None,
         store: Store,
     ) -> tuple[HeadSyncResult, Store]:
@@ -161,7 +161,7 @@ class HeadSync:
             Tuple of (result describing what happened, updated store).
             The store is unchanged if the block was cached.
         """
-        block_inner = block.message.block
+        block_inner = block.message
         block_root = hash_tree_root(block_inner)
         parent_root = block_inner.parent_root
         slot = block_inner.slot
@@ -216,7 +216,7 @@ class HeadSync:
 
     async def _process_block_with_descendants(
         self,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
         peer_id: PeerId | None,
         store: Store,
     ) -> tuple[HeadSyncResult, Store]:
@@ -234,8 +234,8 @@ class HeadSync:
         Returns:
             Result and updated store.
         """
-        block_root = hash_tree_root(block.message.block)
-        slot = block.message.block.slot
+        block_root = hash_tree_root(block.message)
+        slot = block.message.slot
         self._processing.add(block_root)
 
         try:
@@ -348,7 +348,7 @@ class HeadSync:
 
     async def _cache_and_backfill(
         self,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
         peer_id: PeerId | None,
         store: Store,
     ) -> tuple[HeadSyncResult, Store]:
@@ -366,7 +366,7 @@ class HeadSync:
         Returns:
             Result indicating the block was cached, and unchanged store.
         """
-        block_inner = block.message.block
+        block_inner = block.message
         parent_root = block_inner.parent_root
 
         # Add to cache.

@@ -11,11 +11,10 @@ from lean_spec.subspecs.containers import (
     Block,
     BlockBody,
     BlockHeader,
-    BlockWithAttestation,
     Checkpoint,
     Config,
     SignedAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
     Slot,
     State,
     Validator,
@@ -248,29 +247,6 @@ def test_block_typical(ssz: SSZTestFiller) -> None:
     )
 
 
-# --- BlockWithAttestation ---
-
-
-def test_block_with_attestation_minimal(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for BlockWithAttestation with minimal values."""
-    block = Block(
-        slot=Slot(1),
-        proposer_index=ValidatorIndex(0),
-        parent_root=Bytes32.zero(),
-        state_root=Bytes32.zero(),
-        body=BlockBody(attestations=AggregatedAttestations(data=[])),
-    )
-    attestation = SignedAttestation(
-        validator_id=ValidatorIndex(0),
-        data=_zero_attestation_data(),
-        signature=create_dummy_signature(),
-    )
-    ssz(
-        type_name="BlockWithAttestation",
-        value=BlockWithAttestation(block=block, proposer_attestation=attestation),
-    )
-
-
 # --- BlockSignatures ---
 
 
@@ -303,11 +279,11 @@ def test_block_signatures_with_attestation(ssz: SSZTestFiller) -> None:
     )
 
 
-# --- SignedBlockWithAttestation ---
+# --- SignedBlock ---
 
 
-def test_signed_block_with_attestation_minimal(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for SignedBlockWithAttestation with minimal values."""
+def test_signed_block_minimal(ssz: SSZTestFiller) -> None:
+    """SSZ roundtrip for SignedBlock with minimal values."""
     block = Block(
         slot=Slot(1),
         proposer_index=ValidatorIndex(0),
@@ -315,19 +291,13 @@ def test_signed_block_with_attestation_minimal(ssz: SSZTestFiller) -> None:
         state_root=Bytes32.zero(),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
-    attestation = SignedAttestation(
-        validator_id=ValidatorIndex(0),
-        data=_zero_attestation_data(),
-        signature=create_dummy_signature(),
-    )
-    message = BlockWithAttestation(block=block, proposer_attestation=attestation)
     signature = BlockSignatures(
         attestation_signatures=AttestationSignatures(data=[]),
         proposer_signature=create_dummy_signature(),
     )
     ssz(
-        type_name="SignedBlockWithAttestation",
-        value=SignedBlockWithAttestation(message=message, signature=signature),
+        type_name="SignedBlock",
+        value=SignedBlock(message=block, signature=signature),
     )
 
 

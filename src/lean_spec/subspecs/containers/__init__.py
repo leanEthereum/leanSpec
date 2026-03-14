@@ -20,8 +20,7 @@ from .block import (
     Block,
     BlockBody,
     BlockHeader,
-    BlockWithAttestation,
-    SignedBlockWithAttestation,
+    SignedBlock,
 )
 from .checkpoint import Checkpoint
 from .config import Config
@@ -37,12 +36,11 @@ __all__ = [
     "Block",
     "BlockBody",
     "BlockHeader",
-    "BlockWithAttestation",
     "Checkpoint",
     "Config",
     "SignedAggregatedAttestation",
     "SignedAttestation",
-    "SignedBlockWithAttestation",
+    "SignedBlock",
     "Slot",
     "State",
     "Validator",

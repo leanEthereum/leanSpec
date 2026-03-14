@@ -67,7 +67,7 @@ class TestBlockRoutingToForkchoice:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        block_root = hash_tree_root(block.message.block)
+        block_root = hash_tree_root(block.message)
 
         # Verify block is NOT in store before processing
         assert block_root not in sync_service.store.blocks
@@ -105,7 +105,7 @@ class TestBlockRoutingToForkchoice:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        expected_new_head = hash_tree_root(block.message.block)
+        expected_new_head = hash_tree_root(block.message)
 
         events: list[NetworkEvent] = [
             GossipBlockEvent(block=block, peer_id=peer_id, topic=block_topic),
@@ -342,7 +342,7 @@ class TestIntegrationEventSequence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        expected_head = hash_tree_root(block.message.block)
+        expected_head = hash_tree_root(block.message)
 
         events: list[NetworkEvent] = [
             PeerStatusEvent(peer_id=peer_id, status=status),
@@ -425,7 +425,7 @@ class TestIntegrationEventSequence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        block1_root = hash_tree_root(block1.message.block)
+        block1_root = hash_tree_root(block1.message)
 
         block2 = make_signed_block(
             slot=Slot(2),
@@ -433,7 +433,7 @@ class TestIntegrationEventSequence:
             parent_root=block1_root,
             state_root=Bytes32.zero(),
         )
-        block2_root = hash_tree_root(block2.message.block)
+        block2_root = hash_tree_root(block2.message)
 
         events: list[NetworkEvent] = [
             GossipBlockEvent(block=block1, peer_id=peer_id, topic=block_topic),

@@ -41,7 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.types import Bytes32
 
@@ -68,7 +68,7 @@ class NetworkRequester(Protocol):
         self,
         peer_id: PeerId,
         roots: list[Bytes32],
-    ) -> list[SignedBlockWithAttestation]:
+    ) -> list[SignedBlock]:
         """
         Request blocks by root from a specific peer.
 
@@ -224,7 +224,7 @@ class BackfillSync:
 
     async def _process_received_blocks(
         self,
-        blocks: list[SignedBlockWithAttestation],
+        blocks: list[SignedBlock],
         peer_id: PeerId,
         depth: int,
     ) -> None:

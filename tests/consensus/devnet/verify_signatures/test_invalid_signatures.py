@@ -28,7 +28,7 @@ def test_invalid_proposer_signature(
 
     Expected Behavior
     -----------------
-    1. Proposer's signature in SignedBlockWithAttestation is rejected
+    1. Proposer's signature in SignedBlock is rejected
 
     Why This Matters
     ----------------
@@ -64,7 +64,7 @@ def test_invalid_aggregated_attestation_signature(
 
     Expected Behavior
     -----------------
-    1. The SignedBlockWithAttestation is rejected due to invalid aggregated signature
+    1. The SignedBlock is rejected due to invalid aggregated signature
 
     Why This Matters
     ----------------

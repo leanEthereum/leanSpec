@@ -217,7 +217,7 @@ class TestGossipBlockHandling:
             parent_root=Bytes32(b"\x01" * 32),
             state_root=Bytes32.zero(),
         )
-        block_root = hash_tree_root(block.message.block)
+        block_root = hash_tree_root(block.message)
 
         await sync_service.on_gossip_block(block, peer_id)
 

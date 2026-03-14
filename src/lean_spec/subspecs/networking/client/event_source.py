@@ -106,7 +106,7 @@ from dataclasses import dataclass, field
 from typing import Final, Protocol, Self
 
 from lean_spec.snappy import SnappyDecompressionError, decompress
-from lean_spec.subspecs.containers import SignedBlockWithAttestation
+from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.attestation import SignedAggregatedAttestation, SignedAttestation
 from lean_spec.subspecs.networking.config import (
     GOSSIPSUB_DEFAULT_PROTOCOL_ID,
@@ -211,7 +211,7 @@ class GossipHandler:
 
     Supported topic kinds:
 
-    - Block: Decodes to SignedBlockWithAttestation
+    - Block: Decodes to SignedBlock
     - Attestation: Decodes to SignedAttestation
 
 
@@ -259,7 +259,7 @@ class GossipHandler:
         self,
         topic_str: str,
         compressed_data: bytes,
-    ) -> SignedBlockWithAttestation | SignedAttestation | SignedAggregatedAttestation | None:
+    ) -> SignedBlock | SignedAttestation | SignedAggregatedAttestation | None:
         """
         Decode a gossip message from topic and compressed data.
 
@@ -319,7 +319,7 @@ class GossipHandler:
         try:
             match topic.kind:
                 case TopicKind.BLOCK:
-                    return SignedBlockWithAttestation.decode_bytes(ssz_bytes)
+                    return SignedBlock.decode_bytes(ssz_bytes)
                 case TopicKind.ATTESTATION_SUBNET:
                     return SignedAttestation.decode_bytes(ssz_bytes)
                 case TopicKind.AGGREGATED_ATTESTATION:
@@ -674,7 +674,7 @@ class LiveNetworkEventSource:
 
         Args:
             lookup: Async function that takes a Bytes32 root and returns
-                the SignedBlockWithAttestation if available, None otherwise.
+                the SignedBlock if available, None otherwise.
         """
         self._reqresp_handler.block_lookup = lookup
 
@@ -748,7 +748,7 @@ class LiveNetworkEventSource:
             try:
                 match topic.kind:
                     case TopicKind.BLOCK:
-                        block = SignedBlockWithAttestation.decode_bytes(event.data)
+                        block = SignedBlock.decode_bytes(event.data)
                         await self._emit_gossip_block(block, event.peer_id)
                     case TopicKind.ATTESTATION_SUBNET:
                         att = SignedAttestation.decode_bytes(event.data)
@@ -1096,7 +1096,7 @@ class LiveNetworkEventSource:
 
     async def _emit_gossip_block(
         self,
-        block: SignedBlockWithAttestation,
+        block: SignedBlock,
         peer_id: PeerId,
     ) -> None:
         """
