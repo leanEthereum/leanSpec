@@ -1,11 +1,11 @@
 ---
-name: debug
-description: Common debugging workflows and troubleshooting for leanSpec
+name: workflows
+description: Common developer workflows, commands, and troubleshooting for leanSpec
 ---
 
-# /debug - Debugging & Troubleshooting
+# /workflows - Repository Workflows
 
-Common workflows for diagnosing issues in leanSpec.
+Common developer workflows and commands for working in leanSpec.
 
 ## Running Specific Tests
 
@@ -20,7 +20,7 @@ uvx tox -e pytest -- -k "TestDiscoveryTransport::test_start" -v
 uvx tox -e pytest -- -s -k "test_name"
 ```
 
-## Debugging Type Errors
+## Resolving Type Errors
 
 The project uses two type checkers. Run them separately to isolate issues:
 
