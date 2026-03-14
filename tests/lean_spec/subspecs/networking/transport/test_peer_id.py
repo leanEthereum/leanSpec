@@ -245,7 +245,7 @@ class TestDerivePeerId:
     def test_derive_from_secp256k1(self) -> None:
         """Derive PeerId from secp256k1 public key."""
         keypair = IdentityKeypair.generate()
-        peer_id = PeerId.from_secp256k1(keypair.public_key_bytes())
+        peer_id = PeerId.from_secp256k1(keypair.public_key.to_bytes())
 
         # Result should be a valid Base58 string
         peer_id_str = str(peer_id)
@@ -257,7 +257,7 @@ class TestDerivePeerId:
     def test_derive_deterministic(self) -> None:
         """Same key always produces same PeerId."""
         keypair = IdentityKeypair.generate()
-        public_key_bytes = keypair.public_key_bytes()
+        public_key_bytes = keypair.public_key.to_bytes()
 
         peer_id1 = PeerId.from_secp256k1(public_key_bytes)
         peer_id2 = PeerId.from_secp256k1(public_key_bytes)
@@ -269,8 +269,8 @@ class TestDerivePeerId:
         keypair1 = IdentityKeypair.generate()
         keypair2 = IdentityKeypair.generate()
 
-        peer_id1 = PeerId.from_secp256k1(keypair1.public_key_bytes())
-        peer_id2 = PeerId.from_secp256k1(keypair2.public_key_bytes())
+        peer_id1 = PeerId.from_secp256k1(keypair1.public_key.to_bytes())
+        peer_id2 = PeerId.from_secp256k1(keypair2.public_key.to_bytes())
 
         assert str(peer_id1) != str(peer_id2)
 
@@ -282,7 +282,7 @@ class TestPeerIdFormat:
         """Small encoded keys use identity multihash."""
         # secp256k1 key: 33 bytes, encoded is 37 bytes (< 42)
         keypair = IdentityKeypair.generate()
-        peer_id = PeerId.from_secp256k1(keypair.public_key_bytes())
+        peer_id = PeerId.from_secp256k1(keypair.public_key.to_bytes())
 
         # Decode to verify structure
         decoded = Base58.decode(str(peer_id))
@@ -491,7 +491,7 @@ class TestKnownVectors:
     def test_peer_id_length_reasonable(self) -> None:
         """PeerId length is reasonable (not too long)."""
         keypair = IdentityKeypair.generate()
-        peer_id = PeerId.from_secp256k1(keypair.public_key_bytes())
+        peer_id = PeerId.from_secp256k1(keypair.public_key.to_bytes())
 
         # Identity-hash PeerId should be around 52-60 characters
         # (Base58 encoding of ~39 bytes: 2 multihash header + 37 encoded key)
@@ -504,7 +504,7 @@ class TestIntegration:
     def test_derive_from_generated_keypair(self) -> None:
         """Derive PeerId from freshly generated keypair."""
         keypair = IdentityKeypair.generate()
-        peer_id = PeerId.from_secp256k1(keypair.public_key_bytes())
+        peer_id = PeerId.from_secp256k1(keypair.public_key.to_bytes())
 
         assert len(str(peer_id)) > 0
         # Verify structure
@@ -516,7 +516,7 @@ class TestIntegration:
         keypair = IdentityKeypair.generate()
 
         peer_id1 = keypair.to_peer_id()
-        peer_id2 = PeerId.from_secp256k1(keypair.public_key_bytes())
+        peer_id2 = PeerId.from_secp256k1(keypair.public_key.to_bytes())
 
         assert str(peer_id1) == str(peer_id2)
 
@@ -525,7 +525,7 @@ class TestIntegration:
         peer_ids = set()
         for _ in range(10):
             keypair = IdentityKeypair.generate()
-            peer_id = PeerId.from_secp256k1(keypair.public_key_bytes())
+            peer_id = PeerId.from_secp256k1(keypair.public_key.to_bytes())
             peer_ids.add(str(peer_id))
 
         # All 10 should be unique

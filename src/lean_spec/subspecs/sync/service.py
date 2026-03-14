@@ -38,9 +38,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.chain.clock import SlotClock
 from lean_spec.subspecs.containers import (
@@ -51,6 +52,7 @@ from lean_spec.subspecs.containers import (
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice.store import Store
+from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -162,7 +164,7 @@ class SyncService:
     )
     """Block processor function. Defaults to the store's block processing."""
 
-    _publish_agg_fn: Callable[[SignedAggregatedAttestation], Coroutine[Any, Any, None]] = field(
+    _publish_agg_fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]] = field(
         default=_noop_publish_agg
     )
     """Callback for publishing aggregated attestations to the network."""
@@ -202,7 +204,7 @@ class SyncService:
     """
 
     def set_publish_agg_fn(
-        self, fn: Callable[[SignedAggregatedAttestation], Coroutine[Any, Any, None]]
+        self, fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]]
     ) -> None:
         """Wire the aggregated attestation publisher after construction.
 
@@ -509,11 +511,14 @@ class SyncService:
         # The store validates the signature and updates branch weights.
         # Invalid attestations (bad signature, unknown target) are rejected.
         # Validation failures are logged but don't crash the event loop.
+        t0 = time.perf_counter()
         try:
             self.store = self.store.on_gossip_attestation(
                 signed_attestation=attestation,
                 is_aggregator=is_aggregator_role,
             )
+            metrics.lean_attestation_validation_time_seconds.observe(time.perf_counter() - t0)
+            metrics.lean_attestations_valid_total.labels(source="gossip").inc()
             logger.info(
                 "Attestation from peer %s slot=%s validator=%s: validation and signature ok",
                 peer_str,
@@ -521,6 +526,7 @@ class SyncService:
                 validator_id,
             )
         except (AssertionError, KeyError) as e:
+            metrics.lean_attestations_invalid_total.labels(source="gossip").inc()
             logger.warning(
                 "Attestation from peer %s slot=%s validator=%s: validation or signature failed: %s",
                 peer_str,

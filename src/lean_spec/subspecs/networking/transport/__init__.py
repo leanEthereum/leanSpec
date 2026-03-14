@@ -25,9 +25,9 @@ References:
 from .identity import (
     NOISE_IDENTITY_PREFIX,
     IdentityKeypair,
+    Secp256k1PublicKey,
     create_identity_proof,
     verify_identity_proof,
-    verify_signature,
 )
 from .peer_id import Base58, KeyType, Multihash, MultihashCode, PeerId, PublicKeyProto
 from .quic import (
@@ -47,7 +47,7 @@ __all__ = [
     "generate_libp2p_certificate",
     # Identity (secp256k1 keypair)
     "IdentityKeypair",
-    "verify_signature",
+    "Secp256k1PublicKey",
     "NOISE_IDENTITY_PREFIX",
     "create_identity_proof",
     "verify_identity_proof",

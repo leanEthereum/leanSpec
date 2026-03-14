@@ -324,7 +324,7 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
         """Initialize the libp2p QUIC protocol handler."""
         super().__init__(*args, **kwargs)
         self.connection: QuicConnection | None = None
-        self.peer_identity: bytes | None = None
+        self.peer_identity: PeerId | None = None
         self.handshake_complete = asyncio.Event()
         self._buffered_events: list[QuicEvent] = []
 
@@ -532,7 +532,8 @@ class QuicConnectionManager:
             self._context_managers.append(cm)
 
             # Cast to our protocol type to access custom attributes.
-            protocol: LibP2PQuicProtocol = base_protocol  # type: ignore[assignment]
+            assert isinstance(base_protocol, LibP2PQuicProtocol)
+            protocol: LibP2PQuicProtocol = base_protocol
 
             # Wait for handshake to complete.
             await protocol.handshake_complete.wait()

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from lean_spec.types import Bytes32, Bytes33
+from lean_spec.types import Bytes32
 
-from .keypair import verify_signature
+from .keypair import Secp256k1PublicKey
 
 if TYPE_CHECKING:
     from .keypair import IdentityKeypair
@@ -56,7 +56,7 @@ def create_identity_proof(
 
 
 def verify_identity_proof(
-    identity_public_key: Bytes33,
+    identity_public_key: Secp256k1PublicKey,
     public_key: Bytes32,
     signature: bytes,
 ) -> bool:
@@ -66,7 +66,7 @@ def verify_identity_proof(
     Called during QUIC TLS handshake to verify the remote peer's identity claim.
 
     Args:
-        identity_public_key: 33-byte compressed secp256k1 public key.
+        identity_public_key: The secp256k1 public key claiming identity.
         public_key: 32-byte TLS public key.
         signature: DER-encoded ECDSA signature.
 
@@ -74,4 +74,4 @@ def verify_identity_proof(
         True if the signature is valid, False otherwise.
     """
     message = NOISE_IDENTITY_PREFIX + public_key
-    return verify_signature(identity_public_key, message, signature)
+    return identity_public_key.verify(message, signature)

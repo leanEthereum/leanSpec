@@ -22,7 +22,64 @@ from ..peer_id import KeyType, PeerId, PublicKeyProto
 
 __all__ = [
     "IdentityKeypair",
+    "Secp256k1PublicKey",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class Secp256k1PublicKey:
+    """Compressed secp256k1 public key (33 bytes)."""
+
+    _key: ec.EllipticCurvePublicKey
+    """The cryptography library's public key object"""
+
+    @classmethod
+    def from_bytes(cls, data: Bytes33) -> Secp256k1PublicKey:
+        """
+        Load from 33-byte compressed SEC1 format.
+
+        Args:
+            data: 33-byte compressed secp256k1 public key.
+
+        Returns:
+            Parsed public key.
+        """
+        key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), data)
+        return cls(_key=key)
+
+    def to_bytes(self) -> Bytes33:
+        """
+        Return the 33-byte compressed SEC1 encoding.
+
+        The compressed format starts with 0x02 (even y) or 0x03 (odd y),
+        followed by the 32-byte x coordinate.
+
+        Returns:
+            33-byte compressed public key.
+        """
+        return Bytes33(
+            self._key.public_bytes(
+                encoding=serialization.Encoding.X962,
+                format=serialization.PublicFormat.CompressedPoint,
+            )
+        )
+
+    def verify(self, message: bytes, signature: bytes) -> bool:
+        """
+        Verify an ECDSA-SHA256 signature.
+
+        Args:
+            message: Original message that was signed.
+            signature: DER-encoded ECDSA signature.
+
+        Returns:
+            True if signature is valid, False otherwise.
+        """
+        try:
+            self._key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+            return True
+        except InvalidSignature:
+            return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,12 +88,12 @@ class IdentityKeypair:
     secp256k1 keypair for libp2p identity.
 
     Used to derive PeerId and sign identity proofs during QUIC TLS handshake.
-
-    Attributes:
-        private_key: The secp256k1 private key.
     """
 
     private_key: ec.EllipticCurvePrivateKey
+    """The secp256k1 private key"""
+    public_key: Secp256k1PublicKey
+    """The corresponding secp256k1 public key"""
 
     @classmethod
     def generate(cls) -> IdentityKeypair:
@@ -47,7 +104,8 @@ class IdentityKeypair:
             A fresh identity keypair.
         """
         private_key = ec.generate_private_key(ec.SECP256K1())
-        return cls(private_key=private_key)
+        public_key = Secp256k1PublicKey(_key=private_key.public_key())
+        return cls(private_key=private_key, public_key=public_key)
 
     @classmethod
     def from_bytes(cls, data: Bytes32) -> IdentityKeypair:
@@ -64,7 +122,8 @@ class IdentityKeypair:
             int.from_bytes(data, "big"),
             ec.SECP256K1(),
         )
-        return cls(private_key=private_key)
+        public_key = Secp256k1PublicKey(_key=private_key.public_key())
+        return cls(private_key=private_key, public_key=public_key)
 
     def private_key_bytes(self) -> Bytes32:
         """
@@ -75,24 +134,6 @@ class IdentityKeypair:
         """
         private_numbers = self.private_key.private_numbers()
         return Bytes32(private_numbers.private_value.to_bytes(32, "big"))
-
-    def public_key_bytes(self) -> Bytes33:
-        """
-        Return the compressed secp256k1 public key (33 bytes).
-
-        The compressed format starts with 0x02 (even y) or 0x03 (odd y),
-        followed by the 32-byte x coordinate.
-
-        Returns:
-            33-byte compressed public key.
-        """
-        public_key = self.private_key.public_key()
-        return Bytes33(
-            public_key.public_bytes(
-                encoding=serialization.Encoding.X962,
-                format=serialization.PublicFormat.CompressedPoint,
-            )
-        )
 
     def sign(self, message: bytes) -> bytes:
         """
@@ -120,34 +161,6 @@ class IdentityKeypair:
         """
         proto = PublicKeyProto(
             key_type=KeyType.SECP256K1,
-            key_data=self.public_key_bytes(),
+            key_data=self.public_key.to_bytes(),
         )
         return PeerId.from_public_key(proto)
-
-
-def verify_signature(
-    public_key_bytes: Bytes33,
-    message: bytes,
-    signature: bytes,
-) -> bool:
-    """
-    Verify an ECDSA-SHA256 signature.
-
-    Args:
-        public_key_bytes: 33-byte compressed secp256k1 public key.
-        message: Original message that was signed.
-        signature: DER-encoded ECDSA signature.
-
-    Returns:
-        True if signature is valid, False otherwise.
-    """
-    public_key = ec.EllipticCurvePublicKey.from_encoded_point(
-        ec.SECP256K1(),
-        public_key_bytes,
-    )
-
-    try:
-        public_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
-        return True
-    except InvalidSignature:
-        return False

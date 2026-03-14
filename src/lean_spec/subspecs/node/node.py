@@ -30,11 +30,13 @@ from lean_spec.subspecs.chain.config import (
 from lean_spec.subspecs.chain.service import ChainService
 from lean_spec.subspecs.containers import Block, BlockBody, SignedBlockWithAttestation, State
 from lean_spec.subspecs.containers.attestation import SignedAttestation
+from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
+from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.networking import NetworkService
 from lean_spec.subspecs.networking.client.event_source import EventSource
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -394,7 +396,7 @@ class Node:
             safe_target=head_root,
             latest_justified=justified,
             latest_finalized=finalized,
-            blocks={head_root: head_block},
+            blocks=BlockLookup({head_root: head_block}),
             states={head_root: head_state},
             validator_id=validator_id,
         )
@@ -459,6 +461,8 @@ class Node:
 
         Runs every _JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC seconds to aid
         monitoring and debugging of consensus progress.
+        Also updates Prometheus gauges for current_slot, connected_peers,
+        and validators_count (on scrape).
         """
         while not self._shutdown.is_set():
             await asyncio.sleep(_JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC)
@@ -468,10 +472,20 @@ class Node:
             peers_connected = sum(
                 1 for p in self.sync_service.peer_manager.get_all_peers() if p.is_connected()
             )
+            metrics.lean_current_slot.set(int(self.clock.current_slot()))
+            metrics.lean_connected_peers.set(peers_connected)
+            metrics.lean_head_slot.set(int(store.blocks[store.head].slot))
+            metrics.lean_safe_target_slot.set(int(store.blocks[store.safe_target].slot))
+            metrics.lean_latest_justified_slot.set(int(store.latest_justified.slot))
+            metrics.lean_latest_finalized_slot.set(int(store.latest_finalized.slot))
+            count = (
+                len(self.validator_service.registry) if self.validator_service is not None else 0
+            )
+            metrics.lean_validators_count.set(count)
             j = store.latest_justified
             f = store.latest_finalized
-            j_root = j.root.hex() if hasattr(j.root, "hex") else str(j.root)
-            f_root = f.root.hex() if hasattr(f.root, "hex") else str(f.root)
+            j_root = j.root.hex()
+            f_root = f.root.hex()
             logger.info("=" * 64)
             logger.info(
                 "Peers=%s | Justified slot=%s root=%s | Finalized slot=%s root=%s",

@@ -12,7 +12,7 @@ This separation follows the libp2p-noise specification and matches
 the approach used by ream and zeam.
 """
 
-from .keypair import IdentityKeypair, verify_signature
+from .keypair import IdentityKeypair, Secp256k1PublicKey
 from .signature import (
     NOISE_IDENTITY_PREFIX,
     create_identity_proof,
@@ -21,7 +21,7 @@ from .signature import (
 
 __all__ = [
     "IdentityKeypair",
-    "verify_signature",
+    "Secp256k1PublicKey",
     "NOISE_IDENTITY_PREFIX",
     "create_identity_proof",
     "verify_identity_proof",

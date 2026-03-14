@@ -19,6 +19,7 @@ Options:
     --validator-keys       Path to validator keys directory
     --node-id              Node identifier for validator assignment (default: lean_spec_0)
     --is-aggregator        Enable aggregator mode for attestation aggregation (default: false)
+    --api-port             Port for API server and Prometheus /metrics (default: 5052, 0 to disable)
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import time
 from pathlib import Path
 from typing import Final
 
+from lean_spec.subspecs.api import ApiServerConfig
 from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.containers import Block, BlockBody, Checkpoint, State
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
@@ -39,6 +41,7 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import SubnetId
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.genesis import GenesisConfig
+from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.networking.client import LiveNetworkEventSource
 from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.gossipsub import GossipTopic
@@ -161,6 +164,7 @@ def _init_from_genesis(
     event_source: LiveNetworkEventSource,
     validator_registry: ValidatorRegistry | None = None,
     is_aggregator: bool = False,
+    api_port: int | None = None,
 ) -> Node:
     """
     Initialize a node from genesis configuration.
@@ -170,6 +174,7 @@ def _init_from_genesis(
         event_source: Network transport for the node.
         validator_registry: Optional registry with validator secret keys.
         is_aggregator: Enable aggregator mode for attestation aggregation.
+        api_port: Port for API server and /metrics. None disables the API.
 
     Returns:
         A fully initialized Node starting from genesis.
@@ -192,6 +197,7 @@ def _init_from_genesis(
         validator_registry=validator_registry,
         fork_digest=GOSSIP_FORK_DIGEST,
         is_aggregator=is_aggregator,
+        api_config=ApiServerConfig(port=api_port) if api_port is not None else None,
     )
 
     # Create and return the node.
@@ -204,6 +210,7 @@ async def _init_from_checkpoint(
     event_source: LiveNetworkEventSource,
     validator_registry: ValidatorRegistry | None = None,
     is_aggregator: bool = False,
+    api_port: int | None = None,
 ) -> Node | None:
     """
     Initialize a node from a checkpoint state fetched from a remote node.
@@ -231,6 +238,7 @@ async def _init_from_checkpoint(
         event_source: Network transport for the node.
         validator_registry: Optional registry with validator secret keys.
         is_aggregator: Enable aggregator mode for attestation aggregation.
+        api_port: Port for API server and /metrics. None disables the API.
 
     Returns:
         A fully initialized Node if successful, None if checkpoint sync failed.
@@ -298,6 +306,7 @@ async def _init_from_checkpoint(
             validator_registry=validator_registry,
             fork_digest=GOSSIP_FORK_DIGEST,
             is_aggregator=is_aggregator,
+            api_config=ApiServerConfig(port=api_port) if api_port is not None else None,
         )
 
         # Create node and inject checkpoint store.
@@ -390,6 +399,7 @@ async def run_node(
     node_id: str = "lean_spec_0",
     genesis_time_now: bool = False,
     is_aggregator: bool = False,
+    api_port: int | None = 5052,
 ) -> None:
     """
     Run the lean consensus node.
@@ -403,7 +413,9 @@ async def run_node(
         node_id: Node identifier for validator assignment.
         genesis_time_now: Override genesis time to current time for testing.
         is_aggregator: Enable aggregator mode for attestation aggregation.
+        api_port: Port for API server (health, fork_choice, /metrics). None or 0 disables.
     """
+    metrics.init(name="leanspec-node", version="0.0.1")
     logger.info("Loading genesis from %s", genesis_path)
     genesis = GenesisConfig.from_yaml_file(genesis_path)
 
@@ -506,6 +518,8 @@ async def run_node(
     #   - Starts from block 0 with initial validator set
     #   - Must process every block to reach current head
     #   - Only practical for new or small networks
+    api_port_int: int | None = api_port if api_port and api_port > 0 else None
+
     node: Node | None
     if checkpoint_sync_url is not None:
         node = await _init_from_checkpoint(
@@ -514,6 +528,7 @@ async def run_node(
             event_source=event_source,
             validator_registry=validator_registry,
             is_aggregator=is_aggregator,
+            api_port=api_port_int,
         )
         if node is None:
             # Checkpoint sync failed. Exit rather than falling back.
@@ -527,6 +542,7 @@ async def run_node(
             event_source=event_source,
             validator_registry=validator_registry,
             is_aggregator=is_aggregator,
+            api_port=api_port_int,
         )
 
     logger.info("Node initialized, peer_id=%s", event_source.connection_manager.peer_id)
@@ -662,6 +678,13 @@ def main() -> None:
         action="store_true",
         help="Enable aggregator mode (node performs attestation aggregation)",
     )
+    parser.add_argument(
+        "--api-port",
+        type=int,
+        default=5052,
+        metavar="PORT",
+        help="Port for API server and /metrics (default: 5052). Set 0 to disable.",
+    )
 
     args = parser.parse_args()
 
@@ -680,6 +703,7 @@ def main() -> None:
                 node_id=args.node_id,
                 genesis_time_now=args.genesis_time_now,
                 is_aggregator=args.is_aggregator,
+                api_port=args.api_port,
             )
         )
     except KeyboardInterrupt:

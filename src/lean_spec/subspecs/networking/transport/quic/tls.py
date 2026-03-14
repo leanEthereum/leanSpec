@@ -162,7 +162,7 @@ def _create_extension_payload(
         }
     """
     # Get compressed public key (33 bytes for secp256k1).
-    public_key_compressed = identity_key.public_key_bytes()
+    public_key_compressed = identity_key.public_key.to_bytes()
 
     # Create signature over (prefix + tls_public_bytes).
     #

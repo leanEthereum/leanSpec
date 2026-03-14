@@ -21,7 +21,7 @@ class TestIdentityProof:
 
         proof = create_identity_proof(identity_key, public_key)
         assert verify_identity_proof(
-            identity_key.public_key_bytes(),
+            identity_key.public_key,
             public_key,
             proof,
         )
@@ -34,7 +34,7 @@ class TestIdentityProof:
 
         proof = create_identity_proof(identity_key, public_key)
         assert not verify_identity_proof(
-            identity_key.public_key_bytes(),
+            identity_key.public_key,
             wrong_key,
             proof,
         )
@@ -47,7 +47,7 @@ class TestIdentityProof:
 
         proof = create_identity_proof(identity_key1, public_key)
         assert not verify_identity_proof(
-            identity_key2.public_key_bytes(),
+            identity_key2.public_key,
             public_key,
             proof,
         )
@@ -60,8 +60,8 @@ class TestIdentityProof:
         proof1 = create_identity_proof(identity_key, public_key)
         proof2 = create_identity_proof(identity_key, public_key)
 
-        assert verify_identity_proof(identity_key.public_key_bytes(), public_key, proof1)
-        assert verify_identity_proof(identity_key.public_key_bytes(), public_key, proof2)
+        assert verify_identity_proof(identity_key.public_key, public_key, proof1)
+        assert verify_identity_proof(identity_key.public_key, public_key, proof2)
 
     def test_noise_identity_prefix(self) -> None:
         """NOISE_IDENTITY_PREFIX matches libp2p-noise spec."""
@@ -76,12 +76,12 @@ class TestIdentityProof:
         proof = create_identity_proof(identity_key_real, public_key)
 
         assert verify_identity_proof(
-            identity_key_real.public_key_bytes(),
+            identity_key_real.public_key,
             public_key,
             proof,
         )
         assert not verify_identity_proof(
-            identity_key_attacker.public_key_bytes(),
+            identity_key_attacker.public_key,
             public_key,
             proof,
         )
