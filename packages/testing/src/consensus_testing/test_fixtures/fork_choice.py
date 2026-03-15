@@ -433,7 +433,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         # Aggregate gossip signatures and merge into known payloads.
         # This makes recently gossiped attestations available for block construction.
-        aggregation_store, _ = working_store.aggregate_committee_signatures()
+        aggregation_store, _ = working_store.aggregate()
         merged_store = aggregation_store.accept_new_attestations()
 
         # Two sources of attestations:

@@ -163,7 +163,7 @@ class TestSafeTargetAdvancement:
             store = store.on_gossip_attestation(signed_attestation, is_aggregator=True)
 
         # Aggregate the signatures
-        store, _ = store.aggregate_committee_signatures()
+        store, _ = store.aggregate()
 
         # Update safe target (uses latest_new_aggregated_payloads)
         store = store.update_safe_target()
@@ -207,7 +207,7 @@ class TestSafeTargetAdvancement:
             store = store.on_gossip_attestation(signed_attestation, is_aggregator=True)
 
         # Aggregate the signatures
-        store, _ = store.aggregate_committee_signatures()
+        store, _ = store.aggregate()
 
         # Update safe target
         store = store.update_safe_target()
@@ -247,7 +247,7 @@ class TestSafeTargetAdvancement:
             store = store.on_gossip_attestation(signed_attestation, is_aggregator=True)
 
         # Aggregate into new payloads
-        store, _ = store.aggregate_committee_signatures()
+        store, _ = store.aggregate()
 
         # Update safe target should use new aggregated payloads
         store = store.update_safe_target()
@@ -301,7 +301,7 @@ class TestJustificationLogic:
             store = store.on_gossip_attestation(signed_attestation, is_aggregator=True)
 
         # Aggregate signatures before producing the next block
-        store, _ = store.aggregate_committee_signatures()
+        store, _ = store.aggregate()
 
         # Produce block 2 which includes these attestations
         store, block_2, signatures = store.produce_block_with_signatures(slot_2, proposer_2)
@@ -382,7 +382,7 @@ class TestJustificationLogic:
             )
             store = store.on_gossip_attestation(signed_attestation, is_aggregator=True)
 
-        store, _ = store.aggregate_committee_signatures()
+        store, _ = store.aggregate()
         store = store.update_safe_target()
 
         # Neither target should be justified with only half validators
@@ -527,7 +527,7 @@ class TestIntegrationScenarios:
             store = store.on_gossip_attestation(signed_attestation, is_aggregator=True)
 
         # Phase 3: Aggregate signatures into payloads
-        store, _ = store.aggregate_committee_signatures()
+        store, _ = store.aggregate()
 
         # Phase 4: Update safe target
         store = store.update_safe_target()

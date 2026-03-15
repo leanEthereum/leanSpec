@@ -682,12 +682,14 @@ class TestValidatorServiceIntegration:
             public_keys.append(key_manager.get_attestation_public_key(vid))
             attestation_map[vid] = attestation_data
 
+        xmss_participants = AggregationBits.from_validator_indices(
+            ValidatorIndices(data=participants)
+        )
+        raw_xmss = list(zip(public_keys, signatures, strict=True))
         proof = AggregatedSignatureProof.aggregate(
-            participants=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=participants)
-            ),
-            public_keys=public_keys,
-            signatures=signatures,
+            xmss_participants=xmss_participants,
+            children=[],
+            raw_xmss=raw_xmss,
             message=data_root,
             slot=attestation_data.slot,
         )

@@ -237,12 +237,14 @@ class VerifySignaturesTest(BaseConsensusFixture):
                     for vid in invalid_spec.signer_ids
                 ]
                 # Create valid aggregated proof from actual signers
+                xmss_participants = AggregationBits.from_validator_indices(
+                    ValidatorIndices(data=invalid_spec.signer_ids)
+                )
+                raw_xmss = list(zip(signer_public_keys, signer_signatures, strict=True))
                 valid_proof = AggregatedSignatureProof.aggregate(
-                    participants=AggregationBits.from_validator_indices(
-                        ValidatorIndices(data=invalid_spec.signer_ids)
-                    ),
-                    public_keys=signer_public_keys,
-                    signatures=signer_signatures,
+                    xmss_participants=xmss_participants,
+                    children=[],
+                    raw_xmss=raw_xmss,
                     message=data_root,
                     slot=attestation_data.slot,
                 )

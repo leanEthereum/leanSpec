@@ -323,14 +323,20 @@ class TestOnGossipAggregatedAttestation:
         data_root = attestation_data.data_root_bytes()
 
         # Create valid aggregated proof
+        xmss_participants = AggregationBits.from_validator_indices(
+            ValidatorIndices(data=participants)
+        )
+        raw_xmss = list(
+            zip(
+                [key_manager.get_attestation_public_key(vid) for vid in participants],
+                [key_manager.sign_attestation_data(vid, attestation_data) for vid in participants],
+                strict=True,
+            )
+        )
         proof = AggregatedSignatureProof.aggregate(
-            participants=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=participants)
-            ),
-            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants],
-            signatures=[
-                key_manager.sign_attestation_data(vid, attestation_data) for vid in participants
-            ],
+            xmss_participants=xmss_participants,
+            children=[],
+            raw_xmss=raw_xmss,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -364,14 +370,20 @@ class TestOnGossipAggregatedAttestation:
 
         data_root = attestation_data.data_root_bytes()
 
+        xmss_participants = AggregationBits.from_validator_indices(
+            ValidatorIndices(data=participants)
+        )
+        raw_xmss = list(
+            zip(
+                [key_manager.get_attestation_public_key(vid) for vid in participants],
+                [key_manager.sign_attestation_data(vid, attestation_data) for vid in participants],
+                strict=True,
+            )
+        )
         proof = AggregatedSignatureProof.aggregate(
-            participants=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=participants)
-            ),
-            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants],
-            signatures=[
-                key_manager.sign_attestation_data(vid, attestation_data) for vid in participants
-            ],
+            xmss_participants=xmss_participants,
+            children=[],
+            raw_xmss=raw_xmss,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -402,14 +414,23 @@ class TestOnGossipAggregatedAttestation:
         data_root = attestation_data.data_root_bytes()
 
         # Create proof with WRONG signers (validator 3 signs instead of 2)
+        xmss_participants = AggregationBits.from_validator_indices(
+            ValidatorIndices(data=claimed_participants)
+        )
+        raw_xmss = list(
+            zip(
+                [key_manager.get_attestation_public_key(vid) for vid in actual_signers],
+                [
+                    key_manager.sign_attestation_data(vid, attestation_data)
+                    for vid in actual_signers
+                ],
+                strict=True,
+            )
+        )
         proof = AggregatedSignatureProof.aggregate(
-            participants=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=claimed_participants)
-            ),
-            public_keys=[key_manager.get_attestation_public_key(vid) for vid in actual_signers],
-            signatures=[
-                key_manager.sign_attestation_data(vid, attestation_data) for vid in actual_signers
-            ],
+            xmss_participants=xmss_participants,
+            children=[],
+            raw_xmss=raw_xmss,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -437,28 +458,42 @@ class TestOnGossipAggregatedAttestation:
 
         # First proof: validators 1 and 2
         participants_1 = [ValidatorIndex(1), ValidatorIndex(2)]
+        xmss_1 = AggregationBits.from_validator_indices(ValidatorIndices(data=participants_1))
+        raw_xmss_1 = list(
+            zip(
+                [key_manager.get_attestation_public_key(vid) for vid in participants_1],
+                [
+                    key_manager.sign_attestation_data(vid, attestation_data)
+                    for vid in participants_1
+                ],
+                strict=True,
+            )
+        )
         proof_1 = AggregatedSignatureProof.aggregate(
-            participants=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=participants_1)
-            ),
-            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants_1],
-            signatures=[
-                key_manager.sign_attestation_data(vid, attestation_data) for vid in participants_1
-            ],
+            xmss_participants=xmss_1,
+            children=[],
+            raw_xmss=raw_xmss_1,
             message=data_root,
             slot=attestation_data.slot,
         )
 
         # Second proof: validators 1 and 3 (validator 1 overlaps)
         participants_2 = [ValidatorIndex(1), ValidatorIndex(3)]
+        xmss_2 = AggregationBits.from_validator_indices(ValidatorIndices(data=participants_2))
+        raw_xmss_2 = list(
+            zip(
+                [key_manager.get_attestation_public_key(vid) for vid in participants_2],
+                [
+                    key_manager.sign_attestation_data(vid, attestation_data)
+                    for vid in participants_2
+                ],
+                strict=True,
+            )
+        )
         proof_2 = AggregatedSignatureProof.aggregate(
-            participants=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=participants_2)
-            ),
-            public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants_2],
-            signatures=[
-                key_manager.sign_attestation_data(vid, attestation_data) for vid in participants_2
-            ],
+            xmss_participants=xmss_2,
+            children=[],
+            raw_xmss=raw_xmss_2,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -506,7 +541,7 @@ class TestAggregateCommitteeSignatures:
         )
 
         # Perform aggregation
-        updated_store, _ = store.aggregate_committee_signatures()
+        updated_store, _ = store.aggregate()
 
         # Verify proofs were created and stored keyed by attestation data
         assert attestation_data in updated_store.latest_new_aggregated_payloads, (
@@ -531,7 +566,7 @@ class TestAggregateCommitteeSignatures:
             attesting_validators=attesting_validators,
         )
 
-        updated_store, _ = store.aggregate_committee_signatures()
+        updated_store, _ = store.aggregate()
 
         proofs = updated_store.latest_new_aggregated_payloads[attestation_data]
         proof = next(iter(proofs))
@@ -562,7 +597,7 @@ class TestAggregateCommitteeSignatures:
             attesting_validators=[],  # No attesters
         )
 
-        updated_store, _ = store.aggregate_committee_signatures()
+        updated_store, _ = store.aggregate()
 
         # Verify no proofs were created
         assert len(updated_store.latest_new_aggregated_payloads) == 0
@@ -603,7 +638,7 @@ class TestAggregateCommitteeSignatures:
             }
         )
 
-        updated_store, _ = store.aggregate_committee_signatures()
+        updated_store, _ = store.aggregate()
 
         # Verify both attestation data have separate proofs
         assert att_data_1 in updated_store.latest_new_aggregated_payloads

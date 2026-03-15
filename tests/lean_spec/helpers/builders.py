@@ -425,12 +425,18 @@ def make_aggregated_proof(
 ) -> AggregatedSignatureProof:
     """Create a valid aggregated signature proof for the given participants."""
     data_root = attestation_data.data_root_bytes()
+    xmss_participants = AggregationBits.from_validator_indices(ValidatorIndices(data=participants))
+    raw_xmss = list(
+        zip(
+            [key_manager.get_attestation_public_key(vid) for vid in participants],
+            [key_manager.sign_attestation_data(vid, attestation_data) for vid in participants],
+            strict=True,
+        )
+    )
     return AggregatedSignatureProof.aggregate(
-        participants=AggregationBits.from_validator_indices(ValidatorIndices(data=participants)),
-        public_keys=[key_manager.get_attestation_public_key(vid) for vid in participants],
-        signatures=[
-            key_manager.sign_attestation_data(vid, attestation_data) for vid in participants
-        ],
+        xmss_participants=xmss_participants,
+        children=[],
+        raw_xmss=raw_xmss,
         message=data_root,
         slot=attestation_data.slot,
     )

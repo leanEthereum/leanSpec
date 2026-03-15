@@ -416,10 +416,11 @@ class XmssKeyManager:
             # If the caller supplied raw signatures and any are invalid,
             # aggregation should fail with exception.
             participants = AggregationBits.from_validator_indices(validator_ids)
+            raw_xmss = list(zip(public_keys, signatures, strict=True))
             proof = AggregatedSignatureProof.aggregate(
-                participants=participants,
-                public_keys=public_keys,
-                signatures=signatures,
+                xmss_participants=participants,
+                children=[],
+                raw_xmss=raw_xmss,
                 message=message,
                 slot=slot,
             )

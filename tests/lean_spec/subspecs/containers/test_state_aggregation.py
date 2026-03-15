@@ -29,7 +29,6 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     att_data = make_attestation_data_simple(
         Slot(2), make_bytes32(3), make_bytes32(4), source=source
     )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
     attestation_signatures = {
         att_data: {
             AttestationSignatureEntry(
@@ -40,10 +39,7 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
         }
     }
 
-    results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    results = state.aggregate(attestation_signatures=attestation_signatures)
     aggregated_atts, aggregated_proofs = (
         [att for att, _ in results],
         [proof for _, proof in results],
@@ -93,10 +89,7 @@ def test_aggregate_signatures_splits_when_needed(
         att_data: {block_proof},
     }
 
-    gossip_results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
     payload_atts, payload_proofs = state.select_aggregated_proofs(
         attestations,
         aggregated_payloads=aggregated_payloads,
@@ -217,10 +210,7 @@ def test_aggregate_attestation_signatures_with_empty_attestations(
     """Empty attestations list should return empty results."""
     state = make_keyed_genesis_state(2, container_key_manager)
 
-    results = state.aggregate_attestation_signatures(
-        [],
-        attestation_signatures={},
-    )
+    results = state.aggregate(attestation_signatures={})
 
     assert results == []
 
@@ -237,13 +227,6 @@ def test_aggregated_signatures_with_multiple_data_groups(
     att_data2 = make_attestation_data_simple(
         Slot(10), make_bytes32(25), make_bytes32(26), source=source
     )
-
-    attestations = [
-        Attestation(validator_id=ValidatorIndex(0), data=att_data1),
-        Attestation(validator_id=ValidatorIndex(1), data=att_data1),
-        Attestation(validator_id=ValidatorIndex(2), data=att_data2),
-        Attestation(validator_id=ValidatorIndex(3), data=att_data2),
-    ]
 
     attestation_signatures = {
         att_data1: {
@@ -268,10 +251,7 @@ def test_aggregated_signatures_with_multiple_data_groups(
         },
     }
 
-    results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    results = state.aggregate(attestation_signatures=attestation_signatures)
     aggregated_atts, aggregated_proofs = (
         [att for att, _ in results],
         [proof for _, proof in results],
@@ -318,10 +298,7 @@ def test_aggregated_signatures_falls_back_to_block_payload(
 
     aggregated_payloads = {att_data: {block_proof}}
 
-    gossip_results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
     payload_atts, payload_proofs = state.select_aggregated_proofs(
         attestations,
         aggregated_payloads=aggregated_payloads,
@@ -525,10 +502,7 @@ def test_greedy_stops_when_no_useful_proofs_remain(
 
     aggregated_payloads = {att_data: {proof_23}}
 
-    gossip_results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
     payload_atts, payload_proofs = state.select_aggregated_proofs(
         attestations,
         aggregated_payloads=aggregated_payloads,
@@ -598,10 +572,7 @@ def test_greedy_handles_overlapping_proof_chains(
 
     aggregated_payloads = {att_data: {proof_a, proof_b, proof_c}}
 
-    gossip_results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
     payload_atts, payload_proofs = state.select_aggregated_proofs(
         attestations,
         aggregated_payloads=aggregated_payloads,
@@ -715,10 +686,7 @@ def test_validator_in_both_gossip_and_fallback_proof(
 
     aggregated_payloads = {att_data: {fallback_proof}}
 
-    gossip_results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
     payload_atts, payload_proofs = state.select_aggregated_proofs(
         attestations,
         aggregated_payloads=aggregated_payloads,
@@ -759,16 +727,8 @@ def test_gossip_none_and_aggregated_payloads_none(
     Returns empty results (no attestations can be aggregated without signatures).
     """
     state = make_keyed_genesis_state(2, container_key_manager)
-    source = Checkpoint(root=make_bytes32(110), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(17), make_bytes32(111), make_bytes32(112), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
 
-    results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=None,
-    )
+    results = state.aggregate(attestation_signatures=None)
 
     assert results == []
 
@@ -863,10 +823,7 @@ def test_proof_with_extra_validators_beyond_needed(
 
     aggregated_payloads = {att_data: {proof}}
 
-    gossip_results = state.aggregate_attestation_signatures(
-        attestations,
-        attestation_signatures=attestation_signatures,
-    )
+    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
     payload_atts, payload_proofs = state.select_aggregated_proofs(
         attestations,
         aggregated_payloads=aggregated_payloads,

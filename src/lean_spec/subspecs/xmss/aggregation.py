@@ -15,9 +15,13 @@ from lean_multisig_py import (
 from lean_spec.config import LEAN_ENV, LeanEnvMode
 from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.types import ByteListMiB, Bytes32, Container
 
 from .containers import PublicKey, Signature
+
+INVERSE_PROOF_SIZE = 2
+"""Protocol-level inverse proof size parameter for aggregation (range 1-4)."""
 
 
 class AggregationError(Exception):
@@ -44,39 +48,74 @@ class AggregatedSignatureProof(Container):
     proof_data: ByteListMiB
     """The raw aggregated proof bytes from leanVM."""
 
+    # TODO: Add bytecode-point claim data from recursive aggregation.
+    # bytecode_point: ByteListMiB | None = None
+    # """
+    # Serialized bytecode-point claim data from recursive aggregation.
+
+    # If the bytecode point is not provided, the proof is not recursive.
+    # """
+
     @classmethod
     def aggregate(
         cls,
-        participants: AggregationBits,
-        public_keys: Sequence[PublicKey],
-        signatures: Sequence[Signature],
+        xmss_participants: AggregationBits | None,
+        children: Sequence[Self],
+        raw_xmss: Sequence[tuple[PublicKey, Signature]],
         message: Bytes32,
         slot: Slot,
         mode: LeanEnvMode | None = None,
     ) -> Self:
         """
-        Aggregate individual XMSS signatures into a single proof.
+        Aggregate raw_xmss signatures and children proofs into a single proof.
+
+        The API supports recursive aggregation but the bindings currently do not.
 
         Args:
-            participants: Bitfield of validators whose signatures are included.
-            public_keys: Public keys of the signers (must match signatures order).
-            signatures: Individual XMSS signatures to aggregate.
+            xmss_participants: Bitfield of validators whose raw_signatures are provided.
+            children: Sequence of child proofs to aggregate.
+            raw_xmss: Sequence of (public key, signature) tuples to aggregate.
             message: The 32-byte message that was signed.
             slot: The slot in which the signatures were created.
             mode: The mode to use for the aggregation (test or prod).
 
         Returns:
-            An aggregated signature proof covering all participants.
+            An aggregated signature proof covering raw signers and all child participants.
 
         Raises:
             AggregationError: If aggregation fails.
         """
+        if not raw_xmss and not children:
+            raise AggregationError("At least one raw signature or child proof is required")
+
+        if raw_xmss and xmss_participants is None:
+            raise AggregationError("xmss_participants is required when raw_xmss is provided")
+
+        if not raw_xmss and len(children) < 2:
+            raise AggregationError(
+                "At least two child proofs are required when no raw signatures are provided"
+            )
+
+        aggregated_validator_ids: set[ValidatorIndex] = set()
+        if xmss_participants is not None:
+            aggregated_validator_ids.update(xmss_participants.to_validator_indices())
+
+        if len(aggregated_validator_ids) != len(raw_xmss):
+            raise AggregationError("Raw signature count does not match XMSS participant count")
+
+        # Include child participants in the aggregated participants
+        for child in children:
+            aggregated_validator_ids.update(child.participants.to_validator_indices())
+        participants = AggregationBits.from_validator_indices(
+            ValidatorIndices(data=sorted(aggregated_validator_ids))
+        )
+
         mode = mode or LEAN_ENV
         setup_prover(mode=mode)
         try:
             proof_bytes = aggregate_signatures(
-                [pk.encode_bytes() for pk in public_keys],
-                [sig.encode_bytes() for sig in signatures],
+                [pk.encode_bytes() for pk, _ in raw_xmss],
+                [sig.encode_bytes() for _, sig in raw_xmss],
                 message,
                 slot,
                 mode=mode,
