@@ -516,7 +516,7 @@ class TestValidatorServiceIntegration:
         # Verify proposer signature is cryptographically valid
         proposer_index = signed_block.message.proposer_index
         block_root = hash_tree_root(signed_block.message)
-        proposer_public_key = key_manager.get_proposal_public_key(proposer_index)
+        proposer_public_key = key_manager[proposer_index].proposal_public
 
         is_valid = TARGET_SIGNATURE_SCHEME.verify(
             pk=proposer_public_key,
@@ -558,7 +558,7 @@ class TestValidatorServiceIntegration:
         # Verify each attestation signature
         for signed_att in attestations_produced:
             validator_id = signed_att.validator_id
-            public_key = key_manager.get_attestation_public_key(validator_id)
+            public_key = key_manager[validator_id].attestation_public
             message_bytes = signed_att.data.data_root_bytes()
 
             is_valid = TARGET_SIGNATURE_SCHEME.verify(
@@ -644,7 +644,7 @@ class TestValidatorServiceIntegration:
 
         proposer_index = signed_block.message.proposer_index
         block_root = hash_tree_root(signed_block.message)
-        public_key = key_manager.get_proposal_public_key(proposer_index)
+        public_key = key_manager[proposer_index].proposal_public
 
         is_valid = TARGET_SIGNATURE_SCHEME.verify(
             pk=public_key,
@@ -679,7 +679,7 @@ class TestValidatorServiceIntegration:
         for vid in participants:
             sig = key_manager.sign_attestation_data(vid, attestation_data)
             signatures.append(sig)
-            public_keys.append(key_manager.get_attestation_public_key(vid))
+            public_keys.append(key_manager[vid].attestation_public)
             attestation_map[vid] = attestation_data
 
         xmss_participants = AggregationBits.from_validator_indices(
@@ -892,7 +892,7 @@ class TestValidatorServiceIntegration:
         # Verify each signature was created with the correct slot
         for signed_att in attestations_produced:
             validator_id = signed_att.validator_id
-            public_key = key_manager.get_attestation_public_key(validator_id)
+            public_key = key_manager[validator_id].attestation_public
             message_bytes = signed_att.data.data_root_bytes()
 
             # Verification must use the same slot that was used for signing

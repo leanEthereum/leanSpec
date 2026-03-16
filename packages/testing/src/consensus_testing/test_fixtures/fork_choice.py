@@ -7,6 +7,7 @@ Validates Store responses to blocks, attestations, and time progression.
 
 from __future__ import annotations
 
+import logging
 from typing import ClassVar, Mapping, Self
 
 from pydantic import model_validator
@@ -269,6 +270,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                         step._filled_block = block
 
                         # Register labeled blocks for fork building.
+                        # Later blocks can reference this one as their parent.
                         if step.block.label is not None:
                             if step.block.label in self._block_registry:
                                 raise ValueError(
@@ -278,6 +280,9 @@ class ForkChoiceTest(BaseConsensusFixture):
                             self._block_registry[step.block.label] = block
 
                         # Advance time to the block's slot.
+                        # Store rejects blocks from the future.
+                        # This tick includes a block (has proposal).
+                        # Always act as aggregator to ensure gossip signatures are aggregated
                         target_interval = Interval(block.slot * INTERVALS_PER_SLOT)
                         store, _ = store.on_tick(
                             target_interval, has_proposal=True, is_aggregator=True
@@ -307,8 +312,13 @@ class ForkChoiceTest(BaseConsensusFixture):
                                     scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                                     is_aggregator=True,
                                 )
-                            except (AssertionError, Exception):
-                                pass
+                            except Exception as e:
+                                logging.warning(
+                                    "Proposer gossip attestation failed (slot=%s): %s",
+                                    block.slot,
+                                    e,
+                                    exc_info=True,
+                                )
 
                     case AttestationStep():
                         # Process a gossip attestation.

@@ -130,12 +130,17 @@ class SignedBlock(Container):
         validators = parent_state.validators
 
         # Attestations and signatures are parallel arrays.
+        # - Each attestation says "validators X, Y, Z voted for this data".
+        # - Each signature proves those validators actually signed.
         for aggregated_attestation, aggregated_signature in zip(
             aggregated_attestations, attestation_signatures, strict=True
         ):
+            # Extract which validators participated in this attestation.
+            # The aggregation bits encode validator indices as a bitfield.
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
 
             # The signed message is the attestation data root.
+            # All validators in this group signed this exact data.
             attestation_data_root = aggregated_attestation.data.data_root_bytes()
 
             for validator_id in validator_ids:
@@ -143,6 +148,7 @@ class SignedBlock(Container):
                 assert validator_id.is_valid(num_validators), "Validator index out of range"
 
             # Collect attestation public keys for all participating validators.
+            # Order matters: must match the order in the aggregated signature.
             public_keys = [validators[vid].get_attestation_pubkey() for vid in validator_ids]
 
             try:

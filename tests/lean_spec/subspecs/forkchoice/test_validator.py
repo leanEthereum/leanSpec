@@ -127,7 +127,7 @@ class TestBlockProduction:
         # Verify each aggregated signature proof
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
             participants = proof.participants.to_validator_indices()
-            public_keys = [key_manager.get_attestation_public_key(vid) for vid in participants]
+            public_keys = [key_manager[vid].attestation_public for vid in participants]
             proof.verify(
                 public_keys=public_keys,
                 message=agg_att.data.data_root_bytes(),
@@ -244,7 +244,7 @@ class TestBlockProduction:
         # Verify each aggregated signature proof
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
             participants = proof.participants.to_validator_indices()
-            public_keys = [key_manager.get_attestation_public_key(vid) for vid in participants]
+            public_keys = [key_manager[vid].attestation_public for vid in participants]
             proof.verify(
                 public_keys=public_keys,
                 message=agg_att.data.data_root_bytes(),

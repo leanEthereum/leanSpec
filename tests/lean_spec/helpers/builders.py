@@ -428,7 +428,7 @@ def make_aggregated_proof(
     xmss_participants = AggregationBits.from_validator_indices(ValidatorIndices(data=participants))
     raw_xmss = list(
         zip(
-            [key_manager.get_attestation_public_key(vid) for vid in participants],
+            [key_manager[vid].attestation_public for vid in participants],
             [key_manager.sign_attestation_data(vid, attestation_data) for vid in participants],
             strict=True,
         )

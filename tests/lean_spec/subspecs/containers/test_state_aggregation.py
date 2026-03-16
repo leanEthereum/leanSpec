@@ -52,9 +52,7 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
         ValidatorIndex(1),
     }
 
-    public_keys = [
-        container_key_manager.get_attestation_public_key(ValidatorIndex(i)) for i in range(2)
-    ]
+    public_keys = [container_key_manager[ValidatorIndex(i)].attestation_public for i in range(2)]
     aggregated_proofs[0].verify(
         public_keys=public_keys,
         message=att_data.data_root_bytes(),
@@ -113,7 +111,7 @@ def test_aggregate_signatures_splits_when_needed(
         participants = proof.participants.to_validator_indices()
         if participants == [ValidatorIndex(0)]:
             proof.verify(
-                public_keys=[container_key_manager.get_attestation_public_key(ValidatorIndex(0))],
+                public_keys=[container_key_manager[ValidatorIndex(0)].attestation_public],
                 message=att_data.data_root_bytes(),
                 slot=att_data.slot,
             )
@@ -163,7 +161,7 @@ def test_build_block_collects_valid_available_attestations(
     )
 
     aggregated_proofs[0].verify(
-        public_keys=[container_key_manager.get_attestation_public_key(ValidatorIndex(0))],
+        public_keys=[container_key_manager[ValidatorIndex(0)].attestation_public],
         message=data_root,
         slot=att_data.slot,
     )
@@ -262,9 +260,7 @@ def test_aggregated_signatures_with_multiple_data_groups(
 
     for agg_att, proof in zip(aggregated_atts, aggregated_proofs, strict=True):
         participants = proof.participants.to_validator_indices()
-        public_keys = [
-            container_key_manager.get_attestation_public_key(vid) for vid in participants
-        ]
+        public_keys = [container_key_manager[vid].attestation_public for vid in participants]
         proof.verify(
             public_keys=public_keys,
             message=agg_att.data.data_root_bytes(),
@@ -316,7 +312,7 @@ def test_aggregated_signatures_falls_back_to_block_payload(
         participants = proof.participants.to_validator_indices()
         if participants == [ValidatorIndex(0)]:
             proof.verify(
-                public_keys=[container_key_manager.get_attestation_public_key(ValidatorIndex(0))],
+                public_keys=[container_key_manager[ValidatorIndex(0)].attestation_public],
                 message=att_data.data_root_bytes(),
                 slot=att_data.slot,
             )
@@ -706,9 +702,7 @@ def test_validator_in_both_gossip_and_fallback_proof(
 
     for proof in aggregated_proofs:
         participants = proof.participants.to_validator_indices()
-        public_keys = [
-            container_key_manager.get_attestation_public_key(vid) for vid in participants
-        ]
+        public_keys = [container_key_manager[vid].attestation_public for vid in participants]
         proof.verify(
             public_keys=public_keys,
             message=att_data.data_root_bytes(),
@@ -776,9 +770,7 @@ def test_aggregated_payloads_only_no_gossip(
     participants = {int(v) for v in aggregated_proofs[0].participants.to_validator_indices()}
     assert participants == {0, 1, 2}
 
-    public_keys = [
-        container_key_manager.get_attestation_public_key(ValidatorIndex(i)) for i in range(3)
-    ]
+    public_keys = [container_key_manager[ValidatorIndex(i)].attestation_public for i in range(3)]
     aggregated_proofs[0].verify(public_keys=public_keys, message=data_root, slot=att_data.slot)
 
 

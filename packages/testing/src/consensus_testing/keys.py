@@ -285,14 +285,6 @@ class XmssKeyManager:
         """Iterate over validator indices."""
         return iter(self.keys)
 
-    def get_attestation_public_key(self, idx: ValidatorIndex) -> PublicKey:
-        """Get a validator's attestation public key."""
-        return self[idx].attestation_public
-
-    def get_proposal_public_key(self, idx: ValidatorIndex) -> PublicKey:
-        """Get a validator's proposal public key."""
-        return self[idx].proposal_public
-
     def _sign_with_secret(
         self,
         validator_id: ValidatorIndex,
@@ -405,9 +397,7 @@ class XmssKeyManager:
             # Look up pre-computed signatures by attestation data and validator ID.
             sigs_for_data = lookup.get(agg.data, {})
 
-            public_keys: list[PublicKey] = [
-                self.get_attestation_public_key(vid) for vid in validator_ids
-            ]
+            public_keys: list[PublicKey] = [self[vid].attestation_public for vid in validator_ids]
             signatures: list[Signature] = [
                 sigs_for_data.get(vid) or self.sign_attestation_data(vid, agg.data)
                 for vid in validator_ids
