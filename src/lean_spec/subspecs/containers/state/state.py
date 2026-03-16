@@ -827,8 +827,6 @@ class State(Container):
                 ):
                     if entry.validator_id in covered_validators:
                         continue
-                    if int(entry.validator_id) >= len(self.validators):
-                        continue
                     public_key = self.validators[entry.validator_id].get_attestation_pubkey()
                     raw_entries.append((entry.validator_id, public_key, entry.signature))
                     covered_validators.add(entry.validator_id)
@@ -859,8 +857,6 @@ class State(Container):
                 for entry in sorted(
                     gossip_signatures.get(data, set()), key=lambda e: e.validator_id
                 ):
-                    if int(entry.validator_id) >= len(self.validators):
-                        continue
                     public_key = self.validators[entry.validator_id].get_attestation_pubkey()
                     raw_entries.append((entry.validator_id, public_key, entry.signature))
                 if not raw_entries:

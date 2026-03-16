@@ -7,7 +7,6 @@ Validates Store responses to blocks, attestations, and time progression.
 
 from __future__ import annotations
 
-import logging
 from typing import ClassVar, Mapping, Self
 
 from pydantic import model_validator
@@ -198,19 +197,16 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Test states use placeholder pubkeys.
         # We must replace them with the key manager's actual keys.
         # Otherwise signature verification will fail.
-        updated_validators = [
-            validator.model_copy(
+        updated_validators = []
+        for i, validator in enumerate(self.anchor_state.validators):
+            idx = ValidatorIndex(i)
+            validator = validator.model_copy(
                 update={
-                    "attestation_pubkey": key_manager[
-                        ValidatorIndex(i)
-                    ].attestation_public.encode_bytes(),
-                    "proposal_pubkey": key_manager[
-                        ValidatorIndex(i)
-                    ].proposal_public.encode_bytes(),
+                    "attestation_pubkey": key_manager[idx].attestation_public.encode_bytes(),
+                    "proposal_pubkey": key_manager[idx].proposal_public.encode_bytes(),
                 }
             )
-            for i, validator in enumerate(self.anchor_state.validators)
-        ]
+            updated_validators.append(validator)
 
         # Updating validators changes the state root.
         # We must also update the anchor block to match.
@@ -299,26 +295,18 @@ class ForkChoiceTest(BaseConsensusFixture):
                         if step.block.gossip_proposer_attestation:
                             proposer_index = block.proposer_index
                             proposer_att_data = store.produce_attestation_data(block.slot)
-                            try:
-                                proposer_gossip_att = SignedAttestation(
-                                    validator_id=proposer_index,
-                                    data=proposer_att_data,
-                                    signature=key_manager.sign_attestation_data(
-                                        proposer_index, proposer_att_data
-                                    ),
-                                )
-                                store = store.on_gossip_attestation(
-                                    proposer_gossip_att,
-                                    scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
-                                    is_aggregator=True,
-                                )
-                            except Exception as e:
-                                logging.warning(
-                                    "Proposer gossip attestation failed (slot=%s): %s",
-                                    block.slot,
-                                    e,
-                                    exc_info=True,
-                                )
+                            proposer_gossip_att = SignedAttestation(
+                                validator_id=proposer_index,
+                                data=proposer_att_data,
+                                signature=key_manager.sign_attestation_data(
+                                    proposer_index, proposer_att_data
+                                ),
+                            )
+                            store = store.on_gossip_attestation(
+                                proposer_gossip_att,
+                                scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
+                                is_aggregator=True,
+                            )
 
                     case AttestationStep():
                         # Process a gossip attestation.
