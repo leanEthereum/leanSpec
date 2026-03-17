@@ -864,9 +864,7 @@ def test_reorg_on_newly_justified_slot(
         steps=[
             # Common base at slot 1
             BlockStep(
-                block=BlockSpec(
-                    slot=Slot(1), label="base", gossip_proposer_attestation=True
-                ),
+                block=BlockSpec(slot=Slot(1), label="base", gossip_proposer_attestation=True),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     head_root_label="base",
