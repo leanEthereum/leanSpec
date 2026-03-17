@@ -871,6 +871,7 @@ def test_reorg_on_newly_justified_slot(
                 ),
             ),
             # Fork A: slot 2
+            # Fork A is the heaviest chain (1 block from justified slot)
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(2),
@@ -884,6 +885,7 @@ def test_reorg_on_newly_justified_slot(
                 ),
             ),
             # Fork A: slot 3
+            # Fork A is the heaviest chain (2 blocks from justified slot)
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(3),
