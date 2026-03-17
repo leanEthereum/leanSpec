@@ -864,25 +864,35 @@ def test_reorg_on_newly_justified_slot(
         steps=[
             # Common base at slot 1
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="base"),
+                block=BlockSpec(
+                    slot=Slot(1), label="base", gossip_proposer_attestation=True
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     head_root_label="base",
                 ),
             ),
             # Fork A: slot 2
-            # Fork A is the heaviest chain (1 block from justified slot)
             BlockStep(
-                block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_a_1"),
+                block=BlockSpec(
+                    slot=Slot(2),
+                    parent_label="base",
+                    label="fork_a_1",
+                    gossip_proposer_attestation=True,
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
                     head_root_label="fork_a_1",
                 ),
             ),
             # Fork A: slot 3
-            # Fork A is the heaviest chain (2 blocks from justified slot)
             BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_a_1", label="fork_a_2"),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="fork_a_1",
+                    label="fork_a_2",
+                    gossip_proposer_attestation=True,
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     head_root_label="fork_a_2",
@@ -891,7 +901,12 @@ def test_reorg_on_newly_justified_slot(
             # Fork A: slot 4
             # Fork A is the heaviest chain (3 blocks from justified slot)
             BlockStep(
-                block=BlockSpec(slot=Slot(4), parent_label="fork_a_2", label="fork_a_3"),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    parent_label="fork_a_2",
+                    label="fork_a_3",
+                    gossip_proposer_attestation=True,
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
                     head_root_label="fork_a_3",
@@ -900,7 +915,12 @@ def test_reorg_on_newly_justified_slot(
             # Fork B: slot 5 (first block of fork B)
             # Fork A is still the heaviest chain (3 blocks from justified slot)
             BlockStep(
-                block=BlockSpec(slot=Slot(5), parent_label="base", label="fork_b_1"),
+                block=BlockSpec(
+                    slot=Slot(5),
+                    parent_label="base",
+                    label="fork_b_1",
+                    gossip_proposer_attestation=True,
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
                     head_root_label="fork_a_3",
