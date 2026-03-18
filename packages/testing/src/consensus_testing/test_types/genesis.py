@@ -33,19 +33,17 @@ def generate_pre_state(**kwargs: Any) -> State:
         f"but the key manager has only {available_keys} keys",
     )
 
-    validators = Validators(
-        data=[
+    validator_list = []
+    for i in range(num_validators):
+        idx = ValidatorIndex(i)
+        attestation_pubkey, proposal_pubkey = key_manager.get_public_keys(idx)
+        validator_list.append(
             Validator(
-                attestation_pubkey=Bytes52(
-                    key_manager[ValidatorIndex(i)].attestation_public.encode_bytes()
-                ),
-                proposal_pubkey=Bytes52(
-                    key_manager[ValidatorIndex(i)].proposal_public.encode_bytes()
-                ),
-                index=ValidatorIndex(i),
+                attestation_pubkey=Bytes52(attestation_pubkey.encode_bytes()),
+                proposal_pubkey=Bytes52(proposal_pubkey.encode_bytes()),
+                index=idx,
             )
-            for i in range(num_validators)
-        ]
-    )
+        )
+    validators = Validators(data=validator_list)
 
     return State.generate_genesis(genesis_time=genesis_time, validators=validators)

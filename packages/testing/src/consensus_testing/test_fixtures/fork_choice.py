@@ -200,10 +200,11 @@ class ForkChoiceTest(BaseConsensusFixture):
         updated_validators = []
         for i, validator in enumerate(self.anchor_state.validators):
             idx = ValidatorIndex(i)
+            attestation_pubkey, proposal_pubkey = key_manager.get_public_keys(idx)
             validator = validator.model_copy(
                 update={
-                    "attestation_pubkey": key_manager[idx].attestation_public.encode_bytes(),
-                    "proposal_pubkey": key_manager[idx].proposal_public.encode_bytes(),
+                    "attestation_pubkey": attestation_pubkey.encode_bytes(),
+                    "proposal_pubkey": proposal_pubkey.encode_bytes(),
                 }
             )
             updated_validators.append(validator)

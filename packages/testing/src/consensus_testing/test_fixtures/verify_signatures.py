@@ -230,7 +230,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 # Valid proof but from wrong validators
                 # Sign with signer_ids but claim validator_ids as participants
                 signer_public_keys = [
-                    key_manager[vid].attestation_public for vid in invalid_spec.signer_ids
+                    key_manager.get_public_keys(vid)[0] for vid in invalid_spec.signer_ids
                 ]
                 signer_signatures = [
                     key_manager.sign_attestation_data(vid, attestation_data)
