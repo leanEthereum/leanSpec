@@ -292,8 +292,18 @@ class ForkChoiceTest(BaseConsensusFixture):
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                         )
 
-                        # Optionally simulate the proposer's gossip attestation.
+                        # Simulate the proposer's gossip attestation.
+                        #
+                        # In the real system, attestation happens at interval >= 1
+                        # after the block is processed. Advance time to interval 1
+                        # and update head to match the real validator service behavior.
                         if step.block.gossip_proposer_attestation:
+                            att_interval = Interval(int(block.slot) * int(INTERVALS_PER_SLOT) + 1)
+                            store, _ = store.on_tick(
+                                att_interval, has_proposal=False, is_aggregator=True
+                            )
+                            store = store.update_head()
+
                             proposer_index = block.proposer_index
                             proposer_att_data = store.produce_attestation_data(block.slot)
                             proposer_gossip_att = SignedAttestation(
