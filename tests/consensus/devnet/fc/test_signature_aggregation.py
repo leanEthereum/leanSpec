@@ -36,12 +36,17 @@ def test_multiple_specs_same_target_merge_into_one(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1"),
+                block=BlockSpec(
+                    slot=Slot(1),
+                    label="block_1",
+                    gossip_proposer_attestation=False,
+                ),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(2),
+                    gossip_proposer_attestation=False,
                     attestations=[
                         AggregatedAttestationSpec(
                             validator_ids=[ValidatorIndex(0), ValidatorIndex(1)],
@@ -231,12 +236,17 @@ def test_all_validators_attest_in_single_aggregation(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1"),
+                block=BlockSpec(
+                    slot=Slot(1),
+                    label="block_1",
+                    gossip_proposer_attestation=False,
+                ),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(2),
+                    gossip_proposer_attestation=False,
                     attestations=[
                         AggregatedAttestationSpec(
                             validator_ids=[
@@ -292,7 +302,6 @@ def test_auto_collect_proposer_attestations(
                 block=BlockSpec(
                     slot=Slot(1),
                     label="block_1",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(1),
@@ -346,7 +355,6 @@ def test_auto_collect_combined_with_explicit_attestations(
                 block=BlockSpec(
                     slot=Slot(1),
                     label="block_1",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),

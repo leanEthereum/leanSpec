@@ -362,8 +362,11 @@ def test_reorg_with_slot_gaps(
         anchor_state=generate_pre_state(num_validators=10),
         steps=[
             # Base at slot 1
+            #
+            # Disable proposer gossip on all blocks for precise weight control.
+            # This test focuses on reorg behavior with slot gaps, not attestation flow.
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="base"),
+                block=BlockSpec(slot=Slot(1), label="base", gossip_proposer_attestation=False),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     head_root_label="base",
@@ -375,7 +378,6 @@ def test_reorg_with_slot_gaps(
                     slot=Slot(3),
                     parent_label="base",
                     label="fork_a_3",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
@@ -384,7 +386,12 @@ def test_reorg_with_slot_gaps(
             ),
             # Fork B at slot 4 (competing, missed slot 2-3)
             BlockStep(
-                block=BlockSpec(slot=Slot(4), parent_label="base", label="fork_b_4"),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    parent_label="base",
+                    label="fork_b_4",
+                    gossip_proposer_attestation=False,
+                ),
             ),
             # Fork A at slot 7 (missed slots 4-6)
             BlockStep(
@@ -392,7 +399,6 @@ def test_reorg_with_slot_gaps(
                     slot=Slot(7),
                     parent_label="fork_a_3",
                     label="fork_a_7",
-                    gossip_proposer_attestation=True,
                 ),
             ),
             # Accept fork_a_7's proposer attestation to ensure it counts in fork choice.
@@ -413,6 +419,7 @@ def test_reorg_with_slot_gaps(
                     slot=Slot(8),
                     parent_label="fork_b_4",
                     label="fork_b_8",
+                    gossip_proposer_attestation=False,
                     attestations=[
                         AggregatedAttestationSpec(
                             validator_ids=[
@@ -433,6 +440,7 @@ def test_reorg_with_slot_gaps(
                     slot=Slot(9),
                     parent_label="fork_b_8",
                     label="fork_b_9",
+                    gossip_proposer_attestation=False,
                 ),
             ),
             # After acceptance, fork_b has 3 attestation votes in the block body
@@ -617,7 +625,6 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
                     slot=Slot(2),
                     parent_label="base",
                     label="fork_a_2",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
@@ -629,7 +636,6 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
                     slot=Slot(3),
                     parent_label="fork_a_2",
                     label="fork_a_3",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
@@ -641,7 +647,6 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
                     slot=Slot(4),
                     parent_label="fork_a_3",
                     label="fork_a_4",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
@@ -653,7 +658,6 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
                     slot=Slot(5),
                     parent_label="fork_a_4",
                     label="fork_a_5",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(5),
@@ -665,7 +669,6 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
                     slot=Slot(6),
                     parent_label="fork_a_5",
                     label="fork_a_6",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(6),
@@ -877,7 +880,6 @@ def test_reorg_on_newly_justified_slot(
                     slot=Slot(2),
                     parent_label="base",
                     label="fork_a_1",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
@@ -891,7 +893,6 @@ def test_reorg_on_newly_justified_slot(
                     slot=Slot(3),
                     parent_label="fork_a_1",
                     label="fork_a_2",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
@@ -905,7 +906,6 @@ def test_reorg_on_newly_justified_slot(
                     slot=Slot(4),
                     parent_label="fork_a_2",
                     label="fork_a_3",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
@@ -919,7 +919,6 @@ def test_reorg_on_newly_justified_slot(
                     slot=Slot(5),
                     parent_label="base",
                     label="fork_b_1",
-                    gossip_proposer_attestation=True,
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
@@ -936,6 +935,7 @@ def test_reorg_on_newly_justified_slot(
                     slot=Slot(6),
                     parent_label="fork_b_1",
                     label="fork_b_2",
+                    gossip_proposer_attestation=False,
                     attestations=[
                         # Aggregated attestation from validators 0, 1, 5, 6, 7, 8
                         # fork_b_1 should be able to justify without extra attestations

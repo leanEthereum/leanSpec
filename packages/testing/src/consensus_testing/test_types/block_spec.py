@@ -132,7 +132,7 @@ class BlockSpec(CamelModel):
     Enables more realistic test vectors without manual specification.
     """
 
-    gossip_proposer_attestation: bool = False
+    gossip_proposer_attestation: bool = True
     """
     Simulate the proposer gossiping an attestation after block production.
 
