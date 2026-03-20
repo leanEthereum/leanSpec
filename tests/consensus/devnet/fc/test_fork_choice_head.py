@@ -2,6 +2,7 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
@@ -9,6 +10,7 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -274,21 +276,32 @@ def test_head_switches_to_heavier_fork(
                 ),
                 checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
             ),
-            # Competing fork B at slot 2
+            # Competing fork B at slot 2 (equal weight, tiebreaker decides)
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(2),
                     parent_label="common",
                     label="fork_b",
                 ),
-                checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    lexicographic_head_among=["fork_a", "fork_b"],
+                ),
             ),
-            # Extend fork B - gives it more weight
+            # Extend fork B with an attestation for fork_b → gives it more weight
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(3),
-                    parent_label="fork_b",  # Build on fork B
+                    parent_label="fork_b",
                     label="fork_b_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="fork_b",
+                        ),
+                    ],
                 ),
                 checks=StoreChecks(head_slot=Slot(3), head_root_label="fork_b_3"),
             ),
@@ -330,34 +343,94 @@ def test_head_with_deep_fork_split(
                 block=BlockSpec(slot=Slot(1), label="common"),
                 checks=StoreChecks(head_slot=Slot(1), head_root_label="common"),
             ),
-            # Fork A: slots 2, 3, 4
+            # Fork A: slots 2, 3, 4 with attestations building weight
             BlockStep(
                 block=BlockSpec(slot=Slot(2), parent_label="common", label="fork_a_2"),
                 checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a_2"),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_a_2", label="fork_a_3"),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="fork_a_2",
+                    label="fork_a_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="fork_a_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(head_slot=Slot(3), head_root_label="fork_a_3"),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(4), parent_label="fork_a_3", label="fork_a_4"),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    parent_label="fork_a_3",
+                    label="fork_a_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(3),
+                            target_slot=Slot(3),
+                            target_root_label="fork_a_3",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
             ),
-            # Fork B: slots 2, 3, 4, 5 (longer)
+            # Fork B: slots 2, 3, 4, 5 with more attestations to overtake
             BlockStep(
                 block=BlockSpec(slot=Slot(2), parent_label="common", label="fork_b_2"),
                 checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_b_2", label="fork_b_3"),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="fork_b_2",
+                    label="fork_b_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="fork_b_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(4), parent_label="fork_b_3", label="fork_b_4"),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    parent_label="fork_b_3",
+                    label="fork_b_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(3),
+                            target_slot=Slot(3),
+                            target_root_label="fork_b_3",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(5), parent_label="fork_b_4", label="fork_b_5"),
+                block=BlockSpec(
+                    slot=Slot(5),
+                    parent_label="fork_b_4",
+                    label="fork_b_5",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(4),
+                            target_slot=Slot(4),
+                            target_root_label="fork_b_4",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(head_slot=Slot(5), head_root_label="fork_b_5"),
             ),
         ],

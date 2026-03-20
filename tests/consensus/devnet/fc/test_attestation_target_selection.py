@@ -2,6 +2,7 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
@@ -9,6 +10,7 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -84,35 +86,78 @@ def test_attestation_target_advances_with_attestations(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1)),
+                block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     attestation_target_slot=Slot(0),  # Still at genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(2)),
+                block=BlockSpec(
+                    slot=Slot(2),
+                    label="block_2",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(1),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
                     attestation_target_slot=Slot(0),  # Still at genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3)),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     attestation_target_slot=Slot(0),  # Still at genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(4)),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    label="block_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(3),
+                            target_slot=Slot(3),
+                            target_root_label="block_3",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
                     attestation_target_slot=Slot(1),  # Advances to slot 1
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(5)),
+                block=BlockSpec(
+                    slot=Slot(5),
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(4),
+                            target_slot=Slot(4),
+                            target_root_label="block_4",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(5),
                     attestation_target_slot=Slot(2),  # Continues advancing
@@ -198,56 +243,132 @@ def test_attestation_target_with_extended_chain(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1)),
+                block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     attestation_target_slot=Slot(0),  # Genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(2)),
+                block=BlockSpec(
+                    slot=Slot(2),
+                    label="block_2",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(1),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
                     attestation_target_slot=Slot(0),  # Still genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3)),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     attestation_target_slot=Slot(0),  # Still genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(4)),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    label="block_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(3),
+                            target_slot=Slot(3),
+                            target_root_label="block_3",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
                     attestation_target_slot=Slot(1),  # Advances to slot 1
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(5)),
+                block=BlockSpec(
+                    slot=Slot(5),
+                    label="block_5",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(4),
+                            target_slot=Slot(4),
+                            target_root_label="block_4",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(5),
                     attestation_target_slot=Slot(2),  # Stable at 2
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(6)),
+                block=BlockSpec(
+                    slot=Slot(6),
+                    label="block_6",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="block_5",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(6),
                     attestation_target_slot=Slot(3),  # Continues to advance
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(7)),
+                block=BlockSpec(
+                    slot=Slot(7),
+                    label="block_7",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(6),
+                            target_slot=Slot(6),
+                            target_root_label="block_6",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(7),
                     attestation_target_slot=Slot(4),  # Continues advancing
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(8)),
+                block=BlockSpec(
+                    slot=Slot(8),
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(7),
+                            target_slot=Slot(7),
+                            target_root_label="block_7",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(8),
                     attestation_target_slot=Slot(5),  # Continues advancing

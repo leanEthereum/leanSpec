@@ -292,33 +292,6 @@ class ForkChoiceTest(BaseConsensusFixture):
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                         )
 
-                        # Simulate the proposer's gossip attestation.
-                        #
-                        # In the real system, attestation happens at interval >= 1
-                        # after the block is processed. Advance time to interval 1
-                        # and update head to match the real validator service behavior.
-                        if step.block.gossip_proposer_attestation:
-                            att_interval = Interval(int(block.slot) * int(INTERVALS_PER_SLOT) + 1)
-                            store, _ = store.on_tick(
-                                att_interval, has_proposal=False, is_aggregator=True
-                            )
-                            store = store.update_head()
-
-                            proposer_index = block.proposer_index
-                            proposer_att_data = store.produce_attestation_data(block.slot)
-                            proposer_gossip_att = SignedAttestation(
-                                validator_id=proposer_index,
-                                data=proposer_att_data,
-                                signature=key_manager.sign_attestation_data(
-                                    proposer_index, proposer_att_data
-                                ),
-                            )
-                            store = store.on_gossip_attestation(
-                                proposer_gossip_att,
-                                scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
-                                is_aggregator=True,
-                            )
-
                     case AttestationStep():
                         # Process a gossip attestation.
                         # Gossip attestations arrive outside of blocks.
@@ -445,25 +418,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         aggregation_store, _ = working_store.aggregate()
         merged_store = aggregation_store.accept_new_attestations()
 
-        # Two sources of attestations:
-        # 1. Explicit attestations from the spec (always included)
-        # 2. Store attestations (only if include_store_attestations is True)
-        available_attestations: list[Attestation]
-        known_block_roots: set[Bytes32] | None = None
-
-        if spec.include_store_attestations:
-            # Extract from merged payloads (contains both known and newly aggregated)
-            attestation_map = merged_store.extract_attestations_from_aggregated_payloads(
-                merged_store.latest_known_aggregated_payloads
-            )
-            store_attestations = [
-                Attestation(validator_id=vid, data=data) for vid, data in attestation_map.items()
-            ]
-            available_attestations = store_attestations + attestations
-            known_block_roots = set(store.blocks.keys())
-        else:
-            # Use only explicit attestations from the spec
-            available_attestations = attestations
+        available_attestations = attestations
 
         # Build the block using spec logic.
         #
@@ -476,7 +431,6 @@ class ForkChoiceTest(BaseConsensusFixture):
             parent_root=parent_root,
             attestations=available_attestations,
             available_attestations=available_attestations,
-            known_block_roots=known_block_roots,
             aggregated_payloads=merged_store.latest_known_aggregated_payloads,
         )
 

@@ -56,16 +56,12 @@ def test_finalization_advances_mid_attestation_processing(
     fork_choice_test(
         steps=[
             # Build chain through slot 7
-            #
-            # Disable proposer gossip attestation for these blocks to
-            # control justification timing precisely. This test needs
-            # specific justification state at each step.
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1", gossip_proposer_attestation=False),
+                block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(2), label="block_2", gossip_proposer_attestation=False),
+                block=BlockSpec(slot=Slot(2), label="block_2"),
                 checks=StoreChecks(head_slot=Slot(2)),
             ),
             # Slot 3: Justify slot 1 (source=0 -> target=1)
@@ -74,7 +70,6 @@ def test_finalization_advances_mid_attestation_processing(
                 block=BlockSpec(
                     slot=Slot(3),
                     label="block_3",
-                    gossip_proposer_attestation=False,
                     attestations=[
                         AggregatedAttestationSpec(
                             validator_ids=[
@@ -96,26 +91,25 @@ def test_finalization_advances_mid_attestation_processing(
             ),
             # Extend chain to slot 7
             BlockStep(
-                block=BlockSpec(slot=Slot(4), label="block_4", gossip_proposer_attestation=False),
+                block=BlockSpec(slot=Slot(4), label="block_4"),
                 checks=StoreChecks(head_slot=Slot(4)),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(5), label="block_5", gossip_proposer_attestation=False),
+                block=BlockSpec(slot=Slot(5), label="block_5"),
                 checks=StoreChecks(head_slot=Slot(5)),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(6), label="block_6", gossip_proposer_attestation=False),
+                block=BlockSpec(slot=Slot(6), label="block_6"),
                 checks=StoreChecks(head_slot=Slot(6)),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(7), label="block_7", gossip_proposer_attestation=False),
+                block=BlockSpec(slot=Slot(7), label="block_7"),
                 checks=StoreChecks(head_slot=Slot(7)),
             ),
             # Slot 8: The critical block with both attestations
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(8),
-                    gossip_proposer_attestation=False,
                     attestations=[
                         # Attestation A: Justify slot 2 and finalize slot 1
                         # Source will be slot 1 (latest_justified from parent state)
