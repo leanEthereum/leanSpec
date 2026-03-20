@@ -445,25 +445,24 @@ def test_attestation_target_justifiable_constraint(
 
     steps = []
     for i in range(1, 31):
-        label = f"block_{i}"
-        attestations = None
-        if i >= 2:
-            prev_slot = i - 1
-            prev_proposer = ValidatorIndex(prev_slot % num_validators)
-            attestations = [
-                AggregatedAttestationSpec(
-                    validator_ids=[prev_proposer],
-                    slot=Slot(prev_slot),
-                    target_slot=Slot(prev_slot),
-                    target_root_label=f"block_{prev_slot}",
-                ),
-            ]
         steps.append(
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(i),
-                    label=label,
-                    attestations=attestations,
+                    label=f"block_{i}",
+                    attestations=(
+                        [
+                            AggregatedAttestationSpec(
+                                validator_ids=[ValidatorIndex((i - 1) % num_validators)],
+                                slot=Slot(i - 1),
+                                target_slot=Slot(i - 1),
+                                target_root_label=f"block_{i - 1}",
+                            ),
+                        ]
+                        # Slot 1 can't attest to genesis (root 0x00 not in store.blocks)
+                        if i >= 2
+                        else None
+                    ),
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(i),
