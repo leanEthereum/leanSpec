@@ -409,51 +409,67 @@ def test_attestation_target_justifiable_constraint(
     The test verifies that the target selection algorithm respects these rules
     and never selects a non-justifiable target.
     """
-    fork_choice_test(
-        steps=[
+    num_validators = 4
+    expected_targets = {
+        1: 0,  # 3-slot walkback reaches safe target at slot 0
+        2: 0,  # 3-slot walkback reaches safe target at slot 0
+        3: 0,  # 3-slot walkback reaches safe target at slot 0
+        4: 1,  # delta = 4 - 3 - 0 = 1, Rule 1: delta 1 ≤ 5
+        5: 2,  # delta = 5 - 3 - 0 = 2, Rule 1: delta 2 ≤ 5
+        6: 3,  # delta = 6 - 3 - 0 = 3, Rule 1: delta 3 ≤ 5
+        7: 4,  # delta = 7 - 3 - 0 = 4, Rule 1: delta 4 ≤ 5
+        8: 5,  # delta = 8 - 3 - 0 = 5, Rule 1: delta 5 ≤ 5
+        9: 6,  # delta = 6 - 0 = 6, Rule 3: pronic number (2*3)
+        10: 6,  # delta = 10 - 3 - 0 = 7
+        11: 6,  # delta = 11 - 3 - 0 = 8
+        12: 9,  # delta = 9 - 0 = 9, Rule 2: perfect square (3^2)
+        13: 9,  # delta = 13 - 3 - 0 = 10
+        14: 9,  # delta = 14 - 3 - 0 = 11
+        15: 12,  # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
+        16: 12,  # delta = 16 - 3 - 0 = 13
+        17: 12,  # delta = 17 - 3 - 0 = 14
+        18: 12,  # delta = 18 - 3 - 0 = 15
+        19: 16,  # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
+        20: 16,  # delta = 20 - 3 - 0 = 17
+        21: 16,  # delta = 21 - 3 - 0 = 18
+        22: 16,  # delta = 22 - 3 - 0 = 19
+        23: 20,  # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
+        24: 20,  # delta = 24 - 3 - 0 = 21
+        25: 20,  # delta = 25 - 3 - 0 = 22
+        26: 20,  # delta = 26 - 3 - 0 = 23
+        27: 20,  # delta = 27 - 3 - 0 = 24
+        28: 25,  # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
+        29: 25,  # delta = 29 - 3 - 0 = 26
+        30: 25,  # delta = 30 - 3 - 0 = 27
+    }
+
+    steps = []
+    for i in range(1, 31):
+        label = f"block_{i}"
+        attestations = None
+        if i >= 2:
+            prev_slot = i - 1
+            prev_proposer = ValidatorIndex(prev_slot % num_validators)
+            attestations = [
+                AggregatedAttestationSpec(
+                    validator_ids=[prev_proposer],
+                    slot=Slot(prev_slot),
+                    target_slot=Slot(prev_slot),
+                    target_root_label=f"block_{prev_slot}",
+                ),
+            ]
+        steps.append(
             BlockStep(
-                block=BlockSpec(slot=Slot(i)),
+                block=BlockSpec(
+                    slot=Slot(i),
+                    label=label,
+                    attestations=attestations,
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(i),
-                    attestation_target_slot=Slot(
-                        # Mapping of current slot -> expected target slot
-                        # delta = current_slot - JUSTIFICATION_LOOKBACK_SLOTS - finalized_slot
-                        # delta = current_slot - 3 - 0
-                        {
-                            1: 0,  # 3-slot walkback reaches safe target at slot 0
-                            2: 0,  # 3-slot walkback reaches safe target at slot 0
-                            3: 0,  # 3-slot walkback reaches safe target at slot 0
-                            4: 1,  # delta = 4 - 3 - 0 = 1, Rule 1: delta 1 ≤ 5
-                            5: 2,  # delta = 5 - 3 - 0 = 2, Rule 1: delta 2 ≤ 5
-                            6: 3,  # delta = 6 - 3 - 0 = 3, Rule 1: delta 3 ≤ 5
-                            7: 4,  # delta = 7 - 3 - 0 = 4, Rule 1: delta 4 ≤ 5
-                            8: 5,  # delta = 8 - 3 - 0 = 5, Rule 1: delta 5 ≤ 5
-                            9: 6,  # delta = 6 - 0 = 6, Rule 3: pronic number (2*3)
-                            10: 6,  # delta = 10 - 3 - 0 = 7
-                            11: 6,  # delta = 11 - 3 - 0 = 8
-                            12: 9,  # delta = 9 - 0 = 9, Rule 2: perfect square (3^2)
-                            13: 9,  # delta = 13 - 3 - 0 = 10
-                            14: 9,  # delta = 14 - 3 - 0 = 11
-                            15: 12,  # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
-                            16: 12,  # delta = 16 - 3 - 0 = 13
-                            17: 12,  # delta = 17 - 3 - 0 = 14
-                            18: 12,  # delta = 18 - 3 - 0 = 15
-                            19: 16,  # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
-                            20: 16,  # delta = 20 - 3 - 0 = 17
-                            21: 16,  # delta = 21 - 3 - 0 = 18
-                            22: 16,  # delta = 22 - 3 - 0 = 19
-                            23: 20,  # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
-                            24: 20,  # delta = 24 - 3 - 0 = 21
-                            25: 20,  # delta = 25 - 3 - 0 = 22
-                            26: 20,  # delta = 26 - 3 - 0 = 23
-                            27: 20,  # delta = 27 - 3 - 0 = 24
-                            28: 25,  # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
-                            29: 25,  # delta = 29 - 3 - 0 = 26
-                            30: 25,  # delta = 30 - 3 - 0 = 27
-                        }[i]
-                    ),
+                    attestation_target_slot=Slot(expected_targets[i]),
                 ),
             )
-            for i in range(1, 31)
-        ],
-    )
+        )
+
+    fork_choice_test(steps=steps)
