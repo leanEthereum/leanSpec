@@ -66,11 +66,10 @@ def test_build_block_collects_valid_available_attestations(
     )
     parent_root = hash_tree_root(parent_header_with_state_root)
     source = Checkpoint(root=parent_root, slot=Slot(0))
-    head_root = make_bytes32(10)
-    target = Checkpoint(root=make_bytes32(11), slot=Slot(0))
+    target = Checkpoint(root=parent_root, slot=Slot(0))
     att_data = AttestationData(
         slot=Slot(1),
-        head=Checkpoint(root=head_root, slot=Slot(1)),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
         target=target,
         source=source,
     )
@@ -83,6 +82,7 @@ def test_build_block_collects_valid_available_attestations(
         slot=Slot(1),
         proposer_index=ValidatorIndex(1),
         parent_root=parent_root,
+        known_block_roots={parent_root},
         aggregated_payloads=aggregated_payloads,
     )
 
@@ -116,6 +116,7 @@ def test_build_block_skips_attestations_without_signatures(
         slot=Slot(1),
         proposer_index=ValidatorIndex(0),
         parent_root=parent_root,
+        known_block_roots={parent_root},
         aggregated_payloads={},
     )
 
@@ -226,12 +227,11 @@ def test_build_block_state_root_valid_when_signatures_split(
     parent_root = hash_tree_root(parent_header_with_state_root)
 
     source = Checkpoint(root=parent_root, slot=Slot(0))
-    head_root = make_bytes32(50)
-    target = Checkpoint(root=make_bytes32(51), slot=Slot(0))
+    target = Checkpoint(root=parent_root, slot=Slot(0))
 
     att_data = AttestationData(
         slot=Slot(1),
-        head=Checkpoint(root=head_root, slot=Slot(1)),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
         target=target,
         source=source,
     )
@@ -243,10 +243,11 @@ def test_build_block_state_root_valid_when_signatures_split(
     )
     aggregated_payloads = {att_data: {proof_0, fallback_proof}}
 
-    block, post_state, aggregated_atts, _ = pre_state.build_block(
+    block, _, aggregated_atts, _ = pre_state.build_block(
         slot=Slot(1),
         proposer_index=ValidatorIndex(1),
         parent_root=parent_root,
+        known_block_roots={parent_root},
         aggregated_payloads=aggregated_payloads,
     )
 

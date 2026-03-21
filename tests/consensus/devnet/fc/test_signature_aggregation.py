@@ -36,7 +36,10 @@ def test_multiple_specs_same_target_merge_into_one(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1"),
+                block=BlockSpec(
+                    slot=Slot(1),
+                    label="block_1",
+                ),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
             BlockStep(
@@ -231,7 +234,10 @@ def test_all_validators_attest_in_single_aggregation(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1"),
+                block=BlockSpec(
+                    slot=Slot(1),
+                    label="block_1",
+                ),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
             BlockStep(
@@ -257,123 +263,6 @@ def test_all_validators_attest_in_single_aggregation(
                     block_attestations=[
                         AggregatedAttestationCheck(
                             participants={0, 1, 2, 3},
-                            attestation_slot=Slot(1),
-                            target_slot=Slot(1),
-                        ),
-                    ],
-                ),
-            ),
-        ],
-    )
-
-
-def test_auto_collect_proposer_attestations(
-    fork_choice_test: ForkChoiceTestFiller,
-) -> None:
-    """
-    Proposer gossip attestations ARE auto-collected into future block bodies.
-
-    Scenario
-    --------
-    With automatic attestation collection enabled:
-    - Block 1: proposer (validator 1) gossips attestation using attestation key
-    - Block 2: auto-collection picks up the proposer's gossip attestation
-
-    Expected
-    --------
-    With dual keys, proposers gossip a separate attestation using their
-    attestation key (in addition to the proposal-key signature in the block
-    envelope). This gossip attestation enters the normal aggregation pipeline
-    and gets auto-collected into the next block body.
-    """
-    fork_choice_test(
-        steps=[
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(1),
-                    label="block_1",
-                    gossip_proposer_attestation=True,
-                ),
-                checks=StoreChecks(
-                    head_slot=Slot(1),
-                    block_attestation_count=0,
-                ),
-            ),
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(2),
-                    label="block_2",
-                    include_store_attestations=True,
-                ),
-                checks=StoreChecks(
-                    head_slot=Slot(2),
-                    block_attestation_count=1,
-                    block_attestations=[
-                        AggregatedAttestationCheck(
-                            participants={1},
-                            attestation_slot=Slot(1),
-                            target_slot=Slot(0),
-                        ),
-                    ],
-                ),
-            ),
-        ],
-    )
-
-
-def test_auto_collect_combined_with_explicit_attestations(
-    fork_choice_test: ForkChoiceTestFiller,
-) -> None:
-    """
-    Combine auto-collection with explicit attestation specs.
-
-    Scenario
-    --------
-    Block 2 uses both mechanisms:
-    - Auto-collection picks up block 1's proposer gossip attestation (validator 1)
-    - Explicit spec adds validators 0 and 3
-
-    Expected
-    --------
-    Block body contains both the auto-collected proposer gossip attestation
-    and the explicit attestations. The proposer's gossip attestation (attestation
-    key) enters the normal aggregation pipeline and merges with any explicit
-    attestations targeting the same data.
-    """
-    fork_choice_test(
-        steps=[
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(1),
-                    label="block_1",
-                    gossip_proposer_attestation=True,
-                ),
-                checks=StoreChecks(head_slot=Slot(1)),
-            ),
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(2),
-                    include_store_attestations=True,
-                    attestations=[
-                        AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0), ValidatorIndex(3)],
-                            slot=Slot(1),
-                            target_slot=Slot(1),
-                            target_root_label="block_1",
-                        ),
-                    ],
-                ),
-                checks=StoreChecks(
-                    head_slot=Slot(2),
-                    block_attestation_count=2,
-                    block_attestations=[
-                        AggregatedAttestationCheck(
-                            participants={1},
-                            attestation_slot=Slot(1),
-                            target_slot=Slot(0),
-                        ),
-                        AggregatedAttestationCheck(
-                            participants={0, 3},
                             attestation_slot=Slot(1),
                             target_slot=Slot(1),
                         ),

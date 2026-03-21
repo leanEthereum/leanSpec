@@ -7,6 +7,7 @@ competing forks have equal attestation weight.
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
@@ -14,6 +15,7 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -62,7 +64,19 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_a_2", label="fork_a_3"),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="fork_a_2",
+                    label="fork_a_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="fork_a_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     head_root_label="fork_a_3",
@@ -73,15 +87,27 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
                 block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_b_2"),
                 checks=StoreChecks(
                     head_slot=Slot(3),
-                    # Head remains on fork_a_3 (it has more weight: 2 blocks vs 1)
+                    # Head remains on fork_a_3 (it has more weight: 1 vs 0)
                     head_root_label="fork_a_3",
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_b_2", label="fork_b_3"),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="fork_b_2",
+                    label="fork_b_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="fork_b_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
-                    # Both forks now have equal weight (2 blocks each)
+                    # Both forks now have equal weight (1 attestation each)
                     #
                     # Tiebreaker determines the winner
                     lexicographic_head_among=["fork_a_3", "fork_b_3"],

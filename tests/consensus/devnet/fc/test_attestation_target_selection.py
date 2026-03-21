@@ -2,6 +2,7 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
@@ -9,6 +10,7 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -84,35 +86,78 @@ def test_attestation_target_advances_with_attestations(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1)),
+                block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     attestation_target_slot=Slot(0),  # Still at genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(2)),
+                block=BlockSpec(
+                    slot=Slot(2),
+                    label="block_2",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(1),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
                     attestation_target_slot=Slot(0),  # Still at genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3)),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     attestation_target_slot=Slot(0),  # Still at genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(4)),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    label="block_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(3),
+                            target_slot=Slot(3),
+                            target_root_label="block_3",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
                     attestation_target_slot=Slot(1),  # Advances to slot 1
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(5)),
+                block=BlockSpec(
+                    slot=Slot(5),
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(4),
+                            target_slot=Slot(4),
+                            target_root_label="block_4",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(5),
                     attestation_target_slot=Slot(2),  # Continues advancing
@@ -198,56 +243,132 @@ def test_attestation_target_with_extended_chain(
     fork_choice_test(
         steps=[
             BlockStep(
-                block=BlockSpec(slot=Slot(1)),
+                block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(
                     head_slot=Slot(1),
                     attestation_target_slot=Slot(0),  # Genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(2)),
+                block=BlockSpec(
+                    slot=Slot(2),
+                    label="block_2",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(1),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(2),
                     attestation_target_slot=Slot(0),  # Still genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(3)),
+                block=BlockSpec(
+                    slot=Slot(3),
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     attestation_target_slot=Slot(0),  # Still genesis
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(4)),
+                block=BlockSpec(
+                    slot=Slot(4),
+                    label="block_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(3),
+                            target_slot=Slot(3),
+                            target_root_label="block_3",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
                     attestation_target_slot=Slot(1),  # Advances to slot 1
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(5)),
+                block=BlockSpec(
+                    slot=Slot(5),
+                    label="block_5",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(4),
+                            target_slot=Slot(4),
+                            target_root_label="block_4",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(5),
                     attestation_target_slot=Slot(2),  # Stable at 2
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(6)),
+                block=BlockSpec(
+                    slot=Slot(6),
+                    label="block_6",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="block_5",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(6),
                     attestation_target_slot=Slot(3),  # Continues to advance
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(7)),
+                block=BlockSpec(
+                    slot=Slot(7),
+                    label="block_7",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(6),
+                            target_slot=Slot(6),
+                            target_root_label="block_6",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(7),
                     attestation_target_slot=Slot(4),  # Continues advancing
                 ),
             ),
             BlockStep(
-                block=BlockSpec(slot=Slot(8)),
+                block=BlockSpec(
+                    slot=Slot(8),
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(3)],
+                            slot=Slot(7),
+                            target_slot=Slot(7),
+                            target_root_label="block_7",
+                        ),
+                    ],
+                ),
                 checks=StoreChecks(
                     head_slot=Slot(8),
                     attestation_target_slot=Slot(5),  # Continues advancing
@@ -288,51 +409,66 @@ def test_attestation_target_justifiable_constraint(
     The test verifies that the target selection algorithm respects these rules
     and never selects a non-justifiable target.
     """
-    fork_choice_test(
-        steps=[
+    num_validators = 4
+    expected_targets = {
+        1: 0,  # 3-slot walkback reaches safe target at slot 0
+        2: 0,  # 3-slot walkback reaches safe target at slot 0
+        3: 0,  # 3-slot walkback reaches safe target at slot 0
+        4: 1,  # delta = 4 - 3 - 0 = 1, Rule 1: delta 1 ≤ 5
+        5: 2,  # delta = 5 - 3 - 0 = 2, Rule 1: delta 2 ≤ 5
+        6: 3,  # delta = 6 - 3 - 0 = 3, Rule 1: delta 3 ≤ 5
+        7: 4,  # delta = 7 - 3 - 0 = 4, Rule 1: delta 4 ≤ 5
+        8: 5,  # delta = 8 - 3 - 0 = 5, Rule 1: delta 5 ≤ 5
+        9: 6,  # delta = 6 - 0 = 6, Rule 3: pronic number (2*3)
+        10: 6,  # delta = 10 - 3 - 0 = 7
+        11: 6,  # delta = 11 - 3 - 0 = 8
+        12: 9,  # delta = 9 - 0 = 9, Rule 2: perfect square (3^2)
+        13: 9,  # delta = 13 - 3 - 0 = 10
+        14: 9,  # delta = 14 - 3 - 0 = 11
+        15: 12,  # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
+        16: 12,  # delta = 16 - 3 - 0 = 13
+        17: 12,  # delta = 17 - 3 - 0 = 14
+        18: 12,  # delta = 18 - 3 - 0 = 15
+        19: 16,  # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
+        20: 16,  # delta = 20 - 3 - 0 = 17
+        21: 16,  # delta = 21 - 3 - 0 = 18
+        22: 16,  # delta = 22 - 3 - 0 = 19
+        23: 20,  # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
+        24: 20,  # delta = 24 - 3 - 0 = 21
+        25: 20,  # delta = 25 - 3 - 0 = 22
+        26: 20,  # delta = 26 - 3 - 0 = 23
+        27: 20,  # delta = 27 - 3 - 0 = 24
+        28: 25,  # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
+        29: 25,  # delta = 29 - 3 - 0 = 26
+        30: 25,  # delta = 30 - 3 - 0 = 27
+    }
+
+    steps = []
+    for i in range(1, 31):
+        steps.append(
             BlockStep(
-                block=BlockSpec(slot=Slot(i)),
-                checks=StoreChecks(
-                    head_slot=Slot(i),
-                    attestation_target_slot=Slot(
-                        # Mapping of current slot -> expected target slot
-                        # delta = current_slot - JUSTIFICATION_LOOKBACK_SLOTS - finalized_slot
-                        # delta = current_slot - 3 - 0
-                        {
-                            1: 0,  # 3-slot walkback reaches safe target at slot 0
-                            2: 0,  # 3-slot walkback reaches safe target at slot 0
-                            3: 0,  # 3-slot walkback reaches safe target at slot 0
-                            4: 1,  # delta = 4 - 3 - 0 = 1, Rule 1: delta 1 ≤ 5
-                            5: 2,  # delta = 5 - 3 - 0 = 2, Rule 1: delta 2 ≤ 5
-                            6: 3,  # delta = 6 - 3 - 0 = 3, Rule 1: delta 3 ≤ 5
-                            7: 4,  # delta = 7 - 3 - 0 = 4, Rule 1: delta 4 ≤ 5
-                            8: 5,  # delta = 8 - 3 - 0 = 5, Rule 1: delta 5 ≤ 5
-                            9: 6,  # delta = 6 - 0 = 6, Rule 3: pronic number (2*3)
-                            10: 6,  # delta = 10 - 3 - 0 = 7
-                            11: 6,  # delta = 11 - 3 - 0 = 8
-                            12: 9,  # delta = 9 - 0 = 9, Rule 2: perfect square (3^2)
-                            13: 9,  # delta = 13 - 3 - 0 = 10
-                            14: 9,  # delta = 14 - 3 - 0 = 11
-                            15: 12,  # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
-                            16: 12,  # delta = 16 - 3 - 0 = 13
-                            17: 12,  # delta = 17 - 3 - 0 = 14
-                            18: 12,  # delta = 18 - 3 - 0 = 15
-                            19: 16,  # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
-                            20: 16,  # delta = 20 - 3 - 0 = 17
-                            21: 16,  # delta = 21 - 3 - 0 = 18
-                            22: 16,  # delta = 22 - 3 - 0 = 19
-                            23: 20,  # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
-                            24: 20,  # delta = 24 - 3 - 0 = 21
-                            25: 20,  # delta = 25 - 3 - 0 = 22
-                            26: 20,  # delta = 26 - 3 - 0 = 23
-                            27: 20,  # delta = 27 - 3 - 0 = 24
-                            28: 25,  # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
-                            29: 25,  # delta = 29 - 3 - 0 = 26
-                            30: 25,  # delta = 30 - 3 - 0 = 27
-                        }[i]
+                block=BlockSpec(
+                    slot=Slot(i),
+                    label=f"block_{i}",
+                    attestations=(
+                        [
+                            AggregatedAttestationSpec(
+                                validator_ids=[ValidatorIndex((i - 1) % num_validators)],
+                                slot=Slot(i - 1),
+                                target_slot=Slot(i - 1),
+                                target_root_label=f"block_{i - 1}",
+                            ),
+                        ]
+                        # Slot 1 can't attest to genesis (root 0x00 not in store.blocks)
+                        if i >= 2
+                        else None
                     ),
                 ),
+                checks=StoreChecks(
+                    head_slot=Slot(i),
+                    attestation_target_slot=Slot(expected_targets[i]),
+                ),
             )
-            for i in range(1, 31)
-        ],
-    )
+        )
+
+    fork_choice_test(steps=steps)

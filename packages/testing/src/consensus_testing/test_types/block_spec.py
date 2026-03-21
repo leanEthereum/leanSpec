@@ -116,28 +116,3 @@ class BlockSpec(CamelModel):
 
     Useful for tests that intentionally exercise slot mismatch failures.
     """
-
-    include_store_attestations: bool = False
-    """
-    Automatically include available attestations in the block body.
-
-    When True:
-    - Previous proposers' attestations flow into subsequent blocks
-    - Gossip attestations are automatically collected
-    - Combined with any explicitly specified attestations
-
-    When False (default):
-    - Only explicitly specified attestations are included
-
-    Enables more realistic test vectors without manual specification.
-    """
-
-    gossip_proposer_attestation: bool = False
-    """
-    Simulate the proposer gossiping an attestation after block production.
-
-    In the real system, the proposer gossips an attestation at interval 1
-    using the attestation key, separate from the block's proposal-key
-    signature. This flag simulates that gossip so later blocks can
-    auto-collect it via include_store_attestations.
-    """

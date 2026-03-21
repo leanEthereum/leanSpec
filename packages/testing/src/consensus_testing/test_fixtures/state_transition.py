@@ -257,6 +257,7 @@ class StateTransitionTest(BaseConsensusFixture):
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
+            known_block_roots=frozenset(),
             aggregated_payloads={},
         )
         return block, post_state

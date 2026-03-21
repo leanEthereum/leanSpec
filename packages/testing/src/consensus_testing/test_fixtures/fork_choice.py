@@ -17,7 +17,6 @@ from lean_spec.subspecs.chain.config import (
     MILLISECONDS_PER_INTERVAL,
 )
 from lean_spec.subspecs.containers.attestation import (
-    AggregatedAttestation,
     Attestation,
     AttestationData,
     SignedAttestation,
@@ -293,23 +292,6 @@ class ForkChoiceTest(BaseConsensusFixture):
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                         )
 
-                        # Optionally simulate the proposer's gossip attestation.
-                        if step.block.gossip_proposer_attestation:
-                            proposer_index = block.proposer_index
-                            proposer_att_data = store.produce_attestation_data(block.slot)
-                            proposer_gossip_att = SignedAttestation(
-                                validator_id=proposer_index,
-                                data=proposer_att_data,
-                                signature=key_manager.sign_attestation_data(
-                                    proposer_index, proposer_att_data
-                                ),
-                            )
-                            store = store.on_gossip_attestation(
-                                proposer_gossip_att,
-                                scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
-                                is_aggregator=True,
-                            )
-
                     case AttestationStep():
                         # Process a gossip attestation.
                         # Gossip attestations arrive outside of blocks.
@@ -431,48 +413,22 @@ class ForkChoiceTest(BaseConsensusFixture):
                 is_aggregator=True,
             )
 
-        # Aggregate gossip signatures and merge into known payloads.
-        # This makes recently gossiped attestations available for block construction.
+        # Aggregate gossip signatures into proofs.
+        # aggregate() places freshly aggregated proofs directly into
+        # latest_known_aggregated_payloads, making them available for block building.
         aggregation_store, _ = working_store.aggregate()
         merged_store = aggregation_store.accept_new_attestations()
 
-        if spec.include_store_attestations:
-            # Start from aggregated payloads already present in the store.
-            block_payloads = {
-                data: set(proofs)
-                for data, proofs in merged_store.latest_known_aggregated_payloads.items()
-            }
-        else:
-            block_payloads = {}
-
-        # Explicit attestations from the spec are always candidates for inclusion.
-        # Aggregate only the attestations with valid signatures before building proofs.
-        spec_valid_attestations = [
-            attestation for attestation in attestations if attestation in valid_attestations
-        ]
-        spec_aggregated_attestations = AggregatedAttestation.aggregate_by_data(
-            spec_valid_attestations
-        )
-        spec_attestation_signatures = key_manager.build_attestation_signatures(
-            AggregatedAttestations(data=spec_aggregated_attestations),
-            attestation_signatures,
-        )
-        for aggregated_attestation, proof in zip(
-            spec_aggregated_attestations, spec_attestation_signatures.data, strict=True
-        ):
-            block_payloads.setdefault(aggregated_attestation.data, set()).add(proof)
-
         # Build the block using the same path as regular proposal.
         #
-        # block_payloads now includes:
-        # - store payloads (optional, controlled by include_store_attestations)
-        # - explicit spec attestations (always)
+        # block_payloads contains explicit spec attestations only.
         parent_state = store.states[parent_root]
         final_block, post_state, _, _ = parent_state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            aggregated_payloads=block_payloads,
+            known_block_roots=set(store.blocks.keys()),
+            aggregated_payloads=merged_store.latest_known_aggregated_payloads,
         )
 
         # Sign everything

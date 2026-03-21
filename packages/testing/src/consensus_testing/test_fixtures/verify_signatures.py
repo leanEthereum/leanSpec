@@ -215,14 +215,13 @@ class VerifySignaturesTest(BaseConsensusFixture):
             )
         }
 
-        final_block, post_state, _, _ = state.build_block(
+        final_block, _, _, aggregated_signatures = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
+            known_block_roots={parent_root},
             aggregated_payloads=aggregated_payloads,
         )
-
-        aggregated_signatures = []
 
         # Create proofs for invalid attestation specs
         for invalid_spec in invalid_specs:

@@ -165,3 +165,6 @@ scripts/
 
 # Claude Code
 .claude/settings.local.json
+
+# Client codebase used by Claude skill for running reference tests
+clients/

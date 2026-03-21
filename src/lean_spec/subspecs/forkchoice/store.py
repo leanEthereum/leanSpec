@@ -968,8 +968,13 @@ class Store(StrictBaseModel):
                 }
             ), new_aggregates
         else:
-            # Plain aggregation: only attestation_signatures; carry forward existing
-            # new payloads. Remove this block once bindings support recursive aggregation.
+            # Plain aggregation: only attestation_signatures. Remove this block once
+            # bindings support recursive aggregation.
+            #
+            # Freshly aggregated proofs go directly to latest_known because they are
+            # our own aggregation output and can be used immediately for block building
+            # and fork choice. Proofs from on_gossip_aggregated_attestation remain in
+            # latest_new until accepted at interval 4.
             aggregated_results = head_state.aggregate(
                 attestation_signatures=self.attestation_signatures,
                 new_payloads=None,
@@ -979,7 +984,7 @@ class Store(StrictBaseModel):
             new_aggregates = []
             new_aggregated_payloads = {
                 attestation_data: set(proofs)
-                for attestation_data, proofs in self.latest_new_aggregated_payloads.items()
+                for attestation_data, proofs in self.latest_known_aggregated_payloads.items()
             }
             aggregated_attestation_data = set()
             for att, proof in aggregated_results:
@@ -1281,6 +1286,7 @@ class Store(StrictBaseModel):
             slot=slot,
             proposer_index=validator_index,
             parent_root=head_root,
+            known_block_roots=set(store.blocks.keys()),
             aggregated_payloads=store.latest_known_aggregated_payloads,
         )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -433,13 +434,6 @@ class State(Container):
             if not justified_slots.is_slot_justified(finalized_slot, source.slot):
                 continue
 
-            # Ignore votes for targets that have already reached consensus.
-            #
-            # If a block is already justified, additional votes do not change anything.
-            # We simply skip them.
-            if justified_slots.is_slot_justified(finalized_slot, target.slot):
-                continue
-
             # Ignore votes that reference zero-hash slots.
             if source.root == ZERO_HASH or target.root == ZERO_HASH:
                 continue
@@ -451,6 +445,8 @@ class State(Container):
             # stored for those slots in history.
             #
             # This prevents votes about unknown or conflicting forks.
+            # This check must happen before accessing the justified_slots bitfield,
+            # which may not cover slots from other forks.
             source_slot_int = int(source.slot)
             target_slot_int = int(target.slot)
             source_matches = (
@@ -636,6 +632,7 @@ class State(Container):
         slot: Slot,
         proposer_index: ValidatorIndex,
         parent_root: Bytes32,
+        known_block_roots: AbstractSet[Bytes32],
         aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] | None = None,
     ) -> tuple[Block, State, list[AggregatedAttestation], list[AggregatedSignatureProof]]:
         """
@@ -652,6 +649,8 @@ class State(Container):
             slot: Target slot for the block.
             proposer_index: Validator index of the proposer.
             parent_root: Root of the parent block.
+            known_block_roots: Set of block roots known to the caller. Attestations
+                referencing unknown head roots are excluded.
             aggregated_payloads: Aggregated signature payloads keyed by attestation data.
 
         Returns:
@@ -672,12 +671,19 @@ class State(Container):
             else:
                 current_justified = self.latest_justified
 
+
             while True:
                 found_entries = False
 
-                for att_data, proofs in aggregated_payloads.items():
+                for att_data, proofs in sorted(
+                    aggregated_payloads.items(), key=lambda item: item[0].target.slot
+                ):
+                    if att_data.head.root not in known_block_roots:
+                        continue
+
                     if att_data.source != current_justified:
                         continue
+
                     found_entries = True
 
                     # Greedy proof selection: pick the proof covering the most
