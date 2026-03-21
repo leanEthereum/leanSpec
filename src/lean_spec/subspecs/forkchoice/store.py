@@ -1272,29 +1272,15 @@ class Store(StrictBaseModel):
             f"Validator {validator_index} is not the proposer for slot {slot}"
         )
 
-        # Gather attestations from the store.
-        #
-        # Extract attestations from known aggregated payloads.
-        # These attestations have already influenced fork choice.
-        # Including them in the block makes them permanent on-chain.
-        attestation_data_map = store.extract_attestations_from_aggregated_payloads(
-            store.latest_known_aggregated_payloads
-        )
-        available_attestations = [
-            Attestation(validator_id=validator_id, data=attestation_data)
-            for validator_id, attestation_data in attestation_data_map.items()
-        ]
-
         # Build the block.
         #
-        # The builder iteratively collects valid attestations.
-        # It returns the final block, post-state, and signature proofs.
+        # The builder iteratively collects valid attestations from aggregated
+        # payloads matching the justified checkpoint. Each iteration may advance
+        # justification, unlocking more attestation data entries.
         final_block, final_post_state, collected_attestations, signatures = head_state.build_block(
             slot=slot,
             proposer_index=validator_index,
             parent_root=head_root,
-            available_attestations=available_attestations,
-            known_block_roots=set(store.blocks.keys()),
             aggregated_payloads=store.latest_known_aggregated_payloads,
         )
 

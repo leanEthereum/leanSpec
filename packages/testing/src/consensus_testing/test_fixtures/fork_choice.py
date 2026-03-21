@@ -17,6 +17,7 @@ from lean_spec.subspecs.chain.config import (
     MILLISECONDS_PER_INTERVAL,
 )
 from lean_spec.subspecs.containers.attestation import (
+    AggregatedAttestation,
     Attestation,
     AttestationData,
     SignedAttestation,
@@ -435,39 +436,43 @@ class ForkChoiceTest(BaseConsensusFixture):
         aggregation_store, _ = working_store.aggregate()
         merged_store = aggregation_store.accept_new_attestations()
 
-        # Two sources of attestations:
-        # 1. Explicit attestations from the spec (always included)
-        # 2. Store attestations (only if include_store_attestations is True)
-        available_attestations: list[Attestation]
-        known_block_roots: set[Bytes32] | None = None
-
         if spec.include_store_attestations:
-            # Extract from merged payloads (contains both known and newly aggregated)
-            attestation_map = merged_store.extract_attestations_from_aggregated_payloads(
-                merged_store.latest_known_aggregated_payloads
-            )
-            store_attestations = [
-                Attestation(validator_id=vid, data=data) for vid, data in attestation_map.items()
-            ]
-            available_attestations = store_attestations + attestations
-            known_block_roots = set(store.blocks.keys())
+            # Start from aggregated payloads already present in the store.
+            block_payloads = {
+                data: set(proofs)
+                for data, proofs in merged_store.latest_known_aggregated_payloads.items()
+            }
         else:
-            # Use only explicit attestations from the spec
-            available_attestations = attestations
+            block_payloads = {}
 
-        # Build the block using spec logic.
+        # Explicit attestations from the spec are always candidates for inclusion.
+        # Aggregate only the attestations with valid signatures before building proofs.
+        spec_valid_attestations = [
+            attestation for attestation in attestations if attestation in valid_attestations
+        ]
+        spec_aggregated_attestations = AggregatedAttestation.aggregate_by_data(
+            spec_valid_attestations
+        )
+        spec_attestation_signatures = key_manager.build_attestation_signatures(
+            AggregatedAttestations(data=spec_aggregated_attestations),
+            attestation_signatures,
+        )
+        for aggregated_attestation, proof in zip(
+            spec_aggregated_attestations, spec_attestation_signatures.data, strict=True
+        ):
+            block_payloads.setdefault(aggregated_attestation.data, set()).add(proof)
+
+        # Build the block using the same path as regular proposal.
         #
-        # State handles the core block construction.
-        # This includes state transition and root computation.
+        # block_payloads now includes:
+        # - store payloads (optional, controlled by include_store_attestations)
+        # - explicit spec attestations (always)
         parent_state = store.states[parent_root]
         final_block, post_state, _, _ = parent_state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            attestations=available_attestations,
-            available_attestations=available_attestations,
-            known_block_roots=known_block_roots,
-            aggregated_payloads=merged_store.latest_known_aggregated_payloads,
+            aggregated_payloads=block_payloads,
         )
 
         # Sign everything
