@@ -413,9 +413,8 @@ class ForkChoiceTest(BaseConsensusFixture):
                 is_aggregator=True,
             )
 
-        # Aggregate gossip signatures into proofs.
-        # aggregate() places freshly aggregated proofs directly into
-        # latest_known_aggregated_payloads, making them available for block building.
+        # Aggregate gossip signatures and merge into known payloads.
+        # This makes recently gossiped attestations available for block construction.
         aggregation_store, _ = working_store.aggregate()
         merged_store = aggregation_store.accept_new_attestations()
 

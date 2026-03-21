@@ -434,6 +434,13 @@ class State(Container):
             if not justified_slots.is_slot_justified(finalized_slot, source.slot):
                 continue
 
+            # Ignore votes for targets that have already reached consensus.
+            #
+            # If a block is already justified, additional votes do not change anything.
+            # We simply skip them.
+            if justified_slots.is_slot_justified(finalized_slot, target.slot):
+                continue
+
             # Ignore votes that reference zero-hash slots.
             if source.root == ZERO_HASH or target.root == ZERO_HASH:
                 continue
@@ -445,8 +452,6 @@ class State(Container):
             # stored for those slots in history.
             #
             # This prevents votes about unknown or conflicting forks.
-            # This check must happen before accessing the justified_slots bitfield,
-            # which may not cover slots from other forks.
             source_slot_int = int(source.slot)
             target_slot_int = int(target.slot)
             source_matches = (
@@ -649,8 +654,7 @@ class State(Container):
             slot: Target slot for the block.
             proposer_index: Validator index of the proposer.
             parent_root: Root of the parent block.
-            known_block_roots: Set of block roots known to the caller. Attestations
-                referencing unknown head roots are excluded.
+            known_block_roots: Set of known block roots for attestation validation.
             aggregated_payloads: Aggregated signature payloads keyed by attestation data.
 
         Returns:
