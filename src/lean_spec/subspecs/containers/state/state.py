@@ -675,7 +675,6 @@ class State(Container):
             else:
                 current_justified = self.latest_justified
 
-
             while True:
                 found_entries = False
 

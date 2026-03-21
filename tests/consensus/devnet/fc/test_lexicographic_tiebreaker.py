@@ -106,7 +106,6 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
                     ],
                 ),
                 checks=StoreChecks(
-                    # head_slot=Slot(5),
                     # Both forks now have equal weight (1 attestation each)
                     #
                     # Tiebreaker determines the winner
