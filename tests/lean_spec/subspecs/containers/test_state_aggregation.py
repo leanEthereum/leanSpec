@@ -270,6 +270,286 @@ def test_build_block_state_root_valid_when_signatures_split(
     assert len(result_state.validators.data) == num_validators
 
 
+def test_build_block_greedy_selects_minimum_proofs(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Greedy selection picks the minimum set of proofs to cover all validators."""
+    state = make_keyed_genesis_state(4, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    target = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=target,
+        source=source,
+    )
+
+    # Three overlapping proofs: {0,1,2}, {1,2,3}, {2,3}
+    # Greedy should pick {0,1,2} first (covers 3), then {1,2,3} (covers 1 new: validator 3)
+    proof_012 = make_aggregated_proof(
+        container_key_manager,
+        [ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+        att_data,
+    )
+    proof_123 = make_aggregated_proof(
+        container_key_manager,
+        [ValidatorIndex(1), ValidatorIndex(2), ValidatorIndex(3)],
+        att_data,
+    )
+    proof_23 = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(2), ValidatorIndex(3)], att_data
+    )
+    aggregated_payloads = {att_data: {proof_012, proof_123, proof_23}}
+
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads=aggregated_payloads,
+    )
+
+    all_covered = set()
+    for proof in aggregated_proofs:
+        all_covered |= set(proof.participants.to_validator_indices())
+
+    assert all_covered == {ValidatorIndex(i) for i in range(4)}
+    assert len(aggregated_proofs) == 2
+    assert len(aggregated_atts) == 2
+
+
+def test_build_block_greedy_selects_all_single_validator_proofs(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Greedy selection should keep all disjoint single-validator proofs."""
+    state = make_keyed_genesis_state(3, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+
+    aggregated_payloads = {
+        att_data: {
+            make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data),
+            make_aggregated_proof(container_key_manager, [ValidatorIndex(1)], att_data),
+            make_aggregated_proof(container_key_manager, [ValidatorIndex(2)], att_data),
+        }
+    }
+
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads=aggregated_payloads,
+    )
+
+    expected_participant_sets = {(0,), (1,), (2,)}
+    proof_participant_sets = {
+        tuple(sorted(int(v) for v in proof.participants.to_validator_indices()))
+        for proof in aggregated_proofs
+    }
+    att_participant_sets = {
+        tuple(sorted(int(v) for v in att.aggregation_bits.to_validator_indices()))
+        for att in aggregated_atts
+    }
+
+    assert proof_participant_sets == expected_participant_sets
+    assert att_participant_sets == expected_participant_sets
+
+
+def test_build_block_greedy_tie_chain_skips_redundant_proof(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Overlapping tie chains should cover all validators without selecting zero-gain proofs."""
+    state = make_keyed_genesis_state(5, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+
+    proof_12 = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(1), ValidatorIndex(2)], att_data
+    )
+    proof_23 = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(2), ValidatorIndex(3)], att_data
+    )
+    proof_34 = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(3), ValidatorIndex(4)], att_data
+    )
+    proof_2 = make_aggregated_proof(container_key_manager, [ValidatorIndex(2)], att_data)
+
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data: {proof_12, proof_23, proof_34, proof_2}},
+    )
+
+    proof_participant_sets = {
+        tuple(sorted(int(v) for v in proof.participants.to_validator_indices()))
+        for proof in aggregated_proofs
+    }
+    covered_validators = {
+        validator for participants in proof_participant_sets for validator in participants
+    }
+    att_participant_sets = {
+        tuple(sorted(int(v) for v in att.aggregation_bits.to_validator_indices()))
+        for att in aggregated_atts
+    }
+
+    assert covered_validators == {1, 2, 3, 4}
+    assert (2,) not in proof_participant_sets
+    assert 2 <= len(aggregated_proofs) <= 3
+    assert att_participant_sets == proof_participant_sets
+
+
+def test_build_block_greedy_skips_subset_when_superset_selected(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Subset proof should be skipped after a superset has already covered it."""
+    state = make_keyed_genesis_state(3, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+
+    proof_0 = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
+    proof_01 = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
+    )
+    proof_2 = make_aggregated_proof(container_key_manager, [ValidatorIndex(2)], att_data)
+
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data: {proof_0, proof_01, proof_2}},
+    )
+
+    expected_participant_sets = {(0, 1), (2,)}
+    proof_participant_sets = {
+        tuple(sorted(int(v) for v in proof.participants.to_validator_indices()))
+        for proof in aggregated_proofs
+    }
+    att_participant_sets = {
+        tuple(sorted(int(v) for v in att.aggregation_bits.to_validator_indices()))
+        for att in aggregated_atts
+    }
+
+    assert proof_participant_sets == expected_participant_sets
+    assert att_participant_sets == expected_participant_sets
+
+
+def test_build_block_skips_non_matching_source(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Only attestation data whose source matches current_justified is included."""
+    state = make_keyed_genesis_state(2, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    correct_source = Checkpoint(root=parent_root, slot=Slot(0))
+    wrong_source = Checkpoint(root=make_bytes32(99), slot=Slot(0))
+
+    att_data_good = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=correct_source,
+    )
+    att_data_bad = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=wrong_source,
+    )
+
+    proof_good = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data_good)
+    proof_bad = make_aggregated_proof(container_key_manager, [ValidatorIndex(1)], att_data_bad)
+
+    _, _, aggregated_atts, _ = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data_good: {proof_good}, att_data_bad: {proof_bad}},
+    )
+
+    assert len(aggregated_atts) == 1
+    assert aggregated_atts[0].data == att_data_good
+
+
+def test_build_block_skips_unknown_head_root(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Attestation data with head root not in known_block_roots is excluded."""
+    state = make_keyed_genesis_state(2, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    unknown_root = make_bytes32(200)
+
+    att_data_known = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+    att_data_unknown = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=unknown_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+
+    proof_known = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data_known)
+    proof_unknown = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(1)], att_data_unknown
+    )
+
+    _, _, aggregated_atts, _ = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data_known: {proof_known}, att_data_unknown: {proof_unknown}},
+    )
+
+    assert len(aggregated_atts) == 1
+    assert aggregated_atts[0].data == att_data_known
+
+
 def test_gossip_none_and_aggregated_payloads_none(
     container_key_manager: XmssKeyManager,
 ) -> None:

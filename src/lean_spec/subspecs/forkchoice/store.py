@@ -960,7 +960,7 @@ class Store(StrictBaseModel):
                 }
             ), new_aggregates
         else:
-            # Plain aggregation: only attestation_signatures. Remove this block once
+            # Plain aggregation: only attestation_signatures. TODO: Remove this block once
             # bindings support recursive aggregation.
             #
             # Freshly aggregated proofs go directly to latest_known because they are

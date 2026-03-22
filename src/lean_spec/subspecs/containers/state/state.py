@@ -675,6 +675,8 @@ class State(Container):
             else:
                 current_justified = self.latest_justified
 
+            processed_att_data: set[AttestationData] = set()
+
             while True:
                 found_entries = False
 
@@ -687,33 +689,20 @@ class State(Container):
                     if att_data.source != current_justified:
                         continue
 
+                    if att_data in processed_att_data:
+                        continue
+                    processed_att_data.add(att_data)
+
                     found_entries = True
 
-                    # Greedy proof selection: pick the proof covering the most
-                    # uncovered validators until all are covered.
                     covered: set[ValidatorIndex] = set()
-                    while True:
-                        best_proof: AggregatedSignatureProof | None = None
-                        best_new_coverage = 0
-
-                        for proof in proofs:
-                            proof_validators = set(proof.participants.to_validator_indices())
-                            new_coverage = len(proof_validators - covered)
-                            if new_coverage > best_new_coverage:
-                                best_new_coverage = new_coverage
-                                best_proof = proof
-
-                        if best_proof is None or best_new_coverage == 0:
-                            break
-
-                        aggregated_attestations.append(
-                            AggregatedAttestation(
-                                aggregation_bits=best_proof.participants,
-                                data=att_data,
-                            )
-                        )
-                        aggregated_signatures.append(best_proof)
-                        covered |= set(best_proof.participants.to_validator_indices())
+                    self._extend_proofs_greedily(
+                        proofs,
+                        aggregated_signatures,
+                        covered,
+                        attestation_data=att_data,
+                        attestations=aggregated_attestations,
+                    )
 
                 if not found_entries:
                     break
@@ -758,6 +747,8 @@ class State(Container):
         proofs: set[AggregatedSignatureProof] | None,
         selected: list[AggregatedSignatureProof],
         covered: set[ValidatorIndex],
+        attestation_data: AttestationData | None = None,
+        attestations: list[AggregatedAttestation] | None = None,
     ) -> None:
         if not proofs:
             return
@@ -773,6 +764,10 @@ class State(Container):
             selected.append(best)
             covered.update(participants)
             remaining.remove(best)
+            if attestation_data is not None and attestations is not None:
+                attestations.append(
+                    AggregatedAttestation(aggregation_bits=best.participants, data=attestation_data)
+                )
 
     def aggregate(
         self,
