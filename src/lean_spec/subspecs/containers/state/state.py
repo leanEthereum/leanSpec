@@ -16,7 +16,10 @@ from lean_spec.types import (
     Uint64,
 )
 
-from ..attestation import AggregatedAttestation, AggregationBits, Attestation, AttestationData
+if TYPE_CHECKING:
+    from lean_spec.subspecs.forkchoice import AttestationSignatureEntry
+
+from ..attestation import AggregatedAttestation, AggregationBits, AttestationData
 from ..block import Block, BlockBody, BlockHeader
 from ..block.types import AggregatedAttestations
 from ..checkpoint import Checkpoint
@@ -634,9 +637,7 @@ class State(Container):
         slot: Slot,
         proposer_index: ValidatorIndex,
         parent_root: Bytes32,
-        attestations: list[Attestation] | None = None,
-        available_attestations: Iterable[Attestation] | None = None,
-        known_block_roots: AbstractSet[Bytes32] | None = None,
+        known_block_roots: AbstractSet[Bytes32],
         aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] | None = None,
     ) -> tuple[Block, State, list[AggregatedAttestation], list[AggregatedSignatureProof]]:
         """
@@ -644,111 +645,94 @@ class State(Container):
 
         Computes the post-state and creates a block with the correct state root.
 
-        If `available_attestations` and `known_block_roots` are provided,
-        performs fixed-point attestation collection: iteratively adds valid
-        attestations until no more can be included. This is necessary because
-        processing attestations may update the justified checkpoint, which may
-        make additional attestations valid.
+        Uses a fixed-point algorithm: finds attestation_data entries whose source
+        matches the current justified checkpoint, greedily selects proofs maximizing
+        new validator coverage, then applies the STF. If justification advances,
+        repeats with the new checkpoint.
 
         Args:
             slot: Target slot for the block.
             proposer_index: Validator index of the proposer.
             parent_root: Root of the parent block.
-            attestations: Initial attestations to include.
-            available_attestations: Pool of attestations to collect from.
             known_block_roots: Set of known block roots for attestation validation.
             aggregated_payloads: Aggregated signature payloads keyed by attestation data.
 
         Returns:
             Tuple of (Block, post-State, collected attestations, signatures).
         """
-        # Initialize empty attestation set for iterative collection.
-        attestations = list(attestations or [])
+        aggregated_attestations: list[AggregatedAttestation] = []
+        aggregated_signatures: list[AggregatedSignatureProof] = []
 
-        # Iteratively collect valid attestations using fixed-point algorithm.
-        #
-        # Continue until no new attestations can be added to the block.
-        # This ensures we include the maximal valid attestation set.
-        while True:
-            # Create candidate block with current attestation set.
-            candidate_block = Block(
-                slot=slot,
-                proposer_index=proposer_index,
-                parent_root=parent_root,
-                state_root=Bytes32.zero(),
-                body=BlockBody(
-                    attestations=AggregatedAttestations(
-                        data=AggregatedAttestation.aggregate_by_data(attestations)
+        if aggregated_payloads:
+            # Fixed-point loop: find attestation_data entries matching the current
+            # justified checkpoint and greedily select proofs. Processing attestations
+            # may advance justification, unlocking more entries.
+            # When building on top of genesis (slot 0), process_block_header
+            # updates the justified root to parent_root. Apply the same
+            # derivation here so attestation sources match.
+            if self.latest_block_header.slot == Slot(0):
+                current_justified = self.latest_justified.model_copy(update={"root": parent_root})
+            else:
+                current_justified = self.latest_justified
+
+            processed_att_data: set[AttestationData] = set()
+
+            while True:
+                found_entries = False
+
+                for att_data, proofs in sorted(
+                    aggregated_payloads.items(), key=lambda item: item[0].target.slot
+                ):
+                    if att_data.head.root not in known_block_roots:
+                        continue
+
+                    if att_data.source != current_justified:
+                        continue
+
+                    if att_data in processed_att_data:
+                        continue
+                    processed_att_data.add(att_data)
+
+                    found_entries = True
+
+                    covered: set[ValidatorIndex] = set()
+                    self._extend_proofs_greedily(
+                        proofs,
+                        aggregated_signatures,
+                        covered,
+                        attestation_data=att_data,
+                        attestations=aggregated_attestations,
                     )
-                ),
-            )
 
-            # Apply state transition to get the post-block state.
-            slots_state = self.process_slots(slot)
-            post_state = slots_state.process_block(candidate_block)
+                if not found_entries:
+                    break
 
-            # No attestation source provided: done after computing post_state.
-            if available_attestations is None or known_block_roots is None:
-                break
-
-            # Find new valid attestations matching post-state justification.
-            new_attestations: list[Attestation] = []
-
-            for attestation in available_attestations:
-                data = attestation.data
-
-                # Skip if target block is unknown.
-                if data.head.root not in known_block_roots:
-                    continue
-
-                # Skip if attestation source does not match post-state's latest justified.
-                if data.source != post_state.latest_justified:
-                    continue
-
-                # Avoid adding duplicates of attestations already in the candidate set.
-                if attestation in attestations:
-                    continue
-
-                # We can only include an attestation if we have some way to later provide
-                # an aggregated proof for this attestation.
-                # - at least one proof for the attestation data with this validator's
-                #  participation bit set
-                if not aggregated_payloads or data not in aggregated_payloads:
-                    continue
-
-                vid = attestation.validator_id
-                has_proof_for_validator = any(
-                    int(vid) < len(proof.participants.data)
-                    and bool(proof.participants.data[int(vid)])
-                    for proof in aggregated_payloads[data]
+                # Build candidate block and check if justification changed.
+                candidate_block = Block(
+                    slot=slot,
+                    proposer_index=proposer_index,
+                    parent_root=parent_root,
+                    state_root=Bytes32.zero(),
+                    body=BlockBody(
+                        attestations=AggregatedAttestations(data=list(aggregated_attestations))
+                    ),
                 )
+                post_state = self.process_slots(slot).process_block(candidate_block)
 
-                if has_proof_for_validator:
-                    new_attestations.append(attestation)
+                if post_state.latest_justified != current_justified:
+                    current_justified = post_state.latest_justified
+                    continue
 
-            # Fixed point reached: no new attestations found.
-            if not new_attestations:
                 break
 
-            # Add new attestations and continue iteration.
-            attestations.extend(new_attestations)
-
-        # Select aggregated attestations and proofs for the final block.
-        aggregated_attestations, aggregated_signatures = self.select_aggregated_proofs(
-            attestations,
-            aggregated_payloads=aggregated_payloads,
-        )
-
-        # Create the final block with aggregated attestations.
+        # Create the final block with selected attestations.
         final_block = Block(
             slot=slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
             state_root=Bytes32.zero(),
             body=BlockBody(
-                attestations=AggregatedAttestations(
-                    data=aggregated_attestations,
-                ),
+                attestations=AggregatedAttestations(data=aggregated_attestations),
             ),
         )
 
@@ -763,6 +747,8 @@ class State(Container):
         proofs: set[AggregatedSignatureProof] | None,
         selected: list[AggregatedSignatureProof],
         covered: set[ValidatorIndex],
+        attestation_data: AttestationData | None = None,
+        attestations: list[AggregatedAttestation] | None = None,
     ) -> None:
         if not proofs:
             return
@@ -778,6 +764,10 @@ class State(Container):
             selected.append(best)
             covered.update(participants)
             remaining.remove(best)
+            if attestation_data is not None and attestations is not None:
+                attestations.append(
+                    AggregatedAttestation(aggregation_bits=best.participants, data=attestation_data)
+                )
 
     def aggregate(
         self,
@@ -877,67 +867,3 @@ class State(Container):
                 results.append((attestation, proof))
 
         return results
-
-    def select_aggregated_proofs(
-        self,
-        attestations: list[Attestation],
-        aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] | None = None,
-    ) -> tuple[list[AggregatedAttestation], list[AggregatedSignatureProof]]:
-        """
-        Select aggregated proofs for a set of attestations.
-
-        This method selects aggregated proofs from aggregated_payloads,
-        using a greedy set-cover approach to minimize the number of proofs.
-
-        Strategy:
-        For each attestation group, greedily pick proofs that cover the most
-        remaining validators until all are covered or no more proofs exist.
-
-        Args:
-            attestations: Individual attestations to aggregate and sign.
-            aggregated_payloads: Aggregated proofs keyed by attestation data.
-
-        Returns:
-            Paired attestations and their corresponding proofs.
-        """
-        results: list[tuple[AggregatedAttestation, AggregatedSignatureProof]] = []
-
-        # Group individual attestations by data
-        for aggregated in AggregatedAttestation.aggregate_by_data(attestations):
-            data = aggregated.data
-            validator_ids = aggregated.aggregation_bits.to_validator_indices()
-
-            # Validators that still need proof coverage.
-            remaining: set[ValidatorIndex] = set(validator_ids)
-
-            # Look up all proofs for this attestation data directly.
-            candidates = sorted(
-                (aggregated_payloads.get(data, set()) if aggregated_payloads else set()),
-                key=lambda p: -len(p.participants.to_validator_indices()),
-            )
-
-            if not candidates:
-                continue
-
-            # Greedy set-cover: candidates are pre-sorted by participant count
-            # (most validators first). Iterate in order and pick any proof that
-            # overlaps with remaining validators.
-            #
-            # TODO: We don't support recursive aggregation yet.
-            # In the future, we should be able to aggregate the proofs into a single proof.
-            for proof in candidates:
-                if not remaining:
-                    break
-                covered = set(proof.participants.to_validator_indices())
-                if covered.isdisjoint(remaining):
-                    continue
-                results.append(
-                    (
-                        AggregatedAttestation(aggregation_bits=proof.participants, data=data),
-                        proof,
-                    )
-                )
-                remaining -= covered
-
-        # Unzip the results into parallel lists.
-        return [att for att, _ in results], [proof for _, proof in results]

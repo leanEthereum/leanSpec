@@ -382,20 +382,20 @@ def test_head_with_deep_fork_split(
             ),
             # Fork B: slots 2, 3, 4, 5 with more attestations to overtake
             BlockStep(
-                block=BlockSpec(slot=Slot(2), parent_label="common", label="fork_b_2"),
+                block=BlockSpec(slot=Slot(5), parent_label="common", label="fork_b_5"),
                 checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
             ),
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(3),
-                    parent_label="fork_b_2",
-                    label="fork_b_3",
+                    slot=Slot(6),
+                    parent_label="fork_b_5",
+                    label="fork_b_6",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(2)],
-                            slot=Slot(2),
-                            target_slot=Slot(2),
-                            target_root_label="fork_b_2",
+                            validator_ids=[ValidatorIndex(1)],
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_b_5",
                         ),
                     ],
                 ),
@@ -403,35 +403,34 @@ def test_head_with_deep_fork_split(
             ),
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(4),
-                    parent_label="fork_b_3",
-                    label="fork_b_4",
-                    attestations=[
-                        AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(3)],
-                            slot=Slot(3),
-                            target_slot=Slot(3),
-                            target_root_label="fork_b_3",
-                        ),
-                    ],
-                ),
-                checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
-            ),
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(5),
-                    parent_label="fork_b_4",
-                    label="fork_b_5",
+                    slot=Slot(7),
+                    parent_label="fork_b_6",
+                    label="fork_b_7",
                     attestations=[
                         AggregatedAttestationSpec(
                             validator_ids=[ValidatorIndex(0)],
-                            slot=Slot(4),
-                            target_slot=Slot(4),
-                            target_root_label="fork_b_4",
+                            slot=Slot(6),
+                            target_slot=Slot(6),
+                            target_root_label="fork_b_6",
                         ),
                     ],
                 ),
-                checks=StoreChecks(head_slot=Slot(5), head_root_label="fork_b_5"),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(8),
+                    parent_label="fork_b_7",
+                    label="fork_b_8",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(2)],
+                            slot=Slot(7),
+                            target_slot=Slot(7),
+                            target_root_label="fork_b_7",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(head_slot=Slot(8), head_root_label="fork_b_8"),
             ),
         ],
     )

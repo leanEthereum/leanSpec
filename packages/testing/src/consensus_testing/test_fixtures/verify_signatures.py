@@ -199,13 +199,28 @@ class VerifySignaturesTest(BaseConsensusFixture):
             spec, state, key_manager
         )
 
-        # Use State.build_block for valid attestations (pure spec logic)
+        # Build block with valid attestations directly.
+        aggregated_attestations = AggregatedAttestation.aggregate_by_data(valid_attestations)
+        signature_lookup: dict[AttestationData, dict[ValidatorIndex, Any]] = {}
+        for attestation, signature in zip(valid_attestations, valid_signatures, strict=True):
+            signature_lookup.setdefault(attestation.data, {})[attestation.validator_id] = signature
+        attestation_signatures = key_manager.build_attestation_signatures(
+            AggregatedAttestations(data=aggregated_attestations),
+            signature_lookup=signature_lookup,
+        )
+        aggregated_payloads = {
+            aggregated_attestation.data: {proof}
+            for aggregated_attestation, proof in zip(
+                aggregated_attestations, attestation_signatures.data, strict=True
+            )
+        }
+
         final_block, _, _, aggregated_signatures = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            attestations=valid_attestations,
-            aggregated_payloads={},
+            known_block_roots={parent_root},
+            aggregated_payloads=aggregated_payloads,
         )
 
         # Create proofs for invalid attestation specs

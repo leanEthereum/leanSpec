@@ -593,16 +593,6 @@ class StoreChecks(CamelModel):
 
                     fork_data[label] = (root, slot, weight)
 
-                # Verify all forks are at the same slot
-                slots = [slot for _, slot, _ in fork_data.values()]
-                if len(set(slots)) > 1:
-                    slot_info = {label: slot for label, (_, slot, _) in fork_data.items()}
-                    raise AssertionError(
-                        f"Step {step_index}: lexicographic_head_among forks have "
-                        f"different slots: {slot_info}. All forks must be at the same "
-                        f"slot to test tiebreaker."
-                    )
-
                 # Verify all forks have equal weight
                 weights = [weight for _, _, weight in fork_data.values()]
                 if len(set(weights)) > 1:

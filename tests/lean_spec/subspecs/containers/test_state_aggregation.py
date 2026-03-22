@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from consensus_testing.keys import XmssKeyManager
 
-from lean_spec.subspecs.containers.attestation import (
-    Attestation,
-    AttestationData,
-)
+from lean_spec.subspecs.containers.attestation import AttestationData
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
@@ -60,63 +57,6 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     )
 
 
-def test_aggregate_signatures_splits_when_needed(
-    container_key_manager: XmssKeyManager,
-) -> None:
-    """Test that gossip and aggregated proofs are kept separate."""
-    state = make_keyed_genesis_state(3, container_key_manager)
-    source = Checkpoint(root=make_bytes32(2), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(3), make_bytes32(5), make_bytes32(6), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
-    attestation_signatures = {
-        att_data: {
-            AttestationSignatureEntry(
-                ValidatorIndex(0),
-                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
-            )
-        }
-    }
-
-    block_proof = make_aggregated_proof(
-        container_key_manager, [ValidatorIndex(1), ValidatorIndex(2)], att_data
-    )
-
-    aggregated_payloads = {
-        att_data: {block_proof},
-    }
-
-    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
-    payload_atts, payload_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
-    )
-    aggregated_atts = [att for att, _ in gossip_results] + payload_atts
-    aggregated_proofs = [proof for _, proof in gossip_results] + payload_proofs
-
-    seen_participants = [
-        tuple(int(v) for v in att.aggregation_bits.to_validator_indices())
-        for att in aggregated_atts
-    ]
-    assert (0,) in seen_participants
-    assert (1, 2) in seen_participants
-    proof_participants = [
-        tuple(int(v) for v in p.participants.to_validator_indices()) for p in aggregated_proofs
-    ]
-    assert (0,) in proof_participants
-    assert (1, 2) in proof_participants
-
-    for proof in aggregated_proofs:
-        participants = proof.participants.to_validator_indices()
-        if participants == [ValidatorIndex(0)]:
-            proof.verify(
-                public_keys=[container_key_manager[ValidatorIndex(0)].attestation_public],
-                message=att_data.data_root_bytes(),
-                slot=att_data.slot,
-            )
-
-
 def test_build_block_collects_valid_available_attestations(
     container_key_manager: XmssKeyManager,
 ) -> None:
@@ -126,15 +66,13 @@ def test_build_block_collects_valid_available_attestations(
     )
     parent_root = hash_tree_root(parent_header_with_state_root)
     source = Checkpoint(root=parent_root, slot=Slot(0))
-    head_root = make_bytes32(10)
-    target = Checkpoint(root=make_bytes32(11), slot=Slot(0))
+    target = Checkpoint(root=parent_root, slot=Slot(0))
     att_data = AttestationData(
         slot=Slot(1),
-        head=Checkpoint(root=head_root, slot=Slot(1)),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
         target=target,
         source=source,
     )
-    attestation = Attestation(validator_id=ValidatorIndex(0), data=att_data)
     data_root = att_data.data_root_bytes()
 
     proof = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
@@ -144,9 +82,7 @@ def test_build_block_collects_valid_available_attestations(
         slot=Slot(1),
         proposer_index=ValidatorIndex(1),
         parent_root=parent_root,
-        attestations=[],
-        available_attestations=[attestation],
-        known_block_roots={head_root},
+        known_block_roots={parent_root},
         aggregated_payloads=aggregated_payloads,
     )
 
@@ -175,24 +111,12 @@ def test_build_block_skips_attestations_without_signatures(
         update={"state_root": hash_tree_root(state)}
     )
     parent_root = hash_tree_root(parent_header_with_state_root)
-    source = Checkpoint(root=parent_root, slot=Slot(0))
-    head_root = make_bytes32(15)
-    target = Checkpoint(root=make_bytes32(16), slot=Slot(0))
-    att_data = AttestationData(
-        slot=Slot(1),
-        head=Checkpoint(root=head_root, slot=Slot(1)),
-        target=target,
-        source=source,
-    )
-    attestation = Attestation(validator_id=ValidatorIndex(0), data=att_data)
 
     block, post_state, aggregated_atts, aggregated_proofs = state.build_block(
         slot=Slot(1),
         proposer_index=ValidatorIndex(0),
         parent_root=parent_root,
-        attestations=[],
-        available_attestations=[attestation],
-        known_block_roots={head_root},
+        known_block_roots={parent_root},
         aggregated_payloads={},
     )
 
@@ -268,56 +192,6 @@ def test_aggregated_signatures_with_multiple_data_groups(
         )
 
 
-def test_aggregated_signatures_falls_back_to_block_payload(
-    container_key_manager: XmssKeyManager,
-) -> None:
-    """Should fall back to block payload when gossip is incomplete."""
-    state = make_keyed_genesis_state(2, container_key_manager)
-    source = Checkpoint(root=make_bytes32(27), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(11), make_bytes32(28), make_bytes32(29), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
-
-    attestation_signatures = {
-        att_data: {
-            AttestationSignatureEntry(
-                ValidatorIndex(0),
-                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
-            )
-        }
-    }
-
-    block_proof = make_aggregated_proof(
-        container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
-    )
-
-    aggregated_payloads = {att_data: {block_proof}}
-
-    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
-    payload_atts, payload_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
-    )
-    aggregated_atts = [att for att, _ in gossip_results] + payload_atts
-    aggregated_proofs = [proof for _, proof in gossip_results] + payload_proofs
-
-    assert len(aggregated_atts) == 2
-    assert len(aggregated_proofs) == 2
-    proof_participants = [set(p.participants.to_validator_indices()) for p in aggregated_proofs]
-    assert {ValidatorIndex(0)} in proof_participants
-    assert {ValidatorIndex(0), ValidatorIndex(1)} in proof_participants
-
-    for proof in aggregated_proofs:
-        participants = proof.participants.to_validator_indices()
-        if participants == [ValidatorIndex(0)]:
-            proof.verify(
-                public_keys=[container_key_manager[ValidatorIndex(0)].attestation_public],
-                message=att_data.data_root_bytes(),
-                slot=att_data.slot,
-            )
-
-
 def test_build_block_state_root_valid_when_signatures_split(
     container_key_manager: XmssKeyManager,
 ) -> None:
@@ -353,17 +227,14 @@ def test_build_block_state_root_valid_when_signatures_split(
     parent_root = hash_tree_root(parent_header_with_state_root)
 
     source = Checkpoint(root=parent_root, slot=Slot(0))
-    head_root = make_bytes32(50)
-    target = Checkpoint(root=make_bytes32(51), slot=Slot(0))
+    target = Checkpoint(root=parent_root, slot=Slot(0))
 
     att_data = AttestationData(
         slot=Slot(1),
-        head=Checkpoint(root=head_root, slot=Slot(1)),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
         target=target,
         source=source,
     )
-
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
 
     proof_0 = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
 
@@ -372,11 +243,11 @@ def test_build_block_state_root_valid_when_signatures_split(
     )
     aggregated_payloads = {att_data: {proof_0, fallback_proof}}
 
-    block, post_state, aggregated_atts, _ = pre_state.build_block(
+    block, _, aggregated_atts, _ = pre_state.build_block(
         slot=Slot(1),
         proposer_index=ValidatorIndex(1),
         parent_root=parent_root,
-        attestations=attestations,
+        known_block_roots={parent_root},
         aggregated_payloads=aggregated_payloads,
     )
 
@@ -399,315 +270,284 @@ def test_build_block_state_root_valid_when_signatures_split(
     assert len(result_state.validators.data) == num_validators
 
 
-def test_greedy_selects_proof_with_maximum_overlap(
+def test_build_block_greedy_selects_minimum_proofs(
     container_key_manager: XmssKeyManager,
 ) -> None:
-    """
-    Verify greedy algorithm selects the proof covering the most remaining validators.
-
-    Scenario
-    --------
-    - 4 validators need coverage from fallback (no gossip)
-    - Three available proofs:
-        - Proof A: {0, 1} (covers 2)
-        - Proof B: {1, 2, 3} (covers 3)
-        - Proof C: {3} (covers 1)
-
-    Expected Behavior
-    -----------------
-    - First iteration: B selected (largest overlap with remaining={0,1,2,3})
-    - After B: remaining={0}
-    - Second iteration: A selected (covers 0)
-    - Result: 2 proofs instead of 3
-    """
+    """Greedy selection picks the minimum set of proofs to cover all validators."""
     state = make_keyed_genesis_state(4, container_key_manager)
-    source = Checkpoint(root=make_bytes32(60), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(12), make_bytes32(61), make_bytes32(62), source=source
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
     )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(4)]
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    target = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=target,
+        source=source,
+    )
 
-    proof_a = make_aggregated_proof(
-        container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
+    # Three overlapping proofs: {0,1,2}, {1,2,3}, {2,3}
+    # Greedy should pick {0,1,2} first (covers 3), then {1,2,3} (covers 1 new: validator 3)
+    proof_012 = make_aggregated_proof(
+        container_key_manager,
+        [ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+        att_data,
     )
-    proof_b = make_aggregated_proof(
+    proof_123 = make_aggregated_proof(
         container_key_manager,
         [ValidatorIndex(1), ValidatorIndex(2), ValidatorIndex(3)],
         att_data,
     )
-    proof_c = make_aggregated_proof(container_key_manager, [ValidatorIndex(3)], att_data)
-
-    aggregated_payloads = {att_data: {proof_a, proof_b, proof_c}}
-
-    aggregated_atts, aggregated_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
-    )
-
-    assert len(aggregated_atts) == 2
-    assert len(aggregated_proofs) == 2
-
-    all_participants: set[int] = set()
-    for proof in aggregated_proofs:
-        participants = proof.participants.to_validator_indices()
-        all_participants.update(int(v) for v in participants)
-    assert all_participants == {0, 1, 2, 3}, f"All validators should be covered: {all_participants}"
-
-
-def test_greedy_stops_when_no_useful_proofs_remain(
-    container_key_manager: XmssKeyManager,
-) -> None:
-    """
-    Verify algorithm terminates gracefully when no proofs can cover remaining validators.
-
-    Scenario
-    --------
-    - 5 validators need attestations
-    - Gossip covers {0, 1}
-    - Available proofs only cover {2, 3} (no proof for validator 4)
-
-    Expected Behavior
-    -----------------
-    - Gossip creates attestation for {0, 1}
-    - Fallback finds proof for {2, 3}
-    - Validator 4 remains uncovered (no infinite loop or crash)
-    """
-    state = make_keyed_genesis_state(5, container_key_manager)
-    source = Checkpoint(root=make_bytes32(70), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(13), make_bytes32(71), make_bytes32(72), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(5)]
-
-    attestation_signatures = {
-        att_data: {
-            AttestationSignatureEntry(
-                ValidatorIndex(0),
-                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
-            ),
-            AttestationSignatureEntry(
-                ValidatorIndex(1),
-                container_key_manager.sign_attestation_data(ValidatorIndex(1), att_data),
-            ),
-        }
-    }
-
     proof_23 = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(2), ValidatorIndex(3)], att_data
     )
+    aggregated_payloads = {att_data: {proof_012, proof_123, proof_23}}
 
-    aggregated_payloads = {att_data: {proof_23}}
-
-    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
-    payload_atts, payload_proofs = state.select_aggregated_proofs(
-        attestations,
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
         aggregated_payloads=aggregated_payloads,
     )
-    aggregated_atts = [att for att, _ in gossip_results] + payload_atts
-    aggregated_proofs = [proof for _, proof in gossip_results] + payload_proofs
 
-    assert len(aggregated_atts) == 2
-    assert len(aggregated_proofs) == 2
-
-    all_participants: set[int] = set()
+    all_covered = set()
     for proof in aggregated_proofs:
-        participants = proof.participants.to_validator_indices()
-        all_participants.update(int(v) for v in participants)
+        all_covered |= set(proof.participants.to_validator_indices())
 
-    assert 4 not in all_participants, "Validator 4 should not be covered"
-    assert all_participants == {0, 1, 2, 3}, f"Expected {{0,1,2,3}} covered: {all_participants}"
+    assert all_covered == {ValidatorIndex(i) for i in range(4)}
+    assert len(aggregated_proofs) == 2
+    assert len(aggregated_atts) == 2
 
 
-def test_greedy_handles_overlapping_proof_chains(
+def test_build_block_greedy_selects_all_single_validator_proofs(
     container_key_manager: XmssKeyManager,
 ) -> None:
-    """
-    Test complex scenario with overlapping proofs requiring optimal selection.
-
-    Scenario
-    --------
-    - 5 validators, gossip covers {0}
-    - Remaining: {1, 2, 3, 4}
-    - Available proofs:
-        - Proof A: {1, 2} (covers 2)
-        - Proof B: {2, 3} (covers 2, overlaps with A)
-        - Proof C: {3, 4} (covers 2, overlaps with B)
-
-    Expected Behavior
-    -----------------
-    Greedy may select: A, then C (covers {1,2,3,4} with 2 proofs)
-    OR: B first, then needs A+C (suboptimal)
-
-    The key is that all 4 remaining validators get covered.
-    """
-    state = make_keyed_genesis_state(5, container_key_manager)
-    source = Checkpoint(root=make_bytes32(80), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(14), make_bytes32(81), make_bytes32(82), source=source
+    """Greedy selection should keep all disjoint single-validator proofs."""
+    state = make_keyed_genesis_state(3, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
     )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(5)]
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
 
-    attestation_signatures = {
+    aggregated_payloads = {
         att_data: {
-            AttestationSignatureEntry(
-                ValidatorIndex(0),
-                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
-            ),
+            make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data),
+            make_aggregated_proof(container_key_manager, [ValidatorIndex(1)], att_data),
+            make_aggregated_proof(container_key_manager, [ValidatorIndex(2)], att_data),
         }
     }
 
-    proof_a = make_aggregated_proof(
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads=aggregated_payloads,
+    )
+
+    expected_participant_sets = {(0,), (1,), (2,)}
+    proof_participant_sets = {
+        tuple(sorted(int(v) for v in proof.participants.to_validator_indices()))
+        for proof in aggregated_proofs
+    }
+    att_participant_sets = {
+        tuple(sorted(int(v) for v in att.aggregation_bits.to_validator_indices()))
+        for att in aggregated_atts
+    }
+
+    assert proof_participant_sets == expected_participant_sets
+    assert att_participant_sets == expected_participant_sets
+
+
+def test_build_block_greedy_tie_chain_skips_redundant_proof(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Overlapping tie chains should cover all validators without selecting zero-gain proofs."""
+    state = make_keyed_genesis_state(5, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+
+    proof_12 = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(1), ValidatorIndex(2)], att_data
     )
-    proof_b = make_aggregated_proof(
+    proof_23 = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(2), ValidatorIndex(3)], att_data
     )
-    proof_c = make_aggregated_proof(
+    proof_34 = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(3), ValidatorIndex(4)], att_data
     )
+    proof_2 = make_aggregated_proof(container_key_manager, [ValidatorIndex(2)], att_data)
 
-    aggregated_payloads = {att_data: {proof_a, proof_b, proof_c}}
-
-    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
-    payload_atts, payload_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
-    )
-    aggregated_atts = [att for att, _ in gossip_results] + payload_atts
-    aggregated_proofs = [proof for _, proof in gossip_results] + payload_proofs
-
-    assert len(aggregated_atts) >= 3
-    assert len(aggregated_proofs) >= 3
-
-    all_participants: set[int] = set()
-    for proof in aggregated_proofs:
-        participants = proof.participants.to_validator_indices()
-        all_participants.update(int(v) for v in participants)
-
-    assert all_participants == {0, 1, 2, 3, 4}, (
-        f"All 5 validators should be covered: {all_participants}"
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data: {proof_12, proof_23, proof_34, proof_2}},
     )
 
-
-def test_greedy_single_validator_proofs(
-    container_key_manager: XmssKeyManager,
-) -> None:
-    """
-    Test fallback when only single-validator proofs are available.
-
-    Scenario
-    --------
-    - 3 validators need fallback coverage
-    - Only single-validator proofs available
-
-    Expected Behavior
-    -----------------
-    Each validator gets their own proof (3 proofs total).
-    """
-    state = make_keyed_genesis_state(3, container_key_manager)
-    source = Checkpoint(root=make_bytes32(90), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(15), make_bytes32(91), make_bytes32(92), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
-
-    proofs = [
-        make_aggregated_proof(container_key_manager, [ValidatorIndex(i)], att_data)
-        for i in range(3)
-    ]
-
-    aggregated_payloads = {att_data: set(proofs)}
-
-    aggregated_atts, aggregated_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
-    )
-
-    assert len(aggregated_atts) == 3
-    assert len(aggregated_proofs) == 3
-
-    seen_validators: set[int] = set()
-    for proof in aggregated_proofs:
-        participants = [int(v) for v in proof.participants.to_validator_indices()]
-        assert len(participants) == 1, "Each proof should cover exactly 1 validator"
-        seen_validators.update(participants)
-
-    assert seen_validators == {0, 1, 2}
-
-
-def test_validator_in_both_gossip_and_fallback_proof(
-    container_key_manager: XmssKeyManager,
-) -> None:
-    """
-    Test behavior when a validator appears in both gossip signatures AND fallback proof.
-
-    Scenario
-    --------
-    - Validator 0 has a gossip signature
-    - Validator 1 needs fallback coverage
-    - The only available fallback proof covers BOTH validators {0, 1}
-
-    Current Behavior
-    ----------------
-    - Gossip creates attestation for {0}
-    - Fallback uses the proof for {0, 1} to cover validator 1
-    - Both attestations are included in the block
-
-    This test documents the current behavior. Validator 0 appears in both:
-    - The gossip attestation (participants={0})
-    - The fallback attestation (participants={0, 1})
-
-    Note: This could be considered duplicate coverage, but the fallback proof
-    cannot be "split" - it must be used as-is.
-    """
-    state = make_keyed_genesis_state(2, container_key_manager)
-    source = Checkpoint(root=make_bytes32(100), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(16), make_bytes32(101), make_bytes32(102), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
-
-    attestation_signatures = {
-        att_data: {
-            AttestationSignatureEntry(
-                ValidatorIndex(0),
-                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
-            ),
-        }
+    proof_participant_sets = {
+        tuple(sorted(int(v) for v in proof.participants.to_validator_indices()))
+        for proof in aggregated_proofs
+    }
+    covered_validators = {
+        validator for participants in proof_participant_sets for validator in participants
+    }
+    att_participant_sets = {
+        tuple(sorted(int(v) for v in att.aggregation_bits.to_validator_indices()))
+        for att in aggregated_atts
     }
 
-    fallback_proof = make_aggregated_proof(
+    assert covered_validators == {1, 2, 3, 4}
+    assert (2,) not in proof_participant_sets
+    assert 2 <= len(aggregated_proofs) <= 3
+    assert att_participant_sets == proof_participant_sets
+
+
+def test_build_block_greedy_skips_subset_when_superset_selected(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Subset proof should be skipped after a superset has already covered it."""
+    state = make_keyed_genesis_state(3, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    att_data = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+
+    proof_0 = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
+    proof_01 = make_aggregated_proof(
         container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
     )
+    proof_2 = make_aggregated_proof(container_key_manager, [ValidatorIndex(2)], att_data)
 
-    aggregated_payloads = {att_data: {fallback_proof}}
-
-    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
-    payload_atts, payload_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
+    _, _, aggregated_atts, aggregated_proofs = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data: {proof_0, proof_01, proof_2}},
     )
-    aggregated_atts = [att for att, _ in gossip_results] + payload_atts
-    aggregated_proofs = [proof for _, proof in gossip_results] + payload_proofs
 
-    assert len(aggregated_atts) == 2
-    assert len(aggregated_proofs) == 2
+    expected_participant_sets = {(0, 1), (2,)}
+    proof_participant_sets = {
+        tuple(sorted(int(v) for v in proof.participants.to_validator_indices()))
+        for proof in aggregated_proofs
+    }
+    att_participant_sets = {
+        tuple(sorted(int(v) for v in att.aggregation_bits.to_validator_indices()))
+        for att in aggregated_atts
+    }
 
-    proof_participants = [
-        {int(v) for v in p.participants.to_validator_indices()} for p in aggregated_proofs
-    ]
+    assert proof_participant_sets == expected_participant_sets
+    assert att_participant_sets == expected_participant_sets
 
-    assert {0} in proof_participants, "Gossip attestation should cover validator 0"
-    assert {0, 1} in proof_participants, "Fallback proof should cover {0, 1}"
 
-    for proof in aggregated_proofs:
-        participants = proof.participants.to_validator_indices()
-        public_keys = [container_key_manager[vid].attestation_public for vid in participants]
-        proof.verify(
-            public_keys=public_keys,
-            message=att_data.data_root_bytes(),
-            slot=att_data.slot,
-        )
+def test_build_block_skips_non_matching_source(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Only attestation data whose source matches current_justified is included."""
+    state = make_keyed_genesis_state(2, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    correct_source = Checkpoint(root=parent_root, slot=Slot(0))
+    wrong_source = Checkpoint(root=make_bytes32(99), slot=Slot(0))
+
+    att_data_good = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=correct_source,
+    )
+    att_data_bad = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=wrong_source,
+    )
+
+    proof_good = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data_good)
+    proof_bad = make_aggregated_proof(container_key_manager, [ValidatorIndex(1)], att_data_bad)
+
+    _, _, aggregated_atts, _ = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data_good: {proof_good}, att_data_bad: {proof_bad}},
+    )
+
+    assert len(aggregated_atts) == 1
+    assert aggregated_atts[0].data == att_data_good
+
+
+def test_build_block_skips_unknown_head_root(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """Attestation data with head root not in known_block_roots is excluded."""
+    state = make_keyed_genesis_state(2, container_key_manager)
+    parent_header_with_state_root = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
+    parent_root = hash_tree_root(parent_header_with_state_root)
+    source = Checkpoint(root=parent_root, slot=Slot(0))
+    unknown_root = make_bytes32(200)
+
+    att_data_known = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=parent_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+    att_data_unknown = AttestationData(
+        slot=Slot(1),
+        head=Checkpoint(root=unknown_root, slot=Slot(0)),
+        target=Checkpoint(root=parent_root, slot=Slot(0)),
+        source=source,
+    )
+
+    proof_known = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data_known)
+    proof_unknown = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(1)], att_data_unknown
+    )
+
+    _, _, aggregated_atts, _ = state.build_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={parent_root},
+        aggregated_payloads={att_data_known: {proof_known}, att_data_unknown: {proof_unknown}},
+    )
+
+    assert len(aggregated_atts) == 1
+    assert aggregated_atts[0].data == att_data_known
 
 
 def test_gossip_none_and_aggregated_payloads_none(
@@ -725,109 +565,3 @@ def test_gossip_none_and_aggregated_payloads_none(
     results = state.aggregate(attestation_signatures=None)
 
     assert results == []
-
-
-def test_aggregated_payloads_only_no_gossip(
-    container_key_manager: XmssKeyManager,
-) -> None:
-    """
-    Test aggregation with aggregated_payloads only (no gossip signatures).
-
-    Scenario
-    --------
-    - 3 validators need attestation
-    - No gossip signatures available
-    - Aggregated proof available covering all 3
-
-    Expected Behavior
-    -----------------
-    Single attestation from the fallback proof.
-    """
-    state = make_keyed_genesis_state(3, container_key_manager)
-    source = Checkpoint(root=make_bytes32(120), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(18), make_bytes32(121), make_bytes32(122), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(3)]
-    data_root = att_data.data_root_bytes()
-
-    proof = make_aggregated_proof(
-        container_key_manager,
-        [ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
-        att_data,
-    )
-
-    aggregated_payloads = {att_data: {proof}}
-
-    aggregated_atts, aggregated_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
-    )
-
-    assert len(aggregated_atts) == 1
-    assert len(aggregated_proofs) == 1
-
-    participants = {int(v) for v in aggregated_proofs[0].participants.to_validator_indices()}
-    assert participants == {0, 1, 2}
-
-    public_keys = [container_key_manager[ValidatorIndex(i)].attestation_public for i in range(3)]
-    aggregated_proofs[0].verify(public_keys=public_keys, message=data_root, slot=att_data.slot)
-
-
-def test_proof_with_extra_validators_beyond_needed(
-    container_key_manager: XmssKeyManager,
-) -> None:
-    """
-    Test that fallback proof including extra validators works correctly.
-
-    Scenario
-    --------
-    - 2 validators attest (indices 0 and 1)
-    - Gossip covers validator 0
-    - Fallback proof covers {0, 1, 2, 3} (includes validators not in attestation)
-
-    Expected Behavior
-    -----------------
-    - Gossip attestation for {0}
-    - Fallback proof used as-is (includes extra validators 2, 3)
-
-    The proof cannot be "trimmed" to exclude extra validators.
-    """
-    state = make_keyed_genesis_state(4, container_key_manager)
-    source = Checkpoint(root=make_bytes32(130), slot=Slot(0))
-    att_data = make_attestation_data_simple(
-        Slot(19), make_bytes32(131), make_bytes32(132), source=source
-    )
-    attestations = [Attestation(validator_id=ValidatorIndex(i), data=att_data) for i in range(2)]
-
-    attestation_signatures = {
-        att_data: {
-            AttestationSignatureEntry(
-                ValidatorIndex(0),
-                container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
-            ),
-        }
-    }
-
-    proof = make_aggregated_proof(
-        container_key_manager, [ValidatorIndex(i) for i in range(4)], att_data
-    )
-
-    aggregated_payloads = {att_data: {proof}}
-
-    gossip_results = state.aggregate(attestation_signatures=attestation_signatures)
-    payload_atts, payload_proofs = state.select_aggregated_proofs(
-        attestations,
-        aggregated_payloads=aggregated_payloads,
-    )
-    aggregated_atts = [att for att, _ in gossip_results] + payload_atts
-    aggregated_proofs = [proof for _, proof in gossip_results] + payload_proofs
-
-    assert len(aggregated_atts) == 2
-    assert len(aggregated_proofs) == 2
-
-    proof_participants = [
-        {int(v) for v in p.participants.to_validator_indices()} for p in aggregated_proofs
-    ]
-    assert {0} in proof_participants
-    assert {0, 1, 2, 3} in proof_participants
