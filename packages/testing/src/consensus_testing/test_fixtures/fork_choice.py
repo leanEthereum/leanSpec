@@ -263,7 +263,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                         )
 
                         # Store the filled block for serialization.
-                        block = signed_block.message
+                        block = signed_block.block
                         step._filled_block = block
 
                         # Register labeled blocks for fork building.
@@ -447,7 +447,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         # Assemble the signed block.
         return SignedBlock(
-            message=final_block,
+            block=final_block,
             signature=BlockSignatures(
                 attestation_signatures=attestation_signatures_blob,
                 proposer_signature=proposer_signature,

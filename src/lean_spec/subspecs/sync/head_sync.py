@@ -161,7 +161,7 @@ class HeadSync:
             Tuple of (result describing what happened, updated store).
             The store is unchanged if the block was cached.
         """
-        block_inner = block.message
+        block_inner = block.block
         block_root = hash_tree_root(block_inner)
         parent_root = block_inner.parent_root
         slot = block_inner.slot
@@ -234,8 +234,8 @@ class HeadSync:
         Returns:
             Result and updated store.
         """
-        block_root = hash_tree_root(block.message)
-        slot = block.message.slot
+        block_root = hash_tree_root(block.block)
+        slot = block.block.slot
         self._processing.add(block_root)
 
         try:
@@ -366,7 +366,7 @@ class HeadSync:
         Returns:
             Result indicating the block was cached, and unchanged store.
         """
-        block_inner = block.message
+        block_inner = block.block
         parent_root = block_inner.parent_root
 
         # Add to cache.

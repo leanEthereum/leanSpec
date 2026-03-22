@@ -26,13 +26,13 @@ class TestPendingBlock:
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
-        root = hash_tree_root(block.message)
+        root = hash_tree_root(block.block)
 
         pending = PendingBlock(
             block=block,
             root=root,
-            parent_root=block.message.parent_root,
-            slot=block.message.slot,
+            parent_root=block.block.parent_root,
+            slot=block.block.slot,
             received_from=peer_id,
         )
 
@@ -55,7 +55,7 @@ class TestPendingBlock:
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
-        root = hash_tree_root(block.message)
+        root = hash_tree_root(block.block)
 
         pending = PendingBlock(
             block=block,
@@ -76,7 +76,7 @@ class TestPendingBlock:
             parent_root=Bytes32.zero(),
             state_root=Bytes32.zero(),
         )
-        root = hash_tree_root(block.message)
+        root = hash_tree_root(block.block)
 
         pending = PendingBlock(
             block=block,
@@ -120,7 +120,7 @@ class TestBlockCacheBasicOperations:
 
         pending = cache.add(block, peer_id)
 
-        root = hash_tree_root(block.message)
+        root = hash_tree_root(block.block)
         assert len(cache) == 1
         assert pending == PendingBlock(
             block=block,
@@ -713,7 +713,7 @@ class TestBlockCacheBackfillDepth:
 
         pending = cache.add(block, peer_id, backfill_depth=10)
 
-        root = hash_tree_root(block.message)
+        root = hash_tree_root(block.block)
         assert pending == PendingBlock(
             block=block,
             root=root,
@@ -736,7 +736,7 @@ class TestBlockCacheBackfillDepth:
 
         pending = cache.add(block, peer_id)
 
-        root = hash_tree_root(block.message)
+        root = hash_tree_root(block.block)
         assert pending == PendingBlock(
             block=block,
             root=root,

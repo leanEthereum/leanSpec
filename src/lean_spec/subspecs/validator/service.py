@@ -405,7 +405,7 @@ class ValidatorService:
         )
 
         return SignedBlock(
-            message=block,
+            block=block,
             signature=signature,
         )
 

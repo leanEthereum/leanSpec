@@ -48,7 +48,7 @@ class MockNetworkRequester:
 
     def add_block(self, block: SignedBlock) -> Bytes32:
         """Add a block to the mock network. Returns its root."""
-        root = hash_tree_root(block.message)
+        root = hash_tree_root(block.block)
         self.blocks_by_root[root] = block
         return root
 
@@ -119,10 +119,10 @@ class MockForkchoiceStore:
         **kwargs: object,
     ) -> MockForkchoiceStore:
         """Track block additions. Returns self for assignment chaining."""
-        root = hash_tree_root(block.message)
-        self.blocks[root] = block.message
+        root = hash_tree_root(block.block)
+        self.blocks[root] = block.block
         self.head = root
-        self.head_slot = block.message.slot
+        self.head_slot = block.block.slot
         return self
 
     def on_gossip_attestation(

@@ -291,7 +291,7 @@ class TestReqRespClientBlocksByRoot:
         blocks = await client.request_blocks_by_root(peer_id, roots)
 
         assert len(blocks) == 1
-        assert blocks[0].message.slot == Slot(10)
+        assert blocks[0].block.slot == Slot(10)
 
     async def test_request_multiple_blocks_success(self) -> None:
         """Successfully request multiple blocks."""
@@ -312,7 +312,7 @@ class TestReqRespClientBlocksByRoot:
         blocks = await client.request_blocks_by_root(peer_id, roots)
 
         assert len(blocks) == 2
-        slots = {b.message.slot for b in blocks}
+        slots = {b.block.slot for b in blocks}
         assert Slot(10) in slots
         assert Slot(20) in slots
 
@@ -335,7 +335,7 @@ class TestReqRespClientBlocksByRoot:
 
         # Only one block returned, RESOURCE_UNAVAILABLE continues reading
         assert len(blocks) == 1
-        assert blocks[0].message.slot == Slot(10)
+        assert blocks[0].block.slot == Slot(10)
 
     async def test_request_blocks_empty_request(self) -> None:
         """Empty root list returns empty without request."""
@@ -535,7 +535,7 @@ class TestReqRespClientErrorHandling:
 
         # Only block before codec error is returned
         assert len(blocks) == 1
-        assert blocks[0].message.slot == Slot(10)
+        assert blocks[0].block.slot == Slot(10)
 
 
 class TestReqRespClientConcurrency:
@@ -615,7 +615,7 @@ class TestReqRespClientConcurrency:
         assert status is not None
         assert status.head.slot == Slot(200)
         assert len(blocks) == 1
-        assert blocks[0].message.slot == Slot(42)
+        assert blocks[0].block.slot == Slot(42)
 
 
 class TestReqRespClientStreamLifecycle:

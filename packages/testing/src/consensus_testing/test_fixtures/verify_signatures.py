@@ -301,7 +301,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
             proposer_signature = create_dummy_signature()
 
         return SignedBlock(
-            message=final_block,
+            block=final_block,
             signature=BlockSignatures(
                 attestation_signatures=attestation_signatures,
                 proposer_signature=proposer_signature,

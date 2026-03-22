@@ -510,17 +510,17 @@ class TestValidatorServiceIntegration:
         signed_block = blocks_produced[0]
 
         # Verify block structure
-        assert signed_block.message.slot == Slot(1)
-        assert signed_block.message.proposer_index == ValidatorIndex(1)
+        assert signed_block.block.slot == Slot(1)
+        assert signed_block.block.proposer_index == ValidatorIndex(1)
 
         # Verify proposer signature is cryptographically valid
-        proposer_index = signed_block.message.proposer_index
-        block_root = hash_tree_root(signed_block.message)
+        proposer_index = signed_block.block.proposer_index
+        block_root = hash_tree_root(signed_block.block)
         proposer_public_key = key_manager[proposer_index].proposal_public
 
         is_valid = TARGET_SIGNATURE_SCHEME.verify(
             pk=proposer_public_key,
-            slot=signed_block.message.slot,
+            slot=signed_block.block.slot,
             message=block_root,
             sig=signed_block.signature.proposer_signature,
         )
@@ -642,13 +642,13 @@ class TestValidatorServiceIntegration:
         assert len(blocks_produced) == 1
         signed_block = blocks_produced[0]
 
-        proposer_index = signed_block.message.proposer_index
-        block_root = hash_tree_root(signed_block.message)
+        proposer_index = signed_block.block.proposer_index
+        block_root = hash_tree_root(signed_block.block)
         public_key = key_manager[proposer_index].proposal_public
 
         is_valid = TARGET_SIGNATURE_SCHEME.verify(
             pk=public_key,
-            slot=signed_block.message.slot,
+            slot=signed_block.block.slot,
             message=block_root,
             sig=signed_block.signature.proposer_signature,
         )
@@ -724,7 +724,7 @@ class TestValidatorServiceIntegration:
         signed_block = blocks_produced[0]
 
         # Block should contain the pending attestations
-        body_attestations = signed_block.message.body.attestations
+        body_attestations = signed_block.block.body.attestations
         assert len(body_attestations) > 0
 
         # Verify the attestation signatures are included and valid
@@ -811,7 +811,7 @@ class TestValidatorServiceIntegration:
 
         # One block should be produced
         assert len(blocks_produced) == 1
-        assert blocks_produced[0].message.proposer_index == proposer_index
+        assert blocks_produced[0].block.proposer_index == proposer_index
 
         # ALL validators should have attested (including proposer)
         attestation_validator_ids = {att.validator_id for att in attestations_produced}
@@ -845,7 +845,7 @@ class TestValidatorServiceIntegration:
         await service._maybe_produce_block(Slot(4))
 
         assert len(blocks_produced) == 1
-        produced_block = blocks_produced[0].message
+        produced_block = blocks_produced[0].block
 
         # The state root should not be zero (it was computed)
         assert produced_block.state_root != Bytes32.zero()

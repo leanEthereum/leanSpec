@@ -212,7 +212,7 @@ class NetworkService:
         compressed = compress(ssz_bytes)
 
         await self.event_source.publish(topic.to_topic_id(), compressed)
-        logger.debug("Published block at slot %s", block.message.slot)
+        logger.debug("Published block at slot %s", block.block.slot)
 
     async def publish_attestation(
         self, attestation: SignedAttestation, subnet_id: SubnetId

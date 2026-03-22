@@ -89,7 +89,7 @@ class BlockSignatures(Container):
 class SignedBlock(Container):
     """Envelope carrying a block and its aggregated signatures."""
 
-    message: Block
+    block: Block
     """The block being signed."""
 
     signature: BlockSignatures
@@ -116,9 +116,9 @@ class SignedBlock(Container):
         Raises:
             AssertionError: On verification failure.
         """
-        block = self.message
+        block = self.block
         signatures = self.signature
-        aggregated_attestations = block.body.attestations
+        aggregated_attestations = self.block.body.attestations
         attestation_signatures = signatures.attestation_signatures
 
         # Each attestation in the body must have a corresponding signature entry.

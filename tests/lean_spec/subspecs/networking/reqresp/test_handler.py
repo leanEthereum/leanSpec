@@ -271,8 +271,8 @@ class TestRequestHandlerBlocksByRoot:
         decoded1 = SignedBlock.decode_bytes(response.successes[0])
         decoded2 = SignedBlock.decode_bytes(response.successes[1])
 
-        assert decoded1.message.slot == Slot(1)
-        assert decoded2.message.slot == Slot(2)
+        assert decoded1.block.slot == Slot(1)
+        assert decoded2.block.slot == Slot(2)
 
     async def test_handle_blocks_by_root_skips_missing_blocks(self) -> None:
         """Missing blocks are silently skipped."""
@@ -359,7 +359,7 @@ class TestRequestHandlerBlocksByRoot:
         assert len(response.successes) == 1
 
         decoded = SignedBlock.decode_bytes(response.successes[0])
-        assert decoded.message.slot == Slot(2)
+        assert decoded.block.slot == Slot(2)
 
 
 class TestReqRespServer:
@@ -423,7 +423,7 @@ class TestReqRespServer:
         assert code == ResponseCode.SUCCESS
 
         returned_block = SignedBlock.decode_bytes(ssz_data)
-        assert returned_block.message.slot == Slot(1)
+        assert returned_block.block.slot == Slot(1)
 
     async def test_empty_request_returns_error(self) -> None:
         """Empty request data returns INVALID_REQUEST error."""
@@ -618,7 +618,7 @@ class TestIntegration:
                 blocks.append(SignedBlock.decode_bytes(ssz_bytes))
 
         assert len(blocks) == 2
-        slots = {b.message.slot for b in blocks}
+        slots = {b.block.slot for b in blocks}
         assert Slot(10) in slots
         assert Slot(20) in slots
 
@@ -652,7 +652,7 @@ class TestIntegration:
 
         # Only one block returned
         assert len(blocks) == 1
-        assert blocks[0].message.slot == Slot(10)
+        assert blocks[0].block.slot == Slot(10)
 
 
 class TestStreamResponseAdapterMultipleResponses:
@@ -876,7 +876,7 @@ class TestRequestHandlerEdgeCases:
         assert len(response.successes) == 1
 
         decoded = SignedBlock.decode_bytes(response.successes[0])
-        assert decoded.message.slot == Slot(999)
+        assert decoded.block.slot == Slot(999)
 
     async def test_blocks_by_root_all_missing(self) -> None:
         """Request where all blocks are missing returns no success responses."""
@@ -938,8 +938,8 @@ class TestRequestHandlerEdgeCases:
         decoded1 = SignedBlock.decode_bytes(response.successes[0])
         decoded2 = SignedBlock.decode_bytes(response.successes[1])
 
-        assert decoded1.message.slot == Slot(1)
-        assert decoded2.message.slot == Slot(3)
+        assert decoded1.block.slot == Slot(1)
+        assert decoded2.block.slot == Slot(3)
 
     async def test_status_update_after_initialization(self) -> None:
         """Status can be updated after handler creation."""
@@ -1039,7 +1039,7 @@ class TestConcurrentRequestHandling:
         block_result = SignedBlock.decode_bytes(ssz_data)
 
         assert status_result.head.slot == Slot(200)
-        assert block_result.message.slot == Slot(42)
+        assert block_result.block.slot == Slot(42)
 
 
 class MockFailingStream:

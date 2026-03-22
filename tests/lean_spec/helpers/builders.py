@@ -214,7 +214,7 @@ def make_signed_block(
     )
 
     return SignedBlock(
-        message=block,
+        block=block,
         signature=BlockSignatures(
             attestation_signatures=AttestationSignatures(data=[]),
             proposer_signature=make_mock_signature(),
@@ -458,7 +458,7 @@ def make_signed_block_from_store(
     attestation_signatures = key_manager.build_attestation_signatures(block.body.attestations)
 
     signed_block = SignedBlock(
-        message=block,
+        block=block,
         signature=BlockSignatures(
             attestation_signatures=attestation_signatures,
             proposer_signature=proposer_signature,

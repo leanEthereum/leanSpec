@@ -36,7 +36,7 @@ def test_linear_chain_weight_accumulates_upward(base_store: Store) -> None:
         parent_root=genesis_root,
         state_root=make_bytes32(10),
     )
-    block1_root = hash_tree_root(block1.message)
+    block1_root = hash_tree_root(block1.block)
 
     block2 = make_signed_block(
         slot=Slot(2),
@@ -44,11 +44,11 @@ def test_linear_chain_weight_accumulates_upward(base_store: Store) -> None:
         parent_root=block1_root,
         state_root=make_bytes32(20),
     )
-    block2_root = hash_tree_root(block2.message)
+    block2_root = hash_tree_root(block2.block)
 
     new_blocks = dict(base_store.blocks)
-    new_blocks[block1_root] = block1.message
-    new_blocks[block2_root] = block2.message
+    new_blocks[block1_root] = block1.block
+    new_blocks[block2_root] = block2.block
 
     new_states = dict(base_store.states)
     genesis_state = base_store.states[genesis_root]
@@ -93,10 +93,10 @@ def test_multiple_attestations_accumulate(base_store: Store) -> None:
         parent_root=genesis_root,
         state_root=make_bytes32(10),
     )
-    block1_root = hash_tree_root(block1.message)
+    block1_root = hash_tree_root(block1.block)
 
     new_blocks = dict(base_store.blocks)
-    new_blocks[block1_root] = block1.message
+    new_blocks[block1_root] = block1.block
 
     new_states = dict(base_store.states)
     new_states[block1_root] = base_store.states[genesis_root]

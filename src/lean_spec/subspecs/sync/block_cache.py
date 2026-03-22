@@ -186,7 +186,7 @@ class BlockCache:
         Returns:
             The PendingBlock wrapper, either newly created or existing.
         """
-        block_inner = block.message
+        block_inner = block.block
         root = hash_tree_root(block_inner)
 
         # Deduplication: if we already have this block, return the existing entry.

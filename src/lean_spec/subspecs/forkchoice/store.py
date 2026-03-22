@@ -244,36 +244,28 @@ class Store(StrictBaseModel):
         Returns:
             New Store with stale attestation data removed.
         """
-        finalized_slot = self.latest_finalized.slot
-
         # Filter out stale entries from all attestation-related mappings.
         #
         # Each mapping is keyed by attestation data, so we check membership by slot
         # against the finalized slot.
 
-        new_attestation_sigs = {
-            attestation_data: sigs
-            for attestation_data, sigs in self.attestation_signatures.items()
-            if attestation_data.target.slot > finalized_slot
-        }
-
-        new_aggregated_new = {
-            attestation_data: proofs
-            for attestation_data, proofs in self.latest_new_aggregated_payloads.items()
-            if attestation_data.target.slot > finalized_slot
-        }
-
-        new_aggregated_known = {
-            attestation_data: proofs
-            for attestation_data, proofs in self.latest_known_aggregated_payloads.items()
-            if attestation_data.target.slot > finalized_slot
-        }
-
         return self.model_copy(
             update={
-                "attestation_signatures": new_attestation_sigs,
-                "latest_new_aggregated_payloads": new_aggregated_new,
-                "latest_known_aggregated_payloads": new_aggregated_known,
+                "attestation_signatures": {
+                    attestation_data: sigs
+                    for attestation_data, sigs in self.attestation_signatures.items()
+                    if attestation_data.target.slot > self.latest_finalized.slot
+                },
+                "latest_new_aggregated_payloads": {
+                    attestation_data: proofs
+                    for attestation_data, proofs in self.latest_new_aggregated_payloads.items()
+                    if attestation_data.target.slot > self.latest_finalized.slot
+                },
+                "latest_known_aggregated_payloads": {
+                    attestation_data: proofs
+                    for attestation_data, proofs in self.latest_known_aggregated_payloads.items()
+                    if attestation_data.target.slot > self.latest_finalized.slot
+                },
             }
         )
 
@@ -489,7 +481,7 @@ class Store(StrictBaseModel):
         Raises:
             AssertionError: If parent block/state not found in store.
         """
-        block = signed_block.message
+        block = signed_block.block
         block_root = hash_tree_root(block)
 
         # Skip duplicate blocks (idempotent operation)
@@ -580,10 +572,10 @@ class Store(StrictBaseModel):
         - Justified and finalized slot gauges
         - Reorg counter and depth histogram (only when the head actually changed)
         """
-        metrics.lean_head_slot.set(int(self.blocks[self.head].slot))
-        metrics.lean_safe_target_slot.set(int(self.blocks[self.safe_target].slot))
-        metrics.lean_latest_justified_slot.set(int(self.latest_justified.slot))
-        metrics.lean_latest_finalized_slot.set(int(self.latest_finalized.slot))
+        metrics.lean_head_slot.set(self.blocks[self.head].slot)
+        metrics.lean_safe_target_slot.set(self.blocks[self.safe_target].slot)
+        metrics.lean_latest_justified_slot.set(self.latest_justified.slot)
+        metrics.lean_latest_finalized_slot.set(self.latest_finalized.slot)
 
         if self.head != old_head:
             metrics.lean_fork_choice_reorgs_total.inc()
@@ -1050,19 +1042,18 @@ class Store(StrictBaseModel):
             Tuple of (new store with advanced time, list of new signed aggregated attestation).
         """
         # Advance time by one interval
-        store = self.model_copy(update={"time": Interval(int(self.time) + 1)})
+        store = self.model_copy(update={"time": self.time + Interval(1)})
         current_interval = store.time % INTERVALS_PER_SLOT
         new_aggregates: list[SignedAggregatedAttestation] = []
 
-        match int(current_interval):
-            case 0 if has_proposal:
-                store = store.accept_new_attestations()
-            case 2 if is_aggregator:
-                store, new_aggregates = store.aggregate()
-            case 3:
-                store = store.update_safe_target()
-            case 4:
-                store = store.accept_new_attestations()
+        if current_interval == Interval(0) and has_proposal:
+            store = store.accept_new_attestations()
+        elif current_interval == Interval(2) and is_aggregator:
+            store, new_aggregates = store.aggregate()
+        elif current_interval == Interval(3):
+            store = store.update_safe_target()
+        elif current_interval == Interval(4):
+            store = store.accept_new_attestations()
 
         return store, new_aggregates
 

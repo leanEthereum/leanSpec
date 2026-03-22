@@ -297,7 +297,7 @@ def test_signed_block_minimal(ssz: SSZTestFiller) -> None:
     )
     ssz(
         type_name="SignedBlock",
-        value=SignedBlock(message=block, signature=signature),
+        value=SignedBlock(block=block, signature=signature),
     )
 
 

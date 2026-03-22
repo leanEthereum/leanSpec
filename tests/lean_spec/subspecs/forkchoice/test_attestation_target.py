@@ -558,7 +558,7 @@ class TestIntegrationScenarios:
         proposer_signature = key_manager.sign_block_root(proposer_1, slot_1, block_root)
 
         signed_block = SignedBlock(
-            message=block,
+            block=block,
             signature=BlockSignatures(
                 attestation_signatures=AttestationSignatures(data=signatures),
                 proposer_signature=proposer_signature,

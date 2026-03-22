@@ -472,12 +472,12 @@ class Node:
             peers_connected = sum(
                 1 for p in self.sync_service.peer_manager.get_all_peers() if p.is_connected()
             )
-            metrics.lean_current_slot.set(int(self.clock.current_slot()))
+            metrics.lean_current_slot.set(self.clock.current_slot())
             metrics.lean_connected_peers.set(peers_connected)
-            metrics.lean_head_slot.set(int(store.blocks[store.head].slot))
-            metrics.lean_safe_target_slot.set(int(store.blocks[store.safe_target].slot))
-            metrics.lean_latest_justified_slot.set(int(store.latest_justified.slot))
-            metrics.lean_latest_finalized_slot.set(int(store.latest_finalized.slot))
+            metrics.lean_head_slot.set(store.blocks[store.head].slot)
+            metrics.lean_safe_target_slot.set(store.blocks[store.safe_target].slot)
+            metrics.lean_latest_justified_slot.set(store.latest_justified.slot)
+            metrics.lean_latest_finalized_slot.set(store.latest_finalized.slot)
             count = (
                 len(self.validator_service.registry) if self.validator_service is not None else 0
             )

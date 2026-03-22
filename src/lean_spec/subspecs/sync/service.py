@@ -272,7 +272,7 @@ class SyncService:
         # This is write-through: data is persisted synchronously after processing.
         # The database call is optional - nodes can run without persistence.
         if self.database is not None:
-            self._persist_block(new_store, block.message)
+            self._persist_block(new_store, block.block)
 
         return new_store
 
@@ -423,7 +423,7 @@ class SyncService:
         logger.info(
             "Block received from peer %s slot=%s (state=%s)",
             peer_id,
-            block.message.slot,
+            block.block.slot,
             self._state.name,
         )
 
@@ -445,8 +445,8 @@ class SyncService:
         #
         # A block may be cached instead of processed if its parent is unknown.
         if result.processed:
-            slot = block.message.slot
-            block_root = hash_tree_root(block.message)
+            slot = block.block.slot
+            block_root = hash_tree_root(block.block)
             logger.info(
                 "Block processed slot=%s root=%s from peer %s",
                 slot,

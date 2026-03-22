@@ -52,7 +52,7 @@ class TestGossipBlockProcessing:
         processed_blocks: list[Bytes32] = []
 
         def track_processing(s: Any, block: SignedBlock) -> Any:
-            root = hash_tree_root(block.message)
+            root = hash_tree_root(block.block)
             processed_blocks.append(root)
             new_store = MockStore(set(s.blocks.keys()) | {root})
             return new_store
@@ -69,7 +69,7 @@ class TestGossipBlockProcessing:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        block_root = hash_tree_root(block.message)
+        block_root = hash_tree_root(block.block)
 
         result, new_store = await head_sync.on_gossip_block(block, peer_id, store)
 
@@ -103,7 +103,7 @@ class TestGossipBlockProcessing:
             parent_root=unknown_parent,
             state_root=Bytes32.zero(),
         )
-        block_root = hash_tree_root(block.message)
+        block_root = hash_tree_root(block.block)
 
         result, _ = await head_sync.on_gossip_block(block, peer_id, store)
 
@@ -132,8 +132,8 @@ class TestGossipBlockProcessing:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        block_root = hash_tree_root(block.message)
-        store.blocks[block_root] = block.message
+        block_root = hash_tree_root(block.block)
+        store.blocks[block_root] = block.block
 
         process_block = MagicMock()
         head_sync = HeadSync(
@@ -174,7 +174,7 @@ class TestDescendantProcessing:
             parent_root=genesis_root,
             state_root=Bytes32(b"\x01" * 32),
         )
-        parent_root = hash_tree_root(parent.message)
+        parent_root = hash_tree_root(parent.block)
 
         child = make_signed_block(
             slot=Slot(2),
@@ -182,7 +182,7 @@ class TestDescendantProcessing:
             parent_root=parent_root,
             state_root=Bytes32(b"\x02" * 32),
         )
-        child_root = hash_tree_root(child.message)
+        child_root = hash_tree_root(child.block)
 
         # Pre-cache the child (waiting for parent)
         block_cache.add(child, peer_id)
@@ -190,7 +190,7 @@ class TestDescendantProcessing:
         processing_order: list[Bytes32] = []
 
         def track_processing(s: Any, block: SignedBlock) -> Any:
-            root = hash_tree_root(block.message)
+            root = hash_tree_root(block.block)
             processing_order.append(root)
             new_store = MockStore(set(s.blocks.keys()) | {root})
             return new_store
@@ -235,7 +235,7 @@ class TestDescendantProcessing:
                 state_root=Bytes32(bytes([i]) * 32),
             )
             blocks.append(block)
-            parent_root = hash_tree_root(block.message)
+            parent_root = hash_tree_root(block.block)
 
         # Cache all except the first (which will be gossiped)
         for block in blocks[1:]:
@@ -244,8 +244,8 @@ class TestDescendantProcessing:
         processing_order: list[int] = []
 
         def track_processing(s: Any, block: SignedBlock) -> Any:
-            processing_order.append(int(block.message.slot))
-            root = hash_tree_root(block.message)
+            processing_order.append(int(block.block.slot))
+            root = hash_tree_root(block.block)
             new_store = MockStore(set(s.blocks.keys()) | {root})
             return new_store
 
@@ -303,7 +303,7 @@ class TestProcessAllProcessable:
         def count_processing(s: Any, block: SignedBlock) -> Any:
             nonlocal processed_count
             processed_count += 1
-            root = hash_tree_root(block.message)
+            root = hash_tree_root(block.block)
             new_store = MockStore(set(s.blocks.keys()) | {root})
             return new_store
 
@@ -336,7 +336,7 @@ class TestProcessAllProcessable:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        block_root = hash_tree_root(block.message)
+        block_root = hash_tree_root(block.block)
         block_cache.add(block, peer_id)
 
         def fail_processing(s: Any, b: SignedBlock) -> Any:
@@ -429,7 +429,7 @@ class TestErrorHandling:
         def fail_first(s: Any, block: SignedBlock) -> Any:
             nonlocal call_count
             call_count += 1
-            root = hash_tree_root(block.message)
+            root = hash_tree_root(block.block)
             if call_count == 1:
                 raise Exception("First fails")
             successful_roots.add(root)
@@ -470,7 +470,7 @@ class TestStorePropagation:
             parent_root=genesis_root,
             state_root=Bytes32(b"\x01" * 32),
         )
-        parent_root = hash_tree_root(parent.message)
+        parent_root = hash_tree_root(parent.block)
 
         child1 = make_signed_block(
             slot=Slot(2),
@@ -478,7 +478,7 @@ class TestStorePropagation:
             parent_root=parent_root,
             state_root=Bytes32(b"\x02" * 32),
         )
-        child1_root = hash_tree_root(child1.message)
+        child1_root = hash_tree_root(child1.block)
 
         child2 = make_signed_block(
             slot=Slot(3),
@@ -486,14 +486,14 @@ class TestStorePropagation:
             parent_root=child1_root,
             state_root=Bytes32(b"\x03" * 32),
         )
-        child2_root = hash_tree_root(child2.message)
+        child2_root = hash_tree_root(child2.block)
 
         # Pre-cache descendants.
         block_cache.add(child1, peer_id)
         block_cache.add(child2, peer_id)
 
         def track_processing(s: Any, block: SignedBlock) -> Any:
-            root = hash_tree_root(block.message)
+            root = hash_tree_root(block.block)
             new_store = MockStore(set(s.blocks.keys()) | {root})
             return new_store
 
@@ -539,7 +539,7 @@ class TestReentrantGuard:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        block_root = hash_tree_root(block.message)
+        block_root = hash_tree_root(block.block)
 
         # Simulate reentrant call by pre-adding to _processing.
         head_sync._processing.add(block_root)
@@ -577,7 +577,7 @@ class TestProcessAllProcessableConvergence:
             parent_root=genesis_root,
             state_root=Bytes32(b"\x01" * 32),
         )
-        root_a = hash_tree_root(block_a.message)
+        root_a = hash_tree_root(block_a.block)
 
         block_b = make_signed_block(
             slot=Slot(2),
@@ -585,7 +585,7 @@ class TestProcessAllProcessableConvergence:
             parent_root=root_a,
             state_root=Bytes32(b"\x02" * 32),
         )
-        root_b = hash_tree_root(block_b.message)
+        root_b = hash_tree_root(block_b.block)
 
         block_c = make_signed_block(
             slot=Slot(3),
@@ -601,8 +601,8 @@ class TestProcessAllProcessableConvergence:
         processing_order: list[int] = []
 
         def track_processing(s: Any, block: SignedBlock) -> Any:
-            processing_order.append(int(block.message.slot))
-            root = hash_tree_root(block.message)
+            processing_order.append(int(block.block.slot))
+            root = hash_tree_root(block.block)
             new_store = MockStore(set(s.blocks.keys()) | {root})
             return new_store
 

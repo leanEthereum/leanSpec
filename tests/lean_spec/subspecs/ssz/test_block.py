@@ -24,7 +24,7 @@ def test_encode_decode_signed_block_roundtrip() -> None:
     )
 
     signed_block = SignedBlock(
-        message=block,
+        block=block,
         signature=BlockSignatures(
             attestation_signatures=AttestationSignatures(data=[]),
             proposer_signature=make_mock_signature(),
