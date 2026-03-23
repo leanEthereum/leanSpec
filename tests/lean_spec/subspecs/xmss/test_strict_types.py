@@ -8,7 +8,7 @@ ensuring only approved implementations are used.
 import pytest
 from pydantic import ValidationError
 
-from lean_spec.subspecs.poseidon2.permutation import Poseidon2Params
+from lean_spec.subspecs.poseidon1.permutation import Poseidon1Params
 from lean_spec.subspecs.xmss.constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
 from lean_spec.subspecs.xmss.interface import GeneralizedXmssScheme
 from lean_spec.subspecs.xmss.message_hash import PROD_MESSAGE_HASHER, MessageHasher
@@ -327,27 +327,27 @@ class TestPoseidonXmssStrictTypes:
         assert poseidon.params16 == PROD_POSEIDON.params16
 
     def test_poseidon_rejects_subclass_params16(self) -> None:
-        """PoseidonXmss rejects Poseidon2Params subclass for params16."""
+        """PoseidonXmss rejects Poseidon1Params subclass for params16."""
 
-        class CustomParams(Poseidon2Params):
+        class CustomParams(Poseidon1Params):
             pass
 
-        custom_params = Poseidon2Params.__new__(CustomParams)
+        custom_params = Poseidon1Params.__new__(CustomParams)
         custom_params.__dict__.update(PROD_POSEIDON.params16.__dict__)
 
-        with pytest.raises(TypeError, match="params16 must be exactly Poseidon2Params"):
+        with pytest.raises(TypeError, match="params16 must be exactly Poseidon1Params"):
             PoseidonXmss(params16=custom_params, params24=PROD_POSEIDON.params24)
 
     def test_poseidon_rejects_subclass_params24(self) -> None:
-        """PoseidonXmss rejects Poseidon2Params subclass for params24."""
+        """PoseidonXmss rejects Poseidon1Params subclass for params24."""
 
-        class CustomParams(Poseidon2Params):
+        class CustomParams(Poseidon1Params):
             pass
 
-        custom_params = Poseidon2Params.__new__(CustomParams)
+        custom_params = Poseidon1Params.__new__(CustomParams)
         custom_params.__dict__.update(PROD_POSEIDON.params24.__dict__)
 
-        with pytest.raises(TypeError, match="params24 must be exactly Poseidon2Params"):
+        with pytest.raises(TypeError, match="params24 must be exactly Poseidon1Params"):
             PoseidonXmss(params16=PROD_POSEIDON.params16, params24=custom_params)
 
     def test_poseidon_rejects_wrong_type_params16(self) -> None:

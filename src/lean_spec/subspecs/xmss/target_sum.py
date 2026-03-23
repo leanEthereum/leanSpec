@@ -75,6 +75,10 @@ class TargetSumEncoder(StrictBaseModel):
         # Hash the inputs to map them to a potential codeword (a vertex in the hypercube).
         codeword_candidate = self.message_hasher.apply(parameter, epoch, rho, message)
 
+        # The aborting decode may reject if a field element equals P - 1.
+        if codeword_candidate is None:
+            return None
+
         # A codeword is valid only if it lies on the predefined hypercube layer.
         #
         # This is verified by checking if the sum of its coordinates equals TARGET_SUM.

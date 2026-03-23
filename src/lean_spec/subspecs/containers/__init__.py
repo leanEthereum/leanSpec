@@ -5,7 +5,7 @@ All containers use SSZ encoding. SSZ provides deterministic serialization and
 efficient merkleization.
 
 Hash functions used for merkleization differ by devnet. Early devnets use
-SHA256. Later devnets will switch to Poseidon2 for better SNARK compatibility.
+SHA256. Later devnets will switch to Poseidon1 for better SNARK compatibility.
 """
 
 from .attestation import (

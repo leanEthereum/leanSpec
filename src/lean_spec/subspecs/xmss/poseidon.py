@@ -1,18 +1,18 @@
 """
-Defines the Poseidon2 hash functions for the Generalized XMSS scheme.
+Defines the Poseidon1 hash functions for the Generalized XMSS scheme.
 
-### The Cryptographic Engine: Why Poseidon2?
+### The Cryptographic Engine: Why Poseidon1?
 
 This module provides the low-level cryptographic engine for all internal hashing
-operations. It is built on **Poseidon2** hash function.
+operations. It is built on **Poseidon1** hash function.
 
-The choice of Poseidon2 is deliberate and critical for the scheme's ultimate goal.
-Unlike traditional hashes like SHA-3, Poseidon2 is an **arithmetization-friendly**
+The choice of Poseidon1 is deliberate and critical for the scheme's ultimate goal.
+Unlike traditional hashes like SHA-3, Poseidon1 is an **arithmetization-friendly**
 (or **SNARK-friendly**) hash function. Its algebraic structure is simple, making it
 exponentially faster to prove and verify inside a zero-knowledge proof system,
 which is essential for aggregating many signatures into a single, compact proof.
 
-This file provides wrappers for the two primary ways Poseidon2 is used:
+This file provides wrappers for the two primary ways Poseidon1 is used:
 
 1.  **Compression Mode**: A fast, fixed-input-size mode for hashing small,
     predictable data structures like a single hash digest or a pair of them.
@@ -27,37 +27,37 @@ from pydantic import model_validator
 from lean_spec.types import StrictBaseModel
 
 from ..koalabear import Fp
-from ..poseidon2.permutation import (
+from ..poseidon1.permutation import (
     PARAMS_16,
     PARAMS_24,
-    Poseidon2,
-    Poseidon2Params,
+    Poseidon1,
+    Poseidon1Params,
 )
 from ._validation import enforce_strict_types
 from .utils import int_to_base_p
 
 
 class PoseidonXmss(StrictBaseModel):
-    """An instance of the Poseidon2 hash engine for the XMSS scheme."""
+    """An instance of the Poseidon1 hash engine for the XMSS scheme."""
 
-    params16: Poseidon2Params
-    """Poseidon2 parameters for 16-width permutation."""
+    params16: Poseidon1Params
+    """Poseidon1 parameters for 16-width permutation."""
 
-    params24: Poseidon2Params
-    """Poseidon2 parameters for 24-width permutation."""
+    params24: Poseidon1Params
+    """Poseidon1 parameters for 24-width permutation."""
 
     @model_validator(mode="after")
     def _validate_strict_types(self) -> PoseidonXmss:
         """Reject subclasses to prevent type confusion attacks."""
-        enforce_strict_types(self, params16=Poseidon2Params, params24=Poseidon2Params)
+        enforce_strict_types(self, params16=Poseidon1Params, params24=Poseidon1Params)
         return self
 
     def compress(self, input_vec: list[Fp], width: int, output_len: int) -> list[Fp]:
         """
-        Implements the Poseidon2 hash in **compression mode**.
+        Implements the Poseidon1 hash in **compression mode**.
 
         This mode is used for hashing fixed-size inputs and is the most efficient
-        way to use Poseidon2. It is used for traversing hash chains and building
+        way to use Poseidon1. It is used for traversing hash chains and building
         the internal nodes of the Merkle tree.
 
         ### Compression Algorithm
@@ -66,13 +66,13 @@ class PoseidonXmss(StrictBaseModel):
         1.  **Padding**: The `input_vec` is padded with zeros to match the full state `width`.
         2.  **Permutation**: The core cryptographic permutation is applied to the padded state.
         3.  **Feed-Forward**: The original padded input is added element-wise to the
-            permuted state. This is a key feature of the Poseidon2 design that
+            permuted state. This is a key feature of the Poseidon1 design that
             provides security against certain attacks.
         4.  **Truncation**: The result is truncated to the desired `output_len`.
 
         Args:
             input_vec: The list of field elements to be hashed.
-            width: The state width of the Poseidon2 permutation (16 or 24).
+            width: The state width of the Poseidon1 permutation (16 or 24).
             output_len: The number of field elements in the output digest.
 
         Returns:
@@ -90,8 +90,8 @@ class PoseidonXmss(StrictBaseModel):
         # Create a padded input by extending with zeros to match the state width.
         padded_input = list(input_vec) + [Fp(value=0)] * (width - len(input_vec))
 
-        # Apply the Poseidon2 permutation.
-        permuted_state = Poseidon2(params).permute(padded_input)
+        # Apply the Poseidon1 permutation.
+        permuted_state = Poseidon1(params).permute(padded_input)
 
         # Apply the feed-forward step, adding the input back element-wise.
         final_state = [p + i for p, i in zip(permuted_state, padded_input, strict=True)]
@@ -138,7 +138,7 @@ class PoseidonXmss(StrictBaseModel):
         width: int,
     ) -> list[Fp]:
         """
-        Implements the Poseidon2 hash using the **sponge construction**.
+        Implements the Poseidon1 hash using the **sponge construction**.
 
         This mode is used for hashing large or variable-length inputs. In this scheme,
         it is specifically used to hash the Merkle tree leaves, which consist of many
@@ -162,7 +162,7 @@ class PoseidonXmss(StrictBaseModel):
             input_vec: The input data of arbitrary length.
             capacity_value: The domain-separating value from `safe_domain_separator`.
             output_len: The number of field elements in the final output digest.
-            width: The width of the Poseidon2 permutation.
+            width: The width of the Poseidon1 permutation.
 
         Returns:
             A hash digest of `output_len` field elements.
@@ -188,7 +188,7 @@ class PoseidonXmss(StrictBaseModel):
         state[rate:] = capacity_value
 
         # Create the engine once for efficiency.
-        engine = Poseidon2(params)
+        engine = Poseidon1(params)
 
         # Absorb the input in rate-sized chunks.
         for i in range(0, len(padded_input), rate):
