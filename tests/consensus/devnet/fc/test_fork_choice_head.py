@@ -177,24 +177,23 @@ def test_head_with_two_competing_forks(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Fork choice selects head when two forks compete at the same slot.
+    Fork choice selects head when two forks compete with equal weight.
 
     Scenario
     --------
-    Create two competing blocks at slot 2, both building on slot 1.
+    Create two competing forks from a common ancestor, each with one block
+    at a distinct slot.
 
     Expected Behavior:
         - After slot 1: head = slot 1 (common ancestor)
-        - After fork A (slot 2): head = slot 2 (fork A, first seen)
-        - After fork B (slot 2): head = slot 2 (still fork A)
-        - Both forks have equal weight (1 proposer attestation each)
-        - Head breaks tie lexicographically by block root
+        - After fork A (slot 2): head = fork A (only fork)
+        - After fork B (slot 3): both forks have equal weight
+          (1 proposer attestation each), head chosen by lexicographic tiebreaker
 
     Why This Matters
     ----------------
-    This is an important fork choice scenario: two blocks competing for the
-    same slot. Even with equal attestation weight, fork choice must deterministically
-    select a head.
+    This is an important fork choice scenario: two forks of equal weight
+    competing for the head. Fork choice must deterministically select a head.
 
     The algorithm uses lexicographic order of block roots as a tie-breaker,
     ensuring all nodes agree on the same head even when forks have equal weight.
@@ -217,16 +216,18 @@ def test_head_with_two_competing_forks(
                 ),
                 checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
             ),
-            # Competing fork B at slot 2
+            # Fork B at slot 3 (same parent as fork A, equal weight)
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(2),
-                    parent_label="common",  # Same parent
+                    slot=Slot(3),
+                    parent_label="common",
                     label="fork_b",
                 ),
-                # Head determined by tie-breaker (lexicographic root order)
-                # The tie is broken by comparing block roots lexicographically
-                checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
+                # Both forks have equal weight (1 proposer attestation each)
+                # Head determined by lexicographic tiebreaker on block roots
+                checks=StoreChecks(
+                    lexicographic_head_among=["fork_a", "fork_b"],
+                ),
             ),
         ],
     )
