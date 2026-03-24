@@ -241,12 +241,13 @@ def test_head_switches_to_heavier_fork(
 
     Scenario
     --------
-    Create two forks at slot 2, then extend one fork to make it heavier.
+    Create two forks from a common ancestor at distinct slots, then extend
+    one fork to make it heavier.
 
     Expected Behavior:
-        - After fork A (slot 2): head = fork A
-        - After fork B (slot 2): head = still fork A (tie-breaker)
-        - After extending fork B (slot 3): head = slot 3 (fork B wins!)
+        - After fork A (slot 2): head = fork A (only fork)
+        - After fork B (slot 3): equal weight, tiebreaker decides
+        - After extending fork B (slot 4): head = fork B's child (fork B wins!)
 
     Why This Matters
     ----------------
@@ -277,34 +278,33 @@ def test_head_switches_to_heavier_fork(
                 ),
                 checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
             ),
-            # Competing fork B at slot 2 (equal weight, tiebreaker decides)
+            # Fork B at slot 3 (same parent, equal weight, tiebreaker decides)
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(2),
+                    slot=Slot(3),
                     parent_label="common",
                     label="fork_b",
                 ),
                 checks=StoreChecks(
-                    head_slot=Slot(2),
                     lexicographic_head_among=["fork_a", "fork_b"],
                 ),
             ),
             # Extend fork B with an attestation for fork_b → gives it more weight
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(3),
+                    slot=Slot(4),
                     parent_label="fork_b",
-                    label="fork_b_3",
+                    label="fork_b_4",
                     attestations=[
                         AggregatedAttestationSpec(
                             validator_ids=[ValidatorIndex(2)],
-                            slot=Slot(2),
-                            target_slot=Slot(2),
+                            slot=Slot(3),
+                            target_slot=Slot(3),
                             target_root_label="fork_b",
                         ),
                     ],
                 ),
-                checks=StoreChecks(head_slot=Slot(3), head_root_label="fork_b_3"),
+                checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_b_4"),
             ),
         ],
     )
