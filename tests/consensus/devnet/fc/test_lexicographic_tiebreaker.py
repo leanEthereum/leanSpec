@@ -30,10 +30,9 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
     --------
     - Slot 1: Build common ancestor
     - Slots 2-3: Build fork A to depth 2 (slots 2 & 3)
-    - Slots 2-3: Build fork B to depth 2 (slots 2 & 3)
+    - Slots 4-5: Build fork B to depth 2 (slots 4 & 5)
 
     Both forks have identical structure:
-    - Same depth (2 blocks each)
     - Same attestation weight (2 proposer attestations each)
     - Same parent (common ancestor at slot 1)
 
@@ -41,9 +40,8 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
     -----------------
     The competing forks have identical attestation weight. The head is chosen
     via lexicographic ordering of the block roots. The framework automatically
-    verifies that:
-    1. Both forks are at the same slot (equal depth)
-    2. The head is the lexicographically highest root among them
+    verifies that the head is the lexicographically highest root among the
+    two fork tips.
     """
     fork_choice_test(
         steps=[
@@ -55,7 +53,7 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
                     head_root_label="base",
                 ),
             ),
-            # Fork A: build to depth 2
+            # Fork A: first block
             BlockStep(
                 block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_a_2"),
                 checks=StoreChecks(
@@ -63,6 +61,7 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
                     head_root_label="fork_a_2",
                 ),
             ),
+            # Fork A: second block, carrying attestation for fork_a_2 (weight = 1)
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(3),
@@ -82,15 +81,16 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
                     head_root_label="fork_a_3",
                 ),
             ),
-            # Fork B: build to depth 2 (now equal weight with fork A)
+            # Fork B: first block — fork A still leads (weight 1 vs 0)
             BlockStep(
                 block=BlockSpec(slot=Slot(4), parent_label="base", label="fork_b_4"),
                 checks=StoreChecks(
                     head_slot=Slot(3),
-                    # Head remains on fork_a_3 (it has more weight: 1 vs 0)
                     head_root_label="fork_a_3",
                 ),
             ),
+            # Fork B: second block, carrying attestation for fork_b_4 (weight = 1)
+            # Both forks now have equal weight — tiebreaker selects the head
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(5),
@@ -106,9 +106,6 @@ def test_equal_weight_forks_use_lexicographic_tiebreaker(
                     ],
                 ),
                 checks=StoreChecks(
-                    # Both forks now have equal weight (1 attestation each)
-                    #
-                    # Tiebreaker determines the winner
                     lexicographic_head_among=["fork_a_3", "fork_b_5"],
                 ),
             ),
