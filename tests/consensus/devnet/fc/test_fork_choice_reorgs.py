@@ -26,14 +26,14 @@ def test_simple_one_block_reorg(
     --------
     - Slot 1: Common ancestor (chain_base)
     - Slot 2: Fork A created, becomes head
-    - Slot 2: Fork B created (competing fork at same slot)
-    - Slot 3: Fork B extended → triggers reorg from A to B
+    - Slot 3: Fork B created (competing fork from same parent)
+    - Slot 4: Fork B extended → triggers reorg from A to B
 
     Expected Behavior
     -----------------
-    1. After fork_a_2: head = fork_a_2 (first fork created)
-    2. After fork_b_2: head = fork_a_2 (equal weight, head remains unchanged)
-    3. After fork_b_3: head = fork_b_3 (fork B heavier due to extension)
+    1. After fork_a_2: head = fork_a_2 (only fork)
+    2. After fork_b_3: equal weight, tiebreaker decides
+    3. After fork_b_4: head = fork_b_4 (fork B heavier due to extension)
 
     Reorg Details:
         - **Depth**: 1 block (fork_a_2 becomes non-canonical)
@@ -72,36 +72,35 @@ def test_simple_one_block_reorg(
                     head_root_label="fork_a_2",
                 ),
             ),
-            # Fork B at slot 2 (competing fork, equal weight to fork_a)
+            # Fork B at slot 3 (same parent, equal weight)
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(2),
+                    slot=Slot(3),
                     parent_label="chain_base",
-                    label="fork_b_2",
+                    label="fork_b_3",
                 ),
                 checks=StoreChecks(
-                    head_slot=Slot(2),
-                    lexicographic_head_among=["fork_a_2", "fork_b_2"],
+                    lexicographic_head_among=["fork_a_2", "fork_b_3"],
                 ),
             ),
             # Extend fork B with attestation → triggers reorg to fork B
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(3),
-                    parent_label="fork_b_2",
-                    label="fork_b_3",
+                    slot=Slot(4),
+                    parent_label="fork_b_3",
+                    label="fork_b_4",
                     attestations=[
                         AggregatedAttestationSpec(
                             validator_ids=[ValidatorIndex(2)],
-                            slot=Slot(2),
-                            target_slot=Slot(2),
-                            target_root_label="fork_b_2",
+                            slot=Slot(3),
+                            target_slot=Slot(3),
+                            target_root_label="fork_b_3",
                         ),
                     ],
                 ),
                 checks=StoreChecks(
-                    head_slot=Slot(3),
-                    head_root_label="fork_b_3",  # REORG! Fork B now canonical
+                    head_slot=Slot(4),
+                    head_root_label="fork_b_4",
                 ),
             ),
         ],
