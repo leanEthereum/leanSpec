@@ -318,12 +318,13 @@ def test_head_with_deep_fork_split(
 
     Scenario
     --------
-    Create two forks that diverge at slot 2 and extend to different depths.
+    Create two forks that diverge from a common ancestor but are built
+    at different slots (no duplicate slots).
 
     Expected Behavior:
-        - Fork A extends to slot 4
-        - Fork B extends to slot 5
-        - Head follows the longer (heavier) fork B
+        - Fork A extends earlier to slot 4
+        - Fork B starts later but extends to slot 8
+        - Head eventually follows the heavier fork B
 
     Why This Matters
     ----------------
@@ -344,7 +345,7 @@ def test_head_with_deep_fork_split(
                 block=BlockSpec(slot=Slot(1), label="common"),
                 checks=StoreChecks(head_slot=Slot(1), head_root_label="common"),
             ),
-            # Fork A: slots 2, 3, 4 with attestations building weight
+            # Fork A: earlier branch (slots 2 - 4)
             BlockStep(
                 block=BlockSpec(slot=Slot(2), parent_label="common", label="fork_a_2"),
                 checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a_2"),
@@ -381,7 +382,7 @@ def test_head_with_deep_fork_split(
                 ),
                 checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
             ),
-            # Fork B: slots 2, 3, 4, 5 with more attestations to overtake
+            # Fork B: competing branch starting later (slots 5 - 8)
             BlockStep(
                 block=BlockSpec(slot=Slot(5), parent_label="common", label="fork_b_5"),
                 checks=StoreChecks(head_slot=Slot(4), head_root_label="fork_a_4"),
