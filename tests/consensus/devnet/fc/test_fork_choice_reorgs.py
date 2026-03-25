@@ -800,22 +800,19 @@ def test_back_and_forth_reorg_oscillation(
     tests fork choice correctness under extreme conditions.
 
     Oscillation Pattern:
-        Slot 2: Fork A leads (1 vs 0) ← head
-        Slot 2: Fork B created (1 vs 1) → tie, A maintains
-        Slot 3: Fork B extends (2 vs 1) ← head switches to B (REORG #1)
-        Slot 3: Fork A extends (2 vs 2) → tie, B maintains
-        Slot 4: Fork A extends (3 vs 2) ← head switches to A (REORG #2)
-        Slot 4: Fork B extends (3 vs 3) → tie, A maintains
-        Slot 5: Fork B extends (4 vs 3) ← head switches to B (REORG #3)
+        Slot 2: Fork A created ← head (only fork)
+        Slot 3: Fork B created → tie, tiebreaker decides
+        Slot 4: Fork B extends with attestation ← head switches to B (REORG #1)
+        Slot 5: Fork A extends (no attestation) → B still leads
+        Slot 6: Fork A extends with 2 attestations ← head switches to A (REORG #2)
+        Slot 7: Fork B extends (no attestation) → A still leads
+        Slot 8: Fork B extends with 2 attestations ← head switches to B (REORG #3)
 
     Expected Behavior
     -----------------
     1. Head oscillates: A → B → A → B
-    2. Each extension triggers reorg to that fork
-    3. All reorgs are 1-2 blocks deep
-    4. Fork choice remains consistent and correct throughout
-
-    Reorg Count: 3 reorgs in 4 slots (very high rate)
+    2. Each extension with attestations triggers reorg to that fork
+    3. Fork choice remains consistent and correct throughout
 
     Why This Matters
     ----------------
@@ -838,7 +835,7 @@ def test_back_and_forth_reorg_oscillation(
     convergence.
     """
     fork_choice_test(
-        anchor_state=generate_pre_state(num_validators=6),
+        anchor_state=generate_pre_state(num_validators=10),
         steps=[
             # Common base
             BlockStep(
@@ -848,96 +845,95 @@ def test_back_and_forth_reorg_oscillation(
                     head_root_label="base",
                 ),
             ),
-            # Fork A: slot 2 (takes initial lead)
+            # Fork A at slot 2 (takes initial lead)
             BlockStep(
                 block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_a_2"),
                 checks=StoreChecks(
                     head_slot=Slot(2),
-                    head_root_label="fork_a_2",  # Fork A leads
+                    head_root_label="fork_a_2",
                 ),
             ),
-            # Fork B: slot 2 (ties, tiebreaker decides)
+            # Fork B at slot 3 (ties, tiebreaker decides)
             BlockStep(
-                block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_b_2"),
+                block=BlockSpec(slot=Slot(3), parent_label="base", label="fork_b_3"),
                 checks=StoreChecks(
-                    head_slot=Slot(2),
-                    lexicographic_head_among=["fork_a_2", "fork_b_2"],
+                    lexicographic_head_among=["fork_a_2", "fork_b_3"],
                 ),
             ),
-            # Fork B: slot 3 with attestation → REORG #1 (B weight=1 vs A weight=0)
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(3),
-                    parent_label="fork_b_2",
-                    label="fork_b_3",
-                    attestations=[
-                        AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(3)],
-                            slot=Slot(2),
-                            target_slot=Slot(2),
-                            target_root_label="fork_b_2",
-                        ),
-                    ],
-                ),
-                checks=StoreChecks(
-                    head_slot=Slot(3),
-                    head_root_label="fork_b_3",  # Fork B leads (weight=1 vs 0)
-                ),
-            ),
-            # Fork A: slot 3 (catches up, no attestation)
-            BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_a_2", label="fork_a_3"),
-                checks=StoreChecks(
-                    head_slot=Slot(3),
-                    head_root_label="fork_b_3",  # Fork B maintains (weight=1 vs 0)
-                ),
-            ),
-            # Fork A: slot 4 with 2 attestations → REORG #2 (A weight=2 vs B weight=1)
+            # Fork B extends to slot 4 with attestation → REORG #1
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(4),
-                    parent_label="fork_a_3",
-                    label="fork_a_4",
+                    parent_label="fork_b_3",
+                    label="fork_b_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0), ValidatorIndex(4)],
+                            validator_ids=[ValidatorIndex(0)],
                             slot=Slot(3),
                             target_slot=Slot(3),
-                            target_root_label="fork_a_3",
+                            target_root_label="fork_b_3",
                         ),
                     ],
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(4),
-                    head_root_label="fork_a_4",  # Fork A back on top (weight=2 vs 1)
+                    head_root_label="fork_b_4",
                 ),
             ),
-            # Fork B: slot 4 (catches up, no attestation)
+            # Fork A extends to slot 5 (catches up, no attestation)
             BlockStep(
-                block=BlockSpec(slot=Slot(4), parent_label="fork_b_3", label="fork_b_4"),
+                block=BlockSpec(slot=Slot(5), parent_label="fork_a_2", label="fork_a_5"),
                 checks=StoreChecks(
                     head_slot=Slot(4),
-                    head_root_label="fork_a_4",  # Fork A maintains (weight=2 vs 1)
+                    head_root_label="fork_b_4",
                 ),
             ),
-            # Fork B: slot 5 with 2 attestations → REORG #3 (B weight=3 vs A weight=2)
+            # Fork A extends to slot 6 with 2 attestations → REORG #2
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(5),
-                    parent_label="fork_b_4",
-                    label="fork_b_5",
+                    slot=Slot(6),
+                    parent_label="fork_a_5",
+                    label="fork_a_6",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1), ValidatorIndex(5)],
-                            slot=Slot(4),
-                            target_slot=Slot(4),
-                            target_root_label="fork_b_4",
+                            validator_ids=[ValidatorIndex(9), ValidatorIndex(8)],
+                            slot=Slot(5),
+                            target_slot=Slot(5),
+                            target_root_label="fork_a_5",
                         ),
                     ],
                 ),
                 checks=StoreChecks(
-                    head_slot=Slot(5),
-                    head_root_label="fork_b_5",  # Fork B wins final round (weight=3 vs 2)
+                    head_slot=Slot(6),
+                    head_root_label="fork_a_6",
+                ),
+            ),
+            # Fork B extends to slot 7 (catches up, no attestation)
+            BlockStep(
+                block=BlockSpec(slot=Slot(7), parent_label="fork_b_4", label="fork_b_7"),
+                checks=StoreChecks(
+                    head_slot=Slot(6),
+                    head_root_label="fork_a_6",
+                ),
+            ),
+            # Fork B extends to slot 8 with 2 attestations → REORG #3
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(8),
+                    parent_label="fork_b_7",
+                    label="fork_b_8",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1), ValidatorIndex(9)],
+                            slot=Slot(7),
+                            target_slot=Slot(7),
+                            target_root_label="fork_b_7",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(8),
+                    head_root_label="fork_b_8",
                 ),
             ),
         ],
