@@ -5,7 +5,16 @@ description: Show what changed in leanSpec between devnet versions or HEAD
 
 # /spec-diff - Spec Changelog Between Versions
 
-Show what spec functions, types, and modules changed between two devnet versions (or HEAD).
+Show what changed in the **spec code** (`src/lean_spec/`) and **consensus test vectors**
+(`tests/consensus/`) between two devnet versions (or HEAD).
+
+**Scope**: Protocol-level spec types, functions, containers, forkchoice logic, and the
+test fixtures that generate cross-client test vectors.
+
+**Excluded**: Test framework infrastructure (`packages/testing/`, `consensus_testing/`,
+`execution_testing/`), unit tests (`tests/lean_spec/`), interop tests (`tests/interop/`),
+documentation (`docs/`), CI/tooling configs, and the node implementation layer
+(networking, sync, storage, node runner).
 
 ## Usage
 
