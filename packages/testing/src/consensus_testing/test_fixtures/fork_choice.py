@@ -52,6 +52,7 @@ from ..test_types import (
     BlockSpec,
     BlockStep,
     ForkChoiceStep,
+    GossipAttestationSpec,
     TickStep,
 )
 from .base import BaseConsensusFixture
@@ -155,7 +156,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 if isinstance(step, BlockStep):
                     max_slot_value = max(max_slot_value, step.block.slot)
                 elif isinstance(step, AttestationStep):
-                    max_slot_value = max(max_slot_value, step.attestation.data.slot)
+                    max_slot_value = max(max_slot_value, step.attestation.slot)
 
             self.max_slot = max_slot_value
 
@@ -296,8 +297,12 @@ class ForkChoiceTest(BaseConsensusFixture):
                         # Process a gossip attestation.
                         # Gossip attestations arrive outside of blocks.
                         # They influence the fork choice weight calculation.
+                        signed_attestation = self._build_signed_attestation_from_spec(
+                            step.attestation, self._block_registry, key_manager
+                        )
+                        step._filled_attestation = signed_attestation
                         store = store.on_gossip_attestation(
-                            step.attestation,
+                            signed_attestation,
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                         )
 
@@ -633,4 +638,92 @@ class ForkChoiceTest(BaseConsensusFixture):
             head=target,
             target=target,
             source=state.latest_justified,
+        )
+
+    def _build_signed_attestation_from_spec(
+        self,
+        spec: GossipAttestationSpec,
+        block_registry: dict[str, Block],
+        key_manager: XmssKeyManager,
+    ) -> SignedAttestation:
+        """
+        Build a signed attestation from a gossip attestation specification.
+
+        Args:
+            spec: Gossip attestation specification.
+            block_registry: Labeled blocks for target resolution.
+            key_manager: XMSS key manager for signing.
+
+        Returns:
+            Signed attestation ready for gossip processing.
+
+        Raises:
+            ValueError: If target label not found in registry.
+        """
+        # Resolve target from label.
+        if (target_block := block_registry.get(spec.target_root_label)) is None:
+            raise ValueError(
+                f"target_root_label '{spec.target_root_label}' not found - "
+                f"available: {list(block_registry.keys())}"
+            )
+
+        target_root = hash_tree_root(target_block)
+        target = Checkpoint(root=target_root, slot=spec.target_slot)
+
+        # Resolve head checkpoint.
+        # Defaults to the target checkpoint when not overridden.
+        if spec.head_root_label is not None:
+            if (head_block := block_registry.get(spec.head_root_label)) is None:
+                raise ValueError(
+                    f"head_root_label '{spec.head_root_label}' not found - "
+                    f"available: {list(block_registry.keys())}"
+                )
+            head_root = hash_tree_root(head_block)
+            head_slot = spec.head_slot if spec.head_slot is not None else head_block.slot
+            head = Checkpoint(root=head_root, slot=head_slot)
+        else:
+            head = Checkpoint(
+                root=target_root,
+                slot=spec.head_slot if spec.head_slot is not None else spec.target_slot,
+            )
+
+        # Resolve source checkpoint.
+        # Defaults to the anchor (genesis) block when not overridden.
+        assert self.anchor_block is not None, "anchor_block must be set before building attestation"
+        if spec.source_root_label is not None:
+            if (source_block := block_registry.get(spec.source_root_label)) is None:
+                raise ValueError(
+                    f"source_root_label '{spec.source_root_label}' not found - "
+                    f"available: {list(block_registry.keys())}"
+                )
+            source_root = hash_tree_root(source_block)
+            source_slot = spec.source_slot if spec.source_slot is not None else source_block.slot
+            source = Checkpoint(root=source_root, slot=source_slot)
+        else:
+            anchor_root = hash_tree_root(self.anchor_block)
+            source = Checkpoint(
+                root=anchor_root,
+                slot=spec.source_slot if spec.source_slot is not None else self.anchor_block.slot,
+            )
+
+        attestation_data = AttestationData(
+            slot=spec.slot,
+            head=head,
+            target=target,
+            source=source,
+        )
+
+        # Generate signature or use dummy.
+        if spec.valid_signature:
+            signature = key_manager.sign_attestation_data(
+                spec.validator_id,
+                attestation_data,
+            )
+        else:
+            signature = create_dummy_signature()
+
+        return SignedAttestation(
+            validator_id=spec.validator_id,
+            data=attestation_data,
+            signature=signature,
         )

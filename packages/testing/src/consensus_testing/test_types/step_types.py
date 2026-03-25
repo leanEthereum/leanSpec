@@ -4,11 +4,12 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import ConfigDict, Field, PrivateAttr, field_serializer
 
-from lean_spec.subspecs.containers import SignedAttestation
+from lean_spec.subspecs.containers.attestation import SignedAttestation
 from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.types import CamelModel
 
 from .block_spec import BlockSpec
+from .gossip_attestation_spec import GossipAttestationSpec
 from .store_checks import StoreChecks
 
 
@@ -127,8 +128,49 @@ class AttestationStep(BaseForkChoiceStep):
     step_type: Literal["attestation"] = "attestation"
     """Discriminator field for serialization."""
 
-    attestation: SignedAttestation
-    """Attestation (SignedAttestation) to process from gossip."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    attestation: GossipAttestationSpec
+    """
+    Gossip attestation specification for this step.
+
+    Tests provide a GossipAttestationSpec with required fields.
+    The framework fills in the attestation data and signature during make_fixture().
+    """
+
+    _filled_attestation: SignedAttestation | None = PrivateAttr(default=None)
+    """The filled SignedAttestation, processed through the spec."""
+
+    @field_serializer("attestation", when_used="json")
+    def serialize_attestation(self, value: GossipAttestationSpec) -> dict[str, Any]:
+        """
+        Serialize the filled SignedAttestation instead of the spec.
+
+        This ensures the fixture output contains the complete attestation that was
+        filled from the spec, not the input specification.
+
+        Parameters:
+        ----------
+        value : GossipAttestationSpec
+            The spec field value (ignored, we use _filled_attestation instead).
+
+        Returns:
+        -------
+        dict[str, Any]
+            The serialized SignedAttestation.
+
+        Raises:
+        ------
+        ValueError
+            If _filled_attestation is None (make_fixture not called yet).
+        """
+        if self._filled_attestation is None:
+            raise ValueError(
+                "Attestation not filled yet - make_fixture() must be called "
+                "before serialization. This AttestationStep should only be "
+                "serialized after the fixture has been processed."
+            )
+        return self._filled_attestation.to_json()
 
 
 # Discriminated union type for all fork choice steps
