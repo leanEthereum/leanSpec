@@ -61,6 +61,14 @@ Categorize each item as:
 For modified items, briefly describe what changed (e.g. "added `deadline` parameter",
 "changed return type from `bool` to `Optional[bool]`").
 
+**Detecting renames**: A rename+change appears in the diff as a removal in one place and
+an addition in another. Before classifying something as `[Removed]` + `[New]`, check
+whether the removed item has a corresponding new item with a similar name, similar
+parameters, or similar objective. If so, report it as a single `[Modified]` entry:
+`old_name()` → renamed to `new_name()`, with a description of what else changed.
+Common rename patterns: prefix/suffix changes (`gossip_` → `attestation_`), class
+extraction (`function` → `Class.method`), split (`one_func` → `two_funcs`).
+
 ### 4. Analyze test vector changes
 
 For each changed consensus test file (`tests/consensus/`), run:
