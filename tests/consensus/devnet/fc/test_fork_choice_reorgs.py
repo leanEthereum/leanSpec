@@ -495,33 +495,29 @@ def test_three_way_fork_competition(
 
     Scenario
     --------
-    Three forks (A, B, C) compete simultaneously. Fork choice progressively
-    eliminates weaker forks as stronger ones extend.
+    Three forks (A, B, C) compete from a common ancestor, each at a distinct
+    slot. Fork choice progressively eliminates weaker forks as stronger ones
+    extend.
 
     Fork Topology:
-                  base (slot 1)
-                   /   |     \
-                  /    |      \
-              fork_a  fork_b  fork_c  (slot 2)
-                |       |       |
-                |       |       +--- fork_c_3 (slot 3)
-                |       +--- fork_b_3 (slot 3)
-                |       +--- fork_b_4 (slot 4) ← Winner
+                       base (slot 1)
+                      /    |       \
+                     /     |        \
+              fork_a_2  fork_b_3  fork_c_4
+              (slot 2)  (slot 3)  (slot 4)
+                |          |         |
+                |          |         +--- fork_c_5 (slot 5)
+                |          +--- fork_b_6 (slot 6)
+                |          +--- fork_b_7 (slot 7) ← Winner
                 +--- abandoned
 
     Expected Behavior
     -----------------
-    1. All three forks start at slot 2 (three-way tie)
-    2. Fork C extends to slot 3 → becomes head
-    3. Fork B extends to slot 3 → ties with fork C at depth 2
-    4. Fork B extends to slot 4 → wins with depth 3
+    1. Three forks created at slots 2, 3, 4 (equal weight, three-way tie)
+    2. Fork C extends to slot 5 with attestation → becomes head
+    3. Fork B extends to slot 6 (no attestation) → fork C still leads
+    4. Fork B extends to slot 7 with 2 attestations → wins
     5. Forks A and C become non-canonical
-
-    Reorg Sequence:
-        - Initial: fork_a (tie-breaker among three)
-        - After fork_c_3: fork_c (depth advantage)
-        - After fork_b_3: fork_c (tie, maintains head)
-        - After fork_b_4: fork_b (final winner)
 
     Why This Matters
     ----------------
@@ -537,6 +533,7 @@ def test_three_way_fork_competition(
     - Final winner is objectively the heaviest fork
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=8),
         steps=[
             # Common base
             BlockStep(
@@ -546,101 +543,80 @@ def test_three_way_fork_competition(
                     head_root_label="base",
                 ),
             ),
-            # Three-way fork at slot 2
-            #
-            # Each fork includes a different attestation in its body so that
-            # the blocks produce distinct roots (identical bodies → identical roots).
+            # Three forks at distinct slots (2, 3, 4)
             BlockStep(
                 block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_a_2"),
                 checks=StoreChecks(
                     head_slot=Slot(2),
-                    head_root_label="fork_a_2",  # First seen
+                    head_root_label="fork_a_2",
                 ),
             ),
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(2),
-                    parent_label="base",
-                    label="fork_b_2",
-                    attestations=[
-                        AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1)],
-                            slot=Slot(1),
-                            target_slot=Slot(1),
-                            target_root_label="base",
-                        ),
-                    ],
-                ),
-                checks=StoreChecks(
-                    head_slot=Slot(2),
-                    lexicographic_head_among=["fork_a_2", "fork_b_2"],
-                ),
-            ),
-            BlockStep(
-                block=BlockSpec(
-                    slot=Slot(2),
-                    parent_label="base",
-                    label="fork_c_2",
-                    attestations=[
-                        AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(3)],
-                            slot=Slot(1),
-                            target_slot=Slot(1),
-                            target_root_label="base",
-                        ),
-                    ],
-                ),
-                checks=StoreChecks(
-                    head_slot=Slot(2),
-                    lexicographic_head_among=["fork_a_2", "fork_b_2", "fork_c_2"],
-                ),
-            ),
-            # Fork C extends to slot 3 with attestation → takes lead (weight=1)
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(3),
-                    parent_label="fork_c_2",
-                    label="fork_c_3",
-                    attestations=[
-                        AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
-                            slot=Slot(2),
-                            target_slot=Slot(2),
-                            target_root_label="fork_c_2",
-                        ),
-                    ],
+                    parent_label="base",
+                    label="fork_b_3",
                 ),
                 checks=StoreChecks(
-                    head_slot=Slot(3),
-                    head_root_label="fork_c_3",  # Fork C now leads (weight=1)
+                    lexicographic_head_among=["fork_a_2", "fork_b_3"],
                 ),
             ),
-            # Fork B extends to slot 3 (no attestation, fork C still leads)
-            BlockStep(
-                block=BlockSpec(slot=Slot(3), parent_label="fork_b_2", label="fork_b_3"),
-                checks=StoreChecks(
-                    head_slot=Slot(3),
-                    head_root_label="fork_c_3",  # Fork C leads (weight=1 vs 0)
-                ),
-            ),
-            # Fork B extends to slot 4 with 2 attestations → wins (weight=2 vs 1)
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(4),
-                    parent_label="fork_b_3",
-                    label="fork_b_4",
+                    parent_label="base",
+                    label="fork_c_4",
+                ),
+                checks=StoreChecks(
+                    lexicographic_head_among=["fork_a_2", "fork_b_3", "fork_c_4"],
+                ),
+            ),
+            # Fork C extends to slot 5 with attestation → takes lead
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(5),
+                    parent_label="fork_c_4",
+                    label="fork_c_5",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1), ValidatorIndex(2)],
-                            slot=Slot(3),
-                            target_slot=Slot(3),
-                            target_root_label="fork_b_3",
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(4),
+                            target_slot=Slot(4),
+                            target_root_label="fork_c_4",
                         ),
                     ],
                 ),
                 checks=StoreChecks(
-                    head_slot=Slot(4),
-                    head_root_label="fork_b_4",  # Fork B wins (weight=2 > 1)
+                    head_slot=Slot(5),
+                    head_root_label="fork_c_5",
+                ),
+            ),
+            # Fork B extends to slot 6 (no attestation, fork C still leads)
+            BlockStep(
+                block=BlockSpec(slot=Slot(6), parent_label="fork_b_3", label="fork_b_6"),
+                checks=StoreChecks(
+                    head_slot=Slot(5),
+                    head_root_label="fork_c_5",
+                ),
+            ),
+            # Fork B extends to slot 7 with 2 attestations → wins
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(7),
+                    parent_label="fork_b_6",
+                    label="fork_b_7",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(1), ValidatorIndex(2)],
+                            slot=Slot(6),
+                            target_slot=Slot(6),
+                            target_root_label="fork_b_6",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(7),
+                    head_root_label="fork_b_7",
                 ),
             ),
         ],
