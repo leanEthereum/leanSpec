@@ -1,4 +1,4 @@
-"""Test vectors for store.on_gossip_attestation() validation."""
+"""Test vectors for gossip attestation validation."""
 
 import pytest
 from consensus_testing import (
