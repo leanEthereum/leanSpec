@@ -396,29 +396,6 @@ class TestOnGossipAggregatedAttestation:
         with pytest.raises(AssertionError, match="signature verification failed"):
             store.on_gossip_aggregated_attestation(signed_aggregated)
 
-    def test_invalid_attestation_data_rejected(self, key_manager: XmssKeyManager) -> None:
-        """
-        Aggregated attestations fail if their data violates validate_attestation().
-        """
-        store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=4, validator_id=ValidatorIndex(0)
-        )
-
-        invalid_source = attestation_data.source.model_copy(
-            update={"slot": Slot(int(attestation_data.target.slot) + 1)}
-        )
-        invalid_data = attestation_data.model_copy(update={"source": invalid_source})
-
-        proof = make_aggregated_proof(key_manager, [ValidatorIndex(1)], invalid_data)
-
-        signed_aggregated = SignedAggregatedAttestation(
-            data=invalid_data,
-            proof=proof,
-        )
-
-        with pytest.raises(AssertionError, match="Source checkpoint slot must not exceed target"):
-            store.on_gossip_aggregated_attestation(signed_aggregated)
-
     def test_multiple_proofs_accumulate(self, key_manager: XmssKeyManager) -> None:
         """
         Multiple aggregated proofs for same validator accumulate.

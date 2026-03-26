@@ -43,7 +43,7 @@ from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.types import Bytes32, Uint64
+from lean_spec.types import ByteListMiB, Bytes32, Uint64
 
 from ..keys import (
     LEAN_ENV_TO_SCHEMES,
@@ -815,63 +815,89 @@ class ForkChoiceTest(BaseConsensusFixture):
         block_registry: dict[str, Block],
         state: State,
     ) -> AttestationData:
-        """Build attestation data for gossip aggregated attestation specs."""
-        # Resolve target root either explicitly or via label.
+        """
+        Build attestation data for a gossip aggregated attestation.
+
+        Resolves the three checkpoints (target, head, source) from the spec.
+
+        The state provides fallback values for the source checkpoint
+        when neither an explicit root nor a label is specified.
+
+        Args:
+            spec: Aggregated attestation specification with checkpoint overrides.
+            block_registry: Labeled blocks for checkpoint resolution.
+            state: Head state providing the latest justified checkpoint as source fallback.
+
+        Returns:
+            Attestation data with all three checkpoints resolved.
+
+        Raises:
+            ValueError: If the target has neither an explicit root nor
+                a label.
+        """
+        # Resolve the target checkpoint.
+        #
+        # An explicit root takes highest priority.
+        # A label triggers lookup in the block registry.
+        # Unlike the other two checkpoints, the target is mandatory.
         if spec.target_root is not None:
-            target_root = spec.target_root
+            target = Checkpoint(root=spec.target_root, slot=spec.target_slot)
         elif spec.target_root_label is not None:
-            if (target_block := block_registry.get(spec.target_root_label)) is None:
-                raise ValueError(
-                    f"target_root_label '{spec.target_root_label}' not found - "
-                    f"available: {list(block_registry.keys())}"
-                )
-            target_root = hash_tree_root(target_block)
+            target = self._resolve_checkpoint(
+                spec.target_root_label, spec.target_slot, block_registry
+            )
         else:
             raise ValueError("gossip aggregated attestation spec requires a target root")
 
-        target = Checkpoint(root=target_root, slot=spec.target_slot)
-
-        # Head checkpoint derivation.
+        # Resolve the head checkpoint.
+        #
+        # Priority: explicit root > label > target checkpoint.
+        # - When using an explicit root without a slot, the target slot is used.
+        # - When no head information is provided at all, the head mirrors the target.
+        #
+        # This matches honest validator behavior.
         if spec.head_root is not None:
-            head_root = spec.head_root
+            head = Checkpoint(
+                root=spec.head_root,
+                slot=spec.head_slot if spec.head_slot is not None else spec.target_slot,
+            )
         elif spec.head_root_label is not None:
-            if (head_block := block_registry.get(spec.head_root_label)) is None:
-                raise ValueError(
-                    f"head_root_label '{spec.head_root_label}' not found - "
-                    f"available: {list(block_registry.keys())}"
-                )
-            head_root = hash_tree_root(head_block)
+            head = self._resolve_checkpoint(spec.head_root_label, spec.head_slot, block_registry)
         else:
-            head_root = target_root
+            head = Checkpoint(
+                root=target.root,
+                slot=spec.head_slot if spec.head_slot is not None else target.slot,
+            )
 
-        if spec.head_slot is not None:
-            head_slot = spec.head_slot
-        elif spec.head_root_label is not None:
-            head_slot = block_registry[spec.head_root_label].slot
-        else:
-            head_slot = spec.target_slot
-
-        head = Checkpoint(root=head_root, slot=head_slot)
-
-        # Source checkpoint derivation.
+        # Resolve the source checkpoint.
+        #
+        # Priority: explicit root > label > latest justified from state.
+        # The source represents the most recent justified checkpoint the attester is aware of.
+        # When not overridden, the state's latest justified checkpoint provides the correct default.
         if spec.source_root is not None:
-            source_root = spec.source_root
+            source = Checkpoint(
+                root=spec.source_root,
+                slot=(
+                    spec.source_slot
+                    if spec.source_slot is not None
+                    else state.latest_justified.slot
+                ),
+            )
         elif spec.source_root_label is not None:
-            if (source_block := block_registry.get(spec.source_root_label)) is None:
-                raise ValueError(
-                    f"source_root_label '{spec.source_root_label}' not found - "
-                    f"available: {list(block_registry.keys())}"
-                )
-            source_root = hash_tree_root(source_block)
+            source = self._resolve_checkpoint(
+                spec.source_root_label, spec.source_slot, block_registry
+            )
         else:
-            source_root = state.latest_justified.root
+            source = Checkpoint(
+                root=state.latest_justified.root,
+                slot=(
+                    spec.source_slot
+                    if spec.source_slot is not None
+                    else state.latest_justified.slot
+                ),
+            )
 
-        source_slot = (
-            spec.source_slot if spec.source_slot is not None else state.latest_justified.slot
-        )
-
-        source = Checkpoint(root=source_root, slot=source_slot)
-
+        # Assemble the final attestation data from resolved checkpoints.
         return AttestationData(
             slot=spec.slot,
             head=head,
@@ -886,38 +912,83 @@ class ForkChoiceTest(BaseConsensusFixture):
         block_registry: dict[str, Block],
         key_manager: XmssKeyManager,
     ) -> SignedAggregatedAttestation:
-        """Build a signed aggregated attestation for a gossip step."""
+        """
+        Build a signed aggregated attestation from a gossip specification.
+
+        Args:
+            spec: Aggregated attestation specification with participant and checkpoint
+                configuration.
+            store: Fork choice store providing head state for checkpoint resolution.
+            block_registry: Labeled blocks for checkpoint resolution.
+            key_manager: XMSS key manager for signing attestation data.
+
+        Returns:
+            Signed aggregated attestation ready for gossip processing.
+        """
+        # Resolve checkpoints into concrete attestation data.
         attestation_data = self._build_attestation_data_from_gossip_aggregated_spec(
             spec,
             block_registry,
             store.states[store.head],
         )
 
+        # Separate "claimed" from "actual" participants.
+        #
+        # - Claimed validators appear in the proof's participant bitfield.
+        # - Actual signers produce the cryptographic material.
+        # They default to the same set for honest attestations.
         validator_ids = spec.validator_ids
         signer_ids = spec.signer_ids or spec.validator_ids
 
-        message = attestation_data.data_root_bytes()
-        slot = attestation_data.slot
+        # Path 1: Invalid signature.
+        #
+        # Build a proof with the correct participant bitfield but zeroed-out proof bytes.
+        # This exercises signature verification rejection.
+        if not spec.valid_signature:
+            proof = AggregatedSignatureProof(
+                participants=AggregationBits.from_validator_indices(
+                    ValidatorIndices(data=validator_ids)
+                ),
+                proof_data=ByteListMiB(data=b"\x00" * 32),
+            )
+            return SignedAggregatedAttestation(data=attestation_data, proof=proof)
 
-        public_keys = [key_manager.get_public_keys(vid)[0] for vid in signer_ids]
-        signatures = [
-            key_manager.sign_attestation_data(vid, attestation_data) for vid in signer_ids
+        # Path 2: Valid signature.
+        #
+        # Collect each signer's public key and individual signature over the attestation data.
+        # These feed into the aggregation step.
+        raw_xmss = [
+            (
+                key_manager.get_public_keys(vid)[0],
+                key_manager.sign_attestation_data(vid, attestation_data),
+            )
+            for vid in signer_ids
         ]
 
+        # Encode which validators actually produced signatures.
         xmss_participants = AggregationBits.from_validator_indices(
             ValidatorIndices(data=signer_ids)
         )
 
-        raw_xmss = list(zip(public_keys, signatures, strict=True))
-
+        # Aggregate individual signatures into a single proof.
+        #
+        # The proof combines all signer contributions so the verifier
+        # can check them in one pass against the attestation data root.
         proof = AggregatedSignatureProof.aggregate(
             xmss_participants=xmss_participants,
             children=[],
             raw_xmss=raw_xmss,
-            message=message,
-            slot=slot,
+            message=attestation_data.data_root_bytes(),
+            slot=attestation_data.slot,
         )
 
+        # Path 3: Participant mismatch.
+        #
+        # Replace the participant bitfield with different validator indices
+        # while keeping the original proof bytes intact.
+        # The proof is cryptographically valid for the actual signers,
+        # but the claimed participants no longer match.
+        # The store must detect and reject this inconsistency.
         if spec.signer_ids and spec.signer_ids != spec.validator_ids:
             proof = AggregatedSignatureProof(
                 participants=AggregationBits.from_validator_indices(
