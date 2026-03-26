@@ -809,21 +809,6 @@ class ForkChoiceTest(BaseConsensusFixture):
             source=source,
         )
 
-        # Generate signature or use dummy.
-        if spec.valid_signature:
-            signature = key_manager.sign_attestation_data(
-                spec.validator_id,
-                attestation_data,
-            )
-        else:
-            signature = create_dummy_signature()
-
-        return SignedAttestation(
-            validator_id=spec.validator_id,
-            data=attestation_data,
-            signature=signature,
-        )
-
     def _build_attestation_data_from_gossip_aggregated_spec(
         self,
         spec: GossipAggregatedAttestationSpec,
