@@ -44,7 +44,7 @@ class TestValidateAttestationHeadChecks:
         )
 
         with pytest.raises(AssertionError, match="Head checkpoint slot mismatch"):
-            store.validate_attestation(attestation)
+            store.validate_attestation(attestation.data)
 
     def test_head_slot_less_than_source_rejected(
         self,
@@ -80,7 +80,7 @@ class TestValidateAttestationHeadChecks:
         )
 
         with pytest.raises(AssertionError, match="Head checkpoint must not be older than target"):
-            store.validate_attestation(attestation)
+            store.validate_attestation(attestation.data)
 
     def test_head_slot_less_than_target_rejected(
         self,
@@ -116,7 +116,7 @@ class TestValidateAttestationHeadChecks:
         )
 
         with pytest.raises(AssertionError, match="Head checkpoint must not be older than target"):
-            store.validate_attestation(attestation)
+            store.validate_attestation(attestation.data)
 
     def test_valid_attestation_with_correct_head_passes(
         self,
@@ -151,7 +151,7 @@ class TestValidateAttestationHeadChecks:
             ),
         )
 
-        store.validate_attestation(attestation)
+        store.validate_attestation(attestation.data)
 
     def test_head_equal_to_source_and_target_passes(
         self,
@@ -177,4 +177,4 @@ class TestValidateAttestationHeadChecks:
             ),
         )
 
-        store.validate_attestation(attestation)
+        store.validate_attestation(attestation.data)

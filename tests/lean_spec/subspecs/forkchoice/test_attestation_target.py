@@ -345,7 +345,7 @@ class TestJustificationLogic:
 
         # This attestation should fail validation because source is unknown
         with pytest.raises(AssertionError, match="Unknown source block"):
-            store.validate_attestation(attestation)
+            store.validate_attestation(attestation.data)
 
     def test_justification_tracking_with_multiple_targets(
         self,
