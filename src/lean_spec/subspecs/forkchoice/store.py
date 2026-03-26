@@ -414,6 +414,8 @@ class Store(StrictBaseModel):
         data = signed_attestation.data
         proof = signed_attestation.proof
 
+        self.validate_attestation(Attestation(validator_id=ValidatorIndex(0), data=data))
+
         # Get validator IDs who participated in this aggregation
         validator_ids = proof.participants.to_validator_indices()
 
