@@ -21,6 +21,10 @@ from lean_spec.subspecs.containers.attestation import (
     AttestationData,
     SignedAttestation,
 )
+from lean_spec.subspecs.containers.attestation.aggregation_bits import AggregationBits
+from lean_spec.subspecs.containers.attestation.attestation import (
+    SignedAggregatedAttestation,
+)
 from lean_spec.subspecs.containers.block import (
     Block,
     BlockBody,
@@ -34,9 +38,10 @@ from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
 from lean_spec.subspecs.containers.state.state import State
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz import hash_tree_root
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Uint64
 
@@ -52,6 +57,8 @@ from ..test_types import (
     BlockSpec,
     BlockStep,
     ForkChoiceStep,
+    GossipAggregatedAttestationSpec,
+    GossipAggregatedAttestationStep,
     GossipAttestationSpec,
     TickStep,
 )
@@ -156,6 +163,8 @@ class ForkChoiceTest(BaseConsensusFixture):
                 if isinstance(step, BlockStep):
                     max_slot_value = max(max_slot_value, step.block.slot)
                 elif isinstance(step, AttestationStep):
+                    max_slot_value = max(max_slot_value, step.attestation.slot)
+                elif isinstance(step, GossipAggregatedAttestationStep):
                     max_slot_value = max(max_slot_value, step.attestation.slot)
 
             self.max_slot = max_slot_value
@@ -305,6 +314,16 @@ class ForkChoiceTest(BaseConsensusFixture):
                             signed_attestation,
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                         )
+
+                    case GossipAggregatedAttestationStep():
+                        signed_aggregated = self._build_signed_aggregated_attestation_from_spec(
+                            step.attestation,
+                            store,
+                            self._block_registry,
+                            key_manager,
+                        )
+                        step._filled_attestation = signed_aggregated
+                        store = store.on_gossip_aggregated_attestation(signed_aggregated)
 
                     case _:
                         raise ValueError(f"Step {i}: unknown step type {type(step).__name__}")
@@ -727,3 +746,122 @@ class ForkChoiceTest(BaseConsensusFixture):
             data=attestation_data,
             signature=signature,
         )
+
+    def _build_attestation_data_from_gossip_aggregated_spec(
+        self,
+        spec: GossipAggregatedAttestationSpec,
+        block_registry: dict[str, Block],
+        state: State,
+    ) -> AttestationData:
+        """Build attestation data for gossip aggregated attestation specs."""
+        # Resolve target root either explicitly or via label.
+        if spec.target_root is not None:
+            target_root = spec.target_root
+        elif spec.target_root_label is not None:
+            if (target_block := block_registry.get(spec.target_root_label)) is None:
+                raise ValueError(
+                    f"target_root_label '{spec.target_root_label}' not found - "
+                    f"available: {list(block_registry.keys())}"
+                )
+            target_root = hash_tree_root(target_block)
+        else:
+            raise ValueError("gossip aggregated attestation spec requires a target root")
+
+        target = Checkpoint(root=target_root, slot=spec.target_slot)
+
+        # Head checkpoint derivation.
+        if spec.head_root is not None:
+            head_root = spec.head_root
+        elif spec.head_root_label is not None:
+            if (head_block := block_registry.get(spec.head_root_label)) is None:
+                raise ValueError(
+                    f"head_root_label '{spec.head_root_label}' not found - "
+                    f"available: {list(block_registry.keys())}"
+                )
+            head_root = hash_tree_root(head_block)
+        else:
+            head_root = target_root
+
+        if spec.head_slot is not None:
+            head_slot = spec.head_slot
+        elif spec.head_root_label is not None:
+            head_slot = block_registry[spec.head_root_label].slot
+        else:
+            head_slot = spec.target_slot
+
+        head = Checkpoint(root=head_root, slot=head_slot)
+
+        # Source checkpoint derivation.
+        if spec.source_root is not None:
+            source_root = spec.source_root
+        elif spec.source_root_label is not None:
+            if (source_block := block_registry.get(spec.source_root_label)) is None:
+                raise ValueError(
+                    f"source_root_label '{spec.source_root_label}' not found - "
+                    f"available: {list(block_registry.keys())}"
+                )
+            source_root = hash_tree_root(source_block)
+        else:
+            source_root = state.latest_justified.root
+
+        source_slot = (
+            spec.source_slot if spec.source_slot is not None else state.latest_justified.slot
+        )
+
+        source = Checkpoint(root=source_root, slot=source_slot)
+
+        return AttestationData(
+            slot=spec.slot,
+            head=head,
+            target=target,
+            source=source,
+        )
+
+    def _build_signed_aggregated_attestation_from_spec(
+        self,
+        spec: GossipAggregatedAttestationSpec,
+        store: Store,
+        block_registry: dict[str, Block],
+        key_manager: XmssKeyManager,
+    ) -> SignedAggregatedAttestation:
+        """Build a signed aggregated attestation for a gossip step."""
+        attestation_data = self._build_attestation_data_from_gossip_aggregated_spec(
+            spec,
+            block_registry,
+            store.states[store.head],
+        )
+
+        validator_ids = spec.validator_ids
+        signer_ids = spec.signer_ids or spec.validator_ids
+
+        message = attestation_data.data_root_bytes()
+        slot = attestation_data.slot
+
+        public_keys = [key_manager.get_public_keys(vid)[0] for vid in signer_ids]
+        signatures = [
+            key_manager.sign_attestation_data(vid, attestation_data) for vid in signer_ids
+        ]
+
+        xmss_participants = AggregationBits.from_validator_indices(
+            ValidatorIndices(data=signer_ids)
+        )
+
+        raw_xmss = list(zip(public_keys, signatures, strict=True))
+
+        proof = AggregatedSignatureProof.aggregate(
+            xmss_participants=xmss_participants,
+            children=[],
+            raw_xmss=raw_xmss,
+            message=message,
+            slot=slot,
+        )
+
+        if spec.signer_ids and spec.signer_ids != spec.validator_ids:
+            proof = AggregatedSignatureProof(
+                participants=AggregationBits.from_validator_indices(
+                    ValidatorIndices(data=validator_ids)
+                ),
+                proof_data=proof.proof_data,
+            )
+
+        return SignedAggregatedAttestation(data=attestation_data, proof=proof)

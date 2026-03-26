@@ -4,11 +4,15 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import ConfigDict, Field, PrivateAttr, field_serializer
 
-from lean_spec.subspecs.containers.attestation import SignedAttestation
+from lean_spec.subspecs.containers.attestation import (
+    SignedAggregatedAttestation,
+    SignedAttestation,
+)
 from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.types import CamelModel
 
 from .block_spec import BlockSpec
+from .gossip_aggregated_attestation_spec import GossipAggregatedAttestationSpec
 from .gossip_attestation_spec import GossipAttestationSpec
 from .store_checks import StoreChecks
 
@@ -142,7 +146,7 @@ class AttestationStep(BaseForkChoiceStep):
     """The filled SignedAttestation, processed through the spec."""
 
     @field_serializer("attestation", when_used="json")
-    def serialize_attestation(self, value: GossipAttestationSpec) -> dict[str, Any]:
+    def serialize_gossip_attestation(self, value: GossipAttestationSpec) -> dict[str, Any]:
         """
         Serialize the filled SignedAttestation instead of the spec.
 
@@ -173,8 +177,35 @@ class AttestationStep(BaseForkChoiceStep):
         return self._filled_attestation.to_json()
 
 
+class GossipAggregatedAttestationStep(BaseForkChoiceStep):
+    """Aggregated attestation processing step."""
+
+    step_type: Literal["gossipAggregatedAttestation"] = "gossipAggregatedAttestation"
+    """Discriminator field for serialization."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    attestation: GossipAggregatedAttestationSpec
+    """
+    Specification for the aggregated gossip attestation.
+    """
+
+    _filled_attestation: SignedAggregatedAttestation | None = PrivateAttr(default=None)
+
+    @field_serializer("attestation", when_used="json")
+    def serialize_gossip_aggregated_attestation(
+        self, value: GossipAggregatedAttestationSpec
+    ) -> dict[str, Any]:
+        """Return the filled aggregated attestation for serialization."""
+        if self._filled_attestation is None:
+            raise ValueError(
+                "Aggregated attestation not filled yet - make_fixture() must process the step."
+            )
+        return self._filled_attestation.to_json()
+
+
 # Discriminated union type for all fork choice steps
 ForkChoiceStep = Annotated[
-    Union[TickStep, BlockStep, AttestationStep],
+    Union[TickStep, BlockStep, AttestationStep, GossipAggregatedAttestationStep],
     Field(discriminator="step_type"),
 ]

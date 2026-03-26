@@ -409,9 +409,7 @@ class TestOnGossipAggregatedAttestation:
         )
         invalid_data = attestation_data.model_copy(update={"source": invalid_source})
 
-        proof = make_aggregated_proof(
-            key_manager, [ValidatorIndex(1)], invalid_data
-        )
+        proof = make_aggregated_proof(key_manager, [ValidatorIndex(1)], invalid_data)
 
         signed_aggregated = SignedAggregatedAttestation(
             data=invalid_data,

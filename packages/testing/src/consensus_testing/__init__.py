@@ -19,6 +19,8 @@ from .test_types import (
     BlockSpec,
     BlockStep,
     ForkChoiceStep,
+    GossipAggregatedAttestationSpec,
+    GossipAggregatedAttestationStep,
     GossipAttestationSpec,
     StateExpectation,
     StoreChecks,
@@ -34,6 +36,7 @@ SSZTestFiller = Type[SSZTest]
 __all__ = [
     # Public API
     "AggregatedAttestationSpec",
+    "GossipAggregatedAttestationSpec",
     "GossipAttestationSpec",
     "BlockSpec",
     "forks",
@@ -50,6 +53,7 @@ __all__ = [
     "TickStep",
     "BlockStep",
     "AttestationStep",
+    "GossipAggregatedAttestationStep",
     "ForkChoiceStep",
     "StateExpectation",
     "StoreChecks",

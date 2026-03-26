@@ -3,6 +3,7 @@
 from .aggregated_attestation_spec import AggregatedAttestationSpec
 from .block_spec import BlockSpec
 from .genesis import generate_pre_state
+from .gossip_aggregated_attestation_spec import GossipAggregatedAttestationSpec
 from .gossip_attestation_spec import GossipAttestationSpec
 from .state_expectation import StateExpectation
 from .step_types import (
@@ -10,6 +11,7 @@ from .step_types import (
     BaseForkChoiceStep,
     BlockStep,
     ForkChoiceStep,
+    GossipAggregatedAttestationStep,
     TickStep,
 )
 from .store_checks import AggregatedAttestationCheck, AttestationCheck, StoreChecks
@@ -17,6 +19,7 @@ from .store_checks import AggregatedAttestationCheck, AttestationCheck, StoreChe
 __all__ = [
     "AggregatedAttestationSpec",
     "GossipAttestationSpec",
+    "GossipAggregatedAttestationSpec",
     "StateExpectation",
     "StoreChecks",
     "AttestationCheck",
@@ -27,5 +30,6 @@ __all__ = [
     "BlockStep",
     "AttestationStep",
     "ForkChoiceStep",
+    "GossipAggregatedAttestationStep",
     "generate_pre_state",
 ]
