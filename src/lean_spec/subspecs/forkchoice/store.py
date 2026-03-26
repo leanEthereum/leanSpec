@@ -16,7 +16,6 @@ from lean_spec.subspecs.chain.config import (
     JUSTIFICATION_LOOKBACK_SLOTS,
 )
 from lean_spec.subspecs.containers import (
-    Attestation,
     AttestationData,
     Block,
     Checkpoint,
@@ -268,7 +267,7 @@ class Store(StrictBaseModel):
             }
         )
 
-    def validate_attestation(self, attestation: Attestation) -> None:
+    def validate_attestation(self, attestation_data: AttestationData) -> None:
         """
         Validate incoming attestation before processing.
 
@@ -280,12 +279,12 @@ class Store(StrictBaseModel):
             5. A vote cannot be for a future slot.
 
         Args:
-            attestation: Attestation to validate (unsigned).
+        attestation_data: AttestationData whose checkpoints and slot should be validated.
 
         Raises:
             AssertionError: If attestation fails validation.
         """
-        data = attestation.data
+        data = attestation_data
 
         # Availability Check
         #
@@ -354,8 +353,7 @@ class Store(StrictBaseModel):
 
         # Validate the attestation first so unknown blocks are rejected cleanly
         # (instead of raising a raw KeyError when state is missing).
-        attestation = Attestation(validator_id=validator_id, data=attestation_data)
-        self.validate_attestation(attestation)
+        self.validate_attestation(attestation_data)
 
         key_state = self.states.get(attestation_data.target.root)
         assert key_state is not None, (
@@ -414,7 +412,7 @@ class Store(StrictBaseModel):
         data = signed_attestation.data
         proof = signed_attestation.proof
 
-        self.validate_attestation(Attestation(validator_id=ValidatorIndex(0), data=data))
+        self.validate_attestation(data)
 
         # Get validator IDs who participated in this aggregation
         validator_ids = proof.participants.to_validator_indices()

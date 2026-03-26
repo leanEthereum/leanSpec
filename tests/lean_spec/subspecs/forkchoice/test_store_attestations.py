@@ -405,7 +405,7 @@ class TestOnGossipAggregatedAttestation:
         )
 
         invalid_source = attestation_data.source.model_copy(
-            update={"slot": Slot(int(attestation_data.source.slot) + 1)}
+            update={"slot": Slot(int(attestation_data.target.slot) + 1)}
         )
         invalid_data = attestation_data.model_copy(update={"source": invalid_source})
 
