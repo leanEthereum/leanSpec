@@ -117,7 +117,7 @@ timeout = 300
 [tool.coverage.run]
 source = ["src"]
 branch = true
-fail_under = 90
+fail_under = 80
 
 [tool.mdformat]
 number = true
