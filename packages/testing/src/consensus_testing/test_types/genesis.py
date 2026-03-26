@@ -6,7 +6,7 @@ from lean_spec.subspecs.containers.state import State, Validators
 from lean_spec.subspecs.containers.validator import Validator, ValidatorIndex
 from lean_spec.types import Bytes52, Uint64
 
-from ..keys import get_shared_key_manager
+from ..keys import XmssKeyManager
 
 
 def generate_pre_state(**kwargs: Any) -> State:
@@ -24,7 +24,7 @@ def generate_pre_state(**kwargs: Any) -> State:
     genesis_time = kwargs.get("genesis_time", Uint64(0))
     num_validators = kwargs.get("num_validators", 4)
 
-    key_manager = get_shared_key_manager()
+    key_manager = XmssKeyManager.shared()
     available_keys = len(key_manager)
 
     assert num_validators <= available_keys, (

@@ -2,7 +2,7 @@
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.types import CamelModel
+from lean_spec.types import Bytes32, CamelModel
 
 
 class GossipAttestationSpec(CamelModel):
@@ -59,6 +59,30 @@ class GossipAttestationSpec(CamelModel):
 
     When None (default), uses the actual slot of the source block.
     When specified, creates a mismatch for testing consistency checks.
+    """
+
+    target_root_override: Bytes32 | None = None
+    """
+    Raw root override for the target checkpoint.
+
+    Bypasses label resolution. Used to inject roots not in the store
+    for testing unknown block rejection.
+    """
+
+    head_root_override: Bytes32 | None = None
+    """
+    Raw root override for the head checkpoint.
+
+    Bypasses label resolution. Used to inject roots not in the store
+    for testing unknown block rejection.
+    """
+
+    source_root_override: Bytes32 | None = None
+    """
+    Raw root override for the source checkpoint.
+
+    Bypasses label resolution. Used to inject roots not in the store
+    for testing unknown block rejection.
     """
 
     valid_signature: bool = True

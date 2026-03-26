@@ -27,7 +27,7 @@ from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import ByteListMiB, Bytes32
 
-from ..keys import XmssKeyManager, create_dummy_signature, get_shared_key_manager
+from ..keys import XmssKeyManager, create_dummy_signature
 from ..test_types import AggregatedAttestationSpec, BlockSpec
 from .base import BaseConsensusFixture
 
@@ -122,7 +122,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
         assert self.anchor_state is not None, "anchor state must be set before making the fixture"
 
         # Use shared key manager
-        key_manager = get_shared_key_manager()
+        key_manager = XmssKeyManager.shared()
 
         # Build the signed block
         signed_block = self._build_block_from_spec(self.block, self.anchor_state, key_manager)

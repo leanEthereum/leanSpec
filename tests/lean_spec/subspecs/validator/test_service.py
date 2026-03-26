@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from consensus_testing.keys import XmssKeyManager, get_shared_key_manager
+from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain.clock import SlotClock
 from lean_spec.subspecs.chain.config import MILLISECONDS_PER_INTERVAL
@@ -445,7 +445,7 @@ class TestValidatorServiceIntegration:
     @pytest.fixture
     def key_manager(self) -> XmssKeyManager:
         """Key manager with pre-generated test keys."""
-        return get_shared_key_manager(max_slot=Slot(10))
+        return XmssKeyManager.shared(max_slot=Slot(10))
 
     @pytest.fixture
     def real_store(self, key_manager: XmssKeyManager) -> Store:

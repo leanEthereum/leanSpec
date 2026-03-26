@@ -2,7 +2,7 @@
 
 import pytest
 from consensus_testing import SSZTestFiller
-from consensus_testing.keys import create_dummy_signature, get_shared_key_manager
+from consensus_testing.keys import XmssKeyManager, create_dummy_signature
 
 from lean_spec.subspecs.containers import ValidatorIndex
 from lean_spec.subspecs.containers.attestation import AggregationBits
@@ -52,9 +52,9 @@ def test_signature_zero(ssz: SSZTestFiller) -> None:
 
 def test_signature_actual(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for a cryptographically valid Signature produced by signing."""
-    key_manager = get_shared_key_manager()
+    key_manager = XmssKeyManager.shared()
     scheme = key_manager.scheme
-    sk = key_manager.keys[ValidatorIndex(0)].attestation_secret
+    sk = key_manager[ValidatorIndex(0)].attestation_secret
     signature = scheme.sign(sk, Slot(0), Bytes32(b"\x42" * 32))
     ssz(type_name="Signature", value=signature)
 

@@ -12,6 +12,7 @@ from consensus_testing import (
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -86,6 +87,7 @@ def test_attestation_target_slot_mismatch_rejected(
                     target_root_label="block_2",
                 ),
                 valid=False,
+                expected_error="Target checkpoint slot mismatch",
             ),
         ],
     )
@@ -123,6 +125,7 @@ def test_attestation_too_far_in_future_rejected(
                     target_root_label="block_2",
                 ),
                 valid=False,
+                expected_error="Attestation too far in future",
             ),
         ],
     )
@@ -263,6 +266,7 @@ def test_gossip_attestation_with_invalid_signature(
                     valid_signature=False,
                 ),
                 valid=False,
+                expected_error="Signature verification failed",
             ),
         ],
     )
@@ -302,6 +306,7 @@ def test_gossip_attestation_with_unknown_validator(
                     valid_signature=False,
                 ),
                 valid=False,
+                expected_error="not found in state",
             ),
         ],
     )
@@ -345,6 +350,7 @@ def test_attestation_source_slot_exceeds_target_rejected(
                     source_slot=Slot(3),
                 ),
                 valid=False,
+                expected_error="Source checkpoint slot must not exceed target",
             ),
         ],
     )
@@ -387,25 +393,25 @@ def test_attestation_head_older_than_target_rejected(
                     head_root_label="block_1",
                 ),
                 valid=False,
+                expected_error="Head checkpoint must not be older than target",
             ),
         ],
     )
 
 
-def test_attestation_source_slot_mismatch_rejected(
+def test_attestation_source_slot_override_exceeds_target_rejected(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Attestation with source checkpoint slot mismatch is rejected.
+    Attestation where source slot exceeds target slot is rejected (via slot override).
 
     Scenario
     --------
     Build a chain with blocks at slots 1 and 2.
-    Submit attestation where the source slot (5) does not match
-    the source block's actual slot (0, the genesis/anchor block).
+    Submit attestation where the source slot (5) exceeds the target slot (2).
 
     Expected:
-        - Validation fails with "Source checkpoint slot mismatch"
+        - Validation fails because source slot (5) exceeds target slot (2)
     """
     fork_choice_test(
         steps=[
@@ -426,6 +432,48 @@ def test_attestation_source_slot_mismatch_rejected(
                     source_slot=Slot(5),
                 ),
                 valid=False,
+                expected_error="Source checkpoint slot must not exceed target",
+            ),
+        ],
+    )
+
+
+def test_attestation_source_slot_mismatch_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Attestation with source checkpoint slot mismatch is rejected.
+
+    Scenario
+    --------
+    Build a chain with blocks at slots 1 and 2.
+    Submit attestation where the source slot (1) does not match
+    the source block's actual slot (0, the genesis/anchor block),
+    but still satisfies source <= target ordering.
+
+    Expected:
+        - Validation fails with "Source checkpoint slot mismatch"
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_id=ValidatorIndex(1),
+                    slot=Slot(2),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                    source_slot=Slot(1),
+                ),
+                valid=False,
+                expected_error="Source checkpoint slot mismatch",
             ),
         ],
     )
@@ -465,6 +513,7 @@ def test_attestation_head_slot_mismatch_rejected(
                     head_slot=Slot(5),
                 ),
                 valid=False,
+                expected_error="Head checkpoint slot mismatch",
             ),
         ],
     )
@@ -519,6 +568,130 @@ def test_gossip_attestation_chain_extended_after_gossip(
             BlockStep(
                 block=BlockSpec(slot=Slot(4), label="block_4"),
                 checks=StoreChecks(head_slot=Slot(4)),
+            ),
+        ],
+    )
+
+
+FAKE_ROOT = Bytes32(b"\xde\xad" + b"\x00" * 30)
+"""A root that will never appear in the store."""
+
+
+def test_attestation_unknown_target_block_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Attestation referencing an unknown target block is rejected.
+
+    Scenario
+    --------
+    Build a chain with blocks at slots 1 and 2.
+    Submit attestation whose target root does not exist in the store.
+
+    Expected:
+        - Validation fails with "Unknown target block"
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_id=ValidatorIndex(1),
+                    slot=Slot(2),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                    target_root_override=FAKE_ROOT,
+                    valid_signature=False,
+                ),
+                valid=False,
+                expected_error="Unknown target block",
+            ),
+        ],
+    )
+
+
+def test_attestation_unknown_head_block_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Attestation referencing an unknown head block is rejected.
+
+    Scenario
+    --------
+    Build a chain with blocks at slots 1 and 2.
+    Submit attestation whose head root does not exist in the store.
+
+    Expected:
+        - Validation fails with "Unknown head block"
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_id=ValidatorIndex(1),
+                    slot=Slot(2),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                    head_root_override=FAKE_ROOT,
+                    valid_signature=False,
+                ),
+                valid=False,
+                expected_error="Unknown head block",
+            ),
+        ],
+    )
+
+
+def test_attestation_unknown_source_block_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Attestation referencing an unknown source block is rejected.
+
+    Scenario
+    --------
+    Build a chain with blocks at slots 1 and 2.
+    Submit attestation whose source root does not exist in the store.
+
+    Expected:
+        - Validation fails with "Unknown source block"
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_id=ValidatorIndex(1),
+                    slot=Slot(2),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                    source_root_override=FAKE_ROOT,
+                    valid_signature=False,
+                ),
+                valid=False,
+                expected_error="Unknown source block",
             ),
         ],
     )

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import NamedTuple, cast
 
-from consensus_testing.keys import XmssKeyManager, get_shared_key_manager
+from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain.clock import Interval, SlotClock
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
@@ -101,20 +101,18 @@ def make_validators(count: int) -> Validators:
 
 def make_validators_from_key_manager(key_manager: XmssKeyManager, count: int) -> Validators:
     """Build a validator registry with real XMSS keys from a key manager."""
-    return Validators(
-        data=[
+    validators = []
+    for i in range(count):
+        idx = ValidatorIndex(i)
+        att_pk, prop_pk = key_manager.get_public_keys(idx)
+        validators.append(
             Validator(
-                attestation_pubkey=Bytes52(
-                    key_manager[ValidatorIndex(i)].attestation_public.encode_bytes()
-                ),
-                proposal_pubkey=Bytes52(
-                    key_manager[ValidatorIndex(i)].proposal_public.encode_bytes()
-                ),
-                index=ValidatorIndex(i),
+                attestation_pubkey=Bytes52(att_pk.encode_bytes()),
+                proposal_pubkey=Bytes52(prop_pk.encode_bytes()),
+                index=idx,
             )
-            for i in range(count)
-        ]
-    )
+        )
+    return Validators(data=validators)
 
 
 def make_genesis_state(
@@ -413,7 +411,7 @@ def make_keyed_genesis_state(
 ) -> State:
     """Create a genesis state with real XMSS keys from the shared key manager."""
     if key_manager is None:
-        key_manager = get_shared_key_manager()
+        key_manager = XmssKeyManager.shared()
     validators = make_validators_from_key_manager(key_manager, num_validators)
     return make_genesis_state(validators=validators)
 
@@ -428,7 +426,7 @@ def make_aggregated_proof(
     xmss_participants = AggregationBits.from_validator_indices(ValidatorIndices(data=participants))
     raw_xmss = list(
         zip(
-            [key_manager[vid].attestation_public for vid in participants],
+            [key_manager.get_public_keys(vid)[0] for vid in participants],
             [key_manager.sign_attestation_data(vid, attestation_data) for vid in participants],
             strict=True,
         )

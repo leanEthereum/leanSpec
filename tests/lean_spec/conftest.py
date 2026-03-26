@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from consensus_testing.keys import XmssKeyManager, get_shared_key_manager
+from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.containers import Block, State
 from lean_spec.subspecs.containers.slot import Slot
@@ -28,7 +28,7 @@ from tests.lean_spec.helpers import (
 @pytest.fixture
 def key_manager() -> XmssKeyManager:
     """XMSS key manager for signing attestations."""
-    return get_shared_key_manager(max_slot=Slot(20))
+    return XmssKeyManager.shared(max_slot=Slot(20))
 
 
 _DEFAULT_VALIDATOR_ID = ValidatorIndex(0)

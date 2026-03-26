@@ -29,6 +29,15 @@ class BaseForkChoiceStep(CamelModel):
     valid: bool = True
     """Whether this step is expected to succeed."""
 
+    expected_error: str | None = None
+    """
+    Expected error message substring when valid=False.
+
+    When set, the exception message must contain this string.
+    When None and valid=False, any exception is accepted.
+    Ignored when valid=True.
+    """
+
     checks: StoreChecks | None = None
     """
     Store state checks to validate after processing this step.
