@@ -123,7 +123,7 @@ def test_aggregated_attestation_head_slot_mismatch_rejected(
                     target_slot=Slot(2),
                     target_root_label="block_2",
                     head_root_label="block_1",
-                    head_slot=Slot(1),
+                    head_slot=Slot(5),
                 ),
                 valid=False,
                 expected_error="Head checkpoint slot mismatch",
