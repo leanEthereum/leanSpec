@@ -4,14 +4,20 @@ from typing import Any, ClassVar, List
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
+from lean_spec.subspecs.containers.attestation import AttestationData
+from lean_spec.subspecs.containers.attestation.aggregation_bits import AggregationBits
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
+from lean_spec.subspecs.containers.checkpoint import Checkpoint
+from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Bytes32
 
-from ..test_types import BlockSpec, StateExpectation
+from ..keys import XmssKeyManager
+from ..test_types import AggregatedAttestationSpec, BlockSpec, StateExpectation
 from .base import BaseConsensusFixture
 
 
@@ -145,7 +151,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 # Store the filled Block for serialization
                 filled_blocks.append(block)
 
-                # Register labeled blocks for parent resolution
+                # Register labeled blocks for parent and attestation target resolution
                 if block_spec.label is not None:
                     if block_spec.label in block_registry:
                         raise ValueError(
@@ -221,7 +227,8 @@ class StateTransitionTest(BaseConsensusFixture):
         state : State
             Current state to build against.
         block_registry : dict[str, Block]
-            Map of labels to previously built blocks, used to resolve parent_label references.
+            Map of labels to previously built blocks, used to resolve
+            parent_label and attestation target roots.
 
         Returns:
         -------
@@ -277,11 +284,159 @@ class StateTransitionTest(BaseConsensusFixture):
                 body=spec.body or BlockBody(attestations=aggregated_attestations),
             ), None
 
+        # Build aggregated payloads from spec.attestations if provided
+        aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
+        if spec.attestations:
+            aggregated_payloads = self._build_aggregated_payloads_from_spec(
+                spec.attestations, state, block_registry
+            )
+
+        # Collect known block roots for attestation validation in build_block
+        known_block_roots = frozenset(hash_tree_root(block) for block in block_registry.values())
+
         block, post_state, _, _ = state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
-            known_block_roots=frozenset(),
-            aggregated_payloads={},
+            known_block_roots=known_block_roots,
+            aggregated_payloads=aggregated_payloads,
         )
         return block, post_state
+
+    def _build_aggregated_payloads_from_spec(
+        self,
+        attestation_specs: list[AggregatedAttestationSpec],
+        state: State,
+        block_registry: dict[str, Block],
+    ) -> dict[AttestationData, set[AggregatedSignatureProof]]:
+        """
+        Build aggregated signature payloads from attestation specifications.
+
+        For each AggregatedAttestationSpec, builds AttestationData, signs
+        individual attestations, and aggregates them into proofs that can
+        be passed to State.build_block().
+
+        Parameters
+        ----------
+        attestation_specs : list[AggregatedAttestationSpec]
+            Attestation specifications from the BlockSpec.
+        state : State
+            Current state for source checkpoint lookup.
+        block_registry : dict[str, Block]
+            Map of labels to blocks for resolving target roots.
+
+        Returns:
+        -------
+        dict[AttestationData, set[AggregatedSignatureProof]]
+            Aggregated payloads keyed by attestation data.
+        """
+        # Compute max slot across all attestation specs for XMSS key lifetime.
+        # XMSS keys require precomputation up to the highest slot used.
+        max_slot = max(spec.slot for spec in attestation_specs)
+        key_manager = XmssKeyManager.shared(max_slot=max_slot)
+        payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
+
+        for spec in attestation_specs:
+            if not spec.valid_signature:
+                raise NotImplementedError(
+                    "valid_signature=False not yet supported in StateTransitionTest"
+                )
+            if spec.signer_ids is not None:
+                raise NotImplementedError("signer_ids not yet supported in StateTransitionTest")
+
+            attestation_data = self._build_attestation_data_from_spec(spec, block_registry, state)
+
+            # Sign each validator's attestation individually
+            public_keys = []
+            signatures = []
+            for validator_id in spec.validator_ids:
+                attestation_pubkey, _ = key_manager.get_public_keys(validator_id)
+                public_keys.append(attestation_pubkey)
+                signatures.append(key_manager.sign_attestation_data(validator_id, attestation_data))
+
+            # Aggregate into a single proof
+            xmss_participants = AggregationBits.from_validator_indices(
+                ValidatorIndices(data=spec.validator_ids)
+            )
+            proof = AggregatedSignatureProof.aggregate(
+                xmss_participants=xmss_participants,
+                children=[],
+                raw_xmss=list(zip(public_keys, signatures, strict=True)),
+                message=attestation_data.data_root_bytes(),
+                slot=attestation_data.slot,
+            )
+
+            payloads.setdefault(attestation_data, set()).add(proof)
+
+        return payloads
+
+    def _resolve_checkpoint(
+        self,
+        label: str,
+        slot_override: Slot | None,
+        block_registry: dict[str, Block],
+    ) -> Checkpoint:
+        """
+        Resolve a block label and optional slot override into a Checkpoint.
+
+        Args:
+            label: Block label in the registry.
+            slot_override: When set, overrides the block's actual slot.
+            block_registry: Labeled blocks for lookup.
+
+        Returns:
+            Checkpoint with the block's root and resolved slot.
+
+        Raises:
+            ValueError: If label not found in registry.
+        """
+        if (block := block_registry.get(label)) is None:
+            raise ValueError(
+                f"label '{label}' not found - available: {list(block_registry.keys())}"
+            )
+        return Checkpoint(
+            root=hash_tree_root(block),
+            slot=block.slot if slot_override is None else slot_override,
+        )
+
+    def _build_attestation_data_from_spec(
+        self,
+        spec: AggregatedAttestationSpec,
+        block_registry: dict[str, Block],
+        state: State,
+    ) -> AttestationData:
+        """
+        Build attestation data from a specification.
+
+        Attestation data contains the validator's vote:
+
+        - slot: When the attestation was made
+        - head: What block the validator sees as head
+        - target: Checkpoint being voted for (epoch boundary)
+        - source: Previously justified checkpoint (link source)
+
+        Target is resolved from label.
+        Source comes from the parent state's justified checkpoint.
+
+        Args:
+            spec: Aggregated attestation specification.
+            block_registry: Labeled blocks for target resolution.
+            state: State for source checkpoint lookup.
+
+        Returns:
+            Attestation data shared by all validators in the aggregation.
+
+        Raises:
+            ValueError: If target label not found in registry.
+        """
+        target = self._resolve_checkpoint(spec.target_root_label, spec.target_slot, block_registry)
+
+        # In simplified tests, head equals target for convenience.
+        #
+        # Source is the state's last justified checkpoint (3SF-mini link).
+        return AttestationData(
+            slot=spec.slot,
+            head=target,
+            target=target,
+            source=state.latest_justified,
+        )
