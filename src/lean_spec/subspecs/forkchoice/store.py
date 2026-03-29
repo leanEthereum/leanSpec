@@ -1195,7 +1195,12 @@ class Store(StrictBaseModel):
         The algorithm:
         1. Get the current head block
         2. Calculate the appropriate attestation target using current forkchoice state
-        3. Use the store's latest justified checkpoint as the attestation source
+        3. Use the head state's latest justified checkpoint as the attestation source
+           (matching 3sf-mini's original design where vote source comes from the head
+           block's post-state, not from the store-wide max). This ensures that
+           build_block's filter (post_state.latest_justified) always matches on the
+           first iteration, since an empty candidate block over head_state preserves
+           head_state.latest_justified.
         4. Construct and return the complete AttestationData object
 
         Args:
@@ -1213,12 +1218,19 @@ class Store(StrictBaseModel):
         # Calculate the target checkpoint for this attestation
         target_checkpoint = self.get_attestation_target()
 
+        # Use the head state's justified checkpoint as source, matching 3sf-mini.
+        # store.latest_justified can advance past head_state.latest_justified when
+        # a non-head-chain block's state transition crosses the 2/3 threshold.
+        # Using store.latest_justified here would cause a mismatch with build_block's
+        # filter (post_state.latest_justified), resulting in 0-attestation blocks.
+        head_state = self.states[self.head]
+
         # Construct attestation data
         return AttestationData(
             slot=slot,
             head=head_checkpoint,
             target=target_checkpoint,
-            source=self.latest_justified,
+            source=head_state.latest_justified,
         )
 
     def produce_block_with_signatures(
