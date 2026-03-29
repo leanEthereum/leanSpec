@@ -1,8 +1,8 @@
 """
-Tests for the "Top Level" message hashing and encoding logic.
+Tests for the message hashing and aborting hypercube encoding logic.
 """
 
-from lean_spec.subspecs.koalabear import Fp
+from lean_spec.subspecs.koalabear import Fp, P
 from lean_spec.subspecs.xmss.constants import (
     TEST_CONFIG,
     TWEAK_PREFIX_MESSAGE,
@@ -57,10 +57,51 @@ def test_encode_epoch() -> None:
         seen_encodings.add(encoding)
 
 
-def test_apply_output_is_in_correct_hypercube_part() -> None:
+def test_aborting_decode_known_decomposition() -> None:
+    """Verifies aborting decode with a hand-computed example."""
+    hasher = TEST_MESSAGE_HASHER
+    config = TEST_CONFIG
+
+    # Pick an arbitrary quotient multiplier to build a valid field element.
+    d_value = 5
+    fe_list = [Fp(value=config.Q * d_value)] * hasher.config.MH_HASH_LEN_FE
+    result = hasher._aborting_decode(fe_list)
+    assert result is not None
+    assert len(result) == config.DIMENSION
+
+    # Each FE decomposes d_value into Z base-BASE digits (LSB first),
+    # then the first DIMENSION digits are taken across all FEs.
+    digits_per_fe = []
+    remaining = d_value
+    for _ in range(config.Z):
+        digits_per_fe.append(remaining % config.BASE)
+        remaining //= config.BASE
+    all_digits = (digits_per_fe * hasher.config.MH_HASH_LEN_FE)[: config.DIMENSION]
+    assert result == all_digits
+
+
+def test_aborting_decode_boundary() -> None:
+    """Tests that FE = P-2 succeeds and FE = P-1 aborts."""
+    hasher = TEST_MESSAGE_HASHER
+    config = TEST_CONFIG
+
+    # P - 2 is the largest valid value (just below Q * BASE^Z = P - 1).
+    fe_valid = [Fp(value=P - 2)] * hasher.config.MH_HASH_LEN_FE
+    result = hasher._aborting_decode(fe_valid)
+    assert result is not None
+    assert len(result) == config.DIMENSION
+    assert all(0 <= d < config.BASE for d in result)
+
+    # P - 1 triggers the abort (A_i >= Q * BASE^Z).
+    fe_abort = [Fp(value=P - 1)]
+    result = hasher._aborting_decode(fe_abort)
+    assert result is None
+
+
+def test_apply_output_is_valid_codeword() -> None:
     """
-    Tests that the output of `apply` is a valid vertex that lies within
-    the top `FINAL_LAYER` layers of the hypercube.
+    Tests that the output of `apply` is `None` or a valid codeword with
+    DIMENSION digits each in `[0, BASE-1]`.
     """
     config = TEST_CONFIG
     hasher = TEST_MESSAGE_HASHER
@@ -73,23 +114,11 @@ def test_apply_output_is_in_correct_hypercube_part() -> None:
     message = Bytes32(b"\xaa" * 32)
 
     # Call the message hash function.
-    vertex = hasher.apply(parameter, epoch, randomness, message)
+    result = hasher.apply(parameter, epoch, randomness, message)
 
-    # Verify the properties of the output vertex.
-    #
-    # The length of the vertex must be equal to the hypercube's dimension.
-    assert len(vertex) == config.DIMENSION
-    # Each coordinate must be smaller than the base `w`.
-    assert all(0 <= coord < config.BASE for coord in vertex)
+    # The aborting decode may return None, but in practice it almost never does.
+    assert result is not None
 
-    # Check that the vertex lies in the correct set of layers.
-    #
-    # By definition, a vertex is in layer `d` if `d = v*(w-1) - sum(coords)`.
-    #
-    # We require `d <= FINAL_LAYER`.
-    #
-    # This is equivalent to `sum(coords) >= v*(w-1) - FINAL_LAYER`.
-    coord_sum = sum(vertex)
-    min_required_sum = (config.BASE - 1) * config.DIMENSION - config.FINAL_LAYER
-
-    assert coord_sum >= min_required_sum, "Vertex is not in the top layers"
+    # Verify the properties of the output codeword.
+    assert len(result) == config.DIMENSION
+    assert all(0 <= coord < config.BASE for coord in result)

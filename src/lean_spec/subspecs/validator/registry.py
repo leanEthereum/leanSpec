@@ -15,7 +15,7 @@ The registry supports two YAML files:
 2. **validator-keys-manifest.yaml** - Contains key metadata and file paths:
 
        key_scheme: SIGTopLevelTargetSumLifetime32Dim64Base8
-       hash_function: Poseidon2
+       hash_function: Poseidon1
        num_validators: 3
        validators:
        - index: 0
@@ -85,7 +85,7 @@ class ValidatorManifest(BaseModel):
     """Signature scheme identifier (e.g., SIGTopLevelTargetSumLifetime32Dim64Base8)."""
 
     hash_function: str
-    """Hash function used (e.g., Poseidon2)."""
+    """Hash function used (e.g., Poseidon1)."""
 
     encoding: str
     """Encoding type (e.g., TargetSum)."""

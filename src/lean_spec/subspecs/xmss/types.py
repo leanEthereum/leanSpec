@@ -27,7 +27,7 @@ HASH_DIGEST_LENGTH: Final = TARGET_CONFIG.HASH_LEN_FE
 The fixed length of a hash digest in field elements.
 
 Derived from `TARGET_CONFIG.HASH_LEN_FE`. This corresponds to the output length
-of the Poseidon2 hash function used in the XMSS scheme.
+of the Poseidon1 hash function used in the XMSS scheme.
 """
 
 # Calculate the maximum number of nodes in a sparse Merkle tree layer:
@@ -49,7 +49,7 @@ class HashDigestVector(SSZVector[Fp]):
     """
     A single hash digest represented as a fixed-size vector of field elements.
 
-    This is the SSZ-compliant representation of a Poseidon2 hash output.
+    This is the SSZ-compliant representation of a Poseidon1 hash output.
     In SSZ notation: `Vector[Fp, HASH_DIGEST_LENGTH]`
 
     The fixed size enables efficient serialization when used in collections,

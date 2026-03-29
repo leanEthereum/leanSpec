@@ -155,7 +155,7 @@ class TestValidatorRegistryFromYaml:
             yaml.dump(
                 {
                     "key_scheme": "SIGTopLevelTargetSumLifetime32Dim64Base8",
-                    "hash_function": "Poseidon2",
+                    "hash_function": "Poseidon1",
                     "encoding": "TargetSum",
                     "lifetime": 32,
                     "log_num_active_epochs": 5,
@@ -224,7 +224,7 @@ class TestValidatorRegistryFromYaml:
             yaml.dump(
                 {
                     "key_scheme": "SIGTopLevelTargetSumLifetime32Dim64Base8",
-                    "hash_function": "Poseidon2",
+                    "hash_function": "Poseidon1",
                     "encoding": "TargetSum",
                     "lifetime": 32,
                     "log_num_active_epochs": 5,
@@ -253,7 +253,7 @@ class TestValidatorRegistryFromYaml:
             yaml.dump(
                 {
                     "key_scheme": "SIGTopLevelTargetSumLifetime32Dim64Base8",
-                    "hash_function": "Poseidon2",
+                    "hash_function": "Poseidon1",
                     "encoding": "TargetSum",
                     "lifetime": 32,
                     "log_num_active_epochs": 5,
@@ -300,7 +300,7 @@ class TestValidatorRegistryFromYaml:
             yaml.dump(
                 {
                     "key_scheme": "SIGTopLevelTargetSumLifetime32Dim64Base8",
-                    "hash_function": "Poseidon2",
+                    "hash_function": "Poseidon1",
                     "encoding": "TargetSum",
                     "lifetime": 32,
                     "log_num_active_epochs": 5,
@@ -329,7 +329,7 @@ class TestValidatorRegistryFromYaml:
             yaml.dump(
                 {
                     "key_scheme": "SIGTopLevelTargetSumLifetime32Dim64Base8",
-                    "hash_function": "Poseidon2",
+                    "hash_function": "Poseidon1",
                     "encoding": "TargetSum",
                     "lifetime": 32,
                     "log_num_active_epochs": 5,
@@ -365,7 +365,7 @@ class TestValidatorRegistryFromYaml:
             yaml.dump(
                 {
                     "key_scheme": "SIGTopLevelTargetSumLifetime32Dim64Base8",
-                    "hash_function": "Poseidon2",
+                    "hash_function": "Poseidon1",
                     "encoding": "TargetSum",
                     "lifetime": 32,
                     "log_num_active_epochs": 5,

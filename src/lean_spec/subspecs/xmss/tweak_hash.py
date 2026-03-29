@@ -1,9 +1,9 @@
 """
-Defines the Tweakable Hash function using Poseidon2.
+Defines the Tweakable Hash function using Poseidon1.
 
 ### The Problem: Hash Function Overload
 
-In a complex cryptographic scheme like XMSS, a single hash function (like Poseidon2)
+In a complex cryptographic scheme like XMSS, a single hash function (like Poseidon1)
 is used for many different purposes:
 1.  Hashing iteratively to form **hash chains**.
 2.  Hashing pairs of nodes to build the **Merkle tree**.
@@ -97,7 +97,7 @@ class TweakHasher(StrictBaseModel):
         Encodes a structured tweak object into a list of field elements.
 
         It converts a high-level tweak context (like "Merkle tree, level 5, index 3")
-        into a low-level format that can be consumed by the Poseidon2 hash function.
+        into a low-level format that can be consumed by the Poseidon1 hash function.
 
         ### Encoding Algorithm
 
@@ -144,10 +144,10 @@ class TweakHasher(StrictBaseModel):
         message_parts: list[HashDigestVector],
     ) -> HashDigestVector:
         """
-        Applies the tweakable Poseidon2 hash function to a message.
+        Applies the tweakable Poseidon1 hash function to a message.
 
         This is the main entry point for all internal hashing operations. It prepares
-        the inputs and routes them to the appropriate Poseidon2 function based on
+        the inputs and routes them to the appropriate Poseidon1 function based on
         the input size, ensuring optimal performance and security.
 
         ### Hashing Algorithm
@@ -157,7 +157,7 @@ class TweakHasher(StrictBaseModel):
 
         2.  **Mode Selection**:
             - For small inputs (1 or 2 `HashDigest` parts), it uses the highly
-                efficient **compression mode** of Poseidon2.
+                efficient **compression mode** of Poseidon1.
             - For large inputs (many `HashDigest` parts, like a Merkle leaf),
                 it uses the more flexible **sponge mode**.
 
@@ -175,12 +175,12 @@ class TweakHasher(StrictBaseModel):
         # Encode the high-level tweak structure into a list of field elements.
         encoded_tweak = self._encode_tweak(tweak, config.TWEAK_LEN_FE)
 
-        # Route to the correct Poseidon2 mode based on the input size.
+        # Route to the correct Poseidon1 mode based on the input size.
         if len(message_parts) == 1:
             # Case 1: Hashing a single digest (used in hash chains).
             #
             # We use the efficient width-16 compression mode.
-            input_vec = parameter.elements + encoded_tweak + message_parts[0].elements
+            input_vec = message_parts[0].elements + parameter.elements + encoded_tweak
             result = self.poseidon.compress(input_vec, 16, config.HASH_LEN_FE)
 
         elif len(message_parts) == 2:

@@ -11,13 +11,16 @@ We also provide a test instantiation for testing purposes.
 
 from __future__ import annotations
 
+import math
 from typing import Final
+
+from pydantic import model_validator
 
 from lean_spec.config import LEAN_ENV
 from lean_spec.types import StrictBaseModel, Uint64
 from lean_spec.types.constants import OFFSET_BYTE_LENGTH
 
-from ..koalabear import P_BYTES, Fp
+from ..koalabear import P_BYTES, Fp, P
 
 
 class XmssConfig(StrictBaseModel):
@@ -45,8 +48,11 @@ class XmssConfig(StrictBaseModel):
     BASE: int
     """The alphabet size for the digits of the encoded message."""
 
-    FINAL_LAYER: int
-    """Number of top layers of the hypercube to map the hash output into."""
+    Z: int
+    """Number of base-`BASE` digits extracted from each field element."""
+
+    Q: int
+    """Quotient such that `Q * BASE^Z == P - 1`."""
 
     TARGET_SUM: int
     """The required sum of all codeword chunks for a signature to be valid."""
@@ -79,18 +85,19 @@ class XmssConfig(StrictBaseModel):
     """The output length of the main tweakable hash function."""
 
     CAPACITY: int
-    """The capacity of the Poseidon2 sponge, defining its security level."""
+    """The capacity of the Poseidon1 sponge, defining its security level."""
 
-    POS_OUTPUT_LEN_PER_INV_FE: int
-    """Output length per invocation for the message hash."""
-
-    POS_INVOCATIONS: int
-    """Number of invocations for the message hash."""
+    @model_validator(mode="after")
+    def _validate_decomposition(self) -> XmssConfig:
+        """Verify that Q * BASE^Z == P - 1."""
+        if self.Q * self.BASE**self.Z != P - 1:
+            raise ValueError(f"Q * BASE^Z must equal P-1={P - 1}")
+        return self
 
     @property
-    def POS_OUTPUT_LEN_FE(self) -> int:  # noqa: N802
-        """Total output length for the message hash."""
-        return self.POS_OUTPUT_LEN_PER_INV_FE * self.POS_INVOCATIONS
+    def MH_HASH_LEN_FE(self) -> int:  # noqa: N802
+        """Number of Poseidon output field elements needed for the aborting decode."""
+        return math.ceil(self.DIMENSION / self.Z)
 
     @property
     def PUBLIC_KEY_LEN_BYTES(self) -> int:  # noqa: N802
@@ -121,10 +128,11 @@ class XmssConfig(StrictBaseModel):
 PROD_CONFIG: Final = XmssConfig(
     MESSAGE_LENGTH=32,
     LOG_LIFETIME=32,
-    DIMENSION=64,
+    DIMENSION=46,
     BASE=8,
-    FINAL_LAYER=77,
-    TARGET_SUM=375,
+    Z=8,
+    Q=127,
+    TARGET_SUM=200,
     MAX_TRIES=100_000,
     PARAMETER_LEN=5,
     TWEAK_LEN_FE=2,
@@ -132,8 +140,6 @@ PROD_CONFIG: Final = XmssConfig(
     RAND_LEN_FE=7,
     HASH_LEN_FE=8,
     CAPACITY=9,
-    POS_OUTPUT_LEN_PER_INV_FE=15,
-    POS_INVOCATIONS=1,
 )
 
 
@@ -141,8 +147,9 @@ TEST_CONFIG: Final = XmssConfig(
     MESSAGE_LENGTH=32,
     LOG_LIFETIME=8,
     DIMENSION=4,
-    BASE=4,
-    FINAL_LAYER=6,
+    BASE=8,
+    Z=8,
+    Q=127,
     TARGET_SUM=6,
     MAX_TRIES=100_000,
     PARAMETER_LEN=5,
@@ -151,8 +158,6 @@ TEST_CONFIG: Final = XmssConfig(
     RAND_LEN_FE=7,
     HASH_LEN_FE=8,
     CAPACITY=9,
-    POS_OUTPUT_LEN_PER_INV_FE=15,
-    POS_INVOCATIONS=1,
 )
 
 

@@ -4,7 +4,7 @@ subspecs
 crate
 crates
 ethereum
-poseidon2
+poseidon1
 keccak
 blake
 merkle
