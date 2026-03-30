@@ -1,22 +1,4 @@
-"""Tests for Validator Registry.
-
-Testing strategy
-----------------
-registry.py manages two concerns:
-
-1. **YAML parsing** — ValidatorManifestEntry, ValidatorManifest, and
-   load_node_validator_mapping() turn raw YAML (which may auto-cast
-   0x-prefixed hex strings to integers) into validated Python objects.
-   We test every edge of that parsing, including YAML's integer coercion.
-
-2. **Key loading and registry lifecycle** — ValidatorRegistry.from_yaml()
-   orchestrates file I/O, manifest lookup, and SSZ key decoding.  We test
-   the happy path plus every failure mode (unknown node, missing manifest
-   entry, missing file, corrupt file) for both attestation and proposal keys.
-
-All YAML files are written to pytest's tmp_path to keep tests hermetic.
-SecretKey.decode_bytes is patched wherever we don't need real key material.
-"""
+"""Tests for Validator Registry."""
 
 from __future__ import annotations
 
