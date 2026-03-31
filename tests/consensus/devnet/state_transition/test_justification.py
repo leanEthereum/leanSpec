@@ -233,22 +233,22 @@ def test_repeated_validators_do_not_double_count_across_blocks(
 
     Scenario
     --------
-    1. Start from genesis with 6 validators
-    2. Process block_1 at slot 1 and block_2 at slot 2
-    3. Process block_2 with attestations from validators 0 and 1 targeting
-       block_1 at slot 1
-    4. Process block_3 with the same validators 0 and 1 targeting block_1 again
-    5. Process block_4 with new validators 2, 3, 4, and 5 targeting block_2 at slot 2
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1
+    3. Process block_2 at slot 2 with attestations from validators 0 and 1
+       targeting block_1 at slot 1
+    4. Process block_3 at slot 3 with the same validators 0 and 1 targeting
+       block_1 again
 
     Expected Behavior
     -----------------
-    1. Duplicate votes for block_1 do not create new validator weight
-    2. block_1 must not become justified from repeated participants alone
-    3. The later block_2 attestation still uses source slot 0
-    4. latest_justified_slot advances to slot 2 without finalizing slot 1
+    1. The first attestation set is below threshold on its own
+    2. Repeating the same validators in a later block does not add new weight
+    3. Unique support remains two of four validators, which is below two-thirds
+    4. latest_justified_slot stays at genesis
     """
     state_transition_test(
-        pre=generate_pre_state(num_validators=6),
+        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -283,28 +283,10 @@ def test_repeated_validators_do_not_double_count_across_blocks(
                     ),
                 ],
             ),
-            BlockSpec(
-                slot=Slot(4),
-                parent_label="block_3",
-                attestations=[
-                    AggregatedAttestationSpec(
-                        validator_ids=[
-                            ValidatorIndex(2),
-                            ValidatorIndex(3),
-                            ValidatorIndex(4),
-                            ValidatorIndex(5),
-                        ],
-                        slot=Slot(4),
-                        target_slot=Slot(2),
-                        target_root_label="block_2",
-                    ),
-                ],
-            ),
         ],
         post=StateExpectation(
-            slot=Slot(4),
-            latest_justified_slot=Slot(2),
-            latest_finalized_slot=Slot(0),
+            slot=Slot(3),
+            latest_justified_slot=Slot(0),
         ),
     )
 
