@@ -33,6 +33,7 @@ from lean_spec.subspecs.containers.block import (
 )
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
+    AttestationSignatures,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
@@ -456,21 +457,12 @@ class ForkChoiceTest(BaseConsensusFixture):
         #
         # block_payloads contains explicit spec attestations only.
         parent_state = store.states[parent_root]
-        final_block, post_state, _, _ = parent_state.build_block(
+        final_block, post_state, _, block_proofs = parent_state.build_block(
             slot=spec.slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
             known_block_roots=set(store.blocks.keys()),
             aggregated_payloads=merged_store.latest_known_aggregated_payloads,
-        )
-
-        # Sign everything
-        #
-        # Aggregate signatures for attestations in the block body.
-        # Sign the block root with the proposer's proposal key.
-        attestation_signatures_blob = key_manager.build_attestation_signatures(
-            final_block.body.attestations,
-            attestation_signatures,
         )
 
         proposer_signature = key_manager.sign_block_root(
@@ -483,7 +475,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         return SignedBlock(
             block=final_block,
             signature=BlockSignatures(
-                attestation_signatures=attestation_signatures_blob,
+                attestation_signatures=AttestationSignatures(data=block_proofs),
                 proposer_signature=proposer_signature,
             ),
         )
