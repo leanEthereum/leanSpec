@@ -26,7 +26,7 @@
 
 ## Adding New Subspecifications
 
-New subspecs belong in `src/lean_spec/subspecs/`. Follow the pattern of existing subspecs like `poseidon2`:
+New subspecs belong in `src/lean_spec/subspecs/`. Follow the pattern of existing subspecs like `poseidon1`:
 
 ```bash
 mkdir -p src/lean_spec/subspecs/my_new_subspec

@@ -29,7 +29,20 @@ import pytest
 
 from lean_spec.subspecs.koalabear import P
 from lean_spec.subspecs.xmss.constants import PROD_CONFIG, XmssConfig
-from lean_spec.subspecs.xmss.hypercube import _calculate_layer_size
+
+
+def _calculate_layer_size(w: int, v: int, d: int) -> int:
+    """
+    Calculates a hypercube layer's size using inclusion-exclusion.
+
+    Counts integer solutions to x_1 + ... + x_v = k with 0 <= x_i <= w-1,
+    where k = v*(w-1) - d.
+    """
+    coord_sum = v * (w - 1) - d
+    return sum(
+        ((-1) ** s) * math.comb(v, s) * math.comb(coord_sum - s * w + v - 1, v - 1)
+        for s in range(coord_sum // w + 1)
+    )
 
 
 def _compute_security_levels(config: XmssConfig) -> dict[str, float]:

@@ -68,10 +68,10 @@ uv run pytest
 │   └── lean_spec/                      # Main specifications
 │      ├── __init__.py
 │      └── subspecs/                       # Sub-specifications
-│          ├── poseidon2/
+│          ├── poseidon1/
 │          │   ├── __init__.py
-│          │   ├── poseidon2.py
-│          │   └── ...
+│          │   ├── permutation.py
+│          │   └── constants.py
 │          ├── ...
 │          └── ...
 ├── tests/                              # Test suite
