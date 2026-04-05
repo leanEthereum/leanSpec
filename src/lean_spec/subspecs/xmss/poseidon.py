@@ -86,12 +86,13 @@ class PoseidonXmss(StrictBaseModel):
         if width not in (16, 24):
             raise ValueError(f"Width must be 16 or 24, got {width}")
         params = self.params16 if width == 16 else self.params24
+        engine = Poseidon1(params)
 
         # Create a padded input by extending with zeros to match the state width.
         padded_input = list(input_vec) + [Fp(value=0)] * (width - len(input_vec))
 
         # Apply the Poseidon1 permutation.
-        permuted_state = Poseidon1(params).permute(padded_input)
+        permuted_state = engine.permute(padded_input)
 
         # Apply the feed-forward step, adding the input back element-wise.
         final_state = [p + i for p, i in zip(permuted_state, padded_input, strict=True)]
@@ -215,5 +216,5 @@ class PoseidonXmss(StrictBaseModel):
 PROD_POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
 """An instance configured for production-level parameters."""
 
-TEST_POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
-"""A lightweight instance for test environments."""
+TEST_POSEIDON = PROD_POSEIDON
+"""Test and production use the same Poseidon1 parameters; only XmssConfig differs."""

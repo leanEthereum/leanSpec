@@ -7,7 +7,7 @@ Validates Store responses to blocks, attestations, and time progression.
 
 from __future__ import annotations
 
-from typing import ClassVar, Mapping, Self
+from typing import ClassVar, Self
 
 from pydantic import model_validator
 
@@ -544,7 +544,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         key_manager: XmssKeyManager,
     ) -> tuple[
         list[Attestation],
-        Mapping[AttestationData, Mapping[ValidatorIndex, Signature]],
+        dict[AttestationData, dict[ValidatorIndex, Signature]],
         set[Attestation],
     ]:
         """
@@ -570,7 +570,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
         parent_state = store.states[parent_root]
         attestations = []
-        signature_lookup: Mapping[AttestationData, Mapping[ValidatorIndex, Signature]] = {}
+        signature_lookup: dict[AttestationData, dict[ValidatorIndex, Signature]] = {}
         valid_attestations: set[Attestation] = set()
 
         for aggregated_spec in spec.attestations:

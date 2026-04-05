@@ -141,6 +141,7 @@ PROD_CONFIG: Final = XmssConfig(
     HASH_LEN_FE=8,
     CAPACITY=9,
 )
+"""Production XMSS configuration matching the canonical Rust instantiation."""
 
 
 TEST_CONFIG: Final = XmssConfig(
@@ -159,6 +160,7 @@ TEST_CONFIG: Final = XmssConfig(
     HASH_LEN_FE=8,
     CAPACITY=9,
 )
+"""Lightweight XMSS configuration for fast test execution."""
 
 
 TWEAK_PREFIX_CHAIN: Final = Fp(value=0x00)

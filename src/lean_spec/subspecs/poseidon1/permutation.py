@@ -53,7 +53,7 @@ def _mds_multiply_jit(
     for i in range(n):
         s = np.int64(0)
         for j in range(n):
-            s += mds[i, j] * state[j] % p
+            s += (mds[i, j] * state[j]) % p
         result[i] = s % p
     return result
 
@@ -75,7 +75,7 @@ def _permute_jit(
     S-box: x^3 computed as (x*x % p) * x % p to avoid int64 overflow.
 
     Round structure: AddRoundConstants -> S-box -> MDS multiply.
-    Unlike Poseidon2, there is no initial linear layer.
+    No initial linear layer is applied before the round structure begins.
     """
     const_idx = 0
 
@@ -231,14 +231,9 @@ class Poseidon1:
         return [Fp(value=int(x)) for x in state]
 
 
-# MDS first row for WIDTH = 16
-#
-# From Plonky3: koala-bear/src/mds.rs
 _MDS_FIRST_ROW_16: list[int] = [1, 1, 51, 1, 11, 17, 2, 1, 101, 63, 15, 2, 67, 22, 13, 3]
+"""MDS first row for width-16 circulant matrix. From Plonky3: koala-bear/src/mds.rs."""
 
-# MDS first row for WIDTH = 24
-#
-# From Plonky3: koala-bear/src/mds.rs
 _MDS_FIRST_ROW_24: list[int] = [
     0x2D0AAAAB,
     0x64850517,
@@ -265,8 +260,8 @@ _MDS_FIRST_ROW_24: list[int] = [
     0x17E118F6,
     0x0878A07F,
 ]
+"""MDS first row for width-24 circulant matrix. From Plonky3: koala-bear/src/mds.rs."""
 
-# Parameters for WIDTH = 16
 PARAMS_16 = Poseidon1Params(
     width=16,
     rounds_f=8,
@@ -274,8 +269,8 @@ PARAMS_16 = Poseidon1Params(
     mds_first_row=[Fp(value=v) for v in _MDS_FIRST_ROW_16],
     round_constants=ROUND_CONSTANTS_16,
 )
+"""Poseidon1 parameters for width-16 permutation (8 full rounds, 20 partial)."""
 
-# Parameters for WIDTH = 24
 PARAMS_24 = Poseidon1Params(
     width=24,
     rounds_f=8,
@@ -283,3 +278,4 @@ PARAMS_24 = Poseidon1Params(
     mds_first_row=[Fp(value=v) for v in _MDS_FIRST_ROW_24],
     round_constants=ROUND_CONSTANTS_24,
 )
+"""Poseidon1 parameters for width-24 permutation (8 full rounds, 23 partial)."""
