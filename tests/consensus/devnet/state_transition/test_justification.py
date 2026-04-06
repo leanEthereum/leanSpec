@@ -11,6 +11,7 @@ from consensus_testing import (
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.types import ZERO_HASH, Bytes32
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -682,6 +683,254 @@ def test_square_boundary_acceptance(
         post=StateExpectation(
             slot=Slot(10),
             latest_justified_slot=Slot(9),
+            latest_finalized_slot=Slot(0),
+        ),
+    )
+
+
+def test_unjustified_source_rejected(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test that an unjustified source checkpoint is rejected.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1 and block_2 at slot 2
+    3. Process block_3 at slot 3 with attestations from validators 0, 1, and 2
+       targeting block_2 at slot 2 but sourcing from block_1 at slot 1
+
+    Expected Behavior
+    -----------------
+    1. The source slot 1 is neither justified nor finalized
+    2. Three of four validators form a supermajority
+    3. The attestation is ignored because its source is not trusted
+    4. latest_justified_slot stays at genesis
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
+            BlockSpec(
+                slot=Slot(3),
+                parent_label="block_2",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(3),
+                        target_slot=Slot(2),
+                        target_root_label="block_2",
+                        source_root_label="block_1",
+                        source_slot=Slot(1),
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(3),
+            latest_justified_slot=Slot(0),
+            latest_finalized_slot=Slot(0),
+        ),
+    )
+
+
+def test_wrong_source_or_target_root_rejected(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test that non-canonical source or target roots are rejected.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1
+    3. Process block_2 at slot 2 with two supermajority attestations:
+       - one with a non-canonical source root for slot 0
+       - one with a non-canonical target root for slot 1
+
+    Expected Behavior
+    -----------------
+    1. The source and target slots are otherwise eligible for voting
+    2. Three of four validators form a supermajority in each attestation
+    3. Votes whose roots do not match canonical history are ignored
+    4. latest_justified_slot stays at genesis
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        source_root_override=Bytes32(b"\xaa" * 32),
+                    ),
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        target_root_override=Bytes32(b"\xbb" * 32),
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            latest_justified_slot=Slot(0),
+            latest_finalized_slot=Slot(0),
+        ),
+    )
+
+
+def test_target_slot_at_or_before_source_slot_rejected(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test that a target at or before its source slot is rejected.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1 and block_2 at slot 2
+    3. Process block_3 at slot 3 with attestations from validators 0, 1, and 2
+       targeting block_2 at slot 2, which justifies slot 2
+    4. Process block_4 at slot 4 with attestations from validators 0, 1, and 2
+       targeting block_1 at slot 1 from source block_2 at slot 2
+
+    Expected Behavior
+    -----------------
+    1. Slot 2 is justified naturally via supermajority in block_3
+    2. The source slot 2 passes the trusted-source gate
+    3. The target slot 1 is not already justified
+    4. The attestation is ignored because target.slot <= source.slot
+    5. latest_justified_slot stays at slot 2
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
+            BlockSpec(
+                slot=Slot(3),
+                parent_label="block_2",
+                label="block_3",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(3),
+                        target_slot=Slot(2),
+                        target_root_label="block_2",
+                    ),
+                ],
+            ),
+            BlockSpec(
+                slot=Slot(4),
+                parent_label="block_3",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(4),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        source_root_label="block_2",
+                        source_slot=Slot(2),
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(4),
+            latest_justified_slot=Slot(2),
+            latest_finalized_slot=Slot(0),
+        ),
+    )
+
+
+def test_zero_hash_source_or_target_root_rejected(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test that zero-hash source or target roots are rejected.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1
+    3. Process block_2 at slot 2 with two supermajority attestations:
+       - one with ZERO_HASH as the source root
+       - one with ZERO_HASH as the target root
+
+    Expected Behavior
+    -----------------
+    1. The source and target slots are otherwise eligible for voting
+    2. Three of four validators form a supermajority in each attestation
+    3. Votes referencing ZERO_HASH are ignored
+    4. latest_justified_slot stays at genesis
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        source_root_override=ZERO_HASH,
+                    ),
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        target_root_override=ZERO_HASH,
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            latest_justified_slot=Slot(0),
             latest_finalized_slot=Slot(0),
         ),
     )

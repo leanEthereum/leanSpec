@@ -2,7 +2,7 @@
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.types import CamelModel
+from lean_spec.types import Bytes32, CamelModel
 
 
 class AggregatedAttestationSpec(CamelModel):
@@ -27,6 +27,36 @@ class AggregatedAttestationSpec(CamelModel):
     Label referencing a previously created block as the target (required).
 
     The block must exist in the block registry with this label.
+    """
+
+    source_root_label: str | None = None
+    """
+    Optional label referencing a previously created block as the source.
+
+    When None (default), the source checkpoint is derived from the parent state.
+    When specified, resolves to a different block for source override tests.
+    """
+
+    source_slot: Slot | None = None
+    """
+    Optional override for the source checkpoint slot.
+
+    When None (default), uses the actual slot of the source checkpoint.
+    When specified, creates a source/slot mismatch for guard testing.
+    """
+
+    target_root_override: Bytes32 | None = None
+    """
+    Raw root override for the target checkpoint.
+
+    Bypasses label resolution. Used to inject a non-canonical target root.
+    """
+
+    source_root_override: Bytes32 | None = None
+    """
+    Raw root override for the source checkpoint.
+
+    Bypasses label resolution. Used to inject a non-canonical source root.
     """
 
     valid_signature: bool = True

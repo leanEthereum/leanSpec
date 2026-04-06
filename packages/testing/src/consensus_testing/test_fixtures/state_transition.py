@@ -4,7 +4,7 @@ from typing import Any, ClassVar, List
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
-from lean_spec.subspecs.containers.attestation import AttestationData
+from lean_spec.subspecs.containers.attestation import AggregatedAttestation, AttestationData
 from lean_spec.subspecs.containers.attestation.aggregation_bits import AggregationBits
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
@@ -284,6 +284,29 @@ class StateTransitionTest(BaseConsensusFixture):
                 body=spec.body or BlockBody(attestations=aggregated_attestations),
             ), None
 
+        # Some state-transition tests need to inject attestations whose source or
+        # checkpoint roots intentionally do not match the current justified
+        # checkpoint. State.build_block() drops those entries before
+        # process_attestations() sees them, so blocks using explicit attestation
+        # overrides are assembled directly here.
+        if spec.attestations and any(
+            self._aggregated_attestation_spec_has_overrides(attestation_spec)
+            for attestation_spec in spec.attestations
+        ):
+            explicit_attestations = self._build_aggregated_attestations_from_spec(
+                spec.attestations, state, block_registry
+            )
+            block = Block(
+                slot=spec.slot,
+                proposer_index=proposer_index,
+                parent_root=parent_root,
+                state_root=Bytes32.zero(),
+                body=BlockBody(attestations=AggregatedAttestations(data=explicit_attestations)),
+            )
+            post_state = (temp_state or state).process_block(block)
+            block = block.model_copy(update={"state_root": hash_tree_root(post_state)})
+            return block, post_state
+
         # Build aggregated payloads from spec.attestations if provided
         aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
         if spec.attestations:
@@ -302,6 +325,16 @@ class StateTransitionTest(BaseConsensusFixture):
             aggregated_payloads=aggregated_payloads,
         )
         return block, post_state
+
+    @staticmethod
+    def _aggregated_attestation_spec_has_overrides(spec: AggregatedAttestationSpec) -> bool:
+        """Return whether an aggregated attestation spec uses explicit checkpoints."""
+        return (
+            spec.source_root_label is not None
+            or spec.source_slot is not None
+            or spec.target_root_override is not None
+            or spec.source_root_override is not None
+        )
 
     def _build_aggregated_payloads_from_spec(
         self,
@@ -370,6 +403,40 @@ class StateTransitionTest(BaseConsensusFixture):
 
         return payloads
 
+    def _build_aggregated_attestations_from_spec(
+        self,
+        attestation_specs: list[AggregatedAttestationSpec],
+        state: State,
+        block_registry: dict[str, Block],
+    ) -> list[AggregatedAttestation]:
+        """
+        Build aggregated attestations directly from test specifications.
+
+        This path is used only when a spec includes explicit checkpoint
+        overrides and the block must carry the attestations exactly as written.
+        """
+        attestations: list[AggregatedAttestation] = []
+
+        for spec in attestation_specs:
+            if not spec.valid_signature:
+                raise NotImplementedError(
+                    "valid_signature=False not yet supported in StateTransitionTest"
+                )
+            if spec.signer_ids is not None:
+                raise NotImplementedError("signer_ids not yet supported in StateTransitionTest")
+
+            attestation_data = self._build_attestation_data_from_spec(spec, block_registry, state)
+            attestations.append(
+                AggregatedAttestation(
+                    aggregation_bits=AggregationBits.from_validator_indices(
+                        ValidatorIndices(data=spec.validator_ids)
+                    ),
+                    data=attestation_data,
+                )
+            )
+
+        return attestations
+
     def _resolve_checkpoint(
         self,
         label: str,
@@ -430,6 +497,24 @@ class StateTransitionTest(BaseConsensusFixture):
             ValueError: If target label not found in registry.
         """
         target = self._resolve_checkpoint(spec.target_root_label, spec.target_slot, block_registry)
+        if spec.target_root_override is not None:
+            target = Checkpoint(root=spec.target_root_override, slot=target.slot)
+
+        if spec.source_root_label is not None:
+            source = self._resolve_checkpoint(
+                spec.source_root_label, spec.source_slot, block_registry
+            )
+        else:
+            source = Checkpoint(
+                root=state.latest_justified.root,
+                slot=(
+                    spec.source_slot
+                    if spec.source_slot is not None
+                    else state.latest_justified.slot
+                ),
+            )
+        if spec.source_root_override is not None:
+            source = Checkpoint(root=spec.source_root_override, slot=source.slot)
 
         # In simplified tests, head equals target for convenience.
         #
@@ -438,5 +523,5 @@ class StateTransitionTest(BaseConsensusFixture):
             slot=spec.slot,
             head=target,
             target=target,
-            source=state.latest_justified,
+            source=source,
         )
