@@ -723,6 +723,46 @@ class State(Container):
 
                 break
 
+            # Compact: merge all proofs sharing the same AttestationData into one
+            # using recursive children aggregation.
+            proof_groups: dict[AttestationData, list[AggregatedSignatureProof]] = {}
+            for att, sig in zip(aggregated_attestations, aggregated_signatures, strict=True):
+                proof_groups.setdefault(att.data, []).append(sig)
+
+            compacted_attestations: list[AggregatedAttestation] = []
+            compacted_signatures: list[AggregatedSignatureProof] = []
+            for att_data, proofs in proof_groups.items():
+                if len(proofs) == 1:
+                    compacted_signatures.append(proofs[0])
+                else:
+                    children = [
+                        (
+                            proof,
+                            [
+                                self.validators[vid].get_attestation_pubkey()
+                                for vid in proof.participants.to_validator_indices()
+                            ],
+                        )
+                        for proof in proofs
+                    ]
+                    merged = AggregatedSignatureProof.aggregate(
+                        xmss_participants=None,
+                        children=children,
+                        raw_xmss=[],
+                        message=att_data.data_root_bytes(),
+                        slot=att_data.slot,
+                    )
+                    compacted_signatures.append(merged)
+                compacted_attestations.append(
+                    AggregatedAttestation(
+                        aggregation_bits=compacted_signatures[-1].participants,
+                        data=att_data,
+                    )
+                )
+
+            aggregated_attestations = compacted_attestations
+            aggregated_signatures = compacted_signatures
+
         # Create the final block with selected attestations.
         final_block = Block(
             slot=slot,

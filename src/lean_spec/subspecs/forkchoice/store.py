@@ -542,6 +542,13 @@ class Store(StrictBaseModel):
             "Attestation signature groups must match aggregated attestations"
         )
 
+        # Each unique AttestationData must appear at most once per block.
+        att_data_set = {att.data for att in aggregated_attestations}
+        assert len(att_data_set) == len(aggregated_attestations), (
+            "Block contains duplicate AttestationData entries; "
+            "each AttestationData must appear at most once"
+        )
+
         # Copy the aggregated proof map for updates
         # Shallow-copy the dict and its inner sets to preserve immutability
         # Block attestations go directly to "known" payloads (like is_from_block=True in the spec)
