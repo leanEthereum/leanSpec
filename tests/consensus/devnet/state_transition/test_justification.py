@@ -316,10 +316,9 @@ def test_repeated_validator_does_not_double_count_within_same_block(
 
     Expected Behavior
     -----------------
-    1. The two attestations do not merge because their attestation-data slots differ
-    2. Justification tallies are keyed by target root, not by raw attestation count
-    3. Validator 0 contributes only one unit of support toward block_1
-    4. Unique support remains three of six validators, below the threshold
+    1. Justification tallies are keyed by target root, not by raw attestation count
+    2. Validator 0 contributes only one unit of support toward block_1
+    3. Unique support remains three of six validators, below the threshold
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=6),
@@ -520,13 +519,7 @@ def test_pending_justification_survives_finalization_rebase(
             latest_justified_slot=Slot(2),
             latest_finalized_slot=Slot(1),
             justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={
-                    "data": [
-                        Boolean(True),
-                        Boolean(False),
-                        Boolean(False),
-                    ]
-                }
+                update={"data": [Boolean(True), Boolean(False), Boolean(False)]}
             ),
             justifications_validators=JustificationValidators(
                 data=[
@@ -922,6 +915,9 @@ def test_split_supermajority_aggregations_in_same_block_justify(
             slot=Slot(2),
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
+            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
         ),
     )
 
@@ -971,6 +967,9 @@ def test_odd_validator_threshold_boundary_justifies(
             slot=Slot(2),
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
+            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
         ),
     )
 
@@ -1019,6 +1018,16 @@ def test_odd_validator_threshold_boundary_does_not_justify(
             slot=Slot(2),
             latest_justified_slot=Slot(0),
             latest_finalized_slot=Slot(0),
+            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(False)]}),
+            justifications_validators=JustificationValidators(
+                data=[
+                    Boolean(True),
+                    Boolean(True),
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                ]
+            ),
         ),
     )
 
@@ -1068,6 +1077,8 @@ def test_supermajority_with_mismatched_target_root_is_ignored(
             slot=Slot(3),
             latest_justified_slot=Slot(0),
             latest_finalized_slot=Slot(0),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
         ),
     )
 
