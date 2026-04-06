@@ -810,7 +810,7 @@ class State(Container):
             child_proofs, covered = self._select_proofs_greedily(new.get(data), known.get(data))
 
             # Phase 2: Collect raw XMSS signatures for validators not yet covered.
-            # Sorted by validator index as required by the Rust aggregation bindings.
+            # Sorted by validator index for deterministic output.
             raw_entries = [
                 (
                     e.validator_id,
