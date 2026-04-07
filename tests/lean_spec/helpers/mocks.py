@@ -120,9 +120,9 @@ class MockForkchoiceStore:
         self.latest_finalized = _MockCheckpoint()
         self.states: dict[Bytes32, object] = {}
         self.reject_attestation: Callable[[SignedAttestation], bool] | None = None
-        self.reject_aggregated_attestation: (
-            Callable[[SignedAggregatedAttestation], bool] | None
-        ) = None
+        self.reject_aggregated_attestation: Callable[[SignedAggregatedAttestation], bool] | None = (
+            None
+        )
 
     def on_block(
         self,
@@ -153,9 +153,8 @@ class MockForkchoiceStore:
         signed_attestation: SignedAggregatedAttestation,
     ) -> MockForkchoiceStore:
         """Track aggregated attestation additions. Returns self for assignment chaining."""
-        if (
-            self.reject_aggregated_attestation is not None
-            and self.reject_aggregated_attestation(signed_attestation)
+        if self.reject_aggregated_attestation is not None and self.reject_aggregated_attestation(
+            signed_attestation
         ):
             raise KeyError("simulated missing block")
         self._aggregated_attestations_received.append(signed_attestation)
