@@ -342,9 +342,15 @@ class QuicConnection:
 
         elif isinstance(event, ConnectionTerminated):
             self._closed = True
-            # Signal all waiting streams.
+
+            # Per RFC 9000 Section 10, connection termination implicitly
+            # resets all open streams — data may have been lost.
+            #
+            # Using _receive_reset (not _receive_end) ensures that pending
+            # reads raise an error instead of returning empty bytes, which
+            # would falsely imply a clean end-of-stream.
             for stream in self._streams.values():
-                stream._receive_end()
+                stream._receive_reset(event.error_code)
 
 
 class LibP2PQuicProtocol(QuicConnectionProtocol):

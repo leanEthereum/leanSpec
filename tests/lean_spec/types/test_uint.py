@@ -206,6 +206,10 @@ def test_bitwise_operators(uint_class: Type[BaseUint]) -> None:
 
     with pytest.raises(TypeError):
         _ = a & 1
+    with pytest.raises(TypeError):
+        _ = a | 1
+    with pytest.raises(TypeError):
+        _ = a ^ 1
 
 
 @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
@@ -420,3 +424,253 @@ class TestUintSSZ:
         stream = io.BytesIO(b"\x00" * (byte_length - 1))
         with pytest.raises(SSZSerializationError, match="expected .* bytes, got"):
             uint_class.deserialize(stream, scope=byte_length)
+
+
+class TestForwardArithmeticTypeErrors:
+    """Tests that forward arithmetic operators reject plain int operands.
+
+    When calling e.g. Uint64(5).__add__(3), the forward operator must raise
+    TypeError because 3 is a plain int, not a BaseUint subclass.
+    """
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    @pytest.mark.parametrize(
+        "method, op_symbol",
+        [
+            ("__add__", r"\+"),
+            ("__sub__", r"-"),
+            ("__mul__", r"\*"),
+            ("__floordiv__", r"//"),
+            ("__mod__", r"%"),
+        ],
+    )
+    def test_forward_operator_rejects_plain_int(
+        self, uint_class: Type[BaseUint], method: str, op_symbol: str
+    ) -> None:
+        """Forward arithmetic operator raises TypeError when given a plain int."""
+        # Call the dunder method directly with a plain int operand.
+        with pytest.raises(TypeError, match=op_symbol):
+            getattr(uint_class(5), method)(3)
+
+
+class TestReverseArithmeticSuccessPaths:
+    """Tests that reverse arithmetic operators succeed when both operands are BaseUint.
+
+    Calling the reverse dunder directly (e.g. Uint64(3).__radd__(Uint64(5)))
+    exercises the success return path of each reverse operator.
+    """
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_radd_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse add returns the correct sum when called directly."""
+        # __radd__(other) computes other + self
+        result = uint_class(3).__radd__(uint_class(5))
+        assert result == uint_class(8)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rsub_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse sub returns the correct difference when called directly."""
+        # __rsub__(other) computes other - self
+        result = uint_class(3).__rsub__(uint_class(10))
+        assert result == uint_class(7)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rmul_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse mul returns the correct product when called directly."""
+        # __rmul__(other) computes other * self
+        result = uint_class(3).__rmul__(uint_class(5))
+        assert result == uint_class(15)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rfloordiv_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse floordiv returns the correct quotient when called directly."""
+        # __rfloordiv__(other) computes other // self
+        result = uint_class(3).__rfloordiv__(uint_class(10))
+        assert result == uint_class(3)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rmod_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse mod returns the correct remainder when called directly."""
+        # __rmod__(other) computes other % self
+        result = uint_class(3).__rmod__(uint_class(10))
+        assert result == uint_class(1)
+        assert isinstance(result, uint_class)
+
+
+class TestPowAndRpow:
+    """Tests for exponentiation operators including modulo and reverse paths."""
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_pow_with_modulo(self, uint_class: Type[BaseUint]) -> None:
+        """Three-argument pow(base, exp, mod) validates the modulo and returns correct result."""
+        # pow(2, 10, 100) == 1024 % 100 == 24
+        result = pow(uint_class(2), 10, 100)
+        assert result == uint_class(24)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_pow_with_bool_modulo_raises(self, uint_class: Type[BaseUint]) -> None:
+        """Three-argument pow rejects a bool as the modulo operand."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'bool'"):
+            pow(uint_class(2), 10, True)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rpow_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse pow computes base ** self when called directly."""
+        # __rpow__(base) computes base ** self => 2 ** 3 == 8
+        result = uint_class(3).__rpow__(uint_class(2))
+        assert result == uint_class(8)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rpow_rejects_bool(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse pow rejects a bool as the base operand."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'bool'"):
+            uint_class(3).__rpow__(True)
+
+
+class TestValidateIntOperand:
+    """Tests for _validate_int_operand which rejects bools and non-ints."""
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_pow_rejects_bool_exponent(self, uint_class: Type[BaseUint]) -> None:
+        """Exponentiation rejects a bool as the exponent."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'bool'"):
+            uint_class(2) ** True
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_pow_rejects_string_exponent(self, uint_class: Type[BaseUint]) -> None:
+        """Exponentiation rejects a string as the exponent."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'str'"):
+            uint_class(2) ** "3"  # type: ignore[operator]
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_lshift_rejects_bool(self, uint_class: Type[BaseUint]) -> None:
+        """Left shift rejects a bool as the shift amount."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'bool'"):
+            uint_class(1) << True
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rshift_rejects_bool(self, uint_class: Type[BaseUint]) -> None:
+        """Right shift rejects a bool as the shift amount."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'bool'"):
+            uint_class(8) >> True
+
+
+class TestDivmodEdgeCases:
+    """Tests for divmod type error and reverse divmod paths."""
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_divmod_rejects_plain_int(self, uint_class: Type[BaseUint]) -> None:
+        """Forward divmod raises TypeError when the divisor is a plain int."""
+        with pytest.raises(TypeError, match="divmod"):
+            divmod(uint_class(10), 3)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rdivmod_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse divmod returns correct (quotient, remainder) when called directly."""
+        # __rdivmod__(other) computes divmod(other, self) => divmod(10, 3) == (3, 1)
+        q, r = uint_class(3).__rdivmod__(uint_class(10))
+        assert q == uint_class(3)
+        assert r == uint_class(1)
+        assert isinstance(q, uint_class)
+        assert isinstance(r, uint_class)
+
+
+class TestReverseBitwiseOperators:
+    """Tests for reverse bitwise operator delegation paths."""
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rand_delegates_to_and(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse AND delegates to forward AND and returns the correct result."""
+        # __rand__ delegates to __and__
+        result = uint_class(0b1100).__rand__(uint_class(0b1010))
+        assert result == uint_class(0b1000)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_ror_delegates_to_or(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse OR delegates to forward OR and returns the correct result."""
+        # __ror__ delegates to __or__
+        result = uint_class(0b1100).__ror__(uint_class(0b1010))
+        assert result == uint_class(0b1110)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rxor_delegates_to_xor(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse XOR delegates to forward XOR and returns the correct result."""
+        # __rxor__ delegates to __xor__
+        result = uint_class(0b1100).__rxor__(uint_class(0b1010))
+        assert result == uint_class(0b0110)
+        assert isinstance(result, uint_class)
+
+
+class TestReverseShiftOperators:
+    """Tests for reverse left-shift and right-shift operator paths."""
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rlshift_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse left shift computes other << self."""
+        # __rlshift__(other) computes other << self => 1 << 2 == 4
+        result = uint_class(2).__rlshift__(1)
+        assert result == uint_class(4)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rlshift_rejects_bool(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse left shift rejects a bool operand."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'bool'"):
+            uint_class(2).__rlshift__(True)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rrshift_success(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse right shift computes other >> self."""
+        # __rrshift__(other) computes other >> self => 8 >> 2 == 2
+        result = uint_class(2).__rrshift__(8)
+        assert result == uint_class(2)
+        assert isinstance(result, uint_class)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_rrshift_rejects_bool(self, uint_class: Type[BaseUint]) -> None:
+        """Reverse right shift rejects a bool operand."""
+        with pytest.raises(TypeError, match=r"expected 'int' but got 'bool'"):
+            uint_class(2).__rrshift__(True)
+
+
+class TestComparisonTypeErrors:
+    """Tests that comparison operators raise TypeError when given plain int operands.
+
+    The existing test_all_comparisons_with_other_types_raise_error uses the operator
+    syntax (e.g., `uint < 10`) which for __lt__ and __le__ may be resolved by Python
+    as int.__gt__ and int.__ge__ instead. Calling the dunder directly ensures the
+    BaseUint implementation is exercised.
+    """
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_lt_rejects_plain_int(self, uint_class: Type[BaseUint]) -> None:
+        """Less-than raises TypeError when compared to a plain int directly."""
+        with pytest.raises(TypeError, match="<"):
+            uint_class(5).__lt__(10)
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_le_rejects_plain_int(self, uint_class: Type[BaseUint]) -> None:
+        """Less-than-or-equal raises TypeError when compared to a plain int directly."""
+        with pytest.raises(TypeError, match="<="):
+            uint_class(5).__le__(10)
+
+
+class TestIndexReturnsPlainInt:
+    """Tests that __index__ returns a plain int, not a BaseUint subclass."""
+
+    @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
+    def test_index_returns_plain_int(self, uint_class: Type[BaseUint]) -> None:
+        """__index__ returns a plain int so that built-in operations receive a raw integer."""
+        result = uint_class(42).__index__()
+        # The value must be correct.
+        assert result == 42
+        # The type must be plain int, not a BaseUint subclass.
+        assert type(result) is int

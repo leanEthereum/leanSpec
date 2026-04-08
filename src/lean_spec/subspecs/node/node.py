@@ -25,7 +25,6 @@ from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import (
     ATTESTATION_COMMITTEE_COUNT,
     INTERVALS_PER_SLOT,
-    SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.chain.service import ChainService
 from lean_spec.subspecs.containers import Block, BlockBody, SignedBlock, State
@@ -200,7 +199,7 @@ class Node:
         validator_id = (
             config.validator_registry.primary_index() if config.validator_registry else None
         )
-        store = cls._try_load_from_database(
+        store = cls._try_load_store_from_database(
             database, validator_id, config.genesis_time, config.time_fn
         )
 
@@ -332,7 +331,7 @@ class Node:
         )
 
     @staticmethod
-    def _try_load_from_database(
+    def _try_load_store_from_database(
         database: Database | None,
         validator_id: ValidatorIndex | None,
         genesis_time: Uint64 | None = None,
@@ -392,10 +391,9 @@ class Node:
         # block's proposal moment. After a restart, this makes the store
         # think it's in the past, rejecting valid attestations as "future".
         # Instead, derive time from wall clock, floored by the block's slot.
-        gt = genesis_time if genesis_time is not None else _ZERO_TIME
-        elapsed_seconds = Uint64(max(0, int(time_fn()) - int(gt)))
-        wall_clock_intervals = elapsed_seconds * INTERVALS_PER_SLOT // SECONDS_PER_SLOT
-        block_intervals = head_block.slot * INTERVALS_PER_SLOT
+        clock = SlotClock(genesis_time=genesis_time or _ZERO_TIME, time_fn=time_fn)
+        wall_clock_intervals = clock.total_intervals()
+        block_intervals = Interval(head_block.slot * INTERVALS_PER_SLOT)
         store_time = max(wall_clock_intervals, block_intervals)
 
         # Reconstruct minimal store from persisted data.
@@ -403,7 +401,7 @@ class Node:
         # The store starts with just the head block and state.
         # Additional blocks can be loaded on demand or via sync.
         return Store(
-            time=Interval(int(store_time)),
+            time=Interval(store_time),
             config=head_state.config,
             head=head_root,
             safe_target=head_root,

@@ -1,7 +1,5 @@
 """Reusable, strict base models for the specification."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -9,13 +7,10 @@ from pydantic.alias_generators import to_camel
 
 
 class CamelModel(BaseModel):
-    """
-    A base model that converts field names to camel case when serializing.
+    """Base model that serializes field names as camelCase.
 
-    For example, the field name `current_slot` in a Python model will be
-    represented as `currentSlot` when it is serialized to JSON.
-
-    This is useful for serializing all Python objects as JSON for use in test vectors.
+    All spec types inherit from this model so that JSON test vectors
+    use camelCase keys for cross-client compatibility.
     """
 
     model_config = ConfigDict(
@@ -26,8 +21,12 @@ class CamelModel(BaseModel):
     )
 
     def to_json(self, **kwargs: Any) -> dict[str, Any]:
-        """Return json encodable representation of this model"""
-        # remove these if user tries to pass them
+        """Serialize to a JSON-encodable dict with camelCase keys.
+
+        Always uses JSON mode and camelCase aliases regardless of kwargs.
+        Callers cannot override mode or by_alias — these are stripped
+        silently to guarantee correct test vector output.
+        """
         kwargs.pop("mode", None)
         kwargs.pop("by_alias", None)
 
@@ -39,7 +38,14 @@ class CamelModel(BaseModel):
 
 
 class StrictBaseModel(CamelModel):
-    """A strict, immutable pydantic base model."""
+    """Immutable, strict base model for all spec types.
+
+    Adds three constraints on top of CamelModel:
+
+    - Frozen: attribute assignment after construction raises
+    - Extra forbidden: unknown fields rejected at construction
+    - Strict: no implicit type coercion
+    """
 
     model_config = CamelModel.model_config | {
         "extra": "forbid",

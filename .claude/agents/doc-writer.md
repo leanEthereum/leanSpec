@@ -50,7 +50,7 @@ That belongs in the inline comments.
 
 ### 4. Line-by-line documentation inside every function body
 
-This is **the most important rule**. Every logical step gets a comment block BEFORE it.
+This is **the most important rule**. Every logical step gets a comment block BEFORE it. This applies everywhere: spec code, utility code, **and test code**. Tests are functions — the same rules apply without exception.
 
 Each comment block:
 - Starts with a short summary line

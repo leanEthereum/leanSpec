@@ -154,18 +154,18 @@ class TestNodeFromGenesis:
 
 
 class TestDatabaseLoading:
-    """Tests for _try_load_from_database."""
+    """Tests for _try_load_store_from_database."""
 
     def test_returns_none_when_no_database(self) -> None:
         """No database returns None."""
-        assert Node._try_load_from_database(None, validator_id=None) is None
+        assert Node._try_load_store_from_database(None, validator_id=None) is None
 
     def test_returns_none_when_no_head_root(self) -> None:
         """Empty database returns None."""
         mock_db = MagicMock()
         mock_db.get_head_root.return_value = None
 
-        assert Node._try_load_from_database(mock_db, validator_id=None) is None
+        assert Node._try_load_store_from_database(mock_db, validator_id=None) is None
 
     def test_returns_none_when_block_missing(self) -> None:
         """Missing block returns None."""
@@ -174,7 +174,7 @@ class TestDatabaseLoading:
         mock_db.get_block.return_value = None
         mock_db.get_state.return_value = MagicMock()
 
-        assert Node._try_load_from_database(mock_db, validator_id=None) is None
+        assert Node._try_load_store_from_database(mock_db, validator_id=None) is None
 
     def test_returns_none_when_state_missing(self) -> None:
         """Missing state returns None."""
@@ -183,14 +183,14 @@ class TestDatabaseLoading:
         mock_db.get_block.return_value = MagicMock()
         mock_db.get_state.return_value = None
 
-        assert Node._try_load_from_database(mock_db, validator_id=None) is None
+        assert Node._try_load_store_from_database(mock_db, validator_id=None) is None
 
     def test_returns_none_when_justified_missing(self) -> None:
         """Missing justified checkpoint returns None."""
         mock_db, block, state, _ = _make_mock_db_data()
         mock_db.get_justified_checkpoint.return_value = None
 
-        assert Node._try_load_from_database(mock_db, validator_id=None) is None
+        assert Node._try_load_store_from_database(mock_db, validator_id=None) is None
 
     def test_returns_none_when_finalized_missing(self) -> None:
         """Missing finalized checkpoint returns None."""
@@ -198,7 +198,7 @@ class TestDatabaseLoading:
         mock_db.get_finalized_checkpoint.return_value = None
         mock_db.get_justified_checkpoint.return_value = MagicMock()
 
-        assert Node._try_load_from_database(mock_db, validator_id=None) is None
+        assert Node._try_load_store_from_database(mock_db, validator_id=None) is None
 
     def test_successful_load_uses_wall_clock_time(self) -> None:
         """Store time uses wall clock when it exceeds block-based time."""
@@ -207,7 +207,7 @@ class TestDatabaseLoading:
 
         # Simulate 100 seconds after genesis (well past slot 10 at 4s/slot = 40s).
         wall_time = float(GENESIS_TIME) + 100.0
-        store = Node._try_load_from_database(
+        store = Node._try_load_store_from_database(
             mock_db,
             validator_id=ValidatorIndex(0),
             genesis_time=GENESIS_TIME,
@@ -230,7 +230,7 @@ class TestDatabaseLoading:
 
         # Simulate wall clock only 10 seconds after genesis (slot 100 is at 400s).
         wall_time = float(GENESIS_TIME) + 10.0
-        store = Node._try_load_from_database(
+        store = Node._try_load_store_from_database(
             mock_db,
             validator_id=ValidatorIndex(0),
             genesis_time=GENESIS_TIME,

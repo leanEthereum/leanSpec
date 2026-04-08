@@ -1,4 +1,5 @@
-"""Tests for QUIC connection, stream, and multiaddr utilities.
+"""
+Tests for QUIC connection, stream, and multiaddr utilities.
 
 Tests verify behavior against RFC 9000 (QUIC) and the libp2p-QUIC/multiaddr specs.
 """
@@ -6,7 +7,9 @@ Tests verify behavior against RFC 9000 (QUIC) and the libp2p-QUIC/multiaddr spec
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock
+import ssl
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,6 +20,7 @@ from lean_spec.subspecs.networking.transport.quic.connection import (
     HandshakeCompleted,
     LibP2PQuicProtocol,
     QuicConnection,
+    QuicConnectionManager,
     QuicStream,
     QuicStreamResetError,
     QuicTransportError,
@@ -444,21 +448,34 @@ class TestQuicConnectionHandleEvent:
         # Must not raise.
         quic_connection._handle_event(event)
 
-    def test_connection_terminated_closes_all_streams(
+    def test_connection_terminated_resets_all_streams(
         self, quic_connection: QuicConnection, mock_protocol: MagicMock
     ) -> None:
-        """Per RFC 9000 Section 10, connection termination closes all streams."""
+        """Per RFC 9000 Section 10, connection termination implicitly resets all streams.
+
+        All open streams are assumed to have lost data. Reads must raise
+        an error, not return empty bytes (which would imply clean EOF).
+        """
+
+        # Create two open streams on the connection.
         s1 = QuicStream(_protocol=mock_protocol, _stream_id=0)
         s2 = QuicStream(_protocol=mock_protocol, _stream_id=4)
         quic_connection._streams = {0: s1, 4: s2}
 
+        # Simulate a CONNECTION_CLOSE from the peer.
         event = ConnectionTerminated(error_code=0, frame_type=None, reason_phrase="done")
         quic_connection._handle_event(event)
 
+        # Connection is marked closed.
         assert quic_connection._closed is True
-        # All streams receive end signal.
-        assert s1._read_buffer.get_nowait() == b""
-        assert s2._read_buffer.get_nowait() == b""
+
+        # All streams received a reset, not a clean FIN.
+        #
+        # The reset error carries the connection-level error code.
+        assert s1._reset_error is not None
+        assert s1._reset_error.error_code == 0
+        assert s2._reset_error is not None
+        assert s2._reset_error.error_code == 0
 
 
 # ---------------------------------------------------------------------------
@@ -672,3 +689,628 @@ class TestLibP2PQuicProtocol:
         )
         protocol._replay_buffered_events()
         assert protocol._buffered_events == []
+
+    def test_handshake_exception_sets_peer_identity_none(
+        self, protocol: LibP2PQuicProtocol
+    ) -> None:
+        """Handshake completes even if certificate extraction raises.
+
+        The except branch is defensive — if the try block inside the
+        handshake handler raises, the handshake must still complete
+        so the connection can proceed.
+        """
+        # Trigger a standard handshake event.
+        event = HandshakeCompleted(
+            alpn_protocol="libp2p", early_data_accepted=False, session_resumed=False
+        )
+
+        # Force the first assignment to peer_identity to raise.
+        #
+        # This simulates a failure during certificate extraction.
+        # The except branch catches it and sets peer_identity = None.
+        original_setattr = object.__setattr__
+        call_count = 0
+
+        def raising_setattr(self_inner: object, name: str, value: object) -> None:
+            nonlocal call_count
+            if name == "peer_identity" and call_count == 0:
+                call_count += 1
+                raise RuntimeError("cert extraction failed")
+            original_setattr(self_inner, name, value)
+
+        with patch.object(type(protocol), "__setattr__", raising_setattr):
+            protocol.quic_event_received(event)
+
+        # Despite the exception, handshake completed and identity is set.
+        assert protocol.peer_identity is None
+        assert protocol.handshake_complete.is_set()
+
+
+class TestQuicStreamProtocolId:
+    """Tests for the protocol_id property on QuicStream.
+
+    Each QUIC stream carries a negotiated protocol identifier set during
+    multistream-select. The default is empty until negotiation completes.
+    """
+
+    def test_protocol_id_returns_set_value(self, mock_protocol: MagicMock) -> None:
+        """After negotiation, protocol_id reflects the agreed protocol."""
+        stream = QuicStream(
+            _protocol=mock_protocol,
+            _stream_id=0,
+            _protocol_id=ProtocolId("/test/1.0"),
+        )
+        assert stream.protocol_id == ProtocolId("/test/1.0")
+
+    def test_protocol_id_default_empty(self, quic_stream: QuicStream) -> None:
+        """Before negotiation, protocol_id is an empty string."""
+        assert quic_stream.protocol_id == ProtocolId("")
+
+
+class TestQuicStreamWriteFinDetection:
+    """Tests for write detecting aioquic's internal FIN state.
+
+    aioquic tracks per-stream state internally. If FIN was already sent
+    (e.g., due to a race between close and write), the write method must
+    detect this and fail early with a clear error rather than letting
+    aioquic raise an opaque exception.
+    """
+
+    async def test_write_detects_aioquic_fin_sent(
+        self, quic_stream: QuicStream, mock_protocol: MagicMock
+    ) -> None:
+        """Write raises when aioquic has already sent FIN on this stream.
+
+        This catches the race where close() sends FIN but write() is
+        called before our _write_closed flag is set.
+        """
+
+        # Simulate aioquic's internal stream with FIN already sent.
+        mock_internal_stream = MagicMock()
+        mock_internal_stream.send_fin = True
+        mock_protocol._quic._streams = {0: mock_internal_stream}
+
+        with pytest.raises(QuicTransportError, match=r"aioquic FIN already sent"):
+            await quic_stream.write(b"data")
+
+        # Write side is permanently closed after detecting FIN.
+        assert quic_stream._write_closed is True
+
+    async def test_write_proceeds_when_no_fin(
+        self, quic_stream: QuicStream, mock_protocol: MagicMock
+    ) -> None:
+        """Write succeeds normally when the internal stream has not sent FIN."""
+
+        # Simulate aioquic's internal stream in normal state.
+        mock_internal_stream = MagicMock()
+        mock_internal_stream.send_fin = False
+        mock_protocol._quic._streams = {0: mock_internal_stream}
+
+        await quic_stream.write(b"data")
+        mock_protocol._quic.send_stream_data.assert_called_once_with(0, b"data")
+
+    async def test_write_proceeds_when_stream_not_in_map(
+        self, quic_stream: QuicStream, mock_protocol: MagicMock
+    ) -> None:
+        """Write succeeds when aioquic has no entry for this stream ID.
+
+        This happens for newly created streams before any data is sent.
+        """
+        mock_protocol._quic._streams = {}
+
+        await quic_stream.write(b"data")
+        mock_protocol._quic.send_stream_data.assert_called_once_with(0, b"data")
+
+
+class TestQuicStreamWriteException:
+    """Tests for write wrapping exceptions from aioquic.
+
+    When aioquic raises during a write, the error is wrapped in
+    QuicTransportError. If the error message indicates a terminal
+    condition (FIN sent or stream closed), the write side is also
+    marked closed to prevent further attempts.
+    """
+
+    async def test_write_wraps_fin_exception_and_marks_closed(
+        self, quic_stream: QuicStream, mock_protocol: MagicMock
+    ) -> None:
+        """An exception mentioning 'FIN' permanently closes the write side.
+
+        This heuristic detects terminal errors from aioquic's internals.
+        """
+
+        # Simulate aioquic raising a FIN-related error.
+        mock_protocol._quic.send_stream_data.side_effect = RuntimeError("FIN already sent")
+
+        with pytest.raises(QuicTransportError, match=r"Write failed on stream 0"):
+            await quic_stream.write(b"data")
+
+        # Write side is permanently closed.
+        assert quic_stream._write_closed is True
+
+    async def test_write_wraps_closed_exception_and_marks_closed(
+        self, quic_stream: QuicStream, mock_protocol: MagicMock
+    ) -> None:
+        """An exception mentioning 'closed' permanently closes the write side."""
+
+        # Simulate aioquic raising a stream-closed error.
+        mock_protocol._quic.send_stream_data.side_effect = RuntimeError("stream is closed")
+
+        with pytest.raises(QuicTransportError, match=r"Write failed on stream 0"):
+            await quic_stream.write(b"data")
+
+        assert quic_stream._write_closed is True
+
+    async def test_write_wraps_unrelated_exception_without_marking_closed(
+        self, quic_stream: QuicStream, mock_protocol: MagicMock
+    ) -> None:
+        """Transient errors keep the write side open for retry.
+
+        Only terminal conditions (FIN, closed) should permanently close.
+        A buffer overflow or similar transient error should not.
+        """
+
+        # Simulate a transient error unrelated to stream state.
+        mock_protocol._quic.send_stream_data.side_effect = RuntimeError("buffer overflow")
+
+        with pytest.raises(QuicTransportError, match=r"Write failed on stream 0"):
+            await quic_stream.write(b"data")
+
+        # Write side stays open — the error was transient.
+        assert quic_stream._write_closed is False
+
+
+class TestQuicConnectionProperties:
+    """Tests for QuicConnection read-only property accessors.
+
+    These properties expose the peer identity and address that were
+    established during connection setup.
+    """
+
+    def test_peer_id_returns_set_value(
+        self, quic_connection: QuicConnection, peer_a: PeerId
+    ) -> None:
+        """The connection exposes the peer ID set during construction."""
+        assert quic_connection.peer_id == peer_a
+
+    def test_remote_addr_returns_set_value(self, quic_connection: QuicConnection) -> None:
+        """The connection exposes the remote multiaddr set during construction."""
+        assert quic_connection.remote_addr == "/ip4/127.0.0.1/udp/9000/quic-v1"
+
+
+class TestQuicConnectionOpenStreamHappyPath:
+    """Tests for opening a stream with successful protocol negotiation.
+
+    Opening a stream involves three steps:
+
+    1. Allocate a QUIC stream ID from aioquic
+    2. Run multistream-select to negotiate the application protocol
+    3. Store the negotiated protocol ID on the stream
+    """
+
+    @patch(
+        "lean_spec.subspecs.networking.transport.quic.connection.QuicStreamAdapter",
+    )
+    async def test_open_stream_creates_and_negotiates(
+        self,
+        mock_adapter_cls: MagicMock,
+        quic_connection: QuicConnection,
+        mock_protocol: MagicMock,
+    ) -> None:
+        """Full stream opening flow: allocate ID, negotiate, return stream.
+
+        The adapter wraps the raw QUIC stream for multistream-select.
+        After negotiation, the protocol ID is stored on the stream.
+        """
+
+        # aioquic assigns stream ID 8 for the new stream.
+        mock_protocol._quic.get_next_available_stream_id.return_value = 8
+
+        # Simulate successful protocol negotiation via the adapter.
+        mock_adapter = MagicMock()
+        mock_adapter.negotiate_lazy_client = AsyncMock(return_value=ProtocolId("/test/1.0"))
+        mock_adapter_cls.return_value = mock_adapter
+
+        stream = await quic_connection.open_stream(ProtocolId("/test/1.0"))
+
+        # Verify the stream was created with the correct ID and protocol.
+        assert stream.stream_id == 8
+        assert stream.protocol_id == ProtocolId("/test/1.0")
+        assert 8 in quic_connection._streams
+
+        # Verify negotiation was attempted and data was flushed.
+        mock_adapter.negotiate_lazy_client.assert_awaited_once_with(ProtocolId("/test/1.0"))
+        mock_protocol.transmit.assert_called()
+
+
+class TestLibP2PQuicProtocolInit:
+    """Tests for LibP2PQuicProtocol construction.
+
+    The parent class (aioquic's QuicConnectionProtocol) requires real
+    QUIC internals. Patching the parent constructor lets us verify
+    our custom attributes are initialized correctly in isolation.
+    """
+
+    def test_init_with_mocked_quic_config(self) -> None:
+        """All custom attributes start in their expected initial state.
+
+        Connection and peer identity are None until handshake completes.
+        The handshake event is unset. No events are buffered yet.
+        """
+
+        # Bypass the parent constructor that needs real aioquic internals.
+        with patch.object(LibP2PQuicProtocol.__bases__[0], "__init__", return_value=None):
+            protocol = LibP2PQuicProtocol()
+
+        assert protocol.connection is None
+        assert protocol.peer_identity is None
+        assert not protocol.handshake_complete.is_set()
+        assert protocol._buffered_events == []
+
+
+class TestQuicConnectionManagerCreate:
+    """Tests for QuicConnectionManager.create factory method.
+
+    Creation generates a libp2p-TLS certificate, writes it to temp files
+    (aioquic requires file paths), and configures QUIC with the libp2p
+    ALPN protocol and CERT_NONE (peer verification uses the libp2p
+    certificate extension, not a CA chain).
+    """
+
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.generate_libp2p_certificate")
+    async def test_create_generates_cert_and_configures_quic(
+        self, mock_gen_cert: MagicMock
+    ) -> None:
+        """Full creation flow: generate cert, write to disk, configure QUIC.
+
+        The certificate is written to temp files because aioquic only
+        accepts file paths for TLS configuration.
+        """
+
+        # Simulate certificate generation returning PEM + DER bytes.
+        mock_gen_cert.return_value = (b"PRIVATE-KEY", b"CERTIFICATE", b"DER-CERT")
+
+        # Simulate an identity keypair that produces a known peer ID.
+        mock_identity = MagicMock()
+        mock_peer_id = PeerId.from_base58("peerA")
+        mock_identity.to_peer_id.return_value = mock_peer_id
+
+        # Intercept QUIC configuration to avoid real TLS operations.
+        with patch(
+            "lean_spec.subspecs.networking.transport.quic.connection.QuicConfiguration"
+        ) as mock_config_cls:
+            mock_config = MagicMock()
+            mock_config_cls.return_value = mock_config
+
+            manager = await QuicConnectionManager.create(mock_identity)
+
+        # Verify the manager was configured correctly.
+        assert manager.peer_id == mock_peer_id
+        mock_gen_cert.assert_called_once_with(mock_identity)
+        mock_config_cls.assert_called_once_with(
+            alpn_protocols=[LIBP2P_ALPN_PROTOCOL],
+            is_client=True,
+            verify_mode=ssl.CERT_NONE,
+        )
+        mock_config.load_cert_chain.assert_called_once()
+
+        # Verify temp files were written with the certificate data.
+        assert manager._temp_dir is not None
+        assert (manager._temp_dir / "cert.pem").read_bytes() == b"CERTIFICATE"
+        assert (manager._temp_dir / "key.pem").read_bytes() == b"PRIVATE-KEY"
+
+
+class TestQuicConnectionManagerConnect:
+    """Tests for outbound QUIC connection establishment.
+
+    Connecting parses the multiaddr, creates a QUIC session via aioquic,
+    waits for the TLS handshake, and wraps the result in a QuicConnection.
+    If the multiaddr includes a p2p component, the expected peer ID is used
+    directly. Otherwise a temporary peer ID is generated (full certificate
+    verification is not yet implemented).
+    """
+
+    @pytest.fixture
+    def manager(self) -> QuicConnectionManager:
+        """A manager with mocked internals for outbound connection tests."""
+        mock_identity = MagicMock()
+        mock_peer_id = PeerId.from_base58("peerA")
+        mock_config = MagicMock(spec=["load_cert_chain"])
+        return QuicConnectionManager(
+            _identity_key=mock_identity,
+            _peer_id=mock_peer_id,
+            _config=mock_config,
+            _temp_dir=Path("/tmp/test"),
+        )
+
+    async def test_connect_non_quic_raises(self, manager: QuicConnectionManager) -> None:
+        """Connecting to a non-QUIC multiaddr is rejected immediately."""
+        with pytest.raises(QuicTransportError, match=r"Not a QUIC multiaddr"):
+            await manager.connect("/ip4/127.0.0.1/udp/9000")
+
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.quic_connect")
+    async def test_connect_happy_path_with_peer_id(
+        self, mock_quic_connect: MagicMock, manager: QuicConnectionManager
+    ) -> None:
+        """When the multiaddr includes a p2p component, that peer ID is used.
+
+        This is the normal case — the caller knows who they're connecting to.
+        """
+
+        # Simulate a protocol whose TLS handshake already completed.
+        mock_protocol = MagicMock(spec=LibP2PQuicProtocol)
+        mock_protocol.handshake_complete = asyncio.Event()
+        mock_protocol.handshake_complete.set()
+        mock_protocol.connection = None
+        mock_protocol._buffered_events = []
+        mock_protocol._replay_buffered_events = MagicMock()
+
+        # Wire quic_connect to return our pre-configured protocol.
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_protocol)
+        mock_quic_connect.return_value = mock_cm
+
+        # Connect to a multiaddr that includes a peer ID.
+        multiaddr = "/ip4/127.0.0.1/udp/9000/quic-v1/p2p/peerB"
+        conn = await manager.connect(multiaddr)
+
+        # The peer ID from the multiaddr is used, not a generated one.
+        assert conn.peer_id == PeerId.from_base58("peerB")
+        assert conn.remote_addr == multiaddr
+
+        # Buffered events from the handshake window are replayed.
+        mock_protocol._replay_buffered_events.assert_called_once()
+
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.IdentityKeypair")
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.quic_connect")
+    async def test_connect_happy_path_without_peer_id(
+        self,
+        mock_quic_connect: MagicMock,
+        mock_identity_cls: MagicMock,
+        manager: QuicConnectionManager,
+    ) -> None:
+        """Without a p2p component, a temporary peer ID is generated.
+
+        Full peer certificate verification is not yet implemented.
+        This fallback allows connections to proceed during development.
+        """
+
+        # Simulate a protocol whose TLS handshake already completed.
+        mock_protocol = MagicMock(spec=LibP2PQuicProtocol)
+        mock_protocol.handshake_complete = asyncio.Event()
+        mock_protocol.handshake_complete.set()
+        mock_protocol.connection = None
+        mock_protocol._buffered_events = []
+        mock_protocol._replay_buffered_events = MagicMock()
+
+        # Wire quic_connect to return our pre-configured protocol.
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_protocol)
+        mock_quic_connect.return_value = mock_cm
+
+        # Simulate generation of a temporary identity keypair.
+        temp_peer = PeerId.from_base58("tempPeer")
+        mock_temp_key = MagicMock()
+        mock_temp_key.to_peer_id.return_value = temp_peer
+        mock_identity_cls.generate.return_value = mock_temp_key
+
+        # Connect without a peer ID in the multiaddr.
+        conn = await manager.connect("/ip4/127.0.0.1/udp/9000/quic-v1")
+
+        # A temporary peer ID was generated and used.
+        assert conn.peer_id == temp_peer
+
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.quic_connect")
+    async def test_connect_wraps_exception(
+        self, mock_quic_connect: MagicMock, manager: QuicConnectionManager
+    ) -> None:
+        """Connection failures are wrapped in QuicTransportError.
+
+        The original exception is preserved as the cause.
+        """
+
+        # Simulate a network-level failure during connection.
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(side_effect=OSError("connection refused"))
+        mock_quic_connect.return_value = mock_cm
+
+        with pytest.raises(QuicTransportError, match=r"Failed to connect"):
+            await manager.connect("/ip4/127.0.0.1/udp/9000/quic-v1")
+
+
+class TestQuicConnectionManagerListen:
+    """Tests for inbound QUIC connection acceptance.
+
+    The listener creates a server-side QUIC configuration, starts
+    quic_serve, and installs a protocol factory. Each new connection
+    triggers a handshake callback that creates a QuicConnection wrapper.
+    """
+
+    @pytest.fixture
+    def manager_with_temp_dir(self, tmp_path: Path) -> QuicConnectionManager:
+        """A manager with a real temp dir containing cert files.
+
+        Uses tmp_path so cert files exist on disk for load_cert_chain.
+        """
+        cert_path = tmp_path / "cert.pem"
+        key_path = tmp_path / "key.pem"
+        cert_path.write_bytes(b"CERTIFICATE")
+        key_path.write_bytes(b"PRIVATE-KEY")
+
+        mock_identity = MagicMock()
+        mock_peer_id = PeerId.from_base58("peerA")
+        mock_config = MagicMock()
+        return QuicConnectionManager(
+            _identity_key=mock_identity,
+            _peer_id=mock_peer_id,
+            _config=mock_config,
+            _temp_dir=tmp_path,
+        )
+
+    async def test_listen_non_quic_raises(
+        self, manager_with_temp_dir: QuicConnectionManager
+    ) -> None:
+        """Listening on a non-QUIC multiaddr is rejected immediately."""
+        callback = AsyncMock()
+        with pytest.raises(QuicTransportError, match=r"Not a QUIC multiaddr"):
+            await manager_with_temp_dir.listen("/ip4/0.0.0.0/udp/9000", callback)
+
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.QuicConfiguration")
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.quic_serve")
+    async def test_listen_configures_server_and_serves(
+        self,
+        mock_quic_serve: MagicMock,
+        mock_config_cls: MagicMock,
+        manager_with_temp_dir: QuicConnectionManager,
+    ) -> None:
+        """Server uses is_client=False, CERT_NONE, and the libp2p ALPN.
+
+        CERT_NONE is correct because peer verification happens via
+        the libp2p certificate extension, not a CA chain.
+        """
+
+        # Intercept server config creation.
+        mock_server_config = MagicMock()
+        mock_config_cls.return_value = mock_server_config
+        mock_quic_serve.return_value = MagicMock()
+
+        callback = AsyncMock()
+
+        # Force the shutdown event to raise immediately so listen() exits.
+        mock_event = MagicMock()
+        mock_event.wait = AsyncMock(side_effect=asyncio.CancelledError)
+
+        with (
+            patch(
+                "lean_spec.subspecs.networking.transport.quic.connection.asyncio.Event"
+            ) as mock_event_cls,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            mock_event_cls.return_value = mock_event
+            await manager_with_temp_dir.listen("/ip4/0.0.0.0/udp/9000/quic-v1", callback)
+
+        # Verify the server was configured as a non-client with libp2p ALPN.
+        mock_config_cls.assert_called_once_with(
+            alpn_protocols=[LIBP2P_ALPN_PROTOCOL],
+            is_client=False,
+            verify_mode=ssl.CERT_NONE,
+        )
+        mock_server_config.load_cert_chain.assert_called_once()
+        mock_quic_serve.assert_awaited_once()
+
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.QuicConfiguration")
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.quic_serve")
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.IdentityKeypair")
+    async def test_listen_handle_handshake_creates_connection(
+        self,
+        mock_identity_cls: MagicMock,
+        mock_quic_serve: MagicMock,
+        mock_config_cls: MagicMock,
+        manager_with_temp_dir: QuicConnectionManager,
+    ) -> None:
+        """The handshake callback creates and registers a QuicConnection.
+
+        This test captures the protocol factory that listen() passes to
+        quic_serve, then invokes the handshake callback to verify that
+        a connection is correctly wired up and registered.
+        """
+        mock_config_cls.return_value = MagicMock()
+
+        # Simulate generation of a remote peer identity.
+        temp_peer = PeerId.from_base58("remotePeer")
+        mock_temp_key = MagicMock()
+        mock_temp_key.to_peer_id.return_value = temp_peer
+        mock_identity_cls.generate.return_value = mock_temp_key
+
+        # Capture the protocol factory that listen() passes to quic_serve.
+        captured_create_protocol = None
+
+        async def capture_serve(*args: object, **kwargs: object) -> MagicMock:
+            nonlocal captured_create_protocol
+            captured_create_protocol = kwargs.get("create_protocol")
+            return MagicMock()
+
+        mock_quic_serve.side_effect = capture_serve
+
+        callback = AsyncMock()
+
+        # Force the shutdown event to raise immediately so listen() exits.
+        mock_event = MagicMock()
+        mock_event.wait = AsyncMock(side_effect=asyncio.CancelledError)
+
+        with (
+            patch(
+                "lean_spec.subspecs.networking.transport.quic.connection.asyncio.Event"
+            ) as mock_event_cls,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            mock_event_cls.return_value = mock_event
+            await manager_with_temp_dir.listen("/ip4/0.0.0.0/udp/9000/quic-v1", callback)
+
+        # The factory must have been captured from quic_serve kwargs.
+        assert captured_create_protocol is not None
+
+        # Create a protocol instance using the captured factory.
+        #
+        # The parent constructor is patched to avoid aioquic dependencies.
+        with patch.object(LibP2PQuicProtocol.__bases__[0], "__init__", return_value=None):
+            proto_instance = captured_create_protocol()
+
+        # The factory must have attached a handshake callback.
+        assert proto_instance._on_handshake is not None
+
+        # Simulate the handshake callback being invoked by aioquic.
+        proto_instance._quic = MagicMock()
+        proto_instance.transmit = MagicMock()
+        proto_instance.connection = None
+        proto_instance._buffered_events = []
+
+        proto_instance._on_handshake(proto_instance)
+
+        # The callback creates a connection and registers it in the manager.
+        assert proto_instance.connection is not None
+        assert proto_instance.connection.peer_id == temp_peer
+        assert temp_peer in manager_with_temp_dir._connections
+
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.QuicConfiguration")
+    @patch("lean_spec.subspecs.networking.transport.quic.connection.quic_serve")
+    async def test_listen_without_temp_dir_skips_cert_loading(
+        self,
+        mock_quic_serve: MagicMock,
+        mock_config_cls: MagicMock,
+    ) -> None:
+        """Without a temp directory, cert loading is skipped gracefully.
+
+        This guards against a crash if the manager was not constructed
+        via the normal create() factory.
+        """
+
+        # Intercept server config creation.
+        mock_server_config = MagicMock()
+        mock_config_cls.return_value = mock_server_config
+        mock_quic_serve.return_value = MagicMock()
+
+        # Create a manager with no temp directory (no cert files on disk).
+        manager = QuicConnectionManager(
+            _identity_key=MagicMock(),
+            _peer_id=PeerId.from_base58("peerA"),
+            _config=MagicMock(),
+            _temp_dir=None,
+        )
+        callback = AsyncMock()
+
+        # Force the shutdown event to raise immediately so listen() exits.
+        mock_event = MagicMock()
+        mock_event.wait = AsyncMock(side_effect=asyncio.CancelledError)
+
+        with (
+            patch(
+                "lean_spec.subspecs.networking.transport.quic.connection.asyncio.Event"
+            ) as mock_event_cls,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            mock_event_cls.return_value = mock_event
+            await manager.listen("/ip4/0.0.0.0/udp/9000/quic-v1", callback)
+
+        # Cert loading was skipped because no temp dir exists.
+        mock_server_config.load_cert_chain.assert_not_called()
