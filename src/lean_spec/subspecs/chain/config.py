@@ -2,7 +2,7 @@
 
 from typing import Final
 
-from lean_spec.types import Uint64
+from lean_spec.types import Uint8, Uint64
 
 INTERVALS_PER_SLOT: Final = Uint64(5)
 """Number of intervals per slot for forkchoice processing."""
@@ -32,3 +32,6 @@ VALIDATOR_REGISTRY_LIMIT: Final = Uint64(2**12)
 
 ATTESTATION_COMMITTEE_COUNT: Final = Uint64(1)
 """The number of attestation committees per slot."""
+
+MAX_ATTESTATIONS_DATA: Final = Uint8(16)
+"""Maximum number of distinct attestation data entries per block."""

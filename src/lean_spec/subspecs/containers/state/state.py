@@ -12,9 +12,11 @@ from lean_spec.types import (
     Boolean,
     Bytes32,
     Container,
+    Uint8,
     Uint64,
 )
 
+from ...chain.config import MAX_ATTESTATIONS_DATA
 from ..attestation import AggregatedAttestation, AttestationData
 from ..block import Block, BlockBody, BlockHeader
 from ..block.types import AggregatedAttestations
@@ -676,6 +678,12 @@ class State(Container):
                 for att_data, proofs in sorted(
                     aggregated_payloads.items(), key=lambda item: item[0].target.slot
                 ):
+                    if (
+                        Uint8(len(processed_att_data)) >= MAX_ATTESTATIONS_DATA
+                        and att_data not in processed_att_data
+                    ):
+                        break
+
                     if att_data.head.root not in known_block_roots:
                         continue
 

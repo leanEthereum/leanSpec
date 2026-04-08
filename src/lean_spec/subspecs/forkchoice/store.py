@@ -14,6 +14,7 @@ from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
+    MAX_ATTESTATIONS_DATA,
 )
 from lean_spec.subspecs.containers import (
     AggregationBits,
@@ -41,6 +42,7 @@ from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, Generaliz
 from lean_spec.types import (
     ZERO_HASH,
     Bytes32,
+    Uint8,
     Uint64,
 )
 from lean_spec.types.base import StrictBaseModel
@@ -549,6 +551,10 @@ class Store(StrictBaseModel):
         assert len(att_data_set) == len(aggregated_attestations), (
             "Block contains duplicate AttestationData entries; "
             "each AttestationData must appear at most once"
+        )
+        assert Uint8(len(att_data_set)) <= MAX_ATTESTATIONS_DATA, (
+            f"Block contains {len(att_data_set)} distinct AttestationData entries; "
+            f"maximum is {MAX_ATTESTATIONS_DATA}"
         )
 
         # Copy the aggregated proof map for updates
