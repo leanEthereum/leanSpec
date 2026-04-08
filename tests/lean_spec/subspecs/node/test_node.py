@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from unittest.mock import AsyncMock, MagicMock, patch
+import signal
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -521,6 +522,22 @@ class TestSignalHandlers:
             await node.run(install_signal_handlers=True)
 
         mock_install.assert_called_once_with(node)
+
+    def test_install_signal_handlers_success(self, node_config: NodeConfig) -> None:
+        """Signal handlers are added to the event loop successfully."""
+        node = Node.from_genesis(node_config)
+        mock_loop = MagicMock()
+
+        with patch("asyncio.get_running_loop", return_value=mock_loop):
+            node._install_signal_handlers()
+
+        # Both SIGINT and SIGTERM should be registered
+        assert mock_loop.add_signal_handler.call_count == 2
+        calls = [
+            (signal.SIGINT, node._shutdown.set),
+            (signal.SIGTERM, node._shutdown.set),
+        ]
+        mock_loop.add_signal_handler.assert_has_calls([call(*c) for c in calls], any_order=True)
 
 
 class TestPeriodicLogging:
