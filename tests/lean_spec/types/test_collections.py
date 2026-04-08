@@ -1,6 +1,6 @@
 """Tests for the SSZVector and List types."""
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -8,12 +8,19 @@ from pydantic import BaseModel, ValidationError
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.types import Bytes32, Uint8, Uint16, Uint32
 from lean_spec.types.boolean import Boolean
-from lean_spec.types.collections import SSZList, SSZVector
+from lean_spec.types.collections import (
+    SSZList,
+    SSZVector,
+    _extract_element_type_from_generic,
+    _serialize_ssz_elements_to_json,
+    _validate_offsets,
+)
 from lean_spec.types.container import Container
-from lean_spec.types.exceptions import SSZTypeError, SSZValueError
+from lean_spec.types.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 
 # Type alias for errors that can be SSZValueError or wrapped in ValidationError
 ValueOrValidationError = (SSZValueError, ValidationError)
+TypeOrValidationError = (SSZTypeError, ValidationError)
 
 
 # Define some List types that are needed for Container definitions
@@ -186,6 +193,46 @@ class Uint8Vector2Model(BaseModel):
     value: Uint8Vector2
 
 
+class TestCollectionHelpers:
+    """Tests for SSZ collection helper functions."""
+
+    def test_extract_element_type_from_generic_returns_element_type(self) -> None:
+        """Tests extracting the element type from Pydantic generic metadata."""
+        assert _extract_element_type_from_generic(Uint16Vector2, SSZVector) is Uint16
+
+    def test_extract_element_type_from_generic_returns_none_without_metadata(self) -> None:
+        """Tests that classes without matching generic metadata return None."""
+
+        class PlainClass:
+            pass
+
+        assert _extract_element_type_from_generic(PlainClass, SSZVector) is None
+
+    def test_serialize_ssz_elements_to_json_handles_supported_types(self) -> None:
+        """Tests JSON serialization for bytes, field elements, and plain values."""
+        marker = object()
+        result = _serialize_ssz_elements_to_json([Bytes32.zero(), Fp(7), marker])
+
+        assert result[0] == "0x" + ("00" * 32)
+        assert result[1] == 7
+        assert result[2] is marker
+
+    def test_validate_offsets_accepts_empty_and_monotonic_offsets(self) -> None:
+        """Tests offset validation success cases."""
+        _validate_offsets([], scope=0, type_name="TestType")
+        _validate_offsets([4, 8, 12], scope=12, type_name="TestType")
+
+    def test_validate_offsets_rejects_non_monotonic_offsets(self) -> None:
+        """Tests offset validation rejects decreasing offsets."""
+        with pytest.raises(SSZSerializationError, match="offsets not monotonically increasing"):
+            _validate_offsets([4, 3], scope=4, type_name="TestType")
+
+    def test_validate_offsets_rejects_final_offset_beyond_scope(self) -> None:
+        """Tests offset validation rejects a final offset beyond scope."""
+        with pytest.raises(SSZSerializationError, match="final offset 8 exceeds scope 7"):
+            _validate_offsets([4, 8], scope=7, type_name="TestType")
+
+
 class TestSSZVector:
     """Tests for the fixed-length, immutable SSZVector type."""
 
@@ -198,6 +245,23 @@ class TestSSZVector:
         assert vec_type_a.LENGTH == 32
         assert vec_type_a.ELEMENT_TYPE is Uint8
         assert "Uint8Vector32" in repr(vec_type_a)
+
+    def test_init_subclass_infers_element_type_from_generic(self) -> None:
+        """Tests generic subclasses infer their element type automatically."""
+
+        class LocalVector(SSZVector[Uint16]):
+            LENGTH = 1
+
+        assert LocalVector.ELEMENT_TYPE is Uint16
+
+    def test_init_subclass_preserves_explicit_element_type(self) -> None:
+        """Tests an explicit ELEMENT_TYPE is not overwritten by generic inference."""
+
+        class LocalVector(SSZVector[Uint8]):
+            ELEMENT_TYPE = Uint16
+            LENGTH = 1
+
+        assert LocalVector.ELEMENT_TYPE is Uint16
 
     def test_instantiate_raw_type_raises_error(self) -> None:
         """Tests that the raw, non-specialized SSZVector cannot be instantiated."""
@@ -219,6 +283,21 @@ class TestSSZVector:
         with pytest.raises(ValueOrValidationError):
             vec_type(data=[Uint8(1), Uint8(2), Uint8(3), Uint8(4), Uint8(5)])  # Too many
 
+    def test_instantiation_from_iterator_coerces_values(self) -> None:
+        """Tests iterator input is consumed and elements are coerced to ELEMENT_TYPE."""
+        instance = Uint8Vector4(data=cast(Any, (value for value in range(1, 5))))
+
+        assert tuple(instance) == (Uint8(1), Uint8(2), Uint8(3), Uint8(4))
+
+    def test_instantiation_without_length_raises_error(self) -> None:
+        """Tests misconfigured vector subclasses fail validation."""
+
+        class MissingLengthVector(SSZVector[Uint8]):
+            pass
+
+        with pytest.raises(TypeOrValidationError, match="must define ELEMENT_TYPE and LENGTH"):
+            MissingLengthVector(data=cast(Any, [1]))
+
     def test_pydantic_validation(self) -> None:
         """Tests that Pydantic validation works for SSZVector types."""
         # Test valid data - Pydantic coerces dict to Uint8Vector2
@@ -238,6 +317,28 @@ class TestSSZVector:
         vec = Uint8Vector2(data=[Uint8(1), Uint8(2)])
         with pytest.raises(TypeError):
             vec[0] = 3  # type: ignore[index]  # Should fail because SSZModel is immutable
+
+    def test_variable_size_vector_has_no_fixed_byte_length(self) -> None:
+        """Tests variable-size vectors do not expose a fixed byte length."""
+        with pytest.raises(SSZTypeError, match="variable-size vector has no fixed byte length"):
+            VariableContainerVector2.get_byte_length()
+
+    def test_elements_returns_copy_and_slice_returns_sequence(self) -> None:
+        """Tests vector convenience accessors return safe views of the data."""
+        vec = Uint8Vector4(data=[Uint8(1), Uint8(2), Uint8(3), Uint8(4)])
+
+        elements = vec.elements
+        elements.append(Uint8(9))
+
+        assert elements == [Uint8(1), Uint8(2), Uint8(3), Uint8(4), Uint8(9)]
+        assert list(vec) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4)]
+        assert vec[1:3] == (Uint8(2), Uint8(3))
+
+    def test_model_dump_json_serializes_vector_elements(self) -> None:
+        """Tests vector field serializers are used in JSON mode."""
+        instance = FpVector8(data=[Fp(1), Fp(2), Fp(3), Fp(4), Fp(5), Fp(6), Fp(7), Fp(8)])
+
+        assert instance.model_dump(mode="json")["data"] == [1, 2, 3, 4, 5, 6, 7, 8]
 
 
 class Uint8List4Model(BaseModel):
@@ -259,16 +360,49 @@ class TestList:
         assert list_type_a.ELEMENT_TYPE is Uint8
         assert "Uint8List32" in repr(list_type_a)
 
+    def test_init_subclass_infers_element_type_from_generic(self) -> None:
+        """Tests generic list subclasses infer their element type automatically."""
+
+        class LocalList(SSZList[Uint16]):
+            LIMIT = 2
+
+        assert LocalList.ELEMENT_TYPE is Uint16
+
     def test_instantiate_raw_type_raises_error(self) -> None:
         """Tests that the raw, non-specialized SSZList cannot be instantiated."""
         with pytest.raises(SSZTypeError, match="must define ELEMENT_TYPE and LIMIT"):
             SSZList(data=[])
+
+    def test_instantiation_without_limit_raises_error(self) -> None:
+        """Tests misconfigured list subclasses fail validation."""
+
+        class MissingLimitList(SSZList[Uint8]):
+            pass
+
+        with pytest.raises(TypeOrValidationError, match="must define ELEMENT_TYPE and LIMIT"):
+            MissingLimitList(data=cast(Any, [1]))
 
     def test_instantiation_over_limit_raises_error(self) -> None:
         """Tests that providing more items than the limit during instantiation fails."""
         list_type = Uint8List4
         with pytest.raises(ValueOrValidationError):
             list_type(data=[Uint8(1), Uint8(2), Uint8(3), Uint8(4), Uint8(5)])
+
+    def test_instantiation_from_iterator_coerces_values(self) -> None:
+        """Tests iterator input is materialized and elements are coerced."""
+        instance = Uint8List4(data=cast(Any, (value for value in range(3))))
+
+        assert list(instance) == [Uint8(0), Uint8(1), Uint8(2)]
+
+    def test_non_iterable_input_raises_error(self) -> None:
+        """Tests non-iterable inputs are rejected."""
+        with pytest.raises(TypeOrValidationError, match="Expected iterable"):
+            Uint8List4(data=5)  # type: ignore[arg-type]
+
+    def test_invalid_element_type_raises_descriptive_error(self) -> None:
+        """Tests failed element coercion produces a descriptive error."""
+        with pytest.raises(TypeOrValidationError, match="Expected Uint8, got"):
+            Uint8List4(data=[1, "bad"])  # type: ignore[list-item]
 
     def test_pydantic_validation(self) -> None:
         """Tests that Pydantic validation works for List types."""
@@ -309,11 +443,50 @@ class TestList:
         assert list(result) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4)]
         assert isinstance(result, Uint8List10)
 
+    def test_add_with_tuple(self) -> None:
+        """Tests concatenating an SSZList with a tuple."""
+        list1 = Uint8List10(data=[Uint8(1), Uint8(2)])
+        result = list1 + (3, 4)
+
+        assert list(result) == [Uint8(1), Uint8(2), Uint8(3), Uint8(4)]
+        assert isinstance(result, Uint8List10)
+
+    def test_add_with_unsupported_type_returns_not_implemented(self) -> None:
+        """Tests unsupported operands return NotImplemented from __add__."""
+        list1 = Uint8List10(data=[Uint8(1), Uint8(2)])
+
+        assert list1.__add__(object()) is NotImplemented
+
     def test_add_exceeding_limit_raises_error(self) -> None:
         """Tests that concatenating beyond the limit raises an error."""
         list1 = Uint8List4(data=[Uint8(1), Uint8(2), Uint8(3)])
         with pytest.raises(ValueOrValidationError):
             list1 + [4, 5]
+
+    def test_elements_returns_copy(self) -> None:
+        """Tests the elements property returns a copy of the underlying data."""
+        instance = Uint8List4(data=[Uint8(1), Uint8(2), Uint8(3)])
+
+        elements = instance.elements
+        elements.append(Uint8(9))
+
+        assert elements == [Uint8(1), Uint8(2), Uint8(3), Uint8(9)]
+        assert list(instance) == [Uint8(1), Uint8(2), Uint8(3)]
+
+    def test_list_is_never_fixed_size(self) -> None:
+        """Tests SSZList is always variable-size."""
+        assert Uint8List4.is_fixed_size() is False
+
+    def test_get_byte_length_raises_for_variable_size_list(self) -> None:
+        """Tests lists do not expose a fixed byte length."""
+        with pytest.raises(SSZTypeError, match="variable-size list has no fixed byte length"):
+            Uint8List4.get_byte_length()
+
+    def test_model_dump_json_serializes_list_elements(self) -> None:
+        """Tests list field serializers are used in JSON mode."""
+        instance = Bytes32List32(data=[Bytes32.zero()])
+
+        assert instance.model_dump(mode="json")["data"] == ["0x" + ("00" * 32)]
 
 
 class TestSSZVectorSerialization:
@@ -382,6 +555,11 @@ class TestSSZVectorSerialization:
         assert encoded.hex() == expected_hex
         decoded = VariableContainerVector2.decode_bytes(encoded)
         assert decoded == instance
+
+    def test_variable_size_vector_deserialization_rejects_invalid_first_offset(self) -> None:
+        """Tests variable-size vectors reject an invalid initial offset."""
+        with pytest.raises(SSZSerializationError, match="invalid offset 4, expected 8"):
+            VariableContainerVector2.decode_bytes(b"\x04\x00\x00\x00")
 
 
 class TestSSZListSerialization:
@@ -453,3 +631,31 @@ class TestSSZListSerialization:
         assert encoded.hex() == expected_hex
         decoded = list_type.decode_bytes(encoded)
         assert decoded == instance
+
+    def test_fixed_size_list_deserialization_rejects_invalid_scope(self) -> None:
+        """Tests fixed-size lists reject scopes not divisible by element size."""
+        with pytest.raises(SSZSerializationError, match="scope 1 not divisible by element size 2"):
+            Uint16List4.decode_bytes(b"\x01")
+
+    def test_variable_size_list_deserialization_accepts_empty_scope(self) -> None:
+        """Tests variable-size lists decode an empty payload as an empty list."""
+        decoded = VariableContainerList2.decode_bytes(b"")
+
+        assert decoded == VariableContainerList2(data=[])
+
+    def test_variable_size_list_deserialization_rejects_too_small_scope(self) -> None:
+        """Tests variable-size lists require at least one offset word."""
+        with pytest.raises(SSZSerializationError, match="scope 3 too small"):
+            VariableContainerList2.decode_bytes(b"\x00\x00\x00")
+
+    def test_variable_size_list_deserialization_rejects_invalid_first_offset(self) -> None:
+        """Tests variable-size lists reject misaligned offsets."""
+        with pytest.raises(SSZSerializationError, match="invalid offset 1"):
+            VariableContainerList2.decode_bytes(b"\x01\x00\x00\x00")
+
+    def test_variable_size_list_deserialization_rejects_count_beyond_limit(self) -> None:
+        """Tests variable-size lists reject counts beyond their limit."""
+        bad_payload = b"\x0c\x00\x00\x00" + (b"\x00" * 8)
+
+        with pytest.raises(SSZValueError, match="exceeds limit of 2, got 3"):
+            VariableContainerList2.decode_bytes(bad_payload)

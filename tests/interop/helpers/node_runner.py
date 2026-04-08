@@ -140,7 +140,10 @@ class TestNode:
                 pass
 
         # Stop the event source (cancels gossip tasks).
-        await self.event_source.stop()
+        try:
+            await asyncio.wait_for(self.event_source.stop(), timeout=5.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+            pass
 
         # Cancel the node task (it contains the TaskGroup with services).
         if self._task is not None and not self._task.done():
@@ -514,8 +517,7 @@ class NodeCluster:
 
     async def stop_all(self) -> None:
         """Stop all nodes gracefully."""
-        for node in self.nodes:
-            await node.stop()
+        await asyncio.gather(*(node.stop() for node in self.nodes), return_exceptions=True)
         self.nodes.clear()
         logger.info("All nodes stopped")
 

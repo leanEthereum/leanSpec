@@ -7,7 +7,7 @@ Each function creates minimal valid instances suitable for unit tests.
 
 from __future__ import annotations
 
-from typing import NamedTuple, cast
+from typing import Callable, NamedTuple, cast
 
 from consensus_testing.keys import XmssKeyManager
 
@@ -36,6 +36,7 @@ from lean_spec.subspecs.networking.peer import PeerInfo
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.types import ConnectionState
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.storage import Database
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.subspecs.sync.service import SyncService
@@ -469,11 +470,19 @@ def make_signed_block_from_store(
     return advanced_store, signed_block
 
 
-def create_mock_sync_service(peer_id: PeerId) -> SyncService:
+def create_mock_sync_service(
+    peer_id: PeerId,
+    *,
+    database: Database | None = None,
+    genesis_start: bool = False,
+    process_block: Callable[[Store, SignedBlock], Store] | None = None,
+) -> SyncService:
     """Create a SyncService with mock dependencies for integration testing."""
     mock_store = MockForkchoiceStore(head_slot=0)
     peer_manager = PeerManager()
     peer_manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))
+
+    processor = process_block if process_block is not None else (lambda s, b: s.on_block(b))
 
     return SyncService(
         store=cast(Store, mock_store),
@@ -481,5 +490,7 @@ def create_mock_sync_service(peer_id: PeerId) -> SyncService:
         block_cache=BlockCache(),
         clock=SlotClock(genesis_time=Uint64(0), time_fn=lambda: 1000.0),
         network=MockNetworkRequester(),
-        process_block=lambda s, b: s.on_block(b),
+        database=database,
+        genesis_start=genesis_start,
+        process_block=processor,
     )

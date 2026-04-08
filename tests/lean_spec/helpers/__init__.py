@@ -32,7 +32,13 @@ from .builders import (
     make_validators,
     make_validators_from_key_manager,
 )
-from .mocks import MockEventSource, MockForkchoiceStore, MockNetworkRequester
+from .mocks import (
+    MockEventSource,
+    MockForkchoiceStore,
+    MockNetworkRequester,
+    RecordedCall,
+    RecordingSyncDatabase,
+)
 
 TEST_VALIDATOR_ID = ValidatorIndex(0)
 
@@ -69,6 +75,8 @@ __all__ = [
     "MockEventSource",
     "MockForkchoiceStore",
     "MockNetworkRequester",
+    "RecordedCall",
+    "RecordingSyncDatabase",
     # Constants
     "TEST_VALIDATOR_ID",
 ]

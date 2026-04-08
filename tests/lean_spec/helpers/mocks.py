@@ -6,7 +6,10 @@ Each mock provides minimal implementations for isolated testing.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.attestation import SignedAttestation
@@ -99,6 +102,9 @@ class MockForkchoiceStore:
     Tracks blocks, attestations, and head state without running real
     forkchoice logic. Methods return self so the SyncService can assign
     the result back (matching the real Store's immutable-update pattern).
+
+    Optional ``reject_*`` predicates return True to simulate validation
+    failure (``KeyError``), e.g. unknown attestation target.
     """
 
     def __init__(self, head_slot: int = 0) -> None:
@@ -108,10 +114,15 @@ class MockForkchoiceStore:
         self.head: Bytes32 = genesis_root
         self.head_slot: Slot = Slot(head_slot)
         self._attestations_received: list[SignedAttestation] = []
+        self._aggregated_attestations_received: list[SignedAggregatedAttestation] = []
         self.validator_id = None
         self.latest_justified = _MockCheckpoint()
         self.latest_finalized = _MockCheckpoint()
         self.states: dict[Bytes32, object] = {}
+        self.reject_attestation: Callable[[SignedAttestation], bool] | None = None
+        self.reject_aggregated_attestation: Callable[[SignedAggregatedAttestation], bool] | None = (
+            None
+        )
 
     def on_block(
         self,
@@ -132,6 +143,8 @@ class MockForkchoiceStore:
         is_aggregator: bool = False,
     ) -> MockForkchoiceStore:
         """Track attestation additions. Returns self for assignment chaining."""
+        if self.reject_attestation is not None and self.reject_attestation(signed_attestation):
+            raise KeyError("simulated missing block")
         self._attestations_received.append(signed_attestation)
         return self
 
@@ -140,4 +153,81 @@ class MockForkchoiceStore:
         signed_attestation: SignedAggregatedAttestation,
     ) -> MockForkchoiceStore:
         """Track aggregated attestation additions. Returns self for assignment chaining."""
+        if self.reject_aggregated_attestation is not None and self.reject_aggregated_attestation(
+            signed_attestation
+        ):
+            raise KeyError("simulated missing block")
+        self._aggregated_attestations_received.append(signed_attestation)
         return self
+
+
+@dataclass(frozen=True)
+class RecordedCall:
+    """One invocation recorded by RecordingSyncDatabase."""
+
+    name: str
+    args: tuple[object, ...]
+    kwargs: Mapping[str, object]
+
+
+class RecordingSyncDatabase:
+    """Minimal database double recording calls made by SyncService._persist_block."""
+
+    def __init__(self) -> None:
+        self.calls: list[RecordedCall] = []
+
+    def _record(self, name: str, *args: object, **kwargs: object) -> None:
+        self.calls.append(
+            RecordedCall(
+                name=name,
+                args=args,
+                kwargs=MappingProxyType(dict(kwargs)),
+            )
+        )
+
+    def calls_inside_batch(self) -> list[RecordedCall]:
+        """Calls between the first ``batch_write_enter`` and matching ``batch_write_exit``."""
+        collected: list[RecordedCall] = []
+        in_batch = False
+        for call in self.calls:
+            if call.name == "batch_write_enter":
+                in_batch = True
+                continue
+            if call.name == "batch_write_exit":
+                break
+            if in_batch:
+                collected.append(call)
+        return collected
+
+    @contextmanager
+    def batch_write(self) -> Iterator[None]:
+        self._record("batch_write_enter")
+        try:
+            yield
+        finally:
+            self._record("batch_write_exit")
+
+    def put_block(self, block: object, root: object) -> None:
+        self._record("put_block", block, root)
+
+    def put_state(self, state: object, root: object) -> None:
+        self._record("put_state", state, root)
+
+    def put_block_root_by_state_root(self, state_root: object, block_root: object) -> None:
+        self._record("put_block_root_by_state_root", state_root, block_root)
+
+    def put_block_root_by_slot(self, slot: object, root: object) -> None:
+        self._record("put_block_root_by_slot", slot, root)
+
+    def put_head_root(self, root: object) -> None:
+        self._record("put_head_root", root)
+
+    def put_justified_checkpoint(self, checkpoint: object) -> None:
+        self._record("put_justified_checkpoint", checkpoint)
+
+    def put_finalized_checkpoint(self, checkpoint: object) -> None:
+        self._record("put_finalized_checkpoint", checkpoint)
+
+    def prune_before_slot(self, slot: object, *, keep_roots: frozenset) -> int:
+        self._record("prune_before_slot", slot, keep_roots=keep_roots)
+        return 0

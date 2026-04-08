@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
+from consensus_testing.keys import XmssKeyManager
 from pydantic import ValidationError
 
 from lean_spec.subspecs.containers import ValidatorIndex
+from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.subspecs.validator.registry import (
     ValidatorEntry,
@@ -29,6 +30,12 @@ def registry_state(registry: ValidatorRegistry) -> dict[ValidatorIndex, tuple[ob
         assert entry is not None, f"Registry contains index {idx} but get() returned None"
         result[idx] = (entry.attestation_secret_key, entry.proposal_secret_key)
     return result
+
+
+@pytest.fixture
+def km() -> XmssKeyManager:
+    """Key manager for registry tests."""
+    return XmssKeyManager.shared(max_slot=Slot(10))
 
 
 def _minimal_manifest_dict(
@@ -63,20 +70,19 @@ def _manifest_entry_dict(index: int, suffix: str = "") -> dict[str, object]:
 class TestValidatorEntry:
     """Tests for ValidatorEntry frozen dataclass."""
 
-    def test_construction_stores_all_fields(self) -> None:
+    def test_construction_stores_all_fields(self, km: XmssKeyManager) -> None:
         """All three fields are accessible after construction."""
-        att_key = MagicMock(name="att_key")
-        prop_key = MagicMock(name="prop_key")
+        kp = km[ValidatorIndex(7)]
         entry = ValidatorEntry(
             index=ValidatorIndex(7),
-            attestation_secret_key=att_key,
-            proposal_secret_key=prop_key,
+            attestation_secret_key=kp.attestation_secret,
+            proposal_secret_key=kp.proposal_secret,
         )
 
         assert entry == ValidatorEntry(
             index=ValidatorIndex(7),
-            attestation_secret_key=att_key,
-            proposal_secret_key=prop_key,
+            attestation_secret_key=kp.attestation_secret,
+            proposal_secret_key=kp.proposal_secret,
         )
 
 
@@ -198,6 +204,16 @@ class TestLoadNodeValidatorMapping:
 class TestValidatorRegistry:
     """Tests for ValidatorRegistry dataclass."""
 
+    def _entry(self, km: XmssKeyManager, idx: int) -> ValidatorEntry:
+        """Create a ValidatorEntry with real keys for the given index."""
+        vid = ValidatorIndex(idx)
+        kp = km[vid]
+        return ValidatorEntry(
+            index=vid,
+            attestation_secret_key=kp.attestation_secret,
+            proposal_secret_key=kp.proposal_secret,
+        )
+
     def test_empty_registry_has_no_entries(self) -> None:
         """Newly created registry contains no validators."""
         registry = ValidatorRegistry()
@@ -205,62 +221,47 @@ class TestValidatorRegistry:
         assert registry_state(registry) == {}
         assert registry.primary_index() is None
 
-    def test_add_single_entry_and_retrieve(self) -> None:
+    def test_add_single_entry_and_retrieve(self, km: XmssKeyManager) -> None:
         """A single entry is stored and retrievable by index."""
         registry = ValidatorRegistry()
-        key = MagicMock(name="key_42")
-        entry = ValidatorEntry(
-            index=ValidatorIndex(42),
-            attestation_secret_key=key,
-            proposal_secret_key=key,
-        )
+        entry = self._entry(km, 0)
         registry.add(entry)
 
-        assert registry.get(ValidatorIndex(42)) == entry
+        assert registry.get(ValidatorIndex(0)) == entry
 
-    def test_get_miss_returns_none(self) -> None:
+    def test_get_miss_returns_none(self, km: XmssKeyManager) -> None:
         """get() returns None for an index that was never added."""
         registry = ValidatorRegistry()
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(0),
-                attestation_secret_key=MagicMock(),
-                proposal_secret_key=MagicMock(),
-            )
-        )
+        registry.add(self._entry(km, 0))
 
         assert registry.get(ValidatorIndex(99)) is None
 
-    def test_add_multiple_entries(self) -> None:
+    def test_add_multiple_entries(self, km: XmssKeyManager) -> None:
         """Multiple entries are stored with correct index-to-key mapping."""
         registry = ValidatorRegistry()
-        key_1, key_3, key_4 = MagicMock(), MagicMock(), MagicMock()
-
-        for idx, key in [(3, key_3), (1, key_1), (4, key_4)]:
-            registry.add(
-                ValidatorEntry(
-                    index=ValidatorIndex(idx),
-                    attestation_secret_key=key,
-                    proposal_secret_key=key,
-                )
-            )
+        entries = {idx: self._entry(km, idx) for idx in [3, 1, 4]}
+        for entry in entries.values():
+            registry.add(entry)
 
         assert registry_state(registry) == {
-            ValidatorIndex(1): (key_1, key_1),
-            ValidatorIndex(3): (key_3, key_3),
-            ValidatorIndex(4): (key_4, key_4),
+            ValidatorIndex(1): (
+                entries[1].attestation_secret_key,
+                entries[1].proposal_secret_key,
+            ),
+            ValidatorIndex(3): (
+                entries[3].attestation_secret_key,
+                entries[3].proposal_secret_key,
+            ),
+            ValidatorIndex(4): (
+                entries[4].attestation_secret_key,
+                entries[4].proposal_secret_key,
+            ),
         }
 
-    def test_contains_known_index(self) -> None:
+    def test_contains_known_index(self, km: XmssKeyManager) -> None:
         """__contains__ returns True for a registered validator index."""
         registry = ValidatorRegistry()
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(5),
-                attestation_secret_key=MagicMock(),
-                proposal_secret_key=MagicMock(),
-            )
-        )
+        registry.add(self._entry(km, 5))
 
         assert ValidatorIndex(5) in registry
 
@@ -270,33 +271,21 @@ class TestValidatorRegistry:
 
         assert ValidatorIndex(99) not in registry
 
-    def test_len_after_adds(self) -> None:
+    def test_len_after_adds(self, km: XmssKeyManager) -> None:
         """__len__ reflects the number of entries added."""
         registry = ValidatorRegistry()
         assert len(registry) == 0
 
         for i in range(4):
-            registry.add(
-                ValidatorEntry(
-                    index=ValidatorIndex(i),
-                    attestation_secret_key=MagicMock(),
-                    proposal_secret_key=MagicMock(),
-                )
-            )
+            registry.add(self._entry(km, i))
 
         assert len(registry) == 4
 
-    def test_indices_returns_all_registered_indices(self) -> None:
+    def test_indices_returns_all_registered_indices(self, km: XmssKeyManager) -> None:
         """All registered indices are returned as a collection."""
         registry = ValidatorRegistry()
         for i in [2, 5, 8]:
-            registry.add(
-                ValidatorEntry(
-                    index=ValidatorIndex(i),
-                    attestation_secret_key=MagicMock(),
-                    proposal_secret_key=MagicMock(),
-                )
-            )
+            registry.add(self._entry(km, i))
 
         result = registry.indices()
 
@@ -306,73 +295,57 @@ class TestValidatorRegistry:
         """Primary index is None for an empty registry."""
         assert ValidatorRegistry().primary_index() is None
 
-    def test_primary_index_single_entry(self) -> None:
+    def test_primary_index_single_entry(self, km: XmssKeyManager) -> None:
         """Primary index is the only entry's index."""
         registry = ValidatorRegistry()
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(5),
-                attestation_secret_key=MagicMock(),
-                proposal_secret_key=MagicMock(),
-            )
-        )
+        registry.add(self._entry(km, 5))
 
         assert registry.primary_index() == ValidatorIndex(5)
 
-    def test_primary_index_is_first_inserted(self) -> None:
+    def test_primary_index_is_first_inserted(self, km: XmssKeyManager) -> None:
         """Primary index is the first inserted entry (insertion order)."""
         registry = ValidatorRegistry()
         for i in [3, 1, 7]:
-            registry.add(
-                ValidatorEntry(
-                    index=ValidatorIndex(i),
-                    attestation_secret_key=MagicMock(),
-                    proposal_secret_key=MagicMock(),
-                )
-            )
+            registry.add(self._entry(km, i))
 
         assert registry.primary_index() == ValidatorIndex(3)
 
-    def test_add_overwrites_existing_entry(self) -> None:
+    def test_add_overwrites_existing_entry(self, km: XmssKeyManager) -> None:
         """add() with an existing index replaces the entry, preserving registry size."""
         registry = ValidatorRegistry()
-        old_key = MagicMock(name="old")
-        new_att = MagicMock(name="new_att")
-        new_prop = MagicMock(name="new_prop")
+        old_entry = self._entry(km, 5)
+        # Create a different entry for the same index using different key pairs.
+        kp_att = km[ValidatorIndex(6)]
+        kp_prop = km[ValidatorIndex(7)]
+        new_entry = ValidatorEntry(
+            index=ValidatorIndex(5),
+            attestation_secret_key=kp_att.attestation_secret,
+            proposal_secret_key=kp_prop.proposal_secret,
+        )
 
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(5),
-                attestation_secret_key=old_key,
-                proposal_secret_key=old_key,
-            )
-        )
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(5),
-                attestation_secret_key=new_att,
-                proposal_secret_key=new_prop,
-            )
-        )
+        registry.add(old_entry)
+        registry.add(new_entry)
 
         assert len(registry) == 1
-        assert registry_state(registry) == {ValidatorIndex(5): (new_att, new_prop)}
+        assert registry_state(registry) == {
+            ValidatorIndex(5): (kp_att.attestation_secret, kp_prop.proposal_secret)
+        }
 
-    def test_from_secret_keys(self) -> None:
+    def test_from_secret_keys(self, km: XmssKeyManager) -> None:
         """Registry can be populated from a dictionary of key pairs."""
-        key_0_att, key_0_prop = MagicMock(), MagicMock()
-        key_2_att, key_2_prop = MagicMock(), MagicMock()
+        kp_0 = km[ValidatorIndex(0)]
+        kp_2 = km[ValidatorIndex(2)]
 
         registry = ValidatorRegistry.from_secret_keys(
             {
-                ValidatorIndex(0): (key_0_att, key_0_prop),
-                ValidatorIndex(2): (key_2_att, key_2_prop),
+                ValidatorIndex(0): (kp_0.attestation_secret, kp_0.proposal_secret),
+                ValidatorIndex(2): (kp_2.attestation_secret, kp_2.proposal_secret),
             }
         )
 
         assert registry_state(registry) == {
-            ValidatorIndex(0): (key_0_att, key_0_prop),
-            ValidatorIndex(2): (key_2_att, key_2_prop),
+            ValidatorIndex(0): (kp_0.attestation_secret, kp_0.proposal_secret),
+            ValidatorIndex(2): (kp_2.attestation_secret, kp_2.proposal_secret),
         }
 
 
@@ -393,7 +366,17 @@ def _write_key_files(directory: Path, indices: list[int]) -> None:
 class TestValidatorRegistryFromYaml:
     """Integration tests for the full YAML loading pipeline (files on disk -> registry)."""
 
-    def test_happy_path_loads_assigned_validators(self, tmp_path: Path) -> None:
+    def _write_real_key_files(
+        self, km: XmssKeyManager, directory: Path, indices: list[int]
+    ) -> None:
+        """Write real SSZ-encoded XMSS key files for the given validator indices."""
+        for i in indices:
+            vid = ValidatorIndex(i)
+            kp = km[vid]
+            (directory / f"att_key_{i}.ssz").write_bytes(kp.attestation_secret.encode_bytes())
+            (directory / f"prop_key_{i}.ssz").write_bytes(kp.proposal_secret.encode_bytes())
+
+    def test_happy_path_loads_assigned_validators(self, tmp_path: Path, km: XmssKeyManager) -> None:
         """Registry loads keys only for validators assigned to the specified node."""
         validators_file = tmp_path / "validators.yaml"
         validators_file.write_text(yaml.dump({"node_0": [0, 1], "node_1": [2]}))
@@ -403,26 +386,26 @@ class TestValidatorRegistryFromYaml:
             manifest_file,
             [_manifest_entry_dict(0), _manifest_entry_dict(1), _manifest_entry_dict(2)],
         )
-        _write_key_files(tmp_path, [0, 1])
+        self._write_real_key_files(km, tmp_path, [0, 1])
 
-        att_0, prop_0, att_1, prop_1 = (
-            MagicMock(name=n) for n in ["att_0", "prop_0", "att_1", "prop_1"]
+        registry = ValidatorRegistry.from_yaml(
+            node_id="node_0",
+            validators_path=validators_file,
+            manifest_path=manifest_file,
         )
 
-        with patch(
-            "lean_spec.subspecs.xmss.SecretKey.decode_bytes",
-            side_effect=[att_0, prop_0, att_1, prop_1],
-        ):
-            registry = ValidatorRegistry.from_yaml(
-                node_id="node_0",
-                validators_path=validators_file,
-                manifest_path=manifest_file,
-            )
+        assert set(registry.indices()) == {ValidatorIndex(0), ValidatorIndex(1)}
+        assert len(registry) == 2
 
-        assert registry_state(registry) == {
-            ValidatorIndex(0): (att_0, prop_0),
-            ValidatorIndex(1): (att_1, prop_1),
-        }
+        # Loaded keys should match the originals from the key manager.
+        for i in [0, 1]:
+            vid = ValidatorIndex(i)
+            entry = registry.get(vid)
+            assert entry is not None
+            expected_att = km[vid].attestation_secret.encode_bytes()
+            expected_prop = km[vid].proposal_secret.encode_bytes()
+            assert entry.attestation_secret_key.encode_bytes() == expected_att
+            assert entry.proposal_secret_key.encode_bytes() == expected_prop
 
     def test_unknown_node_returns_empty_registry(self, tmp_path: Path) -> None:
         """An unrecognised node ID produces an empty registry without error."""
@@ -457,7 +440,7 @@ class TestValidatorRegistryFromYaml:
         assert registry_state(registry) == {}
 
     def test_missing_manifest_entry_logs_warning_and_skips(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, km: XmssKeyManager, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Validator indices present in validators.yaml but absent from manifest are skipped."""
         validators_file = tmp_path / "validators.yaml"
@@ -465,21 +448,15 @@ class TestValidatorRegistryFromYaml:
 
         manifest_file = tmp_path / "manifest.yaml"
         _write_manifest(manifest_file, [_manifest_entry_dict(0)])
-        _write_key_files(tmp_path, [0])
+        self._write_real_key_files(km, tmp_path, [0])
 
-        att_0, prop_0 = MagicMock(), MagicMock()
-        with patch(
-            "lean_spec.subspecs.xmss.SecretKey.decode_bytes",
-            side_effect=[att_0, prop_0],
-        ):
-            registry = ValidatorRegistry.from_yaml(
-                node_id="node_0",
-                validators_path=validators_file,
-                manifest_path=manifest_file,
-            )
+        registry = ValidatorRegistry.from_yaml(
+            node_id="node_0",
+            validators_path=validators_file,
+            manifest_path=manifest_file,
+        )
 
-        # Index 99 is silently skipped; index 0 is loaded normally.
-        assert registry_state(registry) == {ValidatorIndex(0): (att_0, prop_0)}
+        assert set(registry.indices()) == {ValidatorIndex(0)}
         assert "99" in caplog.text
 
     def test_missing_attestation_key_file_raises(self, tmp_path: Path) -> None:
@@ -489,7 +466,6 @@ class TestValidatorRegistryFromYaml:
 
         manifest_file = tmp_path / "manifest.yaml"
         _write_manifest(manifest_file, [_manifest_entry_dict(0)])
-        # Deliberately omit key files.
 
         with pytest.raises(ValueError, match="key file not found"):
             ValidatorRegistry.from_yaml(
@@ -498,7 +474,7 @@ class TestValidatorRegistryFromYaml:
                 manifest_path=manifest_file,
             )
 
-    def test_missing_proposal_key_file_raises(self, tmp_path: Path) -> None:
+    def test_missing_proposal_key_file_raises(self, tmp_path: Path, km: XmssKeyManager) -> None:
         """Missing proposal SSZ file raises ValueError after the attestation key loads."""
         validators_file = tmp_path / "validators.yaml"
         validators_file.write_text(yaml.dump({"node_0": [0]}))
@@ -506,20 +482,16 @@ class TestValidatorRegistryFromYaml:
         manifest_file = tmp_path / "manifest.yaml"
         _write_manifest(manifest_file, [_manifest_entry_dict(0)])
 
-        # Provide attestation key but not proposal key.
-        (tmp_path / "att_key_0.ssz").write_bytes(b"att0")
+        # Write only attestation key, not proposal key.
+        kp = km[ValidatorIndex(0)]
+        (tmp_path / "att_key_0.ssz").write_bytes(kp.attestation_secret.encode_bytes())
 
-        att_0 = MagicMock()
-        with patch(
-            "lean_spec.subspecs.xmss.SecretKey.decode_bytes",
-            side_effect=[att_0, FileNotFoundError("no prop key")],
-        ):
-            with pytest.raises(ValueError, match="key file not found"):
-                ValidatorRegistry.from_yaml(
-                    node_id="node_0",
-                    validators_path=validators_file,
-                    manifest_path=manifest_file,
-                )
+        with pytest.raises(ValueError, match="key file not found"):
+            ValidatorRegistry.from_yaml(
+                node_id="node_0",
+                validators_path=validators_file,
+                manifest_path=manifest_file,
+            )
 
     def test_corrupt_attestation_key_file_raises(self, tmp_path: Path) -> None:
         """A corrupt attestation SSZ file raises ValueError with a clear message."""
@@ -538,29 +510,27 @@ class TestValidatorRegistryFromYaml:
                 manifest_path=manifest_file,
             )
 
-    def test_corrupt_proposal_key_file_raises(self, tmp_path: Path) -> None:
+    def test_corrupt_proposal_key_file_raises(self, tmp_path: Path, km: XmssKeyManager) -> None:
         """A corrupt proposal SSZ file raises ValueError after the attestation key loads."""
         validators_file = tmp_path / "validators.yaml"
         validators_file.write_text(yaml.dump({"node_0": [0]}))
 
         manifest_file = tmp_path / "manifest.yaml"
         _write_manifest(manifest_file, [_manifest_entry_dict(0)])
-        (tmp_path / "att_key_0.ssz").write_bytes(b"att0")
+
+        # Write real attestation key but corrupt proposal key.
+        kp = km[ValidatorIndex(0)]
+        (tmp_path / "att_key_0.ssz").write_bytes(kp.attestation_secret.encode_bytes())
         (tmp_path / "prop_key_0.ssz").write_bytes(b"not valid ssz")
 
-        att_0 = MagicMock()
-        with patch(
-            "lean_spec.subspecs.xmss.SecretKey.decode_bytes",
-            side_effect=[att_0, Exception("decode failed")],
-        ):
-            with pytest.raises(ValueError, match="Failed to load proposal key"):
-                ValidatorRegistry.from_yaml(
-                    node_id="node_0",
-                    validators_path=validators_file,
-                    manifest_path=manifest_file,
-                )
+        with pytest.raises(ValueError, match="Failed to load proposal key"):
+            ValidatorRegistry.from_yaml(
+                node_id="node_0",
+                validators_path=validators_file,
+                manifest_path=manifest_file,
+            )
 
-    def test_only_assigned_node_keys_are_loaded(self, tmp_path: Path) -> None:
+    def test_only_assigned_node_keys_are_loaded(self, tmp_path: Path, km: XmssKeyManager) -> None:
         """Keys for validators belonging to other nodes are never touched."""
         validators_file = tmp_path / "validators.yaml"
         validators_file.write_text(yaml.dump({"node_0": [0], "node_1": [1, 2]}))
@@ -570,20 +540,14 @@ class TestValidatorRegistryFromYaml:
             manifest_file,
             [_manifest_entry_dict(0), _manifest_entry_dict(1), _manifest_entry_dict(2)],
         )
-        _write_key_files(tmp_path, [0])  # Only node_0's key files exist.
+        self._write_real_key_files(km, tmp_path, [0])
 
-        att_0, prop_0 = MagicMock(), MagicMock()
-        with patch(
-            "lean_spec.subspecs.xmss.SecretKey.decode_bytes",
-            side_effect=[att_0, prop_0],
-        ):
-            registry = ValidatorRegistry.from_yaml(
-                node_id="node_0",
-                validators_path=validators_file,
-                manifest_path=manifest_file,
-            )
+        registry = ValidatorRegistry.from_yaml(
+            node_id="node_0",
+            validators_path=validators_file,
+            manifest_path=manifest_file,
+        )
 
-        # Only validator 0 is in the registry; node_1's validators are untouched.
-        assert registry_state(registry) == {ValidatorIndex(0): (att_0, prop_0)}
+        assert set(registry.indices()) == {ValidatorIndex(0)}
         assert ValidatorIndex(1) not in registry
         assert ValidatorIndex(2) not in registry
