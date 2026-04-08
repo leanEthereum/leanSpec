@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from lean_spec.subspecs.api import ApiServerConfig
 from lean_spec.subspecs.chain.config import (
+    ATTESTATION_COMMITTEE_COUNT,
     HISTORICAL_ROOTS_LIMIT,
     INTERVALS_PER_SLOT,
     SECONDS_PER_SLOT,
@@ -96,6 +98,26 @@ def node_config() -> NodeConfig:
         network=MockNetworkRequester(),
         time_fn=lambda: 1704067200.0,
     )
+
+
+def _make_validator_registry() -> ValidatorRegistry:
+    """Create a minimal validator registry with one entry."""
+    registry = ValidatorRegistry()
+    registry.add(
+        ValidatorEntry(
+            index=ValidatorIndex(0),
+            attestation_secret_key=MagicMock(),
+            proposal_secret_key=MagicMock(),
+        )
+    )
+    return registry
+
+
+@pytest.fixture
+def node_with_validator(node_config: NodeConfig) -> Node:
+    """Create a node with a validator registry configured."""
+    config = dataclasses.replace(node_config, validator_registry=_make_validator_registry())
+    return Node.from_genesis(config)
 
 
 class TestNodeFromGenesis:
@@ -225,15 +247,10 @@ class TestDatabaseLoading:
 class TestOptionalServiceWiring:
     """Tests for optional services (API server, validator service)."""
 
-    def test_api_server_created_when_config_provided(self) -> None:
+    def test_api_server_created_when_config_provided(self, node_config: NodeConfig) -> None:
         """API server is created when api_config is set."""
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: 1704067200.0,
-            api_config=ApiServerConfig(host="127.0.0.1", port=5052),
+        config = dataclasses.replace(
+            node_config, api_config=ApiServerConfig(host="127.0.0.1", port=5052)
         )
         node = Node.from_genesis(config)
         assert node.api_server is not None
@@ -243,27 +260,11 @@ class TestOptionalServiceWiring:
         node = Node.from_genesis(node_config)
         assert node.api_server is None
 
-    def test_validator_service_created_when_registry_provided(self) -> None:
+    def test_validator_service_created_when_registry_provided(
+        self, node_with_validator: Node
+    ) -> None:
         """Validator service is created when validator_registry is set."""
-        registry = ValidatorRegistry()
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(0),
-                attestation_secret_key=MagicMock(),
-                proposal_secret_key=MagicMock(),
-            )
-        )
-
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: 1704067200.0,
-            validator_registry=registry,
-        )
-        node = Node.from_genesis(config)
-        assert node.validator_service is not None
+        assert node_with_validator.validator_service is not None
 
     def test_validator_service_none_when_no_registry(self, node_config: NodeConfig) -> None:
         """Validator service is None when no registry is set."""
@@ -306,17 +307,10 @@ class TestNodeShutdown:
 
         assert node.network_service._running is False
 
-    async def test_database_closed_after_run(self) -> None:
+    async def test_database_closed_after_run(self, node_config: NodeConfig) -> None:
         """Database is closed after run exits."""
         mock_db = MagicMock()
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: 1704067200.0,
-        )
-        node = Node.from_genesis(config)
+        node = Node.from_genesis(node_config)
         node.database = mock_db
 
         asyncio.get_running_loop().call_later(0.05, node.stop)
@@ -328,55 +322,32 @@ class TestNodeShutdown:
 class TestGenesisPersistence:
     """Tests for genesis block/state persistence to database."""
 
-    def test_from_genesis_persists_block_to_database(self) -> None:
-        """Genesis block is persisted to the database."""
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: 1704067200.0,
-            database_path=":memory:",
-        )
-        node = Node.from_genesis(config)
+    @pytest.fixture
+    def db_node(self, node_config: NodeConfig) -> Node:
+        """Create a node with an in-memory database for persistence tests."""
+        config = dataclasses.replace(node_config, database_path=":memory:")
+        return Node.from_genesis(config)
 
-        # The database should have the genesis block.
-        assert node.database is not None
-        head_root = node.database.get_head_root()
+    def test_from_genesis_persists_block_to_database(self, db_node: Node) -> None:
+        """Genesis block is persisted to the database."""
+        assert db_node.database is not None
+        head_root = db_node.database.get_head_root()
         assert head_root is not None
-        block = node.database.get_block(head_root)
+        block = db_node.database.get_block(head_root)
         assert block is not None
         assert block.slot == Slot(0)
 
-    def test_from_genesis_persists_state_to_database(self) -> None:
+    def test_from_genesis_persists_state_to_database(self, db_node: Node) -> None:
         """Genesis state is persisted to the database."""
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: 1704067200.0,
-            database_path=":memory:",
-        )
-        node = Node.from_genesis(config)
-
-        assert node.database is not None
-        head_root = node.database.get_head_root()
+        assert db_node.database is not None
+        head_root = db_node.database.get_head_root()
         assert head_root is not None
-        state = node.database.get_state(head_root)
+        state = db_node.database.get_state(head_root)
         assert state is not None
 
-    def test_from_genesis_persists_checkpoints(self) -> None:
+    def test_from_genesis_persists_checkpoints(self, db_node: Node) -> None:
         """Justified and finalized checkpoints are persisted."""
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: 1704067200.0,
-            database_path=":memory:",
-        )
-        node = Node.from_genesis(config)
+        node = db_node
 
         assert node.database is not None
         assert node.database.get_justified_checkpoint() is not None
@@ -392,7 +363,11 @@ class TestDatabaseGenesisTimeFallback:
     """Tests for genesis_time fallback to database."""
 
     def test_falls_back_to_database_genesis_time(self) -> None:
-        """When genesis_time is None, loads it from the database."""
+        """When genesis_time is None, loads it from the database.
+
+        The store time should be computed using the database-provided
+        genesis time, identical to passing it explicitly.
+        """
         test_slot = Slot(10)
         mock_db, _, _, _ = _make_mock_db_data(test_slot)
         mock_db.get_genesis_time.return_value = GENESIS_TIME
@@ -407,6 +382,11 @@ class TestDatabaseGenesisTimeFallback:
 
         assert store is not None
         mock_db.get_genesis_time.assert_called_once()
+
+        # Same math as test_successful_load_uses_wall_clock_time:
+        # wall clock 100s * 5 intervals / 4 seconds = 125 intervals.
+        expected_wall = Uint64(100) * INTERVALS_PER_SLOT // SECONDS_PER_SLOT
+        assert store.time == expected_wall
 
     def test_zero_genesis_time_when_database_returns_none(self) -> None:
         """When both genesis_time param and database return None, falls back to zero."""
@@ -432,17 +412,9 @@ class TestDatabaseGenesisTimeFallback:
 class TestDatabaseResumeFromGenesis:
     """Tests for from_genesis loading from an existing database."""
 
-    def test_from_genesis_resumes_from_database(self) -> None:
+    def test_from_genesis_resumes_from_database(self, node_config: NodeConfig) -> None:
         """When database has valid state, from_genesis skips genesis creation."""
-        # First create a node with persistence so the DB is populated.
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-            database_path=":memory:",
-        )
+        config = dataclasses.replace(node_config, database_path=":memory:")
         original_node = Node.from_genesis(config)
         assert original_node.database is not None
 
@@ -459,94 +431,89 @@ class TestDatabaseResumeFromGenesis:
 
 
 class TestValidatorPublishWrappers:
-    """Tests for the publish wrappers created when a validator registry is provided."""
+    """Tests for the publish wrappers created when a validator registry is provided.
 
-    def _make_node_with_validator(self) -> Node:
-        """Create a node with a validator registry configured."""
-        registry = ValidatorRegistry()
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(0),
-                attestation_secret_key=MagicMock(),
-                proposal_secret_key=MagicMock(),
-            )
-        )
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-            validator_registry=registry,
-        )
-        return Node.from_genesis(config)
+    The wrappers fan out each locally-produced block/attestation to both the
+    network layer (gossip) and the local sync service (so forkchoice sees the
+    produced item immediately, without waiting for a gossip round-trip).
+    """
 
-    async def test_block_publish_wrapper_calls_both_services(self) -> None:
+    async def test_block_publish_wrapper_calls_both_services(
+        self, node_with_validator: Node
+    ) -> None:
         """Block wrapper publishes to network and processes locally."""
-        node = self._make_node_with_validator()
-        assert node.validator_service is not None
+        assert node_with_validator.validator_service is not None
 
         mock_block = MagicMock()
         publish_block = AsyncMock()
         on_gossip_block = AsyncMock()
 
         with (
-            patch.object(type(node.network_service), "publish_block", publish_block),
-            patch.object(type(node.sync_service), "on_gossip_block", on_gossip_block),
+            patch.object(type(node_with_validator.network_service), "publish_block", publish_block),
+            patch.object(
+                type(node_with_validator.sync_service), "on_gossip_block", on_gossip_block
+            ),
         ):
-            await node.validator_service.on_block(mock_block)
+            await node_with_validator.validator_service.on_block(mock_block)
 
         publish_block.assert_awaited_once_with(mock_block)
         on_gossip_block.assert_awaited_once_with(mock_block, peer_id=None)
 
-    async def test_attestation_publish_wrapper_calls_both_services(self) -> None:
-        """Attestation wrapper publishes to network and processes locally."""
-        node = self._make_node_with_validator()
-        assert node.validator_service is not None
+    async def test_attestation_publish_wrapper_calls_both_services(
+        self, node_with_validator: Node
+    ) -> None:
+        """Attestation wrapper publishes to network with computed subnet_id.
+
+        The subnet_id is derived from the attestation's validator index via
+        ``compute_subnet_id(ATTESTATION_COMMITTEE_COUNT)``. This test
+        verifies the computed value is forwarded correctly to the network.
+        """
+        assert node_with_validator.validator_service is not None
 
         mock_attestation = MagicMock()
-        mock_attestation.validator_id.compute_subnet_id.return_value = 0
+        # The wrapper calls validator_id.compute_subnet_id(ATTESTATION_COMMITTEE_COUNT).
+        expected_subnet = 42
+        mock_attestation.validator_id.compute_subnet_id.return_value = expected_subnet
 
         publish_attestation = AsyncMock()
         on_gossip_attestation = AsyncMock()
 
         with (
-            patch.object(type(node.network_service), "publish_attestation", publish_attestation),
-            patch.object(type(node.sync_service), "on_gossip_attestation", on_gossip_attestation),
+            patch.object(
+                type(node_with_validator.network_service),
+                "publish_attestation",
+                publish_attestation,
+            ),
+            patch.object(
+                type(node_with_validator.sync_service),
+                "on_gossip_attestation",
+                on_gossip_attestation,
+            ),
         ):
-            await node.validator_service.on_attestation(mock_attestation)
+            await node_with_validator.validator_service.on_attestation(mock_attestation)
 
-        publish_attestation.assert_awaited_once()
+        # Verify subnet_id computation used the correct committee count.
+        mock_attestation.validator_id.compute_subnet_id.assert_called_once_with(
+            ATTESTATION_COMMITTEE_COUNT
+        )
+        # Verify the computed subnet_id was forwarded to the network layer.
+        publish_attestation.assert_awaited_once_with(mock_attestation, expected_subnet)
         on_gossip_attestation.assert_awaited_once_with(mock_attestation)
 
 
 class TestSignalHandlers:
     """Tests for signal handler installation."""
 
-    async def test_signal_handlers_silently_ignored_on_error(self) -> None:
+    async def test_signal_handlers_silently_ignored_on_error(self, node_config: NodeConfig) -> None:
         """Signal handler installation errors are silently ignored."""
-        node_config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-        )
         node = Node.from_genesis(node_config)
 
         with patch("asyncio.get_running_loop", side_effect=RuntimeError("not main thread")):
             # Should not raise.
             node._install_signal_handlers()
 
-    async def test_run_installs_signal_handlers_by_default(self) -> None:
+    async def test_run_installs_signal_handlers_by_default(self, node_config: NodeConfig) -> None:
         """run() installs signal handlers when install_signal_handlers=True."""
-        node_config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-        )
         node = Node.from_genesis(node_config)
 
         with patch.object(Node, "_install_signal_handlers", autospec=True) as mock_install:
@@ -557,124 +524,110 @@ class TestSignalHandlers:
 
 
 class TestPeriodicLogging:
-    """Tests for the periodic logging task."""
+    """Tests for the periodic logging task.
 
-    async def test_logging_exits_on_shutdown(self) -> None:
+    These tests call ``_log_justified_finalized_periodically`` directly
+    rather than through ``run()``, isolating the logging loop from the
+    full TaskGroup lifecycle.
+
+    Instead of patching ``asyncio.sleep`` (which would mutate the global
+    asyncio module), we set the log interval to 0 so ``sleep(0)`` just
+    yields control. A background task sets the shutdown event after
+    one iteration completes.
+    """
+
+    async def test_logging_exits_on_shutdown(self, node_config: NodeConfig) -> None:
         """Periodic logging loop exits when shutdown event is set."""
-        node_config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-        )
         node = Node.from_genesis(node_config)
 
-        # Set shutdown immediately so the loop exits after the first sleep.
+        # Pre-set shutdown so the loop exits after the first sleep.
         node._shutdown.set()
         await node._log_justified_finalized_periodically()
 
-    async def test_logging_reports_metrics(self) -> None:
-        """Periodic logging updates metrics at least once before shutdown."""
-        node_config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-        )
-        node = Node.from_genesis(node_config)
+    async def test_logging_reports_metrics(self, node_config: NodeConfig) -> None:
+        """Periodic logging updates Prometheus gauges at least once.
 
-        # Let the loop run one iteration with a very short sleep, then stop.
-        original_sleep = asyncio.sleep
+        Initializes the metric registry with a test collector, runs one
+        full iteration of the loop, then asserts each gauge was set with
+        the expected value derived from the genesis store by checking the
+        real metric registry values.
+        """
+        from prometheus_client import CollectorRegistry
 
-        call_count = 0
+        from lean_spec.subspecs.metrics import registry as metrics_registry
 
-        async def fast_sleep(_delay: float) -> None:
-            nonlocal call_count
-            call_count += 1
-            if call_count >= 2:
+        test_reg = CollectorRegistry()
+        metrics_registry.init(registry=test_reg)
+
+        try:
+            node = Node.from_genesis(node_config)
+
+            original_set = metrics_registry.lean_validators_count.set
+
+            def trigger_shutdown(value: float) -> None:
+                original_set(value)
                 node._shutdown.set()
-            await original_sleep(0)
 
-        with patch("lean_spec.subspecs.node.node._JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC", 0):
-            with patch("asyncio.sleep", side_effect=fast_sleep):
+            with (
+                patch("lean_spec.subspecs.node.node._JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC", 0),
+                patch.object(
+                    metrics_registry.lean_validators_count, "set", side_effect=trigger_shutdown
+                ),
+            ):
                 await node._log_justified_finalized_periodically()
 
-    async def test_logging_reports_zero_validators_without_service(self) -> None:
-        """Validator count is 0 when no validator service is configured."""
-        node_config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-        )
-        node = Node.from_genesis(node_config)
-        assert node.validator_service is None
+            assert test_reg.get_sample_value("lean_current_slot") == 0.0
+            assert test_reg.get_sample_value("lean_connected_peers") == 0.0
+            assert test_reg.get_sample_value("lean_head_slot") == 0.0
+            assert test_reg.get_sample_value("lean_safe_target_slot") == 0.0
+            assert test_reg.get_sample_value("lean_latest_justified_slot") == 0.0
+            assert test_reg.get_sample_value("lean_latest_finalized_slot") == 0.0
+            assert test_reg.get_sample_value("lean_validators_count") == 0.0
+        finally:
+            metrics_registry.reset()
+            metrics_registry._initialized = False
 
-        original_sleep = asyncio.sleep
+    async def test_logging_reports_zero_validators_without_service(
+        self, node_config: NodeConfig
+    ) -> None:
+        """Validator count gauge is set to 0 when no validator service exists.
 
-        async def stop_after_one(_delay: float) -> None:
-            node._shutdown.set()
-            await original_sleep(0)
+        This verifies the ``len(self.validator_service.registry)`` fallback
+        path that returns 0 when ``validator_service is None``.
+        """
+        from prometheus_client import CollectorRegistry
 
-        with patch("asyncio.sleep", side_effect=stop_after_one):
-            await node._log_justified_finalized_periodically()
+        from lean_spec.subspecs.metrics import registry as metrics_registry
+
+        test_reg = CollectorRegistry()
+        metrics_registry.init(registry=test_reg)
+
+        try:
+            node = Node.from_genesis(node_config)
+            assert node.validator_service is None
+
+            original_set = metrics_registry.lean_validators_count.set
+
+            def trigger_shutdown(value: float) -> None:
+                original_set(value)
+                node._shutdown.set()
+
+            with (
+                patch("lean_spec.subspecs.node.node._JUSTIFIED_FINALIZED_LOG_INTERVAL_SEC", 0),
+                patch.object(
+                    metrics_registry.lean_validators_count, "set", side_effect=trigger_shutdown
+                ),
+            ):
+                await node._log_justified_finalized_periodically()
+
+            assert test_reg.get_sample_value("lean_validators_count") == 0.0
+        finally:
+            metrics_registry.reset()
+            metrics_registry._initialized = False
 
 
 class TestWaitShutdown:
     """Tests for _wait_shutdown with optional services."""
-
-    async def test_wait_shutdown_stops_api_server(self) -> None:
-        """Shutdown stops the API server when present."""
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-            api_config=ApiServerConfig(host="127.0.0.1", port=5052),
-        )
-        node = Node.from_genesis(config)
-        assert node.api_server is not None
-
-        mock_stop = MagicMock()
-        node._shutdown.set()
-
-        with patch.object(type(node.api_server), "stop", mock_stop):
-            await node._wait_shutdown()
-
-        mock_stop.assert_called_once()
-
-    async def test_wait_shutdown_stops_validator_service(self) -> None:
-        """Shutdown stops the validator service when present."""
-        registry = ValidatorRegistry()
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(0),
-                attestation_secret_key=MagicMock(),
-                proposal_secret_key=MagicMock(),
-            )
-        )
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-            validator_registry=registry,
-        )
-        node = Node.from_genesis(config)
-        assert node.validator_service is not None
-
-        mock_stop = MagicMock()
-        node._shutdown.set()
-
-        with patch.object(type(node.validator_service), "stop", mock_stop):
-            await node._wait_shutdown()
-
-        mock_stop.assert_called_once()
 
     async def test_wait_shutdown_skips_none_services(self, node_config: NodeConfig) -> None:
         """Shutdown handles None api_server and validator_service gracefully."""
@@ -689,15 +642,10 @@ class TestWaitShutdown:
 class TestRunWithOptionalServices:
     """Tests for run() with optional API and validator services."""
 
-    async def test_run_with_api_server(self) -> None:
+    async def test_run_with_api_server(self, node_config: NodeConfig) -> None:
         """run() starts and runs the API server task when configured."""
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-            api_config=ApiServerConfig(host="127.0.0.1", port=0),
+        config = dataclasses.replace(
+            node_config, api_config=ApiServerConfig(host="127.0.0.1", port=0)
         )
         node = Node.from_genesis(config)
         assert node.api_server is not None
@@ -712,34 +660,22 @@ class TestRunWithOptionalServices:
         ):
             await node.run(install_signal_handlers=False)
 
+        # Both start() (called before TaskGroup) and run() (added to TaskGroup)
+        # must be awaited for the API server to function.
         mock_start.assert_awaited_once()
+        mock_run.assert_awaited_once()
 
-    async def test_run_with_validator_service(self) -> None:
+    async def test_run_with_validator_service(self, node_with_validator: Node) -> None:
         """run() starts the validator service task when configured."""
-        registry = ValidatorRegistry()
-        registry.add(
-            ValidatorEntry(
-                index=ValidatorIndex(0),
-                attestation_secret_key=MagicMock(),
-                proposal_secret_key=MagicMock(),
-            )
-        )
-        config = NodeConfig(
-            genesis_time=GENESIS_TIME,
-            validators=make_validators(3),
-            event_source=MockEventSource(),
-            network=MockNetworkRequester(),
-            time_fn=lambda: float(GENESIS_TIME),
-            validator_registry=registry,
-        )
-        node = Node.from_genesis(config)
-        assert node.validator_service is not None
+        assert node_with_validator.validator_service is not None
 
         mock_run = AsyncMock()
 
-        asyncio.get_running_loop().call_later(0.05, node.stop)
-        with patch.object(type(node.validator_service), "run", mock_run):
-            await node.run(install_signal_handlers=False)
+        asyncio.get_running_loop().call_later(0.05, node_with_validator.stop)
+        with patch.object(type(node_with_validator.validator_service), "run", mock_run):
+            await node_with_validator.run(install_signal_handlers=False)
+
+        mock_run.assert_awaited_once()
 
 
 class TestNodeIntegration:
