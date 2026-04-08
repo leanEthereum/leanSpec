@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from types import MappingProxyType
 from typing import cast
 
 import pytest
 from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.containers import (
-    Block,
     SignedAggregatedAttestation,
     SignedBlock,
 )
@@ -20,12 +20,14 @@ from lean_spec.subspecs.forkchoice.store import Store
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.storage.database import Database
 from lean_spec.subspecs.sync.config import MAX_PENDING_ATTESTATIONS
 from lean_spec.subspecs.sync.service import SyncProgress, SyncService
 from lean_spec.subspecs.sync.states import SyncState
 from lean_spec.types import Bytes32
 from tests.lean_spec.helpers import (
     MockForkchoiceStore,
+    RecordedCall,
     RecordingSyncDatabase,
     create_mock_sync_service,
     make_aggregated_proof,
@@ -586,7 +588,7 @@ class TestBlockPersistence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        service.store = service._process_block_wrapper(cast(Store, service.store), block)
+        service.store = service._process_block_wrapper(service.store, block)
         assert service._blocks_processed == 1
 
     def test_persist_skips_state_when_post_state_missing(
@@ -597,7 +599,7 @@ class TestBlockPersistence:
         db = RecordingSyncDatabase()
         service = create_mock_sync_service(
             peer_id,
-            database=db,
+            database=cast(Database, db),
             process_block=_persist_process_block(include_post_state=False, prune=False),
         )
         service._state = SyncState.SYNCING
@@ -608,29 +610,28 @@ class TestBlockPersistence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        service.store = service._process_block_wrapper(cast(Store, service.store), block)
+        service.store = service._process_block_wrapper(service.store, block)
 
         block_root = hash_tree_root(block.block)
         assert db.calls[0].name == "batch_write_enter"
         assert db.calls[-1].name == "batch_write_exit"
 
-        inner = db.calls_inside_batch()
-        assert [c.name for c in inner] == [
-            "put_block",
-            "put_block_root_by_slot",
-            "put_head_root",
-            "put_justified_checkpoint",
-            "put_finalized_checkpoint",
+        empty: MappingProxyType[str, object] = MappingProxyType({})
+        assert db.calls_inside_batch() == [
+            RecordedCall(name="put_block", args=(block.block, block_root), kwargs=empty),
+            RecordedCall(name="put_block_root_by_slot", args=(Slot(1), block_root), kwargs=empty),
+            RecordedCall(name="put_head_root", args=(block_root,), kwargs=empty),
+            RecordedCall(
+                name="put_justified_checkpoint",
+                args=(Checkpoint(root=block_root, slot=Slot(1)),),
+                kwargs=empty,
+            ),
+            RecordedCall(
+                name="put_finalized_checkpoint",
+                args=(Checkpoint(root=Bytes32.zero(), slot=Slot(0)),),
+                kwargs=empty,
+            ),
         ]
-
-        assert inner[0].args[0] is block.block
-        assert isinstance(inner[0].args[0], Block)
-        assert inner[0].args[1] == block_root
-
-        assert inner[1].args == (Slot(1), block_root)
-        assert inner[2].args == (block_root,)
-        assert inner[3].args == (Checkpoint(root=block_root, slot=Slot(1)),)
-        assert inner[4].args == (Checkpoint(root=Bytes32.zero(), slot=Slot(0)),)
 
     def test_persist_writes_state_and_prunes_when_finalized_advanced(
         self,
@@ -640,7 +641,7 @@ class TestBlockPersistence:
         db = RecordingSyncDatabase()
         service = create_mock_sync_service(
             peer_id,
-            database=db,
+            database=cast(Database, db),
             process_block=_persist_process_block(include_post_state=True, prune=True),
         )
         service._state = SyncState.SYNCING
@@ -651,37 +652,43 @@ class TestBlockPersistence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        service.store = service._process_block_wrapper(cast(Store, service.store), block)
+        service.store = service._process_block_wrapper(service.store, block)
 
         block_root = hash_tree_root(block.block)
         assert db.calls[0].name == "batch_write_enter"
         assert db.calls[-1].name == "batch_write_exit"
 
         inner = db.calls_inside_batch()
-        assert [c.name for c in inner] == [
-            "put_block",
-            "put_state",
-            "put_block_root_by_state_root",
-            "put_block_root_by_slot",
-            "put_head_root",
-            "put_justified_checkpoint",
-            "put_finalized_checkpoint",
-            "prune_before_slot",
-        ]
-
-        assert inner[1].args[1] == block_root
         state_obj = inner[1].args[0]
         state_root = hash_tree_root(state_obj)
-        assert inner[2].args == (state_root, block_root)
 
-        assert inner[3].args == (Slot(1), block_root)
-        assert inner[4].args == (block_root,)
-        assert inner[5].args == (Checkpoint(root=block_root, slot=Slot(1)),)
-        assert inner[6].args == (Checkpoint(root=block_root, slot=Slot(1)),)
-
-        assert inner[7].name == "prune_before_slot"
-        assert inner[7].args == (Slot(1),)
-        assert inner[7].kwargs == {"keep_roots": frozenset({block_root})}
+        empty: MappingProxyType[str, object] = MappingProxyType({})
+        assert inner == [
+            RecordedCall(name="put_block", args=(block.block, block_root), kwargs=empty),
+            RecordedCall(name="put_state", args=(state_obj, block_root), kwargs=empty),
+            RecordedCall(
+                name="put_block_root_by_state_root",
+                args=(state_root, block_root),
+                kwargs=empty,
+            ),
+            RecordedCall(name="put_block_root_by_slot", args=(Slot(1), block_root), kwargs=empty),
+            RecordedCall(name="put_head_root", args=(block_root,), kwargs=empty),
+            RecordedCall(
+                name="put_justified_checkpoint",
+                args=(Checkpoint(root=block_root, slot=Slot(1)),),
+                kwargs=empty,
+            ),
+            RecordedCall(
+                name="put_finalized_checkpoint",
+                args=(Checkpoint(root=block_root, slot=Slot(1)),),
+                kwargs=empty,
+            ),
+            RecordedCall(
+                name="prune_before_slot",
+                args=(Slot(1),),
+                kwargs=MappingProxyType({"keep_roots": frozenset({block_root})}),
+            ),
+        ]
 
 
 class TestPublishAggregatedAttestation:
