@@ -52,7 +52,7 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     ]
     results[0].proof.verify(
         public_keys=public_keys,
-        message=att_data.data_root_bytes(),
+        message=hash_tree_root(att_data),
         slot=att_data.slot,
     )
 
@@ -73,7 +73,7 @@ def test_build_block_collects_valid_available_attestations(
         target=target,
         source=source,
     )
-    data_root = att_data.data_root_bytes()
+    data_root = hash_tree_root(att_data)
 
     proof = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
     aggregated_payloads = {att_data: {proof}}
@@ -183,7 +183,7 @@ def test_aggregated_signatures_with_multiple_data_groups(
         public_keys = [head_state.validators[vid].get_attestation_pubkey() for vid in participants]
         signed_att.proof.verify(
             public_keys=public_keys,
-            message=signed_att.data.data_root_bytes(),
+            message=hash_tree_root(signed_att.data),
             slot=signed_att.data.slot,
         )
 

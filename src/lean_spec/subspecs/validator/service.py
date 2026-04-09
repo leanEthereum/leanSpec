@@ -443,7 +443,7 @@ class ValidatorService:
         _, signature = self._sign_with_key(
             entry,
             attestation_data.slot,
-            attestation_data.data_root_bytes(),
+            hash_tree_root(attestation_data),
             "attestation_secret_key",
         )
 

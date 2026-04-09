@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.attestation import AggregatedAttestation, AttestationData
-from lean_spec.subspecs.containers.attestation.aggregation_bits import AggregationBits
 from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
@@ -123,9 +122,7 @@ class AggregatedAttestationSpec(CamelModel):
         """
         attestation_data = self.build_attestation_data(block_registry, state)
 
-        aggregation_bits = AggregationBits.from_validator_indices(
-            ValidatorIndices(data=self.validator_ids)
-        )
+        aggregation_bits = ValidatorIndices(data=self.validator_ids).to_aggregation_bits()
         invalid_aggregated = AggregatedAttestation(
             aggregation_bits=aggregation_bits,
             data=attestation_data,
@@ -134,9 +131,7 @@ class AggregatedAttestationSpec(CamelModel):
         if not self.valid_signature:
             # Cryptographically invalid proof (zeroed-out bytes).
             invalid_proof = AggregatedSignatureProof(
-                participants=AggregationBits.from_validator_indices(
-                    ValidatorIndices(data=self.validator_ids)
-                ),
+                participants=ValidatorIndices(data=self.validator_ids).to_aggregation_bits(),
                 proof_data=ByteListMiB(data=b"\x00" * 32),
             )
         elif self.signer_ids is not None:
@@ -148,9 +143,7 @@ class AggregatedAttestationSpec(CamelModel):
             )
         else:
             invalid_proof = AggregatedSignatureProof(
-                participants=AggregationBits.from_validator_indices(
-                    ValidatorIndices(data=self.validator_ids)
-                ),
+                participants=ValidatorIndices(data=self.validator_ids).to_aggregation_bits(),
                 proof_data=ByteListMiB(data=b"\x00" * 32),
             )
 

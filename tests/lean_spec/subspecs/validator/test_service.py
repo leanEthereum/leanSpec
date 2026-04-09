@@ -17,7 +17,6 @@ from lean_spec.subspecs.containers import (
     ValidatorIndex,
     ValidatorIndices,
 )
-from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -227,7 +226,7 @@ class TestSignAttestation:
         assert TARGET_SIGNATURE_SCHEME.verify(
             pk=public_key,
             slot=att_data.slot,
-            message=att_data.data_root_bytes(),
+            message=hash_tree_root(att_data),
             sig=result.signature,
         )
 
@@ -243,7 +242,7 @@ class TestSignAttestation:
         assert TARGET_SIGNATURE_SCHEME.verify(
             pk=attestation_pk,
             slot=att_data.slot,
-            message=att_data.data_root_bytes(),
+            message=hash_tree_root(att_data),
             sig=result.signature,
         )
 
@@ -1011,7 +1010,7 @@ class TestValidatorServiceIntegration:
         for signed_att in attestations_produced:
             validator_id = signed_att.validator_id
             public_key = key_manager[validator_id].attestation_public
-            message_bytes = signed_att.data.data_root_bytes()
+            message_bytes = hash_tree_root(signed_att.data)
 
             is_valid = TARGET_SIGNATURE_SCHEME.verify(
                 pk=public_key,
@@ -1108,7 +1107,7 @@ class TestValidatorServiceIntegration:
         """
         store = real_sync_service.store
         attestation_data = store.produce_attestation_data(Slot(0))
-        data_root = attestation_data.data_root_bytes()
+        data_root = hash_tree_root(attestation_data)
 
         participants = [ValidatorIndex(3), ValidatorIndex(4)]
         public_keys = []
@@ -1119,9 +1118,7 @@ class TestValidatorServiceIntegration:
             signatures.append(sig)
             public_keys.append(key_manager[vid].attestation_public)
 
-        xmss_participants = AggregationBits.from_validator_indices(
-            ValidatorIndices(data=participants)
-        )
+        xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
         proof = AggregatedSignatureProof.aggregate(
             xmss_participants=xmss_participants,
             children=[],
@@ -1292,7 +1289,7 @@ class TestValidatorServiceIntegration:
         for signed_att in attestations_produced:
             validator_id = signed_att.validator_id
             public_key = key_manager[validator_id].attestation_public
-            message_bytes = signed_att.data.data_root_bytes()
+            message_bytes = hash_tree_root(signed_att.data)
 
             is_valid = TARGET_SIGNATURE_SCHEME.verify(
                 pk=public_key,

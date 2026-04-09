@@ -14,9 +14,9 @@ from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
+    MAX_ATTESTATIONS_DATA,
 )
 from lean_spec.subspecs.containers import (
-    AggregationBits,
     AttestationData,
     Block,
     Checkpoint,
@@ -41,6 +41,7 @@ from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, Generaliz
 from lean_spec.types import (
     ZERO_HASH,
     Bytes32,
+    Uint8,
     Uint64,
 )
 from lean_spec.types.base import StrictBaseModel
@@ -219,7 +220,7 @@ class Store(StrictBaseModel):
         # The state internally might have zero-hash checkpoints (if genesis),
         # but the Store must treat the anchor block as the justified/finalized point.
         return cls(
-            time=Interval(anchor_slot * INTERVALS_PER_SLOT),
+            time=Interval.from_slot(anchor_slot),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
@@ -371,7 +372,7 @@ class Store(StrictBaseModel):
         public_key = key_state.validators[validator_id].get_attestation_pubkey()
 
         assert signature.verify(
-            public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
+            public_key, attestation_data.slot, hash_tree_root(attestation_data), scheme
         ), "Signature verification failed"
 
         # Store signature and attestation data for later aggregation.
@@ -443,7 +444,7 @@ class Store(StrictBaseModel):
         try:
             proof.verify(
                 public_keys=public_keys,
-                message=data.data_root_bytes(),
+                message=hash_tree_root(data),
                 slot=data.slot,
             )
         except AggregationError as exc:
@@ -549,6 +550,10 @@ class Store(StrictBaseModel):
         assert len(att_data_set) == len(aggregated_attestations), (
             "Block contains duplicate AttestationData entries; "
             "each AttestationData must appear at most once"
+        )
+        assert Uint8(len(att_data_set)) <= MAX_ATTESTATIONS_DATA, (
+            f"Block contains {len(att_data_set)} distinct AttestationData entries; "
+            f"maximum is {MAX_ATTESTATIONS_DATA}"
         )
 
         # Copy the aggregated proof map for updates
@@ -1012,9 +1017,9 @@ class Store(StrictBaseModel):
                 continue
 
             # Encode the set of raw signers as a compact bitfield.
-            xmss_participants = AggregationBits.from_validator_indices(
-                ValidatorIndices(data=[vid for vid, _, _ in raw_entries])
-            )
+            xmss_participants = ValidatorIndices(
+                data=[vid for vid, _, _ in raw_entries]
+            ).to_aggregation_bits()
             raw_xmss = [(pk, sig) for _, pk, sig in raw_entries]
 
             # Phase 3: Aggregate
@@ -1041,7 +1046,7 @@ class Store(StrictBaseModel):
                 xmss_participants=xmss_participants,
                 children=children,
                 raw_xmss=raw_xmss,
-                message=data.data_root_bytes(),
+                message=hash_tree_root(data),
                 slot=data.slot,
             )
             new_aggregates.append(SignedAggregatedAttestation(data=data, proof=proof))
@@ -1185,7 +1190,7 @@ class Store(StrictBaseModel):
             Tuple of (new Store with updated time, head root for building).
         """
         # Advance time to this slot's first interval
-        target_interval = Interval(slot * INTERVALS_PER_SLOT)
+        target_interval = Interval.from_slot(slot)
         store, _ = self.on_tick(target_interval, True)
 
         # Process any pending attestations before proposal

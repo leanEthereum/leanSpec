@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers.attestation import AttestationData
-from lean_spec.subspecs.containers.attestation.aggregation_bits import AggregationBits
 from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
@@ -190,9 +189,7 @@ class GossipAggregatedAttestationSpec(CamelModel):
         # Exercises signature verification rejection.
         if not self.valid_signature:
             proof = AggregatedSignatureProof(
-                participants=AggregationBits.from_validator_indices(
-                    ValidatorIndices(data=validator_ids)
-                ),
+                participants=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
                 proof_data=ByteListMiB(data=b"\x00" * 32),
             )
             return SignedAggregatedAttestation(data=attestation_data, proof=proof)
@@ -209,9 +206,7 @@ class GossipAggregatedAttestationSpec(CamelModel):
         # The store must detect and reject this inconsistency.
         if self.signer_ids and self.signer_ids != self.validator_ids:
             proof = AggregatedSignatureProof(
-                participants=AggregationBits.from_validator_indices(
-                    ValidatorIndices(data=validator_ids)
-                ),
+                participants=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
                 proof_data=proof.proof_data,
             )
 

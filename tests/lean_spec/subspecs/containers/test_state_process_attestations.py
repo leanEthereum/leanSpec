@@ -41,7 +41,6 @@ from __future__ import annotations
 
 from lean_spec.subspecs.containers.attestation import (
     AggregatedAttestation,
-    AggregationBits,
     AttestationData,
 )
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
@@ -126,9 +125,9 @@ class TestProcessAttestationsBoundsCheck:
 
         attestation = AggregatedAttestation(
             # Two validators participate in this attestation.
-            aggregation_bits=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=[ValidatorIndex(0), ValidatorIndex(1)])
-            ),
+            aggregation_bits=ValidatorIndices(
+                data=[ValidatorIndex(0), ValidatorIndex(1)]
+            ).to_aggregation_bits(),
             data=att_data,
         )
 
@@ -208,9 +207,9 @@ class TestProcessAttestationsBoundsCheck:
         )
 
         attestation = AggregatedAttestation(
-            aggregation_bits=AggregationBits.from_validator_indices(
-                ValidatorIndices(data=[ValidatorIndex(0), ValidatorIndex(1)])
-            ),
+            aggregation_bits=ValidatorIndices(
+                data=[ValidatorIndex(0), ValidatorIndex(1)]
+            ).to_aggregation_bits(),
             data=att_data,
         )
 

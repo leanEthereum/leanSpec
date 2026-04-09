@@ -10,9 +10,13 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cryptography.exceptions import InvalidTag
 
 from lean_spec.subspecs.networking.discovery.config import DiscoveryConfig
+from lean_spec.subspecs.networking.discovery.handshake import HandshakeError, HandshakeResult
 from lean_spec.subspecs.networking.discovery.messages import (
+    Distance,
+    FindNode,
     IPv4,
     Nodes,
     Nonce,
@@ -21,7 +25,16 @@ from lean_spec.subspecs.networking.discovery.messages import (
     Pong,
     Port,
     RequestId,
+    TalkResp,
 )
+from lean_spec.subspecs.networking.discovery.packet import (
+    HandshakeAuthdata,
+    PacketHeader,
+    decode_packet_header,
+    encode_message_authdata,
+    encode_packet,
+)
+from lean_spec.subspecs.networking.discovery.session import Session
 from lean_spec.subspecs.networking.discovery.transport import (
     DiscoveryProtocol,
     DiscoveryTransport,
@@ -31,7 +44,8 @@ from lean_spec.subspecs.networking.discovery.transport import (
 from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.enr.keys import EnrKey
 from lean_spec.subspecs.networking.types import NodeId, SeqNumber
-from lean_spec.types import Bytes64, Uint8
+from lean_spec.types import Bytes16, Bytes33, Bytes64, Uint8
+from tests.lean_spec.subspecs.networking.discovery.conftest import NODE_B_PUBKEY
 
 
 class TestDiscoveryProtocol:
@@ -1255,11 +1269,6 @@ class TestHandleMessage:
             local_enr=local_enr,
         )
 
-        from lean_spec.subspecs.networking.discovery.packet import (
-            PacketHeader,
-            encode_message_authdata,
-        )
-
         src_id = NodeId(bytes(range(32)))
         authdata = encode_message_authdata(src_id)
 
@@ -1358,5 +1367,1078 @@ class TestSendWhoareyou:
             # Verify enr_seq=42 was passed, not 0.
             call_kwargs = mock_create.call_args
             assert call_kwargs[1]["remote_enr_seq"] == SeqNumber(42)
+
+        await transport.stop()
+
+
+class TestSendPingNonPong:
+    """Tests for send_ping returning None on non-Pong responses."""
+
+    @pytest.mark.anyio
+    async def test_send_ping_returns_none_on_non_pong(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """send_ping returns None when response is not a Pong."""
+        config = DiscoveryConfig(request_timeout_secs=0.1)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        nodes = Nodes(
+            request_id=request_id,
+            total=Uint8(1),
+            enrs=[],
+        )
+
+        with patch.object(transport, "_send_request", new=AsyncMock(return_value=nodes)):
+            result = await transport.send_ping(remote_node_id, ("192.168.1.1", 30303))
+
+        assert result is None
+
+        await transport.stop()
+
+    @pytest.mark.anyio
+    async def test_send_ping_returns_pong_on_pong_response(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """send_ping returns Pong response when received."""
+        config = DiscoveryConfig(request_timeout_secs=0.1)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        pong = Pong(
+            request_id=request_id,
+            enr_seq=SeqNumber(1),
+            recipient_ip=IPv4(b"\x7f\x00\x00\x01"),
+            recipient_port=Port(9000),
+        )
+
+        with patch.object(transport, "_send_request", new=AsyncMock(return_value=pong)):
+            result = await transport.send_ping(remote_node_id, ("192.168.1.1", 30303))
+
+        assert result == pong
+
+        await transport.stop()
+
+
+class TestSendFindNodeNonNodes:
+    """Tests for send_findnode handling non-Nodes responses."""
+
+    @pytest.mark.anyio
+    async def test_send_findnode_ignores_non_nodes_responses(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """send_findnode ignores responses that are not NODES."""
+        config = DiscoveryConfig(request_timeout_secs=0.1)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        pong = Pong(
+            request_id=request_id,
+            enr_seq=SeqNumber(1),
+            recipient_ip=IPv4(b"\x7f\x00\x00\x01"),
+            recipient_port=Port(9000),
+        )
+
+        with patch.object(
+            transport, "_send_multi_response_request", new=AsyncMock(return_value=[pong])
+        ):
+            result = await transport.send_findnode(remote_node_id, ("192.168.1.1", 30303), [256])
+
+        assert result == []
+
+        await transport.stop()
+
+    @pytest.mark.anyio
+    async def test_send_findnode_extracts_enrs_from_nodes(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """send_findnode extracts ENRs from NODES responses."""
+        config = DiscoveryConfig(request_timeout_secs=0.1)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        nodes = Nodes(
+            request_id=request_id,
+            total=Uint8(1),
+            enrs=[b"enr1", b"enr2"],
+        )
+
+        with patch.object(
+            transport, "_send_multi_response_request", new=AsyncMock(return_value=[nodes])
+        ):
+            result = await transport.send_findnode(remote_node_id, ("192.168.1.1", 30303), [256])
+
+        assert result == [b"enr1", b"enr2"]
+
+        await transport.stop()
+
+
+class TestMultiResponseTimeout:
+    """Tests for multi-response collection timeout handling."""
+
+    @pytest.mark.anyio
+    async def test_multi_response_deadline_elapsed(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """Multi-response collection exits when deadline has passed."""
+        config = DiscoveryConfig(request_timeout_secs=0.0)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = MagicMock(spec=DiscoveryProtocol)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, mock_protocol)),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        with patch.object(
+            transport, "_send_multi_response_request", new=AsyncMock(return_value=[])
+        ):
+            result = await transport.send_findnode(remote_node_id, ("192.168.1.1", 30303), [256])
+
+        assert result == []
+
+        await transport.stop()
+
+    @pytest.mark.anyio
+    async def test_multi_response_nodes_handling(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """Multi-response collection handles NODES responses correctly."""
+        config = DiscoveryConfig(request_timeout_secs=5.0)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = MagicMock(spec=DiscoveryProtocol)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, mock_protocol)),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        nodes1 = Nodes(request_id=request_id, total=Uint8(2), enrs=[b"enr1"])
+        nodes2 = Nodes(request_id=request_id, total=Uint8(2), enrs=[b"enr2"])
+
+        with patch.object(
+            transport,
+            "_send_multi_response_request",
+            new=AsyncMock(return_value=[nodes1, nodes2]),
+        ):
+            result = await transport.send_findnode(remote_node_id, ("192.168.1.1", 30303), [256])
+
+        assert result == [b"enr1", b"enr2"]
+
+        await transport.stop()
+
+
+class TestSendMultiResponseRequest:
+    """Tests for _send_multi_response_request directly."""
+
+    @pytest.mark.anyio
+    async def test_send_multi_response_request_timeout_zero(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """_send_multi_response_request exits immediately with timeout=0."""
+        config = DiscoveryConfig(request_timeout_secs=0.0)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = MagicMock(spec=DiscoveryProtocol)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, mock_protocol)),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        findnode = FindNode(request_id=request_id, distances=[Distance(256)])
+
+        result = await transport._send_multi_response_request(
+            remote_node_id, ("192.168.1.1", 30303), findnode
+        )
+
+        assert result == []
+
+        await transport.stop()
+
+    @pytest.mark.anyio
+    async def test_send_multi_response_request_collects_responses(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """_send_multi_response_request collects multiple NODES responses."""
+        config = DiscoveryConfig(request_timeout_secs=1.0)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = MagicMock(spec=DiscoveryProtocol)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, mock_protocol)),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        findnode = FindNode(request_id=request_id, distances=[Distance(256)])
+
+        async def feed_responses():
+            await asyncio.sleep(0.01)
+            nodes1 = Nodes(request_id=request_id, total=Uint8(2), enrs=[b"enr1"])
+            nodes2 = Nodes(request_id=request_id, total=Uint8(2), enrs=[b"enr2"])
+            transport._pending_multi_requests[request_id].response_queue.put_nowait(nodes1)
+            await asyncio.sleep(0.01)
+            transport._pending_multi_requests[request_id].response_queue.put_nowait(nodes2)
+
+        task = asyncio.create_task(
+            transport._send_multi_response_request(remote_node_id, ("192.168.1.1", 30303), findnode)
+        )
+        feed_task = asyncio.create_task(feed_responses())
+
+        result = await task
+        await feed_task
+
+        assert result == [
+            Nodes(request_id=request_id, total=Uint8(2), enrs=[b"enr1"]),
+            Nodes(request_id=request_id, total=Uint8(2), enrs=[b"enr2"]),
+        ]
+
+        await transport.stop()
+
+
+class TestSendTalkReqNonTalkResp:
+    """Tests for send_talkreq returning None on non-TalkResp responses."""
+
+    @pytest.mark.anyio
+    async def test_send_talkreq_returns_none_on_non_talkresp(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """send_talkreq returns None when response is not a TalkResp."""
+        config = DiscoveryConfig(request_timeout_secs=0.1)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        pong = Pong(
+            request_id=request_id,
+            enr_seq=SeqNumber(1),
+            recipient_ip=IPv4(b"\x7f\x00\x00\x01"),
+            recipient_port=Port(9000),
+        )
+
+        with patch.object(transport, "_send_request", new=AsyncMock(return_value=pong)):
+            result = await transport.send_talkreq(
+                remote_node_id, ("192.168.1.1", 30303), b"eth2", b"request"
+            )
+
+        assert result is None
+
+        await transport.stop()
+
+    @pytest.mark.anyio
+    async def test_send_talkreq_returns_response_on_talkresp(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """send_talkreq returns response when TalkResp is received."""
+        config = DiscoveryConfig(request_timeout_secs=0.1)
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+            config=config,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        request_id = RequestId(data=b"\x01\x02\x03\x04")
+        response = b"eth2 response data"
+        talkresp = TalkResp(
+            request_id=request_id,
+            response=response,
+        )
+
+        with patch.object(transport, "_send_request", new=AsyncMock(return_value=talkresp)):
+            result = await transport.send_talkreq(
+                remote_node_id, ("192.168.1.1", 30303), b"eth2", b"request"
+            )
+
+        assert result == response
+
+        await transport.stop()
+
+
+class TestBuildMessagePacketDummyKey:
+    """Tests for _build_message_packet without existing session."""
+
+    @pytest.mark.anyio
+    async def test_build_message_packet_uses_dummy_key_without_session(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """_build_message_packet uses dummy key when no session exists."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        with patch.object(
+            transport._handshake_manager,
+            "start_handshake",
+        ) as mock_start:
+            packet = transport._build_message_packet(
+                remote_node_id,
+                ("192.168.1.1", 30303),
+                Nonce(bytes(12)),
+                b"test message",
+            )
+
+            mock_start.assert_called_once_with(remote_node_id)
+            assert packet is not None
+
+        await transport.stop()
+
+    @pytest.mark.anyio
+    async def test_build_message_packet_uses_session_key_with_session(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """_build_message_packet uses session key when session exists."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        transport._session_cache.create(
+            remote_node_id,
+            send_key=Bytes16(bytes(16)),
+            recv_key=Bytes16(bytes(range(16))),
+            is_initiator=True,
+            ip="192.168.1.1",
+            port=Port(30303),
+        )
+
+        with patch.object(
+            transport._handshake_manager,
+            "start_handshake",
+        ) as mock_start:
+            packet = transport._build_message_packet(
+                remote_node_id,
+                ("192.168.1.1", 30303),
+                Nonce(bytes(12)),
+                b"test message",
+            )
+
+            mock_start.assert_not_called()
+            assert packet is not None
+
+        await transport.stop()
+
+
+class TestHandlePacketRouting:
+    """Tests for _handle_packet routing to WHOAREYOU and HANDSHAKE handlers."""
+
+    @pytest.mark.anyio
+    async def test_handle_packet_routes_whoareyou(
+        self, local_node_id, local_private_key, local_enr
+    ):
+        """WHOAREYOU packets are routed to _handle_whoareyou."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        packet_data = encode_packet(
+            dest_node_id=local_node_id,
+            flag=PacketFlag.WHOAREYOU,
+            nonce=Nonce(bytes(12)),
+            authdata=bytes(24),
+            message=bytes(32),
+        )
+
+        with patch.object(transport, "_handle_whoareyou", new=AsyncMock()) as mock_handler:
+            await transport._handle_packet(packet_data, ("192.168.1.1", 30303))
+            mock_handler.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_handle_packet_routes_handshake(
+        self, local_node_id, local_private_key, local_enr
+    ):
+        """HANDSHAKE packets are routed to _handle_handshake."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        packet_data = encode_packet(
+            dest_node_id=local_node_id,
+            flag=PacketFlag.HANDSHAKE,
+            nonce=Nonce(bytes(12)),
+            authdata=bytes(65),
+            message=b"encrypted",
+            encryption_key=Bytes16(bytes(16)),
+        )
+
+        with patch.object(transport, "_handle_handshake", new=AsyncMock()) as mock_handler:
+            await transport._handle_packet(packet_data, ("192.168.1.1", 30303))
+            mock_handler.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_handle_packet_routes_message(self, local_node_id, local_private_key, local_enr):
+        """MESSAGE packets are routed to _handle_message."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        packet_data = encode_packet(
+            dest_node_id=local_node_id,
+            flag=PacketFlag.MESSAGE,
+            nonce=Nonce(bytes(12)),
+            authdata=encode_message_authdata(NodeId(bytes(range(32)))),
+            message=b"encrypted",
+            encryption_key=Bytes16(bytes(16)),
+        )
+
+        with patch.object(transport, "_handle_message", new=AsyncMock()) as mock_handler:
+            await transport._handle_packet(packet_data, ("192.168.1.1", 30303))
+            mock_handler.assert_called_once()
+
+
+class TestHandleWhoareyou:
+    """Tests for _handle_whoareyou edge cases."""
+
+    @pytest.mark.anyio
+    async def test_handle_whoareyou_no_matching_request(
+        self, local_node_id, local_private_key, local_enr
+    ):
+        """_handle_whoareyou returns when no pending request matches nonce."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        id_nonce = bytes(16)
+        authdata = id_nonce + (1).to_bytes(8, "big")
+        packet_data = encode_packet(
+            dest_node_id=local_node_id,
+            flag=PacketFlag.WHOAREYOU,
+            nonce=Nonce(bytes(12)),
+            authdata=authdata,
+            message=bytes(32),
+        )
+
+        with patch.object(transport._handshake_manager, "start_handshake"):
+            await transport._handle_packet(packet_data, ("192.168.1.1", 30303))
+
+    @pytest.mark.anyio
+    async def test_handle_whoareyou_no_cached_enr(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """_handle_whoareyou returns when no cached ENR for remote."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        loop = asyncio.get_running_loop()
+        nonce = Nonce(bytes(12))
+        future: asyncio.Future = loop.create_future()
+        pending = PendingRequest(
+            request_id=RequestId(data=b"\x01"),
+            dest_node_id=remote_node_id,
+            sent_at=loop.time(),
+            nonce=nonce,
+            message=MagicMock(),
+            future=future,
+        )
+        transport._pending_requests[pending.request_id] = pending
+
+        id_nonce = bytes(16)
+        authdata = id_nonce + (1).to_bytes(8, "big")
+        raw_packet = encode_packet(
+            dest_node_id=local_node_id,
+            flag=PacketFlag.WHOAREYOU,
+            nonce=Nonce(bytes(12)),
+            authdata=authdata,
+            message=bytes(32),
+        )
+
+        header, _, _ = decode_packet_header(local_node_id, raw_packet)
+
+        with patch.object(
+            transport._handshake_manager,
+            "get_cached_enr",
+            return_value=None,
+        ):
+            await transport._handle_whoareyou(header, bytes(24), ("192.168.1.1", 30303), raw_packet)
+
+    @pytest.mark.anyio
+    async def test_handle_whoareyou_matching_request_sends_handshake(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """_handle_whoareyou sends HANDSHAKE when pending request matches."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        mock_protocol = MagicMock(spec=DiscoveryProtocol)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, mock_protocol)),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        nonce_bytes = bytes(12)
+        loop = asyncio.get_running_loop()
+        nonce = Nonce(nonce_bytes)
+        future: asyncio.Future = loop.create_future()
+        pending = PendingRequest(
+            request_id=RequestId(data=b"\x01"),
+            dest_node_id=remote_node_id,
+            sent_at=loop.time(),
+            nonce=nonce,
+            message=Ping(request_id=RequestId(data=b"\x01"), enr_seq=SeqNumber(1)),
+            future=future,
+        )
+        transport._pending_requests[pending.request_id] = pending
+
+        remote_enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=SeqNumber(1),
+            pairs={
+                EnrKey("id"): b"v4",
+                EnrKey("secp256k1"): NODE_B_PUBKEY,
+            },
+        )
+
+        authdata = bytes(34)
+        mock_response_authdata = authdata
+        mock_send_key = Bytes16(bytes(16))
+        mock_recv_key = Bytes16(bytes(range(16)))
+
+        with (
+            patch.object(
+                transport._handshake_manager,
+                "get_cached_enr",
+                return_value=remote_enr,
+            ),
+            patch.object(
+                transport._handshake_manager,
+                "create_handshake_response",
+                return_value=(mock_response_authdata, mock_send_key, mock_recv_key),
+            ),
+        ):
+            id_nonce = bytes(16)
+            whoareyou_authdata = id_nonce + (1).to_bytes(8, "big")
+            raw_packet = encode_packet(
+                dest_node_id=local_node_id,
+                flag=PacketFlag.WHOAREYOU,
+                nonce=nonce,
+                authdata=whoareyou_authdata,
+                message=bytes(32),
+            )
+
+            header, _, _ = decode_packet_header(local_node_id, raw_packet)
+            await transport._handle_whoareyou(header, bytes(24), ("192.168.1.1", 30303), raw_packet)
+
+            mock_udp.sendto.assert_called()
+
+        await transport.stop()
+
+    @pytest.mark.anyio
+    async def test_handle_whoareyou_handshake_error(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """_handle_whoareyou handles HandshakeError gracefully."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        loop = asyncio.get_running_loop()
+        nonce = Nonce(bytes(12))
+        future: asyncio.Future = loop.create_future()
+        pending = PendingRequest(
+            request_id=RequestId(data=b"\x01"),
+            dest_node_id=remote_node_id,
+            sent_at=loop.time(),
+            nonce=nonce,
+            message=MagicMock(),
+            future=future,
+        )
+        transport._pending_requests[pending.request_id] = pending
+
+        remote_enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=SeqNumber(1),
+            pairs={
+                EnrKey("id"): b"v4",
+                EnrKey("secp256k1"): NODE_B_PUBKEY,
+            },
+        )
+
+        id_nonce = bytes(16)
+        authdata = id_nonce + (1).to_bytes(8, "big")
+        raw_packet = encode_packet(
+            dest_node_id=local_node_id,
+            flag=PacketFlag.WHOAREYOU,
+            nonce=Nonce(bytes(12)),
+            authdata=authdata,
+            message=bytes(32),
+        )
+
+        header, message_bytes, _ = decode_packet_header(local_node_id, raw_packet)
+
+        with (
+            patch.object(
+                transport._handshake_manager,
+                "get_cached_enr",
+                return_value=remote_enr,
+            ),
+            patch.object(
+                transport._handshake_manager,
+                "create_handshake_response",
+                side_effect=HandshakeError("test error"),
+            ),
+        ):
+            await transport._handle_whoareyou(
+                header, message_bytes, ("192.168.1.1", 30303), raw_packet
+            )
+
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        loop = asyncio.get_running_loop()
+        nonce = Nonce(bytes(12))
+        future: asyncio.Future = loop.create_future()
+        pending = PendingRequest(
+            request_id=RequestId(data=b"\x01"),
+            dest_node_id=remote_node_id,
+            sent_at=loop.time(),
+            nonce=nonce,
+            message=MagicMock(),
+            future=future,
+        )
+        transport._pending_requests[pending.request_id] = pending
+
+        remote_enr = ENR(
+            signature=Bytes64(bytes(64)),
+            seq=SeqNumber(1),
+            pairs={
+                EnrKey("id"): b"v4",
+                EnrKey("secp256k1"): NODE_B_PUBKEY,
+            },
+        )
+
+        id_nonce = bytes(16)
+        authdata = id_nonce + (1).to_bytes(8, "big")
+        raw_packet = encode_packet(
+            dest_node_id=local_node_id,
+            flag=PacketFlag.WHOAREYOU,
+            nonce=Nonce(bytes(12)),
+            authdata=authdata,
+            message=bytes(32),
+        )
+
+        header, message_bytes, _ = decode_packet_header(local_node_id, raw_packet)
+
+        with (
+            patch.object(
+                transport._handshake_manager,
+                "get_cached_enr",
+                return_value=remote_enr,
+            ),
+            patch.object(
+                transport._handshake_manager,
+                "create_handshake_response",
+                side_effect=HandshakeError("test error"),
+            ),
+        ):
+            await transport._handle_whoareyou(
+                header, message_bytes, ("192.168.1.1", 30303), raw_packet
+            )
+
+
+class TestHandleHandshake:
+    """Tests for _handle_handshake."""
+
+    @pytest.mark.anyio
+    async def test_handle_handshake_completes_and_dispatches(
+        self, local_node_id, local_private_key, local_enr
+    ):
+        """_handle_handshake completes handshake and dispatches message."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        remote_node_id = NodeId(bytes(range(32)))
+        session = Session(
+            node_id=remote_node_id,
+            recv_key=Bytes16(bytes(range(16))),
+            send_key=Bytes16(bytes(range(16))),
+            created_at=0.0,
+            last_seen=0.0,
+            is_initiator=False,
+        )
+        result = HandshakeResult(session=session, remote_enr=None)
+
+        mock_authdata = HandshakeAuthdata(
+            src_id=remote_node_id,
+            sig_size=64,
+            eph_key_size=33,
+            id_signature=Bytes64(bytes(64)),
+            eph_pubkey=Bytes33(bytes(range(33))),
+            record=None,
+        )
+
+        pong = Pong(
+            request_id=RequestId(data=b"\x01"),
+            enr_seq=SeqNumber(1),
+            recipient_ip=IPv4(b"\x7f\x00\x00\x01"),
+            recipient_port=Port(9000),
+        )
+
+        with (
+            patch(
+                "lean_spec.subspecs.networking.discovery.transport.decode_handshake_authdata",
+                return_value=mock_authdata,
+            ),
+            patch.object(
+                transport._handshake_manager,
+                "handle_handshake",
+                return_value=result,
+            ),
+            patch(
+                "lean_spec.subspecs.networking.discovery.transport.decrypt_message",
+                return_value=b"decrypted",
+            ),
+            patch(
+                "lean_spec.subspecs.networking.discovery.transport.decode_message",
+                return_value=pong,
+            ),
+            patch.object(
+                transport,
+                "_handle_decoded_message",
+                new=AsyncMock(),
+            ) as mock_dispatch,
+        ):
+            header = MagicMock()
+            header.authdata = bytes(65)
+            header.nonce = Nonce(bytes(12))
+
+            await transport._handle_handshake(header, b"encrypted", ("192.168.1.1", 30303), b"ad")
+
+            mock_dispatch.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_handle_handshake_empty_message_skips_decryption(
+        self, local_node_id, local_private_key, local_enr
+    ):
+        """_handle_handshake skips decryption when message_bytes is empty."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        remote_node_id = NodeId(bytes(range(32)))
+        session = Session(
+            node_id=remote_node_id,
+            recv_key=Bytes16(bytes(range(16))),
+            send_key=Bytes16(bytes(range(16))),
+            created_at=0.0,
+            last_seen=0.0,
+            is_initiator=False,
+        )
+        result = HandshakeResult(session=session, remote_enr=None)
+
+        mock_authdata = HandshakeAuthdata(
+            src_id=remote_node_id,
+            sig_size=64,
+            eph_key_size=33,
+            id_signature=Bytes64(bytes(64)),
+            eph_pubkey=Bytes33(bytes(range(33))),
+            record=None,
+        )
+
+        with (
+            patch(
+                "lean_spec.subspecs.networking.discovery.transport.decode_handshake_authdata",
+                return_value=mock_authdata,
+            ),
+            patch.object(
+                transport._handshake_manager,
+                "handle_handshake",
+                return_value=result,
+            ),
+            patch(
+                "lean_spec.subspecs.networking.discovery.transport.decrypt_message",
+            ) as mock_decrypt,
+            patch.object(
+                transport,
+                "_handle_decoded_message",
+                new=AsyncMock(),
+            ) as mock_dispatch,
+        ):
+            header = MagicMock()
+            header.authdata = bytes(65)
+            header.nonce = Nonce(bytes(12))
+
+            await transport._handle_handshake(header, b"", ("192.168.1.1", 30303), b"ad")
+
+            mock_decrypt.assert_not_called()
+            mock_dispatch.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_handle_handshake_error(self, local_node_id, local_private_key, local_enr):
+        """_handle_handshake handles errors gracefully."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        remote_node_id = NodeId(bytes(range(32)))
+        mock_authdata = HandshakeAuthdata(
+            src_id=remote_node_id,
+            sig_size=64,
+            eph_key_size=33,
+            id_signature=Bytes64(bytes(64)),
+            eph_pubkey=Bytes33(bytes(range(33))),
+            record=None,
+        )
+
+        with (
+            patch(
+                "lean_spec.subspecs.networking.discovery.transport.decode_handshake_authdata",
+                return_value=mock_authdata,
+            ),
+            patch.object(
+                transport._handshake_manager,
+                "handle_handshake",
+                side_effect=HandshakeError("test error"),
+            ),
+        ):
+            header = MagicMock()
+            header.authdata = bytes(65)
+
+            await transport._handle_handshake(header, b"", ("192.168.1.1", 30303), b"")
+
+
+class TestHandleMessageDecryption:
+    """Tests for _handle_message decryption failure path."""
+
+    @pytest.mark.anyio
+    async def test_handle_message_decryption_failure_sends_whoareyou(
+        self, local_node_id, local_private_key, local_enr
+    ):
+        """Decryption failure triggers WHOAREYOU response."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        src_id = NodeId(bytes(range(32)))
+        transport._session_cache.create(
+            src_id,
+            send_key=Bytes16(bytes(16)),
+            recv_key=Bytes16(bytes(range(16))),
+            is_initiator=False,
+            ip="192.168.1.1",
+            port=Port(30303),
+        )
+
+        authdata = encode_message_authdata(src_id)
+
+        header = PacketHeader(
+            flag=PacketFlag.MESSAGE,
+            nonce=Nonce(bytes(12)),
+            authdata=authdata,
+        )
+
+        with (
+            patch(
+                "lean_spec.subspecs.networking.discovery.transport.decrypt_message",
+                side_effect=InvalidTag(),
+            ),
+            patch.object(
+                transport,
+                "_send_whoareyou",
+                new=AsyncMock(),
+            ) as mock_whoareyou,
+        ):
+            await transport._handle_message(header, b"encrypted", ("192.168.1.1", 30303), b"ad")
+
+            mock_whoareyou.assert_called_once()
+
+
+class TestSendResponseWithSession:
+    """Tests for send_response with existing session."""
+
+    @pytest.mark.anyio
+    async def test_send_response_with_session(
+        self, local_node_id, local_private_key, local_enr, remote_node_id
+    ):
+        """send_response encrypts and sends when session exists."""
+        transport = DiscoveryTransport(
+            local_node_id=local_node_id,
+            local_private_key=local_private_key,
+            local_enr=local_enr,
+        )
+
+        transport._session_cache.create(
+            remote_node_id,
+            send_key=Bytes16(bytes(16)),
+            recv_key=Bytes16(bytes(range(16))),
+            is_initiator=False,
+            ip="192.168.1.1",
+            port=Port(30303),
+        )
+
+        mock_udp = MagicMock(spec=asyncio.DatagramTransport)
+        with patch.object(
+            asyncio.get_event_loop(),
+            "create_datagram_endpoint",
+            new=AsyncMock(return_value=(mock_udp, MagicMock(spec=DiscoveryProtocol))),
+        ):
+            await transport.start("127.0.0.1", 9000)
+
+        pong = Pong(
+            request_id=RequestId(data=b"\x01"),
+            enr_seq=SeqNumber(1),
+            recipient_ip=IPv4(b"\x7f\x00\x00\x01"),
+            recipient_port=Port(9000),
+        )
+
+        result = await transport.send_response(remote_node_id, ("192.168.1.1", 30303), pong)
+
+        assert result is True
+        mock_udp.sendto.assert_called_once()
 
         await transport.stop()

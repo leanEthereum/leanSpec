@@ -141,7 +141,7 @@ class SignedBlock(Container):
 
             # The signed message is the attestation data root.
             # All validators in this group signed this exact data.
-            attestation_data_root = aggregated_attestation.data.data_root_bytes()
+            attestation_data_root = hash_tree_root(aggregated_attestation.data)
 
             for validator_id in validator_ids:
                 num_validators = Uint64(len(validators))
