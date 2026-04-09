@@ -1,27 +1,5 @@
 """
 Tests for NetworkService event dispatch, run() lifecycle, and publish methods.
-
-Testing Strategy
-----------------
-
-The existing ``test_network_service.py`` covers block, attestation, and peer-status
-routing through real ``SyncService`` + ``MockForkchoiceStore``.  This module fills
-the remaining coverage gaps:
-
-1. **Event dispatch** — ``GossipAggregatedAttestationEvent``, ``PeerConnectedEvent``,
-   and ``PeerDisconnectedEvent`` are dispatched to the correct handler or peer manager
-   method.
-
-2. **Run lifecycle** — ``run()`` exits when ``stop()`` is called mid-loop, when the
-   event source is exhausted, and ``is_running`` transitions correctly.
-
-3. **Publish methods** — ``publish_block``, ``publish_attestation``, and
-   ``publish_aggregated_attestation`` SSZ-encode, snappy-compress, and publish to the
-   correct gossip topic via the event source.
-
-For dispatch tests we use ``unittest.mock.AsyncMock`` on ``SyncService`` to verify
-calls without exercising real forkchoice logic.  For publish tests we use the real
-``MockEventSource._published`` list to inspect (topic, data) pairs.
 """
 
 from __future__ import annotations
@@ -171,6 +149,21 @@ class TestRunLifecycle:
         await svc.run()
         assert not svc.is_running
 
+    async def test_stop_async_iteration_exception_caught(self, peer_id: PeerId) -> None:
+        """Verify that StopAsyncIteration raised during iteration is caught by the explicit except block."""
+        source = MagicMock()
+        # If __aiter__ raises StopAsyncIteration, it should be caught by the except block in run()
+        source.__aiter__.side_effect = StopAsyncIteration
+
+        sync_service = create_mock_sync_service(peer_id)
+        svc = NetworkService(
+            sync_service=sync_service,
+            event_source=source,  # type: ignore[arg-type]
+            fork_digest=FORK_DIGEST,
+        )
+        await svc.run()
+        assert not svc.is_running
+
 
 # ---------------------------------------------------------------------------
 # Event dispatch — aggregated attestation
@@ -207,8 +200,78 @@ class TestAggregatedAttestationDispatch:
 
 
 # ---------------------------------------------------------------------------
-# Event dispatch — peer connected / disconnected
+# Event dispatch — secondary events
 # ---------------------------------------------------------------------------
+
+
+class TestSecondaryEventDispatch:
+    """Tests for remaining event types: Block, Attestation, and PeerStatus."""
+
+    async def test_gossip_block_routed(self, peer_id: PeerId) -> None:
+        """GossipBlockEvent calls sync_service.on_gossip_block."""
+        from lean_spec.subspecs.sync.service import SyncService as _SyncService
+
+        sync_service = create_mock_sync_service(peer_id)
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+        topic = GossipTopic.block(FORK_DIGEST)
+        event = GossipBlockEvent(block=block, peer_id=peer_id, topic=topic)
+
+        mock_handler = AsyncMock()
+        with patch.object(_SyncService, "on_gossip_block", mock_handler):
+            svc, _ = _make_network_service([event], sync_service=sync_service)
+            await svc.run()
+
+            mock_handler.assert_awaited_once_with(block, peer_id)
+
+    async def test_gossip_attestation_routed(self, peer_id: PeerId) -> None:
+        """GossipAttestationEvent calls sync_service.on_gossip_attestation."""
+        from lean_spec.subspecs.sync.service import SyncService as _SyncService
+
+        sync_service = create_mock_sync_service(peer_id)
+        attestation = SignedAttestation(
+            validator_id=ValidatorIndex(1),
+            data=AttestationData(
+                slot=Slot(1),
+                head=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),
+                target=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),
+                source=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+            ),
+            signature=make_mock_signature(),
+        )
+        topic = GossipTopic.attestation_subnet(FORK_DIGEST, SubnetId(0))
+        event = GossipAttestationEvent(
+            attestation=attestation, peer_id=peer_id, topic=topic
+        )
+
+        mock_handler = AsyncMock()
+        with patch.object(_SyncService, "on_gossip_attestation", mock_handler):
+            svc, _ = _make_network_service([event], sync_service=sync_service)
+            await svc.run()
+
+            mock_handler.assert_awaited_once_with(attestation, peer_id)
+
+    async def test_peer_status_routed(self, peer_id: PeerId) -> None:
+        """PeerStatusEvent calls sync_service.on_peer_status."""
+        from lean_spec.subspecs.sync.service import SyncService as _SyncService
+
+        sync_service = create_mock_sync_service(peer_id)
+        status = Status(
+            finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+            head=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+        )
+        event = PeerStatusEvent(peer_id=peer_id, status=status)
+
+        mock_handler = AsyncMock()
+        with patch.object(_SyncService, "on_peer_status", mock_handler):
+            svc, _ = _make_network_service([event], sync_service=sync_service)
+            await svc.run()
+
+            mock_handler.assert_awaited_once_with(peer_id, status)
 
 
 class TestPeerConnectionEvents:
@@ -364,3 +427,95 @@ class TestPublishAggregatedAttestation:
         expected_topic = GossipTopic.committee_aggregation(FORK_DIGEST).to_topic_id()
         assert topic_id == expected_topic
         assert data == compress(fake_ssz)
+
+
+# ---------------------------------------------------------------------------
+# Edge cases for _handle_event match exhaustiveness
+# ---------------------------------------------------------------------------
+
+
+class TestHandleEventEdgeCases:
+    """Cover the implicit fall-through branch of the match statement."""
+
+    async def test_disconnecting_absent_peer_does_not_raise(
+        self, peer_id: PeerId
+    ) -> None:
+        """PeerDisconnectedEvent for an unknown peer should not crash."""
+        sync_service = create_mock_sync_service(peer_id)
+        unknown_peer = PeerId.from_base58("16Uiu2HAmUnknownPeerXYZ")
+
+        events: list[NetworkEvent] = [
+            PeerDisconnectedEvent(peer_id=unknown_peer),
+        ]
+        svc, _ = _make_network_service(events, sync_service=sync_service)
+        # Should not raise even though the peer was never connected.
+        await svc.run()
+        assert not svc.is_running
+
+    async def test_multiple_peer_events_sequence(
+        self,
+        peer_id: PeerId,
+        peer_id_2: PeerId,
+    ) -> None:
+        """Connect then disconnect exercising both match arms in sequence."""
+        sync_service = create_mock_sync_service(peer_id)
+        events: list[NetworkEvent] = [
+            PeerConnectedEvent(peer_id=peer_id_2),
+            PeerDisconnectedEvent(peer_id=peer_id_2),
+        ]
+        svc, _ = _make_network_service(events, sync_service=sync_service)
+        await svc.run()
+
+        assert peer_id_2 not in sync_service.peer_manager
+
+
+# ---------------------------------------------------------------------------
+# Constructor / init field defaults
+# ---------------------------------------------------------------------------
+
+
+class TestNetworkServiceInit:
+    """Tests for constructor fields and defaults."""
+
+    def test_default_fork_digest(self, peer_id: PeerId) -> None:
+        """fork_digest defaults to ``0x00000000`` when not specified."""
+        source = MockEventSource(events=[])
+        sync_service = create_mock_sync_service(peer_id)
+        svc = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
+        assert svc.fork_digest == "0x00000000"
+
+    def test_default_is_aggregator(self, peer_id: PeerId) -> None:
+        """is_aggregator defaults to False."""
+        source = MockEventSource(events=[])
+        sync_service = create_mock_sync_service(peer_id)
+        svc = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
+        assert svc.is_aggregator is False
+
+    def test_default_aggregate_subnet_ids(self, peer_id: PeerId) -> None:
+        """aggregate_subnet_ids defaults to an empty tuple."""
+        source = MockEventSource(events=[])
+        sync_service = create_mock_sync_service(peer_id)
+        svc = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+        )
+        assert svc.aggregate_subnet_ids == ()
+
+    def test_custom_aggregator_fields(self, peer_id: PeerId) -> None:
+        """Constructor accepts is_aggregator and aggregate_subnet_ids."""
+        source = MockEventSource(events=[])
+        sync_service = create_mock_sync_service(peer_id)
+        svc = NetworkService(
+            sync_service=sync_service,
+            event_source=source,
+            is_aggregator=True,
+            aggregate_subnet_ids=(SubnetId(0), SubnetId(3)),
+        )
+        assert svc.is_aggregator is True
+        assert svc.aggregate_subnet_ids == (SubnetId(0), SubnetId(3))
