@@ -374,7 +374,7 @@ class TestDatabaseGenesisTimeFallback:
         mock_db.get_genesis_time.return_value = GENESIS_TIME
 
         wall_time = float(GENESIS_TIME) + 100.0
-        store = Node._try_load_from_database(
+        store = Node._try_load_store_from_database(
             mock_db,
             validator_id=None,
             genesis_time=None,
@@ -396,7 +396,7 @@ class TestDatabaseGenesisTimeFallback:
         mock_db.get_genesis_time.return_value = None
 
         wall_time = 200.0
-        store = Node._try_load_from_database(
+        store = Node._try_load_store_from_database(
             mock_db,
             validator_id=None,
             genesis_time=None,
