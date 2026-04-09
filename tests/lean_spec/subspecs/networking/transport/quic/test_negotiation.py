@@ -15,10 +15,11 @@ Reference: https://github.com/multiformats/multistream-select
 """
 
 from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass, field
-from unittest.mock import AsyncMock, patch
 from typing import cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -514,6 +515,7 @@ class TestMessageFormat:
         expected = encode_varint(len(expected_payload)) + expected_payload
 
         assert raw == expected
+
 
 class TestBufferedIO:
     """Tests for buffered read/write operations."""
