@@ -18,9 +18,11 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, patch
+from typing import cast
 
 import pytest
 
+from lean_spec.subspecs.networking.transport.quic import QuicStream
 from lean_spec.subspecs.networking.transport.quic.stream_adapter import (
     MAX_MESSAGE_SIZE,
     MAX_NEGOTIATION_ATTEMPTS,
@@ -764,7 +766,7 @@ class TestClose:
     async def test_close_delegates_to_underlying(self) -> None:
         """Close delegates to stream"""
         mock = _MockStream(_read_queue=asyncio.Queue(), _write_queue=None)
-        await QuicStreamAdapter(mock).close()
+        await QuicStreamAdapter(cast(QuicStream, mock)).close()
         assert mock.close_called is True
 
 
