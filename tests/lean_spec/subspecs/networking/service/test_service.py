@@ -4,11 +4,7 @@ Tests for NetworkService event dispatch, run() lifecycle, and publish methods.
 
 from __future__ import annotations
 
-import asyncio
-from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from lean_spec.snappy import compress
 from lean_spec.subspecs.containers import (
@@ -34,7 +30,6 @@ from lean_spec.subspecs.networking.service.events import (
     PeerStatusEvent,
 )
 from lean_spec.subspecs.networking.types import ConnectionState
-from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.types import Bytes32
 from tests.lean_spec.helpers import (
     MockEventSource,
@@ -150,7 +145,7 @@ class TestRunLifecycle:
         assert not svc.is_running
 
     async def test_stop_async_iteration_exception_caught(self, peer_id: PeerId) -> None:
-        """Verify that StopAsyncIteration raised during iteration is caught by the explicit except block."""
+        """StopAsyncIteration during iteration is caught by the explicit except block."""
         source = MagicMock()
         # If __aiter__ raises StopAsyncIteration, it should be caught by the except block in run()
         source.__aiter__.side_effect = StopAsyncIteration
@@ -198,7 +193,6 @@ class TestAggregatedAttestationDispatch:
             mock_handler.assert_awaited_once_with(signed_agg, peer_id)
 
 
-
 # ---------------------------------------------------------------------------
 # Event dispatch — secondary events
 # ---------------------------------------------------------------------------
@@ -244,9 +238,7 @@ class TestSecondaryEventDispatch:
             signature=make_mock_signature(),
         )
         topic = GossipTopic.attestation_subnet(FORK_DIGEST, SubnetId(0))
-        event = GossipAttestationEvent(
-            attestation=attestation, peer_id=peer_id, topic=topic
-        )
+        event = GossipAttestationEvent(attestation=attestation, peer_id=peer_id, topic=topic)
 
         mock_handler = AsyncMock()
         with patch.object(_SyncService, "on_gossip_attestation", mock_handler):
@@ -437,9 +429,7 @@ class TestPublishAggregatedAttestation:
 class TestHandleEventEdgeCases:
     """Cover the implicit fall-through branch of the match statement."""
 
-    async def test_disconnecting_absent_peer_does_not_raise(
-        self, peer_id: PeerId
-    ) -> None:
+    async def test_disconnecting_absent_peer_does_not_raise(self, peer_id: PeerId) -> None:
         """PeerDisconnectedEvent for an unknown peer should not crash."""
         sync_service = create_mock_sync_service(peer_id)
         unknown_peer = PeerId.from_base58("16Uiu2HAmUnknownPeerXYZ")
