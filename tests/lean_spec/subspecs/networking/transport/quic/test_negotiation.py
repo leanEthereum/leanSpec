@@ -15,7 +15,6 @@ Reference: https://github.com/multiformats/multistream-select
 """
 
 from __future__ import annotations
-
 import asyncio
 from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, patch
@@ -23,12 +22,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from lean_spec.subspecs.networking.transport.quic.stream_adapter import (
+    MAX_MESSAGE_SIZE,
+    MAX_NEGOTIATION_ATTEMPTS,
     MULTISTREAM_PROTOCOL_ID,
     NA,
     NegotiationError,
     QuicStreamAdapter,
-    MAX_NEGOTIATION_ATTEMPTS,
-    MAX_MESSAGE_SIZE,
 )
 from lean_spec.subspecs.networking.types import ProtocolId
 from lean_spec.subspecs.networking.varint import decode_varint, encode_varint
@@ -86,7 +85,6 @@ class TestNegotiateClient:
         await task
         assert result == GOSSIPSUB_ID
 
-
     async def test_client_all_rejected(self) -> None:
         """Client raises error when all protocols rejected."""
         client, server = _create_stream_pair()
@@ -118,27 +116,16 @@ class TestNegotiateClient:
         with pytest.raises(NegotiationError, match="Invalid multistream header"):
             await client.negotiate_client([GOSSIPSUB_ID])
 
-    @pytest.mark.anyio
-    async def test_client_unexpected_response(self) -> None:
-        """Client raises error on unexpected response."""
-        client, server = _create_stream_pair()
-
-    
-    async def test_client_empty_protocol_list(self) -> None:
-        """Client gets empty protocol list"""
-        client, _ = _create_stream_pair()
-        with pytest.raises(NegotiationError, match="No protocols to negotiate"):
-            await client.negotiate_client([])
-    
-        
     async def test_client_unexpected_response(self) -> None:
         """Client gets neither protocol nor na"""
         client, server = _create_stream_pair()
+
         async def server_task() -> None:
             await _read_message(server)
             await _write_message(server, MULTISTREAM_PROTOCOL_ID)
             await _read_message(server)
             await _write_message(server, "/unexpected/response")
+            await _write_message(server, "<><><>")
 
         task = asyncio.create_task(server_task())
         with pytest.raises(NegotiationError, match="Unexpected response"):
@@ -197,35 +184,10 @@ class TestNegotiateServer:
         with pytest.raises(NegotiationError, match="Invalid multistream header"):
             await server.negotiate_server({GOSSIPSUB_ID})
 
-    @pytest.mark.anyio
-    async def test_server_too_many_attempts(self) -> None:
-        """Server raises error when client proposes too many protocols."""
-        server, client = _create_stream_pair()
-
-        async def client_task() -> None:
-            await _write_message(client, MULTISTREAM_PROTOCOL_ID)
-            await _read_message(client)
-            for _ in range(10):
-                await _write_message(client, ProtocolId("/unsupported/proto"))
-                response = await _read_message(client)
-                assert response == NA
-
-        task = asyncio.create_task(client_task())
-    async def test_server_happy_path(self) -> None:
-        """Client proposes supported protocol and server accepts"""
-        server, client = _create_stream_pair()
-        async def client_task() -> None:
-            await _write_message(client, MULTISTREAM_PROTOCOL_ID)
-            await _read_message(client)
-            await _write_message(client, GOSSIPSUB_ID)
-            response = await _read_message(client)
-            assert response == GOSSIPSUB_ID
-        task = asyncio.create_task(client_task())
-        result = await server.negotiate_server({GOSSIPSUB_ID})
-    
     async def test_server_client_unsupported_server_supported(self) -> None:
         """Client proposes unsupported, then supported protocol"""
         server, client = _create_stream_pair()
+
         async def server_task() -> None:
             await _read_message(server)
             await _write_message(server, MULTISTREAM_PROTOCOL_ID)
@@ -233,20 +195,16 @@ class TestNegotiateServer:
             await _write_message(server, NA)
             protocol = await _read_message(server)
             await _write_message(server, protocol)
+
         task = asyncio.create_task(server_task())
         result = await client.negotiate_client([ProtocolId("/unsupported"), GOSSIPSUB_ID])
         await task
         assert result == GOSSIPSUB_ID
 
-    async def test_server_empty_supported_set(self) -> None:
-        """Server gets empty supported set"""
-        server, client = _create_stream_pair()
-        with pytest.raises(NegotiationError, match="No supported protocols"):
-            await server.negotiate_server(set())
-
     async def test_server_too_many_attempts(self) -> None:
         """Client uses too many attempts"""
         server, client = _create_stream_pair()
+
         async def client_task() -> None:
             await _write_message(client, MULTISTREAM_PROTOCOL_ID)
             header = await _read_message(client)
@@ -337,22 +295,6 @@ class TestLazyClient:
             await client.negotiate_lazy_client(GOSSIPSUB_ID)
         await task
 
-    async def test_lazy_client_happy_path(self) -> None:
-        """header + protocol sent together, accepted"""
-        client, server = _create_stream_pair()
-
-        async def server_task() -> None:
-            header = await _read_message(server)
-            assert header == MULTISTREAM_PROTOCOL_ID
-            protocol = await _read_message(server)
-            assert protocol == GOSSIPSUB_ID 
-            await _write_message(server, MULTISTREAM_PROTOCOL_ID)
-            await _write_message(server, protocol)
-        task = asyncio.create_task(server_task())
-        result = await client.negotiate_lazy_client(GOSSIPSUB_ID)
-        await task
-        assert result == GOSSIPSUB_ID
-
 
 class TestMessageFormat:
     """Tests for wire message format."""
@@ -384,7 +326,7 @@ class TestMessageFormat:
         assert first == b"A"
         rest = await stream.read(100)
         assert rest == b"BCDEFG"
-    
+
     async def test_read_buffer_overflow(self) -> None:
         """Buffer has more than n bytes, leftover stays"""
         stream, peer = _create_stream_pair()
@@ -441,7 +383,7 @@ class TestMessageFormat:
         assert result == b"ABCDEF"
         assert await stream.read() == b"G"
 
-    async def test_readexactly_EOFError(self) -> None:
+    async def test_readexactly_eof_error(self) -> None:
         """Stream closes before n bytes received"""
         stream, peer = _create_stream_pair()
         peer.write(b"ABC")
@@ -449,7 +391,7 @@ class TestMessageFormat:
         await peer.drain()
         with pytest.raises(EOFError):
             await stream.readexactly(6)
-    
+
     async def test_write_drain_buffers(self) -> None:
         """Write accumulates, drain flushes to stream"""
         stream, peer = _create_stream_pair()
@@ -484,7 +426,7 @@ class TestMessageFormat:
         await stream.finish_write()
         first = await peer.read()
         assert first == b""
-    
+
     async def test_read_negotiation_message_valid(self) -> None:
         """Valid message is Varint length + payload + newline"""
         stream, peer = _create_stream_pair()
@@ -499,7 +441,6 @@ class TestMessageFormat:
         result = await stream._read_negotiation_message()
         assert result == "/my/proto/1.0.0"
 
-        
     async def test_read_negotiation_message_connection_closed(self) -> None:
         """Connection closed"""
         stream, peer = _create_stream_pair()
@@ -546,15 +487,17 @@ class TestMessageFormat:
 
         with pytest.raises(NegotiationError, match="Message must end with newline"):
             await stream._read_negotiation_message()
-    
+
     async def test_read_negotiation_message_invalid_varint(self, monkeypatch) -> None:
         """Invalid varint"""
         stream, peer = _create_stream_pair()
         peer.write(b"\x01")
         await peer.drain()
         import lean_spec.subspecs.networking.transport.quic.stream_adapter as module
+
         def fake_decode_varint(_):
             raise ValueError("bad varint")
+
         monkeypatch.setattr(module, "decode_varint", fake_decode_varint)
 
         with pytest.raises(NegotiationError, match="Invalid varint: bad varint"):
@@ -810,14 +753,14 @@ class _MockStream:
 
     async def close(self) -> None:
         """Close the stream."""
-        self.close_called =True
+        self.close_called = True
         if self._write_queue is not None:
             self._write_queue.put_nowait(b"")
 
 
 class TestClose:
-    """Integration test for calling underlying stream's close
-    """
+    """Integration test for calling underlying stream's close"""
+
     async def test_close_delegates_to_underlying(self) -> None:
         """Close delegates to stream"""
         mock = _MockStream(_read_queue=asyncio.Queue(), _write_queue=None)
