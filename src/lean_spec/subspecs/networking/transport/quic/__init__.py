@@ -16,9 +16,11 @@ from .connection import (
     QuicConnection,
     QuicConnectionManager,
     QuicStream,
+    is_quic_multiaddr,
+)
+from .stream import (
     QuicStreamResetError,
     QuicTransportError,
-    is_quic_multiaddr,
 )
 from .stream_adapter import NegotiationError, QuicStreamAdapter
 from .tls import generate_libp2p_certificate
