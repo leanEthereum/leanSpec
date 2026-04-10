@@ -1,20 +1,4 @@
-"""
-QUIC stream primitives for libp2p.
-
-This module contains the core stream types used by both the connection layer
-(``connection.py``) and the stream adapter (``stream_adapter.py``).  Placing
-them here breaks the circular import that previously existed between those two
-modules.
-
-Exported symbols
-----------------
-QuicTransportError
-    Base exception for QUIC transport failures.
-QuicStreamResetError
-    Raised when a stream is abruptly reset by the peer (RESET_STREAM).
-QuicStream
-    A single QUIC stream for application data.
-"""
+"""QUIC stream primitives for libp2p."""
 
 from __future__ import annotations
 
