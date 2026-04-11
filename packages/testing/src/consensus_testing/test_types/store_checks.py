@@ -202,12 +202,35 @@ class StoreChecks(CamelModel):
     should be selected as the head.
     """
 
+    reorg_depth: int | None = None
+    """
+    Expected reorg depth after this step.
+
+    Reorg depth is the number of blocks reverted when the head switches
+    from the old chain to the new chain. Computed by finding the common
+    ancestor of the old and new heads, then counting blocks from the old
+    head back to that ancestor.
+
+    Only meaningful when the head actually changes. If the head didn't
+    change, the actual reorg depth is 0.
+    """
+
+    labels_in_store: list[str] | None = None
+    """
+    Block labels that must be present in the store's block tree.
+
+    Each label is resolved to a block root via the block registry,
+    then checked for presence in ``store.blocks``. This verifies
+    that blocks from abandoned forks are retained (not pruned).
+    """
+
     def validate_against_store(
         self,
         store: "Store",
         step_index: int,
         block_registry: dict[str, "Block"] | None = None,
         filled_block: "Block | None" = None,
+        old_head: "Bytes32 | None" = None,
     ) -> None:
         """
         Validate these checks against actual Store state.
@@ -219,6 +242,8 @@ class StoreChecks(CamelModel):
             step_index: Index of the step being validated (for error messages).
             block_registry: Optional labeled blocks for resolving label-based checks.
             filled_block: Optional block for validating block body attestations.
+            old_head: Previous head root before this step executed. Required
+                for reorg_depth checks.
         """
         fields = self.model_fields_set
 
@@ -351,6 +376,28 @@ class StoreChecks(CamelModel):
             StoreChecks._validate_lexicographic_head(
                 self.lexicographic_head_among, store, block_registry, step_index
             )
+
+        # Reorg depth
+        if "reorg_depth" in fields:
+            if old_head is None:
+                raise ValueError(
+                    f"Step {step_index}: reorg_depth specified but old_head not provided"
+                )
+            actual_depth = (
+                store.blocks.reorg_depth(old_head, store.head) if store.head != old_head else 0
+            )
+            _check("reorg_depth", actual_depth, self.reorg_depth)
+
+        # Verify labeled blocks are present in the store
+        if "labels_in_store" in fields:
+            assert self.labels_in_store is not None
+            for label in self.labels_in_store:
+                root = _resolve_label("labels_in_store", label)
+                if root not in store.blocks:
+                    raise AssertionError(
+                        f"Step {step_index}: block '{label}' (root=0x{root.hex()}) "
+                        f"not found in store.blocks"
+                    )
 
     @staticmethod
     def _validate_block_attestations(
