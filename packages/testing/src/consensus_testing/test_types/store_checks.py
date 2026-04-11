@@ -293,6 +293,12 @@ class StoreChecks(CamelModel):
                 "latest_justified_root_label", self.latest_justified_root_label
             )
             _check("latest_justified.root", store.latest_justified.root, expected)
+        if "latest_finalized_root_label" in fields:
+            assert self.latest_finalized_root_label is not None
+            expected = _resolve_label(
+                "latest_finalized_root_label", self.latest_finalized_root_label
+            )
+            _check("latest_finalized.root", store.latest_finalized.root, expected)
 
         # Attestation target checkpoint (slot + root consistency)
         if "attestation_target_slot" in fields:

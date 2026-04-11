@@ -557,47 +557,50 @@ def test_fork_from_before_finalization_not_considered(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    A fork originating before the finalized slot is ignored by head selection.
+    A fork with majority weight is ignored when it originates before finalization.
 
     Scenario
     --------
-    Four validators. Consecutive justifications build a finalization chain::
+    Eight validators. Canonical chain achieves finalization at slot 3.
+    A dead fork branches from block_2 (before finalization) and carries
+    attestations from 5/8 validators -- more weight than canonical::
 
         genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
-                                     \
-                                      +-> dead_fork(4)
+                                     \\
+                                      +-> dead_6(6) -> dead_7(7)
+                                           [V3-V7 attest here: weight 5]
 
-    Each block carries a 3/4 supermajority attestation targeting the
-    previous slot. This creates consecutive justifications:
+    Canonical: V0-V5 (6/8) attest in each block -> justification chain.
+    Dead fork: V3-V7 (5/8) attest in dead_7 targeting dead_6.
 
-    - Block 2: justifies slot 1
-    - Block 3: justifies slot 2, finalizes slot 1
-    - Block 4: justifies slot 3, finalizes slot 2
-    - Block 5: justifies slot 4, finalizes slot 3
-
-    After block 5: justified=4, finalized=3.
-
-    Then a "dead fork" block at slot 4 branches from block_2 (slot 2),
-    which is before the finalized slot (3).
+    - 5 attesters stay below 2/3 threshold (3*5=15 < 2*8=16),
+      so no justification is triggered on the dead fork
+    - V3-V5's dead fork attestations (slot 9) override their canonical
+      ones (slot 5), giving the dead fork MORE total weight than canonical
 
     Expected post-state
     -------------------
-    - Dead fork is accepted into the store (no error)
-    - Head stays at block_5 (slot 5)
-    - The dead fork is unreachable because LMD-GHOST starts from the
-      justified root (block_4 at slot 4), and the fork branches from
-      block_2 which is never visited in the forward walk
+    - Head = block_5 (despite dead fork having weight 5 vs canonical 3)
+    - Justified = slot 4 (unchanged, dead fork did not trigger justification)
+    - Finalized = slot 3
+
+    Why the dead fork loses
+    -----------------------
+    LMD-GHOST starts from the justified root (block_4, slot 4).
+    The forward walk visits block_4 -> block_5 -> done.
+    The dead fork branches from block_2, which is an ancestor of
+    block_4, not a descendant. It is never reached in the walk.
     """
     fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=8),
         steps=[
-            # Justification / finalization chain
-            # ====================================
+            # Canonical justification / finalization chain
+            # =============================================
             #
             #   genesis -> 1 -> 2 -> 3 -> 4 -> 5
             #
-            # Each block has 3/4 validators attesting to the previous slot.
-            # Threshold: 3*3=9 >= 2*4=8 -> supermajority each time.
-            # Consecutive justifications trigger consecutive finalizations:
+            # V0-V5 (6/8) attest in each block.
+            # Threshold: 3*6=18 >= 2*8=16 -> supermajority each time.
             #
             #   After block 2: justified=1, finalized=0
             #   After block 3: justified=2, finalized=1
@@ -607,7 +610,7 @@ def test_fork_from_before_finalization_not_considered(
                 block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
-            # Justify slot 1: 3/4 validators attest targeting slot 1.
+            # Justify slot 1: 6/8 validators attest.
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(2),
@@ -615,11 +618,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_1",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
-                                ValidatorIndex(0),
-                                ValidatorIndex(1),
-                                ValidatorIndex(2),
-                            ],
+                            validator_ids=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(2),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -641,11 +640,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_2",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
-                                ValidatorIndex(0),
-                                ValidatorIndex(1),
-                                ValidatorIndex(2),
-                            ],
+                            validator_ids=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(3),
                             target_slot=Slot(2),
                             target_root_label="block_2",
@@ -666,11 +661,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
-                                ValidatorIndex(0),
-                                ValidatorIndex(1),
-                                ValidatorIndex(2),
-                            ],
+                            validator_ids=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(4),
                             target_slot=Slot(3),
                             target_root_label="block_3",
@@ -691,11 +682,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
-                                ValidatorIndex(0),
-                                ValidatorIndex(1),
-                                ValidatorIndex(2),
-                            ],
+                            validator_ids=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(5),
                             target_slot=Slot(4),
                             target_root_label="block_4",
@@ -709,26 +696,74 @@ def test_fork_from_before_finalization_not_considered(
                     latest_finalized_slot=Slot(3),
                 ),
             ),
-            # Dead fork from before finalization
-            # ====================================
+            # Dead fork with majority weight
+            # ================================
             #
-            # A block at slot 4 branching from block_2 (slot 2).
-            # Slot 2 is before finalized slot 3.
+            #   block_2(2) -> dead_6(6) -> dead_7(7)
             #
-            # The block is accepted (no equivocation detection in the store),
-            # but LMD-GHOST starts from the justified root (block_4, slot 4).
-            # The forward walk from block_4 visits only block_5.
-            # The dead fork is a child of block_2, which is an ancestor of
-            # block_4, not a descendant -- so it is never reached.
+            # Two blocks branching from block_2 (slot 2, before finalized slot 3).
+            # dead_7 carries attestations from V3-V7 (5/8) targeting dead_6.
+            #
+            # Why 5 attesters, not 6?
+            # Threshold: 3*5=15 < 2*8=16 -> below supermajority.
+            # No justification on the dead fork. If we used 6/8 attesters,
+            # the store's justified would advance to dead_6 (slot 6 > slot 4),
+            # and LMD-GHOST would start from dead_6 -- defeating the test.
+            #
+            # Slot justifiability:
+            # - Slot 6: delta=6 from finalized=0 (dead fork state), pronic (2*3). Valid.
+            #
+            # Weight after dead_7 is processed:
+            #
+            #   Validator | Latest head    | Slot | Source
+            #   V0        | block_4        |  5   | canonical
+            #   V1        | block_4        |  5   | canonical
+            #   V2        | block_4        |  5   | canonical
+            #   V3        | dead_6         |  7   | dead fork (overrides canonical slot 5)
+            #   V4        | dead_6         |  7   | dead fork (overrides canonical slot 5)
+            #   V5        | dead_6         |  7   | dead fork (overrides canonical slot 5)
+            #   V6        | dead_6         |  7   | dead fork (never attested on canonical)
+            #   V7        | dead_6         |  7   | dead fork (never attested on canonical)
+            #
+            # Dead fork subtree weight: 5 (V3-V7)
+            # Canonical subtree weight from justified root: 0
+            #   (V0-V2 head=block_4 at slot 4 = start_slot, weight walk stops immediately)
+            #
+            # Despite having MORE weight, the dead fork is unreachable.
+            # LMD-GHOST walks forward from block_4 -> block_5 -> done.
+            # Dead fork blocks are children of block_2, never visited.
+            # dead_6: first dead fork block. No attestations yet.
+            # Head stays on canonical (block_5).
+            BlockStep(
+                block=BlockSpec(slot=Slot(6), parent_label="block_2", label="dead_6"),
+                checks=StoreChecks(
+                    head_slot=Slot(5),
+                    head_root_label="block_5",
+                ),
+            ),
+            # dead_7: carries 5/8 attestations targeting dead_6.
+            # V3-V7 now have their latest head on the dead fork.
+            # Dead fork has weight 5 vs canonical's 0 from the justified root.
+            # Yet the head does NOT move -- finalization constrains fork choice.
             BlockStep(
                 block=BlockSpec(
-                    slot=Slot(4),
-                    parent_label="block_2",
-                    label="dead_fork",
+                    slot=Slot(7),
+                    parent_label="dead_6",
+                    label="dead_7",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(i) for i in range(3, 8)],
+                            slot=Slot(7),
+                            target_slot=Slot(6),
+                            target_root_label="dead_6",
+                        ),
+                    ],
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(5),
                     head_root_label="block_5",
+                    # Invariant: justified did NOT advance to dead fork.
+                    # 5/8 attesters: 3*5=15 < 2*8=16 -> below threshold.
                     latest_justified_slot=Slot(4),
                     latest_finalized_slot=Slot(3),
                 ),
