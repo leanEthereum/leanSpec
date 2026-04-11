@@ -556,12 +556,58 @@ def test_head_selection_by_weight_not_depth(
 def test_fork_from_before_finalization_not_considered(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
-    """A fork originating before the finalized slot is ignored by head selection."""
+    """
+    A fork originating before the finalized slot is ignored by head selection.
+
+    Scenario
+    --------
+    Four validators. Consecutive justifications build a finalization chain::
+
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
+                                     \
+                                      +-> dead_fork(4)
+
+    Each block carries a 3/4 supermajority attestation targeting the
+    previous slot. This creates consecutive justifications:
+
+    - Block 2: justifies slot 1
+    - Block 3: justifies slot 2, finalizes slot 1
+    - Block 4: justifies slot 3, finalizes slot 2
+    - Block 5: justifies slot 4, finalizes slot 3
+
+    After block 5: justified=4, finalized=3.
+
+    Then a "dead fork" block at slot 4 branches from block_2 (slot 2),
+    which is before the finalized slot (3).
+
+    Expected post-state
+    -------------------
+    - Dead fork is accepted into the store (no error)
+    - Head stays at block_5 (slot 5)
+    - The dead fork is unreachable because LMD-GHOST starts from the
+      justified root (block_4 at slot 4), and the fork branches from
+      block_2 which is never visited in the forward walk
+    """
     fork_choice_test(
         steps=[
-            # Block 1
-            BlockStep(block=BlockSpec(slot=Slot(1), label="block_1")),
-            # Block 2 justifies block 1
+            # Justification / finalization chain
+            # ====================================
+            #
+            #   genesis -> 1 -> 2 -> 3 -> 4 -> 5
+            #
+            # Each block has 3/4 validators attesting to the previous slot.
+            # Threshold: 3*3=9 >= 2*4=8 -> supermajority each time.
+            # Consecutive justifications trigger consecutive finalizations:
+            #
+            #   After block 2: justified=1, finalized=0
+            #   After block 3: justified=2, finalized=1
+            #   After block 4: justified=3, finalized=2
+            #   After block 5: justified=4, finalized=3
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            # Justify slot 1: 3/4 validators attest targeting slot 1.
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(2),
@@ -569,15 +615,25 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_1",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
                             slot=Slot(2),
                             target_slot=Slot(1),
                             target_root_label="block_1",
                         ),
                     ],
                 ),
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    latest_justified_slot=Slot(1),
+                    latest_finalized_slot=Slot(0),
+                ),
             ),
-            # Block 3 justifies block 2, finalizes block 1
+            # Justify slot 2, finalize slot 1.
+            # Finalization: range(1+1, 2) is empty -> no gap -> finalizes source.
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(3),
@@ -585,15 +641,24 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_2",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
                             slot=Slot(3),
                             target_slot=Slot(2),
                             target_root_label="block_2",
                         ),
                     ],
                 ),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    latest_justified_slot=Slot(2),
+                    latest_finalized_slot=Slot(1),
+                ),
             ),
-            # Block 4 justifies block 3, finalizes block 2
+            # Justify slot 3, finalize slot 2.
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(4),
@@ -601,15 +666,24 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
                             slot=Slot(4),
                             target_slot=Slot(3),
                             target_root_label="block_3",
                         ),
                     ],
                 ),
+                checks=StoreChecks(
+                    head_slot=Slot(4),
+                    latest_justified_slot=Slot(3),
+                    latest_finalized_slot=Slot(2),
+                ),
             ),
-            # Block 5 justifies block 4, finalizes block 3
+            # Justify slot 4, finalize slot 3.
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(5),
@@ -617,7 +691,11 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
                             slot=Slot(5),
                             target_slot=Slot(4),
                             target_root_label="block_4",
@@ -626,20 +704,32 @@ def test_fork_from_before_finalization_not_considered(
                 ),
                 checks=StoreChecks(
                     head_slot=Slot(5),
+                    head_root_label="block_5",
+                    latest_justified_slot=Slot(4),
                     latest_finalized_slot=Slot(3),
                 ),
             ),
-            # Process a new block at slot 4 with parent_label="block_2"
-            # (forks from before finalization)
+            # Dead fork from before finalization
+            # ====================================
+            #
+            # A block at slot 4 branching from block_2 (slot 2).
+            # Slot 2 is before finalized slot 3.
+            #
+            # The block is accepted (no equivocation detection in the store),
+            # but LMD-GHOST starts from the justified root (block_4, slot 4).
+            # The forward walk from block_4 visits only block_5.
+            # The dead fork is a child of block_2, which is an ancestor of
+            # block_4, not a descendant -- so it is never reached.
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(4),
-                    parent_label="block_2",  # Before finalization!
+                    parent_label="block_2",
                     label="dead_fork",
                 ),
                 checks=StoreChecks(
-                    # Head should NOT be on the dead fork, stays on slot 5
                     head_slot=Slot(5),
+                    head_root_label="block_5",
+                    latest_justified_slot=Slot(4),
                     latest_finalized_slot=Slot(3),
                 ),
             ),
