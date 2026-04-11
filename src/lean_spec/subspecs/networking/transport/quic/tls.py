@@ -24,14 +24,13 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-if TYPE_CHECKING:
-    from ..identity import IdentityKeypair
+from ..identity import IdentityKeypair
 
 LIBP2P_EXTENSION_OID: Final = x509.ObjectIdentifier("1.3.6.1.4.1.53594.1.1")
 """libp2p TLS extension OID (Protocol Labs assigned)."""

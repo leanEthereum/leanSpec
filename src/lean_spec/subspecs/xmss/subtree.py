@@ -7,12 +7,13 @@ implementing the memory-efficient top-bottom tree traversal approach.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from lean_spec.types import Uint64
 from lean_spec.types.container import Container
 
-from .tweak_hash import TreeTweak
+from .constants import XmssConfig
+from .prf import Prf
+from .rand import Rand
+from .tweak_hash import TreeTweak, TweakHasher
 from .types import (
     HashDigestList,
     HashDigestVector,
@@ -23,12 +24,6 @@ from .types import (
     PRFKey,
 )
 from .utils import get_padded_layer
-
-if TYPE_CHECKING:
-    from .constants import XmssConfig
-    from .prf import Prf
-    from .rand import Rand
-    from .tweak_hash import TweakHasher
 
 
 class HashSubTree(Container):

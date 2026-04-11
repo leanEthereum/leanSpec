@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -17,18 +17,23 @@ from lean_spec.subspecs.sync.backfill_sync import BackfillSync
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.head_sync import HeadSync, HeadSyncResult
 from lean_spec.types import Bytes32
-from tests.lean_spec.helpers import make_signed_block
+from tests.lean_spec.helpers import MockForkchoiceStore, make_signed_block
 
 
-class MockStore:
-    """Mock store that tracks which blocks exist."""
+@dataclass
+class NullBackfillSync:
+    """Backfill stub that records fill_missing calls without doing real work."""
 
-    def __init__(self, existing_roots: set[Bytes32] | None = None) -> None:
-        """Initialize with optional existing block roots."""
-        self.blocks: dict[Bytes32, object] = {}
-        if existing_roots:
-            for root in existing_roots:
-                self.blocks[root] = MagicMock()
+    fill_missing_calls: list[list[Bytes32]] = field(default_factory=list)
+
+    async def fill_missing(self, roots: list[Bytes32]) -> None:
+        """Record the call without performing any backfill."""
+        self.fill_missing_calls.append(roots)
+
+
+def _null_backfill() -> BackfillSync:
+    """Create a NullBackfillSync cast to BackfillSync for type safety."""
+    return cast(BackfillSync, NullBackfillSync())
 
 
 class TestGossipBlockProcessing:
@@ -38,9 +43,9 @@ class TestGossipBlockProcessing:
     def genesis_setup(self, genesis_block) -> tuple[Bytes32, Store]:
         """Provide genesis root and store with genesis block."""
         genesis_root = hash_tree_root(genesis_block)
-        mock_store = MockStore({genesis_root})
-        mock_store.blocks[genesis_root] = genesis_block
-        return genesis_root, cast(Store, mock_store)
+        store = MockForkchoiceStore()
+        store.blocks[genesis_root] = genesis_block
+        return genesis_root, cast(Store, store)
 
     async def test_block_with_known_parent_processed_immediately(
         self,
@@ -54,12 +59,14 @@ class TestGossipBlockProcessing:
         def track_processing(s: Any, block: SignedBlock) -> Any:
             root = hash_tree_root(block.block)
             processed_blocks.append(root)
-            new_store = MockStore(set(s.blocks.keys()) | {root})
+            new_store = MockForkchoiceStore()
+            new_store.blocks = dict(s.blocks)
+            new_store.blocks[root] = object()
             return new_store
 
         head_sync = HeadSync(
             block_cache=BlockCache(),
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=track_processing,
         )
 
@@ -86,14 +93,13 @@ class TestGossipBlockProcessing:
         peer_id: PeerId,
     ) -> None:
         """Block whose parent is unknown is cached and backfill is triggered."""
-        store = cast(Store, MockStore())
-        backfill = MagicMock(spec=BackfillSync)
-        backfill.fill_missing = AsyncMock()
+        store = cast(Store, MockForkchoiceStore())
+        backfill = NullBackfillSync()
 
         head_sync = HeadSync(
             block_cache=BlockCache(),
-            backfill=backfill,
-            process_block=MagicMock(),
+            backfill=cast(BackfillSync, backfill),
+            process_block=lambda s, b: s,
         )
 
         unknown_parent = Bytes32(b"\x01" * 32)
@@ -115,7 +121,7 @@ class TestGossipBlockProcessing:
         )
         assert block_root in head_sync.block_cache
         assert head_sync.block_cache.orphan_count == 1
-        backfill.fill_missing.assert_called_once_with([unknown_parent])
+        assert backfill.fill_missing_calls == [[unknown_parent]]
 
     async def test_duplicate_block_skipped(
         self,
@@ -135,11 +141,17 @@ class TestGossipBlockProcessing:
         block_root = hash_tree_root(block.block)
         store.blocks[block_root] = block.block
 
-        process_block = MagicMock()
+        call_count = 0
+
+        def should_not_be_called(s: Any, b: SignedBlock) -> Any:
+            nonlocal call_count
+            call_count += 1
+            return s
+
         head_sync = HeadSync(
             block_cache=BlockCache(),
-            backfill=MagicMock(spec=BackfillSync),
-            process_block=process_block,
+            backfill=_null_backfill(),
+            process_block=should_not_be_called,
         )
 
         result, _ = await head_sync.on_gossip_block(block, peer_id, store)
@@ -150,7 +162,7 @@ class TestGossipBlockProcessing:
             backfill_triggered=False,
             descendants_processed=0,
         )
-        process_block.assert_not_called()
+        assert call_count == 0
 
 
 class TestDescendantProcessing:
@@ -163,7 +175,7 @@ class TestDescendantProcessing:
     ) -> None:
         """When a parent block is processed, its cached children are processed too."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
         block_cache = BlockCache()
 
@@ -192,12 +204,14 @@ class TestDescendantProcessing:
         def track_processing(s: Any, block: SignedBlock) -> Any:
             root = hash_tree_root(block.block)
             processing_order.append(root)
-            new_store = MockStore(set(s.blocks.keys()) | {root})
+            new_store = MockForkchoiceStore()
+            new_store.blocks = dict(s.blocks)
+            new_store.blocks[root] = object()
             return new_store
 
         head_sync = HeadSync(
             block_cache=block_cache,
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=track_processing,
         )
 
@@ -220,7 +234,7 @@ class TestDescendantProcessing:
     ) -> None:
         """Deep chain of descendants is processed in correct slot order."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
         block_cache = BlockCache()
 
@@ -246,12 +260,14 @@ class TestDescendantProcessing:
         def track_processing(s: Any, block: SignedBlock) -> Any:
             processing_order.append(int(block.block.slot))
             root = hash_tree_root(block.block)
-            new_store = MockStore(set(s.blocks.keys()) | {root})
+            new_store = MockForkchoiceStore()
+            new_store.blocks = dict(s.blocks)
+            new_store.blocks[root] = object()
             return new_store
 
         head_sync = HeadSync(
             block_cache=block_cache,
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=track_processing,
         )
 
@@ -277,7 +293,7 @@ class TestProcessAllProcessable:
     ) -> None:
         """All blocks whose parents are in store are processed."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
         block_cache = BlockCache()
 
@@ -304,12 +320,14 @@ class TestProcessAllProcessable:
             nonlocal processed_count
             processed_count += 1
             root = hash_tree_root(block.block)
-            new_store = MockStore(set(s.blocks.keys()) | {root})
+            new_store = MockForkchoiceStore()
+            new_store.blocks = dict(s.blocks)
+            new_store.blocks[root] = object()
             return new_store
 
         head_sync = HeadSync(
             block_cache=block_cache,
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=count_processing,
         )
 
@@ -326,7 +344,7 @@ class TestProcessAllProcessable:
     ) -> None:
         """Failed blocks are removed to prevent infinite retry loops."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
         block_cache = BlockCache()
 
@@ -344,7 +362,7 @@ class TestProcessAllProcessable:
 
         head_sync = HeadSync(
             block_cache=block_cache,
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=fail_processing,
         )
 
@@ -364,7 +382,7 @@ class TestErrorHandling:
     ) -> None:
         """Processing errors are captured in the result, not raised."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
 
         def fail_processing(s: Any, b: SignedBlock) -> Any:
@@ -372,7 +390,7 @@ class TestErrorHandling:
 
         head_sync = HeadSync(
             block_cache=BlockCache(),
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=fail_processing,
         )
 
@@ -401,7 +419,7 @@ class TestErrorHandling:
     ) -> None:
         """Error processing one child doesn't prevent processing siblings."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
         block_cache = BlockCache()
 
@@ -433,12 +451,14 @@ class TestErrorHandling:
             if call_count == 1:
                 raise Exception("First fails")
             successful_roots.add(root)
-            new_store = MockStore(set(s.blocks.keys()) | {root})
+            new_store = MockForkchoiceStore()
+            new_store.blocks = dict(s.blocks)
+            new_store.blocks[root] = object()
             return new_store
 
         head_sync = HeadSync(
             block_cache=block_cache,
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=fail_first,
         )
 
@@ -459,7 +479,7 @@ class TestStorePropagation:
     ) -> None:
         """Returned store contains ALL processed blocks, not just the parent."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
         block_cache = BlockCache()
 
@@ -494,12 +514,14 @@ class TestStorePropagation:
 
         def track_processing(s: Any, block: SignedBlock) -> Any:
             root = hash_tree_root(block.block)
-            new_store = MockStore(set(s.blocks.keys()) | {root})
+            new_store = MockForkchoiceStore()
+            new_store.blocks = dict(s.blocks)
+            new_store.blocks[root] = object()
             return new_store
 
         head_sync = HeadSync(
             block_cache=block_cache,
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=track_processing,
         )
 
@@ -524,13 +546,20 @@ class TestReentrantGuard:
     ) -> None:
         """Block already in _processing returns processed=False, cached=False."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
+
+        call_count = 0
+
+        def should_not_be_called(s: Any, b: SignedBlock) -> Any:
+            nonlocal call_count
+            call_count += 1
+            return s
 
         head_sync = HeadSync(
             block_cache=BlockCache(),
-            backfill=MagicMock(spec=BackfillSync),
-            process_block=MagicMock(),
+            backfill=_null_backfill(),
+            process_block=should_not_be_called,
         )
 
         block = make_signed_block(
@@ -553,7 +582,7 @@ class TestReentrantGuard:
             descendants_processed=0,
         )
         assert returned_store is store
-        cast(MagicMock, head_sync.process_block).assert_not_called()
+        assert call_count == 0
 
 
 class TestProcessAllProcessableConvergence:
@@ -566,7 +595,7 @@ class TestProcessAllProcessableConvergence:
     ) -> None:
         """Chain A -> B -> C all processed in one process_all_processable call."""
         genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockStore({genesis_root}))
+        store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
         block_cache = BlockCache()
 
@@ -603,12 +632,14 @@ class TestProcessAllProcessableConvergence:
         def track_processing(s: Any, block: SignedBlock) -> Any:
             processing_order.append(int(block.block.slot))
             root = hash_tree_root(block.block)
-            new_store = MockStore(set(s.blocks.keys()) | {root})
+            new_store = MockForkchoiceStore()
+            new_store.blocks = dict(s.blocks)
+            new_store.blocks[root] = object()
             return new_store
 
         head_sync = HeadSync(
             block_cache=block_cache,
-            backfill=MagicMock(spec=BackfillSync),
+            backfill=_null_backfill(),
             process_block=track_processing,
         )
 

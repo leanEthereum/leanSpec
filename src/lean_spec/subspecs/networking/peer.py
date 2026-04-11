@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from time import time
-from typing import TYPE_CHECKING
 
+from .enr import ENR
+from .reqresp import Status
 from .transport import PeerId
 from .types import ConnectionState, Direction, ForkDigest, Multiaddr
-
-if TYPE_CHECKING:
-    from .enr import ENR
-    from .reqresp import Status
 
 
 @dataclass(slots=True)

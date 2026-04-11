@@ -329,29 +329,20 @@ class TestInitFromCheckpoint:
             }
         )
 
-        # Mock the checkpoint sync client functions
         mock_event_source = AsyncMock()
 
-        with (
-            patch(
-                "lean_spec.__main__.fetch_finalized_state",
-                new_callable=AsyncMock,
-                return_value=checkpoint_state,
-            ),
-            patch(
-                "lean_spec.__main__.verify_checkpoint_state",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
+        with patch(
+            "lean_spec.__main__.fetch_finalized_state",
+            new_callable=AsyncMock,
+            return_value=checkpoint_state,
         ):
-            # Act
             result = await _init_from_checkpoint(
                 checkpoint_sync_url="http://localhost:5052",
                 genesis=local_genesis,
                 event_source=mock_event_source,
             )
 
-        # Assert: Returns None due to genesis time mismatch
+        # Returns None due to genesis time mismatch
         assert result is None
 
     async def test_checkpoint_sync_verification_failure_returns_none(self) -> None:
@@ -432,26 +423,17 @@ class TestInitFromCheckpoint:
         mock_event_source = AsyncMock()
         mock_event_source.reqresp_client = AsyncMock()
 
-        with (
-            patch(
-                "lean_spec.__main__.fetch_finalized_state",
-                new_callable=AsyncMock,
-                return_value=checkpoint_state,
-            ),
-            patch(
-                "lean_spec.__main__.verify_checkpoint_state",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
+        with patch(
+            "lean_spec.__main__.fetch_finalized_state",
+            new_callable=AsyncMock,
+            return_value=checkpoint_state,
         ):
-            # Act
             result = await _init_from_checkpoint(
                 checkpoint_sync_url="http://localhost:5052",
                 genesis=local_genesis,
                 event_source=mock_event_source,
             )
 
-        # Assert: Returns a Node instance
         assert result is not None
         assert isinstance(result, Node)
 

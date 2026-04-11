@@ -1,6 +1,5 @@
 """Tests for Store attestation data pruning."""
 
-from lean_spec.subspecs.containers.attestation import AggregationBits
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.forkchoice import AttestationSignatureEntry, Store
@@ -140,9 +139,7 @@ def test_prunes_related_structures_together(pruning_store: Store) -> None:
 
     # Create mock aggregated proof (empty proof data for testing)
     mock_proof = AggregatedSignatureProof(
-        participants=AggregationBits.from_validator_indices(
-            ValidatorIndices(data=[ValidatorIndex(1)])
-        ),
+        participants=ValidatorIndices(data=[ValidatorIndex(1)]).to_aggregation_bits(),
         proof_data=ByteListMiB(data=b""),
     )
 

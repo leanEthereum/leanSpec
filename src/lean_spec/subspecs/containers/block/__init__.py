@@ -4,13 +4,13 @@ from .block import (
     Block,
     BlockBody,
     BlockHeader,
+    BlockLookup,
     BlockSignatures,
     SignedBlock,
 )
 from .types import (
     AggregatedAttestations,
     AttestationSignatures,
-    BlockLookup,
 )
 
 __all__ = [

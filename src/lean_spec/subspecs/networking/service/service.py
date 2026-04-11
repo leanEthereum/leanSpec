@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from lean_spec.snappy import compress
 from lean_spec.subspecs.containers import SignedBlock
@@ -34,6 +33,7 @@ from lean_spec.subspecs.networking.client.event_source import EventSource
 from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic
 from lean_spec.subspecs.networking.peer import PeerInfo
 from lean_spec.subspecs.networking.types import ConnectionState
+from lean_spec.subspecs.sync import SyncService
 
 from .events import (
     GossipAggregatedAttestationEvent,
@@ -44,9 +44,6 @@ from .events import (
     PeerDisconnectedEvent,
     PeerStatusEvent,
 )
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.sync import SyncService
 
 logger = logging.getLogger(__name__)
 

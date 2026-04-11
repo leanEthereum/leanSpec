@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from lean_spec.subspecs.containers import SignedBlock
-from lean_spec.subspecs.networking import PeerId
+from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.types import Bytes32
 
 from .block_cache import BlockCache

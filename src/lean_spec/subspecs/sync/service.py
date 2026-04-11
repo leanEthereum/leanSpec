@@ -41,7 +41,6 @@ import logging
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.chain.clock import SlotClock
 from lean_spec.subspecs.containers import (
@@ -57,6 +56,7 @@ from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.storage import Database
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache
@@ -64,9 +64,6 @@ from .config import MAX_PENDING_ATTESTATIONS
 from .head_sync import HeadSync
 from .peer_manager import PeerManager
 from .states import SyncState
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.storage import Database
 
 logger = logging.getLogger(__name__)
 

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from lean_spec.subspecs.containers.block.block import Block, BlockBody
+from lean_spec.subspecs.containers.block.block import Block, BlockBody, BlockLookup
 from lean_spec.subspecs.containers.block.types import (
     AggregatedAttestations,
-    BlockLookup,
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex

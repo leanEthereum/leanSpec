@@ -31,8 +31,8 @@ from lean_spec.subspecs.containers.state.types import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
-    Validators,
 )
+from lean_spec.subspecs.containers.validator import Validators
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Boolean, ByteListMiB, Bytes32, Bytes52, Uint64
 

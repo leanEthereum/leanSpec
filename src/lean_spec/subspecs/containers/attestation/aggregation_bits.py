@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
-from lean_spec.types import Boolean
 from lean_spec.types.bitfields import BaseBitlist
 
 
@@ -17,41 +16,6 @@ class AggregationBits(BaseBitlist):
     """
 
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
-
-    @classmethod
-    def from_validator_indices(cls, indices: ValidatorIndices) -> AggregationBits:
-        """
-        Construct aggregation bits from a set of validator indices.
-
-        Args:
-            indices: Validator indices to set in the bitlist.
-
-        Returns:
-            AggregationBits with the corresponding indices set to True.
-
-        Raises:
-            AssertionError: If no indices are provided.
-            AssertionError: If any index is outside the supported LIMIT.
-        """
-        index_list = indices.data
-
-        # Require at least one validator for a valid aggregation.
-        if not index_list:
-            raise AssertionError("Aggregated attestation must reference at least one validator")
-
-        # Convert to a set of native ints.
-        #
-        # This combines int conversion and deduplication in a single O(N) pass.
-        ids = {int(i) for i in index_list}
-
-        # Validate bounds: max index must be within registry limit.
-        if (max_id := max(ids)) >= cls.LIMIT:
-            raise AssertionError("Validator index out of range for aggregation bits")
-
-        # Build bit list:
-        # - True at positions present in indices,
-        # - False elsewhere.
-        return cls(data=[Boolean(i in ids) for i in range(max_id + 1)])
 
     def to_validator_indices(self) -> ValidatorIndices:
         """

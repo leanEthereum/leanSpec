@@ -20,6 +20,7 @@ from lean_spec.subspecs.networking.client.event_source import (
     LiveNetworkEventSource,
     read_gossip_message,
 )
+from lean_spec.subspecs.networking.client.reqresp_client import ReqRespClient
 from lean_spec.subspecs.networking.config import (
     GOSSIPSUB_DEFAULT_PROTOCOL_ID,
     GOSSIPSUB_PROTOCOL_ID_V12,
@@ -35,6 +36,10 @@ from lean_spec.subspecs.networking.gossipsub.types import TopicId
 from lean_spec.subspecs.networking.reqresp.handler import REQRESP_PROTOCOL_IDS
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport import PeerId
+from lean_spec.subspecs.networking.transport.quic.connection import (
+    QuicConnection,
+    QuicConnectionManager,
+)
 from lean_spec.subspecs.networking.varint import encode_varint
 from lean_spec.types import Bytes32
 from tests.lean_spec.helpers.builders import make_signed_attestation, make_signed_block
@@ -298,17 +303,14 @@ class TestReadGossipMessageChunked:
 
 def _make_mock_connection_manager() -> MagicMock:
     """Provide a mock QUIC connection manager with a stubbed identity key."""
-    mgr = MagicMock()
+    mgr = MagicMock(spec=QuicConnectionManager)
     mgr._identity_key = MagicMock()
     return mgr
 
 
 def _make_mock_reqresp_client() -> MagicMock:
     """Provide a mock req/resp client with stubbed register/unregister hooks."""
-    client = MagicMock()
-    client.register_connection = MagicMock()
-    client.unregister_connection = MagicMock()
-    return client
+    return MagicMock(spec=ReqRespClient)
 
 
 def _make_event_source() -> LiveNetworkEventSource:
@@ -468,7 +470,7 @@ class TestLiveNetworkEventSourceDisconnect:
         es = _make_event_source()
         peer_id = PeerId.from_base58("peerA")
 
-        mock_conn = AsyncMock()
+        mock_conn = AsyncMock(spec=QuicConnection)
         es._connections[peer_id] = mock_conn
 
         await es.disconnect(peer_id)
@@ -498,7 +500,7 @@ class TestLiveNetworkEventSourceDisconnect:
             reqresp_client=mock_client,
         )
         peer_id = PeerId.from_base58("peerC")
-        es._connections[peer_id] = AsyncMock()
+        es._connections[peer_id] = AsyncMock(spec=QuicConnection)
 
         await es.disconnect(peer_id)
 
@@ -568,7 +570,7 @@ class TestLiveNetworkEventSourcePublish:
         """Publishing with active connections delegates to gossipsub behavior."""
         es = _make_event_source()
         peer_id = PeerId.from_base58("peerD")
-        es._connections[peer_id] = MagicMock()
+        es._connections[peer_id] = MagicMock(spec=QuicConnection)
 
         with patch.object(
             es._gossipsub_behavior, "publish", new_callable=AsyncMock
@@ -581,7 +583,7 @@ class TestLiveNetworkEventSourcePublish:
         """Exceptions during publish are caught, not propagated."""
         es = _make_event_source()
         peer_id = PeerId.from_base58("peerE")
-        es._connections[peer_id] = MagicMock()
+        es._connections[peer_id] = MagicMock(spec=QuicConnection)
 
         with patch.object(
             es._gossipsub_behavior,

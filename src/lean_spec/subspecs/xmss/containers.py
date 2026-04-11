@@ -8,13 +8,13 @@ Base types (HashDigestVector, Parameter, etc.) are defined in types.py.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, NamedTuple, override
+from typing import NamedTuple, override
 
 from pydantic import model_serializer
 
 from lean_spec.subspecs.containers.slot import Slot
 
-from ...types import Bytes32, Uint64
+from ...types import Uint64
 from ...types.container import Container
 from .constants import TARGET_CONFIG
 from .subtree import HashSubTree
@@ -26,9 +26,6 @@ from .types import (
     PRFKey,
     Randomness,
 )
-
-if TYPE_CHECKING:
-    from .interface import GeneralizedXmssScheme
 
 
 class PublicKey(Container):
@@ -99,39 +96,6 @@ class Signature(Container):
     def _serialize_as_bytes(self) -> str:
         """Serialize as hex-encoded SSZ bytes for JSON output."""
         return "0x" + self.encode_bytes().hex()
-
-    def verify(
-        self,
-        public_key: PublicKey,
-        slot: Slot,
-        message: Bytes32,
-        scheme: GeneralizedXmssScheme,
-    ) -> bool:
-        """
-        Verify the signature using XMSS verification algorithm.
-
-        This is a convenience method that delegates to `scheme.verify()`.
-
-        Invalid or malformed signatures return `False`.
-
-        Expected exceptions:
-        - `ValueError` for invalid slots,
-        - `IndexError` for malformed signatures
-        are caught and converted to `False`.
-
-        Args:
-            public_key: The public key to verify against.
-            slot: The slot the signature corresponds to.
-            message: The message that was supposedly signed.
-            scheme: The XMSS scheme instance to use for verification.
-
-        Returns:
-            `True` if the signature is valid, `False` otherwise.
-        """
-        try:
-            return scheme.verify(public_key, slot, message, self)
-        except (ValueError, IndexError):
-            return False
 
 
 class SecretKey(Container):

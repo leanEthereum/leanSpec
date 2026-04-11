@@ -2,23 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from lean_spec.subspecs.containers.attestation import AttestationData, SignedAttestation
+from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.forkchoice.store import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, CamelModel
 
-from ..keys import create_dummy_signature
+from ..keys import XmssKeyManager, create_dummy_signature
 from .utils import resolve_checkpoint
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.containers.block.block import Block
-    from lean_spec.subspecs.forkchoice.store import Store
-
-    from ..keys import XmssKeyManager
 
 
 class GossipAttestationSpec(CamelModel):

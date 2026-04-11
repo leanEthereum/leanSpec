@@ -7,7 +7,6 @@ from lean_spec.types import Boolean, Bytes32, SSZList
 from lean_spec.types.bitfields import BaseBitlist
 
 from ..slot import Slot
-from ..validator import Validator
 
 
 class HistoricalBlockHashes(SSZList[Bytes32]):
@@ -168,9 +167,3 @@ class JustificationValidators(BaseBitlist):
     """Bitlist for tracking validator justifications per historical root."""
 
     LIMIT = int(HISTORICAL_ROOTS_LIMIT) * int(VALIDATOR_REGISTRY_LIMIT)
-
-
-class Validators(SSZList[Validator]):
-    """Validator registry tracked in the state."""
-
-    LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

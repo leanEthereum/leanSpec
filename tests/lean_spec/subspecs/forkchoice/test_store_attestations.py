@@ -7,7 +7,6 @@ from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
-    AggregationBits,
     AttestationData,
     SignedAggregatedAttestation,
     SignedAttestation,
@@ -16,6 +15,7 @@ from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.forkchoice import AttestationSignatureEntry
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import ByteListMiB, Bytes32, Uint64
 from tests.lean_spec.helpers import (
@@ -274,12 +274,10 @@ class TestOnGossipAggregatedAttestation:
             key_manager, num_validators=4, validator_id=ValidatorIndex(0)
         )
 
-        data_root = attestation_data.data_root_bytes()
+        data_root = hash_tree_root(attestation_data)
 
         # Create valid aggregated proof
-        xmss_participants = AggregationBits.from_validator_indices(
-            ValidatorIndices(data=participants)
-        )
+        xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
         raw_xmss = list(
             zip(
                 [key_manager[vid].attestation_public for vid in participants],
@@ -322,11 +320,9 @@ class TestOnGossipAggregatedAttestation:
             key_manager, num_validators=4, validator_id=ValidatorIndex(0)
         )
 
-        data_root = attestation_data.data_root_bytes()
+        data_root = hash_tree_root(attestation_data)
 
-        xmss_participants = AggregationBits.from_validator_indices(
-            ValidatorIndices(data=participants)
-        )
+        xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
         raw_xmss = list(
             zip(
                 [key_manager[vid].attestation_public for vid in participants],
@@ -364,9 +360,9 @@ class TestOnGossipAggregatedAttestation:
             key_manager, num_validators=4, validator_id=ValidatorIndex(0)
         )
 
-        data_root = attestation_data.data_root_bytes()
+        data_root = hash_tree_root(attestation_data)
 
-        xmss_participants = AggregationBits.from_validator_indices(ValidatorIndices(data=signers))
+        xmss_participants = ValidatorIndices(data=signers).to_aggregation_bits()
         raw_xmss = list(
             zip(
                 [key_manager[vid].attestation_public for vid in signers],
@@ -410,11 +406,11 @@ class TestOnGossipAggregatedAttestation:
             key_manager, num_validators=4, validator_id=ValidatorIndex(0)
         )
 
-        data_root = attestation_data.data_root_bytes()
+        data_root = hash_tree_root(attestation_data)
 
         # First proof: validators 1 and 2
         participants_1 = [ValidatorIndex(1), ValidatorIndex(2)]
-        xmss_1 = AggregationBits.from_validator_indices(ValidatorIndices(data=participants_1))
+        xmss_1 = ValidatorIndices(data=participants_1).to_aggregation_bits()
         raw_xmss_1 = list(
             zip(
                 [key_manager[vid].attestation_public for vid in participants_1],
@@ -435,7 +431,7 @@ class TestOnGossipAggregatedAttestation:
 
         # Second proof: validators 1 and 3 (validator 1 overlaps)
         participants_2 = [ValidatorIndex(1), ValidatorIndex(3)]
-        xmss_2 = AggregationBits.from_validator_indices(ValidatorIndices(data=participants_2))
+        xmss_2 = ValidatorIndices(data=participants_2).to_aggregation_bits()
         raw_xmss_2 = list(
             zip(
                 [key_manager[vid].attestation_public for vid in participants_2],
@@ -534,7 +530,7 @@ class TestAggregateCommitteeSignatures:
         # Verify the proof is valid
         proof.verify(
             public_keys=public_keys,
-            message=attestation_data.data_root_bytes(),
+            message=hash_tree_root(attestation_data),
             slot=attestation_data.slot,
         )
 
@@ -751,7 +747,7 @@ class TestEndToEndAggregationFlow:
         )
 
         attestation_data = store.produce_attestation_data(Slot(1))
-        data_root = attestation_data.data_root_bytes()
+        data_root = hash_tree_root(attestation_data)
 
         # Step 1: Receive gossip attestations from validators 1 and 2
         # (all in same subnet since ATTESTATION_COMMITTEE_COUNT=1 by default)

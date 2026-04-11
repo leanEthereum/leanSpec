@@ -35,7 +35,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from lean_spec.subspecs.chain.clock import Interval, SlotClock
 from lean_spec.subspecs.containers import (
@@ -51,15 +51,13 @@ from lean_spec.subspecs.containers.block import (
 )
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.sync import SyncService
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Uint64
 
 from .registry import ValidatorEntry, ValidatorRegistry
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.sync import SyncService
 
 logger = logging.getLogger(__name__)
 
@@ -443,7 +441,7 @@ class ValidatorService:
         _, signature = self._sign_with_key(
             entry,
             attestation_data.slot,
-            attestation_data.data_root_bytes(),
+            hash_tree_root(attestation_data),
             "attestation_secret_key",
         )
 

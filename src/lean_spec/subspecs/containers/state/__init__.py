@@ -1,12 +1,12 @@
 """State container and related types for the Lean Ethereum consensus specification."""
 
+from ..validator import Validators
 from .state import State
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
-    Validators,
 )
 
 __all__ = [

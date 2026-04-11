@@ -29,13 +29,12 @@ References:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from lean_spec.subspecs.networking.types import ProtocolId
 from lean_spec.subspecs.networking.varint import decode_varint, encode_varint
 
-if TYPE_CHECKING:
-    from .connection import QuicStream
+from .stream import QuicStream
 
 MULTISTREAM_PROTOCOL_ID: Final[str] = "/multistream/1.0.0"
 """Protocol identifier for multistream-select 1.0."""

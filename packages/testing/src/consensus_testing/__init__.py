@@ -3,6 +3,7 @@
 from typing import Type
 
 from . import forks
+from .genesis import generate_pre_state
 from .test_fixtures import (
     BaseConsensusFixture,
     ForkChoiceTest,
@@ -25,7 +26,6 @@ from .test_types import (
     StateExpectation,
     StoreChecks,
     TickStep,
-    generate_pre_state,
 )
 
 StateTransitionTestFiller = Type[StateTransitionTest]

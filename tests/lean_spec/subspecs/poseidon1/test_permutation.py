@@ -99,3 +99,64 @@ def test_permutation_vector(
     assert output_state == expected_output, (
         f"Permutation output for width {params.width} did not match."
     )
+
+
+class TestPoseidon1ParamsValidation:
+    """Tests for Poseidon1Params validation."""
+
+    def test_invalid_mds_first_row_length(self) -> None:
+        """Raises error when mds_first_row length doesn't match width."""
+        with pytest.raises(ValueError, match="Length of mds_first_row must equal width"):
+            Poseidon1Params(
+                width=3,
+                rounds_f=8,
+                rounds_p=20,
+                mds_first_row=[Fp(1), Fp(2)],
+                round_constants=[Fp(1)] * 84,
+            )
+
+    def test_invalid_round_constants_count(self) -> None:
+        """Raises error when round_constants count is incorrect."""
+        with pytest.raises(ValueError, match="Incorrect number of round constants"):
+            Poseidon1Params(
+                width=3,
+                rounds_f=8,
+                rounds_p=20,
+                mds_first_row=[Fp(1), Fp(2), Fp(3)],
+                round_constants=[Fp(1)] * 20,
+            )
+
+
+class TestPoseidon1Engine:
+    """Tests for Poseidon1 engine."""
+
+    def test_permute_wrong_state_length_too_short(self) -> None:
+        """Raises error when input state is too short."""
+        engine = Poseidon1(PARAMS_16)
+        with pytest.raises(ValueError, match="Input state must have length 16"):
+            engine.permute([Fp(1)] * 10)
+
+    def test_permute_wrong_state_length_too_long(self) -> None:
+        """Raises error when input state is too long."""
+        engine = Poseidon1(PARAMS_16)
+        with pytest.raises(ValueError, match="Input state must have length 16"):
+            engine.permute([Fp(1)] * 20)
+
+    def test_permute_determinism(self) -> None:
+        """Same input produces same output."""
+        engine = Poseidon1(PARAMS_16)
+        state = [Fp(value=i) for i in range(16)]
+
+        output1 = engine.permute(state)
+        output2 = engine.permute(state)
+
+        assert output1 == output2
+
+    def test_permute_output_differs_from_input(self) -> None:
+        """Permutation changes the state."""
+        engine = Poseidon1(PARAMS_16)
+        state = [Fp(value=i) for i in range(16)]
+
+        output = engine.permute(state)
+
+        assert output != state

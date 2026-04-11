@@ -14,14 +14,11 @@ References:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from lean_spec.types import Bytes32
 
-from .keypair import Secp256k1PublicKey
-
-if TYPE_CHECKING:
-    from .keypair import IdentityKeypair
+from .keypair import IdentityKeypair, Secp256k1PublicKey
 
 __all__ = [
     "NOISE_IDENTITY_PREFIX",

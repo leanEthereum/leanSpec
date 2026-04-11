@@ -42,18 +42,15 @@ from __future__ import annotations
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from time import time
-from typing import TYPE_CHECKING
 
 from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.networking import PeerId
+from lean_spec.subspecs.forkchoice import Store
+from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32
 
 from .config import MAX_CACHED_BLOCKS
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.forkchoice import Store
 
 
 @dataclass(slots=True)

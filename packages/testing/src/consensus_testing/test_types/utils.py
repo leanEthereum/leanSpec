@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
+from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.containers.block.block import Block
 
 
 def resolve_checkpoint(

@@ -12,7 +12,6 @@ from typing import Callable, NamedTuple, cast
 from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain.clock import Interval, SlotClock
-from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers import (
     AttestationData,
     Block,
@@ -23,7 +22,10 @@ from lean_spec.subspecs.containers import (
     State,
     Validator,
 )
-from lean_spec.subspecs.containers.attestation import AggregatedAttestation, AggregationBits
+from lean_spec.subspecs.containers.attestation import (
+    AggregatedAttestation,
+    SignedAggregatedAttestation,
+)
 from lean_spec.subspecs.containers.block import BlockSignatures
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations, AttestationSignatures
 from lean_spec.subspecs.containers.slot import Slot
@@ -240,9 +242,7 @@ def make_aggregated_attestation(
     )
 
     return AggregatedAttestation(
-        aggregation_bits=AggregationBits.from_validator_indices(
-            ValidatorIndices(data=participant_ids)
-        ),
+        aggregation_bits=ValidatorIndices(data=participant_ids).to_aggregation_bits(),
         data=data,
     )
 
@@ -423,8 +423,8 @@ def make_aggregated_proof(
     attestation_data: AttestationData,
 ) -> AggregatedSignatureProof:
     """Create a valid aggregated signature proof for the given participants."""
-    data_root = attestation_data.data_root_bytes()
-    xmss_participants = AggregationBits.from_validator_indices(ValidatorIndices(data=participants))
+    data_root = hash_tree_root(attestation_data)
+    xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
     raw_xmss = list(
         zip(
             [key_manager.get_public_keys(vid)[0] for vid in participants],
@@ -439,6 +439,27 @@ def make_aggregated_proof(
         message=data_root,
         slot=attestation_data.slot,
     )
+
+
+def make_signed_aggregated_attestation(
+    key_manager: XmssKeyManager | None = None,
+    participants: list[ValidatorIndex] | None = None,
+    attestation_data: AttestationData | None = None,
+) -> "SignedAggregatedAttestation":
+    """Create a valid signed aggregated attestation with real XMSS keys."""
+    if key_manager is None:
+        key_manager = XmssKeyManager.shared()
+    if participants is None:
+        participants = [ValidatorIndex(0)]
+    if attestation_data is None:
+        attestation_data = AttestationData(
+            slot=Slot(1),
+            head=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),
+            target=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),
+            source=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+        )
+    proof = make_aggregated_proof(key_manager, participants, attestation_data)
+    return SignedAggregatedAttestation(data=attestation_data, proof=proof)
 
 
 def make_signed_block_from_store(
@@ -464,7 +485,7 @@ def make_signed_block_from_store(
         ),
     )
 
-    target_interval = Interval(block.slot * INTERVALS_PER_SLOT)
+    target_interval = Interval.from_slot(block.slot)
     advanced_store, _ = store.on_tick(target_interval, has_proposal=True)
 
     return advanced_store, signed_block

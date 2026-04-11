@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from time import time
-from unittest.mock import MagicMock
+from typing import cast
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.block_cache import BlockCache, PendingBlock
 from lean_spec.subspecs.sync.config import MAX_CACHED_BLOCKS
 from lean_spec.types import Bytes32
-from tests.lean_spec.helpers import make_signed_block
+from tests.lean_spec.helpers import MockForkchoiceStore, make_signed_block
 
 
 class TestPendingBlock:
@@ -616,18 +617,18 @@ class TestBlockCacheProcessable:
     def test_get_processable_empty_cache(self) -> None:
         """get_processable returns empty list for empty cache."""
         cache = BlockCache()
-        mock_store = MagicMock()
-        mock_store.blocks = {}
+        store = MockForkchoiceStore()
+        store.blocks.clear()
 
-        processable = cache.get_processable(mock_store)
+        processable = cache.get_processable(cast(Store, store))
 
         assert processable == []
 
     def test_get_processable_no_parents_in_store(self, peer_id: PeerId) -> None:
         """get_processable returns empty when no parents are in Store."""
         cache = BlockCache()
-        mock_store = MagicMock()
-        mock_store.blocks = {}
+        store = MockForkchoiceStore()
+        store.blocks.clear()
 
         block = make_signed_block(
             slot=Slot(1),
@@ -637,7 +638,7 @@ class TestBlockCacheProcessable:
         )
         cache.add(block, peer_id)
 
-        processable = cache.get_processable(mock_store)
+        processable = cache.get_processable(cast(Store, store))
 
         assert processable == []
 
@@ -646,8 +647,8 @@ class TestBlockCacheProcessable:
         cache = BlockCache()
         parent_root = Bytes32(b"\x01" * 32)
 
-        mock_store = MagicMock()
-        mock_store.blocks = {parent_root: MagicMock()}
+        store = MockForkchoiceStore()
+        store.blocks[parent_root] = object()
 
         block = make_signed_block(
             slot=Slot(1),
@@ -657,7 +658,7 @@ class TestBlockCacheProcessable:
         )
         pending = cache.add(block, peer_id)
 
-        processable = cache.get_processable(mock_store)
+        processable = cache.get_processable(cast(Store, store))
 
         assert processable == [pending]
 
@@ -666,8 +667,8 @@ class TestBlockCacheProcessable:
         cache = BlockCache()
         parent_root = Bytes32(b"\x01" * 32)
 
-        mock_store = MagicMock()
-        mock_store.blocks = {parent_root: MagicMock()}
+        store = MockForkchoiceStore()
+        store.blocks[parent_root] = object()
 
         # Add blocks out of order
         block3 = make_signed_block(
@@ -693,7 +694,7 @@ class TestBlockCacheProcessable:
         pending1 = cache.add(block1, peer_id)
         pending2 = cache.add(block2, peer_id)
 
-        processable = cache.get_processable(mock_store)
+        processable = cache.get_processable(cast(Store, store))
 
         assert processable == [pending1, pending2, pending3]
 

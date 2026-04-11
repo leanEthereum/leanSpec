@@ -106,9 +106,7 @@ class AggregatedSignatureProof(Container):
         # Include child participants in the aggregated participants
         for child_proof, _ in children:
             aggregated_validator_ids.update(child_proof.participants.to_validator_indices())
-        participants = AggregationBits.from_validator_indices(
-            ValidatorIndices(data=list(aggregated_validator_ids))
-        )
+        participants = ValidatorIndices(data=list(aggregated_validator_ids)).to_aggregation_bits()
 
         mode = mode or LEAN_ENV
         setup_prover(mode=mode)

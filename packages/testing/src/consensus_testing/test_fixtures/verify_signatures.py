@@ -70,7 +70,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
         # Verify signatures
         try:
-            signed_block.verify_signatures(self.anchor_state)
+            signed_block.verify_signatures(self.anchor_state.validators)
         except AssertionError as e:
             exception_raised = e
             # If we expect an exception, this is fine

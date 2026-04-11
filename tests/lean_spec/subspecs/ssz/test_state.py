@@ -12,9 +12,8 @@ from lean_spec.subspecs.containers.state.types import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
-    Validators,
 )
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.containers.validator import ValidatorIndex, Validators
 from lean_spec.types import Bytes32, Uint64
 
 

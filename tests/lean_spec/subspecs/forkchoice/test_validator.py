@@ -130,7 +130,7 @@ class TestBlockProduction:
             public_keys = [key_manager[vid].attestation_public for vid in participants]
             proof.verify(
                 public_keys=public_keys,
-                message=agg_att.data.data_root_bytes(),
+                message=hash_tree_root(agg_att.data),
                 slot=agg_att.data.slot,
             )
 
@@ -247,7 +247,7 @@ class TestBlockProduction:
             public_keys = [key_manager[vid].attestation_public for vid in participants]
             proof.verify(
                 public_keys=public_keys,
-                message=agg_att.data.data_root_bytes(),
+                message=hash_tree_root(agg_att.data),
                 slot=agg_att.data.slot,
             )
 

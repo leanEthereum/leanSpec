@@ -11,14 +11,12 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from aiohttp import web
 
-from .routes import ROUTES
+from lean_spec.subspecs.forkchoice import Store
 
-if TYPE_CHECKING:
-    from lean_spec.subspecs.forkchoice import Store
+from .routes import ROUTES
 
 logger = logging.getLogger(__name__)
 

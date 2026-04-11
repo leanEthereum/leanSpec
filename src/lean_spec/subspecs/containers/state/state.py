@@ -23,13 +23,12 @@ from ..block.types import AggregatedAttestations
 from ..checkpoint import Checkpoint
 from ..config import Config
 from ..slot import Slot
-from ..validator import ValidatorIndex
+from ..validator import ValidatorIndex, Validators
 from .types import (
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
-    Validators,
 )
 
 
@@ -760,7 +759,7 @@ class State(Container):
                         xmss_participants=None,
                         children=children,
                         raw_xmss=[],
-                        message=att_data.data_root_bytes(),
+                        message=hash_tree_root(att_data),
                         slot=att_data.slot,
                     )
                 aggregated_signatures.append(sig)

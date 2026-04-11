@@ -17,18 +17,15 @@ subsystem is active or not.
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
 
 from prometheus_client import (
     REGISTRY,
+    CollectorRegistry,
     Counter,
     Gauge,
     Histogram,
     generate_latest,
 )
-
-if TYPE_CHECKING:
-    from prometheus_client import CollectorRegistry
 
 # Histogram bucket boundaries from the leanMetrics spec.
 #

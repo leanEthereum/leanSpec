@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 
 from lean_spec.subspecs.containers import SignedBlock
 from lean_spec.subspecs.forkchoice import Store
-from lean_spec.subspecs.networking import PeerId
+from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32
 

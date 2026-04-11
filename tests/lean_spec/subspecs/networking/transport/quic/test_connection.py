@@ -22,12 +22,14 @@ from lean_spec.subspecs.networking.transport.quic.connection import (
     QuicConnection,
     QuicConnectionManager,
     QuicStream,
-    QuicStreamResetError,
-    QuicTransportError,
     StreamDataReceived,
     StreamReset,
     is_quic_multiaddr,
     parse_multiaddr,
+)
+from lean_spec.subspecs.networking.transport.quic.stream import (
+    QuicStreamResetError,
+    QuicTransportError,
 )
 from lean_spec.subspecs.networking.types import ProtocolId
 

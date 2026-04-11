@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections import defaultdict
 
 from lean_spec.subspecs.containers.attestation import (
     AggregatedAttestation,
@@ -21,20 +21,16 @@ from lean_spec.subspecs.containers.block.types import (
     AttestationSignatures,
 )
 from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+from lean_spec.subspecs.forkchoice.store import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, CamelModel
 
-from ..keys import LEAN_ENV_TO_SCHEMES, create_dummy_signature
+from ..keys import LEAN_ENV_TO_SCHEMES, XmssKeyManager, create_dummy_signature
 from .aggregated_attestation_spec import AggregatedAttestationSpec
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.containers.state.state import State
-    from lean_spec.subspecs.forkchoice.store import Store
-    from lean_spec.subspecs.xmss.containers import Signature
-
-    from ..keys import XmssKeyManager
 
 
 class BlockSpec(CamelModel):
@@ -331,8 +327,22 @@ class BlockSpec(CamelModel):
             state, block_registry, key_manager
         )
 
-        # Aggregate valid attestations into block body.
-        aggregated_attestations = AggregatedAttestation.aggregate_by_data(valid_attestations)
+        # Group attestations that share the same AttestationData.
+        # Validators seeing the same head/source/target produce identical data,
+        # so they can be merged into a single aggregated attestation.
+        data_to_validator_ids: dict[AttestationData, list[ValidatorIndex]] = defaultdict(list)
+        for attestation in valid_attestations:
+            data_to_validator_ids[attestation.data].append(attestation.validator_id)
+
+        # Build one AggregatedAttestation per unique data.
+        # Each carries a bitfield marking which validators participated.
+        aggregated_attestations = [
+            AggregatedAttestation(
+                aggregation_bits=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
+                data=data,
+            )
+            for data, validator_ids in data_to_validator_ids.items()
+        ]
         attestation_sigs = key_manager.build_attestation_signatures(
             AggregatedAttestations(data=aggregated_attestations),
             signature_lookup=signature_lookup,
@@ -397,13 +407,12 @@ class BlockSpec(CamelModel):
 
         # Build attestations from this spec's attestation fields.
         parent_state = store.states[parent_root]
-        attestations, attestation_signatures, valid_attestations = self.build_attestations(
+        _, attestation_signatures, valid_attestations = self.build_attestations(
             parent_state, block_registry, key_manager
         )
 
         # Gossip valid attestation signatures into the Store.
         # This runs signature verification through the spec's validation path.
-        working_store = store
         for attestation in valid_attestations:
             sigs_for_data = attestation_signatures.get(attestation.data)
             if (
@@ -411,7 +420,7 @@ class BlockSpec(CamelModel):
                 or (signature := sigs_for_data.get(attestation.validator_id)) is None
             ):
                 continue
-            working_store = working_store.on_gossip_attestation(
+            store = store.on_gossip_attestation(
                 SignedAttestation(
                     validator_id=attestation.validator_id,
                     data=attestation.data,
@@ -422,7 +431,7 @@ class BlockSpec(CamelModel):
             )
 
         # Trigger Store aggregation to merge gossip signatures into known payloads.
-        aggregation_store, _ = working_store.aggregate()
+        aggregation_store, _ = store.aggregate()
         merged_store = aggregation_store.accept_new_attestations()
 
         # Build the block through the spec's State.build_block().

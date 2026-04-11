@@ -1,9 +1,10 @@
 """State expectation model for selective validation in state transition tests."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state import State
 from lean_spec.subspecs.containers.state.types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -11,9 +12,6 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.types import Bytes32, CamelModel
-
-if TYPE_CHECKING:
-    from lean_spec.subspecs.containers.state import State
 
 
 class StateExpectation(CamelModel):

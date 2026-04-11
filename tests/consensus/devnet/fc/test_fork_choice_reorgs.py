@@ -940,6 +940,137 @@ def test_back_and_forth_reorg_oscillation(
     )
 
 
+def test_reorg_depth_across_deep_chain_split(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Deep reorg: 10 blocks reverted when head switches to a competing fork.
+
+    Scenario
+    --------
+    - Slot 1: Common ancestor
+    - Slots 2-11: Fork A builds 10-block chain with 1 attestation (becomes head)
+    - Slots 2-11: Fork B builds 10-block chain (parallel, same slots)
+    - Slot 12: Fork B extended with 6/8 attestations → triggers deep reorg
+
+    Chain State Evolution:
+        Slot 1:  common
+        Slot 11: common ← a_2 ← ... ← a_11 (head, weight=1)
+                 common ← b_2 ← ... ← b_11
+        Slot 12: common ← a_2 ← ... ← a_11 (abandoned)
+                 common ← b_2 ← ... ← b_11 ← b_12 (head, weight=6 - REORG!)
+
+    Expected Behavior
+    -----------------
+    1. Fork A leads through slots 2-11 (anchored by explicit attestation)
+    2. Fork B blocks are added but don't overtake (lighter)
+    3. At slot 12, fork B extends with 6 attestations → head switches to B
+    4. Ten blocks reverted: a_2 through a_11 become non-canonical
+    5. Both forks remain in the store (no pruning without finalization)
+
+    Reorg Details:
+        - **Depth**: 10 blocks (a_2 through a_11)
+        - **Trigger**: Supermajority attestation weight on competing fork
+        - **Weight advantage**: Fork B has 6 explicit attestations vs fork A's 1
+    """
+    fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=8),
+        steps=[
+            # Common ancestor at slot 1
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="common"),
+                checks=StoreChecks(
+                    head_slot=Slot(1),
+                    head_root_label="common",
+                ),
+            ),
+            # Fork A: slots 2-10 (no attestations)
+            *[
+                BlockStep(
+                    block=BlockSpec(
+                        slot=Slot(i),
+                        parent_label="common" if i == 2 else f"a_{i - 1}",
+                        label=f"a_{i}",
+                    ),
+                )
+                for i in range(2, 11)
+            ],
+            # Fork A: slot 11 with attestation to anchor fork A as head.
+            #
+            # Targets common (slot 1) so the attestation data stays within
+            # justified_slots range when fork B blocks are built later.
+            # This weight keeps fork A canonical while fork B is constructed.
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(11),
+                    parent_label="a_10",
+                    label="a_11",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(7)],
+                            slot=Slot(1),
+                            target_slot=Slot(1),
+                            target_root_label="common",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(11),
+                    head_root_label="a_11",
+                ),
+            ),
+            # Fork B: slots 2-11, parent chain from "common"
+            *[
+                BlockStep(
+                    block=BlockSpec(
+                        slot=Slot(i),
+                        parent_label="common" if i == 2 else f"b_{i - 1}",
+                        label=f"b_{i}",
+                    ),
+                )
+                for i in range(2, 12)
+            ],
+            # Fork B: slot 12 with 6/8 attestations targeting b_11 → deep reorg.
+            #
+            # Six validators attest to b_11, overwhelming fork A's single
+            # attestation. Head switches from a_11 to b_12, reverting 10 blocks.
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(12),
+                    parent_label="b_11",
+                    label="b_12",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                                ValidatorIndex(3),
+                                ValidatorIndex(4),
+                                ValidatorIndex(5),
+                            ],
+                            slot=Slot(11),
+                            target_slot=Slot(11),
+                            target_root_label="b_11",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(12),
+                    head_root_label="b_12",
+                    reorg_depth=10,
+                    labels_in_store=[
+                        "a_2",
+                        "a_11",
+                        "b_2",
+                        "b_11",
+                    ],
+                ),
+            ),
+        ],
+    )
+
+
 def test_reorg_on_newly_justified_slot(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:

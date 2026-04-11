@@ -18,11 +18,57 @@ from time import time as wall_time
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import Uint64
 
-from .config import MILLISECONDS_PER_INTERVAL, MILLISECONDS_PER_SLOT, SECONDS_PER_SLOT
+from .config import (
+    INTERVALS_PER_SLOT,
+    MILLISECONDS_PER_INTERVAL,
+    MILLISECONDS_PER_SLOT,
+    SECONDS_PER_SLOT,
+)
 
 
 class Interval(Uint64):
     """Interval count since genesis (matches ``Store.time``)."""
+
+    @classmethod
+    def from_unix_time(cls, unix_seconds: Uint64, genesis_time: Uint64) -> Interval:
+        """
+        Convert a Unix timestamp to a total interval count since genesis.
+
+        Useful when external inputs provide absolute timestamps but the
+        store tracks time as intervals (800 ms each, 5 per slot).
+
+        Args:
+            unix_seconds: Absolute Unix timestamp in seconds.
+            genesis_time: Genesis Unix timestamp in seconds.
+
+        Returns:
+            Total intervals elapsed between genesis and the given time.
+        """
+        # Convert the elapsed seconds to milliseconds.
+        #
+        # The store measures time at sub-second granularity (800 ms intervals),
+        # so second-precision input must be scaled up before dividing.
+        delta_ms = (unix_seconds - genesis_time) * Uint64(1000)
+
+        # Truncate to whole intervals.
+        return cls(delta_ms // MILLISECONDS_PER_INTERVAL)
+
+    @classmethod
+    def from_slot(cls, slot: Uint64) -> Interval:
+        """
+        Convert a slot number to the interval at that slot's start.
+
+        Each slot spans a fixed number of intervals.
+        This gives the first interval of the given slot.
+
+        Args:
+            slot: Slot number since genesis.
+
+        Returns:
+            Interval count at the start of the given slot.
+        """
+        # Slot boundaries fall on exact multiples of the interval count.
+        return cls(slot * INTERVALS_PER_SLOT)
 
 
 @dataclass(frozen=True, slots=True)

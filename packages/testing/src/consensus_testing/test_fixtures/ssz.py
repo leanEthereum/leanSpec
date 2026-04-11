@@ -56,8 +56,7 @@ class SSZTest(BaseConsensusFixture):
         ssz_bytes = self.value.encode_bytes()
 
         # Deserialize back
-        container_cls = type(self.value)
-        decoded = container_cls.decode_bytes(ssz_bytes)
+        decoded = self.value.decode_bytes(ssz_bytes)
 
         # Verify roundtrip
         assert decoded == self.value, (

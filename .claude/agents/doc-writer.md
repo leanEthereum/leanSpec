@@ -37,18 +37,74 @@ Names change. Documentation becomes stale. Use plain English.
 # A separate task monitors the shutdown signal.
 ```
 
-### 3. Docstrings describe purpose and context, not the algorithm
+### 3. Never use backticks in comments or docstrings
 
-The algorithm is documented line-by-line inside the function body.
-The docstring tells the reader:
+This is source code, not rendered documentation. Backticks (`` `` ``) add visual noise and make comments harder to scan. Just write identifiers as plain text.
+
+**Bad:**
+```python
+# The ``GossipAggregatedAttestationStep`` puts payloads
+# into ``latest_new_aggregated_payloads``.
+```
+
+**Good:**
+```python
+# Gossip aggregated steps place payloads into the "new" pool.
+```
+
+### 4. Docstrings are short and scannable — education goes inline
+
+The docstring gives a bird's-eye view. The inline comments teach.
+
+For **production code**, the docstring tells the reader:
 - What this accomplishes (one line)
-- Why it exists / when to use it (a few lines)
+- Why it exists / when to use it (bullets)
 - Args, Returns, Raises
 
-Do NOT recapitulate the step-by-step algorithm in the docstring.
-That belongs in the inline comments.
+For **test functions**, the docstring has:
+- One summary line
+- Short named sections with bullets and ASCII diagrams
+- No prose blocks, no algorithm recaps, no framework internals
 
-### 4. Line-by-line documentation inside every function body
+Do NOT recapitulate the step-by-step algorithm in the docstring. That belongs in the inline comments glued to the code it describes.
+
+**Bad** — dense prose block in test docstring:
+```python
+"""
+Delivery mechanism: GossipAggregatedAttestationStep puts payloads
+into latest_new_aggregated_payloads. A TickStep advances time past
+interval 4 of the slot, triggering accept_new_attestations which
+migrates the payloads to latest_known_aggregated_payloads. The
+subsequent BlockStep at slot 5 calls build_signed_block_with_store
+which passes latest_known_aggregated_payloads to State.build_block.
+"""
+```
+
+**Good** — scannable sections with bullets:
+```python
+"""
+Fixed-point loop: justification from attestation A unlocks attestation B.
+
+Scenario
+--------
+Four validators. Linear chain through slot 4::
+
+    genesis(0) -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+
+Two gossip attestations with different sources:
+
+- A: source=1, target=2, validators {0, 1, 2}
+- B: source=2, target=4, validators {1, 2, 3}
+
+Expected post-state
+-------------------
+- Justified slot: 4
+- Finalized slot: 1
+- Block body: 2 aggregated attestations (A and B)
+"""
+```
+
+### 5. Line-by-line documentation inside every function body
 
 This is **the most important rule**. Every logical step gets a comment block BEFORE it. This applies everywhere: spec code, utility code, **and test code**. Tests are functions — the same rules apply without exception.
 
@@ -77,7 +133,78 @@ def verify(self, state: State) -> bool:
         ...
 ```
 
-### 5. Short, scannable sentences
+### 6. Concrete over abstract — use real numbers
+
+Never write vague comments. Use actual values from the context.
+
+**Bad:**
+```python
+# Validate the threshold.
+```
+
+**Good:**
+```python
+# Threshold: 3 * count >= 2 * total -> 3*3=9 >= 2*4=8 -> passes.
+```
+
+**Bad:**
+```python
+# Check that this slot is justifiable.
+```
+
+**Good:**
+```python
+# Slot 3 is justifiable: delta=2 from finalized=1, within the
+# immediate window of 5.
+```
+
+### 7. ASCII diagrams for data flow and chain topology
+
+Whenever code transforms, compares, or rearranges data — or when a chain of blocks is involved — show the layout visually.
+
+```python
+# Chain setup
+#
+#   genesis(0) -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+#
+# Slot 3 carries a supermajority attestation that justifies slot 1.
+# This establishes the baseline: justified=1, finalized=0.
+```
+
+```python
+# Fixed-point loop:
+#
+#   Pass 1: justified=1 -> A selected -> justifies 2
+#           Finalization: range(1+1, 2) is empty -> finalizes 1
+#           justified advances to 2
+#
+#   Pass 2: justified=2 -> B selected -> justifies 4
+#           justified advances to 4
+#
+#   Pass 3: nothing new -> break
+```
+
+### 8. Structured labels in inline comments
+
+Use labeled sub-sections when they add clarity:
+
+- `# Why:` — when the reason is not obvious from the code
+- `# Invariant:` — the rule being enforced or relied upon
+- `# Timing:` — for interval/slot calculations
+- `# Threshold:` — for supermajority arithmetic
+
+```python
+# Migrate attestations: tick to 20s (interval 24 fires acceptance).
+#
+# Invariant: justified is still slot 1.
+# Attestations are stored but not processed until a block is built.
+#
+# We check two validators unique to each attestation:
+# - V0 appears only in A (source=1, target=2)
+# - V3 appears only in B (source=2, target=4)
+```
+
+### 9. Short, scannable sentences
 
 - One idea per line.
 - Under 15 words is ideal.
@@ -95,7 +222,7 @@ def verify(self, state: State) -> bool:
 # Includes initial checkpoints, validator registry, and config.
 ```
 
-### 6. Formatting creates readability
+### 10. Formatting creates readability
 
 Use visual structure so readers WANT to read:
 
@@ -128,7 +255,7 @@ if len(data) < 10:
 header = data[:10]
 ```
 
-### 7. Use bullet points or enumeration for lists
+### 11. Use bullet points or enumeration for lists
 
 When listing multiple items, use structured formatting.
 
@@ -283,6 +410,12 @@ def process(self, data: bytes) -> Result:
 - Keep sentences short and direct
 - Avoid jargon unless defined
 - Reference specification sections when applicable
-- NEVER mention function/method/variable names in comments - use plain English
+- NEVER mention function/method/variable names in comments — use plain English
+- NEVER use backticks in comments or docstrings — this is source code, not docs
+- ALWAYS use concrete numbers from the context (thresholds, deltas, slot values)
+- ALWAYS use ASCII diagrams for chain topology and data flow
+- ALWAYS use structured labels (Why:, Invariant:, Timing:, Threshold:) where they add clarity
+- Docstrings for tests: keep SHORT — one summary line + scannable sections with bullets
+- Education goes INLINE, glued to the code, not in the docstring
 
 When documenting, always ask yourself: "Would this help someone learning Ethereum consensus understand not just WHAT the code does, but WHY it does it this way?"

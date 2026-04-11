@@ -17,7 +17,6 @@ from lean_spec.subspecs.chain.config import (
     MAX_ATTESTATIONS_DATA,
 )
 from lean_spec.subspecs.containers import (
-    AggregationBits,
     AttestationData,
     Block,
     Checkpoint,
@@ -221,7 +220,7 @@ class Store(StrictBaseModel):
         # The state internally might have zero-hash checkpoints (if genesis),
         # but the Store must treat the anchor block as the justified/finalized point.
         return cls(
-            time=Interval(anchor_slot * INTERVALS_PER_SLOT),
+            time=Interval.from_slot(anchor_slot),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
@@ -372,8 +371,8 @@ class Store(StrictBaseModel):
         )
         public_key = key_state.validators[validator_id].get_attestation_pubkey()
 
-        assert signature.verify(
-            public_key, attestation_data.slot, attestation_data.data_root_bytes(), scheme
+        assert scheme.verify(
+            public_key, attestation_data.slot, hash_tree_root(attestation_data), signature
         ), "Signature verification failed"
 
         # Store signature and attestation data for later aggregation.
@@ -445,7 +444,7 @@ class Store(StrictBaseModel):
         try:
             proof.verify(
                 public_keys=public_keys,
-                message=data.data_root_bytes(),
+                message=hash_tree_root(data),
                 slot=data.slot,
             )
         except AggregationError as exc:
@@ -511,7 +510,7 @@ class Store(StrictBaseModel):
         )
 
         # Validate cryptographic signatures
-        valid_signatures = signed_block.verify_signatures(parent_state, scheme)
+        valid_signatures = signed_block.verify_signatures(parent_state.validators, scheme)
 
         # Execute state transition function to compute post-block state
         state_transition_start = time.perf_counter()
@@ -1018,9 +1017,9 @@ class Store(StrictBaseModel):
                 continue
 
             # Encode the set of raw signers as a compact bitfield.
-            xmss_participants = AggregationBits.from_validator_indices(
-                ValidatorIndices(data=[vid for vid, _, _ in raw_entries])
-            )
+            xmss_participants = ValidatorIndices(
+                data=[vid for vid, _, _ in raw_entries]
+            ).to_aggregation_bits()
             raw_xmss = [(pk, sig) for _, pk, sig in raw_entries]
 
             # Phase 3: Aggregate
@@ -1047,7 +1046,7 @@ class Store(StrictBaseModel):
                 xmss_participants=xmss_participants,
                 children=children,
                 raw_xmss=raw_xmss,
-                message=data.data_root_bytes(),
+                message=hash_tree_root(data),
                 slot=data.slot,
             )
             new_aggregates.append(SignedAggregatedAttestation(data=data, proof=proof))
@@ -1191,7 +1190,7 @@ class Store(StrictBaseModel):
             Tuple of (new Store with updated time, head root for building).
         """
         # Advance time to this slot's first interval
-        target_interval = Interval(slot * INTERVALS_PER_SLOT)
+        target_interval = Interval.from_slot(slot)
         store, _ = self.on_tick(target_interval, True)
 
         # Process any pending attestations before proposal

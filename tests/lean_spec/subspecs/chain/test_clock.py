@@ -1,14 +1,118 @@
 """Tests for the SlotClock time-to-slot converter."""
 
+from __future__ import annotations
+
 import pytest
 
 from lean_spec.subspecs.chain import Interval, SlotClock
 from lean_spec.subspecs.chain.config import (
+    INTERVALS_PER_SLOT,
     MILLISECONDS_PER_INTERVAL,
+    MILLISECONDS_PER_SLOT,
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.containers import Slot
 from lean_spec.types import Uint64
+
+GENESIS_TIME = Uint64(1_700_000_000)
+
+
+class TestIntervalFromUnixTime:
+    """Tests for Interval.from_unix_time()."""
+
+    def test_at_genesis(self) -> None:
+        """Returns interval 0 when unix_seconds equals genesis_time."""
+        assert Interval.from_unix_time(GENESIS_TIME, GENESIS_TIME) == Interval(0)
+
+    def test_one_second_after_genesis(self) -> None:
+        """One second equals 1000ms, yielding 1000 // 800 = 1 interval."""
+        result = Interval.from_unix_time(GENESIS_TIME + Uint64(1), GENESIS_TIME)
+        assert result == Interval(1)
+
+    def test_one_slot_after_genesis(self) -> None:
+        """One full slot (4s = 4000ms) yields 4000 // 800 = 5 intervals."""
+        result = Interval.from_unix_time(GENESIS_TIME + SECONDS_PER_SLOT, GENESIS_TIME)
+        expected = Interval(int(MILLISECONDS_PER_SLOT // MILLISECONDS_PER_INTERVAL))
+        assert result == expected
+
+    def test_sub_interval_rounds_down(self) -> None:
+        """Partial intervals are truncated by integer division.
+
+        At 0 full seconds past genesis the delta_ms is 0, so the result is 0.
+        The method only accepts whole-second Uint64 values, so sub-interval
+        precision only surfaces when 1000ms is not a multiple of the interval.
+        Here we verify the floor behaviour across the first few seconds.
+        """
+        # 0s -> 0ms -> 0 intervals
+        assert Interval.from_unix_time(GENESIS_TIME, GENESIS_TIME) == Interval(0)
+        # 1s -> 1000ms -> 1000 // 800 = 1 (remainder 200ms truncated)
+        assert Interval.from_unix_time(GENESIS_TIME + Uint64(1), GENESIS_TIME) == Interval(1)
+        # 2s -> 2000ms -> 2000 // 800 = 2 (remainder 400ms truncated)
+        assert Interval.from_unix_time(GENESIS_TIME + Uint64(2), GENESIS_TIME) == Interval(2)
+        # 3s -> 3000ms -> 3000 // 800 = 3 (remainder 600ms truncated)
+        assert Interval.from_unix_time(GENESIS_TIME + Uint64(3), GENESIS_TIME) == Interval(3)
+
+    def test_multiple_slots(self) -> None:
+        """Ten slots (40s = 40000ms) yields 40000 // 800 = 50 intervals."""
+        ten_slots = Uint64(10) * SECONDS_PER_SLOT
+        result = Interval.from_unix_time(GENESIS_TIME + ten_slots, GENESIS_TIME)
+        expected_intervals = (ten_slots * Uint64(1000)) // MILLISECONDS_PER_INTERVAL
+        assert result == Interval(expected_intervals)
+
+    def test_return_type_is_interval(self) -> None:
+        """Return value is an Interval instance, not a plain Uint64."""
+        result = Interval.from_unix_time(GENESIS_TIME + Uint64(5), GENESIS_TIME)
+        assert isinstance(result, Interval)
+
+    def test_large_time_delta(self) -> None:
+        """Works correctly with a large time delta (one day = 86400s)."""
+        one_day = Uint64(86400)
+        result = Interval.from_unix_time(GENESIS_TIME + one_day, GENESIS_TIME)
+        expected = Interval((one_day * Uint64(1000)) // MILLISECONDS_PER_INTERVAL)
+        assert result == expected
+
+    def test_genesis_time_zero(self) -> None:
+        """Works when genesis_time is zero."""
+        result = Interval.from_unix_time(Uint64(4), Uint64(0))
+        # 4s = 4000ms -> 4000 // 800 = 5
+        assert result == Interval(5)
+
+
+class TestIntervalFromSlot:
+    """Tests for Interval.from_slot()."""
+
+    def test_slot_zero(self) -> None:
+        """Slot 0 maps to interval 0."""
+        assert Interval.from_slot(Uint64(0)) == Interval(0)
+
+    def test_slot_one(self) -> None:
+        """Slot 1 maps to interval equal to INTERVALS_PER_SLOT."""
+        assert Interval.from_slot(Uint64(1)) == Interval(INTERVALS_PER_SLOT)
+
+    def test_slot_three(self) -> None:
+        """Slot 3 maps to interval 3 * INTERVALS_PER_SLOT."""
+        assert Interval.from_slot(Uint64(3)) == Interval(Uint64(3) * INTERVALS_PER_SLOT)
+
+    def test_multiple_slots(self) -> None:
+        """Each slot N maps to interval N * INTERVALS_PER_SLOT."""
+        for n in range(10):
+            slot = Uint64(n)
+            assert Interval.from_slot(slot) == Interval(slot * INTERVALS_PER_SLOT)
+
+    def test_return_type_is_interval(self) -> None:
+        """Return value is an Interval instance, not a plain Uint64."""
+        result = Interval.from_slot(Uint64(2))
+        assert isinstance(result, Interval)
+
+    def test_consistent_with_from_unix_time(self) -> None:
+        """from_slot(N) equals from_unix_time at genesis + N * SECONDS_PER_SLOT."""
+        for n in range(5):
+            slot = Uint64(n)
+            from_slot_result = Interval.from_slot(slot)
+            from_unix_result = Interval.from_unix_time(
+                GENESIS_TIME + slot * SECONDS_PER_SLOT, GENESIS_TIME
+            )
+            assert from_slot_result == from_unix_result
 
 
 class TestCurrentSlot:

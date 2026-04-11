@@ -22,10 +22,7 @@ from typing import Final
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import SlotClock
 from lean_spec.subspecs.chain.clock import Interval
-from lean_spec.subspecs.chain.config import (
-    ATTESTATION_COMMITTEE_COUNT,
-    INTERVALS_PER_SLOT,
-)
+from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.chain.service import ChainService
 from lean_spec.subspecs.containers import Block, BlockBody, SignedBlock, State
 from lean_spec.subspecs.containers.attestation import SignedAttestation
@@ -393,7 +390,7 @@ class Node:
         # Instead, derive time from wall clock, floored by the block's slot.
         clock = SlotClock(genesis_time=genesis_time or _ZERO_TIME, time_fn=time_fn)
         wall_clock_intervals = clock.total_intervals()
-        block_intervals = Interval(head_block.slot * INTERVALS_PER_SLOT)
+        block_intervals = Interval.from_slot(head_block.slot)
         store_time = max(wall_clock_intervals, block_intervals)
 
         # Reconstruct minimal store from persisted data.
