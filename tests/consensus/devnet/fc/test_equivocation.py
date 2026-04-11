@@ -1,19 +1,4 @@
-"""
-Equivocating Proposer Tests.
-
-Tests fork choice behavior when a proposer publishes two different blocks for
-the same slot (equivocation).
-
-Covered scenarios:
-
-- Both equivocating blocks are accepted by the store.
-  Head resolves via lexicographic tiebreaker when neither fork has more weight.
-
-- Validators split attestations across equivocating forks.
-  Head follows the fork with more attestation weight.
-  When weights are equal, the lexicographic tiebreaker applies.
-  When one fork gains an extra vote, the head switches to that fork.
-"""
+"""Equivocating Proposer Tests."""
 
 import pytest
 from consensus_testing import (
