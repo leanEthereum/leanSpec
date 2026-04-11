@@ -514,7 +514,8 @@ def test_fork_from_before_finalization_not_considered(
                     latest_finalized_slot=Slot(3),
                 ),
             ),
-            # Process a new block at slot 4 with parent_label="block_2" (forks from before finalization)
+            # Process a new block at slot 4 with parent_label="block_2"
+            # (forks from before finalization)
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(4),
