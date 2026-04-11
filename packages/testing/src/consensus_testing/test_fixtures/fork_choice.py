@@ -220,6 +220,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Process each step against the Store.
         # Store follows immutable pattern: each method returns a new Store.
         for i, step in enumerate(self.steps):
+            old_head = store.head
             try:
                 match step:
                     case TickStep():
@@ -310,6 +311,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                         step_index=i,
                         block_registry=self._block_registry,
                         filled_block=filled_block,
+                        old_head=old_head,
                     )
 
             except Exception as e:
