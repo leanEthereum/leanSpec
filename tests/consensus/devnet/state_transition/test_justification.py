@@ -1405,3 +1405,80 @@ def test_target_at_or_before_source_is_ignored(
             ),
         ),
     )
+
+
+def test_attestation_with_already_justified_target_is_silently_skipped(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Attestation targeting an already-justified slot is ignored without error.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1
+    3. Process block_2 at slot 2 with attestations from validators 0, 1, and 2
+       targeting block_1 at slot 1, justifying slot 1
+    4. Process block_3 at slot 3 with an attestation from validator 3
+       targeting block_1 at slot 1 (already justified)
+
+    Expected Behavior
+    -----------------
+    1. Slot 1 becomes justified after block_2
+    2. The attestation in block_3 targets an already-justified slot
+    3. The duplicate attestation is silently skipped with no state change
+    4. The block containing the duplicate attestation is accepted as valid
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            # Step 1 — Build chain and justify slot X
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                label="block_2",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+            # Step 2 — Include duplicate attestation targeting slot X
+            # Step 3 — Apply state transition
+            # Assertion C — No errors during processing
+            BlockSpec(
+                slot=Slot(3),
+                parent_label="block_2",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(3),
+                        ],
+                        slot=Slot(3),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(3),
+            # Assertion A — Justification preserved
+            latest_justified_slot=Slot(1),
+            latest_finalized_slot=Slot(0),
+            # Assertion B — No additional state change from the duplicate attestation
+            justified_slots=JustifiedSlots(data=[]).model_copy(
+                update={"data": [Boolean(True), Boolean(False)]}
+            ),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
