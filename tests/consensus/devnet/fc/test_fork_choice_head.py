@@ -7,6 +7,7 @@ from consensus_testing import (
     BlockStep,
     ForkChoiceTestFiller,
     StoreChecks,
+    generate_pre_state,
 )
 
 from lean_spec.subspecs.containers.slot import Slot
@@ -433,6 +434,96 @@ def test_head_with_deep_fork_split(
                     ],
                 ),
                 checks=StoreChecks(head_slot=Slot(8), head_root_label="fork_b_8"),
+            ),
+        ],
+    )
+
+
+def test_head_selection_by_weight_not_depth(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Shorter fork with more attestation weight wins over deeper fork.
+
+    Scenario
+    --------
+    Six validators. Two forks diverge from a common ancestor at slot 1::
+
+        genesis ── slot 1 ("common")
+            ├── a_2 ── a_3 ── a_4 ── a_5 ── a_6   (Fork A: 5 deep, V0 attests)
+            └── b_9 ── b_12                         (Fork B: 2 deep, V1-V4 attest)
+
+    Fork B uses justifiable slots 9 (3²) and 12 (3×4) to satisfy
+    the 3SF-mini justification rules.
+
+    Expected Behavior:
+        - Fork A: 5 blocks deep, 1 attestation (validator 0 on a_2)
+        - Fork B: 2 blocks deep, 4 attestations (validators 1-4 on b_9)
+        - Head = b_12 — heavier subtree wins despite being shallower
+
+    Why This Matters
+    ----------------
+    LMD-GHOST selects the head by greedily descending toward the subtree with
+    the most validator weight. Chain depth is irrelevant — only accumulated
+    attestation weight determines the canonical head.
+
+    At the fork point, Fork B's subtree has weight 4 (validators 1-4) vs
+    Fork A's weight 1 (validator 0). Fork B wins decisively.
+
+    This is critical for consensus safety: an attacker cannot gain head
+    priority by producing many blocks alone. Only validator attestations
+    (real economic weight) determine the canonical chain.
+    """
+    fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=6),
+        steps=[
+            # Common ancestor — the fork point for both chains.
+            BlockStep(block=BlockSpec(slot=Slot(1), label="common")),
+            # Fork A: deep chain with minimal attestation weight.
+            # Five consecutive blocks, but only one validator supports this fork.
+            BlockStep(block=BlockSpec(slot=Slot(2), parent_label="common", label="a_2")),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="a_2",
+                    label="a_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="a_2",
+                        ),
+                    ],
+                ),
+            ),
+            BlockStep(block=BlockSpec(slot=Slot(4), parent_label="a_3", label="a_4")),
+            BlockStep(block=BlockSpec(slot=Slot(5), parent_label="a_4", label="a_5")),
+            BlockStep(block=BlockSpec(slot=Slot(6), parent_label="a_5", label="a_6")),
+            # Fork B: shallow chain with heavy attestation weight.
+            # Only two blocks, but four validators support this fork.
+            BlockStep(block=BlockSpec(slot=Slot(9), parent_label="common", label="b_9")),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(12),
+                    parent_label="b_9",
+                    label="b_12",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                                ValidatorIndex(3),
+                                ValidatorIndex(4),
+                            ],
+                            slot=Slot(9),
+                            target_slot=Slot(9),
+                            target_root_label="b_9",
+                        ),
+                    ],
+                ),
+                # LMD-GHOST selects Fork B (weight 4) over Fork A (weight 1).
+                checks=StoreChecks(head_slot=Slot(12), head_root_label="b_12"),
             ),
         ],
     )
