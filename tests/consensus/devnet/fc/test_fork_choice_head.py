@@ -436,3 +436,96 @@ def test_head_with_deep_fork_split(
             ),
         ],
     )
+
+
+def test_fork_from_before_finalization_not_considered(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """A fork originating before the finalized slot is ignored by head selection."""
+    fork_choice_test(
+        steps=[
+            # Block 1
+            BlockStep(block=BlockSpec(slot=Slot(1), label="block_1")),
+            # Block 2 justifies block 1
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(2),
+                    label="block_2",
+                    parent_label="block_1",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            slot=Slot(2),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
+            ),
+            # Block 3 justifies block 2, finalizes block 1
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    label="block_3",
+                    parent_label="block_2",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            slot=Slot(3),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                    ],
+                ),
+            ),
+            # Block 4 justifies block 3, finalizes block 2
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(4),
+                    label="block_4",
+                    parent_label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            slot=Slot(4),
+                            target_slot=Slot(3),
+                            target_root_label="block_3",
+                        ),
+                    ],
+                ),
+            ),
+            # Block 5 justifies block 4, finalizes block 3
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(5),
+                    label="block_5",
+                    parent_label="block_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                            slot=Slot(5),
+                            target_slot=Slot(4),
+                            target_root_label="block_4",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(5),
+                    latest_finalized_slot=Slot(3),
+                ),
+            ),
+            # Process a new block at slot 4 with parent_label="block_2" (forks from before finalization)
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(4),
+                    parent_label="block_2",  # Before finalization!
+                    label="dead_fork",
+                ),
+                checks=StoreChecks(
+                    # Head should NOT be on the dead fork, stays on slot 5
+                    head_slot=Slot(5),
+                    latest_finalized_slot=Slot(3),
+                ),
+            ),
+        ],
+    )
