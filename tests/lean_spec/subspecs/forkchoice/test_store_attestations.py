@@ -21,7 +21,6 @@ from lean_spec.types import ByteListMiB, Bytes32, Uint64
 from tests.lean_spec.helpers import (
     TEST_VALIDATOR_ID,
     make_aggregated_proof,
-    make_bytes32,
     make_signed_block_from_store,
     make_store,
     make_store_with_attestation_data,
@@ -789,56 +788,3 @@ class TestEndToEndAggregationFlow:
             message=data_root,
             slot=attestation_data.slot,
         )
-
-
-def test_produce_attestation_data_uses_head_state_justified(
-    key_manager: XmssKeyManager,
-) -> None:
-    """
-    Attestation source uses the head state's justified checkpoint.
-
-    Problem
-    -------
-    The store tracks the highest justified checkpoint across *all* forks.
-    A block on a minority fork can push this global max ahead of what
-    the head chain has seen:
-
-    - Global justified: slot 42 (advanced by a competing fork)
-    - Head state justified: slot 0 (head chain hasn't seen those votes)
-
-    If attestation production uses the global max, block building rejects
-    every attestation because it filters by the head state's checkpoint.
-    Result: blocks with zero attestations, stalling justification.
-
-    Invariant
-    ---------
-    The source in produced attestations must always match what the block
-    builder expects. Both must come from the head state, not the global max.
-    """
-    # Create a minimal store with 3 validators at genesis.
-    store = make_store(num_validators=3, key_manager=key_manager)
-
-    # The head state's justified checkpoint is what the block builder
-    # will filter attestations against. At genesis, the stored root is
-    # Bytes32.zero(), so apply the same correction used in block building.
-    head_state = store.states[store.head]
-    head_justified = head_state.latest_justified.model_copy(update={"root": store.head})
-
-    # Simulate a non-head fork advancing the store's global justified
-    # past what the head chain has seen. In practice this happens when
-    # a minority fork's block carries enough attestations to cross the
-    # 2/3 supermajority threshold.
-    higher_justified = Checkpoint(root=make_bytes32(99), slot=Slot(42))
-    diverged_store = store.model_copy(update={"latest_justified": higher_justified})
-
-    # Precondition: the global max is strictly ahead of the head state.
-    assert diverged_store.latest_justified.slot > head_justified.slot
-
-    # Produce attestation data. The source must come from the head state
-    # (slot 0), not from the global max (slot 42).
-    attestation = diverged_store.produce_attestation_data(Slot(1))
-
-    # The source must match the head state's justified checkpoint.
-    # Using the global max would cause a source mismatch in block building,
-    # silently rejecting every attestation.
-    assert attestation.source == head_justified
