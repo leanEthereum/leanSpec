@@ -4,10 +4,11 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
-from lean_spec.subspecs.containers.attestation import AttestationData
+from lean_spec.subspecs.containers.attestation import AggregatedAttestation, AttestationData
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.containers.validator import ValidatorIndices
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Bytes32
@@ -212,10 +213,33 @@ class StateTransitionTest(BaseConsensusFixture):
             default_root=hash_tree_root(source_state.latest_block_header),
         )
 
-        # Extract attestations from body if provided
+        # Extract attestations from body if provided.
         aggregated_attestations = (
             spec.body.attestations if spec.body else AggregatedAttestations(data=[])
         )
+        forced_attestations = (
+            self._build_forced_aggregated_attestations_from_spec(
+                spec.forced_attestations, state, block_registry
+            )
+            if spec.forced_attestations
+            else []
+        )
+
+        def append_forced_attestations(block: Block) -> Block:
+            if not forced_attestations:
+                return block
+
+            return block.model_copy(
+                update={
+                    "body": block.body.model_copy(
+                        update={
+                            "attestations": AggregatedAttestations(
+                                data=[*block.body.attestations.data, *forced_attestations]
+                            )
+                        }
+                    )
+                }
+            )
 
         # Handle explicit state root override
         if spec.state_root is not None:
@@ -226,16 +250,18 @@ class StateTransitionTest(BaseConsensusFixture):
                 state_root=spec.state_root,
                 body=spec.body or BlockBody(attestations=aggregated_attestations),
             )
-            return block, None
+            return append_forced_attestations(block), None
 
         # For invalid tests, return incomplete block without processing
         if self.expect_exception is not None or spec.skip_slot_processing:
-            return Block(
-                slot=spec.slot,
-                proposer_index=proposer_index,
-                parent_root=parent_root,
-                state_root=Bytes32.zero(),
-                body=spec.body or BlockBody(attestations=aggregated_attestations),
+            return append_forced_attestations(
+                Block(
+                    slot=spec.slot,
+                    proposer_index=proposer_index,
+                    parent_root=parent_root,
+                    state_root=Bytes32.zero(),
+                    body=spec.body or BlockBody(attestations=aggregated_attestations),
+                )
             ), None
 
         # Build aggregated payloads from spec.attestations if provided
@@ -255,7 +281,38 @@ class StateTransitionTest(BaseConsensusFixture):
             known_block_roots=known_block_roots,
             aggregated_payloads=aggregated_payloads,
         )
+
+        if forced_attestations:
+            block = append_forced_attestations(block)
+            post_state = state.process_slots(spec.slot).process_block(block)
+            block = block.model_copy(update={"state_root": hash_tree_root(post_state)})
+
         return block, post_state
+
+    @staticmethod
+    def _build_forced_aggregated_attestations_from_spec(
+        attestation_specs: list[AggregatedAttestationSpec],
+        state: State,
+        block_registry: dict[str, Block],
+    ) -> list[AggregatedAttestation]:
+        """
+        Build raw aggregated attestations that bypass block-builder filtering.
+
+        Args:
+            attestation_specs: Attestation specifications to include directly.
+            state: Current state for checkpoint resolution.
+            block_registry: Labels to blocks for resolving checkpoint roots.
+
+        Returns:
+            Aggregated attestations ready to append to the block body.
+        """
+        return [
+            AggregatedAttestation(
+                aggregation_bits=ValidatorIndices(data=spec.validator_ids).to_aggregation_bits(),
+                data=spec.build_attestation_data(block_registry, state),
+            )
+            for spec in attestation_specs
+        ]
 
     @staticmethod
     def _build_aggregated_payloads_from_spec(

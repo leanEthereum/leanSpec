@@ -1534,3 +1534,103 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
             justifications_validators=JustificationValidators(data=[]),
         ),
     )
+
+
+def test_attestation_with_unjustified_source_is_silently_skipped(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Attestation whose source slot is not justified is ignored without error.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1
+    3. Process block_2 at slot 2 with validators 0, 1, and 2 attesting to block_1,
+       which justifies slot 1
+    4. Process block_3 at slot 3 with no attestations, so slot 2 remains unjustified
+    5. Process block_4 at slot 4 with:
+       - a valid attestation from validators 0 and 1 using justified source slot 1
+         and targeting block_2 at slot 2
+       - a forced attestation from validators 2 and 3 using unjustified source slot 2
+         and targeting block_3 at slot 3
+
+    Expected Behavior
+    -----------------
+    1. The unjustified-source attestation is silently skipped
+    2. The valid attestation is processed and creates a pending tally for block_2
+    3. latest_justified_slot remains at slot 1
+    4. The block containing both attestations is accepted as valid
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                label="block_2",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+            BlockSpec(
+                slot=Slot(3),
+                parent_label="block_2",
+                label="block_3",
+            ),
+            BlockSpec(
+                slot=Slot(4),
+                parent_label="block_3",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                        ],
+                        slot=Slot(4),
+                        target_slot=Slot(2),
+                        target_root_label="block_2",
+                    ),
+                ],
+                forced_attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(2),
+                            ValidatorIndex(3),
+                        ],
+                        slot=Slot(4),
+                        target_slot=Slot(3),
+                        target_root_label="block_3",
+                        source_root_label="block_2",
+                        source_slot=Slot(2),
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(4),
+            latest_justified_slot=Slot(1),
+            latest_finalized_slot=Slot(0),
+            justified_slots=JustifiedSlots(data=[]).model_copy(
+                update={"data": [Boolean(True), Boolean(False), Boolean(False)]}
+            ),
+            justifications_validators=JustificationValidators(
+                data=[
+                    Boolean(True),
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                ]
+            ),
+        ),
+    )
