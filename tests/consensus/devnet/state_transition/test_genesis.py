@@ -8,7 +8,13 @@ Tests for genesis state generation and initialization.
 """
 
 import pytest
-from consensus_testing import StateExpectation, StateTransitionTestFiller, generate_pre_state
+from consensus_testing import (
+    AggregatedAttestationSpec,
+    BlockSpec,
+    StateExpectation,
+    StateTransitionTestFiller,
+    generate_pre_state,
+)
 
 from lean_spec.subspecs.containers.block import BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
@@ -19,6 +25,7 @@ from lean_spec.subspecs.containers.state.types import (
     JustificationValidators,
     JustifiedSlots,
 )
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
 
@@ -147,5 +154,57 @@ def test_genesis_custom_validator_set(
             justified_slots=JustifiedSlots(data=[]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
+def test_genesis_single_validator(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test genesis state with exactly 1 validator.
+
+    Scenario
+    --------
+    This is an edge case that tests boundary behavior:
+    - The single validator is the proposer for every slot (slot % 1 == 0, always)
+    - Supermajority threshold is trivially met (1/1 = 100% >= 66.7%)
+    - A single attestation from the only validator should justify and finalize
+
+    Steps:
+    1. Generate genesis with 1 validator
+    2. Produce block at slot 1 (validator 0 is always the proposer)
+    3. Include attestation from the single validator
+    4. Verify justification happens immediately (1/1 = supermajority)
+    5. Produce another block to verify finalization
+
+    Expected Behavior
+    -----------------
+    - Validator count is 1
+    - Proposer index is always 0 (slot % 1 == 0)
+    - Justification threshold: 3 * 1 >= 2 * 1 -> 3 >= 2 -> True
+    - Single attestation justifies immediately
+    """
+    state_transition_test(
+        pre=generate_pre_state(num_validators=1, genesis_time=Uint64(0)),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[ValidatorIndex(0)],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            validator_count=1,
+            latest_justified_slot=Slot(1),
+            latest_block_header_proposer_index=0,
         ),
     )
