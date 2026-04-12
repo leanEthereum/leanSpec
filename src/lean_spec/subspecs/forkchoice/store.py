@@ -767,16 +767,30 @@ class Store(StrictBaseModel):
             self.latest_known_aggregated_payloads
         )
 
-        # Run LMD-GHOST fork choice algorithm
-        #
-        # Selects canonical head by walking the tree from the justified root,
-        # choosing the heaviest child at each fork based on attestation weights.
+        # Run LMD-GHOST fork choice algorithm.
+        # Start from the justified root and descend toward the heaviest leaf.
         new_head = self._compute_lmd_ghost_head(
             start_root=self.latest_justified.root,
             attestations=attestations,
         )
 
-        # Return new Store instance with updated values (immutable update)
+        # Invariant: the head is always downstream from the justified root.
+        #
+        # Walk backward from the head through parent links.
+        # If we reach the justified root, the invariant holds.
+        current = new_head
+        while current in self.blocks:
+            if current == self.latest_justified.root:
+                break
+            current = self.blocks[current].parent_root
+        else:
+            current = ZERO_HASH
+
+        assert current == self.latest_justified.root, (
+            f"Head {new_head.hex()} is not downstream from "
+            f"justified root {self.latest_justified.root.hex()}"
+        )
+
         return self.model_copy(
             update={
                 "head": new_head,
