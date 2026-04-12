@@ -16,7 +16,7 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.types import Boolean, Bytes32
+from lean_spec.types import ZERO_HASH, Boolean, Bytes32
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -1530,6 +1530,163 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
             justified_slots=JustifiedSlots(data=[]).model_copy(
                 update={"data": [Boolean(True), Boolean(False)]}
             ),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
+def test_attestation_with_zero_hash_source_root_is_skipped(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Attestation with ZERO_HASH source root has no effect on state.
+
+    Scenario
+    --------
+    Four validators. Block 2 carries two attestations targeting slot 1:
+
+    - First: source root overridden to ZERO_HASH (malformed)
+    - Second: valid source from genesis justified
+
+    Expected post-state
+    -------------------
+    - Justified slot: 1 (only the valid attestation counted)
+    - No pending votes (the malformed attestation had no effect)
+
+    What this verifies
+    ------------------
+    A Byzantine proposer could include an attestation with a zero-hash
+    source root. The state transition must process the block without
+    error and the malformed attestation must not affect justification.
+
+    The test cannot isolate WHICH guard rejects the attestation.
+    The spec has two guards that both catch this case:
+
+    - Zero-hash early exit (source.root == ZERO_HASH)
+    - Historical hashes mismatch (ZERO_HASH != genesis block root)
+
+    The post-state is identical regardless of which fires first.
+    What matters for client teams: correct post-state, no crash.
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                attestations=[
+                    # Malformed: source root = ZERO_HASH.
+                    # A real source root would be the genesis block hash.
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        source_root=ZERO_HASH,
+                    ),
+                    # Valid: correct source derived from genesis justified.
+                    # Threshold: 3*3=9 >= 2*4=8 -> justifies slot 1.
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            # Only the valid attestation produced state changes.
+            latest_justified_slot=Slot(1),
+            latest_finalized_slot=Slot(0),
+            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            # No pending votes: the malformed attestation did not create
+            # any entries, and the valid one's votes were cleared on
+            # justification.
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
+def test_attestation_with_zero_hash_target_root_is_skipped(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Attestation with ZERO_HASH target root has no effect on state.
+
+    Scenario
+    --------
+    Four validators. Block 2 carries two attestations targeting slot 1:
+
+    - First: target root overridden to ZERO_HASH (malformed)
+    - Second: valid target from block_1
+
+    Expected post-state
+    -------------------
+    - Justified slot: 1 (only the valid attestation counted)
+    - No pending votes (the malformed attestation had no effect)
+
+    What this verifies
+    ------------------
+    Same principle as the source zero-hash test. Two guards catch this:
+
+    - Zero-hash early exit (target.root == ZERO_HASH)
+    - Historical hashes mismatch (ZERO_HASH != block_1 root)
+
+    The test proves correct post-state regardless of which fires.
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                attestations=[
+                    # Malformed: target root = ZERO_HASH.
+                    # A real target root would be block_1's hash.
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root=ZERO_HASH,
+                    ),
+                    # Valid: correct target resolved from block_1 label.
+                    # Threshold: 3*3=9 >= 2*4=8 -> justifies slot 1.
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            latest_justified_slot=Slot(1),
+            latest_finalized_slot=Slot(0),
+            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),

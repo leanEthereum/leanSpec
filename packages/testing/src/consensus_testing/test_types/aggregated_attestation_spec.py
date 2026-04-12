@@ -21,7 +21,8 @@ class AggregatedAttestationSpec(CamelModel):
     Aggregated attestation specification for test definitions.
 
     Specifies multiple validators attesting to the same data.
-    Head and source are automatically derived from target.
+    Head is derived from target.
+    Source defaults to the latest justified checkpoint unless overridden.
     """
 
     validator_ids: list[ValidatorIndex]
