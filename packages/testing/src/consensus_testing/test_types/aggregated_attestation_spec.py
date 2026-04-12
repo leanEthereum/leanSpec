@@ -5,11 +5,12 @@ from __future__ import annotations
 from lean_spec.subspecs.containers.attestation import AggregatedAttestation, AttestationData
 from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
+from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state.state import State
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
-from lean_spec.types import ByteListMiB, CamelModel
+from lean_spec.types import ByteListMiB, Bytes32, CamelModel
 
 from ..keys import XmssKeyManager
 from .utils import resolve_checkpoint
@@ -32,12 +33,33 @@ class AggregatedAttestationSpec(CamelModel):
     target_slot: Slot
     """The slot of the target block being attested to (required)."""
 
-    target_root_label: str
+    target_root_label: str | None = None
     """
-    Label referencing a previously created block as the target (required).
+    Label referencing a previously created block as the target.
 
     The block must exist in the block registry with this label.
     """
+
+    target_root: Bytes32 | None = None
+    """Optional explicit target root (bypasses label lookup)."""
+
+    head_root_label: str | None = None
+    """Optional label for the head checkpoint."""
+
+    head_root: Bytes32 | None = None
+    """Optional explicit head root."""
+
+    head_slot: Slot | None = None
+    """Optional override for the head checkpoint slot."""
+
+    source_root_label: str | None = None
+    """Optional label for the source checkpoint."""
+
+    source_root: Bytes32 | None = None
+    """Optional explicit source root."""
+
+    source_slot: Slot | None = None
+    """Optional override for the source checkpoint slot."""
 
     valid_signature: bool = True
     """
@@ -80,15 +102,54 @@ class AggregatedAttestationSpec(CamelModel):
             Attestation data shared by all validators in the aggregation.
 
         Raises:
-            ValueError: If target label not found in registry.
+            ValueError: If no target root source is provided.
         """
-        target = resolve_checkpoint(self.target_root_label, self.target_slot, block_registry)
+        if self.target_root is not None:
+            target = Checkpoint(root=self.target_root, slot=self.target_slot)
+        elif self.target_root_label is not None:
+            target = resolve_checkpoint(self.target_root_label, self.target_slot, block_registry)
+        else:
+            raise ValueError("aggregated attestation spec requires a target root")
+
+        if self.head_root is not None:
+            head = Checkpoint(
+                root=self.head_root,
+                slot=self.head_slot if self.head_slot is not None else self.target_slot,
+            )
+        elif self.head_root_label is not None:
+            head = resolve_checkpoint(self.head_root_label, self.head_slot, block_registry)
+        else:
+            head = Checkpoint(
+                root=target.root,
+                slot=self.head_slot if self.head_slot is not None else target.slot,
+            )
+
+        if self.source_root is not None:
+            source = Checkpoint(
+                root=self.source_root,
+                slot=(
+                    self.source_slot
+                    if self.source_slot is not None
+                    else state.latest_justified.slot
+                ),
+            )
+        elif self.source_root_label is not None:
+            source = resolve_checkpoint(self.source_root_label, self.source_slot, block_registry)
+        else:
+            source = Checkpoint(
+                root=state.latest_justified.root,
+                slot=(
+                    self.source_slot
+                    if self.source_slot is not None
+                    else state.latest_justified.slot
+                ),
+            )
 
         return AttestationData(
             slot=self.slot,
-            head=target,
+            head=head,
             target=target,
-            source=state.latest_justified,
+            source=source,
         )
 
     def build_invalid_proof(

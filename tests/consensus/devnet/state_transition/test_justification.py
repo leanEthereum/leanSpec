@@ -16,7 +16,7 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.types import Boolean
+from lean_spec.types import Boolean, Bytes32
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -1075,6 +1075,58 @@ def test_supermajority_with_mismatched_target_root_is_ignored(
         ],
         post=StateExpectation(
             slot=Slot(3),
+            latest_justified_slot=Slot(0),
+            latest_finalized_slot=Slot(0),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
+def test_attestation_with_target_root_not_in_historical_hashes_is_skipped(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test that an attestation with a fabricated target root is silently skipped.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1
+    3. Process block_2 at slot 2 with attestations from validators 0, 1, and 2
+       targeting slot 1 with a valid Bytes32 root that does not match block_1
+
+    Expected Behavior
+    -----------------
+    1. The block at slot 2 is processed successfully
+    2. The attestation reaches state processing because its head stays canonical
+    3. The target root fails the historical_block_hashes check and is skipped
+    4. latest_justified_slot stays at genesis
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root=Bytes32(b"\x42" * 32),
+                        head_root_label="block_1",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
             latest_justified_slot=Slot(0),
             latest_finalized_slot=Slot(0),
             justifications_roots=JustificationRoots(data=[]),
