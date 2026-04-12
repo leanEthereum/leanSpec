@@ -49,7 +49,9 @@ class StateExpectation(CamelModel):
         "historical_block_hashes": lambda s: s.historical_block_hashes,
         "justified_slots": lambda s: s.justified_slots,
         "justifications_roots": lambda s: s.justifications_roots,
+        "justifications_roots_count": lambda s: len(s.justifications_roots),
         "justifications_validators": lambda s: s.justifications_validators,
+        "justifications_validators_count": lambda s: len(s.justifications_validators),
     }
 
     slot: Slot | None = None
@@ -100,8 +102,14 @@ class StateExpectation(CamelModel):
     justifications_roots: JustificationRoots | None = None
     """Expected justifications roots collection."""
 
+    justifications_roots_count: int | None = None
+    """Expected number of pending justification target roots."""
+
     justifications_validators: JustificationValidators | None = None
     """Expected justifications validators bitlist."""
+
+    justifications_validators_count: int | None = None
+    """Expected number of entries in the flat justification voters bitlist."""
 
     def validate_against_state(self, state: "State") -> None:
         """

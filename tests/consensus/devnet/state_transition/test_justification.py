@@ -1691,3 +1691,135 @@ def test_attestation_with_zero_hash_target_root_is_skipped(
             justifications_validators=JustificationValidators(data=[]),
         ),
     )
+
+
+def test_attestation_with_unjustified_source_is_silently_skipped(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Attestation whose source slot is not justified is ignored without error.
+
+    Scenario
+    --------
+    Four validators. Justify slot 1 in block 2, then in block 4 include:
+
+    - Valid: V0, V1 with source=slot 1 (justified), target=slot 2
+    - Forced: V2, V3 with source=slot 2 (NOT justified), target=slot 3
+
+    The forced attestation bypasses the block builder (which would
+    filter it out) so it reaches the state transition directly.
+
+    Expected post-state
+    -------------------
+    - Justified slot: 1 (unchanged, valid attestation is 2/4 = below threshold)
+    - Pending votes: [True, True, False, False] (only V0, V1 recorded)
+    - No pending votes from V2, V3 (their attestation was skipped)
+
+    Why this test is precise
+    ------------------------
+    The forced attestation is crafted so that EVERY guard in the
+    attestation processing EXCEPT the source-justified check would pass:
+
+    - Source root matches historical hashes (real block_2 root)
+    - Target root matches historical hashes (real block_3 root)
+    - Neither root is zero-hash
+    - Chronological order holds (target slot 3 > source slot 2)
+    - Target is justifiable (delta=3 from finalized=0, within window)
+
+    Only the source-justified guard (slot 2 is not justified) rejects it.
+    The 4-entry pending votes (not 8) proves it was skipped.
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            # Justify slot 1: 3/4 validators attest.
+            # Threshold: 3*3=9 >= 2*4=8 -> passes.
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                label="block_2",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+            # Empty block. Slot 2 stays unjustified.
+            BlockSpec(
+                slot=Slot(3),
+                parent_label="block_2",
+                label="block_3",
+            ),
+            # Two attestations: one valid (through builder), one forced (bypasses builder).
+            #
+            # Valid: V0, V1 with justified source=1, target=2.
+            #   2/4 below threshold -> creates pending votes, no justification.
+            #
+            # Forced: V2, V3 with unjustified source=2, target=3.
+            #   Source slot 2 is NOT justified -> skipped at the first guard.
+            #   If not skipped, it would create a second set of pending votes
+            #   (8 total entries). The 4-entry result proves the skip.
+            BlockSpec(
+                slot=Slot(4),
+                parent_label="block_3",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                        ],
+                        slot=Slot(4),
+                        target_slot=Slot(2),
+                        target_root_label="block_2",
+                    ),
+                ],
+                forced_attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(2),
+                            ValidatorIndex(3),
+                        ],
+                        slot=Slot(4),
+                        target_slot=Slot(3),
+                        target_root_label="block_3",
+                        source_root_label="block_2",
+                        source_slot=Slot(2),
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(4),
+            latest_justified_slot=Slot(1),
+            latest_finalized_slot=Slot(0),
+            # Slot 1 justified, slots 2 and 3 not.
+            justified_slots=JustifiedSlots(data=[]).model_copy(
+                update={"data": [Boolean(True), Boolean(False), Boolean(False)]}
+            ),
+            # Exactly 1 pending target root (the valid attestation's target = block_2).
+            # If the forced attestation had been processed, there would be 2 roots
+            # (block_2 and block_3).
+            justifications_roots_count=1,
+            # 4 entries = 1 target x 4 validators.
+            # V0 and V1 voted (True), V2 and V3 did not (False).
+            # If the forced attestation had been processed, there would be
+            # 8 entries (2 targets x 4 validators).
+            justifications_validators_count=4,
+            justifications_validators=JustificationValidators(
+                data=[
+                    Boolean(True),
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                ]
+            ),
+        ),
+    )

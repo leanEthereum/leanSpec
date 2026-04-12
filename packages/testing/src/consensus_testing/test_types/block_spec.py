@@ -85,6 +85,15 @@ class BlockSpec(CamelModel):
     If body is provided, this field is ignored.
     """
 
+    forced_attestations: list[AggregatedAttestationSpec] | None = None
+    """
+    Raw aggregated attestations appended directly to the final block body.
+
+    Unlike attestations, these entries bypass the block builder's filtering.
+    Use this only for STF coverage when the builder would pre-filter the
+    attestation before state processing (e.g., unjustified source).
+    """
+
     label: str | None = None
     """
     Optional label to tag this block for later reference.

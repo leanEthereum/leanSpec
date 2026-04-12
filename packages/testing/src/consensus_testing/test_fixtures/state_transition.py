@@ -4,10 +4,11 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
-from lean_spec.subspecs.containers.attestation import AttestationData
+from lean_spec.subspecs.containers.attestation import AggregatedAttestation, AttestationData
 from lean_spec.subspecs.containers.block.block import Block, BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.state.state import State
+from lean_spec.subspecs.containers.validator import ValidatorIndices
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import Bytes32
@@ -189,72 +190,109 @@ class StateTransitionTest(BaseConsensusFixture):
         """
         Build a Block from a BlockSpec, optionally caching the post-state.
 
+        Three construction paths:
+
+        1. Explicit state_root -- caller controls the root, no transition
+        2. Invalid or skip-slot -- placeholder zero root, no transition
+        3. Normal -- full build_block with computed state root
+
+        After construction, any forced attestations are appended to the
+        body. These bypass the builder's filtering so they reach
+        process_attestations directly (e.g., unjustified source tests).
+
         Args:
             spec: Block specification with optional field overrides.
             state: Current state to build against.
-            block_registry: Labels to previously built blocks for resolving parents
-                and attestation targets.
+            block_registry: Labeled blocks for parent and target resolution.
 
         Returns:
             Block and cached post-state (None if not computed).
         """
         proposer_index = spec.resolve_proposer_index(len(state.validators))
 
-        temp_state: State | None = None
+        # Advance slots unless the spec intentionally skips slot processing.
+        slot_advanced_state: State | None = None
         if not spec.skip_slot_processing:
-            temp_state = state.process_slots(spec.slot)
+            slot_advanced_state = state.process_slots(spec.slot)
 
         # Resolve the parent root.
-        # The default is the latest block header from the slot-advanced state.
-        source_state = temp_state or state
+        # Default: latest block header from the slot-advanced state.
+        source_state = slot_advanced_state or state
         parent_root = spec.resolve_parent_root(
             block_registry,
             default_root=hash_tree_root(source_state.latest_block_header),
         )
 
-        # Extract attestations from body if provided
-        aggregated_attestations = (
-            spec.body.attestations if spec.body else AggregatedAttestations(data=[])
-        )
+        body = spec.body or BlockBody(attestations=AggregatedAttestations(data=[]))
+        post_state: State | None = None
 
-        # Handle explicit state root override
+        # Path 1: explicit state root override -- no state transition needed.
         if spec.state_root is not None:
             block = Block(
                 slot=spec.slot,
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=spec.state_root,
-                body=spec.body or BlockBody(attestations=aggregated_attestations),
+                body=body,
             )
-            return block, None
 
-        # For invalid tests, return incomplete block without processing
-        if self.expect_exception is not None or spec.skip_slot_processing:
-            return Block(
+        # Path 2: invalid test or skip-slot -- placeholder root, no transition.
+        elif self.expect_exception is not None or spec.skip_slot_processing:
+            block = Block(
                 slot=spec.slot,
                 proposer_index=proposer_index,
                 parent_root=parent_root,
                 state_root=Bytes32.zero(),
-                body=spec.body or BlockBody(attestations=aggregated_attestations),
-            ), None
-
-        # Build aggregated payloads from spec.attestations if provided
-        aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
-        if spec.attestations:
-            aggregated_payloads = StateTransitionTest._build_aggregated_payloads_from_spec(
-                spec.attestations, state, block_registry
+                body=body,
             )
 
-        # Collect known block roots for attestation validation in build_block
-        known_block_roots = frozenset(hash_tree_root(block) for block in block_registry.values())
+        # Path 3: normal block construction via the spec's builder.
+        else:
+            aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
+            if spec.attestations:
+                aggregated_payloads = StateTransitionTest._build_aggregated_payloads_from_spec(
+                    spec.attestations, state, block_registry
+                )
 
-        block, post_state, _, _ = state.build_block(
-            slot=spec.slot,
-            proposer_index=proposer_index,
-            parent_root=parent_root,
-            known_block_roots=known_block_roots,
-            aggregated_payloads=aggregated_payloads,
-        )
+            known_block_roots = frozenset(hash_tree_root(b) for b in block_registry.values())
+
+            block, post_state, _, _ = state.build_block(
+                slot=spec.slot,
+                proposer_index=proposer_index,
+                parent_root=parent_root,
+                known_block_roots=known_block_roots,
+                aggregated_payloads=aggregated_payloads,
+            )
+
+        # Append forced attestations if any.
+        # These bypass the builder's filtering so they reach the state
+        # transition even when the builder would exclude them.
+        if spec.forced_attestations:
+            forced = [
+                AggregatedAttestation(
+                    aggregation_bits=ValidatorIndices(data=fa.validator_ids).to_aggregation_bits(),
+                    data=fa.build_attestation_data(block_registry, state),
+                )
+                for fa in spec.forced_attestations
+            ]
+            block = block.model_copy(
+                update={
+                    "body": block.body.model_copy(
+                        update={
+                            "attestations": AggregatedAttestations(
+                                data=[*block.body.attestations.data, *forced]
+                            )
+                        }
+                    )
+                }
+            )
+
+            # The body changed, so re-run the transition to get the correct
+            # post-state and state root.
+            if post_state is not None:
+                post_state = state.process_slots(spec.slot).process_block(block)
+                block = block.model_copy(update={"state_root": hash_tree_root(post_state)})
+
         return block, post_state
 
     @staticmethod
