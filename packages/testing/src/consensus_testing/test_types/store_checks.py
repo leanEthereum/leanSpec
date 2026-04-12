@@ -126,6 +126,15 @@ class StoreChecks(CamelModel):
     The framework resolves this label to the actual block root.
     """
 
+    filled_block_root_label: str | None = None
+    """
+    Expected root of the block built for this step, resolved by label.
+
+    This is useful when a test needs to prove that the fixture rebuilt or
+    resubmitted an exact previously known block rather than merely producing a
+    different block that leaves the head unchanged.
+    """
+
     latest_justified_slot: Slot | None = None
     """Expected latest justified checkpoint slot."""
 
@@ -287,6 +296,15 @@ class StoreChecks(CamelModel):
             assert self.head_root_label is not None
             expected = _resolve_label("head_root_label", self.head_root_label)
             _check("head.root", store.head, expected)
+        if "filled_block_root_label" in fields:
+            if filled_block is None:
+                raise ValueError(
+                    f"Step {step_index}: filled_block_root_label specified but "
+                    f"filled_block not provided"
+                )
+            assert self.filled_block_root_label is not None
+            expected = _resolve_label("filled_block_root_label", self.filled_block_root_label)
+            _check("filled_block.root", hash_tree_root(filled_block), expected)
         if "latest_justified_root_label" in fields:
             assert self.latest_justified_root_label is not None
             expected = _resolve_label(

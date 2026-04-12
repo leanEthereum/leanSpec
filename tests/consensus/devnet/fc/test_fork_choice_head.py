@@ -174,6 +174,71 @@ def test_head_with_large_gaps(
     )
 
 
+def test_duplicate_block_processed_idempotently(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Processing the same block twice leaves the fork choice store unchanged.
+
+    Scenario
+    --------
+    Process a block at slot 1, then process the exact same block again.
+
+    Expected Behavior:
+        - Both block processing steps succeed
+        - The second step reuses the same block root as the first
+        - Head, justified checkpoint, and finalized checkpoint remain unchanged
+
+    Why This Matters
+    ----------------
+    Duplicate block delivery is normal in real networks:
+    - gossip can deliver the same block multiple times
+    - syncing from multiple peers can produce duplicates
+
+    The store must be idempotent for already-known blocks. Reprocessing a
+    duplicate must return the store unchanged instead of erroring or mutating.
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(1),
+                    proposer_index=ValidatorIndex(1),
+                    parent_label="genesis",
+                    label="block_1",
+                ),
+                valid=True,
+                checks=StoreChecks(
+                    head_slot=Slot(1),
+                    head_root_label="block_1",
+                    latest_justified_slot=Slot(0),
+                    latest_justified_root_label="genesis",
+                    latest_finalized_slot=Slot(0),
+                    latest_finalized_root_label="genesis",
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(1),
+                    proposer_index=ValidatorIndex(1),
+                    parent_label="genesis",
+                    label="block_1_dup",
+                ),
+                valid=True,
+                checks=StoreChecks(
+                    head_slot=Slot(1),
+                    head_root_label="block_1",
+                    filled_block_root_label="block_1",
+                    latest_justified_slot=Slot(0),
+                    latest_justified_root_label="genesis",
+                    latest_finalized_slot=Slot(0),
+                    latest_finalized_root_label="genesis",
+                ),
+            ),
+        ],
+    )
+
+
 def test_head_with_two_competing_forks(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
