@@ -180,6 +180,30 @@ class StoreChecks(CamelModel):
     attestation_checks: list[AttestationCheck] | None = None
     """Optional list of attestation content checks for specific validators."""
 
+    attestation_signature_target_slots: list[Slot] | None = None
+    """
+    Expected target slots present in ``attestation_signatures``.
+
+    Compares the exact set of target checkpoint slots keyed in the raw gossip
+    signature map, independent of how many validators signed each target.
+    """
+
+    latest_new_aggregated_target_slots: list[Slot] | None = None
+    """
+    Expected target slots present in ``latest_new_aggregated_payloads``.
+
+    Compares the exact set of target checkpoint slots keyed in the pending
+    aggregated proof map.
+    """
+
+    latest_known_aggregated_target_slots: list[Slot] | None = None
+    """
+    Expected target slots present in ``latest_known_aggregated_payloads``.
+
+    Compares the exact set of target checkpoint slots keyed in the accepted
+    aggregated proof map.
+    """
+
     block_attestation_count: int | None = None
     """
     Expected number of aggregated attestations in the block body.
@@ -350,6 +374,24 @@ class StoreChecks(CamelModel):
                         f"{label}_aggregated_payloads"
                     )
                 check.validate_attestation(extracted[check.validator], label, step_index)
+
+        if "attestation_signature_target_slots" in fields:
+            assert self.attestation_signature_target_slots is not None
+            actual = sorted({data.target.slot for data in store.attestation_signatures})
+            expected = sorted(self.attestation_signature_target_slots)
+            _check("attestation_signatures.target_slots", actual, expected)
+
+        if "latest_new_aggregated_target_slots" in fields:
+            assert self.latest_new_aggregated_target_slots is not None
+            actual = sorted({data.target.slot for data in store.latest_new_aggregated_payloads})
+            expected = sorted(self.latest_new_aggregated_target_slots)
+            _check("latest_new_aggregated_payloads.target_slots", actual, expected)
+
+        if "latest_known_aggregated_target_slots" in fields:
+            assert self.latest_known_aggregated_target_slots is not None
+            actual = sorted({data.target.slot for data in store.latest_known_aggregated_payloads})
+            expected = sorted(self.latest_known_aggregated_target_slots)
+            _check("latest_known_aggregated_payloads.target_slots", actual, expected)
 
         # Block body attestation count
         if "block_attestation_count" in fields:
