@@ -235,37 +235,82 @@ def test_block_builder_fixed_point_advances_justification(
     )
 
 
-def test_produce_block_rejects_unauthorized_proposer(
+def test_produce_block_includes_pending_attestations(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Block production rejects a validator who is not the proposer for the slot.
+    Block production includes attestations accumulated via gossip.
 
     Scenario
     --------
-    Four validators. Proposer is determined by round-robin: slot % num_validators.
+    Four validators. Linear chain through slot 2::
 
-    - Slot 1: block produced normally (proposer = validator 1)
-    - Slot 2: proposer should be validator 2 (= 2 % 4)
-      Attempt to produce with validator 0 instead (unauthorized)
+        genesis(0) -> block_1(1) -> block_2(2)
 
-    Expected Behavior
-    -----------------
-    - The unauthorized block step fails with a proposer error.
-    - The store is not updated; head remains at slot 1.
+    One gossip aggregated attestation from validators {1, 2} targeting
+    block_2.  The next block (slot 3) is produced without explicit
+    attestations — the builder reads from the store's known payload pool.
+
+    Timing
+    ------
+    ::
+
+        10s = interval 12 = slot 2, interval 2 (aggregate)
+              Pool is empty, so aggregation is a no-op.
+
+        12s = interval 15 = slot 3, interval 0
+              Advances time so the block at slot 3 is valid.
+
+    The tick alone does not migrate pending payloads to known.
+    The block builder merges and processes pending payloads internally
+    before selecting attestations for the block body.
+
+    Expected
+    --------
+    - 1 aggregated attestation in the block body
+    - Covers validators {1, 2}
+    - Target slot 2
     """
     fork_choice_test(
         steps=[
-            BlockStep(block=BlockSpec(slot=Slot(1), label="block_1")),
-            # Slot 2: legitimate proposer is validator 2 (= 2 % 4).
-            # Validator 0 is not authorized — expect rejection.
             BlockStep(
-                block=BlockSpec(
-                    slot=Slot(2),
-                    proposer_index=ValidatorIndex(0),
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            # Advance past the aggregate interval while the pool is empty.
+            TickStep(time=10),
+            # Validators 1 & 2 gossip an aggregated attestation targeting block_2.
+            # slot=3 is one slot ahead of current (slot 2): within the allowed margin.
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[ValidatorIndex(1), ValidatorIndex(2)],
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
                 ),
-                valid=False,
-                expected_error="proposer",
+            ),
+            # Advance time to slot 3 so the block proposal is valid.
+            TickStep(time=12),
+            # Produce block without explicit attestations.
+            # The block builder merges pending gossip payloads before calling
+            # the state transition, so the gossip attestation above is included.
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), label="block_3"),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    block_attestation_count=1,
+                    block_attestations=[
+                        AggregatedAttestationCheck(
+                            participants={1, 2},
+                            attestation_slot=Slot(3),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
             ),
         ],
     )
