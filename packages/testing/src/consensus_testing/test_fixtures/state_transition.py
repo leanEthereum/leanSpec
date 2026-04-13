@@ -176,7 +176,7 @@ class StateTransitionTest(BaseConsensusFixture):
 
         # Validate post-state expectations if provided
         if self.post is not None and actual_post_state is not None:
-            self.post.validate_against_state(actual_post_state)
+            self.post.validate_against_state(actual_post_state, block_registry=block_registry)
 
         # Return self (fixture is already complete)
         return self

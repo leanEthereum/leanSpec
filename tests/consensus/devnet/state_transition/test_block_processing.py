@@ -9,8 +9,9 @@ from consensus_testing import (
 )
 
 from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.state.types import JustifiedSlots
 from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.types import Bytes32
+from lean_spec.types import Boolean, Bytes32
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -154,6 +155,44 @@ def test_block_at_large_slot_number(
             BlockSpec(slot=Slot(100)),
         ],
         post=StateExpectation(slot=Slot(100)),
+    )
+
+
+def test_block_at_very_large_slot_with_many_skipped(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    State transition handles hundreds of empty slots without error.
+
+    Scenario
+    --------
+    Jump directly from genesis to slot 500, simulating:
+    - Network bootstrap after very long downtime
+    - Integer overflow boundary testing at scale
+    - Memory usage stress test for slot processing
+
+    Expected Behavior
+    -----------------
+    1. Process 499 empty slots: 1→2→...→499→500
+    2. Block at slot 500 processes correctly
+    3. historical_block_hashes has 500 entries:
+       - Genesis parent root
+       - 499 ZERO_HASH entries for skipped slots
+    4. justified_slots tracks slots 1..499 = 499 entries (all False)
+    5. No integer overflow or memory issues
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(500)),
+        ],
+        post=StateExpectation(
+            slot=Slot(500),
+            historical_block_hashes_count=500,
+            justified_slots=JustifiedSlots(data=[]).model_copy(
+                update={"data": [Boolean(False)] * 499}
+            ),
+        ),
     )
 
 
