@@ -233,3 +233,39 @@ def test_block_builder_fixed_point_advances_justification(
             ),
         ],
     )
+
+
+def test_produce_block_rejects_unauthorized_proposer(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Block production rejects a validator who is not the proposer for the slot.
+
+    Scenario
+    --------
+    Four validators. Proposer is determined by round-robin: slot % num_validators.
+
+    - Slot 1: block produced normally (proposer = validator 1)
+    - Slot 2: proposer should be validator 2 (= 2 % 4)
+      Attempt to produce with validator 0 instead (unauthorized)
+
+    Expected Behavior
+    -----------------
+    - The unauthorized block step fails with a proposer error.
+    - The store is not updated; head remains at slot 1.
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(block=BlockSpec(slot=Slot(1), label="block_1")),
+            # Slot 2: legitimate proposer is validator 2 (= 2 % 4).
+            # Validator 0 is not authorized — expect rejection.
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(2),
+                    proposer_index=ValidatorIndex(0),
+                ),
+                valid=False,
+                expected_error="proposer",
+            ),
+        ],
+    )
