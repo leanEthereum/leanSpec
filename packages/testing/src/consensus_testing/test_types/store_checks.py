@@ -182,7 +182,7 @@ class StoreChecks(CamelModel):
 
     attestation_signature_target_slots: list[Slot] | None = None
     """
-    Expected target slots present in ``attestation_signatures``.
+    Expected target slots present in attestation_signatures.
 
     Compares the exact set of target checkpoint slots keyed in the raw gossip
     signature map, independent of how many validators signed each target.
@@ -190,7 +190,7 @@ class StoreChecks(CamelModel):
 
     latest_new_aggregated_target_slots: list[Slot] | None = None
     """
-    Expected target slots present in ``latest_new_aggregated_payloads``.
+    Expected target slots present in latest_new_aggregated_payloads.
 
     Compares the exact set of target checkpoint slots keyed in the pending
     aggregated proof map.
@@ -198,7 +198,7 @@ class StoreChecks(CamelModel):
 
     latest_known_aggregated_target_slots: list[Slot] | None = None
     """
-    Expected target slots present in ``latest_known_aggregated_payloads``.
+    Expected target slots present in latest_known_aggregated_payloads.
 
     Compares the exact set of target checkpoint slots keyed in the accepted
     aggregated proof map.

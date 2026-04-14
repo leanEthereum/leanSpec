@@ -289,9 +289,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                         store = store.on_gossip_attestation(
                             signed_attestation,
                             scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
-                            # Fork choice fillers need raw gossip signatures to remain in the
-                            # store so tests can cover aggregation and pruning behavior.
-                            is_aggregator=True,
+                            is_aggregator=step.is_aggregator,
                         )
 
                     case GossipAggregatedAttestationStep():

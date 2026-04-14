@@ -149,6 +149,15 @@ class AttestationStep(BaseForkChoiceStep):
     The framework fills in the attestation data and signature during make_fixture().
     """
 
+    is_aggregator: bool = False
+    """
+    Whether the node holds the aggregator role for this attestation.
+
+    Only aggregator nodes store gossip signatures in the raw signature pool.
+    Defaults to False so existing fillers preserve the behavior where gossip
+    attestations are validated but not stored.
+    """
+
     _filled_attestation: SignedAttestation | None = PrivateAttr(default=None)
     """The filled SignedAttestation, processed through the spec."""
 
