@@ -218,6 +218,25 @@ class XmssKeyManager:
         cls._cache[LEAN_ENV] = manager
         return manager
 
+    @classmethod
+    def reset_signing_state(cls, scheme_name: str | None = None) -> None:
+        """
+        Clear advanced secret-key state from the cached manager.
+
+        XMSS keys are stateful — signing advances the key past used slots.
+        Without resetting, a test that signs at high slots poisons the cache
+        for later tests that need low-slot signatures.
+
+        Only the mutable signing state is cleared. The JSON and public-key
+        caches are immutable and preserved to avoid expensive re-loading.
+
+        Args:
+            scheme_name: Scheme entry to reset. Defaults to the current LEAN_ENV.
+        """
+        cached = cls._cache.get(LEAN_ENV if scheme_name is None else scheme_name)
+        if cached is not None:
+            cached._secret_state.clear()
+
     def __init__(
         self,
         max_slot: Slot = DEFAULT_MAX_SLOT,

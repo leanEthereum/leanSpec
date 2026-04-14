@@ -452,4 +452,35 @@ class BlockSpec(CamelModel):
             aggregated_payloads=merged_store.latest_known_aggregated_payloads,
         )
 
+        # Append forced attestations that bypass the builder's MAX cap.
+        # Each entry is signed and aggregated so the block carries valid proofs.
+        if self.forced_attestations:
+            for spec in self.forced_attestations:
+                att_data = spec.build_attestation_data(block_registry, parent_state)
+                proof = key_manager.sign_and_aggregate(spec.validator_ids, att_data)
+                block_proofs.append(proof)
+                final_block = final_block.model_copy(
+                    update={
+                        "body": final_block.body.model_copy(
+                            update={
+                                "attestations": AggregatedAttestations(
+                                    data=[
+                                        *final_block.body.attestations.data,
+                                        AggregatedAttestation(
+                                            aggregation_bits=ValidatorIndices(
+                                                data=spec.validator_ids,
+                                            ).to_aggregation_bits(),
+                                            data=att_data,
+                                        ),
+                                    ]
+                                )
+                            }
+                        )
+                    }
+                )
+
+            # Recompute state root with the modified body.
+            post_state = parent_state.process_slots(self.slot).process_block(final_block)
+            final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
+
         return self._sign_block(final_block, block_proofs, proposer_index, key_manager)

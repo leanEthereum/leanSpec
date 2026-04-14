@@ -296,31 +296,6 @@ class StateTransitionTest(BaseConsensusFixture):
         return block, post_state
 
     @staticmethod
-    def _build_forced_aggregated_attestations_from_spec(
-        attestation_specs: list[AggregatedAttestationSpec],
-        state: State,
-        block_registry: dict[str, Block],
-    ) -> list[AggregatedAttestation]:
-        """
-        Build raw aggregated attestations that bypass block-builder filtering.
-
-        Args:
-            attestation_specs: Attestation specifications to include directly.
-            state: Current state for checkpoint resolution.
-            block_registry: Labels to blocks for resolving checkpoint roots.
-
-        Returns:
-            Aggregated attestations ready to append to the block body.
-        """
-        return [
-            AggregatedAttestation(
-                aggregation_bits=ValidatorIndices(data=spec.validator_ids).to_aggregation_bits(),
-                data=spec.build_attestation_data(block_registry, state),
-            )
-            for spec in attestation_specs
-        ]
-
-    @staticmethod
     def _build_aggregated_payloads_from_spec(
         attestation_specs: list[AggregatedAttestationSpec],
         state: State,
