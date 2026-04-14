@@ -8,7 +8,13 @@ Tests for genesis state generation and initialization.
 """
 
 import pytest
-from consensus_testing import StateExpectation, StateTransitionTestFiller, generate_pre_state
+from consensus_testing import (
+    AggregatedAttestationSpec,
+    BlockSpec,
+    StateExpectation,
+    StateTransitionTestFiller,
+    generate_pre_state,
+)
 
 from lean_spec.subspecs.containers.block import BlockBody
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
@@ -19,6 +25,7 @@ from lean_spec.subspecs.containers.state.types import (
     JustificationValidators,
     JustifiedSlots,
 )
+from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
 
@@ -147,5 +154,113 @@ def test_genesis_custom_validator_set(
             justified_slots=JustifiedSlots(data=[]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
+def test_genesis_single_validator(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Genesis with exactly 1 validator; justification and finalization in 3 blocks.
+
+    Scenario
+    --------
+    Single validator. Proposer for every slot (slot % 1 == 0, always).
+    Supermajority threshold trivially met: 3*1=3 >= 2*1=2.
+
+    - Block 1: empty (creates attestation target)
+    - Block 2: V0 attests to slot 1 -> justifies slot 1
+    - Block 3: V0 attests to slot 2 -> justifies slot 2, finalizes slot 1
+
+    Expected post-state
+    -------------------
+    - Validator count: 1
+    - Justified slot: 2
+    - Finalized slot: 1
+    - Proposer index: always 0
+    """
+    state_transition_test(
+        pre=generate_pre_state(num_validators=1, genesis_time=Uint64(0)),
+        blocks=[
+            # Block 1: creates the attestation target for block 2.
+            BlockSpec(slot=Slot(1), label="block_1"),
+            # Block 2: V0 attests to slot 1.
+            # Threshold: 3*1=3 >= 2*1=2 -> justifies slot 1.
+            # Finalization: range(0+1, 1) is empty -> finalizes source (slot 0).
+            # But finalized was already 0, so no visible advance.
+            BlockSpec(
+                slot=Slot(2),
+                label="block_2",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[ValidatorIndex(0)],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+            # Block 3: V0 attests to slot 2.
+            # Justifies slot 2 (source=1, target=2).
+            # Finalization: range(1+1, 2) is empty -> finalizes source = slot 1.
+            # This is the visible advance: finalized goes from 0 to 1.
+            BlockSpec(
+                slot=Slot(3),
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[ValidatorIndex(0)],
+                        slot=Slot(3),
+                        target_slot=Slot(2),
+                        target_root_label="block_2",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(3),
+            validator_count=1,
+            latest_justified_slot=Slot(2),
+            latest_finalized_slot=Slot(1),
+            latest_block_header_proposer_index=0,
+        ),
+    )
+
+
+def test_first_post_genesis_block_sets_checkpoint_anchor_roots(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test the post-state of the first block after genesis.
+
+    Scenario
+    --------
+    1. Start from the default genesis state
+    2. Process the first block at slot 1
+
+    Expected Behavior
+    -----------------
+    1. The post-state slot is 1
+    2. latest_justified.slot and latest_finalized.slot remain 0
+    3. latest_justified.root and latest_finalized.root equal the parent root of block 1
+    4. historical_block_hashes contains that root once
+    5. justified_slots is empty
+    """
+    pre = generate_pre_state()
+    anchor_root = hash_tree_root(pre.process_slots(Slot(1)).latest_block_header)
+
+    state_transition_test(
+        pre=pre,
+        blocks=[
+            BlockSpec(slot=Slot(1)),
+        ],
+        post=StateExpectation(
+            slot=Slot(1),
+            latest_justified_slot=Slot(0),
+            latest_justified_root=anchor_root,
+            latest_finalized_slot=Slot(0),
+            latest_finalized_root=anchor_root,
+            historical_block_hashes=HistoricalBlockHashes(data=[anchor_root]),
+            justified_slots=JustifiedSlots(data=[]),
         ),
     )

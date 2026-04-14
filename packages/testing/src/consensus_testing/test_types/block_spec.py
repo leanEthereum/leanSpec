@@ -89,9 +89,9 @@ class BlockSpec(CamelModel):
     """
     Raw aggregated attestations appended directly to the final block body.
 
-    Unlike `attestations`, these entries bypass `State.build_block()` selection.
-    Use this only for STF coverage when the block-building helper would
-    otherwise pre-filter the attestation before state processing.
+    Unlike attestations, these entries bypass the block builder's filtering.
+    Use this only for STF coverage when the builder would pre-filter the
+    attestation before state processing (e.g., unjustified source).
     """
 
     label: str | None = None

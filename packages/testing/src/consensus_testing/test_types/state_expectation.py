@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import Any, ClassVar
 
+from lean_spec.subspecs.containers.block.block import Block
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import State
 from lean_spec.subspecs.containers.state.types import (
@@ -12,6 +13,8 @@ from lean_spec.subspecs.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.types import Bytes32, CamelModel
+
+from .utils import resolve_block_root
 
 
 class StateExpectation(CamelModel):
@@ -49,8 +52,11 @@ class StateExpectation(CamelModel):
         "historical_block_hashes": lambda s: s.historical_block_hashes,
         "justified_slots": lambda s: s.justified_slots,
         "justifications_roots": lambda s: s.justifications_roots,
+        "justifications_roots_count": lambda s: len(s.justifications_roots),
         "justifications_validators": lambda s: s.justifications_validators,
+        "justifications_validators_count": lambda s: len(s.justifications_validators),
     }
+    """Field name to accessor function for reading expected values from a State."""
 
     slot: Slot | None = None
     """Expected current slot."""
@@ -61,11 +67,27 @@ class StateExpectation(CamelModel):
     latest_justified_root: Bytes32 | None = None
     """Expected latest justified checkpoint root."""
 
+    latest_justified_root_label: str | None = None
+    """
+    Expected latest justified checkpoint root by label reference.
+
+    Alternative to latest_justified_root that uses the block label system.
+    The framework resolves this label to the actual block root.
+    """
+
     latest_finalized_slot: Slot | None = None
     """Expected latest finalized checkpoint slot."""
 
     latest_finalized_root: Bytes32 | None = None
     """Expected latest finalized checkpoint root."""
+
+    latest_finalized_root_label: str | None = None
+    """
+    Expected latest finalized checkpoint root by label reference.
+
+    Alternative to latest_finalized_root that uses the block label system.
+    The framework resolves this label to the actual block root.
+    """
 
     validator_count: int | None = None
     """Expected number of validators."""
@@ -100,10 +122,28 @@ class StateExpectation(CamelModel):
     justifications_roots: JustificationRoots | None = None
     """Expected justifications roots collection."""
 
+    justifications_roots_labels: list[str] | None = None
+    """
+    Expected pending justification roots by label reference.
+
+    Alternative to justifications_roots that uses the block label system.
+    The framework resolves each label to the actual block root.
+    """
+
+    justifications_roots_count: int | None = None
+    """Expected number of pending justification target roots."""
+
     justifications_validators: JustificationValidators | None = None
     """Expected justifications validators bitlist."""
 
-    def validate_against_state(self, state: "State") -> None:
+    justifications_validators_count: int | None = None
+    """Expected number of entries in the flat justification voters bitlist."""
+
+    def validate_against_state(
+        self,
+        state: "State",
+        block_registry: dict[str, Block] | None = None,
+    ) -> None:
         """
         Validate this expectation against actual State.
 
@@ -112,17 +152,52 @@ class StateExpectation(CamelModel):
 
         Args:
             state: The actual state to validate against.
+            block_registry: Optional labeled blocks for resolving label-based checks.
 
         Raises:
             AssertionError: If any explicitly set field doesn't match the actual state value.
         """
-        for field_name in self.model_fields_set:
-            accessor = self._ACCESSORS.get(field_name)
-            if accessor is None:
-                raise ValueError(f"No accessor defined for field: {field_name}")
+        fields = self.model_fields_set
+
+        def _resolve(label: str) -> Bytes32:
+            if block_registry is None:
+                raise ValueError(f"label '{label}' specified but block_registry not provided")
+            return resolve_block_root(label, block_registry)
+
+        for field_name in fields & self._ACCESSORS.keys():
+            accessor = self._ACCESSORS[field_name]
             expected = getattr(self, field_name)
             actual = accessor(state)
             if actual != expected:
                 raise AssertionError(
                     f"State validation failed: {field_name} = {actual}, expected {expected}"
+                )
+
+        if "latest_justified_root_label" in fields:
+            assert self.latest_justified_root_label is not None
+            expected = _resolve(self.latest_justified_root_label)
+            if state.latest_justified.root != expected:
+                raise AssertionError(
+                    f"State validation failed: latest_justified.root = "
+                    f"{state.latest_justified.root}, expected {expected}"
+                )
+
+        if "latest_finalized_root_label" in fields:
+            assert self.latest_finalized_root_label is not None
+            expected = _resolve(self.latest_finalized_root_label)
+            if state.latest_finalized.root != expected:
+                raise AssertionError(
+                    f"State validation failed: latest_finalized.root = "
+                    f"{state.latest_finalized.root}, expected {expected}"
+                )
+
+        if "justifications_roots_labels" in fields:
+            assert self.justifications_roots_labels is not None
+            expected_sorted = sorted(_resolve(label) for label in self.justifications_roots_labels)
+            actual_sorted = sorted(state.justifications_roots.data)
+            if actual_sorted != expected_sorted:
+                raise AssertionError(
+                    "State validation failed: justifications_roots = "
+                    f"{state.justifications_roots}, expected "
+                    f"{JustificationRoots(data=expected_sorted)}"
                 )

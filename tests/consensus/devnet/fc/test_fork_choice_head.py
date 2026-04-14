@@ -174,6 +174,106 @@ def test_head_with_large_gaps(
     )
 
 
+def test_duplicate_block_processed_idempotently(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Processing the same block twice leaves the fork choice store unchanged.
+
+    Scenario
+    --------
+    Four validators. Build a chain, then re-submit the last block::
+
+        genesis -> block_1(1) -> block_2(2) -> block_2_dup(2)
+                                                 (same root)
+
+    Block 2 carries attestations from V0-V2 targeting slot 1.
+    This crosses the 2/3 threshold and justifies slot 1.
+
+    Then block 2 is re-submitted with identical parameters.
+    The store detects the duplicate root and returns unchanged.
+
+    Expected post-state
+    -------------------
+    - Both steps succeed (no error)
+    - Second block has the same root as the first (filled_block_root_label)
+    - Head, justified, finalized all unchanged after the duplicate
+    - No double-counting of attestation votes
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            # Block 2 with attestations that justify slot 1.
+            # Threshold: 3*3=9 >= 2*4=8 -> justifies.
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(2),
+                    parent_label="block_1",
+                    label="block_2",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(2),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    latest_justified_slot=Slot(1),
+                    latest_justified_root_label="block_1",
+                    latest_finalized_slot=Slot(0),
+                ),
+            ),
+            # Re-submit the exact same block.
+            # Same slot, same parent, same proposer, same attestations
+            # -> deterministic state_root -> same block root.
+            #
+            # The store's on_block checks: block_root in self.blocks.
+            # It finds the root from step 2 -> returns self unchanged.
+            #
+            # filled_block_root_label="block_2" proves the roots match.
+            # The unchanged justified/finalized proves no double-counting.
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(2),
+                    parent_label="block_1",
+                    label="block_2_dup",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(2),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    filled_block_root_label="block_2",
+                    latest_justified_slot=Slot(1),
+                    latest_justified_root_label="block_1",
+                    latest_finalized_slot=Slot(0),
+                ),
+            ),
+        ],
+    )
+
+
 def test_head_with_two_competing_forks(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
