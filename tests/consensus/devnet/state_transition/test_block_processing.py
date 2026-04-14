@@ -532,4 +532,3 @@ def test_block_with_maximum_attestations(
             latest_justified_slot=Slot(0),
         ),
     )
-
