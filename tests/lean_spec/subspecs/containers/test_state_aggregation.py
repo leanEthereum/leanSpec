@@ -5,11 +5,14 @@ from __future__ import annotations
 from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.containers.attestation import AttestationData
+from lean_spec.subspecs.containers.block import Block, BlockBody
+from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.checkpoint import Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.forkchoice import AttestationSignatureEntry
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.types import Bytes32
 from tests.lean_spec.helpers import (
     make_aggregated_proof,
     make_attestation_data_simple,
@@ -359,3 +362,111 @@ def test_aggregate_with_no_signatures(
     _, results = store.aggregate()
 
     assert results == []
+
+
+def test_build_block_fixed_point_closes_justified_divergence(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    """
+    Fixed-point loop advances justification when pool attestations are available.
+
+    Simulates the justified divergence scenario:
+
+    - State has latest_justified at genesis (slot 0)
+    - Pool contains attestations from 3/4 validators targeting slot 1
+    - The fixed-point loop must include them and advance justification
+
+    This is the mechanism that closes the gap when the store's justified
+    checkpoint has advanced from a minority fork but the head chain lags.
+    """
+    num_validators = 4
+    state_0 = make_keyed_genesis_state(num_validators, container_key_manager)
+
+    # Build a two-block chain: genesis -> block_1 (slot 1) -> block_2 (slot 2).
+    #
+    # After block_1, the state marks genesis as justified (first post-genesis
+    # block triggers the trust anchor). After block_2, justified is still
+    # genesis — no attestations have been processed yet.
+
+    # Compute genesis root (needed as parent for block_1).
+    genesis_header_with_root = state_0.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state_0)}
+    )
+    genesis_root = hash_tree_root(genesis_header_with_root)
+
+    block_1 = Block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(1),
+        parent_root=genesis_root,
+        state_root=Bytes32.zero(),
+        body=BlockBody(attestations=AggregatedAttestations(data=[])),
+    )
+    state_1 = state_0.process_slots(Slot(1)).process_block(block_1)
+
+    # After block_1: justified = (genesis_root, slot=0).
+    assert state_1.latest_justified == Checkpoint(root=genesis_root, slot=Slot(0))
+
+    block_1_root = hash_tree_root(
+        state_1.latest_block_header.model_copy(update={"state_root": hash_tree_root(state_1)})
+    )
+
+    block_2 = Block(
+        slot=Slot(2),
+        proposer_index=ValidatorIndex(2),
+        parent_root=block_1_root,
+        state_root=Bytes32.zero(),
+        body=BlockBody(attestations=AggregatedAttestations(data=[])),
+    )
+    state_2 = state_1.process_slots(Slot(2)).process_block(block_2)
+
+    # Still at genesis justified — no attestations processed.
+    assert state_2.latest_justified == Checkpoint(root=genesis_root, slot=Slot(0))
+
+    block_2_root = hash_tree_root(
+        state_2.latest_block_header.model_copy(update={"state_root": hash_tree_root(state_2)})
+    )
+
+    # Create attestations targeting slot 1 from V1+V2+V3.
+    #
+    # source = genesis justified checkpoint
+    # target = block_1 at slot 1
+    #
+    # These simulate attestations the store received from a minority fork.
+    # The head state never processed them, creating the divergence.
+    source = Checkpoint(root=genesis_root, slot=Slot(0))
+    target = Checkpoint(root=block_1_root, slot=Slot(1))
+
+    att_data = AttestationData(
+        slot=Slot(3),
+        head=target,
+        target=target,
+        source=source,
+    )
+
+    proof = make_aggregated_proof(
+        container_key_manager,
+        [ValidatorIndex(1), ValidatorIndex(2), ValidatorIndex(3)],
+        att_data,
+    )
+
+    # Call build_block with the divergent attestations in the pool.
+    #
+    # The fixed-point loop should:
+    #   Pass 1: current_justified = genesis -> attestations match (source=genesis)
+    #           3/4 supermajority -> justifies slot 1
+    #   Pass 2: no new entries -> done
+    _, post_state, aggregated_atts, _ = state_2.build_block(
+        slot=Slot(3),
+        proposer_index=ValidatorIndex(3),
+        parent_root=block_2_root,
+        known_block_roots={genesis_root, block_1_root, block_2_root},
+        aggregated_payloads={att_data: {proof}},
+    )
+
+    # The block must include the justifying attestations.
+    assert len(aggregated_atts) == 1
+    assert aggregated_atts[0].data == att_data
+
+    # Justification must have advanced: the fixed-point loop closed the gap.
+    assert post_state.latest_justified.slot >= Slot(1)
+    assert post_state.latest_justified == target

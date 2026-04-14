@@ -2,6 +2,7 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationCheck,
     AggregatedAttestationSpec,
     BlockSpec,
     BlockStep,
@@ -124,7 +125,7 @@ def test_justified_divergence_self_heals_in_next_block(
                     latest_justified_root_label="common",
                 ),
             ),
-            # Self-healing block on the head chain
+            # Self-healing block on the head chain.
             #
             # No explicit attestations. The builder reads from the pool.
             #
@@ -138,6 +139,10 @@ def test_justified_divergence_self_heals_in_next_block(
             #   Pass 2: nothing new -> break
             #
             # Divergence closed: head state justified = 1 = store justified.
+            #
+            # The produced block MUST carry the justifying attestations so that
+            # other nodes processing it also advance their justified checkpoint.
+            # Block production asserts this invariant.
             BlockStep(
                 block=BlockSpec(slot=Slot(5), label="block_5"),
                 checks=StoreChecks(
@@ -146,6 +151,27 @@ def test_justified_divergence_self_heals_in_next_block(
                     # Both store and head agree: justified = slot 1.
                     latest_justified_slot=Slot(1),
                     latest_justified_root_label="common",
+                    # The block body must contain fork B's attestations.
+                    #
+                    # The builder picks up all pool entries whose source matches
+                    # the current justified checkpoint (genesis). Two match:
+                    #
+                    # 1. V1+V2+V3 targeting slot 1 — the minority fork's
+                    #    justifying attestation. This is the one that closes
+                    #    the divergence.
+                    # 2. V0 targeting slot 2 — originally in block_3's body,
+                    #    still in the attestation pool.
+                    block_attestation_count=2,
+                    block_attestations=[
+                        AggregatedAttestationCheck(
+                            participants={1, 2, 3},
+                            target_slot=Slot(1),
+                        ),
+                        AggregatedAttestationCheck(
+                            participants={0},
+                            target_slot=Slot(2),
+                        ),
+                    ],
                 ),
             ),
         ],

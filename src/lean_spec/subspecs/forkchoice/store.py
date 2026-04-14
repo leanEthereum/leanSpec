@@ -747,20 +747,13 @@ class Store(StrictBaseModel):
         """
         Compute updated store with new canonical head.
 
-        This method implements the core fork choice algorithm, selecting the canonical
-        chain head based on:
-        1. Latest justified checkpoint (from state analysis)
-        2. LMD-GHOST fork choice rule (heaviest subtree)
-        3. Finalization status (from head state)
+        Selects the canonical chain head using:
 
-        Algorithm
-        ---------
-        1. **Fork Choice**: Run LMD-GHOST from justified root using attestation weights
-        2. **Return**: New Store instance with updated head
+        1. Latest justified checkpoint as the starting root
+        2. LMD-GHOST fork choice rule (heaviest subtree by attestation weight)
 
         Returns:
             New Store with updated head.
-
         """
         # Extract attestations from known aggregated payloads
         attestations = self.extract_attestations_from_aggregated_payloads(
@@ -768,27 +761,13 @@ class Store(StrictBaseModel):
         )
 
         # Run LMD-GHOST fork choice algorithm.
-        # Start from the justified root and descend toward the heaviest leaf.
+        #
+        # Starts from the justified root and greedily descends to the heaviest
+        # leaf. The result is always a descendant of the justified root by
+        # construction: the walk only follows child edges within the subtree.
         new_head = self._compute_lmd_ghost_head(
             start_root=self.latest_justified.root,
             attestations=attestations,
-        )
-
-        # Invariant: the head is always downstream from the justified root.
-        #
-        # Walk backward from the head through parent links.
-        # If we reach the justified root, the invariant holds.
-        current = new_head
-        while current in self.blocks:
-            if current == self.latest_justified.root:
-                break
-            current = self.blocks[current].parent_root
-        else:
-            current = ZERO_HASH
-
-        assert current == self.latest_justified.root, (
-            f"Head {new_head.hex()} is not downstream from "
-            f"justified root {self.latest_justified.root.hex()}"
         )
 
         return self.model_copy(
@@ -1338,7 +1317,9 @@ class Store(StrictBaseModel):
             - Signature proofs aligned with block attestations
 
         Raises:
-            AssertionError: If validator is not the proposer for this slot.
+            AssertionError: If validator is not the proposer for this slot,
+                or if the produced block fails to close a justified divergence
+                between the store and the head chain.
         """
         # Retrieve parent block.
         #
@@ -1367,6 +1348,23 @@ class Store(StrictBaseModel):
             parent_root=head_root,
             known_block_roots=set(store.blocks.keys()),
             aggregated_payloads=store.latest_known_aggregated_payloads,
+        )
+
+        # Invariant: the produced block must close any justified divergence.
+        #
+        # The store may have advanced its justified checkpoint from attestations
+        # on a minority fork that the head state never processed. The fixed-point
+        # loop above must incorporate those attestations from the pool, advancing
+        # the block's justified checkpoint to at least match the store.
+        #
+        # Without this, other nodes processing the block would never see the
+        # justification advance, degrading consensus liveness: only nodes that
+        # happened to receive the minority fork would know justification moved.
+        block_justified = final_post_state.latest_justified.slot
+        store_justified = store.latest_justified.slot
+        assert block_justified >= store_justified, (
+            f"Produced block justified={block_justified} < store justified="
+            f"{store_justified}. Fixed-point attestation loop did not converge."
         )
 
         # Compute block hash for storage.
