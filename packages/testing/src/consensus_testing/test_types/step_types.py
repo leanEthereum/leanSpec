@@ -75,7 +75,7 @@ class TickStep(BaseForkChoiceStep):
     def validate_target(self) -> "TickStep":
         """Require exactly one time target representation."""
         if (self.time is None) == (self.interval is None):
-            raise ValueError("TickStep requires exactly one of `time` or `interval`")
+            raise ValueError("TickStep requires exactly one of time or interval")
         return self
 
 

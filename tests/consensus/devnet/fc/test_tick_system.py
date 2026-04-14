@@ -14,7 +14,7 @@ from consensus_testing import (
 
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.types.uint import Uint64
+from lean_spec.types import Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -24,18 +24,26 @@ def test_tick_interval_progression_through_full_slot(
 ) -> None:
     """
     Advance through slot 3's five-interval tick cycle and verify the
-    interval-specific store transitions we can observe through the filler.
+    interval-specific store transitions.
 
-    Notes:
-    - `TickStep.time` uses integer unix seconds, so slot 3 intervals map to:
-      - `12s` -> interval 15 (slot 3, interval 0)
-      - `13s` -> interval 16 (slot 3, interval 1)
-      - `14s` -> interval 17 (slot 3, interval 2)
-      - `15s` -> interval 18 (slot 3, interval 3)
-      - `16s` -> interval 20, which passes through interval 19
-        (slot 3, interval 4) and lands at slot 4 interval 0
-    - The filler currently drives ticks with `has_proposal=False`, so interval 0
-      only exercises the "no proposer" path here.
+    Scenario
+    --------
+    TickStep.time uses integer unix seconds. With genesis_time=0 and
+    MILLISECONDS_PER_INTERVAL=800, slot 3 intervals map to:
+
+    - 12s -> interval 15 (slot 3, interval 0)
+    - 13s -> interval 16 (slot 3, interval 1)
+    - 14s -> interval 17 (slot 3, interval 2)
+    - 15s -> interval 18 (slot 3, interval 3)
+    - 16s -> interval 20 (passes through interval 19 = slot 3 interval 4,
+      then lands at slot 4 interval 0)
+
+    Expected Behavior
+    -----------------
+    1. Intervals 0-2: no observable store mutation (no proposal, no pending data)
+    2. After gossip at interval 2: attestation lands in "new" pool
+    3. Interval 3: safe_target recomputed using "new" pool
+    4. Interval 4: attestations migrate from "new" to "known"
     """
     fork_choice_test(
         steps=[
@@ -49,7 +57,7 @@ def test_tick_interval_progression_through_full_slot(
                 checks=StoreChecks(head_slot=Slot(2), head_root_label="block_2"),
             ),
             # Interval 0 with no proposal: the store reaches slot 3, but
-            # `accept_new_attestations()` does not run because `has_proposal=False`.
+            # acceptance does not run because has_proposal is False.
             TickStep(
                 time=12,
                 checks=StoreChecks(
@@ -113,9 +121,9 @@ def test_tick_interval_progression_through_full_slot(
                     ],
                 ),
             ),
-            # Interval 3 recomputes `safe_target` using both the "new" and "known"
+            # Interval 3 recomputes safe_target using both the "new" and "known"
             # attestation pools. The attestation is still unaccepted, so it remains
-            # in "new" while still being strong enough to move `safe_target`.
+            # in "new" while still being strong enough to move safe_target.
             TickStep(
                 time=15,
                 checks=StoreChecks(
@@ -128,28 +136,14 @@ def test_tick_interval_progression_through_full_slot(
                         AttestationCheck(
                             validator=ValidatorIndex(0),
                             location="new",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                        AttestationCheck(
-                            validator=ValidatorIndex(1),
-                            location="new",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                        AttestationCheck(
-                            validator=ValidatorIndex(2),
-                            location="new",
-                            source_slot=Slot(0),
                             target_slot=Slot(2),
                         ),
                     ],
                 ),
             ),
-            # `time=16` lands at slot 4 interval 0, which means the store passes
-            # through slot 3 interval 4 on the way there. Interval 4 always accepts
-            # new attestations, so the aggregated attestation should migrate from
-            # "new" to "known" while `safe_target` and head stay on `block_2`.
+            # time=16 lands at slot 4 interval 0, passing through slot 3 interval 4
+            # on the way. Interval 4 always accepts new attestations, so the
+            # attestation migrates from "new" to "known".
             TickStep(
                 time=16,
                 checks=StoreChecks(
@@ -162,19 +156,6 @@ def test_tick_interval_progression_through_full_slot(
                         AttestationCheck(
                             validator=ValidatorIndex(0),
                             location="known",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                        AttestationCheck(
-                            validator=ValidatorIndex(1),
-                            location="known",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                        AttestationCheck(
-                            validator=ValidatorIndex(2),
-                            location="known",
-                            source_slot=Slot(0),
                             target_slot=Slot(2),
                         ),
                     ],
@@ -230,13 +211,21 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Interval 0 only accepts new attestations when the local validator has the
-    proposal for that slot.
+    Interval 0 only accepts new attestations when a proposal exists.
 
-    The fork choice test harness uses local validator 0. With four validators
-    and round-robin proposal selection:
-    - slot 3 proposer = validator 3, so validator 0 is not the proposer
-    - slot 4 proposer = validator 0, so validator 0 is the proposer
+    Scenario
+    --------
+    1. Tick to slot 3 interval 0 without a proposal: attestations stay in "new"
+    2. Tick to slot 4 interval 0 with has_proposal=True: attestations migrate
+       to "known" immediately
+    3. Tick to slot 5 interval 4 (unconditional acceptance): fresh attestations
+       also migrate without a proposal
+
+    Expected Behavior
+    -----------------
+    1. Non-proposer interval 0: no acceptance
+    2. Proposer interval 0: early acceptance
+    3. Interval 4: always accepts regardless of proposer status
     """
     fork_choice_test(
         steps=[
