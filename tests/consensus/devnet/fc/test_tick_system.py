@@ -406,4 +406,3 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             ),
         ],
     )
-
