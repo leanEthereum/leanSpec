@@ -227,14 +227,21 @@ class ForkChoiceTest(BaseConsensusFixture):
                         # Time advancement may trigger slot boundaries.
                         # At slot boundaries, pending attestations may become active.
                         # Always act as aggregator to ensure gossip signatures are aggregated
-                        #
-                        # TickStep.time is a Unix timestamp in seconds.
-                        # Convert to intervals since genesis for the store.
-                        target_interval = Interval.from_unix_time(
-                            Uint64(step.time), store.config.genesis_time
-                        )
+                        if step.interval is not None:
+                            # Tests that care about exact interval semantics can
+                            # target the store's internal interval clock directly.
+                            target_interval = Interval(step.interval)
+                        else:
+                            assert step.time is not None
+                            # TickStep.time is a Unix timestamp in seconds.
+                            # Convert to intervals since genesis for the store.
+                            target_interval = Interval.from_unix_time(
+                                Uint64(step.time), store.config.genesis_time
+                            )
                         store, _ = store.on_tick(
-                            target_interval, has_proposal=False, is_aggregator=True
+                            target_interval,
+                            has_proposal=step.has_proposal,
+                            is_aggregator=True,
                         )
 
                     case BlockStep():

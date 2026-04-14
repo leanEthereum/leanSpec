@@ -168,6 +168,17 @@ class StoreChecks(CamelModel):
     safe_target: Bytes32 | None = None
     """Expected safe target root."""
 
+    safe_target_slot: Slot | None = None
+    """Expected safe target block slot."""
+
+    safe_target_root_label: str | None = None
+    """
+    Expected safe target root by label reference.
+
+    Alternative to safe_target that uses the block label system.
+    The framework resolves this label to the actual block root.
+    """
+
     attestation_target_slot: Slot | None = None
     """
     Expected attestation target checkpoint slot.
@@ -286,6 +297,8 @@ class StoreChecks(CamelModel):
             _check("latest_finalized.root", store.latest_finalized.root, self.latest_finalized_root)
         if "safe_target" in fields:
             _check("safe_target", store.safe_target, self.safe_target)
+        if "safe_target_slot" in fields:
+            _check("safe_target.slot", store.blocks[store.safe_target].slot, self.safe_target_slot)
 
         # Label-based root checks (resolve label -> root, then compare)
         if "head_root_label" in fields:
@@ -309,6 +322,10 @@ class StoreChecks(CamelModel):
             assert self.latest_finalized_root_label is not None
             expected = _resolve(self.latest_finalized_root_label)
             _check("latest_finalized.root", store.latest_finalized.root, expected)
+        if "safe_target_root_label" in fields:
+            assert self.safe_target_root_label is not None
+            expected = _resolve(self.safe_target_root_label)
+            _check("safe_target", store.safe_target, expected)
 
         # Attestation target checkpoint (slot + root consistency)
         if "attestation_target_slot" in fields:

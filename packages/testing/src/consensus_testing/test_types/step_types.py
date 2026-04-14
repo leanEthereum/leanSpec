@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import ConfigDict, Field, PrivateAttr, field_serializer
+from pydantic import ConfigDict, Field, PrivateAttr, field_serializer, model_validator
 
 from lean_spec.subspecs.containers.attestation import (
     SignedAggregatedAttestation,
@@ -54,15 +54,29 @@ class TickStep(BaseForkChoiceStep):
     """
     Time advancement step.
 
-    Advances the fork choice store time to a specific unix timestamp.
-    This triggers interval-based actions like attestation processing.
+    Advances the fork choice store time to a specific unix timestamp or
+    exact interval count. This triggers interval-based actions like
+    attestation processing.
     """
 
     step_type: Literal["tick"] = "tick"
     """Discriminator field for serialization."""
 
-    time: int
-    """Time to advance to (unix timestamp)."""
+    time: int | None = None
+    """Optional unix timestamp to advance to."""
+
+    interval: int | None = None
+    """Optional exact interval count to advance to."""
+
+    has_proposal: bool = False
+    """Whether interval 0 of the target slot should see a proposal."""
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "TickStep":
+        """Require exactly one time target representation."""
+        if (self.time is None) == (self.interval is None):
+            raise ValueError("TickStep requires exactly one of `time` or `interval`")
+        return self
 
 
 class BlockStep(BaseForkChoiceStep):

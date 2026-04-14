@@ -1,0 +1,409 @@
+"""Fork choice tick interval progression tests."""
+
+import pytest
+from consensus_testing import (
+    AttestationCheck,
+    BlockSpec,
+    BlockStep,
+    ForkChoiceTestFiller,
+    GossipAggregatedAttestationSpec,
+    GossipAggregatedAttestationStep,
+    StoreChecks,
+    TickStep,
+)
+
+from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.subspecs.containers.validator import ValidatorIndex
+
+pytestmark = pytest.mark.valid_until("Devnet")
+
+
+def test_tick_interval_progression_through_full_slot(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Advance through slot 3's five-interval tick cycle and verify the
+    interval-specific store transitions we can observe through the filler.
+
+    Notes:
+    - `TickStep.time` uses integer unix seconds, so slot 3 intervals map to:
+      - `12s` -> interval 15 (slot 3, interval 0)
+      - `13s` -> interval 16 (slot 3, interval 1)
+      - `14s` -> interval 17 (slot 3, interval 2)
+      - `15s` -> interval 18 (slot 3, interval 3)
+      - `16s` -> interval 20, which passes through interval 19
+        (slot 3, interval 4) and lands at slot 4 interval 0
+    - The filler currently drives ticks with `has_proposal=False`, so interval 0
+      only exercises the "no proposer" path here.
+    """
+    fork_choice_test(
+        steps=[
+            # Build a short chain so slot 3 can be reached.
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1), head_root_label="block_1"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2), head_root_label="block_2"),
+            ),
+            # Interval 0 with no proposal: the store reaches slot 3, but
+            # `accept_new_attestations()` does not run because `has_proposal=False`.
+            TickStep(
+                time=12,
+                checks=StoreChecks(
+                    time=15,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                ),
+            ),
+            # Interval 1 is the vote propagation window, so there is no direct
+            # store mutation to assert beyond time/head stability.
+            TickStep(
+                time=13,
+                checks=StoreChecks(
+                    time=16,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                ),
+            ),
+            # Interval 2 is the aggregation window. We tick through it first, then
+            # inject an already aggregated gossip attestation so it remains in the
+            # "new" pool for the interval-3 and interval-4 checks below.
+            TickStep(
+                time=14,
+                checks=StoreChecks(
+                    time=17,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                ),
+            ),
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(0),
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                    ],
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                ),
+                checks=StoreChecks(
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(0),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                        AttestationCheck(
+                            validator=ValidatorIndex(1),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                        AttestationCheck(
+                            validator=ValidatorIndex(2),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+            # Interval 3 recomputes `safe_target` using both the "new" and "known"
+            # attestation pools. The attestation is still unaccepted, so it remains
+            # in "new" while still being strong enough to move `safe_target`.
+            TickStep(
+                time=15,
+                checks=StoreChecks(
+                    time=18,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    safe_target_slot=Slot(2),
+                    safe_target_root_label="block_2",
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(0),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                        AttestationCheck(
+                            validator=ValidatorIndex(1),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                        AttestationCheck(
+                            validator=ValidatorIndex(2),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+            # `time=16` lands at slot 4 interval 0, which means the store passes
+            # through slot 3 interval 4 on the way there. Interval 4 always accepts
+            # new attestations, so the aggregated attestation should migrate from
+            # "new" to "known" while `safe_target` and head stay on `block_2`.
+            TickStep(
+                time=16,
+                checks=StoreChecks(
+                    time=20,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    safe_target_slot=Slot(2),
+                    safe_target_root_label="block_2",
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(0),
+                            location="known",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                        AttestationCheck(
+                            validator=ValidatorIndex(1),
+                            location="known",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                        AttestationCheck(
+                            validator=ValidatorIndex(2),
+                            location="known",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+        ],
+    )
+
+
+def test_on_tick_advances_across_multiple_empty_slots(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """Time advances through multiple empty slots without changing the head."""
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1), head_root_label="block_1"),
+            ),
+            # Slot boundaries are the cleanest integer-second checkpoints:
+            # 8s -> slot 2 interval 0 -> store time 10
+            TickStep(
+                time=8,
+                checks=StoreChecks(
+                    time=10,
+                    head_slot=Slot(1),
+                    head_root_label="block_1",
+                ),
+            ),
+            # 12s -> slot 3 interval 0 -> store time 15
+            TickStep(
+                time=12,
+                checks=StoreChecks(
+                    time=15,
+                    head_slot=Slot(1),
+                    head_root_label="block_1",
+                ),
+            ),
+            # 16s -> slot 4 interval 0 -> store time 20
+            TickStep(
+                time=16,
+                checks=StoreChecks(
+                    time=20,
+                    head_slot=Slot(1),
+                    head_root_label="block_1",
+                ),
+            ),
+        ],
+    )
+
+
+def test_tick_interval_0_skips_acceptance_when_not_proposer(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Interval 0 only accepts new attestations when the local validator has the
+    proposal for that slot.
+
+    The fork choice test harness uses local validator 0. With four validators
+    and round-robin proposal selection:
+    - slot 3 proposer = validator 3, so validator 0 is not the proposer
+    - slot 4 proposer = validator 0, so validator 0 is the proposer
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1), head_root_label="block_1"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2), head_root_label="block_2"),
+            ),
+            # Reach the interval immediately before slot 3 interval 0 so a fresh
+            # attestation can remain pending into the non-proposer check.
+            TickStep(
+                interval=14,
+                checks=StoreChecks(
+                    time=14,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                ),
+            ),
+            # Start with a pending aggregated attestation for slot 3.
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(0),
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                    ],
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                ),
+                checks=StoreChecks(
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(0),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+            # Exact interval 15 is slot 3 interval 0. Validator 0 is not the
+            # proposer for slot 3, so interval 0 must leave the attestation
+            # in the "new" pool.
+            TickStep(
+                interval=15,
+                checks=StoreChecks(
+                    time=15,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(0),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+            # Move to the interval immediately before slot 4 interval 0. We do
+            # not assert on the old pending attestation here because interval 2's
+            # aggregation path rewrites the "new" pool before slot 3 interval 4.
+            TickStep(
+                interval=19,
+                checks=StoreChecks(
+                    time=19,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                ),
+            ),
+            # Add a fresh pending attestation right before slot 4 interval 0.
+            # At store time 19, current slot is still 3, so a slot-4 attestation
+            # is within the allowed +1 future-slot margin.
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(0),
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                    ],
+                    slot=Slot(4),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                ),
+                checks=StoreChecks(
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(1),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+            # Exact interval 20 is slot 4 interval 0. Validator 0 is the proposer
+            # for slot 4, so interval 0 should accept the pending attestation
+            # immediately instead of waiting until interval 4.
+            TickStep(
+                interval=20,
+                has_proposal=True,
+                checks=StoreChecks(
+                    time=20,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(1),
+                            location="known",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+            # Reach slot 5 interval 3, inject a fresh attestation after the
+            # aggregation interval, then verify interval 4 accepts it even
+            # without a proposal.
+            TickStep(
+                interval=28,
+                checks=StoreChecks(
+                    time=28,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                ),
+            ),
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                        ValidatorIndex(3),
+                    ],
+                    slot=Slot(5),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                ),
+                checks=StoreChecks(
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(3),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+            TickStep(
+                interval=29,
+                checks=StoreChecks(
+                    time=29,
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(3),
+                            location="known",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+        ],
+    )
+
