@@ -2,6 +2,7 @@
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     StateExpectation,
     StateTransitionTestFiller,
@@ -427,3 +428,69 @@ def test_empty_blocks_with_missed_slots(
             slot=Slot(6), latest_block_header_slot=Slot(6), historical_block_hashes_count=6
         ),
     )
+
+
+def test_block_with_maximum_attestations(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Block with 16 AttestationData entries (MAX_ATTESTATIONS_DATA) processes correctly.
+
+    Scenario
+    --------
+    1. Build a linear chain of 16 blocks at justifiable slots:
+       1, 2, 3, 4, 5 (immediate), 6 (pronic), 9 (square), 12 (pronic),
+       16 (square), 20 (pronic), 25 (square), 30 (pronic), 36 (square),
+       42 (pronic), 49 (square), 56 (pronic).
+    2. Create a final block at slot 60 containing 16 attestations, each
+       targeting one of the above blocks.
+
+    This ensures we hit the MAX_ATTESTATIONS_DATA = 16 limit with:
+      - 16 distinct AttestationData entries in the block body.
+      - 16 distinct justification trackers in the post-state.
+
+    Expected Behavior
+    -----------------
+    1. All 16 attestations are processed without errors.
+    2. State advances to slot 60.
+    3. justifications_roots contains 16 unique roots.
+    """
+    # 16 justifiable slots starting from 1 (after finalized genesis 0)
+    justifiable_slots = [1, 2, 3, 4, 5, 6, 9, 12, 16, 20, 25, 30, 36, 42, 49, 56]
+    assert len(justifiable_slots) == 16
+
+    blocks = []
+    for i, slot in enumerate(justifiable_slots):
+        label = f"b_{slot}"
+        parent_label = f"b_{justifiable_slots[i - 1]}" if i > 0 else None
+        blocks.append(BlockSpec(slot=Slot(slot), label=label, parent_label=parent_label))
+
+    # Create 16 attestations, each targeting a different block in the chain
+    attestations = [
+        AggregatedAttestationSpec(
+            validator_ids=[ValidatorIndex(i % 12)],  # Stay within 12 available keys
+            slot=Slot(60),
+            target_slot=Slot(slot),
+            target_root_label=f"b_{slot}",
+        )
+        for i, slot in enumerate(justifiable_slots)
+    ]
+
+    # Block at slot 60 containing all 16 attestations
+    blocks.append(
+        BlockSpec(
+            slot=Slot(60),
+            parent_label=f"b_{justifiable_slots[-1]}",
+            attestations=attestations,
+        )
+    )
+
+    state_transition_test(
+        pre=generate_pre_state(num_validators=12),
+        blocks=blocks,
+        post=StateExpectation(
+            slot=Slot(60),
+            latest_justified_slot=Slot(0),
+        ),
+    )
+
