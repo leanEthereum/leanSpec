@@ -11,8 +11,6 @@ These tests cover leanSpec-specific implementation details:
 
 from __future__ import annotations
 
-import asyncio
-
 import httpx
 
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
@@ -100,8 +98,6 @@ class TestJustifiedCheckpointEndpoint:
 
         finally:
             await server.aclose()
-            server.stop()
-            await asyncio.sleep(0.1)
 
 
 class TestForkChoiceEndpoint:
@@ -121,8 +117,7 @@ class TestForkChoiceEndpoint:
                 assert response.status_code == 503
 
         finally:
-            server.stop()
-            await asyncio.sleep(0.1)
+            await server.aclose()
 
     async def test_returns_200_with_initialized_store(self, base_store: Store) -> None:
         """Endpoint returns 200 with fork choice tree when store is initialized."""
@@ -169,5 +164,4 @@ class TestForkChoiceEndpoint:
                 assert node["weight"] == 0
 
         finally:
-            server.stop()
-            await asyncio.sleep(0.1)
+            await server.aclose()
