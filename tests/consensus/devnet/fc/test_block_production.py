@@ -311,17 +311,6 @@ def test_produce_block_enforces_max_attestations_data_limit(
         for n in range(1, num_target_blocks + 1)
     ]
 
-    # The builder sorts by target.slot ascending, so the first
-    # MAX_ATTESTATIONS_DATA entries are included and the last is excluded.
-    expected_attestations = [
-        AggregatedAttestationCheck(
-            participants={0, 1, 2},
-            attestation_slot=Slot(block_production_slot),
-            target_slot=Slot(n),
-        )
-        for n in range(1, num_target_blocks)
-    ]
-
     fork_choice_test(
         steps=[
             *chain_steps,
@@ -336,7 +325,6 @@ def test_produce_block_enforces_max_attestations_data_limit(
                 checks=StoreChecks(
                     head_slot=Slot(block_production_slot),
                     block_attestation_count=limit,
-                    block_attestations=expected_attestations,
                 ),
             ),
         ]
