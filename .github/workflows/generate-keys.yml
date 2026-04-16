@@ -1,0 +1,69 @@
+name: Generate Keys
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      LEANSIG_TEST_KEYS_REPO_TOKEN:
+        required: true
+
+# This workflow does not need any write permission to leanSpec repo
+permissions:
+  contents: read
+
+# Cancels any ongoing key generation when a new key generation is triggered (likely with newer changes)
+concurrency:
+  group: generate-keys
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout leanSpec
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Sync dependencies
+        run: uv sync --no-progress
+
+      - name: Generate test scheme keys
+        run: uv run python -m consensus_testing.keys --scheme test
+
+      - name: Generate prod scheme keys
+        run: LEAN_ENV=prod uv run python -m consensus_testing.keys --scheme prod
+
+      - name: Publish to leansig-test-keys
+        run: |
+          cd packages/testing/src/consensus_testing/test_keys
+          tar czf /tmp/test_scheme.tar.gz test_scheme
+          tar czf /tmp/prod_scheme.tar.gz prod_scheme
+          gh release delete latest --repo leanEthereum/leansig-test-keys --yes || true
+          gh release create latest /tmp/test_scheme.tar.gz /tmp/prod_scheme.tar.gz \
+            --repo leanEthereum/leansig-test-keys \
+            --title "Latest keys from leanSpec" \
+            --notes "Auto-generated from leanSpec@${{ github.sha }}"
+        env:
+          GH_TOKEN: ${{ secrets.LEANSIG_TEST_KEYS_REPO_TOKEN }}
+
+      - name: Save test key cache
+        uses: actions/cache/save@v4
+        with:
+          path: packages/testing/src/consensus_testing/test_keys/test_scheme
+          key: test-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
+
+      - name: Save prod key cache
+        uses: actions/cache/save@v4
+        with:
+          path: packages/testing/src/consensus_testing/test_keys/prod_scheme
+          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}

@@ -3,14 +3,53 @@ name: Production Test Vectors
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  fill-prod-vectors:
-    name: Fill production test fixtures - Python 3.14
+  check:
+    name: Check key availability
     runs-on: ubuntu-latest
+    outputs:
+      scheme-changed: ${{ steps.scheme-diff.outputs.changed }}
+      cache-hit: ${{ steps.key-cache.outputs.cache-hit }}
+    steps:
+      - name: Checkout leanSpec
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if scheme changed
+        id: scheme-diff
+        run: |
+          if git diff HEAD~1 --name-only | grep -qE '^src/lean_spec/subspecs/(xmss|poseidon2)/'; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check prod key cache
+        id: key-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/prod-keys-probe
+          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
+          lookup-only: true
+
+  keygen:
+    name: Generate keys
+    needs: check
+    if: needs.check.outputs.cache-hit != 'true' && needs.check.outputs.scheme-changed == 'true'
+    uses: ./.github/workflows/generate-keys.yml
+    secrets: inherit
+
+  fill:
+    name: Fill production test fixtures
+    needs: [check, keygen]
+    # Trick to run even when keygen was skipped, but not on failure or cancel.
+    if: always() && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -29,28 +68,33 @@ jobs:
       - name: Sync dependencies
         run: uv sync --no-progress
 
-      - name: Get production keys URL hash
-        id: prod-keys-url
-        run: |
-          URL=$(uv run python -c "from consensus_testing.keys import KEY_DOWNLOAD_URLS; print(KEY_DOWNLOAD_URLS['prod'])")
-          HASH=$(echo -n "$URL" | sha256sum | awk '{print $1}')
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-
-      - name: Cache production keys
-        id: cache-prod-keys
-        uses: actions/cache@v4
+      - name: Restore prod key cache
+        id: key-cache
+        uses: actions/cache/restore@v4
         with:
           path: packages/testing/src/consensus_testing/test_keys/prod_scheme
-          key: prod-keys-${{ steps.prod-keys-url.outputs.hash }}
+          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
 
-      - name: Download production keys
-        if: steps.cache-prod-keys.outputs.cache-hit != 'true'
+      - name: Download keys
+        if: steps.key-cache.outputs.cache-hit != 'true'
         run: uv run python -m consensus_testing.keys --download --scheme prod
+
+      - name: Save key cache
+        if: steps.key-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: packages/testing/src/consensus_testing/test_keys/prod_scheme
+          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
 
       - name: Fill production test fixtures
         run: uv run fill --fork=Devnet --scheme prod --clean -n auto
 
-      - name: Upload production test fixtures
+      - name: Bundle keys with fixtures
+        run: |
+          mkdir -p fixtures/keys
+          cp -r packages/testing/src/consensus_testing/test_keys/prod_scheme fixtures/keys/
+
+      - name: Upload fixtures + keys
         uses: actions/upload-artifact@v4
         with:
           name: fixtures-prod-scheme
