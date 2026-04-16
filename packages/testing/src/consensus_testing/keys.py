@@ -616,14 +616,27 @@ def _generate_single_keypair(
     Returns:
         Complete key pair with both attestation and proposal keys.
     """
-    print(f"Starting key #{index} generation...")
+    import sys
+    import time
 
     # Generate two independent key pairs: one for attestations, one for proposals.
     #
     # Separate keys allow signing both roles within the same slot
     # without exhausting a one-time leaf.
+    start = time.monotonic()
+    print(f"[key #{index}] generating attestation key...", flush=True)
     att_pk, att_sk = scheme.key_gen(Slot(0), Uint64(num_slots))
+
+    elapsed = time.monotonic() - start
+    print(
+        f"[key #{index}] attestation key done ({elapsed:.0f}s), "
+        f"generating proposal key...",
+        flush=True,
+    )
     prop_pk, prop_sk = scheme.key_gen(Slot(0), Uint64(num_slots))
+
+    elapsed = time.monotonic() - start
+    print(f"[key #{index}] done ({elapsed:.0f}s)", file=sys.stderr, flush=True)
 
     return ValidatorKeyPair(
         attestation_public=att_pk,
@@ -665,14 +678,20 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
 
     # Generate key pairs in parallel across all CPU cores.
     # Results arrive in index order thanks to executor.map.
+    import time
+
+    gen_start = time.monotonic()
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         worker_func = partial(_generate_single_keypair, scheme, num_slots)
         for idx, key_pair in enumerate(executor.map(worker_func, range(count))):
-            # Serialize and write each key pair as a separate JSON file named by index.
+            elapsed = time.monotonic() - gen_start
+            print(f"[{idx + 1}/{count}] saved key #{idx} ({elapsed:.0f}s elapsed)")
+
             key_file = keys_dir / f"{idx}.json"
             key_file.write_text(json.dumps(key_pair.to_dict(), indent=2))
 
-    print(f"Saved {count} key pairs to {keys_dir}/")
+    total = time.monotonic() - gen_start
+    print(f"Saved {count} key pairs to {keys_dir}/ ({total:.0f}s total)")
 
 
 def download_keys(scheme: str) -> None:
