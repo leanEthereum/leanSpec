@@ -68,8 +68,8 @@ SecretField = Literal["attestation_secret", "proposal_secret"]
 """Discriminator for which secret key to load from a validator key pair."""
 
 KEY_DOWNLOAD_URLS = {
-    "test": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-ad9a3226/test_scheme.tar.gz",
-    "prod": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-ad9a3226/prod_scheme.tar.gz",
+    "test": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-2c691ba6/test_scheme.tar.gz",
+    "prod": "https://github.com/leanEthereum/leansig-test-keys/releases/download/leanSpec-2c691ba6/prod_scheme.tar.gz",
 }
 """
 GitHub release URLs for pre-generated key archives.
