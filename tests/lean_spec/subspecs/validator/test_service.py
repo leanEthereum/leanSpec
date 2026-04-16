@@ -89,8 +89,8 @@ def sync_service(keyed_store: Store) -> SyncService:
 
 @pytest.fixture
 def real_registry(key_manager: XmssKeyManager) -> ValidatorRegistry:
-    """Registry with real XMSS keys for all 12 validators."""
-    return _make_registry(key_manager, *range(12))
+    """Registry with real XMSS keys for all 8 validators."""
+    return _make_registry(key_manager, *range(8))
 
 
 class TestSignBlock:
@@ -465,7 +465,7 @@ class TestMaybeProduceBlock:
         key_manager: XmssKeyManager,
     ) -> None:
         """No block is produced when the validator is not the proposer for the slot."""
-        # With 12 validators, proposer for slot 5 is validator 5 (5 % 12 = 5).
+        # With 8 validators, proposer for slot 5 is validator 5 (5 % 8 = 5).
         # Register only validator 0, so it should not produce at slot 5.
         registry = _make_registry(key_manager, 0)
         blocks: list[SignedBlock] = []
@@ -500,7 +500,7 @@ class TestMaybeProduceBlock:
         with patch.object(
             Store, "produce_block_with_signatures", side_effect=AssertionError("mismatch")
         ):
-            # Slot 0: proposer is validator 0 (0 % 12 = 0), which is in the registry.
+            # Slot 0: proposer is validator 0 (0 % 8 = 0), which is in the registry.
             await service._maybe_produce_block(Slot(0))
 
         assert blocks == []
@@ -520,7 +520,7 @@ class TestValidatorServiceDuties:
         async def capture_block(block: SignedBlock) -> None:
             blocks_received.append(block)
 
-        # With 12 validators, proposer for slot 2 is validator 2.
+        # With 8 validators, proposer for slot 2 is validator 2.
         # Register only validator 2, so slots 0 and 1 should produce nothing.
         service = ValidatorService(
             sync_service=sync_service,

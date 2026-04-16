@@ -78,13 +78,13 @@ def base_store(genesis_state: State, genesis_block: Block) -> Store:
     )
 
 
-# Keyed genesis (real XMSS keys, 12 validators)
+# Keyed genesis (real XMSS keys, 8 validators)
 
 
 @pytest.fixture
 def keyed_genesis(key_manager: XmssKeyManager) -> GenesisData:
-    """Genesis data with real XMSS keys (12 validators)."""
-    return make_genesis_data(num_validators=12, key_manager=key_manager)
+    """Genesis data with real XMSS keys (8 validators)."""
+    return make_genesis_data(num_validators=8, key_manager=key_manager)
 
 
 @pytest.fixture

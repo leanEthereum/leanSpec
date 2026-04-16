@@ -393,7 +393,7 @@ def test_reorg_with_slot_gaps(
     conditions where perfect block production is impossible.
     """
     fork_choice_test(
-        anchor_state=generate_pre_state(num_validators=10),
+        anchor_state=generate_pre_state(num_validators=8),
         steps=[
             # Base at slot 1
             BlockStep(
@@ -663,7 +663,7 @@ def test_reorg_prevention_heavy_fork_resists_light_competition(
     - Network naturally converges on heaviest fork
     """
     fork_choice_test(
-        anchor_state=generate_pre_state(num_validators=12),
+        anchor_state=generate_pre_state(num_validators=8),
         steps=[
             # Common base
             BlockStep(
@@ -835,7 +835,7 @@ def test_back_and_forth_reorg_oscillation(
     convergence.
     """
     fork_choice_test(
-        anchor_state=generate_pre_state(num_validators=10),
+        anchor_state=generate_pre_state(num_validators=8),
         steps=[
             # Common base
             BlockStep(
@@ -896,7 +896,7 @@ def test_back_and_forth_reorg_oscillation(
                     label="fork_a_6",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(9), ValidatorIndex(8)],
+                            validator_ids=[ValidatorIndex(7), ValidatorIndex(6)],
                             slot=Slot(5),
                             target_slot=Slot(5),
                             target_root_label="fork_a_5",
@@ -924,7 +924,7 @@ def test_back_and_forth_reorg_oscillation(
                     label="fork_b_8",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1), ValidatorIndex(9)],
+                            validator_ids=[ValidatorIndex(1), ValidatorIndex(7)],
                             slot=Slot(7),
                             target_slot=Slot(7),
                             target_root_label="fork_b_7",
@@ -1111,8 +1111,8 @@ def test_reorg_on_newly_justified_slot(
     - Safety guarantees maintained during reorgs
     """
     fork_choice_test(
-        # Using 9 validators: 3 for Fork A and 6 for Fork B to achieve 2/3rd for Fork B
-        anchor_state=generate_pre_state(num_validators=9),
+        # Using 8 validators: Fork A has 1 attester, Fork B needs 6 of 8 for 2/3 supermajority
+        anchor_state=generate_pre_state(num_validators=8),
         steps=[
             # Common base at slot 1
             BlockStep(
@@ -1195,7 +1195,8 @@ def test_reorg_on_newly_justified_slot(
                     parent_label="fork_b_1",
                     label="fork_b_2",
                     attestations=[
-                        # Aggregated attestation from validators 0, 1, 5, 6, 7, 8
+                        # Aggregated attestation from validators 0, 1, 5, 6, 7 + one
+                        # more to reach 2/3 supermajority (6 of 8 = 75%).
                         # fork_b_1 should be able to justify without extra attestations
                         # from validator 5 and 6 but the test is failing without these
                         # because block proposer's attestations are not being counted
@@ -1204,10 +1205,10 @@ def test_reorg_on_newly_justified_slot(
                             validator_ids=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
+                                ValidatorIndex(3),
                                 ValidatorIndex(5),
                                 ValidatorIndex(6),
                                 ValidatorIndex(7),
-                                ValidatorIndex(8),
                             ],
                             slot=Slot(5),
                             target_slot=Slot(5),
