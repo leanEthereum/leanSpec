@@ -335,8 +335,8 @@ class TestValidatorIntegration:
     def test_validator_edge_cases(self, sample_store: Store) -> None:
         """Test edge cases in validator operations."""
         # Test with validator index equal to number of validators - 1
-        max_validator = ValidatorIndex(9)  # Last validator (0-indexed, 10 total)
-        slot = Slot(9)  # This validator's slot
+        max_validator = ValidatorIndex(7)  # Last validator (0-indexed, 8 total)
+        slot = Slot(7)  # This validator's slot
 
         # Should be able to produce block
         store, block, _signatures = sample_store.produce_block_with_signatures(

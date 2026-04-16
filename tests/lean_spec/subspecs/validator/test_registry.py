@@ -284,12 +284,12 @@ class TestValidatorRegistry:
     def test_indices_returns_all_registered_indices(self, km: XmssKeyManager) -> None:
         """All registered indices are returned as a collection."""
         registry = ValidatorRegistry()
-        for i in [2, 5, 8]:
+        for i in [2, 5, 7]:
             registry.add(self._entry(km, i))
 
         result = registry.indices()
 
-        assert set(result) == {ValidatorIndex(2), ValidatorIndex(5), ValidatorIndex(8)}
+        assert set(result) == {ValidatorIndex(2), ValidatorIndex(5), ValidatorIndex(7)}
 
     def test_primary_index_empty_registry(self) -> None:
         """Primary index is None for an empty registry."""
