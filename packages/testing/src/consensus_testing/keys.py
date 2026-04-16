@@ -629,8 +629,7 @@ def _generate_single_keypair(
 
     elapsed = time.monotonic() - start
     print(
-        f"[key #{index}] attestation key done ({elapsed:.0f}s), "
-        f"generating proposal key...",
+        f"[key #{index}] attestation key done ({elapsed:.0f}s), generating proposal key...",
         flush=True,
     )
     prop_pk, prop_sk = scheme.key_gen(Slot(0), Uint64(num_slots))
