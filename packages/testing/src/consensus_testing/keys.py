@@ -130,12 +130,12 @@ Default max slot for the shared key manager.
 Slot 10 is high enough for most unit tests while keeping key generation fast.
 """
 
-NUM_VALIDATORS: int = 12
+NUM_VALIDATORS: int = 8
 """
 Default number of validator key pairs.
 
-Twelve validators is enough to exercise committee logic while keeping
-key generation and test execution fast.
+Eight validators is enough to exercise committee logic and 2/3 supermajority
+thresholds while keeping key generation and test execution fast.
 """
 
 CLI_DEFAULT_MAX_SLOT = Slot(100)
