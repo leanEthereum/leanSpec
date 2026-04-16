@@ -5,6 +5,7 @@ from typing import Type
 from . import forks
 from .genesis import generate_pre_state
 from .test_fixtures import (
+    ApiEndpointTest,
     BaseConsensusFixture,
     ForkChoiceTest,
     GossipsubHandlerTest,
@@ -36,6 +37,7 @@ VerifySignaturesTestFiller = Type[VerifySignaturesTest]
 SSZTestFiller = Type[SSZTest]
 NetworkingCodecTestFiller = Type[NetworkingCodecTest]
 GossipsubHandlerTestFiller = Type[GossipsubHandlerTest]
+ApiEndpointTestFiller = Type[ApiEndpointTest]
 
 __all__ = [
     # Public API
@@ -54,6 +56,7 @@ __all__ = [
     "SSZTest",
     "NetworkingCodecTest",
     "GossipsubHandlerTest",
+    "ApiEndpointTest",
     # Test types
     "BaseForkChoiceStep",
     "TickStep",
@@ -72,4 +75,5 @@ __all__ = [
     "SSZTestFiller",
     "NetworkingCodecTestFiller",
     "GossipsubHandlerTestFiller",
+    "ApiEndpointTestFiller",
 ]

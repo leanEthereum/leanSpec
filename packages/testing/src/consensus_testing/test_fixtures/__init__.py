@@ -1,5 +1,6 @@
 """Consensus test fixture format definitions (Pydantic models)."""
 
+from .api_endpoint import ApiEndpointTest
 from .base import BaseConsensusFixture
 from .fork_choice import ForkChoiceTest
 from .gossipsub_handler import GossipsubHandlerTest
@@ -16,4 +17,5 @@ __all__ = [
     "SSZTest",
     "NetworkingCodecTest",
     "GossipsubHandlerTest",
+    "ApiEndpointTest",
 ]
