@@ -11,7 +11,7 @@ VALID_SNAPPY = "0x01000000"
 INVALID_SNAPPY = "0x00000000"
 """Domain prefix for messages where snappy decompression failed."""
 
-BLOCK_TOPIC = "0x" + b"/leanconsensus/0x12345678/block/ssz_snappy".hex()
+BLOCK_TOPIC = "0x" + b"/leanconsensus/12345678/block/ssz_snappy".hex()
 """Hex-encoded topic bytes for a typical block topic string."""
 
 

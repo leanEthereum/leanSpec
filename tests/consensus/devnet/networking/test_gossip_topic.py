@@ -5,7 +5,7 @@ from consensus_testing import NetworkingCodecTestFiller
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
-FORK_DIGEST = "0x12345678"
+FORK_DIGEST = "12345678"
 """Arbitrary fork digest used across topic tests."""
 
 
@@ -24,7 +24,7 @@ def test_block_topic_different_digest(networking_codec: NetworkingCodecTestFille
     """Block topic with a different fork digest to verify digest embedding."""
     networking_codec(
         codec_name="gossip_topic",
-        input={"kind": "block", "forkDigest": "0xaabbccdd"},
+        input={"kind": "block", "forkDigest": "aabbccdd"},
     )
 
 
@@ -73,7 +73,7 @@ def test_block_topic_zero_digest(networking_codec: NetworkingCodecTestFiller) ->
     """Block topic with all-zero fork digest."""
     networking_codec(
         codec_name="gossip_topic",
-        input={"kind": "block", "forkDigest": "0x00000000"},
+        input={"kind": "block", "forkDigest": "00000000"},
     )
 
 
@@ -81,5 +81,5 @@ def test_block_topic_max_digest(networking_codec: NetworkingCodecTestFiller) -> 
     """Block topic with all-0xff fork digest."""
     networking_codec(
         codec_name="gossip_topic",
-        input={"kind": "block", "forkDigest": "0xffffffff"},
+        input={"kind": "block", "forkDigest": "ffffffff"},
     )

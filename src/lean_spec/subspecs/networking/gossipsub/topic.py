@@ -17,7 +17,7 @@ Topics follow a structured format::
 
     /{prefix}/{fork_digest}/{topic_name}/{encoding}
 
-    Example: /leanconsensus/0x12345678/block/ssz_snappy
+    Example: /leanconsensus/12345678/block/ssz_snappy
 
 **Components:**
 
@@ -26,7 +26,7 @@ Topics follow a structured format::
 +================+==========================================================+
 | prefix         | Network identifier (`leanconsensus`)                   |
 +----------------+----------------------------------------------------------+
-| fork_digest    | 4-byte fork identifier as hex (`0x12345678`)           |
+| fork_digest    | 4-byte fork identifier as hex (`12345678`)             |
 +----------------+----------------------------------------------------------+
 | topic_name     | Message type (`blocks`, `attestation`)               |
 +----------------+----------------------------------------------------------+
@@ -148,7 +148,7 @@ class GossipTopic:
     """
 
     fork_digest: str
-    """Fork digest as 0x-prefixed hex string.
+    """Fork digest as hex string (no 0x prefix), like the beacon chain.
 
     Identifies the fork this topic belongs to.
 
@@ -181,7 +181,7 @@ class GossipTopic:
         Validate that the topic's fork_digest matches expected.
 
         Args:
-            expected_fork_digest: Expected fork digest (0x-prefixed hex).
+            expected_fork_digest: Expected fork digest (hex string (no 0x prefix)).
 
         Raises:
             ForkMismatchError: If fork_digest does not match.
@@ -240,7 +240,7 @@ class GossipTopic:
 
         Args:
             topic_str: Full topic string to parse.
-            expected_fork_digest: Expected fork digest (0x-prefixed hex).
+            expected_fork_digest: Expected fork digest (hex string (no 0x prefix)).
 
         Returns:
             Parsed GossipTopic instance.
@@ -258,7 +258,7 @@ class GossipTopic:
         """Create a block topic for the given fork.
 
         Args:
-            fork_digest: Fork digest as 0x-prefixed hex string.
+            fork_digest: Fork digest as hex string (no 0x prefix) string.
 
         Returns:
             GossipTopic for block messages.
@@ -270,7 +270,7 @@ class GossipTopic:
         """Create a committee aggregation topic for the given fork.
 
         Args:
-            fork_digest: Fork digest as 0x-prefixed hex string.
+            fork_digest: Fork digest as hex string (no 0x prefix) string.
 
         Returns:
             GossipTopic for committee aggregation messages.
@@ -282,7 +282,7 @@ class GossipTopic:
         """Create an attestation subnet topic for the given fork and subnet.
 
         Args:
-            fork_digest: Fork digest as 0x-prefixed hex string.
+            fork_digest: Fork digest as hex string (no 0x prefix) string.
             subnet_id: Subnet ID for the attestation topic.
 
         Returns:
