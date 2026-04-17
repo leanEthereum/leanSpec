@@ -3,16 +3,34 @@
 import asyncio
 import threading
 import time
+from dataclasses import dataclass, field
 from typing import Generator
 
 import httpx
 import pytest
 
-from lean_spec.subspecs.api import ApiServer, ApiServerConfig
+from lean_spec.subspecs.api import AggregatorController, ApiServer, ApiServerConfig
 from tests.lean_spec.helpers import make_store
 
 # Default port for auto-started local server
 DEFAULT_PORT = 15099
+
+
+@dataclass(slots=True)
+class _AggregatorStub:
+    """Minimal stub exposing only the is_aggregator flag."""
+
+    is_aggregator: bool = field(default=False)
+
+
+def _make_conformance_controller(initial: bool = False) -> AggregatorController:
+    """Build an AggregatorController backed by lightweight stubs."""
+    sync_stub = _AggregatorStub(is_aggregator=initial)
+    network_stub = _AggregatorStub(is_aggregator=initial)
+    return AggregatorController(
+        sync_service=sync_stub,  # type: ignore[arg-type]
+        network_service=network_stub,  # type: ignore[arg-type]
+    )
 
 
 class _ServerThread(threading.Thread):
@@ -46,11 +64,16 @@ class _ServerThread(threading.Thread):
                 self.loop.close()
 
     def _create_server(self) -> ApiServer:
-        """Create the API server with a test store."""
+        """Create the API server with a test store and aggregator controller."""
         store = make_store(num_validators=3, validator_id=None, genesis_time=int(time.time()))
 
+        controller = _make_conformance_controller(initial=False)
         config = ApiServerConfig(host="127.0.0.1", port=self.port)
-        return ApiServer(config=config, store_getter=lambda: store)
+        return ApiServer(
+            config=config,
+            store_getter=lambda: store,
+            aggregator_controller=controller,
+        )
 
     def stop(self) -> None:
         """Stop the server and event loop, awaiting cleanup so _async_stop is run."""

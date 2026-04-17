@@ -45,3 +45,65 @@ def test_fork_choice_4v(api_endpoint: ApiEndpointTestFiller) -> None:
 def test_fork_choice_8v(api_endpoint: ApiEndpointTestFiller) -> None:
     """Fork choice tree at genesis with 8 validators. Same shape, higher count."""
     api_endpoint(endpoint="/lean/v0/fork_choice", genesis_params=GENESIS_8V)
+
+
+def test_aggregator_status_disabled(api_endpoint: ApiEndpointTestFiller) -> None:
+    """GET aggregator status on a node started with aggregator disabled."""
+    api_endpoint(
+        endpoint="/lean/v0/admin/aggregator",
+        genesis_params=GENESIS_4V,
+        initial_is_aggregator=False,
+    )
+
+
+def test_aggregator_status_enabled(api_endpoint: ApiEndpointTestFiller) -> None:
+    """GET aggregator status on a node started with aggregator enabled."""
+    api_endpoint(
+        endpoint="/lean/v0/admin/aggregator",
+        genesis_params=GENESIS_4V,
+        initial_is_aggregator=True,
+    )
+
+
+def test_aggregator_toggle_activate(api_endpoint: ApiEndpointTestFiller) -> None:
+    """POST enable=true flips the role from off to on."""
+    api_endpoint(
+        endpoint="/lean/v0/admin/aggregator",
+        method="POST",
+        genesis_params=GENESIS_4V,
+        initial_is_aggregator=False,
+        request_body={"enabled": True},
+    )
+
+
+def test_aggregator_toggle_deactivate(api_endpoint: ApiEndpointTestFiller) -> None:
+    """POST enable=false flips the role from on to off."""
+    api_endpoint(
+        endpoint="/lean/v0/admin/aggregator",
+        method="POST",
+        genesis_params=GENESIS_4V,
+        initial_is_aggregator=True,
+        request_body={"enabled": False},
+    )
+
+
+def test_aggregator_toggle_idempotent_enable(api_endpoint: ApiEndpointTestFiller) -> None:
+    """POST enable=true on an already-enabled node returns previous=true and is a no-op."""
+    api_endpoint(
+        endpoint="/lean/v0/admin/aggregator",
+        method="POST",
+        genesis_params=GENESIS_4V,
+        initial_is_aggregator=True,
+        request_body={"enabled": True},
+    )
+
+
+def test_aggregator_toggle_idempotent_disable(api_endpoint: ApiEndpointTestFiller) -> None:
+    """POST enable=false on an already-disabled node returns previous=false and is a no-op."""
+    api_endpoint(
+        endpoint="/lean/v0/admin/aggregator",
+        method="POST",
+        genesis_params=GENESIS_4V,
+        initial_is_aggregator=False,
+        request_body={"enabled": False},
+    )

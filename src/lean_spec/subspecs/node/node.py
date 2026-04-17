@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from lean_spec.subspecs.api import ApiServer, ApiServerConfig
+from lean_spec.subspecs.api import AggregatorController, ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import SlotClock
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
@@ -119,6 +119,11 @@ class NodeConfig:
 
     When False (default):
     - The node runs in standard validator or passive mode
+
+    Seeds the initial value of the live aggregator flag on SyncService and
+    NetworkService. The flag can be toggled at runtime via the admin API
+    (see AggregatorController). Runtime toggles do not persist across
+    restarts and do not update the local ENR or subnet subscriptions.
     """
 
     aggregate_subnet_ids: tuple[SubnetId, ...] = field(default_factory=tuple)
@@ -278,10 +283,17 @@ class Node:
         # Create API server if configured
         api_server: ApiServer | None = None
         if config.api_config is not None:
+            # Controller lets the admin API rotate the aggregator role at
+            # runtime when another aggregator becomes unhealthy.
+            aggregator_controller = AggregatorController(
+                sync_service=sync_service,
+                network_service=network_service,
+            )
             # Store getter captures sync_service to get the live store
             api_server = ApiServer(
                 config=config.api_config,
                 store_getter=lambda: sync_service.store,
+                aggregator_controller=aggregator_controller,
             )
 
         # Create validator service if registry provided.

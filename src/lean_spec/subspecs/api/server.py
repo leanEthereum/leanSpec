@@ -16,13 +16,15 @@ from aiohttp import web
 
 from lean_spec.subspecs.forkchoice import Store
 
-from .routes import ROUTES
+from .aggregator_controller import AggregatorController
+from .routes import ADMIN_ROUTES, ROUTES
 
 logger = logging.getLogger(__name__)
 
 
 _routes = [web.get(path, handler) for path, handler in ROUTES.items()]
-"""aiohttp route definitions generated from ROUTES."""
+_routes += [web.route(method, path, handler) for method, path, handler in ADMIN_ROUTES]
+"""aiohttp route definitions generated from ROUTES and ADMIN_ROUTES."""
 
 # The following classes are implementation details.
 # Other implementations may structure their code differently.
@@ -66,6 +68,14 @@ class ApiServer:
     store_getter: Callable[[], Store | None] | None = None
     """Callable that returns the current Store instance."""
 
+    aggregator_controller: AggregatorController | None = None
+    """
+    Optional controller for toggling the aggregator role at runtime.
+
+    When present, the admin aggregator endpoints can query and mutate the
+    node's aggregator flag. When absent, those endpoints return 503.
+    """
+
     _runner: web.AppRunner | None = field(default=None, init=False)
     """aiohttp application runner."""
 
@@ -87,6 +97,10 @@ class ApiServer:
 
         # Store the store_getter in app for handlers that need store access
         app["store_getter"] = self.store_getter
+
+        # Expose the aggregator controller to admin endpoints.
+        # Absence is fine; endpoints return 503 when unset.
+        app["aggregator_controller"] = self.aggregator_controller
 
         # Add all routes
         app.add_routes(_routes)
