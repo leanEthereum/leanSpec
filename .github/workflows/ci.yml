@@ -37,8 +37,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
-      - name: Run all quality checks via tox
-        run: uvx tox -e all-checks
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Run all quality checks
+        run: just check
 
   test:
     name: Tests - Python ${{ matrix.python-version }} on ${{ matrix.os }}
@@ -63,8 +68,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
-      - name: Run tests via tox
-        run: uvx tox -e pytest
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Run tests
+        run: just test
 
   coverage-gate:
     name: Coverage gate - Python 3.12
@@ -84,8 +94,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
       - name: Run tests with coverage gate
-        run: uvx tox -e pytest-cov-gate
+        run: just test-cov-gate
 
   fill-tests:
     name: Fill test fixtures - Python 3.14
@@ -105,11 +120,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
-      - name: Sync dependencies
-        run: uv sync --no-progress
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
       - name: Fill test fixtures
-        run: uv run fill --fork=Devnet --clean -n auto
+        run: just fill
 
   interop-tests:
     name: Interop tests - Multi-node consensus
@@ -130,14 +147,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
       - name: Run interop tests
-        run: |
-          uv run pytest tests/interop/ \
-            -v \
-            --no-cov \
-            --timeout=120 \
-            -x \
-            --tb=short \
-            --log-cli-level=INFO
+        run: just interop
         env:
           LEAN_ENV: test
