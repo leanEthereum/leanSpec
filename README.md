@@ -20,6 +20,20 @@ The Lean Ethereum protocol specifications and cryptographic subspecifications.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ````
 
+#### Installing just
+
+[`just`](https://just.systems/) is the task runner used for common developer
+workflows in this repository.
+
+```bash
+# Recommended cross-platform install
+uv tool install just-bin
+
+# Alternatives
+brew install just
+apt install just
+```
+
 #### Installing Python 3.12+
 
 This project requires Python 3.12 or later and should be installed via `uv`:
@@ -57,8 +71,11 @@ cd leanSpec
 # Install and sync project and dev dependencies, using `uv.lock` versions
 uv sync
 
+# See the available repo tasks
+just
+
 # Run tests to verify setup
-uv run pytest
+just test
 ```
 
 ### Project Structure
@@ -97,7 +114,10 @@ uv sync
 ### Running Tests
 
 ```bash
-# Run all tests from workspace root
+# Run the default test suite
+just test
+
+# Run all tests from workspace root without just
 uv run pytest
 
 # Run tests in parallel, utilizing all available CPU cores
@@ -121,37 +141,51 @@ uv run fill --clean --fork=devnet --scheme=prod
 # Run API conformance tests against an external client implementation
 # Usage: uv run apitest <server-url> [pytest-args]
 uv run apitest http://localhost:5052
+
+# Same API conformance test through the task runner
+just apitest http://localhost:5052
 ```
 
 ### Code Quality
 
 ```bash
+# Run the full quality gate
+just check
+
 # Check code style and errors
-uv run ruff check
+just lint
 
 # Auto-fix issues
-uv run ruff check --fix
+just fix
 
 # Format code
-uv run ruff format
+just format
 
 # Type checking
-uv run ty check
+just typecheck
 ```
 
-### Using Tox for Comprehensive Checks
+### Using just for Common Tasks
 
-You can use `tox` with `uvx`, which:
-* Creates a temporary environment just for `tox`
-* Doesn't require `uv sync` first
-* Uses `tox-uv` for faster dependency installation
+Run `just` with no arguments to see the available recipes. `just` is the
+primary command surface for contributors, while raw `uv run ...` commands remain
+available when you want to invoke tools directly.
 
 ```bash
-# Run specific environment, like "all quality checks" (lint, typecheck, spellcheck)
-uvx tox -e all-checks
+# List available tasks
+just
 
-# Run all tox environments (all checks + tests + docs)
-uvx tox
+# Run quality checks
+just check
+
+# Run tests
+just test
+
+# Build documentation
+just docs
+
+# Generate consensus fixtures
+just fill
 ```
 
 ### Documentation
@@ -210,7 +244,7 @@ def test_withdrawal_amount_above_uint64_max():
 - **uv**: Fast Python package manager - like npm/yarn but for Python
 - **ruff**: Linter and formatter
 - **ty**: Type checker
-- **tox**: Automation tool for running tests across multiple environments (used via `uvx`)
+- **just**: Task runner for repository workflows such as checks, tests, docs, and fixture generation
 - **mkdocs**: Documentation generator - write docs in Markdown, serve them locally
 
 ## Common Commands Reference
@@ -218,16 +252,16 @@ def test_withdrawal_amount_above_uint64_max():
 | Task                                          | Command                                                |
 |-----------------------------------------------|--------------------------------------------------------|
 | Install and sync project and dev dependencies | `uv sync`                                              |
-| Run tests                                     | `uv run pytest ...`                                    |
-| Format code                                   | `uv run ruff format`                                   |
-| Lint code                                     | `uv run ruff check`                                    |
-| Fix lint errors                               | `uv run ruff check --fix`                              |
-| Type check                                    | `uv run ty check`                                      |
-| Build docs                                    | `uv run mkdocs build`                                  |
-| Serve docs                                    | `uv run mkdocs serve`                                  |
-| Run everything (checks + tests + docs)        | `uvx tox`                                              |
-| Run all quality checks (no tests/docs)        | `uvx tox -e all-checks`                                |
-| Test external client API conformance          | `uv run apitest http://localhost:5052`                 |
+| List repo tasks                               | `just`                                                 |
+| Run quality checks                            | `just check`                                           |
+| Run tests                                     | `just test`                                            |
+| Format code                                   | `just format`                                          |
+| Fix lint and formatting                       | `just fix`                                             |
+| Type check                                    | `just typecheck`                                       |
+| Build docs                                    | `just docs`                                            |
+| Serve docs                                    | `just docs-serve`                                      |
+| Generate consensus fixtures                   | `just fill`                                            |
+| Test external client API conformance          | `just apitest http://localhost:5052`                   |
 | Run consensus node                            | `uv run python -m lean_spec --genesis config.yaml`     |
 | Build Docker test image                       | `docker build -t lean-spec:test .`                     |
 | Build Docker node image                       | `docker build --target node -t lean-spec:node .`       |
@@ -265,7 +299,7 @@ docker run --rm lean-spec:test
 # Run tests in parallel
 docker run --rm lean-spec:test uv run pytest -n auto
 
-# Run the fill command
+# Run the fill command directly
 docker run --rm lean-spec:test uv run fill --clean --fork=devnet
 ```
 

@@ -7,9 +7,9 @@
 ## ✅ Checklist
 <!-- Please check off all required items. For those that don't apply remove them accordingly. -->
 
-- [ ] Ran `tox` checks to avoid unnecessary CI fails:
+- [ ] Ran local quality checks to avoid unnecessary CI fails:
     ```console
-    uvx tox
+    just check
     ```
 - [ ] Considered adding appropriate tests for the changes.
 - [ ] Considered updating the online docs in the [./docs/](/leanEthereum/leanSpec/tree/main/docs/) directory.

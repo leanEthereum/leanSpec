@@ -5,9 +5,10 @@
 1. Fork and clone the repository
 2. Install dependencies: `uv sync`
 3. Make your changes
-4. Run checks: `uvx tox -e all-checks`
-5. Run tests: `uvx tox -e pytest`
-6. Submit a pull request
+4. Install `just`: `uv tool install just-bin`
+5. Run checks: `just check`
+6. Run tests: `just test`
+7. Submit a pull request
 
 ## Pull Request Guidelines
 
@@ -22,7 +23,7 @@
 - **Type hints**: Required for all functions and methods
 - **Docstrings**: Use Google style for public APIs
 - **Line length**: 100 characters (enforced by ruff)
-- **Formatting**: Run `uvx tox -e fix` to auto-format
+- **Formatting**: Run `just fix` to auto-format
 
 ## Adding New Subspecifications
 
