@@ -518,10 +518,10 @@ class Store(StrictBaseModel):
 
         # Propagate any checkpoint advances from the post-state.
         latest_justified = max(
-            post_state.latest_justified, self.latest_justified, key=lambda c: c.slot
+            self.latest_justified, post_state.latest_justified, key=lambda c: c.slot
         )
         latest_finalized = max(
-            post_state.latest_finalized, self.latest_finalized, key=lambda c: c.slot
+            self.latest_finalized, post_state.latest_finalized, key=lambda c: c.slot
         )
 
         store = self.model_copy(
