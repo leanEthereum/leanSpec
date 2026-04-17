@@ -219,18 +219,14 @@ class ForkChoiceTest(BaseConsensusFixture):
                     and self.anchor_state.latest_justified.root != anchor_root
                 ):
                     state_updates["latest_justified"] = (
-                        self.anchor_state.latest_justified.model_copy(
-                            update={"root": anchor_root}
-                        )
+                        self.anchor_state.latest_justified.model_copy(update={"root": anchor_root})
                     )
                 if (
                     self.anchor_state.latest_finalized.slot == self.anchor_block.slot
                     and self.anchor_state.latest_finalized.root != anchor_root
                 ):
                     state_updates["latest_finalized"] = (
-                        self.anchor_state.latest_finalized.model_copy(
-                            update={"root": anchor_root}
-                        )
+                        self.anchor_state.latest_finalized.model_copy(update={"root": anchor_root})
                     )
                 if not state_updates:
                     break  # converged

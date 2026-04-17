@@ -56,8 +56,8 @@ def test_store_from_non_genesis_anchor(
     base_state = generate_pre_state(num_validators=4)
 
     anchor_slot = Slot(10)
-    fake_anchor_root = Bytes32(b'\xaa' * 32)
-    fake_parent_root = Bytes32(b'\xbb' * 32)
+    fake_anchor_root = Bytes32(b"\xaa" * 32)
+    fake_parent_root = Bytes32(b"\xbb" * 32)
 
     anchor_state = base_state.model_copy(
         update={
