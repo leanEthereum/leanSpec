@@ -265,6 +265,7 @@ def test_first_post_genesis_block_sets_checkpoint_anchor_roots(
         ),
     )
 
+
 def test_genesis_maximum_validators(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
