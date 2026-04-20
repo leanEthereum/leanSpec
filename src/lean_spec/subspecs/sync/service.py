@@ -52,6 +52,7 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import SubnetId
 from lean_spec.subspecs.forkchoice.store import Store
+from lean_spec.subspecs.metrics import PrometheusForkChoiceObserver
 from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
@@ -68,12 +69,22 @@ from .states import SyncState
 logger = logging.getLogger(__name__)
 
 
+_PROMETHEUS_OBSERVER = PrometheusForkChoiceObserver()
+"""Module-level observer instance shared by the default block processor."""
+
+
 def default_block_processor(
     store: Store,
     block: SignedBlock,
 ) -> Store:
-    """Default block processor using store block processing."""
-    return store.on_block(block)
+    """
+    Default block processor.
+
+    Injects a Prometheus-backed observer so every call records fork-choice
+    telemetry. The spec itself stays free of any metrics backend — the
+    observer is the only seam where Prometheus meets consensus logic.
+    """
+    return store.on_block(block, observer=_PROMETHEUS_OBSERVER)
 
 
 async def _noop_publish_agg(signed_attestation: SignedAggregatedAttestation) -> None:

@@ -30,7 +30,7 @@ from lean_spec.subspecs.containers.attestation.attestation import SignedAggregat
 from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndices
-from lean_spec.subspecs.metrics import registry as metrics
+from lean_spec.subspecs.forkchoice.observer import NULL_OBSERVER, ForkChoiceObserver
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
@@ -466,6 +466,7 @@ class Store(StrictBaseModel):
         self,
         signed_block: SignedBlock,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
+        observer: ForkChoiceObserver = NULL_OBSERVER,
     ) -> "Store":
         """
         Process a new block and update the forkchoice state.
@@ -479,6 +480,10 @@ class Store(StrictBaseModel):
         Args:
             signed_block: Complete signed block.
             scheme: XMSS signature scheme to use for signature verification.
+            observer: Telemetry hook invoked at fixed points during
+                processing. Defaults to a no-op when omitted. Observers
+                must not raise — an exception here aborts a consensus-
+                critical operation for telemetry reasons.
 
         Returns:
             New Store with block integrated and head updated.
@@ -512,9 +517,7 @@ class Store(StrictBaseModel):
         # Execute state transition function to compute post-block state
         state_transition_start = time.perf_counter()
         post_state = parent_state.state_transition(block, valid_signatures)
-        metrics.lean_state_transition_time_seconds.observe(
-            time.perf_counter() - state_transition_start
-        )
+        observer.state_transition_timed(time.perf_counter() - state_transition_start)
 
         # Propagate checkpoint advances from the post-state.
         #
@@ -580,31 +583,17 @@ class Store(StrictBaseModel):
         if store.latest_finalized.slot > self.latest_finalized.slot:
             store = store.prune_stale_attestation_data()
 
-        metrics.lean_fork_choice_block_processing_time_seconds.observe(time.perf_counter() - t0)
-        store._record_metrics(old_head)
+        observer.block_processed(time.perf_counter() - t0)
+        observer.head_advanced(
+            head_slot=int(store.blocks[store.head].slot),
+            safe_target_slot=int(store.blocks[store.safe_target].slot),
+            latest_justified_slot=int(store.latest_justified.slot),
+            latest_finalized_slot=int(store.latest_finalized.slot),
+        )
+        if store.head != old_head:
+            observer.head_reorged(store.blocks.reorg_depth(old_head, store.head))
 
         return store
-
-    def _record_metrics(self, old_head: Bytes32) -> None:
-        """
-        Publish Prometheus metrics reflecting the current store state.
-
-        Called after every block processing round. Updates:
-
-        - Head and safe-target slot gauges
-        - Justified and finalized slot gauges
-        - Reorg counter and depth histogram (only when the head actually changed)
-        """
-        metrics.lean_head_slot.set(self.blocks[self.head].slot)
-        metrics.lean_safe_target_slot.set(self.blocks[self.safe_target].slot)
-        metrics.lean_latest_justified_slot.set(self.latest_justified.slot)
-        metrics.lean_latest_finalized_slot.set(self.latest_finalized.slot)
-
-        if self.head != old_head:
-            metrics.lean_fork_choice_reorgs_total.inc()
-            metrics.lean_fork_choice_reorg_depth.observe(
-                self.blocks.reorg_depth(old_head, self.head)
-            )
 
     def extract_attestations_from_aggregated_payloads(
         self, aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]]
