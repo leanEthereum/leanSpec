@@ -198,43 +198,6 @@ class ForkChoiceTest(BaseConsensusFixture):
             update={"state_root": hash_tree_root(self.anchor_state)}
         )
 
-        # Synchronize checkpoint roots if the checkpoints reference the anchor block itself.
-        # (Needed for checkpoint sync tests where the block builds on top of a non-genesis anchor)
-        #
-        # This requires a fixed-point loop because:
-        #   1. The anchor block's state_root depends on the anchor state
-        #   2. The anchor state's checkpoint roots should reference the anchor block root
-        #   3. Changing the state changes the state_root, which changes the block root
-        #
-        # In practice this converges in 2 iterations.
-        if (
-            self.anchor_state.latest_justified.slot == self.anchor_block.slot
-            or self.anchor_state.latest_finalized.slot == self.anchor_block.slot
-        ):
-            for _ in range(5):  # safety bound
-                anchor_root = hash_tree_root(self.anchor_block)
-                state_updates: dict[str, object] = {}
-                if (
-                    self.anchor_state.latest_justified.slot == self.anchor_block.slot
-                    and self.anchor_state.latest_justified.root != anchor_root
-                ):
-                    state_updates["latest_justified"] = (
-                        self.anchor_state.latest_justified.model_copy(update={"root": anchor_root})
-                    )
-                if (
-                    self.anchor_state.latest_finalized.slot == self.anchor_block.slot
-                    and self.anchor_state.latest_finalized.root != anchor_root
-                ):
-                    state_updates["latest_finalized"] = (
-                        self.anchor_state.latest_finalized.model_copy(update={"root": anchor_root})
-                    )
-                if not state_updates:
-                    break  # converged
-                self.anchor_state = self.anchor_state.model_copy(update=state_updates)
-                self.anchor_block = self.anchor_block.model_copy(
-                    update={"state_root": hash_tree_root(self.anchor_state)}
-                )
-
         # Store initialization
         #
         # The Store is the node's local view of the chain.

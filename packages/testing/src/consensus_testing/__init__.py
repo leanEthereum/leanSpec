@@ -3,7 +3,7 @@
 from typing import Type
 
 from . import forks
-from .genesis import generate_pre_state
+from .genesis import build_anchor, generate_pre_state
 from .test_fixtures import (
     ApiEndpointTest,
     BaseConsensusFixture,
@@ -46,6 +46,7 @@ __all__ = [
     "GossipAttestationSpec",
     "BlockSpec",
     "forks",
+    "build_anchor",
     "generate_pre_state",
     # Base types
     # Fixture classes
