@@ -20,23 +20,52 @@ from lean_spec.subspecs.containers.validator import ValidatorIndex
 pytestmark = pytest.mark.valid_until("Devnet")
 
 
+@pytest.mark.parametrize(
+    "num_attesters",
+    [
+        # Far-below case. Weight 2 / threshold 4 = half the required mass.
+        # Pins behavior in the strict interior of the below-threshold range.
+        pytest.param(2, id="two_of_six"),
+        # Tight boundary case. Weight 3 sits exactly one vote short of the
+        # threshold, covering the off-by-one edge of the prune condition.
+        pytest.param(3, id="three_of_six"),
+    ],
+)
 def test_safe_target_does_not_advance_below_supermajority(
     fork_choice_test: ForkChoiceTestFiller,
+    num_attesters: int,
 ) -> None:
-    """Safe target stays at genesis when weight is below the 2/3 threshold.
+    """Safe target stays at genesis when weight falls short of the 2/3 threshold.
 
-    6 validators, threshold = ceil(12/3) = 4.
-    Only 3 attest to block_2, so weight = 3 < 4 at every block.
+    Fixture state:
 
-    Walk (min_score=4):
+    - 6 validators, threshold = ceil(12 / 3) = 4
+    - Two-block chain rooted at the genesis/justified anchor
+    - A single gossip aggregate signed by the first few validators,
+      all voting for block_2
 
-        justified -> block_1 (weight 3 < 4, pruned) -> stop
+    Parametrized over two below-threshold attester counts:
 
-    Result: safe_target remains at genesis.
+    - 2/6 attesters (far below) -- weight 2, exercises the middle of the region
+    - 3/6 attesters (tight edge) -- weight 3, exercises the off-by-one boundary
+
+    Invariant:
+
+        Every ancestor of block_2 carries the same weight (the attester count).
+        With any attester count in {2, 3}, no child of the justified root clears
+        the ceil(2N / 3) bar, so the safe-target walk halts immediately.
+
+        The LMD-GHOST head has no threshold and still advances to block_2.
     """
     fork_choice_test(
         anchor_state=generate_pre_state(num_validators=6),
         steps=[
+            # Phase 1: build a two-block chain above the justified anchor.
+            #
+            #     genesis (justified) --- block_1 --- block_2  (head)
+            #
+            # Each block is added while the chain is unanimous about its
+            # parent, so the head follows the newest block trivially.
             BlockStep(
                 block=BlockSpec(slot=Slot(1), label="block_1"),
                 checks=StoreChecks(
@@ -51,22 +80,56 @@ def test_safe_target_does_not_advance_below_supermajority(
                     head_root_label="block_2",
                 ),
             ),
-            # Advance past aggregation window (interval 2).
+            # Phase 2: skip past the aggregation window (interval 2).
+            #
+            # Interval 2 is when gossip attestations get batched into an
+            # aggregate. We tick through it while the gossip pool is empty
+            # so the aggregation step is a no-op and the "known"/"new"
+            # pools stay isolated for the rest of the test.
             TickStep(time=14),
-            # 3/6 validators attest -- one short of the threshold.
+            # Phase 3: gossip one aggregate from the first few validators.
+            #
+            #     attesters   :  {0, 1, ...,  num_attesters - 1}
+            #     target      :  block_2
+            #     destination :  the "new" pool (gossip arrivals land here)
+            #
+            # The "new" pool holds attestations collected in the current
+            # slot until the interval-4 migration moves them into "known".
+            # Here we only care that they arrive in "new" so the safe-target
+            # computation at interval 3 can read them.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
-                        ValidatorIndex(0),
-                        ValidatorIndex(1),
-                        ValidatorIndex(2),
-                    ],
+                    validator_ids=[ValidatorIndex(i) for i in range(num_attesters)],
                     slot=Slot(3),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                 ),
+                checks=StoreChecks(
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(i),
+                            location="new",
+                            source_slot=Slot(0),
+                            target_slot=Slot(2),
+                        )
+                        for i in range(num_attesters)
+                    ],
+                ),
             ),
-            # Interval 3: weight 3 < 4, walk cannot leave the justified root.
+            # Phase 4: tick into interval 3 of slot 3 and assert the pin.
+            #
+            # Weight propagates upward from the voted target through every
+            # ancestor on the path to the justified root:
+            #
+            #     block_1 weight = num_attesters
+            #     block_2 weight = num_attesters
+            #
+            # With num_attesters in {2, 3}, both < 4 = ceil(2 * 6 / 3), so
+            # the weight-thresholded walk prunes every child of genesis and
+            # the safe target stays pinned at slot 0.
+            #
+            # Head is still block_2: LMD-GHOST has no threshold and follows
+            # the heaviest path regardless of the 2/3 condition.
             TickStep(
                 time=15,
                 checks=StoreChecks(
@@ -466,96 +529,6 @@ def test_safe_target_uses_merged_pools_at_interval_3(
                     head_root_label="block_3",
                     safe_target_slot=Slot(2),
                     safe_target_root_label="block_2",
-                ),
-            ),
-        ],
-    )
-
-
-def test_safe_target_stays_at_justified_with_insufficient_weight(
-    fork_choice_test: ForkChoiceTestFiller,
-) -> None:
-    """Safe target stays at the justified anchor when weight is far below the threshold.
-
-    6 validators, threshold = 4.
-    Only 2/6 attest to block_2 -- well below the 2/3 boundary.
-
-    Weights:
-
-    - block_1 = 2 < 4
-    - block_2 = 2 < 4
-
-    Walk (min_score=4):
-
-        justified -> no qualifying child -> stop
-        safe_target = genesis / justified anchor.
-
-    Head still advances to the latest block (LMD-GHOST has no threshold).
-    Gossip attestations stay in the "new" pool until the interval-4 migration.
-    """
-    fork_choice_test(
-        anchor_state=generate_pre_state(num_validators=6),
-        steps=[
-            BlockStep(
-                block=BlockSpec(slot=Slot(1), label="block_1"),
-                checks=StoreChecks(head_slot=Slot(1), head_root_label="block_1"),
-            ),
-            BlockStep(
-                block=BlockSpec(slot=Slot(2), label="block_2"),
-                checks=StoreChecks(head_slot=Slot(2), head_root_label="block_2"),
-            ),
-            # Advance past aggregation window (interval 2).
-            TickStep(time=14),
-            # Only 2/6 validators attest -- two below the threshold of 4.
-            GossipAggregatedAttestationStep(
-                attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
-                        ValidatorIndex(0),
-                        ValidatorIndex(1),
-                    ],
-                    slot=Slot(3),
-                    target_slot=Slot(2),
-                    target_root_label="block_2",
-                ),
-                checks=StoreChecks(
-                    attestation_checks=[
-                        AttestationCheck(
-                            validator=ValidatorIndex(0),
-                            location="new",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                        AttestationCheck(
-                            validator=ValidatorIndex(1),
-                            location="new",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                    ],
-                ),
-            ),
-            # Interval 3: weight 2 < 4, walk cannot leave the justified root.
-            # Head follows LMD-GHOST unchanged; attestations stay in "new".
-            TickStep(
-                time=15,
-                checks=StoreChecks(
-                    head_slot=Slot(2),
-                    head_root_label="block_2",
-                    safe_target_slot=Slot(0),
-                    attestation_checks=[
-                        AttestationCheck(
-                            validator=ValidatorIndex(0),
-                            location="new",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                        AttestationCheck(
-                            validator=ValidatorIndex(1),
-                            location="new",
-                            source_slot=Slot(0),
-                            target_slot=Slot(2),
-                        ),
-                    ],
                 ),
             ),
         ],
