@@ -362,26 +362,26 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
 ) -> None:
     """Safe target can be shallower than the LMD-GHOST head.
 
-      8 validators, threshold = ceil(16/3) = 6.
+    6 validators, threshold = 4.
     Chain: genesis -> block_1 -> block_2 -> block_3.
 
-    - 6 vote block_2, 2 vote block_3
-
+    - 4 vote block_2, 2 vote block_3
+    
     Weights:
-        block_1 = 8, block_2 = 8, block_3 = 2
+        block_1 = 6, block_2 = 6, block_3 = 2
 
-    Safe walk (min_score=6):
-
-        justified -> block_1 (8 >= 6) -> block_2 (8 >= 6)
-                  -> block_3 (2 < 6, pruned)
+    Safe walk (min_score=4):
+    
+        justified -> block_1 (6 >= 4) -> block_2 (6 >= 4)
+                  -> block_3 (2 < 4, pruned)
         safe_target = block_2
-
+    
     LMD-GHOST:
-
+    
         continues to block_3 -> head = block_3
-
-    Result: safe_target < head (conservative).
-    """
+    
+    Result: safe_target < head (conservative property).
+        """
     fork_choice_test(
         anchor_state=generate_pre_state(num_validators=8),
         steps=[
@@ -398,7 +398,7 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
                 checks=StoreChecks(head_slot=Slot(3), head_root_label="block_3"),
             ),
             TickStep(time=14),
-            # 6/9 validators vote for block_2. Weight propagates upward: block_2 += 6, block_1 += 6.
+            # 4/6 validators vote for block_2. Weight propagates upward: block_1 += 4, block_2 += 4.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[
@@ -406,40 +406,35 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
                         ValidatorIndex(1),
                         ValidatorIndex(2),
                         ValidatorIndex(3),
-                        ValidatorIndex(4),
-                        ValidatorIndex(5),
                     ],
                     slot=Slot(4),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                 ),
             ),
-            # 3/9 validators vote for block_3.
-            # Weight propagates: block_3 += 3, block_2 += 3, block_1 += 3.
+            # 2/6 validators vote for block_3.
+            # Weight propagates: block_3 += 2, block_2 += 2, block_1 += 2.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[
-                        ValidatorIndex(6),
-                        ValidatorIndex(7),
-                        ValidatorIndex(8),
+                        ValidatorIndex(4),
+                        ValidatorIndex(5),
                     ],
                     slot=Slot(4),
                     target_slot=Slot(3),
                     target_root_label="block_3",
                 ),
             ),
-            # Combined weights:
-            #   block_1 = 9, block_2 = 9, block_3 = 3
-            #
-            # LMD-GHOST (no threshold):
-            #   only child path leads to block_3 → head = block_3
-            #
-            # update_safe_target (min_score = 6):
-            #   justified → block_1 (9 ≥ 6) → block_2 (9 ≥ 6)
-            #   → block_3 (3 < 6, pruned) → stop
-            #   safe_target = block_2
-            #
-            # Result: safe_target is shallower than LMD-GHOST head.
+# Combined weights: block_1=6, block_2=6, block_3=2.
+#
+# LMD-GHOST (no threshold):
+#   only path leads to block_3 → head = block_3
+#
+# update_safe_target (min_score=4):
+#   block_3 (2 < 4) pruned → stop at block_2
+#   safe_target = block_2
+#
+# Result: safe_target < head (conservative property)
             TickStep(
                 time=15,
                 checks=StoreChecks(
