@@ -425,16 +425,16 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
                     target_root_label="block_3",
                 ),
             ),
-# Combined weights: block_1=6, block_2=6, block_3=2.
-#
-# LMD-GHOST (no threshold):
-#   only path leads to block_3 → head = block_3
-#
-# update_safe_target (min_score=4):
-#   block_3 (2 < 4) pruned → stop at block_2
-#   safe_target = block_2
-#
-# Result: safe_target < head (conservative property)
+            # Combined weights: block_1=6, block_2=6, block_3=2.
+            #
+            # LMD-GHOST (no threshold):
+            #   only path leads to block_3 → head = block_3
+            #
+            # update_safe_target (min_score=4):
+            #   block_3 (2 < 4) pruned → stop at block_2
+            #   safe_target = block_2
+            #
+            # Result: safe_target < head (conservative property)
             TickStep(
                 time=15,
                 checks=StoreChecks(
