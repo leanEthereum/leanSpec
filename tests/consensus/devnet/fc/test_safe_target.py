@@ -366,22 +366,22 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
     Chain: genesis -> block_1 -> block_2 -> block_3.
 
     - 4 vote block_2, 2 vote block_3
-    
+
     Weights:
         block_1 = 6, block_2 = 6, block_3 = 2
 
     Safe walk (min_score=4):
-    
+
         justified -> block_1 (6 >= 4) -> block_2 (6 >= 4)
                   -> block_3 (2 < 4, pruned)
         safe_target = block_2
-    
+
     LMD-GHOST:
-    
+
         continues to block_3 -> head = block_3
-    
+
     Result: safe_target < head (conservative property).
-        """
+    """
     fork_choice_test(
         anchor_state=generate_pre_state(num_validators=8),
         steps=[
