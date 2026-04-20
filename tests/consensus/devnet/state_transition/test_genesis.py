@@ -321,7 +321,6 @@ def test_genesis_maximum_validators_justification(
     2. Produce a block at slot 1.
     3. Produce a block at slot 2 containing attestations from 2731 validators
        targeting slot 1.
-    
     Threshold Calculation:
     - supermajority_threshold = ceil(2/3 * 4096) = 2731 validators.
     - Total weight: 2731 * 3 = 8193.
@@ -334,9 +333,6 @@ def test_genesis_maximum_validators_justification(
     """
     # Generate pre-state with max validators
     pre = generate_pre_state(num_validators=4096, genesis_time=Uint64(0))
-
-    # Anchor root for checkpoints (genesis block header processed to slot 1)
-    anchor_root = hash_tree_root(pre.process_slots(Slot(1)).latest_block_header)
 
     state_transition_test(
         pre=pre,
