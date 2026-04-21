@@ -180,7 +180,7 @@ class TweakHasher(StrictBaseModel):
             # Case 1: Hashing a single digest (used in hash chains).
             #
             # We use the efficient width-16 compression mode.
-            input_vec = message_parts[0].elements + parameter.elements + encoded_tweak
+            input_vec = parameter.elements + encoded_tweak + message_parts[0].elements
             result = self.poseidon.compress(input_vec, 16, config.HASH_LEN_FE)
 
         elif len(message_parts) == 2:
