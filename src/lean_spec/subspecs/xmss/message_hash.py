@@ -156,7 +156,7 @@ class MessageHasher(StrictBaseModel):
         epoch_fe = self.encode_epoch(epoch)
 
         # Call Poseidon1 once to produce the required number of output field elements.
-        base_input = message_fe + list(parameter.data) + epoch_fe + list(rho.data)
+        base_input = list(rho.data) + list(parameter.data) + epoch_fe + message_fe
         poseidon_output = self.poseidon.compress(base_input, 24, self.config.MH_HASH_LEN_FE)
 
         # Decode the field elements into base-BASE digits via rejection sampling.
