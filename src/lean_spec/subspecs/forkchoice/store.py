@@ -6,7 +6,6 @@ The Store tracks all information required for the LMD GHOST forkchoice algorithm
 
 __all__ = ["AttestationSignatureEntry", "Store"]
 
-import time
 from collections import defaultdict
 from typing import NamedTuple
 
@@ -30,7 +29,6 @@ from lean_spec.subspecs.containers.attestation.attestation import SignedAggregat
 from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndices
-from lean_spec.subspecs.forkchoice.observer import NULL_OBSERVER, ForkChoiceObserver
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregatedSignatureProof,
@@ -466,7 +464,6 @@ class Store(StrictBaseModel):
         self,
         signed_block: SignedBlock,
         scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
-        observer: ForkChoiceObserver = NULL_OBSERVER,
     ) -> "Store":
         """
         Process a new block and update the forkchoice state.
@@ -480,10 +477,6 @@ class Store(StrictBaseModel):
         Args:
             signed_block: Complete signed block.
             scheme: XMSS signature scheme to use for signature verification.
-            observer: Telemetry hook invoked at fixed points during
-                processing. Defaults to a no-op when omitted. Observers
-                must not raise — an exception here aborts a consensus-
-                critical operation for telemetry reasons.
 
         Returns:
             New Store with block integrated and head updated.
@@ -497,9 +490,6 @@ class Store(StrictBaseModel):
         # Skip duplicate blocks (idempotent operation)
         if block_root in self.blocks:
             return self
-
-        t0 = time.perf_counter()
-        old_head = self.head
 
         # Verify parent chain is available
         #
@@ -515,9 +505,7 @@ class Store(StrictBaseModel):
         valid_signatures = signed_block.verify_signatures(parent_state.validators, scheme)
 
         # Execute state transition function to compute post-block state
-        state_transition_start = time.perf_counter()
         post_state = parent_state.state_transition(block, valid_signatures)
-        observer.state_transition_timed(time.perf_counter() - state_transition_start)
 
         # Propagate checkpoint advances from the post-state.
         #
@@ -582,16 +570,6 @@ class Store(StrictBaseModel):
         # Prune stale attestation data when finalization advances
         if store.latest_finalized.slot > self.latest_finalized.slot:
             store = store.prune_stale_attestation_data()
-
-        observer.block_processed(time.perf_counter() - t0)
-        observer.head_advanced(
-            head_slot=int(store.blocks[store.head].slot),
-            safe_target_slot=int(store.blocks[store.safe_target].slot),
-            latest_justified_slot=int(store.latest_justified.slot),
-            latest_finalized_slot=int(store.latest_finalized.slot),
-        )
-        if store.head != old_head:
-            observer.head_reorged(store.blocks.reorg_depth(old_head, store.head))
 
         return store
 

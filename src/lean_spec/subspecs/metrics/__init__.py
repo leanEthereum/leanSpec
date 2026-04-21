@@ -5,11 +5,11 @@ Metric names and types follow the leanMetrics spec:
 https://github.com/leanEthereum/leanMetrics/blob/main/metrics.md
 """
 
-from .forkchoice_observer import PrometheusForkChoiceObserver
 from .registry import get_metrics_output, registry
+from .spec_observer import PrometheusSpecObserver
 
 __all__ = [
-    "PrometheusForkChoiceObserver",
+    "PrometheusSpecObserver",
     "get_metrics_output",
     "registry",
 ]

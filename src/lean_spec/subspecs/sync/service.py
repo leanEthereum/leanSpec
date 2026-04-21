@@ -52,7 +52,6 @@ from lean_spec.subspecs.containers import (
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import SubnetId
 from lean_spec.subspecs.forkchoice.store import Store
-from lean_spec.subspecs.metrics import PrometheusForkChoiceObserver
 from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
@@ -69,10 +68,6 @@ from .states import SyncState
 logger = logging.getLogger(__name__)
 
 
-_PROMETHEUS_OBSERVER = PrometheusForkChoiceObserver()
-"""Module-level observer instance shared by the default block processor."""
-
-
 def default_block_processor(
     store: Store,
     block: SignedBlock,
@@ -80,11 +75,28 @@ def default_block_processor(
     """
     Default block processor.
 
-    Injects a Prometheus-backed observer so every call records fork-choice
-    telemetry. The spec itself stays free of any metrics backend — the
-    observer is the only seam where Prometheus meets consensus logic.
+    Wraps the pure spec entry point with fork-choice telemetry.
+    State transition timing is emitted by State.state_transition itself
+    through the spec observer, wired at node startup.
+    Everything else is derived here by wrapping the call and diffing
+    pre- and post-stores.
     """
-    return store.on_block(block, observer=_PROMETHEUS_OBSERVER)
+    t0 = time.perf_counter()
+    new_store = store.on_block(block)
+
+    metrics.lean_fork_choice_block_processing_time_seconds.observe(time.perf_counter() - t0)
+    metrics.lean_head_slot.set(new_store.blocks[new_store.head].slot)
+    metrics.lean_safe_target_slot.set(new_store.blocks[new_store.safe_target].slot)
+    metrics.lean_latest_justified_slot.set(new_store.latest_justified.slot)
+    metrics.lean_latest_finalized_slot.set(new_store.latest_finalized.slot)
+
+    if new_store.head != store.head:
+        metrics.lean_fork_choice_reorgs_total.inc()
+        metrics.lean_fork_choice_reorg_depth.observe(
+            new_store.blocks.reorg_depth(store.head, new_store.head)
+        )
+
+    return new_store
 
 
 async def _noop_publish_agg(signed_attestation: SignedAggregatedAttestation) -> None:

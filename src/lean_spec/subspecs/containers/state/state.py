@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
+from lean_spec.subspecs.observability import get_observer
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import (
@@ -599,6 +601,10 @@ class State(Container):
         3. Process the block header and body
         4. Validate the computed state root
 
+        Publishes its wall-clock duration through the module-level spec
+        observer. The default observer is a no-op, so spec correctness
+        does not depend on observer configuration.
+
         Args:
             block: The block to apply to the state.
             valid_signatures: Whether to validate block signatures. Defaults to True.
@@ -613,6 +619,8 @@ class State(Container):
         if not valid_signatures:
             raise AssertionError("Block signatures must be valid")
 
+        t0 = time.perf_counter()
+
         # First, process any intermediate slots.
         state = self.process_slots(block.slot)
 
@@ -623,6 +631,8 @@ class State(Container):
         computed_state_root = hash_tree_root(new_state)
         if block.state_root != computed_state_root:
             raise AssertionError("Invalid block state root")
+
+        get_observer().state_transition_timed(time.perf_counter() - t0)
 
         return new_state
 
