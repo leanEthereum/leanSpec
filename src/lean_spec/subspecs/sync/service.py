@@ -48,6 +48,7 @@ from lean_spec.subspecs.containers import (
     SignedAttestation,
     SignedBlock,
 )
+from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import SubnetId
 from lean_spec.subspecs.forkchoice.store import Store
@@ -68,7 +69,7 @@ from .states import SyncState
 logger = logging.getLogger(__name__)
 
 
-def _ancestor_set(blocks: dict[Bytes32, Block], head: Bytes32) -> set[Bytes32]:
+def _ancestor_set(blocks: BlockLookup, head: Bytes32) -> set[Bytes32]:
     """Walk parent links from head and collect every reachable block root."""
     seen: set[Bytes32] = set()
     root = head

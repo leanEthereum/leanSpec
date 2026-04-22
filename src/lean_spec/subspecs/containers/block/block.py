@@ -71,6 +71,10 @@ class Block(Container):
     """The block's payload."""
 
 
+BlockLookup = dict[Bytes32, "Block"]
+"""Mapping from block root to Block objects."""
+
+
 class BlockSignatures(Container):
     """Aggregated signature payload for a block."""
 
