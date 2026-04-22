@@ -600,10 +600,6 @@ class State(Container):
         3. Process the block header and body
         4. Validate the computed state root
 
-        Publishes its wall-clock duration through the module-level spec
-        observer. The default observer is a no-op, so spec correctness
-        does not depend on observer configuration.
-
         Args:
             block: The block to apply to the state.
             valid_signatures: Whether to validate block signatures. Defaults to True.
