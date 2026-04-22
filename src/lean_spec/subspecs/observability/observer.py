@@ -35,6 +35,12 @@ class SpecObserver(Protocol):
     def state_transition_timed(self, seconds: float) -> None:
         """Report the wall time of a state transition."""
 
+    def on_block_timed(self, seconds: float) -> None:
+        """Report the wall time of processing a block into the fork-choice store."""
+
+    def on_attestation_timed(self, seconds: float) -> None:
+        """Report the wall time of validating and integrating a gossip attestation."""
+
 
 class NullObserver:
     """
@@ -45,6 +51,12 @@ class NullObserver:
     """
 
     def state_transition_timed(self, seconds: float) -> None:  # noqa: ARG002
+        """Accept and discard."""
+
+    def on_block_timed(self, seconds: float) -> None:  # noqa: ARG002
+        """Accept and discard."""
+
+    def on_attestation_timed(self, seconds: float) -> None:  # noqa: ARG002
         """Accept and discard."""
 
 
@@ -103,3 +115,31 @@ def observe_state_transition() -> Iterator[None]:
     start = time.perf_counter()
     yield
     _observer.state_transition_timed(time.perf_counter() - start)
+
+
+@contextmanager
+def observe_on_block() -> Iterator[None]:
+    """
+    Time the wrapped fork-choice block integration and publish the duration.
+
+    Semantics mirror observe_state_transition: publishes only on clean exit,
+    propagates exceptions without emitting an event.
+    """
+    start = time.perf_counter()
+    yield
+    _observer.on_block_timed(time.perf_counter() - start)
+
+
+@contextmanager
+def observe_on_attestation() -> Iterator[None]:
+    """
+    Time the wrapped gossip-attestation validation and publish the duration.
+
+    Semantics mirror observe_state_transition: publishes only on clean exit,
+    propagates exceptions without emitting an event. The caller remains
+    responsible for classifying the outcome (valid vs invalid counters),
+    because that classification is a caller-side concern.
+    """
+    start = time.perf_counter()
+    yield
+    _observer.on_attestation_timed(time.perf_counter() - start)

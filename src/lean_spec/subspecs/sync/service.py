@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
@@ -75,16 +74,13 @@ def default_block_processor(
     """
     Default block processor.
 
-    Wraps the pure spec entry point with fork-choice telemetry.
-    State transition timing is emitted by State.state_transition itself
-    through the spec observer, wired at node startup.
-    Everything else is derived here by wrapping the call and diffing
-    pre- and post-stores.
+    Wraps the pure spec entry point with caller-side fork-choice telemetry.
+    State transition and block processing timings are emitted by the spec
+    itself through the observer, wired at node startup. Everything else
+    here is derived by diffing pre- and post-stores.
     """
-    t0 = time.perf_counter()
     new_store = store.on_block(block)
 
-    metrics.lean_fork_choice_block_processing_time_seconds.observe(time.perf_counter() - t0)
     metrics.lean_head_slot.set(new_store.blocks[new_store.head].slot)
     metrics.lean_safe_target_slot.set(new_store.blocks[new_store.safe_target].slot)
     metrics.lean_latest_justified_slot.set(new_store.latest_justified.slot)
@@ -539,13 +535,11 @@ class SyncService:
         # The store validates the signature and updates branch weights.
         # Invalid attestations (bad signature, unknown target) are rejected.
         # Validation failures are logged but don't crash the event loop.
-        t0 = time.perf_counter()
         try:
             self.store = self.store.on_gossip_attestation(
                 signed_attestation=attestation,
                 is_aggregator=is_aggregator_role,
             )
-            metrics.lean_attestation_validation_time_seconds.observe(time.perf_counter() - t0)
             metrics.lean_attestations_valid_total.labels(source="gossip").inc()
             logger.info(
                 "Attestation from peer %s slot=%s validator=%s: validation and signature ok",
