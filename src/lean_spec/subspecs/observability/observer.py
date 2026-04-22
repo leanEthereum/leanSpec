@@ -18,6 +18,9 @@ implementations (for example, a Prometheus backend outage).
 
 from __future__ import annotations
 
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Protocol
 
 
@@ -74,3 +77,29 @@ def get_observer() -> SpecObserver:
     When no observer has been registered the returned value is a NullObserver.
     """
     return _observer
+
+
+@contextmanager
+def observe_state_transition() -> Iterator[None]:
+    """
+    Time the wrapped state transition and publish the elapsed duration.
+
+    Spec code wraps the body of a state transition in this block instead
+    of calling a stopwatch primitive directly. On clean exit the elapsed
+    wall time is published through the observer singleton.
+
+    Semantics
+
+    - Publishes state_transition_timed only when the body returns normally.
+    - If the body raises, no event is emitted and the exception propagates.
+
+    Other-language ports
+
+    This helper is Python sugar.
+    The portable contract is the state_transition_timed hook on SpecObserver.
+    Clients in other languages produce the same event through whatever
+    scoped-timer idiom is natural in their language (RAII, defer, etc.).
+    """
+    start = time.perf_counter()
+    yield
+    _observer.state_transition_timed(time.perf_counter() - start)

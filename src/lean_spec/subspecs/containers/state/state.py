@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 
-from lean_spec.subspecs.observability import get_observer
+from lean_spec.subspecs.observability import observe_state_transition
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import (
@@ -619,20 +618,17 @@ class State(Container):
         if not valid_signatures:
             raise AssertionError("Block signatures must be valid")
 
-        t0 = time.perf_counter()
+        with observe_state_transition():
+            # First, process any intermediate slots.
+            state = self.process_slots(block.slot)
 
-        # First, process any intermediate slots.
-        state = self.process_slots(block.slot)
+            # Process the block itself.
+            new_state = state.process_block(block)
 
-        # Process the block itself.
-        new_state = state.process_block(block)
-
-        # Validate that the block's state root matches the computed state
-        computed_state_root = hash_tree_root(new_state)
-        if block.state_root != computed_state_root:
-            raise AssertionError("Invalid block state root")
-
-        get_observer().state_transition_timed(time.perf_counter() - t0)
+            # Validate that the block's state root matches the computed state
+            computed_state_root = hash_tree_root(new_state)
+            if block.state_root != computed_state_root:
+                raise AssertionError("Invalid block state root")
 
         return new_state
 

@@ -15,6 +15,7 @@ from .observer import (
     NullObserver,
     SpecObserver,
     get_observer,
+    observe_state_transition,
     set_observer,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "NullObserver",
     "SpecObserver",
     "get_observer",
+    "observe_state_transition",
     "set_observer",
 ]

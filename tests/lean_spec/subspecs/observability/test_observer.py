@@ -13,6 +13,7 @@ from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.observability import (
     NullObserver,
     get_observer,
+    observe_state_transition,
     set_observer,
 )
 
@@ -93,3 +94,36 @@ class TestPrometheusObserverWithRegistry:
         observer.state_transition_timed(0.75)
 
         assert _get_histogram_sum(metrics.lean_state_transition_time_seconds) == 1.25
+
+
+class _RecordingObserver:
+    """Captures every state_transition_timed call for assertion."""
+
+    def __init__(self) -> None:
+        self.samples: list[float] = []
+
+    def state_transition_timed(self, seconds: float) -> None:
+        self.samples.append(seconds)
+
+
+class TestObserveStateTransition:
+    """observe_state_transition publishes elapsed time on clean exit."""
+
+    def test_publishes_on_clean_exit(self) -> None:
+        observer = _RecordingObserver()
+        set_observer(observer)
+
+        with observe_state_transition():
+            pass
+
+        assert len(observer.samples) == 1
+        assert observer.samples[0] >= 0.0
+
+    def test_does_not_publish_when_body_raises(self) -> None:
+        observer = _RecordingObserver()
+        set_observer(observer)
+
+        with pytest.raises(RuntimeError), observe_state_transition():
+            raise RuntimeError("boom")
+
+        assert observer.samples == []
