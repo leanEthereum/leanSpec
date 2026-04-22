@@ -56,6 +56,7 @@ from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.storage import Database
+from lean_spec.types import ZERO_HASH, Bytes32
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache
@@ -65,6 +66,19 @@ from .peer_manager import PeerManager
 from .states import SyncState
 
 logger = logging.getLogger(__name__)
+
+
+def _ancestor_set(blocks: dict[Bytes32, Block], head: Bytes32) -> set[Bytes32]:
+    """Walk parent links from head and collect every reachable block root."""
+    seen: set[Bytes32] = set()
+    root = head
+    while root in blocks:
+        seen.add(root)
+        parent = blocks[root].parent_root
+        if parent == ZERO_HASH:
+            break
+        root = parent
+    return seen
 
 
 def default_block_processor(
@@ -87,10 +101,10 @@ def default_block_processor(
     metrics.lean_latest_finalized_slot.set(new_store.latest_finalized.slot)
 
     if new_store.head != store.head:
+        new_chain = _ancestor_set(new_store.blocks, new_store.head)
+        depth = sum(1 for r in _ancestor_set(new_store.blocks, store.head) if r not in new_chain)
         metrics.lean_fork_choice_reorgs_total.inc()
-        metrics.lean_fork_choice_reorg_depth.observe(
-            new_store.blocks.reorg_depth(store.head, new_store.head)
-        )
+        metrics.lean_fork_choice_reorg_depth.observe(depth)
 
     return new_store
 

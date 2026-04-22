@@ -14,7 +14,6 @@ from lean_spec.subspecs.containers import (
     SignedAttestation,
     ValidatorIndex,
 )
-from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.forkchoice import AttestationSignatureEntry, Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
@@ -392,7 +391,7 @@ class TestValidatorErrorHandling:
             safe_target=Bytes32(b"nonexistent" + b"\x00" * 21),
             latest_justified=checkpoint,
             latest_finalized=checkpoint,
-            blocks=BlockLookup(),  # No blocks
+            blocks={},  # No blocks
             states={},  # No states
             validator_id=TEST_VALIDATOR_ID,
         )

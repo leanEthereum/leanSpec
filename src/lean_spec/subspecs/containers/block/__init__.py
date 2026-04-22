@@ -4,7 +4,6 @@ from .block import (
     Block,
     BlockBody,
     BlockHeader,
-    BlockLookup,
     BlockSignatures,
     SignedBlock,
 )
@@ -17,7 +16,6 @@ __all__ = [
     "Block",
     "BlockBody",
     "BlockHeader",
-    "BlockLookup",
     "BlockSignatures",
     "SignedBlock",
     "AggregatedAttestations",

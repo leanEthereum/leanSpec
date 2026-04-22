@@ -26,7 +26,6 @@ from lean_spec.subspecs.containers import (
     ValidatorIndex,
 )
 from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
-from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndices
 from lean_spec.subspecs.observability import observe_on_attestation, observe_on_block
@@ -115,7 +114,7 @@ class Store(StrictBaseModel):
     Fork choice will never revert finalized history.
     """
 
-    blocks: BlockLookup = BlockLookup()
+    blocks: dict[Bytes32, Block] = {}
     """
     Mapping from block root to Block objects.
 
@@ -222,7 +221,7 @@ class Store(StrictBaseModel):
             safe_target=anchor_root,
             latest_justified=state.latest_justified.model_copy(update={"root": anchor_root}),
             latest_finalized=state.latest_finalized.model_copy(update={"root": anchor_root}),
-            blocks=BlockLookup({anchor_root: anchor_block}),
+            blocks={anchor_root: anchor_block},
             states={anchor_root: state},
             validator_id=validator_id,
         )

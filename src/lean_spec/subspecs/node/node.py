@@ -26,7 +26,6 @@ from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.chain.service import ChainService
 from lean_spec.subspecs.containers import Block, BlockBody, SignedBlock, State
 from lean_spec.subspecs.containers.attestation import SignedAttestation
-from lean_spec.subspecs.containers.block import BlockLookup
 from lean_spec.subspecs.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.state import Validators
@@ -416,7 +415,7 @@ class Node:
             safe_target=head_root,
             latest_justified=justified,
             latest_finalized=finalized,
-            blocks=BlockLookup({head_root: head_block}),
+            blocks={head_root: head_block},
             states={head_root: head_state},
             validator_id=validator_id,
         )
