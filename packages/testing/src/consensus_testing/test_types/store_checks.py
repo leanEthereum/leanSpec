@@ -8,9 +8,22 @@ from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice.store import Store
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.types import Bytes32, CamelModel, Uint64
+from lean_spec.types import ZERO_HASH, Bytes32, CamelModel, Uint64
 
 from .utils import resolve_block_root
+
+
+def _ancestor_set(blocks: dict[Bytes32, Block], head: Bytes32) -> set[Bytes32]:
+    """Walk parent links from head and collect every reachable block root."""
+    seen: set[Bytes32] = set()
+    root = head
+    while root in blocks:
+        seen.add(root)
+        parent = blocks[root].parent_root
+        if parent == ZERO_HASH:
+            break
+        root = parent
+    return seen
 
 
 class AggregatedAttestationCheck(CamelModel):
@@ -458,8 +471,8 @@ class StoreChecks(CamelModel):
                 raise ValueError(
                     f"Step {step_index}: reorg_depth specified but old_head not provided"
                 )
-            actual_depth = (
-                store.blocks.reorg_depth(old_head, store.head) if store.head != old_head else 0
+            actual_depth = len(
+                _ancestor_set(store.blocks, old_head) - _ancestor_set(store.blocks, store.head)
             )
             _check("reorg_depth", actual_depth, self.reorg_depth)
 

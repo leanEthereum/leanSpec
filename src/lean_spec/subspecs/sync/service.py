@@ -101,8 +101,10 @@ def default_block_processor(
     metrics.lean_latest_finalized_slot.set(new_store.latest_finalized.slot)
 
     if new_store.head != store.head:
-        new_chain = _ancestor_set(new_store.blocks, new_store.head)
-        depth = sum(1 for r in _ancestor_set(new_store.blocks, store.head) if r not in new_chain)
+        depth = len(
+            _ancestor_set(new_store.blocks, store.head)
+            - _ancestor_set(new_store.blocks, new_store.head)
+        )
         metrics.lean_fork_choice_reorgs_total.inc()
         metrics.lean_fork_choice_reorg_depth.observe(depth)
 
