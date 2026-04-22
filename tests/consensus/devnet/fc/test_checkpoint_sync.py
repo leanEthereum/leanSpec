@@ -47,7 +47,8 @@ def test_store_init_from_non_genesis_anchor(
     -----------------------------
 
     - Head points to the anchor block.
-    - Latest justified and latest finalized both reference the anchor root.
+    - Latest justified and latest finalized both reference the anchor root
+      at the anchor's own slot (beacon-chain seeding convention).
     - Store clock is at the anchor slot (no pre-anchor intervals tracked).
     - The anchor block is the only entry in the store's block map.
 
@@ -78,9 +79,12 @@ def test_store_init_from_non_genesis_anchor(
                     time=anchor_time_intervals,
                     head_slot=ANCHOR_SLOT,
                     head_root_label="genesis",
-                    latest_justified_slot=anchor_state.latest_justified.slot,
+                    # Both checkpoints are seeded from the anchor itself:
+                    # slot = anchor.slot, root = anchor_root. The anchor
+                    # state's embedded checkpoint slots are intentionally ignored.
+                    latest_justified_slot=ANCHOR_SLOT,
                     latest_justified_root_label="genesis",
-                    latest_finalized_slot=anchor_state.latest_finalized.slot,
+                    latest_finalized_slot=ANCHOR_SLOT,
                     latest_finalized_root_label="genesis",
                     safe_target_root_label="genesis",
                     labels_in_store=["genesis"],
@@ -135,9 +139,11 @@ def test_extend_chain_from_non_genesis_anchor(
                 checks=StoreChecks(
                     head_slot=Slot(11),
                     head_root_label="block_11",
-                    latest_justified_slot=anchor_state.latest_justified.slot,
+                    # Empty blocks carry no attestations, so neither checkpoint
+                    # advances past the anchor seeding.
+                    latest_justified_slot=ANCHOR_SLOT,
                     latest_justified_root_label="genesis",
-                    latest_finalized_slot=anchor_state.latest_finalized.slot,
+                    latest_finalized_slot=ANCHOR_SLOT,
                     latest_finalized_root_label="genesis",
                     labels_in_store=["genesis", "block_11"],
                 ),
@@ -151,7 +157,9 @@ def test_extend_chain_from_non_genesis_anchor(
                 checks=StoreChecks(
                     head_slot=Slot(12),
                     head_root_label="block_12",
+                    latest_justified_slot=ANCHOR_SLOT,
                     latest_justified_root_label="genesis",
+                    latest_finalized_slot=ANCHOR_SLOT,
                     latest_finalized_root_label="genesis",
                     labels_in_store=["genesis", "block_11", "block_12"],
                 ),
@@ -165,7 +173,9 @@ def test_extend_chain_from_non_genesis_anchor(
                 checks=StoreChecks(
                     head_slot=Slot(13),
                     head_root_label="block_13",
+                    latest_justified_slot=ANCHOR_SLOT,
                     latest_justified_root_label="genesis",
+                    latest_finalized_slot=ANCHOR_SLOT,
                     latest_finalized_root_label="genesis",
                     labels_in_store=["genesis", "block_11", "block_12", "block_13"],
                 ),
@@ -238,9 +248,9 @@ def test_fork_off_non_genesis_anchor(
             # unambiguously heavier.
             #
             # Source is pinned to the anchor block because the store
-            # only knows about blocks at or after the anchor. The
-            # anchor state's internal justified root still points to
-            # pre-anchor history that was discarded on checkpoint sync.
+            # only knows about blocks at or after the anchor, and the
+            # store's latest_justified checkpoint is seeded at
+            # (anchor.slot, anchor_root).
             BlockStep(
                 block=BlockSpec(
                     slot=Slot(12),

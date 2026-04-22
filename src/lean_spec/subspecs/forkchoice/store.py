@@ -210,18 +210,21 @@ class Store(StrictBaseModel):
         # Read the slot at which the anchor block was proposed.
         anchor_slot = anchor_block.slot
 
-        # Initialize checkpoints from this state.
+        # Seed both checkpoints from the anchor block itself.
         #
-        # We explicitly set the root to the anchor block root.
-        # The state internally might have zero-hash checkpoints (if genesis),
-        # but the Store must treat the anchor block as the justified/finalized point.
+        # The store treats the anchor as the new "genesis" for fork choice:
+        # all history below it is pruned. The justified and finalized checkpoints
+        # therefore point at the anchor block with the anchor's own slot,
+        # regardless of what the anchor state's embedded checkpoints say.
+        anchor_checkpoint = Checkpoint(root=anchor_root, slot=anchor_slot)
+
         return cls(
             time=Interval.from_slot(anchor_slot),
             config=state.config,
             head=anchor_root,
             safe_target=anchor_root,
-            latest_justified=state.latest_justified.model_copy(update={"root": anchor_root}),
-            latest_finalized=state.latest_finalized.model_copy(update={"root": anchor_root}),
+            latest_justified=anchor_checkpoint,
+            latest_finalized=anchor_checkpoint,
             blocks={anchor_root: anchor_block},
             states={anchor_root: state},
             validator_id=validator_id,
@@ -515,8 +518,8 @@ class Store(StrictBaseModel):
             # Keep the checkpoint with the higher slot.
             # On slot ties, prefer the store's own checkpoint.
             #
-            # The store's checkpoint is pinned to the anchor block root at init.
-            # The anchor state may hold a pre-anchor root.
+            # The store's checkpoint is pinned to the anchor at init and only
+            # moves forward via real justification/finalization events.
             # On ties the store's view is authoritative.
             latest_justified = max(
                 self.latest_justified, post_state.latest_justified, key=lambda c: c.slot
