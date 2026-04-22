@@ -13,7 +13,7 @@ from __future__ import annotations
 from lean_spec.subspecs.metrics.registry import registry as metrics
 
 
-class PrometheusSpecObserver:
+class PrometheusObserver:
     """Forward SpecObserver callbacks to Prometheus metrics."""
 
     def state_transition_timed(self, seconds: float) -> None:

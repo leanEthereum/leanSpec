@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from prometheus_client import CollectorRegistry, Histogram
 
-from lean_spec.subspecs.metrics import PrometheusSpecObserver
+from lean_spec.subspecs.metrics import PrometheusObserver
 from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.observability import (
     NullObserver,
@@ -97,13 +97,13 @@ class TestSetObserver:
     """set_observer replaces the module singleton."""
 
     def test_replaces_singleton(self) -> None:
-        observer = PrometheusSpecObserver()
+        observer = PrometheusObserver()
         set_observer(observer)
         assert get_observer() is observer
 
 
 class TestPrometheusObserverUninitialized:
-    """PrometheusSpecObserver is a no-op when metrics have not been initialized."""
+    """PrometheusObserver is a no-op when metrics have not been initialized."""
 
     @pytest.mark.parametrize(("method_name", "_metric_attr", "_cm"), SPEC_EVENTS)
     def test_no_error_when_metrics_not_initialized(
@@ -112,7 +112,7 @@ class TestPrometheusObserverUninitialized:
         _metric_attr: str,
         _cm: Callable[[], AbstractContextManager[None]],
     ) -> None:
-        getattr(PrometheusSpecObserver(), method_name)(0.1)
+        getattr(PrometheusObserver(), method_name)(0.1)
 
 
 class TestPrometheusObserverWithRegistry:
@@ -128,7 +128,7 @@ class TestPrometheusObserverWithRegistry:
     ) -> None:
         _init_metrics(fresh_registry)
 
-        getattr(PrometheusSpecObserver(), method_name)(0.5)
+        getattr(PrometheusObserver(), method_name)(0.5)
 
         assert _get_histogram_sum(getattr(metrics, metric_attr)) == 0.5
 
@@ -142,7 +142,7 @@ class TestPrometheusObserverWithRegistry:
     ) -> None:
         _init_metrics(fresh_registry)
 
-        observer = PrometheusSpecObserver()
+        observer = PrometheusObserver()
         getattr(observer, method_name)(0.5)
         getattr(observer, method_name)(0.75)
 

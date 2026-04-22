@@ -6,10 +6,10 @@ https://github.com/leanEthereum/leanMetrics/blob/main/metrics.md
 """
 
 from .registry import get_metrics_output, registry
-from .spec_observer import PrometheusSpecObserver
+from .spec_observer import PrometheusObserver
 
 __all__ = [
-    "PrometheusSpecObserver",
+    "PrometheusObserver",
     "get_metrics_output",
     "registry",
 ]
