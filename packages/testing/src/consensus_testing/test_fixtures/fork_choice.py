@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Self
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.containers.block import (
@@ -88,6 +88,30 @@ class ForkChoiceTest(BaseConsensusFixture):
     Each step can validate Store state via checks.
     """
 
+    anchor_valid: bool = Field(default=True, exclude=True)
+    """
+    Whether Store.from_anchor is expected to succeed.
+
+    Default True covers every normal test.
+    Set False to assert that store initialization itself must fail,
+    e.g. when the anchor block and state are inconsistent.
+
+    Excluded from JSON output: configures the test runner, not the test
+    vector that clients consume.
+    """
+
+    expected_anchor_error: str | None = Field(default=None, exclude=True)
+    """
+    Substring required in the raised exception when anchor_valid is False.
+
+    Ignored when anchor_valid is True.
+    Used to pin the failure to a specific precondition rather than any crash.
+    When None, any AssertionError from Store.from_anchor is accepted.
+
+    Excluded from JSON output: configures the test runner, not the test
+    vector that clients consume.
+    """
+
     max_slot: Slot | None = None
     """
     Maximum slot for XMSS key validity.
@@ -164,6 +188,36 @@ class ForkChoiceTest(BaseConsensusFixture):
         assert self.anchor_state is not None, "anchor state must be set before making fixture"
         assert self.anchor_block is not None, "anchor block must be set before making fixture"
         assert self.max_slot is not None, "max slot must be set before making fixture"
+
+        # Expected anchor-init failure path.
+        #
+        # When anchor_valid is False, the test asserts that Store.from_anchor
+        # rejects the given (state, block) pair. The pubkey sync that normally
+        # fixes up the anchor block's state root is skipped, since that would
+        # mask the very inconsistency under test.
+        if not self.anchor_valid:
+            assert self.steps == [], (
+                "steps must be empty when anchor_valid is False: "
+                "Store.from_anchor is expected to fail before any step can run"
+            )
+            try:
+                Store.from_anchor(
+                    self.anchor_state,
+                    self.anchor_block,
+                    validator_id=ValidatorIndex(0),
+                )
+            except AssertionError as e:
+                if self.expected_anchor_error is not None and self.expected_anchor_error not in str(
+                    e
+                ):
+                    raise AssertionError(
+                        "Store.from_anchor failed with wrong error.\n"
+                        f"  Expected error containing: {self.expected_anchor_error!r}\n"
+                        f"  Actual error: {e!r}"
+                    ) from e
+                return self
+
+            raise AssertionError("Store.from_anchor was expected to fail but succeeded")
 
         # Key manager setup
         #

@@ -15,7 +15,7 @@ from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT, SECONDS_PER_SLOT
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Uint64
+from lean_spec.types import Bytes32, Uint64
 
 pytestmark = pytest.mark.valid_until("Devnet")
 
@@ -322,4 +322,52 @@ def test_non_genesis_anchor_is_internally_consistent(
                 checks=StoreChecks(head_root_label="genesis"),
             ),
         ],
+    )
+
+
+def test_store_from_anchor_rejects_mismatched_state_root(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """Store.from_anchor aborts when the anchor block's state_root disagrees
+    with the hash of the anchor state.
+
+    Scenario
+    --------
+    Build a valid mid-chain anchor, then replace the anchor block's state_root
+    with an unrelated value. The block and state no longer agree on the post
+    state, so the store must refuse the pair.
+
+    Key Assertions
+    --------------
+
+    - The fixture is marked anchor_valid=False and carries no steps: init
+      aborts before any step could run.
+    - Store.from_anchor raises an AssertionError whose message contains the
+      exact precondition text from the spec, pinning the failure to the
+      state-root check rather than any later crash.
+    - No Store is returned to the caller; initialization fails cleanly.
+
+    Why This Matters
+    ----------------
+    A block and state that disagree on the state root are structurally
+    inconsistent. Seeding a store from that pair would corrupt every future
+    lookup that resolves a block root to its post state. Clients must refuse
+    the anchor at init time, not silently repair or ignore it.
+    """
+    anchor_state, anchor_block = build_anchor(
+        num_validators=NUM_VALIDATORS, anchor_slot=ANCHOR_SLOT
+    )
+
+    # Sanity: the helper-built pair is consistent to begin with. Makes the
+    # mismatch below the only difference between this test and the happy path.
+    assert anchor_block.state_root == hash_tree_root(anchor_state)
+
+    bad_anchor_block = anchor_block.model_copy(update={"state_root": Bytes32(b"\xff" * 32)})
+
+    fork_choice_test(
+        anchor_state=anchor_state,
+        anchor_block=bad_anchor_block,
+        anchor_valid=False,
+        expected_anchor_error="Anchor block state root must match anchor state hash",
+        steps=[],
     )
