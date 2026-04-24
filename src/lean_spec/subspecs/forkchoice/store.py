@@ -815,18 +815,23 @@ class Store(StrictBaseModel):
         - Interval 3: Safe target update (HERE)
         - Interval 4: New attestations migrate to "known" pool
 
-        Because interval 4 has not yet run, attestations live in two pools:
+        Only the "new" pool is considered. This is a deliberate design choice
+        rooted in the ordering above: migration into "known" happens at
+        interval 4, strictly after safe-target computation. 3sf-mini is free
+        to run the migration before this step but does not, precisely so
+        that safe target sees only freshly received votes from the current
+        slot and ignores what was carried over from earlier slots.
 
-        - "new": freshly received from gossipsub aggregation this slot
-        - "known": from block attestations and previously accepted gossip
-
-        Both pools must be merged to get the full attestation picture.
-        Using only one pool undercounts support. See inline comments for
-        concrete scenarios where this matters.
-
-        Note: the Ream reference implementation uses only the "new" pool.
-        Our merge approach is more conservative. It ensures the safe target
-        reflects every attestation the node knows about.
+        That ordering encodes a specific semantic: safe target is an
+        *availability* signal, not a durable-knowledge signal. A block is
+        "safe" to attest to when a 2/3 supermajority of validators
+        currently online — as seen by this node right now — vote for a
+        descendant of it. Votes aggregated into "known" from earlier
+        slots (block-included attestations, previously migrated gossip,
+        self-attestations stored locally) reflect historical knowledge,
+        not current online behaviour. Counting them would let a node keep
+        advancing its safe target on stale evidence even when live
+        participation has collapsed.
 
         Returns:
             New Store with updated safe_target.
@@ -845,44 +850,16 @@ class Store(StrictBaseModel):
         # For example, 100 validators => threshold is 67, not 66.
         min_target_score = -(-num_validators * 2 // 3)
 
-        # Merge both attestation pools into a single unified view.
+        # Convert the "new" aggregated payloads into per-validator votes.
         #
-        # Why merge? At interval 3, the migration step (interval 4) has not
-        # run yet. Attestations can enter the "known" pool through paths that
-        # bypass gossipsub entirely:
-        #
-        # 1. Proposer's own attestation: the block proposer bundles their
-        #    attestation directly in the block body. When the block is
-        #    processed, this attestation lands in "known" immediately.
-        #    It never appears in "new" because it was never gossipped.
-        #
-        # 2. Self-attestation: a node's own gossip attestation does not
-        #    loop back through gossipsub to itself. The node records it
-        #    locally in "known" without going through the "new" pipeline.
-        #
-        # Without this merge, those attestations would be invisible to the
-        # safe target calculation, causing it to undercount support.
-        #
-        # The technique: start with a shallow copy of "known", then overlay
-        # every entry from "new" on top. When both pools contain proofs for
-        # the same attestation data, merge the proof sets.
-        all_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {
-            attestation_data: set(proofs)
-            for attestation_data, proofs in self.latest_known_aggregated_payloads.items()
-        }
-        for attestation_data, proofs in self.latest_new_aggregated_payloads.items():
-            if attestation_data in all_payloads:
-                # Both pools have proofs for this attestation. Combine them.
-                all_payloads[attestation_data].update(proofs)
-            else:
-                # Only "new" has proofs for this attestation. Add them directly.
-                all_payloads[attestation_data] = set(proofs)
-
-        # Convert the merged aggregated payloads into per-validator votes.
-        #
-        # Each proof encodes which validators participated.
-        # This step unpacks those bitfields into a flat mapping of validator -> vote.
-        attestations = self.extract_attestations_from_aggregated_payloads(all_payloads)
+        # Each proof encodes which validators participated. This step
+        # unpacks those bitfields into a flat mapping of validator -> vote.
+        # We deliberately do not merge in "known": see the docstring for
+        # the availability rationale tied to the interval-3/interval-4
+        # ordering.
+        attestations = self.extract_attestations_from_aggregated_payloads(
+            self.latest_new_aggregated_payloads,
+        )
 
         # Run LMD GHOST with the supermajority threshold.
         #

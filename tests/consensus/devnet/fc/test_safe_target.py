@@ -417,10 +417,10 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
     )
 
 
-def test_safe_target_uses_merged_pools_at_interval_3(
+def test_safe_target_ignores_known_pool_at_interval_3(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
-    """Safe target merges both attestation pools before computing weight.
+    """Safe target only uses the "new" pool at interval 3.
 
     6 validators, threshold = 4.
 
@@ -429,18 +429,17 @@ def test_safe_target_uses_merged_pools_at_interval_3(
     - "known" pool (from block body): validators 0, 1 -> block_2
     - "new" pool (from gossip):       validators 2, 3 -> block_2
 
-    Neither pool alone meets threshold (2 < 4).
-    Merged: 4 >= 4.
+    Safe target is an availability signal tied to the current slot.
+    Migration into "known" runs at interval 4, strictly after safe-target
+    computation, so votes already living in "known" at interval 3 are
+    historical and are intentionally excluded.
 
     Walk (min_score=4):
 
-        justified -> block_1 (4) -> block_2 (4) -> block_3 (0, stop)
-        safe_target = block_2
+        justified -> block_1 (weight 2 < 4, pruned) -> stop
 
-    Without the merge, the walk would stop at genesis.
-
-    Attestations for block_2 appear in block_3's body because
-    validators can only attest to blocks they have already seen.
+    Result: safe_target stays at genesis even though the merged view
+    would have reached block_2.
     """
     fork_choice_test(
         anchor_state=generate_pre_state(num_validators=6),
@@ -520,15 +519,14 @@ def test_safe_target_uses_merged_pools_at_interval_3(
                     ],
                 ),
             ),
-            # Interval 3: merge yields weight 4 at block_1 and block_2.
-            # Walk reaches block_2, stops before block_3.
+            # Interval 3: only the "new" pool is considered.
+            # Weight at block_1 = 2 < 4, so the walk cannot leave genesis.
             TickStep(
                 time=15,
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     head_root_label="block_3",
-                    safe_target_slot=Slot(2),
-                    safe_target_root_label="block_2",
+                    safe_target_slot=Slot(0),
                 ),
             ),
         ],
