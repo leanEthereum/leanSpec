@@ -11,10 +11,11 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Protocol
 
-from lean_spec.subspecs.containers import Block, Checkpoint, State
-from lean_spec.subspecs.containers.attestation import AttestationData
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.forks import State
+from lean_spec.forks.lstar.containers import Block, Checkpoint
+from lean_spec.forks.lstar.containers.attestation import AttestationData
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes32, Uint64
 
 

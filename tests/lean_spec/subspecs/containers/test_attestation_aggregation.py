@@ -2,14 +2,14 @@
 
 import pytest
 
-from lean_spec.subspecs.containers.attestation import (
+from lean_spec.forks.lstar.containers.attestation import (
     AggregatedAttestation,
     AggregationBits,
     AttestationData,
 )
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.types import Boolean, Bytes32
 
 

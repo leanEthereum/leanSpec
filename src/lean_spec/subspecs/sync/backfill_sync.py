@@ -41,7 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from lean_spec.subspecs.containers import SignedBlock
+from lean_spec.forks.lstar.containers import SignedBlock
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.types import Bytes32
 

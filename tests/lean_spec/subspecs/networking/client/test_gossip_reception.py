@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import pytest
 
+from lean_spec.forks.lstar.containers import SignedBlock
+from lean_spec.forks.lstar.containers.attestation import SignedAttestation
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.snappy import compress, decompress
-from lean_spec.subspecs.containers import SignedBlock
-from lean_spec.subspecs.containers.attestation import SignedAttestation
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking.client.event_source import (
     GossipHandler,
     GossipMessageError,
@@ -91,14 +91,14 @@ class MockStream:
         pass
 
 
-def make_block_topic(fork_digest: str = "0x00000000") -> str:
+def make_block_topic(network_name: str = "0x00000000") -> str:
     """Create a valid block topic string."""
-    return f"/{TOPIC_PREFIX}/{fork_digest}/block/{ENCODING_POSTFIX}"
+    return f"/{TOPIC_PREFIX}/{network_name}/block/{ENCODING_POSTFIX}"
 
 
-def make_attestation_topic(fork_digest: str = "0x00000000", subnet_id: int = 0) -> str:
+def make_attestation_topic(network_name: str = "0x00000000", subnet_id: int = 0) -> str:
     """Create a valid attestation subnet topic string."""
-    return f"/{TOPIC_PREFIX}/{fork_digest}/attestation_{subnet_id}/{ENCODING_POSTFIX}"
+    return f"/{TOPIC_PREFIX}/{network_name}/attestation_{subnet_id}/{ENCODING_POSTFIX}"
 
 
 def make_test_signed_block() -> SignedBlock:
@@ -163,57 +163,57 @@ class TestGossipHandlerGetTopic:
 
     def test_valid_block_topic(self) -> None:
         """Parses valid block topic string."""
-        handler = GossipHandler(fork_digest="0x12345678")
+        handler = GossipHandler(network_name="0x12345678")
         topic_str = "/leanconsensus/0x12345678/block/ssz_snappy"
 
         topic = handler.get_topic(topic_str)
 
         assert isinstance(topic, GossipTopic)
         assert topic.kind == TopicKind.BLOCK
-        assert topic.fork_digest == "0x12345678"
+        assert topic.network_name == "0x12345678"
 
     def test_valid_attestation_subnet_topic(self) -> None:
         """Parses valid attestation subnet topic string."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         topic_str = "/leanconsensus/0x00000000/attestation_0/ssz_snappy"
 
         topic = handler.get_topic(topic_str)
 
         assert isinstance(topic, GossipTopic)
         assert topic.kind == TopicKind.ATTESTATION_SUBNET
-        assert topic.fork_digest == "0x00000000"
+        assert topic.network_name == "0x00000000"
 
     def test_invalid_topic_format_missing_parts(self) -> None:
         """Raises GossipMessageError for topic with missing parts."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
             handler.get_topic("/invalid/topic")
 
     def test_invalid_topic_format_wrong_prefix(self) -> None:
         """Raises GossipMessageError for wrong network prefix."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
             handler.get_topic("/wrongprefix/0x00000000/block/ssz_snappy")
 
     def test_invalid_topic_format_wrong_encoding(self) -> None:
         """Raises GossipMessageError for wrong encoding suffix."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
             handler.get_topic("/leanconsensus/0x00000000/block/ssz")
 
     def test_invalid_topic_format_unknown_topic_name(self) -> None:
         """Raises GossipMessageError for unknown topic name."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
             handler.get_topic("/leanconsensus/0x00000000/unknown/ssz_snappy")
 
     def test_empty_topic_string(self) -> None:
         """Raises GossipMessageError for empty topic string."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
             handler.get_topic("")
@@ -224,7 +224,7 @@ class TestGossipHandlerDecodeMessage:
 
     def test_decode_valid_block_message(self) -> None:
         """Decodes valid block message correctly."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         block = make_test_signed_block()
         ssz_bytes = block.encode_bytes()
         compressed = compress(ssz_bytes)
@@ -236,7 +236,7 @@ class TestGossipHandlerDecodeMessage:
 
     def test_decode_valid_attestation_message(self) -> None:
         """Decodes valid attestation message correctly."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         attestation = make_test_signed_attestation()
         ssz_bytes = attestation.encode_bytes()
         compressed = compress(ssz_bytes)
@@ -248,7 +248,7 @@ class TestGossipHandlerDecodeMessage:
 
     def test_decode_invalid_topic_format(self) -> None:
         """Raises GossipMessageError for invalid topic format."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         compressed = compress(b"\x00" * 32)
 
         with pytest.raises(GossipMessageError, match="Invalid topic"):
@@ -256,7 +256,7 @@ class TestGossipHandlerDecodeMessage:
 
     def test_decode_invalid_snappy_compression(self) -> None:
         """Raises GossipMessageError for invalid Snappy data."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         topic_str = make_block_topic()
         # Invalid snappy: claims uncompressed length of 1000 bytes but has truncated data
         # Snappy format: [uncompressed_length varint][compressed_data]
@@ -267,7 +267,7 @@ class TestGossipHandlerDecodeMessage:
 
     def test_decode_invalid_ssz_encoding(self) -> None:
         """Raises GossipMessageError for invalid SSZ data."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         topic_str = make_block_topic()
         # Valid Snappy compression wrapping garbage SSZ
         compressed = compress(b"\xff\xff\xff\xff")
@@ -277,7 +277,7 @@ class TestGossipHandlerDecodeMessage:
 
     def test_decode_empty_snappy_data(self) -> None:
         """Raises GossipMessageError for empty compressed data."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         topic_str = make_block_topic()
 
         with pytest.raises(GossipMessageError, match="Snappy decompression failed"):
@@ -285,7 +285,7 @@ class TestGossipHandlerDecodeMessage:
 
     def test_decode_truncated_ssz_data(self) -> None:
         """Raises GossipMessageError for truncated SSZ data."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         block = make_test_signed_block()
         ssz_bytes = block.encode_bytes()
         truncated = ssz_bytes[:10]  # Truncate SSZ data
@@ -435,7 +435,7 @@ class TestGossipReceptionIntegration:
 
     async def test_full_block_reception_flow(self) -> None:
         """Tests complete flow: stream -> parse -> decompress -> decode."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         original_block = make_test_signed_block()
         ssz_bytes = original_block.encode_bytes()
         topic_str = make_block_topic()
@@ -454,7 +454,7 @@ class TestGossipReceptionIntegration:
 
     async def test_full_attestation_reception_flow(self) -> None:
         """Tests complete flow for attestation messages."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         original_attestation = make_test_signed_attestation()
         ssz_bytes = original_attestation.encode_bytes()
         topic_str = make_attestation_topic()
@@ -476,14 +476,14 @@ class TestGossipReceptionIntegration:
         assert decoded.encode_bytes() == original_attestation.encode_bytes()
 
     def test_handler_fork_digest_stored(self) -> None:
-        """Handler stores fork digest for topic validation."""
+        """Handler stores network name for topic validation."""
         digest = "0xaabbccdd"
-        handler = GossipHandler(fork_digest=digest)
-        assert handler.fork_digest == digest
+        handler = GossipHandler(network_name=digest)
+        assert handler.network_name == digest
 
     async def test_roundtrip_preserves_data_integrity(self) -> None:
         """Data integrity preserved through encode-compress-stream-decompress-decode."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         original = make_test_signed_block()
         original_bytes = original.encode_bytes()
 
@@ -508,12 +508,12 @@ class TestGossipReceptionEdgeCases:
     """Edge case tests for gossip reception."""
 
     def test_handler_with_different_fork_digests(self) -> None:
-        """Handler works with various fork digest formats."""
+        """Handler works with various network name formats."""
         for digest in ["0x00000000", "0xffffffff", "0x12345678", "0xabcdef01"]:
-            handler = GossipHandler(fork_digest=digest)
+            handler = GossipHandler(network_name=digest)
             topic_str = f"/{TOPIC_PREFIX}/{digest}/block/{ENCODING_POSTFIX}"
             topic = handler.get_topic(topic_str)
-            assert topic.fork_digest == digest
+            assert topic.network_name == digest
 
     async def test_zero_length_compressed_data(self) -> None:
         """Handles message with zero-length data field."""
@@ -530,7 +530,7 @@ class TestGossipReceptionEdgeCases:
 
     def test_decode_corrupted_snappy_data(self) -> None:
         """Detects corruption in Snappy compressed data."""
-        handler = GossipHandler(fork_digest="0x00000000")
+        handler = GossipHandler(network_name="0x00000000")
         topic_str = make_block_topic()
 
         # Create truncated snappy data that claims large uncompressed length

@@ -1,15 +1,15 @@
-from lean_spec.subspecs.containers.block import (
+from lean_spec.forks.lstar.containers.block import (
     Block,
     BlockBody,
     BlockSignatures,
     SignedBlock,
 )
-from lean_spec.subspecs.containers.block.types import (
+from lean_spec.forks.lstar.containers.block.types import (
     AggregatedAttestations,
     AttestationSignatures,
 )
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.types import Bytes32
 from tests.lean_spec.helpers.builders import make_mock_signature
 

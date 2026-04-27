@@ -8,7 +8,7 @@ and k-bucket assignment.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 # Official devp2p spec node IDs.
 NODE_A = "0xaaaa8419e9f49d0083561b48287df592939a8d19947d8c0ef88f2a4856a69fbb"

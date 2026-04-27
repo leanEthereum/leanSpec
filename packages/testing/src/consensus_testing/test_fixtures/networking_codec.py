@@ -2,8 +2,8 @@
 
 from typing import Any, ClassVar
 
+from lean_spec.forks.lstar.containers.validator import SubnetId
 from lean_spec.snappy import compress, decompress, frame_compress, frame_decompress
-from lean_spec.subspecs.containers.validator import SubnetId
 from lean_spec.subspecs.networking.discovery.codec import decode_message, encode_message
 from lean_spec.subspecs.networking.discovery.messages import (
     Distance,
@@ -224,16 +224,16 @@ class NetworkingCodecTest(BaseConsensusFixture):
         """Build a topic string from components, parse it back, assert roundtrip.
 
         When the input carries `expectedForkDigest`, also run validate_fork
-        against the parsed topic and report whether the fork digest matched.
+        against the parsed topic and report whether the network name matched.
         This pins the accept / reject branches clients must agree on when
         deciding which mesh to admit a topic into.
         """
         kind = TopicKind(self.input["kind"])
-        fork_digest = self.input["forkDigest"]
+        network_name = self.input["forkDigest"]
         raw_subnet = self.input.get("subnetId")
         subnet_id = SubnetId(raw_subnet) if raw_subnet is not None else None
 
-        topic = GossipTopic(kind=kind, fork_digest=fork_digest, subnet_id=subnet_id)
+        topic = GossipTopic(kind=kind, network_name=network_name, subnet_id=subnet_id)
         topic_string = topic.to_topic_id()
 
         # Parse the string back to verify it reconstructs the same topic.
@@ -242,10 +242,10 @@ class NetworkingCodecTest(BaseConsensusFixture):
 
         output: dict[str, Any] = {"topicString": topic_string}
 
-        expected_fork_digest = self.input.get("expectedForkDigest")
-        if expected_fork_digest is not None:
+        expected_network_name = self.input.get("expectedForkDigest")
+        if expected_network_name is not None:
             try:
-                parsed.validate_fork(expected_fork_digest)
+                parsed.validate_fork(expected_network_name)
                 output["forkValid"] = True
             except ValueError:
                 output["forkValid"] = False

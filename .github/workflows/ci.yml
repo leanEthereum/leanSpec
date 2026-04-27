@@ -109,7 +109,7 @@ jobs:
         run: uv sync --no-progress
 
       - name: Fill test fixtures
-        run: uv run fill --fork=Devnet --clean -n auto
+        run: uv run fill --fork=Lstar --clean -n auto
 
   interop-tests:
     name: Interop tests - Multi-node consensus

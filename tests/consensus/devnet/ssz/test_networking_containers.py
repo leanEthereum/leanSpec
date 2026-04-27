@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import SSZTestFiller
 
-from lean_spec.subspecs.containers import Checkpoint, Slot
+from lean_spec.forks.lstar.containers import Checkpoint, Slot
 from lean_spec.subspecs.networking.reqresp.message import (
     BlocksByRootRequest,
     RequestedBlockRoots,
@@ -11,7 +11,7 @@ from lean_spec.subspecs.networking.reqresp.message import (
 )
 from lean_spec.types import Bytes32
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 # --- Status ---

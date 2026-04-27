@@ -21,7 +21,7 @@ class FixtureCollector:
 
         Args:
             output_dir: Root directory for generated fixtures.
-            fork: The fork name (e.g., "Devnet", "Shanghai").
+            fork: The fork name (e.g., "Lstar", "Shanghai").
             layer: The Ethereum layer (e.g., "consensus", "execution").
         """
         self.output_dir = output_dir

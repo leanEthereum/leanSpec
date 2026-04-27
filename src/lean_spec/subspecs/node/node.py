@@ -19,18 +19,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from lean_spec.forks import ForkProtocol, Store
+from lean_spec.forks.lstar.containers import Block, BlockBody, SignedBlock
+from lean_spec.forks.lstar.containers.attestation import SignedAttestation
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state import Validators
+from lean_spec.forks.lstar.containers.validator import SubnetId, ValidatorIndex
 from lean_spec.subspecs.api import AggregatorController, ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain import SlotClock
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.chain.service import ChainService
-from lean_spec.subspecs.containers import Block, BlockBody, SignedBlock, State
-from lean_spec.subspecs.containers.attestation import SignedAttestation
-from lean_spec.subspecs.containers.block.types import AggregatedAttestations
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state import Validators
-from lean_spec.subspecs.containers.validator import SubnetId, ValidatorIndex
-from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.metrics import registry as metrics
 from lean_spec.subspecs.networking import NetworkService
 from lean_spec.subspecs.networking.client.event_source import EventSource
@@ -69,6 +69,9 @@ class NodeConfig:
     network: NetworkRequester
     """Interface for requesting blocks from peers."""
 
+    fork: ForkProtocol
+    """Fork specification for state/store construction."""
+
     time_fn: Callable[[], float] = field(default=time.time)
     """Time source (injectable for deterministic testing)."""
 
@@ -96,9 +99,9 @@ class NodeConfig:
     If None, the node runs in passive mode (sync only).
     """
 
-    fork_digest: str = field(default="0x00000000")
+    network_name: str = field(default="0x00000000")
     """
-    Fork digest for gossip topics.
+    Network name for gossip topics.
 
     For devnet testing with ream, use "devnet0".
     """
@@ -192,7 +195,7 @@ class Node:
         # The database is optional - nodes can run without persistence.
         database: Database | None = None
         if config.database_path is not None:
-            database = SQLiteDatabase(config.database_path)
+            database = SQLiteDatabase(config.database_path, config.fork.state_class)
 
         #
         # If database contains valid state, resume from there.
@@ -200,15 +203,16 @@ class Node:
         validator_id = (
             config.validator_registry.primary_index() if config.validator_registry else None
         )
+        fork = config.fork
         store = cls._try_load_store_from_database(
-            database, validator_id, config.genesis_time, config.time_fn
+            database, validator_id, config.genesis_time, config.time_fn, fork
         )
 
         if store is None:
             # Generate genesis state from validators.
             #
             # Includes initial checkpoints, validator registry, and config.
-            state = State.generate_genesis(config.genesis_time, config.validators)
+            state = fork.generate_genesis(config.genesis_time, config.validators)
 
             # Create genesis block.
             #
@@ -225,7 +229,7 @@ class Node:
             # Initialize forkchoice store.
             #
             # Genesis block is both justified and finalized.
-            store = Store.from_anchor(state, block, validator_id)
+            store = fork.create_store(state, block, validator_id)
 
             # Persist genesis to database if available.
             #
@@ -268,7 +272,7 @@ class Node:
         network_service = NetworkService(
             sync_service=sync_service,
             event_source=config.event_source,
-            fork_digest=config.fork_digest,
+            network_name=config.network_name,
             is_aggregator=config.is_aggregator,
             aggregate_subnet_ids=config.aggregate_subnet_ids,
         )
@@ -344,6 +348,7 @@ class Node:
         validator_id: ValidatorIndex | None,
         genesis_time: Uint64 | None = None,
         time_fn: Callable[[], float] = time.time,
+        fork: ForkProtocol | None = None,
     ) -> Store | None:
         """
         Try to load forkchoice store from existing database state.
@@ -361,6 +366,7 @@ class Node:
             validator_id: Validator index for the store instance.
             genesis_time: Unix timestamp of genesis (slot 0).
             time_fn: Wall-clock time source.
+            fork: Fork specification for store construction.
 
         Returns:
             Loaded Store or None if no valid state exists.
@@ -408,7 +414,13 @@ class Node:
         #
         # The store starts with just the head block and state.
         # Additional blocks can be loaded on demand or via sync.
-        return Store(
+        if fork is not None:
+            store_cls = fork.store_class
+        else:
+            from lean_spec.forks.lstar.store import Store
+
+            store_cls = Store
+        return store_cls(
             time=Interval(store_time),
             config=head_state.config,
             head=head_root,

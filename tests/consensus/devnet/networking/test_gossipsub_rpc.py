@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 TOPIC_A = "/leanconsensus/0x12345678/block/ssz_snappy"
 TOPIC_B = "/leanconsensus/0x12345678/aggregation/ssz_snappy"

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from unittest.mock import patch
 
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.chain import SlotClock
 from lean_spec.subspecs.chain.config import MILLISECONDS_PER_INTERVAL
 from lean_spec.subspecs.chain.service import ChainService
-from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.types import ZERO_HASH, Bytes32, Uint64
 
 

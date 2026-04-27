@@ -59,8 +59,11 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.containers import SignedBlock
-from lean_spec.subspecs.containers.attestation import SignedAggregatedAttestation, SignedAttestation
+from lean_spec.forks.lstar.containers import SignedBlock
+from lean_spec.forks.lstar.containers.attestation import (
+    SignedAggregatedAttestation,
+    SignedAttestation,
+)
 from lean_spec.subspecs.networking.config import (
     GOSSIPSUB_DEFAULT_PROTOCOL_ID,
     GOSSIPSUB_PROTOCOL_ID_V12,
@@ -197,8 +200,8 @@ class LiveNetworkEventSource:
     Contains our finalized checkpoint and head. Exchanged with peers on connect.
     """
 
-    _fork_digest: str = "0x00000000"
-    """Fork digest for gossip topics.
+    _network_name: str = "0x00000000"
+    """Network name for gossip topics.
 
     4-byte identifier derived from genesis validators root and fork version.
     Used to validate incoming messages belong to the same fork.
@@ -213,7 +216,7 @@ class LiveNetworkEventSource:
     _gossip_handler: GossipHandler = field(init=False)
     """Handler for decoding incoming gossip messages.
 
-    Initialized with the current fork digest.
+    Initialized with the current network name.
     """
 
     _gossip_tasks: set[asyncio.Task[None]] = field(default_factory=set)
@@ -246,7 +249,7 @@ class LiveNetworkEventSource:
 
     def __post_init__(self) -> None:
         """Wire up internal handlers from configuration."""
-        self._gossip_handler = GossipHandler(fork_digest=self._fork_digest)
+        self._gossip_handler = GossipHandler(network_name=self._network_name)
         self._reqresp_handler = RequestHandler()
         self._reqresp_server = ReqRespServer(handler=self._reqresp_handler)
         self._gossipsub_behavior = GossipsubBehavior(params=GossipsubParameters())
@@ -288,15 +291,15 @@ class LiveNetworkEventSource:
         self._our_status = status
         self._reqresp_handler.our_status = status
 
-    def set_fork_digest(self, fork_digest: str) -> None:
+    def set_network_name(self, network_name: str) -> None:
         """
-        Set fork digest for gossip topics.
+        Set network name for gossip topics.
 
         Args:
-            fork_digest: 4-byte fork identifier as hex string.
+            network_name: 4-byte fork identifier as hex string.
         """
-        self._fork_digest = fork_digest
-        self._gossip_handler = GossipHandler(fork_digest=fork_digest)
+        self._network_name = network_name
+        self._gossip_handler = GossipHandler(network_name=network_name)
 
     def set_block_lookup(self, lookup: AsyncBlockLookup) -> None:
         """
@@ -700,7 +703,7 @@ class LiveNetworkEventSource:
             block: Block received from gossip.
             peer_id: Peer that sent it.
         """
-        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest=self._fork_digest)
+        topic = GossipTopic(kind=TopicKind.BLOCK, network_name=self._network_name)
         await self._events.put(GossipBlockEvent(block=block, peer_id=peer_id, topic=topic))
 
     async def _emit_gossip_attestation(
@@ -715,7 +718,7 @@ class LiveNetworkEventSource:
             attestation: Attestation received from gossip.
             peer_id: Peer that sent it.
         """
-        topic = GossipTopic(kind=TopicKind.ATTESTATION_SUBNET, fork_digest=self._fork_digest)
+        topic = GossipTopic(kind=TopicKind.ATTESTATION_SUBNET, network_name=self._network_name)
         await self._events.put(
             GossipAttestationEvent(attestation=attestation, peer_id=peer_id, topic=topic)
         )
@@ -732,7 +735,7 @@ class LiveNetworkEventSource:
             signed_attestation: Aggregated attestation received from gossip.
             peer_id: Peer that sent it.
         """
-        topic = GossipTopic(kind=TopicKind.AGGREGATED_ATTESTATION, fork_digest=self._fork_digest)
+        topic = GossipTopic(kind=TopicKind.AGGREGATED_ATTESTATION, network_name=self._network_name)
         await self._events.put(
             GossipAggregatedAttestationEvent(
                 signed_attestation=signed_attestation, peer_id=peer_id, topic=topic

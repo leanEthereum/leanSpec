@@ -7,12 +7,11 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from lean_spec.forks.lstar import State, Store
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state import Validators
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
-from lean_spec.subspecs.containers import State
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state import Validators
-from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.sync.checkpoint_sync import (
     FINALIZED_STATE_ENDPOINT,
     CheckpointSyncError,

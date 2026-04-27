@@ -11,7 +11,7 @@ Reference:
 import pytest
 from consensus_testing import DiscoveryCryptoTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 # Official devp2p spec key material.
 NODE_A_PRIVKEY = "0xeef77acb6c6a6eebc5b363a475ac583ec7eccdb42b6481424c60f59aa326547f"

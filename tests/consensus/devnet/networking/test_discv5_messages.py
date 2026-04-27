@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 IPV4_LOCALHOST = "0x7f000001"
 """127.0.0.1 as 4 raw bytes."""

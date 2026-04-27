@@ -39,17 +39,17 @@ ignoring malformed ones.
 
 from __future__ import annotations
 
-from lean_spec.subspecs.containers.attestation import (
+from lean_spec.forks.lstar.containers.attestation import (
     AggregatedAttestation,
     AttestationData,
 )
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state.types import (
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state.types import (
     HistoricalBlockHashes,
     JustifiedSlots,
 )
-from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.types import Boolean
 from tests.lean_spec.helpers import make_bytes32, make_genesis_state
 

@@ -1,6 +1,6 @@
 """Tests for SSZ serialization of XMSS types."""
 
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.xmss.constants import TEST_CONFIG
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME

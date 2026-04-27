@@ -8,7 +8,7 @@ produces identical output before integrating with reqresp or gossip.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 # --- Raw Snappy block format ---

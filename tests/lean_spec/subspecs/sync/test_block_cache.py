@@ -5,9 +5,9 @@ from __future__ import annotations
 from time import time
 from typing import cast
 
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.subspecs.forkchoice import Store
+from lean_spec.forks.lstar import Store
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.block_cache import BlockCache, PendingBlock

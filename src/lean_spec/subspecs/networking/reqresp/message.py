@@ -7,7 +7,7 @@ domain. All messages are SSZ-encoded and then compressed with Snappy frames.
 
 from typing import ClassVar, Final
 
-from lean_spec.subspecs.containers import Checkpoint
+from lean_spec.forks.lstar.containers import Checkpoint
 from lean_spec.types import Bytes32, SSZList
 from lean_spec.types.container import Container
 

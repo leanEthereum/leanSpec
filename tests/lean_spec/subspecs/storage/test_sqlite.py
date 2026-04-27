@@ -8,11 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from lean_spec.subspecs.containers import Block, BlockBody, Checkpoint, State
-from lean_spec.subspecs.containers.attestation import AttestationData
-from lean_spec.subspecs.containers.block.types import AggregatedAttestations
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.forks.lstar import State
+from lean_spec.forks.lstar.containers import Block, BlockBody, Checkpoint
+from lean_spec.forks.lstar.containers.attestation import AttestationData
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.storage import (
     SQLiteDatabase,
@@ -26,7 +27,7 @@ from lean_spec.types import Bytes32, Uint64
 @pytest.fixture
 def db() -> Generator[SQLiteDatabase, None, None]:
     """Create an in-memory SQLite database for testing."""
-    database = SQLiteDatabase(":memory:")
+    database = SQLiteDatabase(":memory:", State)
     yield database
     database.close()
 
@@ -352,7 +353,7 @@ class TestRestartRecovery:
             genesis_time = Uint64(1000)
 
             # Write genesis data and close.
-            with SQLiteDatabase(db_path) as db:
+            with SQLiteDatabase(db_path, State) as db:
                 with db.batch_write():
                     db.put_block(genesis_block, block_root)
                     db.put_state(genesis_state, block_root)
@@ -363,7 +364,7 @@ class TestRestartRecovery:
                     db.put_genesis_time(genesis_time)
 
             # Reopen and verify all data survived.
-            with SQLiteDatabase(db_path) as db:
+            with SQLiteDatabase(db_path, State) as db:
                 assert db.get_head_root() == block_root
                 assert db.get_block(block_root) == genesis_block
                 assert db.get_state(block_root) == genesis_state
@@ -584,7 +585,7 @@ class TestLifecycle:
 
     def test_context_manager(self) -> None:
         """Database works as context manager."""
-        with SQLiteDatabase(":memory:") as db:
+        with SQLiteDatabase(":memory:", State) as db:
             root = Bytes32(b"\x0c" * 32)
             db.put_head_root(root)
             db.commit()

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from lean_spec.subspecs.containers.attestation import AggregatedAttestation, AttestationData
-from lean_spec.subspecs.containers.block.block import Block
-from lean_spec.subspecs.containers.block.types import AggregatedAttestations
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state.state import State
-from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation, AttestationData
+from lean_spec.forks.lstar.containers.block.block import Block
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state import State
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import ByteListMiB, Bytes32, CamelModel
 

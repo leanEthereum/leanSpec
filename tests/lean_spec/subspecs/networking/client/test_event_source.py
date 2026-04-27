@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from lean_spec.forks.lstar.containers import SignedBlock
+from lean_spec.forks.lstar.containers.attestation import SignedAttestation
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.snappy import compress
-from lean_spec.subspecs.containers import SignedBlock
-from lean_spec.subspecs.containers.attestation import SignedAttestation
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking.client.event_source import (
     SUPPORTED_PROTOCOLS,
     GossipHandler,
@@ -122,16 +122,16 @@ class MockStream:
 
 class TestGossipHandlerForkMismatch:
     """
-    Fork digest validation on incoming gossip messages.
+    Network name validation on incoming gossip messages.
 
-    Every gossip topic embeds a fork digest identifying the consensus fork.
+    Every gossip topic embeds a network name identifying the consensus fork.
     Messages from peers on a different fork must be rejected immediately
     to avoid processing incompatible data.
     """
 
     def test_decode_message_raises_fork_mismatch(self) -> None:
-        """Rejects messages whose topic carries a different fork digest."""
-        handler = GossipHandler(fork_digest=FORK_DIGEST)
+        """Rejects messages whose topic carries a different network name."""
+        handler = GossipHandler(network_name=FORK_DIGEST)
         block = _make_block()
         compressed = compress(block.encode_bytes())
 
@@ -139,8 +139,8 @@ class TestGossipHandlerForkMismatch:
             handler.decode_message(_block_topic(WRONG_FORK_DIGEST), compressed)
 
     def test_get_topic_raises_fork_mismatch(self) -> None:
-        """Rejects topic strings with mismatched fork digest."""
-        handler = GossipHandler(fork_digest=FORK_DIGEST)
+        """Rejects topic strings with mismatched network name."""
+        handler = GossipHandler(network_name=FORK_DIGEST)
 
         with pytest.raises(ForkMismatchError, match=f"got {WRONG_FORK_DIGEST}"):
             handler.get_topic(_block_topic(WRONG_FORK_DIGEST))
@@ -158,7 +158,7 @@ class TestGossipHandlerForkMismatch:
 
     def test_decode_message_fork_mismatch_not_wrapped_as_gossip_error(self) -> None:
         """ForkMismatchError propagates directly, not wrapped in GossipMessageError."""
-        handler = GossipHandler(fork_digest=FORK_DIGEST)
+        handler = GossipHandler(network_name=FORK_DIGEST)
         compressed = compress(b"\x00" * 32)
 
         with pytest.raises(ForkMismatchError):
@@ -184,18 +184,18 @@ class TestGossipHandlerAggregationTopic:
 
     def test_get_topic_recognizes_aggregation(self) -> None:
         """Parses aggregation topic and returns AGGREGATED_ATTESTATION kind."""
-        handler = GossipHandler(fork_digest=FORK_DIGEST)
+        handler = GossipHandler(network_name=FORK_DIGEST)
 
         topic = handler.get_topic(_aggregation_topic())
 
         assert topic == GossipTopic(
             kind=TopicKind.AGGREGATED_ATTESTATION,
-            fork_digest=FORK_DIGEST,
+            network_name=FORK_DIGEST,
         )
 
     def test_decode_message_invalid_ssz_for_aggregation(self) -> None:
         """Raises GossipMessageError when SSZ bytes are invalid for aggregation."""
-        handler = GossipHandler(fork_digest=FORK_DIGEST)
+        handler = GossipHandler(network_name=FORK_DIGEST)
         compressed = compress(b"\xff\xff\xff\xff")
 
         with pytest.raises(GossipMessageError, match="SSZ decode failed"):
@@ -362,33 +362,33 @@ class TestLiveNetworkEventSourceSetStatus:
 
 class TestLiveNetworkEventSourceSetForkDigest:
     """
-    Fork digest reconfiguration at runtime.
+    Network name reconfiguration at runtime.
 
     When the chain crosses a fork boundary, the event source must update
-    its fork digest and recreate the gossip handler so that subsequent
+    its network name and recreate the gossip handler so that subsequent
     topic validation uses the new digest.
     """
 
     def test_set_fork_digest_updates_field(self) -> None:
-        """Updates the stored fork digest."""
+        """Updates the stored network name."""
         es = _make_event_source()
 
-        es.set_fork_digest("0xdeadbeef")
+        es.set_network_name("0xdeadbeef")
 
-        assert es._fork_digest == "0xdeadbeef"
+        assert es._network_name == "0xdeadbeef"
 
     def test_set_fork_digest_recreates_gossip_handler(self) -> None:
         """Recreates the gossip handler with the new digest."""
         es = _make_event_source()
 
-        es.set_fork_digest("0xdeadbeef")
+        es.set_network_name("0xdeadbeef")
 
-        assert es._gossip_handler.fork_digest == "0xdeadbeef"
+        assert es._gossip_handler.network_name == "0xdeadbeef"
 
     def test_set_fork_digest_new_handler_validates_correctly(self) -> None:
         """The recreated handler rejects topics with the old digest."""
         es = _make_event_source()
-        es.set_fork_digest("0xdeadbeef")
+        es.set_network_name("0xdeadbeef")
 
         # Old default digest should now be rejected
         with pytest.raises(ForkMismatchError, match="expected 0xdeadbeef"):
@@ -600,19 +600,19 @@ class TestLiveNetworkEventSourceInit:
     Default state after event source construction.
 
     A freshly created event source must start in a safe default state:
-    zero fork digest, no connections, no chain status, stopped, and
+    zero network name, no connections, no chain status, stopped, and
     an empty event queue.
     """
 
     def test_default_fork_digest(self) -> None:
-        """Initializes with zero fork digest."""
+        """Initializes with zero network name."""
         es = _make_event_source()
-        assert es._fork_digest == "0x00000000"
+        assert es._network_name == "0x00000000"
 
     def test_gossip_handler_matches_fork_digest(self) -> None:
-        """Post-init creates gossip handler with the configured fork digest."""
+        """Post-init creates gossip handler with the configured network name."""
         es = _make_event_source()
-        assert es._gossip_handler.fork_digest == "0x00000000"
+        assert es._gossip_handler.network_name == "0x00000000"
 
     def test_not_running_initially(self) -> None:
         """Event source starts in stopped state."""
@@ -646,7 +646,7 @@ class TestGossipHandlerDecodeRoundtrip:
 
     def test_block_roundtrip_preserves_ssz(self) -> None:
         """Block SSZ bytes are identical after decode."""
-        handler = GossipHandler(fork_digest=FORK_DIGEST)
+        handler = GossipHandler(network_name=FORK_DIGEST)
         block = _make_block()
         original_bytes = block.encode_bytes()
 
@@ -660,7 +660,7 @@ class TestGossipHandlerDecodeRoundtrip:
 
     def test_attestation_roundtrip_preserves_ssz(self) -> None:
         """Attestation SSZ bytes are identical after decode."""
-        handler = GossipHandler(fork_digest=FORK_DIGEST)
+        handler = GossipHandler(network_name=FORK_DIGEST)
         att = _make_attestation()
         original_bytes = att.encode_bytes()
 

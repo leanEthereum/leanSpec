@@ -25,7 +25,7 @@ from lean_spec.types import (
     Uint64,
 )
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 # --- Test helper types ---

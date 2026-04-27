@@ -10,6 +10,25 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from consensus_testing.keys import XmssKeyManager
 
+from lean_spec.forks.lstar import State
+from lean_spec.forks.lstar.containers import (
+    Block,
+    BlockBody,
+)
+from lean_spec.forks.lstar.containers.block import BlockHeader
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.config import Config
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state import Validators
+from lean_spec.forks.lstar.containers.state.types import (
+    HistoricalBlockHashes,
+    JustificationRoots,
+    JustificationValidators,
+    JustifiedSlots,
+)
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
+from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.api import ApiServerConfig
 from lean_spec.subspecs.chain.config import (
     ATTESTATION_COMMITTEE_COUNT,
@@ -17,24 +36,6 @@ from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
     SECONDS_PER_SLOT,
 )
-from lean_spec.subspecs.containers import (
-    Block,
-    BlockBody,
-    State,
-)
-from lean_spec.subspecs.containers.block import BlockHeader
-from lean_spec.subspecs.containers.block.types import AggregatedAttestations
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.config import Config
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state import Validators
-from lean_spec.subspecs.containers.state.types import (
-    HistoricalBlockHashes,
-    JustificationRoots,
-    JustificationValidators,
-    JustifiedSlots,
-)
-from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.node import Node, NodeConfig
 from lean_spec.subspecs.storage.sqlite import SQLiteDatabase
 from lean_spec.subspecs.validator import ValidatorRegistry
@@ -82,7 +83,7 @@ def _make_populated_db(
         justifications_validators=JustificationValidators(data=[]),
     )
 
-    db = SQLiteDatabase(":memory:")
+    db = SQLiteDatabase(":memory:", State)
     db.put_block(block, head_root)
     db.put_state(state, head_root)
     db.put_head_root(head_root)
@@ -115,6 +116,7 @@ def node_config() -> NodeConfig:
         validators=make_validators(3),
         event_source=MockEventSource(),
         network=MockNetworkRequester(),
+        fork=LstarSpec(),
         time_fn=lambda: 1704067200.0,
     )
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from lean_spec.subspecs.forkchoice import Store
+from lean_spec.forks.lstar import Store
 from lean_spec.types import Uint64
 from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_store
 

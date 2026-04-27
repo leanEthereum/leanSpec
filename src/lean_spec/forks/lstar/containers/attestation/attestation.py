@@ -13,12 +13,12 @@ Attestations can be aggregated by common data to save space and bandwidth.
 
 from __future__ import annotations
 
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
+from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Container
 
-from ...xmss.aggregation import AggregatedSignatureProof
-from ...xmss.containers import Signature
 from ..checkpoint import Checkpoint
 from .aggregation_bits import AggregationBits
 

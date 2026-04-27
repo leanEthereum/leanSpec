@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import GossipsubHandlerTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 TOPIC = "test_topic"
 PARAMS = {"d": 4, "dLow": 3, "dHigh": 6, "dLazy": 3}

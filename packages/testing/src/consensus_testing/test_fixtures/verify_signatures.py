@@ -6,11 +6,18 @@ from typing import Any, ClassVar
 
 from pydantic import Field
 
-from lean_spec.subspecs.containers.block import (
+from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation
+from lean_spec.forks.lstar.containers.attestation.aggregation_bits import AggregationBits
+from lean_spec.forks.lstar.containers.block import (
     SignedBlock,
 )
-from lean_spec.subspecs.containers.block.types import AttestationSignatures
-from lean_spec.subspecs.containers.state.state import State
+from lean_spec.forks.lstar.containers.block.types import (
+    AggregatedAttestations,
+    AttestationSignatures,
+)
+from lean_spec.forks.lstar.containers.state import State
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
+from lean_spec.types import Boolean
 
 from ..keys import XmssKeyManager
 from ..test_types import BlockSpec
@@ -158,8 +165,6 @@ class VerifySignaturesTest(BaseConsensusFixture):
             return signed_block.model_copy(update={"signature": tampered_signatures})
 
         if operation == "set_proposer_index":
-            from lean_spec.subspecs.containers.validator import ValidatorIndex
-
             value = self.tamper.get("value")
             if value is None:
                 raise ValueError("set_proposer_index requires a value")
@@ -169,13 +174,6 @@ class VerifySignaturesTest(BaseConsensusFixture):
             return signed_block.model_copy(update={"block": tampered_block})
 
         if operation == "clear_first_attestation_bits":
-            from lean_spec.subspecs.containers.attestation import AggregatedAttestation
-            from lean_spec.subspecs.containers.attestation.aggregation_bits import (
-                AggregationBits,
-            )
-            from lean_spec.subspecs.containers.block.types import AggregatedAttestations
-            from lean_spec.types import Boolean
-
             body = signed_block.block.body
             original = body.attestations.data
             if not original:

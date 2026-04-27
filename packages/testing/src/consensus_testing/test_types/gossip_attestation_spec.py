@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from lean_spec.subspecs.containers.attestation import AttestationData, SignedAttestation
-from lean_spec.subspecs.containers.block.block import Block
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
-from lean_spec.subspecs.forkchoice.store import Store
+from lean_spec.forks.lstar.containers.attestation import AttestationData, SignedAttestation
+from lean_spec.forks.lstar.containers.block.block import Block
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
+from lean_spec.forks.lstar.store import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, CamelModel
 

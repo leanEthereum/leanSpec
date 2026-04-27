@@ -9,8 +9,8 @@ import yaml
 from consensus_testing.keys import XmssKeyManager
 from pydantic import ValidationError
 
-from lean_spec.subspecs.containers import ValidatorIndex
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers import ValidatorIndex
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.subspecs.validator.registry import (
     ValidatorEntry,

@@ -26,10 +26,10 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
-from lean_spec.subspecs.containers.attestation.attestation import (
+from lean_spec.forks.lstar.containers.attestation.attestation import (
     SignedAggregatedAttestation,
 )
+from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.sync import SyncService
 from lean_spec.types import Uint64
 

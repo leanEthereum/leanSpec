@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from aiohttp import web
 
-from lean_spec.subspecs.forkchoice import Store
+from lean_spec.forks import Store
 
 from .aggregator_controller import AggregatorController
 from .routes import ADMIN_ROUTES, ROUTES

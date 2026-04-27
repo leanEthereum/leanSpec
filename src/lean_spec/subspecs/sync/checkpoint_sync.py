@@ -23,8 +23,8 @@ from typing import Final
 
 import httpx
 
+from lean_spec.forks import State
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
-from lean_spec.subspecs.containers import State
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ async def fetch_finalized_state(url: str, state_class: type[State]) -> State:
 
     Args:
         url: Base URL of the node API (e.g., "http://localhost:5052").
-        state_class: The State class to deserialize into.
+        state_class: State class used to decode SSZ bytes.
 
     Returns:
         The finalized State object.

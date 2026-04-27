@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from time import time as wall_time
 
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.types import Uint64
 
 from .config import (

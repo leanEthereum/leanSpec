@@ -15,7 +15,7 @@ Topic Format
 
 Topics follow a structured format::
 
-    /{prefix}/{fork_digest}/{topic_name}/{encoding}
+    /{prefix}/{network_name}/{topic_name}/{encoding}
 
     Example: /leanconsensus/12345678/block/ssz_snappy
 
@@ -26,7 +26,7 @@ Topics follow a structured format::
 +================+==========================================================+
 | prefix         | Network identifier (`leanconsensus`)                   |
 +----------------+----------------------------------------------------------+
-| fork_digest    | 4-byte fork identifier as hex (`12345678`)             |
+| network_name    | 4-byte fork identifier as hex (`12345678`)             |
 +----------------+----------------------------------------------------------+
 | topic_name     | Message type (`blocks`, `attestation`)               |
 +----------------+----------------------------------------------------------+
@@ -36,7 +36,7 @@ Topics follow a structured format::
 Fork Digest
 -----------
 
-The fork digest ensures peers on different forks don't exchange
+The network name ensures peers on different forks don't exchange
 incompatible messages. It's derived from the fork version and
 genesis validators root.
 
@@ -62,12 +62,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
-from lean_spec.subspecs.containers.validator import SubnetId
+from lean_spec.forks.lstar.containers.validator import SubnetId
 from lean_spec.subspecs.networking.gossipsub.types import TopicId
 
 
 class ForkMismatchError(ValueError):
-    """Raised when a topic's fork_digest does not match the expected value."""
+    """Raised when a topic's network_name does not match the expected value."""
 
     def __init__(self, expected: str, actual: str) -> None:
         """Initialize with expected and actual fork digests."""
@@ -138,7 +138,7 @@ class GossipTopic:
     """A fully-qualified gossipsub topic.
 
     Immutable representation of a topic that combines the message type
-    and fork digest. Can be converted to/from the string format.
+    and network name. Can be converted to/from the string format.
     """
 
     kind: TopicKind
@@ -147,12 +147,12 @@ class GossipTopic:
     Determines what kind of messages are exchanged on this topic.
     """
 
-    fork_digest: str
-    """Fork digest as hex string (no 0x prefix), like the beacon chain.
+    network_name: str
+    """Network name as hex string (no 0x prefix), like the beacon chain.
 
     Identifies the fork this topic belongs to.
 
-    Peers must match on fork digest to exchange messages on a topic.
+    Peers must match on network name to exchange messages on a topic.
     """
 
     subnet_id: SubnetId | None = None
@@ -170,24 +170,24 @@ class GossipTopic:
             topic_name = f"attestation_{self.subnet_id}"
         else:
             topic_name = str(self.kind)
-        return TopicId(f"/{TOPIC_PREFIX}/{self.fork_digest}/{topic_name}/{ENCODING_POSTFIX}")
+        return TopicId(f"/{TOPIC_PREFIX}/{self.network_name}/{topic_name}/{ENCODING_POSTFIX}")
 
     def __str__(self) -> str:
         """Return the full topic string."""
         return self.to_topic_id()
 
-    def validate_fork(self, expected_fork_digest: str) -> None:
+    def validate_fork(self, expected_network_name: str) -> None:
         """
-        Validate that the topic's fork_digest matches expected.
+        Validate that the topic's network_name matches expected.
 
         Args:
-            expected_fork_digest: Expected fork digest (hex string (no 0x prefix)).
+            expected_network_name: Expected network name (hex string (no 0x prefix)).
 
         Raises:
-            ForkMismatchError: If fork_digest does not match.
+            ForkMismatchError: If network_name does not match.
         """
-        if self.fork_digest != expected_fork_digest:
-            raise ForkMismatchError(expected_fork_digest, self.fork_digest)
+        if self.network_name != expected_network_name:
+            raise ForkMismatchError(expected_network_name, self.network_name)
 
     @classmethod
     def from_string(cls, topic_str: str) -> GossipTopic:
@@ -202,7 +202,7 @@ class GossipTopic:
         Raises:
             ValueError: If the topic string is malformed.
         """
-        prefix, fork_digest, topic_name, encoding = parse_topic_string(topic_str)
+        prefix, network_name, topic_name, encoding = parse_topic_string(topic_str)
 
         if prefix != TOPIC_PREFIX:
             raise ValueError(f"Invalid prefix: expected '{TOPIC_PREFIX}', got '{prefix}'")
@@ -218,7 +218,7 @@ class GossipTopic:
                 subnet_id = SubnetId(int(subnet_part))
                 return cls(
                     kind=TopicKind.ATTESTATION_SUBNET,
-                    fork_digest=fork_digest,
+                    network_name=network_name,
                     subnet_id=subnet_id,
                 )
             except ValueError:
@@ -229,10 +229,10 @@ class GossipTopic:
         except ValueError:
             raise ValueError(f"Unknown topic: '{topic_name}'") from None
 
-        return cls(kind=kind, fork_digest=fork_digest)
+        return cls(kind=kind, network_name=network_name)
 
     @classmethod
-    def from_string_validated(cls, topic_str: str, expected_fork_digest: str) -> GossipTopic:
+    def from_string_validated(cls, topic_str: str, expected_network_name: str) -> GossipTopic:
         """Parse a topic string and validate fork compatibility.
 
         Combines parsing and fork validation into a single operation.
@@ -240,55 +240,57 @@ class GossipTopic:
 
         Args:
             topic_str: Full topic string to parse.
-            expected_fork_digest: Expected fork digest (hex string (no 0x prefix)).
+            expected_network_name: Expected network name (hex string (no 0x prefix)).
 
         Returns:
             Parsed GossipTopic instance.
 
         Raises:
             ValueError: If the topic string is malformed.
-            ForkMismatchError: If fork_digest does not match expected.
+            ForkMismatchError: If network_name does not match expected.
         """
         topic = cls.from_string(topic_str)
-        topic.validate_fork(expected_fork_digest)
+        topic.validate_fork(expected_network_name)
         return topic
 
     @classmethod
-    def block(cls, fork_digest: str) -> GossipTopic:
+    def block(cls, network_name: str) -> GossipTopic:
         """Create a block topic for the given fork.
 
         Args:
-            fork_digest: Fork digest as hex string (no 0x prefix) string.
+            network_name: Network name as hex string (no 0x prefix) string.
 
         Returns:
             GossipTopic for block messages.
         """
-        return cls(kind=TopicKind.BLOCK, fork_digest=fork_digest)
+        return cls(kind=TopicKind.BLOCK, network_name=network_name)
 
     @classmethod
-    def committee_aggregation(cls, fork_digest: str) -> GossipTopic:
+    def committee_aggregation(cls, network_name: str) -> GossipTopic:
         """Create a committee aggregation topic for the given fork.
 
         Args:
-            fork_digest: Fork digest as hex string (no 0x prefix) string.
+            network_name: Network name as hex string (no 0x prefix) string.
 
         Returns:
             GossipTopic for committee aggregation messages.
         """
-        return cls(kind=TopicKind.AGGREGATED_ATTESTATION, fork_digest=fork_digest)
+        return cls(kind=TopicKind.AGGREGATED_ATTESTATION, network_name=network_name)
 
     @classmethod
-    def attestation_subnet(cls, fork_digest: str, subnet_id: SubnetId) -> GossipTopic:
+    def attestation_subnet(cls, network_name: str, subnet_id: SubnetId) -> GossipTopic:
         """Create an attestation subnet topic for the given fork and subnet.
 
         Args:
-            fork_digest: Fork digest as hex string (no 0x prefix) string.
+            network_name: Network name as hex string (no 0x prefix) string.
             subnet_id: Subnet ID for the attestation topic.
 
         Returns:
             GossipTopic for attestation subnet messages.
         """
-        return cls(kind=TopicKind.ATTESTATION_SUBNET, fork_digest=fork_digest, subnet_id=subnet_id)
+        return cls(
+            kind=TopicKind.ATTESTATION_SUBNET, network_name=network_name, subnet_id=subnet_id
+        )
 
 
 def parse_topic_string(topic_str: str) -> tuple[str, str, str, str]:
@@ -301,7 +303,7 @@ def parse_topic_string(topic_str: str) -> tuple[str, str, str, str]:
         topic_str: Topic string to parse.
 
     Returns:
-        Tuple of (prefix, fork_digest, topic_name, encoding).
+        Tuple of (prefix, network_name, topic_name, encoding).
 
     Raises:
         ValueError: If the topic string is malformed.

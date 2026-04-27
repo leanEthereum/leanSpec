@@ -1,9 +1,10 @@
 """Consensus layer pre-state generation."""
 
-from lean_spec.subspecs.containers.block import AggregatedAttestations, Block, BlockBody
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state import State, Validators
-from lean_spec.subspecs.containers.validator import Validator, ValidatorIndex
+from lean_spec.forks.lstar.containers.block import AggregatedAttestations, Block, BlockBody
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state import State, Validators
+from lean_spec.forks.lstar.containers.validator import Validator, ValidatorIndex
+from lean_spec.forks.protocol import ForkProtocol
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes52, Uint64
 
@@ -12,19 +13,8 @@ from .keys import XmssKeyManager
 _DEFAULT_GENESIS_TIME = Uint64(0)
 
 
-def generate_pre_state(
-    genesis_time: Uint64 = _DEFAULT_GENESIS_TIME,
-    num_validators: int = 4,
-) -> State:
-    """Generate a default pre-state for consensus tests.
-
-    Args:
-        genesis_time: The genesis timestamp.
-        num_validators: Number of validators to include.
-
-    Returns:
-        A properly initialized consensus state.
-    """
+def _build_validators(num_validators: int) -> Validators:
+    """Build a validator registry with real XMSS keys from the shared key manager."""
     key_manager = XmssKeyManager.shared()
 
     if num_validators > len(key_manager):
@@ -45,7 +35,33 @@ def generate_pre_state(
             )
         )
 
-    return State.generate_genesis(genesis_time=genesis_time, validators=Validators(data=validators))
+    return Validators(data=validators)
+
+
+def generate_pre_state(
+    genesis_time: Uint64 = _DEFAULT_GENESIS_TIME,
+    num_validators: int = 4,
+    fork: ForkProtocol | None = None,
+) -> State:
+    """Generate a default pre-state for consensus tests.
+
+    A fork argument routes through that fork's own genesis builder.
+    Later forks adding extra state fields stay correct this way.
+
+    Args:
+        genesis_time: The genesis timestamp.
+        num_validators: Number of validators to include.
+        fork: Optional fork dispatching genesis. Defaults to the base builder.
+
+    Returns:
+        A properly initialized consensus state.
+    """
+    validators = _build_validators(num_validators)
+
+    if fork is not None:
+        return fork.generate_genesis(genesis_time=genesis_time, validators=validators)
+
+    return State.generate_genesis(genesis_time=genesis_time, validators=validators)
 
 
 def build_anchor(

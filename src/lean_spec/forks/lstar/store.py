@@ -9,26 +9,25 @@ __all__ = ["AttestationSignatureEntry", "Store"]
 from collections import defaultdict
 from typing import NamedTuple
 
-from lean_spec.subspecs.chain.clock import Interval
-from lean_spec.subspecs.chain.config import (
-    INTERVALS_PER_SLOT,
-    JUSTIFICATION_LOOKBACK_SLOTS,
-    MAX_ATTESTATIONS_DATA,
-)
-from lean_spec.subspecs.containers import (
+from lean_spec.forks.lstar.containers import (
     AttestationData,
     Block,
     Checkpoint,
     Config,
     SignedAttestation,
     SignedBlock,
-    State,
     ValidatorIndex,
 )
-from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
-from lean_spec.subspecs.containers.block import BlockLookup
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndices
+from lean_spec.forks.lstar.containers.attestation.attestation import SignedAggregatedAttestation
+from lean_spec.forks.lstar.containers.block import BlockLookup
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndices
+from lean_spec.subspecs.chain.clock import Interval
+from lean_spec.subspecs.chain.config import (
+    INTERVALS_PER_SLOT,
+    JUSTIFICATION_LOOKBACK_SLOTS,
+    MAX_ATTESTATIONS_DATA,
+)
 from lean_spec.subspecs.observability import observe_on_attestation, observe_on_block
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
@@ -44,6 +43,8 @@ from lean_spec.types import (
     Uint64,
 )
 from lean_spec.types.base import StrictBaseModel
+
+from .containers.state import State
 
 
 class AttestationSignatureEntry(NamedTuple):
@@ -212,7 +213,7 @@ class Store(StrictBaseModel):
 
         # Seed both checkpoints from the anchor block itself.
         #
-        # The store treats the anchor as the new "genesis" for fork choice:
+        # The store treats the anchor as the new genesis for fork choice:
         # all history below it is pruned. The justified and finalized checkpoints
         # therefore point at the anchor block with the anchor's own slot,
         # regardless of what the anchor state's embedded checkpoints say.
@@ -811,23 +812,15 @@ class Store(StrictBaseModel):
         - Interval 3: Safe target update (HERE)
         - Interval 4: New attestations migrate to "known" pool
 
-        Only the "new" pool is considered. This is a deliberate design choice
-        rooted in the ordering above: migration into "known" happens at
-        interval 4, strictly after safe-target computation. 3sf-mini is free
-        to run the migration before this step but does not, precisely so
-        that safe target sees only freshly received votes from the current
-        slot and ignores what was carried over from earlier slots.
+        Only the "new" pool counts. Migration into "known" runs at interval 4,
+        after this step, so safe target sees only votes received this slot.
 
-        That ordering encodes a specific semantic: safe target is an
-        *availability* signal, not a durable-knowledge signal. A block is
-        "safe" to attest to when a 2/3 supermajority of validators
-        currently online — as seen by this node right now — vote for a
-        descendant of it. Votes aggregated into "known" from earlier
-        slots (block-included attestations, previously migrated gossip,
-        self-attestations stored locally) reflect historical knowledge,
-        not current online behaviour. Counting them would let a node keep
-        advancing its safe target on stale evidence even when live
-        participation has collapsed.
+        Safe target is an *availability* signal, not durable knowledge:
+
+        - A block is safe when 2/3 of currently online validators vote for a descendant.
+        - "Known" carries block-included, previously migrated, and self-attestations.
+        - Those reflect historical knowledge, not current liveness.
+        - Counting them would advance safe target on stale evidence after a participation collapse.
 
         Returns:
             New Store with updated safe_target.
@@ -846,13 +839,8 @@ class Store(StrictBaseModel):
         # For example, 100 validators => threshold is 67, not 66.
         min_target_score = -(-num_validators * 2 // 3)
 
-        # Convert the "new" aggregated payloads into per-validator votes.
-        #
-        # Each proof encodes which validators participated. This step
-        # unpacks those bitfields into a flat mapping of validator -> vote.
-        # We deliberately do not merge in "known": see the docstring for
-        # the availability rationale tied to the interval-3/interval-4
-        # ordering.
+        # Unpack "new" payloads into a flat validator -> vote mapping.
+        # "Known" is excluded by design.
         attestations = self.extract_attestations_from_aggregated_payloads(
             self.latest_new_aggregated_payloads,
         )

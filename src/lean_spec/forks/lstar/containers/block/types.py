@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.types import SSZList
 
-from ...chain.config import VALIDATOR_REGISTRY_LIMIT
 from ..attestation import AggregatedAttestation
 
 

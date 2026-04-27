@@ -12,7 +12,7 @@ from typing import NamedTuple, override
 
 from pydantic import model_serializer
 
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 
 from ...types import Uint64
 from ...types.container import Container

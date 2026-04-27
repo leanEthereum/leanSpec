@@ -42,7 +42,7 @@ If zero tests ran, warn that the client may need to update its test runner to sc
 ### ream
 
 - **Repo**: https://github.com/ReamLabs/ream.git
-- **Fixture destination** (relative to repo root): `testing/lean-spec-tests/fixtures/devnet4`
+- **Fixture destination** (relative to repo root): `testing/lean-spec-tests/fixtures/lstar`
 - **Test workdir** (relative to repo root): `testing/lean-spec-tests`
 - **Test command**: `cargo test --release --features lean-spec-tests`
 

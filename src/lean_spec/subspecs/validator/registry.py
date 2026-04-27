@@ -32,7 +32,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, field_validator
 
-from lean_spec.subspecs.containers.validator import ValidatorIndex, ValidatorIndices
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex, ValidatorIndices
 from lean_spec.subspecs.xmss import SecretKey
 from lean_spec.types import Bytes52
 

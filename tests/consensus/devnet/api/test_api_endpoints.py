@@ -8,7 +8,7 @@ API server returns the exact same response given the same genesis parameters.
 import pytest
 from consensus_testing import ApiEndpointTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 GENESIS_4V = {"numValidators": 4, "genesisTime": 0}
 """Minimal genesis: 4 validators at epoch 0."""

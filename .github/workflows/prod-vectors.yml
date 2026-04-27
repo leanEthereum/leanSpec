@@ -87,7 +87,7 @@ jobs:
           key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
 
       - name: Fill production test fixtures
-        run: uv run fill --fork=Devnet --scheme prod --clean -n auto
+        run: uv run fill --fork=Lstar --scheme prod --clean -n auto
 
       - name: Bundle keys with fixtures
         run: |

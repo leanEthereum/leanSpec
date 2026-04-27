@@ -7,7 +7,7 @@ sync-layer decisions bit-for-bit.
 
 from typing import Any, ClassVar
 
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.sync.checkpoint_sync import verify_checkpoint_state
 from lean_spec.types import Uint64
 

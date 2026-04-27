@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import lean_spec.subspecs.containers.attestation.aggregation_bits as _aggregation_bits
+import lean_spec.forks.lstar.containers.attestation.aggregation_bits as _aggregation_bits
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
+from lean_spec.subspecs.xmss.containers import PublicKey
 from lean_spec.types import Boolean, Bytes52, Container, SSZList, Uint64
 
-from ..xmss.containers import PublicKey
 from .slot import Slot
 
 

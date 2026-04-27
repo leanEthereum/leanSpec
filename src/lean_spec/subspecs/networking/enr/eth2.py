@@ -18,7 +18,7 @@ See: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-in
 
 from typing import ClassVar, Final
 
-from lean_spec.subspecs.containers.validator import SubnetId
+from lean_spec.forks.lstar.containers.validator import SubnetId
 from lean_spec.subspecs.networking.types import ForkDigest, Version
 from lean_spec.types import StrictBaseModel, Uint64
 from lean_spec.types.bitfields import BaseBitvector

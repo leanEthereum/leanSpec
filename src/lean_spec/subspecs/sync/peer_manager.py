@@ -11,7 +11,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Final
 
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.networking.peer import PeerInfo
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId

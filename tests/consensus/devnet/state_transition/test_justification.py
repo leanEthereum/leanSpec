@@ -9,16 +9,16 @@ from consensus_testing import (
     generate_pre_state,
 )
 
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state.types import (
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state.types import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
 )
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.types import ZERO_HASH, Boolean, Bytes32
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_supermajority_attestations_justify_block(

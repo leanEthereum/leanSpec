@@ -38,9 +38,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from lean_spec.forks.lstar.containers import SignedBlock
+from lean_spec.forks.lstar.containers.attestation import (
+    SignedAggregatedAttestation,
+    SignedAttestation,
+)
 from lean_spec.snappy import SnappyDecompressionError, decompress
-from lean_spec.subspecs.containers import SignedBlock
-from lean_spec.subspecs.containers.attestation import SignedAggregatedAttestation, SignedAttestation
 from lean_spec.subspecs.networking.gossipsub.topic import (
     ForkMismatchError,
     GossipTopic,
@@ -71,7 +74,7 @@ class GossipHandler:
     ---------------------
     Topics contain:
 
-    - Fork digest: 4-byte identifier derived from genesis + fork version.
+    - Network name: 4-byte identifier derived from genesis + fork version.
     - Message type: "blocks" or "attestation".
     - Encoding: Always "ssz_snappy" for Ethereum.
 
@@ -100,8 +103,8 @@ class GossipHandler:
     The topic tells us the schema. The SSZ bytes are just raw data.
     """
 
-    fork_digest: str
-    """Expected fork digest for topic validation.
+    network_name: str
+    """Expected network name for topic validation.
 
     Messages with mismatched fork digests are rejected. This prevents
     cross-fork message injection attacks.
@@ -118,7 +121,7 @@ class GossipHandler:
         Processing proceeds in order:
 
         1. Parse topic to determine message type.
-        2. Validate fork digest.
+        2. Validate network name.
         3. Decompress Snappy-framed data.
         4. Decode SSZ bytes using the appropriate schema.
 
@@ -134,16 +137,16 @@ class GossipHandler:
             Decoded block or attestation.
 
         Raises:
-            ForkMismatchError: If fork_digest does not match.
+            ForkMismatchError: If network_name does not match.
             GossipMessageError: If the message cannot be decoded.
         """
         # Step 1: Parse topic to determine message type and validate fork.
         #
-        # The topic string contains the fork digest and message kind.
+        # The topic string contains the network name and message kind.
         # Invalid topics are rejected before decompression to avoid
         # wasting CPU on malformed or cross-fork messages.
         try:
-            topic = GossipTopic.from_string_validated(topic_str, self.fork_digest)
+            topic = GossipTopic.from_string_validated(topic_str, self.network_name)
         except ForkMismatchError:
             raise
         except ValueError as e:
@@ -192,11 +195,11 @@ class GossipHandler:
             Parsed GossipTopic.
 
         Raises:
-            ForkMismatchError: If fork_digest does not match.
+            ForkMismatchError: If network_name does not match.
             GossipMessageError: If the topic is invalid.
         """
         try:
-            return GossipTopic.from_string_validated(topic_str, self.fork_digest)
+            return GossipTopic.from_string_validated(topic_str, self.network_name)
         except ForkMismatchError:
             raise
         except ValueError as e:

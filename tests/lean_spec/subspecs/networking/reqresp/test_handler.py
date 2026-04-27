@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.containers import Checkpoint, SignedBlock
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers import Checkpoint, SignedBlock
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.networking.config import MAX_ERROR_MESSAGE_SIZE
 from lean_spec.subspecs.networking.reqresp.codec import (
     ResponseCode,

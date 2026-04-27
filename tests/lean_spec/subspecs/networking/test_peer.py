@@ -2,8 +2,8 @@
 
 import time
 
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.enr.eth2 import FAR_FUTURE_EPOCH

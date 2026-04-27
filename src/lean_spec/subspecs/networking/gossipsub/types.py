@@ -23,7 +23,7 @@ class TopicId(str):
 
     Follows the Ethereum consensus format::
 
-        /{prefix}/{fork_digest}/{topic_name}/{encoding}
+        /{prefix}/{network_name}/{topic_name}/{encoding}
     """
 
     __slots__ = ()

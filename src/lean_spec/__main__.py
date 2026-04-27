@@ -32,15 +32,14 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Final
 
+from lean_spec.forks import DEFAULT_REGISTRY, ForkProtocol, State
+from lean_spec.forks.lstar.containers import Block, BlockBody, Checkpoint
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import SubnetId
 from lean_spec.subspecs.api import ApiServerConfig
 from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
-from lean_spec.subspecs.containers import Block, BlockBody, Checkpoint, State
-from lean_spec.subspecs.containers.block.types import AggregatedAttestations
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import SubnetId
-from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.genesis import GenesisConfig
 from lean_spec.subspecs.metrics import PrometheusObserver
 from lean_spec.subspecs.metrics import registry as metrics
@@ -58,12 +57,6 @@ from lean_spec.subspecs.sync.checkpoint_sync import (
 )
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.types import Bytes32, Uint64
-
-# Fork identifier for gossip topics.
-#
-# Must match the fork string used by ream and other clients.
-# For devnet, this is "devnet0".
-GOSSIP_FORK_DIGEST: Final = "devnet0"
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +158,7 @@ def create_anchor_block(state: State) -> Block:
 def _init_from_genesis(
     genesis: GenesisConfig,
     event_source: LiveNetworkEventSource,
+    fork: ForkProtocol,
     validator_registry: ValidatorRegistry | None = None,
     is_aggregator: bool = False,
     aggregate_subnet_ids: tuple[SubnetId, ...] = (),
@@ -176,6 +170,7 @@ def _init_from_genesis(
     Args:
         genesis: Genesis configuration with time and validators.
         event_source: Network transport for the node.
+        fork: Fork specification for state/store construction.
         validator_registry: Optional registry with validator secret keys.
         is_aggregator: Enable aggregator mode for attestation aggregation.
         aggregate_subnet_ids: Additional subnets to subscribe and aggregate from.
@@ -200,8 +195,9 @@ def _init_from_genesis(
         validators=genesis.to_validators(),
         event_source=event_source,
         network=event_source.reqresp_client,
+        fork=fork,
         validator_registry=validator_registry,
-        fork_digest=GOSSIP_FORK_DIGEST,
+        network_name=fork.NETWORK_NAME,
         is_aggregator=is_aggregator,
         aggregate_subnet_ids=aggregate_subnet_ids,
         api_config=ApiServerConfig(port=api_port) if api_port is not None else None,
@@ -215,6 +211,7 @@ async def _init_from_checkpoint(
     checkpoint_sync_url: str,
     genesis: GenesisConfig,
     event_source: LiveNetworkEventSource,
+    fork: ForkProtocol,
     validator_registry: ValidatorRegistry | None = None,
     is_aggregator: bool = False,
     aggregate_subnet_ids: tuple[SubnetId, ...] = (),
@@ -244,6 +241,7 @@ async def _init_from_checkpoint(
         checkpoint_sync_url: URL of the node to fetch checkpoint state from.
         genesis: Local genesis configuration for validation.
         event_source: Network transport for the node.
+        fork: Fork specification for state/store construction.
         validator_registry: Optional registry with validator secret keys.
         is_aggregator: Enable aggregator mode for attestation aggregation.
         aggregate_subnet_ids: Additional subnets to subscribe and aggregate from.
@@ -255,7 +253,7 @@ async def _init_from_checkpoint(
     """
     try:
         logger.info("Fetching checkpoint state from %s", checkpoint_sync_url)
-        state = await fetch_finalized_state(checkpoint_sync_url, State)
+        state = await fetch_finalized_state(checkpoint_sync_url, fork.state_class)
 
         # Structural validation catches corrupted or malformed states.
         #
@@ -290,7 +288,7 @@ async def _init_from_checkpoint(
         # The store treats this as the new "genesis" for fork choice purposes.
         # All blocks before the checkpoint are effectively pruned.
         validator_id = validator_registry.primary_index() if validator_registry else None
-        store = Store.from_anchor(state, anchor_block, validator_id)
+        store = fork.create_store(state, anchor_block, validator_id)
         logger.info(
             "Initialized from checkpoint at slot %d (finalized=%s)",
             state.slot,
@@ -313,8 +311,9 @@ async def _init_from_checkpoint(
             validators=state.validators,
             event_source=event_source,
             network=event_source.reqresp_client,
+            fork=fork,
             validator_registry=validator_registry,
-            fork_digest=GOSSIP_FORK_DIGEST,
+            network_name=fork.NETWORK_NAME,
             is_aggregator=is_aggregator,
             aggregate_subnet_ids=aggregate_subnet_ids,
             api_config=ApiServerConfig(port=api_port) if api_port is not None else None,
@@ -429,6 +428,8 @@ async def run_node(
             Only effective when is_aggregator is also True.
         api_port: Port for API server (health, fork_choice, /metrics). None or 0 disables.
     """
+    fork = DEFAULT_REGISTRY.current
+
     metrics.init(name="leanspec-node", version="0.0.1")
     set_observer(PrometheusObserver())
     logger.info("Loading genesis from %s", genesis_path)
@@ -498,18 +499,18 @@ async def run_node(
 
     event_source = await LiveNetworkEventSource.create()
 
-    # Set the fork digest for incoming message validation.
+    # Set the network name for incoming message validation.
     #
     # Without this, the event source defaults to "0x00000000" and rejects
     # all messages from other clients that use "devnet0".
-    event_source.set_fork_digest(GOSSIP_FORK_DIGEST)
+    event_source.set_network_name(fork.NETWORK_NAME)
 
     # Subscribe to gossip topics.
     #
     # We subscribe before connecting to bootnodes so that when
     # we establish connections, we can immediately announce our
     # subscriptions to peers.
-    block_topic = GossipTopic.block(GOSSIP_FORK_DIGEST).to_topic_id()
+    block_topic = GossipTopic.block(fork.NETWORK_NAME).to_topic_id()
     event_source.subscribe_gossip_topic(block_topic)
 
     # Determine attestation subnets to subscribe to.
@@ -540,7 +541,7 @@ async def run_node(
 
     for subnet_id in subscription_subnets:
         attestation_subnet_topic = GossipTopic.attestation_subnet(
-            GOSSIP_FORK_DIGEST, subnet_id
+            fork.NETWORK_NAME, subnet_id
         ).to_topic_id()
         event_source.subscribe_gossip_topic(attestation_subnet_topic)
         logger.info("Subscribed to attestation subnet %d", subnet_id)
@@ -569,6 +570,7 @@ async def run_node(
             checkpoint_sync_url=checkpoint_sync_url,
             genesis=genesis,
             event_source=event_source,
+            fork=fork,
             validator_registry=validator_registry,
             is_aggregator=is_aggregator,
             aggregate_subnet_ids=aggregate_subnet_ids,
@@ -584,6 +586,7 @@ async def run_node(
         node = _init_from_genesis(
             genesis=genesis,
             event_source=event_source,
+            fork=fork,
             validator_registry=validator_registry,
             is_aggregator=is_aggregator,
             aggregate_subnet_ids=aggregate_subnet_ids,

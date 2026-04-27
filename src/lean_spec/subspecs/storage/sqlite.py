@@ -23,9 +23,10 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from lean_spec.subspecs.containers import Block, Checkpoint, State, ValidatorIndex
-from lean_spec.subspecs.containers.attestation import AttestationData
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks import State
+from lean_spec.forks.lstar.containers import Block, Checkpoint, ValidatorIndex
+from lean_spec.forks.lstar.containers.attestation import AttestationData
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.types import Bytes32, Uint64
 
 from .exceptions import StorageCorruptionError, StorageReadError, StorageWriteError
@@ -52,7 +53,7 @@ class SQLiteDatabase:
     Writes are buffered until explicitly committed via commit() or batch_write().
     """
 
-    def __init__(self, path: Path | str) -> None:
+    def __init__(self, path: Path | str, state_class: type[State] = State) -> None:
         """
         Initialize SQLite database.
 
@@ -61,8 +62,10 @@ class SQLiteDatabase:
         Args:
             path: Path to SQLite database file.
                   Use ":memory:" for in-memory database.
+            state_class: State class used to decode SSZ bytes.
         """
         self._path = Path(path) if isinstance(path, str) else path
+        self._state_class = state_class
 
         # SQLite handles concurrent access through file-level locking.
         #
@@ -203,7 +206,7 @@ class SQLiteDatabase:
             return None
 
         try:
-            return State.decode_bytes(row["data"])
+            return self._state_class.decode_bytes(row["data"])
         except Exception as e:
             raise StorageCorruptionError(
                 f"Corrupt state data for block root {root.hex()}: {e}"

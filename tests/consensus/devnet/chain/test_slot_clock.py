@@ -8,7 +8,7 @@ for a 4-second slot with 5 intervals of 800 ms each.
 import pytest
 from consensus_testing import SlotClockTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 GENESIS = 1700000000
 """Arbitrary genesis timestamp (seconds) used across most vectors."""

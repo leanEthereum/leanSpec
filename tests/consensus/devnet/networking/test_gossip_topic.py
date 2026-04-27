@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 FORK_DIGEST = "12345678"
 """Arbitrary fork digest used across topic tests."""

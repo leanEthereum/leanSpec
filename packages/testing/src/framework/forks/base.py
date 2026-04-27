@@ -81,7 +81,7 @@ class BaseFork(ABC, metaclass=BaseForkMeta):
         """
         Return the name of the fork as it appears in test fixtures.
 
-        By default, this is the class name (e.g., "Devnet" for consensus,
+        By default, this is the class name (e.g., "Lstar" for consensus,
         "Shanghai" for execution).
         This is used in the 'network' field of generated fixtures.
         """

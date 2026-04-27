@@ -4,7 +4,7 @@ End-to-end tests for the Generalized XMSS signature scheme.
 
 import pytest
 
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.xmss.interface import (
     TEST_SIGNATURE_SCHEME,
     GeneralizedXmssScheme,

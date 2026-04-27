@@ -2,7 +2,7 @@
 
 import pytest
 
-from lean_spec.subspecs.containers.validator import SubnetId
+from lean_spec.forks.lstar.containers.validator import SubnetId
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.client.event_source import GossipHandler
 from lean_spec.subspecs.networking.gossipsub import (
@@ -71,13 +71,13 @@ class TestTopicForkValidation:
     """Test suite for topic fork compatibility validation."""
 
     def test_validate_fork_success(self) -> None:
-        """Test validate_fork passes for matching fork_digest."""
-        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+        """Test validate_fork passes for matching network_name."""
+        topic = GossipTopic(kind=TopicKind.BLOCK, network_name="0x12345678")
         topic.validate_fork("0x12345678")  # Should not raise
 
     def test_validate_fork_raises_on_mismatch(self) -> None:
         """Test validate_fork raises ForkMismatchError on mismatch."""
-        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+        topic = GossipTopic(kind=TopicKind.BLOCK, network_name="0x12345678")
         with pytest.raises(ForkMismatchError) as exc_info:
             topic.validate_fork("0xdeadbeef")
 
@@ -88,15 +88,15 @@ class TestTopicForkValidation:
         """Test from_string_validated parses and validates successfully."""
         assert GossipTopic.from_string_validated(
             "/leanconsensus/0x12345678/block/ssz_snappy",
-            expected_fork_digest="0x12345678",
-        ) == GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+            expected_network_name="0x12345678",
+        ) == GossipTopic(kind=TopicKind.BLOCK, network_name="0x12345678")
 
     def test_from_string_validated_raises_on_mismatch(self) -> None:
         """Test from_string_validated raises ForkMismatchError on mismatch."""
         with pytest.raises(ForkMismatchError):
             GossipTopic.from_string_validated(
                 "/leanconsensus/0x12345678/block/ssz_snappy",
-                expected_fork_digest="0xdeadbeef",
+                expected_network_name="0xdeadbeef",
             )
 
     def test_from_string_validated_raises_on_invalid_topic(self) -> None:
@@ -110,24 +110,24 @@ class TestTopicFormatting:
 
     def test_gossip_topic_creation(self) -> None:
         """Test GossipTopic creation."""
-        topic = GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
-        assert topic == GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+        topic = GossipTopic(kind=TopicKind.BLOCK, network_name="0x12345678")
+        assert topic == GossipTopic(kind=TopicKind.BLOCK, network_name="0x12345678")
         assert str(topic) == "/leanconsensus/0x12345678/block/ssz_snappy"
 
     def test_gossip_topic_from_string(self) -> None:
         """Test parsing topic string."""
         topic_str = "/leanconsensus/0x12345678/block/ssz_snappy"
         assert GossipTopic.from_string(topic_str) == GossipTopic(
-            kind=TopicKind.BLOCK, fork_digest="0x12345678"
+            kind=TopicKind.BLOCK, network_name="0x12345678"
         )
 
     def test_gossip_topic_factory_methods(self) -> None:
         """Test GossipTopic factory methods."""
         assert GossipTopic.block("0xabcd1234") == GossipTopic(
-            kind=TopicKind.BLOCK, fork_digest="0xabcd1234"
+            kind=TopicKind.BLOCK, network_name="0xabcd1234"
         )
         assert GossipTopic.attestation_subnet("0xabcd1234", SubnetId(0)) == GossipTopic(
-            kind=TopicKind.ATTESTATION_SUBNET, fork_digest="0xabcd1234", subnet_id=SubnetId(0)
+            kind=TopicKind.ATTESTATION_SUBNET, network_name="0xabcd1234", subnet_id=SubnetId(0)
         )
 
     def test_parse_topic_string(self) -> None:
@@ -504,9 +504,9 @@ class TestGossipHandlerForkValidation:
 
     def test_decode_message_rejects_wrong_fork(self) -> None:
         """GossipHandler.decode_message() raises ForkMismatchError for wrong fork."""
-        handler = GossipHandler(fork_digest="0x12345678")
+        handler = GossipHandler(network_name="0x12345678")
 
-        # Topic with different fork_digest
+        # Topic with different network_name
         wrong_fork_topic = "/leanconsensus/0xdeadbeef/block/ssz_snappy"
 
         with pytest.raises(ForkMismatchError) as exc_info:
@@ -517,9 +517,9 @@ class TestGossipHandlerForkValidation:
 
     def test_get_topic_rejects_wrong_fork(self) -> None:
         """GossipHandler.get_topic() raises ForkMismatchError for wrong fork."""
-        handler = GossipHandler(fork_digest="0x12345678")
+        handler = GossipHandler(network_name="0x12345678")
 
-        # Topic with different fork_digest
+        # Topic with different network_name
         wrong_fork_topic = "/leanconsensus/0xdeadbeef/attestation/ssz_snappy"
 
         with pytest.raises(ForkMismatchError) as exc_info:
@@ -530,7 +530,7 @@ class TestGossipHandlerForkValidation:
 
     def test_get_topic_accepts_matching_fork(self) -> None:
         """GossipHandler.get_topic() returns topic for matching fork."""
-        handler = GossipHandler(fork_digest="0x12345678")
+        handler = GossipHandler(network_name="0x12345678")
         assert handler.get_topic("/leanconsensus/0x12345678/block/ssz_snappy") == GossipTopic(
-            kind=TopicKind.BLOCK, fork_digest="0x12345678"
+            kind=TopicKind.BLOCK, network_name="0x12345678"
         )

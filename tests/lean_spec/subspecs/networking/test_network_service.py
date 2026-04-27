@@ -6,13 +6,13 @@ from typing import cast
 
 import pytest
 
-from lean_spec.subspecs.containers import (
+from lean_spec.forks.lstar.containers import (
     AttestationData,
     Checkpoint,
 )
-from lean_spec.subspecs.containers.attestation import SignedAttestation
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.validator import ValidatorIndex
+from lean_spec.forks.lstar.containers.attestation import SignedAttestation
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.validator import ValidatorIndex
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic, TopicKind
 from lean_spec.subspecs.networking.reqresp.message import Status
@@ -38,13 +38,13 @@ from tests.lean_spec.helpers import (
 @pytest.fixture
 def block_topic() -> GossipTopic:
     """Provide a block gossip topic for tests."""
-    return GossipTopic(kind=TopicKind.BLOCK, fork_digest="0x12345678")
+    return GossipTopic(kind=TopicKind.BLOCK, network_name="0x12345678")
 
 
 @pytest.fixture
 def attestation_topic() -> GossipTopic:
     """Provide an attestation subnet gossip topic for tests."""
-    return GossipTopic(kind=TopicKind.ATTESTATION_SUBNET, fork_digest="0x12345678")
+    return GossipTopic(kind=TopicKind.ATTESTATION_SUBNET, network_name="0x12345678")
 
 
 class TestBlockRoutingToForkchoice:

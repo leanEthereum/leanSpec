@@ -11,7 +11,7 @@ from __future__ import annotations
 from pydantic import model_validator
 
 from lean_spec.config import LEAN_ENV
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.xmss.target_sum import (
     PROD_TARGET_SUM_ENCODER,
     TEST_TARGET_SUM_ENCODER,

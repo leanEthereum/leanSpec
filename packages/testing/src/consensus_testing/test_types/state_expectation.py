@@ -3,10 +3,10 @@
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from lean_spec.subspecs.containers.block.block import Block
-from lean_spec.subspecs.containers.slot import Slot
-from lean_spec.subspecs.containers.state import State
-from lean_spec.subspecs.containers.state.types import (
+from lean_spec.forks.lstar.containers.block.block import Block
+from lean_spec.forks.lstar.containers.slot import Slot
+from lean_spec.forks.lstar.containers.state import State
+from lean_spec.forks.lstar.containers.state.types import (
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,

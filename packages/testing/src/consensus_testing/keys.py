@@ -40,12 +40,12 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 from lean_spec.config import LEAN_ENV
-from lean_spec.subspecs.containers import AttestationData, ValidatorIndex, ValidatorIndices
-from lean_spec.subspecs.containers.block.types import (
+from lean_spec.forks.lstar.containers import AttestationData, ValidatorIndex, ValidatorIndices
+from lean_spec.forks.lstar.containers.block.types import (
     AggregatedAttestations,
     AttestationSignatures,
 )
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof

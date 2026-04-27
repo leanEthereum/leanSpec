@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from lean_spec.subspecs.containers.validator import SubnetId
+from lean_spec.forks.lstar.containers.validator import SubnetId
 from lean_spec.subspecs.networking.enr import Eth2Data
 from lean_spec.subspecs.networking.enr.eth2 import (
     FAR_FUTURE_EPOCH,

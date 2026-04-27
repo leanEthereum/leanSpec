@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from lean_spec.subspecs.containers.checkpoint import Checkpoint
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers.checkpoint import Checkpoint
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.types import Bytes32
 
 # Two distinct roots to verify ordering ignores root content.

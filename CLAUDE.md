@@ -20,8 +20,8 @@ subspecifications that the Lean Ethereum protocol relies on.
 ```bash
 uv sync                           # Install dependencies
 uv run pytest                     # Run unit tests
-uv run fill --fork=devnet --clean -n auto                # Generate test vectors
-uv run fill --fork=devnet --clean -n auto --scheme=prod  # Generate test vectors with production scheme
+uv run fill --fork=lstar --clean -n auto                # Generate test vectors
+uv run fill --fork=lstar --clean -n auto --scheme=prod  # Generate test vectors with production scheme
 # Note: execution layer support is planned for future, infrastructure is ready
 # for now, `--layer=consensus` is default and the only value used.
 ```
@@ -333,7 +333,7 @@ assert all(rpc == expected_rpc for _, rpc in capture.sent)
 - Layer-specific packages: `consensus_testing` (active) and `execution_testing` (future)
 - Write consensus spec tests using `state_transition_test` or `fork_choice_test` fixtures
 - These fixtures are type aliases that create test vectors when called
-- Run `uv run fill --fork=Devnet --clean -n auto` to generate consensus fixtures
+- Run `uv run fill --fork=Lstar --clean -n auto` to generate consensus fixtures
 - Use `--layer=execution` flag when execution layer is implemented
 - Output goes to `fixtures/{layer}/{format}/{test_path}/...`
 

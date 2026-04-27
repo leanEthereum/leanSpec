@@ -11,10 +11,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from lean_spec.subspecs.containers import SignedBlock
-from lean_spec.subspecs.containers.attestation import SignedAttestation
-from lean_spec.subspecs.containers.attestation.attestation import SignedAggregatedAttestation
-from lean_spec.subspecs.containers.slot import Slot
+from lean_spec.forks.lstar.containers import SignedBlock
+from lean_spec.forks.lstar.containers.attestation import SignedAttestation
+from lean_spec.forks.lstar.containers.attestation.attestation import SignedAggregatedAttestation
+from lean_spec.forks.lstar.containers.slot import Slot
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.service.events import NetworkEvent
 from lean_spec.subspecs.ssz.hash import hash_tree_root

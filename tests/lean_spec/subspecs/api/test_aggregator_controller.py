@@ -23,7 +23,7 @@ def _make_controller(
     network_service = NetworkService(
         sync_service=sync_service,
         event_source=MockEventSource(events=[]),
-        fork_digest=FORK_DIGEST,
+        network_name=FORK_DIGEST,
         is_aggregator=initial,
     )
     controller = AggregatorController(

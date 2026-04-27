@@ -32,7 +32,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.containers import SignedBlock
+from lean_spec.forks.lstar.containers import SignedBlock
 from lean_spec.subspecs.networking.reqresp.codec import (
     CodecError,
     ResponseCode,

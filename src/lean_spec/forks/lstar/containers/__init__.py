@@ -25,7 +25,6 @@ from .block import (
 from .checkpoint import Checkpoint
 from .config import Config
 from .slot import Slot
-from .state import State
 from .validator import Validator, ValidatorIndex, ValidatorIndices
 
 __all__ = [
@@ -42,7 +41,6 @@ __all__ = [
     "SignedAttestation",
     "SignedBlock",
     "Slot",
-    "State",
     "Validator",
     "ValidatorIndex",
     "ValidatorIndices",
