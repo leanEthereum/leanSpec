@@ -362,7 +362,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(1),
                     target_root_label="block_1",
                     source_root_label="genesis",
@@ -372,7 +372,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                     source_root_label="block_1",
@@ -382,7 +382,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(3),
                     target_root_label="block_3",
                     source_root_label="block_2",
@@ -392,7 +392,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(4),
                     target_root_label="block_4",
                     source_root_label="block_3",
@@ -402,7 +402,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
                     source_root_label="block_3",
@@ -426,7 +426,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(1),
                     target_root_label="block_1",
                     source_root_label="genesis",
@@ -436,7 +436,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                     source_root_label="block_1",
@@ -446,7 +446,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(3),
                     target_root_label="block_3",
                     source_root_label="block_2",
@@ -456,7 +456,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(4),
                     target_root_label="block_4",
                     source_root_label="block_3",
@@ -466,7 +466,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
                     source_root_label="block_3",
@@ -478,7 +478,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             AttestationStep(
                 attestation=GossipAttestationSpec(
                     validator_id=ValidatorIndex(6),
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(1),
                     target_root_label="block_1",
                     source_root_label="genesis",
@@ -489,7 +489,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             AttestationStep(
                 attestation=GossipAttestationSpec(
                     validator_id=ValidatorIndex(6),
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                     source_root_label="block_1",
@@ -500,7 +500,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             AttestationStep(
                 attestation=GossipAttestationSpec(
                     validator_id=ValidatorIndex(6),
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(3),
                     target_root_label="block_3",
                     source_root_label="block_2",
@@ -511,7 +511,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             AttestationStep(
                 attestation=GossipAttestationSpec(
                     validator_id=ValidatorIndex(6),
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(4),
                     target_root_label="block_4",
                     source_root_label="block_3",
@@ -523,7 +523,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             AttestationStep(
                 attestation=GossipAttestationSpec(
                     validator_id=ValidatorIndex(6),
-                    slot=Slot(6),
+                    slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
                     source_root_label="block_3",

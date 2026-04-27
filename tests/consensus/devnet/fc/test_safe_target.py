@@ -288,7 +288,7 @@ def test_safe_target_follows_heavier_fork_on_split(
             BlockStep(
                 block=BlockSpec(slot=Slot(3), parent_label="block_1", label="block_b"),
             ),
-            TickStep(time=14),
+            TickStep(time=18),
             # Supermajority (4/6) attests to block_b.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
@@ -318,7 +318,7 @@ def test_safe_target_follows_heavier_fork_on_split(
             # block_1 gets weight 6 (all validators walk through it).
             # At the fork, only block_b survives the min_score filter.
             TickStep(
-                time=15,
+                time=19,
                 checks=StoreChecks(
                     safe_target_slot=Slot(3),
                     safe_target_root_label="block_b",
@@ -372,7 +372,7 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
                 block=BlockSpec(slot=Slot(3), label="block_3"),
                 checks=StoreChecks(head_slot=Slot(3), head_root_label="block_3"),
             ),
-            TickStep(time=14),
+            TickStep(time=18),
             # 6/8 vote for block_2. Weight: block_1 += 6, block_2 += 6.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
@@ -405,7 +405,7 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
             # Safe walk stops at block_2 (block_3 below threshold).
             # LMD-GHOST continues to block_3 (no threshold).
             TickStep(
-                time=15,
+                time=19,
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     head_root_label="block_3",
@@ -489,7 +489,7 @@ def test_safe_target_ignores_known_pool_at_interval_3(
                     ],
                 ),
             ),
-            TickStep(time=14),
+            TickStep(time=18),
             # Gossip 2 more attestations into the "new" pool.
             # Combined with "known": total weight = 4 = threshold.
             GossipAggregatedAttestationStep(
@@ -522,7 +522,7 @@ def test_safe_target_ignores_known_pool_at_interval_3(
             # Interval 3: only the "new" pool is considered.
             # Weight at block_1 = 2 < 4, so the walk cannot leave genesis.
             TickStep(
-                time=15,
+                time=19,
                 checks=StoreChecks(
                     head_slot=Slot(3),
                     head_root_label="block_3",

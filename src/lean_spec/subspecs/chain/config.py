@@ -7,6 +7,16 @@ from lean_spec.types import Uint8, Uint64
 INTERVALS_PER_SLOT: Final = Uint64(5)
 """Number of intervals per slot for forkchoice processing."""
 
+GOSSIP_DISPARITY_INTERVALS: Final = Uint64(1)
+"""
+Future-slot tolerance for gossip attestations, in intervals.
+
+Bounds the clock skew the time check is willing to absorb when admitting
+a vote whose slot has not yet started locally.
+
+One interval is roughly 800 ms.
+"""
+
 SECONDS_PER_SLOT: Final = Uint64(4)
 """The fixed duration of a single slot in seconds."""
 

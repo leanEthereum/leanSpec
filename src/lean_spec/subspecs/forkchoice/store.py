@@ -11,6 +11,7 @@ from typing import NamedTuple
 
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import (
+    GOSSIP_DISPARITY_INTERVALS,
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
     MAX_ATTESTATIONS_DATA,
@@ -281,7 +282,7 @@ class Store(StrictBaseModel):
             2. A vote cannot span backwards in time (source > target).
             3. The head must be at least as recent as source and target.
             4. Checkpoint slots must match the actual block slots.
-            5. A vote cannot be for a future slot.
+            5. The vote's slot must have started locally (a small disparity margin is allowed).
 
         Args:
         attestation_data: AttestationData whose checkpoints and slot should be validated.
@@ -317,10 +318,16 @@ class Store(StrictBaseModel):
 
         # Time Check
         #
-        # Validate attestation is not too far in the future
-        # We allow a small margin for clock disparity (1 slot), but no further.
-        current_slot = Slot(self.time // INTERVALS_PER_SLOT)
-        assert data.slot <= current_slot + Slot(1), "Attestation too far in future"
+        # Honest validators emit votes only after their slot has begun.
+        # Allow a small disparity margin for clock skew between peers.
+        #
+        # The bound is in intervals, not slots: a whole-slot margin would
+        # let an adversary pre-publish next-slot aggregates ahead of any
+        # honest validator.
+        attestation_start_interval = Interval.from_slot(data.slot)
+        assert attestation_start_interval <= self.time + GOSSIP_DISPARITY_INTERVALS, (
+            "Attestation too far in future"
+        )
 
     def on_gossip_attestation(
         self,

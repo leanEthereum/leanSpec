@@ -36,9 +36,9 @@ def test_block_builder_fixed_point_advances_justification(
 
     Scenario
     --------
-    Four validators. Linear chain through slot 4::
+    Four validators. Linear chain through slot 5::
 
-        genesis(0) -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+        genesis(0) -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
 
     Two gossip attestations with different sources:
 
@@ -66,7 +66,7 @@ def test_block_builder_fixed_point_advances_justification(
             # Chain setup
             # ===========
             #
-            #   genesis(0) -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+            #   genesis(0) -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
             #
             # Slot 3 carries a supermajority attestation that justifies slot 1.
             # This establishes the baseline: justified=1, finalized=0.
@@ -104,11 +104,18 @@ def test_block_builder_fixed_point_advances_justification(
                     latest_finalized_slot=Slot(0),
                 ),
             ),
-            # Extend to slot 4. No attestations, no checkpoint change.
+            # Extend to slot 4 then slot 5. No attestations, no checkpoint change.
             BlockStep(
                 block=BlockSpec(slot=Slot(4), label="block_4"),
                 checks=StoreChecks(
                     head_slot=Slot(4),
+                    latest_justified_slot=Slot(1),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(5), label="block_5"),
+                checks=StoreChecks(
+                    head_slot=Slot(5),
                     latest_justified_slot=Slot(1),
                 ),
             ),
@@ -125,14 +132,14 @@ def test_block_builder_fixed_point_advances_justification(
             #
             # Timing:
             #
-            #   18s = interval 22 = slot 4, interval 2 (aggregate interval)
+            #   22s = interval 27 = slot 5, interval 2 (aggregate interval)
             #   The attestation pool is empty here, so nothing is lost.
             #
-            #   20s = interval 25 = slot 5, interval 0
-            #   Passes through interval 24 (slot 4, interval 4) which
+            #   24s = interval 30 = slot 6, interval 0
+            #   Passes through interval 29 (slot 5, interval 4) which
             #   migrates attestations from the "new" pool to "known".
-            # Advance past the aggregate interval while the pool is empty.
-            TickStep(time=18),
+            # Advance to the aggregate interval while the pool is empty.
+            TickStep(time=22),
             # Attestation A: source=1, target=2
             # 3/4 validators. Matches justified=1 on the first pass.
             GossipAggregatedAttestationStep(
@@ -166,7 +173,7 @@ def test_block_builder_fixed_point_advances_justification(
                     source_slot=Slot(2),
                 ),
             ),
-            # Migrate attestations: tick to 20s (interval 24 fires acceptance).
+            # Migrate attestations: tick to 24s (interval 29 fires acceptance).
             #
             # Invariant: justified is still slot 1.
             # Attestations are stored but not processed until a block is built.
@@ -175,7 +182,7 @@ def test_block_builder_fixed_point_advances_justification(
             # - V0 appears only in A (source=1, target=2)
             # - V3 appears only in B (source=2, target=4)
             TickStep(
-                time=20,
+                time=24,
                 checks=StoreChecks(
                     latest_justified_slot=Slot(1),
                     attestation_checks=[
@@ -217,9 +224,9 @@ def test_block_builder_fixed_point_advances_justification(
             #   finalized = 1
             #   block body = 2 aggregated attestations
             BlockStep(
-                block=BlockSpec(slot=Slot(5), label="block_5"),
+                block=BlockSpec(slot=Slot(6), label="block_6"),
                 checks=StoreChecks(
-                    head_slot=Slot(5),
+                    head_slot=Slot(6),
                     latest_justified_slot=Slot(4),
                     latest_justified_root_label="block_4",
                     latest_finalized_slot=Slot(1),
@@ -303,7 +310,7 @@ def test_produce_block_enforces_max_attestations_data_limit(
         GossipAggregatedAttestationStep(
             attestation=GossipAggregatedAttestationSpec(
                 validator_ids=validators,
-                slot=Slot(block_production_slot),
+                slot=Slot(num_target_blocks),
                 target_slot=Slot(n),
                 target_root_label=f"block_{n}",
             ),
@@ -380,11 +387,11 @@ def test_produce_block_includes_pending_attestations(
             # Advance past the aggregate interval while the pool is empty.
             TickStep(time=10),
             # Validators 1 & 2 gossip an aggregated attestation targeting block_2.
-            # slot=3 is one slot ahead of current (slot 2): within the allowed margin.
+            # data.slot=2 matches the current slot.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
                     validator_ids=[ValidatorIndex(1), ValidatorIndex(2)],
-                    slot=Slot(3),
+                    slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                 ),
@@ -402,7 +409,7 @@ def test_produce_block_includes_pending_attestations(
                     block_attestations=[
                         AggregatedAttestationCheck(
                             participants={1, 2},
-                            attestation_slot=Slot(3),
+                            attestation_slot=Slot(2),
                             target_slot=Slot(2),
                         ),
                     ],

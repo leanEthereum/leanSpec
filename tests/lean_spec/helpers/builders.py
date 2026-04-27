@@ -359,6 +359,7 @@ def make_store_with_attestation_data(
         validator_id=validator_id,
         key_manager=key_manager,
     )
+    store = store.model_copy(update={"time": Interval.from_slot(attestation_slot)})
     attestation_data = store.produce_attestation_data(attestation_slot)
     return store, attestation_data
 

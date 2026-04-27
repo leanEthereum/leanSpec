@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.containers.attestation import (
     AggregatedAttestation,
     Attestation,
@@ -419,6 +420,13 @@ class BlockSpec(CamelModel):
         _, attestation_signatures, valid_attestations = self.build_attestations(
             parent_state, block_registry, key_manager
         )
+
+        # Advance the local store clock to the block's slot before gossiping.
+        # In-body attestations carry data.slot = self.slot; the Store's time
+        # check rejects votes whose slot has not yet started locally.
+        block_slot_interval = Interval.from_slot(self.slot)
+        if store.time < block_slot_interval:
+            store, _ = store.on_tick(block_slot_interval, has_proposal=True, is_aggregator=True)
 
         # Gossip valid attestation signatures into the Store.
         # This runs signature verification through the spec's validation path.

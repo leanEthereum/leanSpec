@@ -4,11 +4,29 @@ from __future__ import annotations
 
 import pytest
 
+from lean_spec.subspecs.chain.clock import Interval
+from lean_spec.subspecs.chain.config import GOSSIP_DISPARITY_INTERVALS, INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers import Attestation, AttestationData, Checkpoint
 from lean_spec.subspecs.containers.slot import Slot
 from lean_spec.subspecs.containers.validator import ValidatorIndex
 from lean_spec.subspecs.forkchoice import Store
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+
+# Slot used by every time-check case below.
+ATTESTATION_SLOT = Slot(2)
+"""Slot of the attestation under test."""
+
+ATTESTATION_START_INTERVAL = Interval.from_slot(ATTESTATION_SLOT)
+"""First interval at which ATTESTATION_SLOT begins."""
+
+DISPARITY_BOUNDARY_INTERVAL = ATTESTATION_START_INTERVAL - GOSSIP_DISPARITY_INTERVALS
+"""Latest local interval that still admits the attestation."""
+
+JUST_BEYOND_DISPARITY_BOUNDARY_INTERVAL = DISPARITY_BOUNDARY_INTERVAL - Interval(1)
+"""First local interval that rejects the attestation."""
+
+ONE_FULL_SLOT_BEHIND_INTERVAL = ATTESTATION_START_INTERVAL - INTERVALS_PER_SLOT
+"""Local interval one full slot behind the attestation's slot start."""
 
 
 class TestValidateAttestationHeadChecks:
@@ -178,3 +196,81 @@ class TestValidateAttestationHeadChecks:
         )
 
         store.validate_attestation(attestation.data)
+
+
+class TestValidateAttestationTimeCheck:
+    """
+    Time check boundaries.
+
+    Each case sets `store.time` explicitly to isolate the time check from
+    on_tick side effects (aggregation, safe-target update, acceptance).
+    """
+
+    @staticmethod
+    def _build_two_block_chain(store: Store) -> tuple[Store, AttestationData]:
+        """Produce blocks at slots 1 and ATTESTATION_SLOT; return ATTESTATION_SLOT data."""
+        store, _, _ = store.produce_block_with_signatures(Slot(1), ValidatorIndex(1))
+        store, block_2, _ = store.produce_block_with_signatures(
+            ATTESTATION_SLOT, ValidatorIndex(int(ATTESTATION_SLOT))
+        )
+        block_2_root = hash_tree_root(block_2)
+        genesis_root = store.latest_justified.root
+
+        data = AttestationData(
+            slot=ATTESTATION_SLOT,
+            head=Checkpoint(root=block_2_root, slot=ATTESTATION_SLOT),
+            target=Checkpoint(root=block_2_root, slot=ATTESTATION_SLOT),
+            source=Checkpoint(root=genesis_root, slot=Slot(0)),
+        )
+        return store, data
+
+    def test_attestation_at_current_slot_passes(self, observer_store: Store) -> None:
+        """A vote at the current slot is always accepted, every interval."""
+        store, data = self._build_two_block_chain(observer_store)
+
+        # Sweep every interval in the attestation's slot.
+        for offset in range(int(INTERVALS_PER_SLOT)):
+            local = store.model_copy(update={"time": ATTESTATION_START_INTERVAL + Interval(offset)})
+            local.validate_attestation(data)
+
+    def test_attestation_in_past_passes(self, observer_store: Store) -> None:
+        """A vote from a past slot is always accepted."""
+        store, data = self._build_two_block_chain(observer_store)
+
+        # Place the local clock several slots ahead.
+        far_future = ATTESTATION_START_INTERVAL + INTERVALS_PER_SLOT * Interval(10)
+        store = store.model_copy(update={"time": far_future})
+        store.validate_attestation(data)
+
+    def test_attestation_at_disparity_boundary_passes(self, observer_store: Store) -> None:
+        """At the disparity boundary the attestation is still accepted."""
+        store, data = self._build_two_block_chain(observer_store)
+
+        store = store.model_copy(update={"time": DISPARITY_BOUNDARY_INTERVAL})
+        store.validate_attestation(data)
+
+    def test_attestation_just_beyond_disparity_boundary_rejected(
+        self, observer_store: Store
+    ) -> None:
+        """One interval past the disparity boundary the attestation is rejected."""
+        store, data = self._build_two_block_chain(observer_store)
+
+        store = store.model_copy(update={"time": JUST_BEYOND_DISPARITY_BOUNDARY_INTERVAL})
+
+        with pytest.raises(AssertionError, match="Attestation too far in future"):
+            store.validate_attestation(data)
+
+    def test_attestation_one_full_slot_in_future_rejected(self, observer_store: Store) -> None:
+        """
+        Regression: a full-slot future window must be rejected.
+
+        An earlier rule admitted votes up to a full slot ahead.
+        That window let an adversary pre-publish next-slot aggregates
+        before any honest validator could produce them.
+        """
+        store, data = self._build_two_block_chain(observer_store)
+
+        store = store.model_copy(update={"time": ONE_FULL_SLOT_BEHIND_INTERVAL})
+
+        with pytest.raises(AssertionError, match="Attestation too far in future"):
+            store.validate_attestation(data)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from consensus_testing.keys import XmssKeyManager
 
+from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.containers.attestation import (
     AttestationData,
@@ -744,6 +745,8 @@ class TestEndToEndAggregationFlow:
         store = make_store(
             num_validators=num_validators, key_manager=key_manager, validator_id=aggregator_id
         )
+        # Advance the clock to slot 1 so the attestation's slot has begun.
+        store = store.model_copy(update={"time": Interval.from_slot(Slot(1))})
 
         attestation_data = store.produce_attestation_data(Slot(1))
         data_root = hash_tree_root(attestation_data)
