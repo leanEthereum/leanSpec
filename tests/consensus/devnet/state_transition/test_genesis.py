@@ -264,3 +264,100 @@ def test_first_post_genesis_block_sets_checkpoint_anchor_roots(
             justified_slots=JustifiedSlots(data=[]),
         ),
     )
+
+
+def test_genesis_maximum_validators(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test genesis state generation with VALIDATOR_REGISTRY_LIMIT (4096).
+
+    Scenario
+    --------
+    Generate a genesis state with the maximum allowed number of validators (4096).
+    The test then transitions to slot 1 to verify proposer rotation.
+
+    Expected Behavior
+    -----------------
+    - Genesis state should contain exactly 4096 validators.
+    - Proposer for slot 1 should be validator index 1 (standard proposer rotation).
+    - All state roots and headers should be correctly materialized.
+    """
+    # Generate large pre-state with 4096 validators
+    pre = generate_pre_state(num_validators=4096, genesis_time=Uint64(0))
+
+    # The anchor root is the root of the genesis block header with its state root filled.
+    # This header is materialized when transitioning to the first post-genesis block.
+    # We process slots up to slot 1 to get the expected header for comparison.
+    anchor_root = hash_tree_root(pre.process_slots(Slot(1)).latest_block_header)
+
+    state_transition_test(
+        pre=pre,
+        blocks=[
+            BlockSpec(slot=Slot(1), proposer_index=ValidatorIndex(1)),
+        ],
+        post=StateExpectation(
+            slot=Slot(1),
+            validator_count=4096,
+            latest_justified_slot=Slot(0),
+            latest_justified_root=anchor_root,
+            latest_finalized_slot=Slot(0),
+            latest_finalized_root=anchor_root,
+            latest_block_header_slot=Slot(1),
+            latest_block_header_proposer_index=1,
+            latest_block_header_parent_root=anchor_root,
+        ),
+    )
+
+
+def test_genesis_maximum_validators_justification(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test supermajority justification with 4096 validators.
+
+    Scenario
+    --------
+    1. Generate genesis with 4096 validators.
+    2. Produce a block at slot 1.
+    3. Produce a block at slot 2 containing attestations from 2731 validators
+       targeting slot 1.
+    Threshold Calculation:
+    - supermajority_threshold = ceil(2/3 * 4096) = 2731 validators.
+    - Total weight: 2731 * 3 = 8193.
+    - Threshold weight: 2 * 4096 = 8192.
+    - Result: 8193 >= 8192 -> Slot 1 becomes justified.
+
+    Expected Behavior
+    -----------------
+    Slot 1 should be justified in the state after processing the block at slot 2.
+    """
+    # Generate pre-state with max validators
+    pre = generate_pre_state(num_validators=4096, genesis_time=Uint64(0))
+
+    state_transition_test(
+        pre=pre,
+        blocks=[
+            # Block 1: creates the attestation target
+            BlockSpec(slot=Slot(1), label="block_1"),
+            # Block 2: 2731 validators attest to slot 1
+            # Threshold: 3*2731=8193 >= 2*4096=8192 -> justifies slot 1.
+            BlockSpec(
+                slot=Slot(2),
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[ValidatorIndex(i) for i in range(2731)],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            validator_count=4096,
+            latest_justified_slot=Slot(1),
+            latest_justified_root_label="block_1",
+        ),
+    )
