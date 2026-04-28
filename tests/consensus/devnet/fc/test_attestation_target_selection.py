@@ -526,3 +526,143 @@ def test_attestation_target_walkback_bounded_by_lookback(
         for s in range(1, head + 1)
     ]
     fork_choice_test(steps=steps)
+
+
+def test_attestation_target_selection_after_finality_has_moved(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Attestation target selection respects a non-zero finalized boundary.
+
+    Scenario
+    --------
+    1. Justify block_1 in block_3
+    2. Process block_8 so slots 2 and 7 become justified and slot 1 becomes finalized
+    3. Extend the empty chain through block_11
+
+    Expected Behavior
+    -----------------
+    1. latest_justified_slot remains 7
+    2. latest_finalized_slot remains 1
+    3. safe_target settles on block_7
+    4. The attestation target also resolves to block_7
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="block_2",
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(3),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    latest_justified_slot=Slot(1),
+                    latest_finalized_slot=Slot(0),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(4), parent_label="block_3", label="block_4"),
+                checks=StoreChecks(head_slot=Slot(4)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(5), parent_label="block_4", label="block_5"),
+                checks=StoreChecks(head_slot=Slot(5)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(6), parent_label="block_5", label="block_6"),
+                checks=StoreChecks(head_slot=Slot(6)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(7), parent_label="block_6", label="block_7"),
+                checks=StoreChecks(head_slot=Slot(7)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(8),
+                    parent_label="block_7",
+                    label="block_8",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(8),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(8),
+                            target_slot=Slot(7),
+                            target_root_label="block_7",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(8),
+                    latest_justified_slot=Slot(7),
+                    latest_finalized_slot=Slot(1),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(9), parent_label="block_8", label="block_9"),
+                checks=StoreChecks(
+                    head_slot=Slot(9),
+                    latest_justified_slot=Slot(7),
+                    latest_finalized_slot=Slot(1),
+                    safe_target_slot=Slot(7),
+                    safe_target_root_label="block_7",
+                    attestation_target_slot=Slot(7),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(10), parent_label="block_9", label="block_10"),
+                checks=StoreChecks(
+                    head_slot=Slot(10),
+                    latest_justified_slot=Slot(7),
+                    latest_finalized_slot=Slot(1),
+                    safe_target_slot=Slot(7),
+                    safe_target_root_label="block_7",
+                    attestation_target_slot=Slot(7),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(11), parent_label="block_10", label="block_11"),
+                checks=StoreChecks(
+                    head_slot=Slot(11),
+                    latest_justified_slot=Slot(7),
+                    latest_finalized_slot=Slot(1),
+                    safe_target_slot=Slot(7),
+                    safe_target_root_label="block_7",
+                    attestation_target_slot=Slot(7),
+                ),
+            ),
+        ],
+    )

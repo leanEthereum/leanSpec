@@ -417,3 +417,199 @@ def test_produce_block_includes_pending_attestations(
             ),
         ],
     )
+
+
+def test_block_builder_recovers_finality_after_non_zero_boundary_stall(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Block production recovers finality after the finalized slot has already moved.
+
+    Scenario
+    --------
+    1. Justify block_1 in block_3
+    2. Process block_8 so slots 2 and 7 become justified and slot 1 becomes finalized
+    3. Extend the chain through block_11
+    4. Gossip two aggregated attestations for slot 11:
+       one from block_7 to block_10, then one from block_10 to block_11
+    5. Produce block_12 without explicit attestation specs
+
+    Expected Behavior
+    -----------------
+    1. The builder first includes the block_7 to block_10 attestation
+    2. That attestation justifies slot 10 and finalizes slot 7
+    3. The re-iteration then includes the block_10 to block_11 attestation
+    4. The post-store head is block_12 at slot 12
+    5. latest_justified_slot is 11
+    6. latest_finalized_slot is 10
+    7. The block body contains exactly both aggregated attestations
+    """
+    aggregate_interval = 11 * int(INTERVALS_PER_SLOT) + 2
+    aggregate_time = math.ceil(aggregate_interval * int(MILLISECONDS_PER_INTERVAL) / 1000)
+    block_time = 12 * int(SECONDS_PER_SLOT)
+
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="block_2",
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(3),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    latest_justified_slot=Slot(1),
+                    latest_finalized_slot=Slot(0),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(4), parent_label="block_3", label="block_4"),
+                checks=StoreChecks(head_slot=Slot(4)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(5), parent_label="block_4", label="block_5"),
+                checks=StoreChecks(head_slot=Slot(5)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(6), parent_label="block_5", label="block_6"),
+                checks=StoreChecks(head_slot=Slot(6)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(7), parent_label="block_6", label="block_7"),
+                checks=StoreChecks(head_slot=Slot(7)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(8),
+                    parent_label="block_7",
+                    label="block_8",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(8),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                        AggregatedAttestationSpec(
+                            validator_ids=[
+                                ValidatorIndex(0),
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                            ],
+                            slot=Slot(8),
+                            target_slot=Slot(7),
+                            target_root_label="block_7",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(8),
+                    latest_justified_slot=Slot(7),
+                    latest_justified_root_label="block_7",
+                    latest_finalized_slot=Slot(1),
+                    latest_finalized_root_label="block_1",
+                ),
+            ),
+            *[
+                BlockStep(
+                    block=BlockSpec(
+                        slot=Slot(n),
+                        parent_label=f"block_{n - 1}",
+                        label=f"block_{n}",
+                    ),
+                    checks=(StoreChecks(head_slot=Slot(n)) if n == 9 or n == 11 else None),
+                )
+                for n in range(9, 12)
+            ],
+            TickStep(time=aggregate_time),
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(0),
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                    ],
+                    slot=Slot(11),
+                    target_slot=Slot(10),
+                    target_root_label="block_10",
+                    source_root_label="block_7",
+                    source_slot=Slot(7),
+                ),
+            ),
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                        ValidatorIndex(3),
+                    ],
+                    slot=Slot(11),
+                    target_slot=Slot(11),
+                    target_root_label="block_11",
+                    source_root_label="block_10",
+                    source_slot=Slot(10),
+                ),
+            ),
+            TickStep(
+                time=block_time,
+                checks=StoreChecks(
+                    latest_justified_slot=Slot(7),
+                    latest_finalized_slot=Slot(1),
+                    latest_known_aggregated_target_slots=[
+                        Slot(2),
+                        Slot(7),
+                        Slot(10),
+                        Slot(11),
+                    ],
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(12), parent_label="block_11", label="block_12"),
+                checks=StoreChecks(
+                    head_slot=Slot(12),
+                    head_root_label="block_12",
+                    latest_justified_slot=Slot(11),
+                    latest_justified_root_label="block_11",
+                    latest_finalized_slot=Slot(10),
+                    latest_finalized_root_label="block_10",
+                    block_attestation_count=2,
+                    block_attestations=[
+                        AggregatedAttestationCheck(
+                            participants={0, 1, 2},
+                            attestation_slot=Slot(11),
+                            target_slot=Slot(10),
+                        ),
+                        AggregatedAttestationCheck(
+                            participants={1, 2, 3},
+                            attestation_slot=Slot(11),
+                            target_slot=Slot(11),
+                        ),
+                    ],
+                ),
+            ),
+        ],
+    )

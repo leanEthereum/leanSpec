@@ -7,6 +7,8 @@ from consensus_testing import (
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
+    GossipAggregatedAttestationSpec,
+    GossipAggregatedAttestationStep,
     GossipAttestationSpec,
     StoreChecks,
     TickStep,
@@ -246,6 +248,85 @@ def test_equivocating_proposer_with_split_attestations(
                 checks=StoreChecks(
                     head_slot=Slot(2),
                     head_root_label="fork_b",
+                ),
+            ),
+        ],
+    )
+
+
+def test_same_slot_equivocating_attesters_count_once(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Same-slot conflicting attestations from the same validators count once.
+
+    Scenario
+    --------
+    Eight validators. Two forks diverge from a common ancestor:
+
+    - fork_a receives slot-3 votes from validators 0, 1, and 2
+    - fork_b receives slot-3 votes from validators 0, 1, 3, and 4
+
+    Validators 0 and 1 equivocate by signing both fork votes at the same
+    attestation slot. Their later conflicting vote must not add weight to
+    fork_b while still counting for fork_a.
+
+    Expected Behavior
+    -----------------
+    1. fork_a has effective weight 3
+    2. fork_b has effective weight 2
+    3. Head stays on fork_a
+    4. No checkpoint is justified by the below-threshold votes
+    """
+    fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=8),
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="common"),
+                checks=StoreChecks(head_slot=Slot(1), head_root_label="common"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="common", label="fork_a"),
+                checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), parent_label="common", label="fork_b"),
+                checks=StoreChecks(lexicographic_head_among=["fork_a", "fork_b"]),
+            ),
+            TickStep(interval=18),
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(0),
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                    ],
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="fork_a",
+                ),
+            ),
+            GossipAggregatedAttestationStep(
+                attestation=GossipAggregatedAttestationSpec(
+                    validator_ids=[
+                        ValidatorIndex(0),
+                        ValidatorIndex(1),
+                        ValidatorIndex(3),
+                        ValidatorIndex(4),
+                    ],
+                    slot=Slot(3),
+                    target_slot=Slot(3),
+                    target_root_label="fork_b",
+                ),
+            ),
+            TickStep(
+                time=16,
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    head_root_label="fork_a",
+                    latest_justified_slot=Slot(0),
+                    latest_finalized_slot=Slot(0),
+                    latest_known_aggregated_target_slots=[Slot(2), Slot(3)],
                 ),
             ),
         ],
