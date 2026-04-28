@@ -43,6 +43,8 @@ class Status(Container):
 BLOCKS_BY_ROOT_PROTOCOL_V1: Final = ProtocolId("/leanconsensus/req/blocks_by_root/1/ssz_snappy")
 """The protocol ID for the BlocksByRoot v1 request/response message."""
 
+BLOCKS_BY_RANGE_PROTOCOL_V1: Final = ProtocolId("/leanconsensus/req/blocks_by_range/1/ssz_snappy")
+"""The protocol ID for the BlocksByRange v1 request/response message."""
 
 class RequestedBlockRoots(SSZList[Bytes32]):
     """List of block roots requested from a peer."""
@@ -59,3 +61,16 @@ class BlocksByRootRequest(Container):
 
     roots: RequestedBlockRoots
     """List of block roots requested from a peer."""
+
+class BlocksByRangeRequest(Container):
+    """
+    A request for one or more blocks by their slot numbers.
+
+    This is primarily used to recover recent or missing blocks from a peer.
+    """
+
+    start_slot: Slot
+    """The starting slot of the range (inclusive)."""
+
+    count: Uint64
+    """The number of blocks to request (at most `MAX_REQUEST_BLOCKS`)."""

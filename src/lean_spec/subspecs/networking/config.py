@@ -72,3 +72,9 @@ Per the libp2p TLS spec (https://github.com/libp2p/specs/blob/master/tls/tls.md)
 "libp2p" is the Application-Layer Protocol Negotiation (ALPN) value used
 during the TLS 1.3 handshake to identify libp2p connections.
 """
+
+MIN_BLOCK_REQUESTS_HISTORY_SLOT: Final[int] = 3600
+"""Minimum block requests responder should serve."""
+
+MAX_CONCURRENT_REQUESTS: Final[int] = 2
+"""Maximum concurrent block requests receiver can make."""
