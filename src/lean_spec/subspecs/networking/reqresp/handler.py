@@ -63,13 +63,14 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Final
+
+from lean_spec.forks.lstar.containers import SignedBlock, Slot
 from lean_spec.snappy import SnappyDecompressionError, frame_decompress
 from lean_spec.subspecs.networking.config import (
     MAX_ERROR_MESSAGE_SIZE,
     MAX_REQUEST_BLOCKS,
     MIN_BLOCK_REQUESTS_HISTORY_SLOT,
 )
-from lean_spec.forks.lstar.containers import SignedBlock, Slot
 from lean_spec.subspecs.networking.transport.protocols import InboundStreamProtocol
 from lean_spec.subspecs.networking.types import ProtocolId
 from lean_spec.subspecs.networking.varint import VarintError, decode_varint

@@ -331,6 +331,7 @@ class TestRequestTracking:
         await backfill.fill_missing([root])
         assert root in backfill.block_cache
 
+
 class TestBackfillOptimizations:
     """Tests for range sync and store awareness in BackfillSync."""
 
