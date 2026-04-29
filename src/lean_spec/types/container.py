@@ -235,5 +235,12 @@ class Container(SSZModel):
                 field_data = var_section[rel_start:rel_end]
                 fields[name] = field_type.decode_bytes(field_data)
 
+        # Final safety check: ensure we consumed the entire scope.
+        if not var_fields and bytes_read != scope:
+            raise SSZSerializationError(
+                f"{cls.__name__}: unconsumed bytes in fixed-size container, "
+                f"expected {bytes_read}, got {scope}"
+            )
+
         # Construct container with all fields
         return cls(**fields)

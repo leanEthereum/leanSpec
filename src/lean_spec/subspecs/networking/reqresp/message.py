@@ -7,8 +7,8 @@ domain. All messages are SSZ-encoded and then compressed with Snappy frames.
 
 from typing import ClassVar, Final
 
-from lean_spec.forks.lstar.containers import Checkpoint
-from lean_spec.types import Bytes32, SSZList
+from lean_spec.forks.lstar.containers import Checkpoint, Slot
+from lean_spec.types import Bytes32, SSZList, Uint64
 from lean_spec.types.container import Container
 
 from ..config import MAX_REQUEST_BLOCKS
@@ -46,6 +46,7 @@ BLOCKS_BY_ROOT_PROTOCOL_V1: Final = ProtocolId("/leanconsensus/req/blocks_by_roo
 BLOCKS_BY_RANGE_PROTOCOL_V1: Final = ProtocolId("/leanconsensus/req/blocks_by_range/1/ssz_snappy")
 """The protocol ID for the BlocksByRange v1 request/response message."""
 
+
 class RequestedBlockRoots(SSZList[Bytes32]):
     """List of block roots requested from a peer."""
 
@@ -61,6 +62,7 @@ class BlocksByRootRequest(Container):
 
     roots: RequestedBlockRoots
     """List of block roots requested from a peer."""
+
 
 class BlocksByRangeRequest(Container):
     """

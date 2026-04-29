@@ -32,15 +32,17 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from lean_spec.forks.lstar.containers import SignedBlock
+from lean_spec.forks.lstar.containers import SignedBlock, Slot
 from lean_spec.subspecs.networking.reqresp.codec import (
     CodecError,
     ResponseCode,
     encode_request,
 )
 from lean_spec.subspecs.networking.reqresp.message import (
+    BLOCKS_BY_RANGE_PROTOCOL_V1,
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,
+    BlocksByRangeRequest,
     BlocksByRootRequest,
     RequestedBlockRoots,
     Status,
@@ -50,7 +52,8 @@ from lean_spec.subspecs.networking.transport.quic.connection import (
     QuicConnection,
     QuicConnectionManager,
 )
-from lean_spec.types import Bytes32
+from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.types import Bytes32, Uint64
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +207,154 @@ class ReqRespClient:
 
         finally:
             await stream.close()
+
+    async def request_blocks_by_range(
+        self,
+        peer_id: PeerId,
+        start_slot: Slot,
+        count: Uint64,
+    ) -> list[SignedBlock]:
+        """
+        Request blocks by range from a peer.
+
+        Implements the NetworkRequester protocol method.
+
+        Args:
+            peer_id: Peer to request from.
+            start_slot: Start slot of the range.
+            count: Number of blocks to request.
+
+        Returns:
+            List of blocks received. May be fewer than requested if peer
+            doesn't have all blocks. Empty on error.
+        """
+        if count == 0:
+            return []
+
+        conn = self._connections.get(peer_id)
+        if conn is None:
+            logger.debug("No connection to peer %s for blocks_by_range", peer_id)
+            return []
+
+        try:
+            return await asyncio.wait_for(
+                self._do_blocks_by_range_request(conn, start_slot, count),
+                timeout=self.timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Timeout requesting blocks from %s", peer_id)
+            return []
+        except Exception as e:
+            logger.warning("Error requesting blocks from %s: %s", peer_id, e)
+            return []
+
+    async def _do_blocks_by_range_request(
+        self,
+        conn: QuicConnection,
+        start_slot: Slot,
+        count: Uint64,
+    ) -> list[SignedBlock]:
+        """
+        Execute a BlocksByRange request.
+
+        Opens a stream, negotiates the protocol, sends the request,
+        and reads all response chunks.
+
+        Args:
+            conn: QuicConnection to use.
+            start_slot: Start slot of the range.
+            count: Number of blocks to request.
+
+        Returns:
+            List of blocks received.
+        """
+        # Open a new stream and negotiate the protocol.
+        stream = await conn.open_stream(BLOCKS_BY_RANGE_PROTOCOL_V1)
+
+        try:
+            # Build and send the request.
+            request = BlocksByRangeRequest(start_slot=start_slot, count=count)
+            request_bytes = encode_request(request.encode_bytes())
+            await stream.write(request_bytes)
+
+            # Half-close to signal we're done sending.
+            finish_write = getattr(stream, "finish_write", None)
+            if finish_write is not None:
+                await finish_write()
+
+            # Read response chunks.
+            #
+            # Each block is sent as a separate response chunk.
+            # We read until the stream closes or we get all blocks.
+            blocks: list[SignedBlock] = []
+            prev_slot: Slot | None = None
+            prev_root: Bytes32 | None = None
+
+            for _ in range(int(count)):
+                try:
+                    response_data = await stream.read()
+                    if not response_data:
+                        # Stream closed, no more blocks.
+                        break
+
+                    code, ssz_bytes = ResponseCode.decode(response_data)
+
+                    if code == ResponseCode.SUCCESS:
+                        block = SignedBlock.decode_bytes(ssz_bytes)
+
+                        # Step 1: Verify slot strictly increasing.
+                        #
+                        # Peers MUST return blocks in increasing order.
+                        if prev_slot is not None and block.block.slot <= prev_slot:
+                            raise CodecError(
+                                f"Non-monotonic slot: {block.block.slot} <= {prev_slot}"
+                            )
+
+                        # Step 2: Verify block is within requested range.
+                        if block.block.slot < start_slot or block.block.slot >= start_slot + count:
+                            raise CodecError(
+                                f"Block slot {block.block.slot} outside requested range"
+                            )
+
+                        # Step 3: Verify parent_root continuity.
+                        #
+                        # If the slots are consecutive, the parent_root MUST match the
+                        # previous root.
+                        # If there are skips, we can't verify continuity here but we still
+                        # check monotonicity.
+                        if prev_root is not None and block.block.slot == prev_slot + 1:
+                            if block.block.parent_root != prev_root:
+                                raise CodecError(
+                                    f"Parent root mismatch at slot {block.block.slot}: "
+                                    f"expected {prev_root.hex()}, "
+                                    f"got {block.block.parent_root.hex()}"
+                                )
+
+                        blocks.append(block)
+                        prev_slot = block.block.slot
+                        prev_root = hash_tree_root(block.block)
+
+                    elif code == ResponseCode.RESOURCE_UNAVAILABLE:
+                        # Peer doesn't have this block, continue.
+                        continue
+                    else:
+                        # Other error, stop reading.
+                        logger.debug("BlocksByRange error response: %s", code)
+                        break
+
+                except CodecError as e:
+                    # Protocol violation: Log and re-raise to trigger downscoring.
+                    logger.warning("Protocol violation from %s: %s", conn, e)
+                    raise
+
+            return blocks
+
+        finally:
+            # Always close the stream.
+            try:
+                await stream.close()
+            except Exception as e:
+                logger.debug("Error closing stream: %s", e)
 
     async def send_status(
         self,

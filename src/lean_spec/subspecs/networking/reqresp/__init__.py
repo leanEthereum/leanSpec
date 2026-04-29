@@ -8,14 +8,17 @@ from .codec import (
 )
 from .handler import (
     REQRESP_PROTOCOL_IDS,
+    AsyncBlockBySlotLookup,
     AsyncBlockLookup,
     ReqRespServer,
     RequestHandler,
     StreamResponseAdapter,
 )
 from .message import (
+    BLOCKS_BY_RANGE_PROTOCOL_V1,
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,
+    BlocksByRangeRequest,
     BlocksByRootRequest,
     RequestedBlockRoots,
     Status,
@@ -23,10 +26,12 @@ from .message import (
 
 __all__ = [
     # Protocol IDs
+    "BLOCKS_BY_RANGE_PROTOCOL_V1",
     "BLOCKS_BY_ROOT_PROTOCOL_V1",
     "STATUS_PROTOCOL_V1",
     "REQRESP_PROTOCOL_IDS",
     # Message types
+    "BlocksByRangeRequest",
     "BlocksByRootRequest",
     "RequestedBlockRoots",
     "Status",
@@ -36,6 +41,7 @@ __all__ = [
     "encode_request",
     "decode_request",
     # Inbound handlers
+    "AsyncBlockBySlotLookup",
     "AsyncBlockLookup",
     "RequestHandler",
     "ReqRespServer",

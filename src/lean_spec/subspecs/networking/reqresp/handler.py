@@ -63,19 +63,24 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Final
-
-from lean_spec.forks.lstar.containers import SignedBlock
 from lean_spec.snappy import SnappyDecompressionError, frame_decompress
-from lean_spec.subspecs.networking.config import MAX_ERROR_MESSAGE_SIZE
+from lean_spec.subspecs.networking.config import (
+    MAX_ERROR_MESSAGE_SIZE,
+    MAX_REQUEST_BLOCKS,
+    MIN_BLOCK_REQUESTS_HISTORY_SLOT,
+)
+from lean_spec.forks.lstar.containers import SignedBlock, Slot
 from lean_spec.subspecs.networking.transport.protocols import InboundStreamProtocol
 from lean_spec.subspecs.networking.types import ProtocolId
 from lean_spec.subspecs.networking.varint import VarintError, decode_varint
-from lean_spec.types import Bytes32
+from lean_spec.types import Bytes32, Uint64
 
 from .codec import ResponseCode
 from .message import (
+    BLOCKS_BY_RANGE_PROTOCOL_V1,
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,
+    BlocksByRangeRequest,
     BlocksByRootRequest,
     Status,
 )
@@ -124,6 +129,12 @@ type AsyncBlockLookup = Callable[[Bytes32], Awaitable[SignedBlock | None]]
 Takes a block root and returns the block if available, None otherwise.
 """
 
+type AsyncBlockBySlotLookup = Callable[[Slot], Awaitable[SignedBlock | None]]
+"""Type alias for block lookup by slot function.
+
+Takes a slot and returns the canonical block if available, None otherwise.
+"""
+
 
 @dataclass(slots=True)
 class RequestHandler:
@@ -151,6 +162,9 @@ class RequestHandler:
 
     block_lookup: AsyncBlockLookup | None = None
     """Callback to look up blocks by root."""
+
+    block_by_slot_lookup: AsyncBlockBySlotLookup | None = None
+    """Callback to look up canonical blocks by slot."""
 
     async def handle_status(self, response: StreamResponseAdapter) -> None:
         """
@@ -221,11 +235,66 @@ class RequestHandler:
                 # The peer can retry or ask another peer for this specific block.
                 logger.warning("Error looking up block %s: %s", root.hex()[:8], e)
 
+    async def handle_blocks_by_range(
+        self,
+        request: BlocksByRangeRequest,
+        response: StreamResponseAdapter,
+    ) -> None:
+        """
+        Handle incoming BlocksByRange request.
+
+        Looks up and sends each requested block in the range.
+
+        Args:
+            request: Block range to look up.
+            response: Stream for sending blocks.
+        """
+        # Guard: Ensure we have a block lookup configured.
+        if self.block_by_slot_lookup is None:
+            logger.warning("BlocksByRange request received but no block_by_slot_lookup configured")
+            await response.send_error(ResponseCode.SERVER_ERROR, "Block lookup not available")
+            return
+
+        # Step 1: Validate request parameters.
+        #
+        # count == 0 is INVALID_REQUEST per spec.
+        if request.count == Uint64(0) or request.count > Uint64(MAX_REQUEST_BLOCKS):
+            await response.send_error(ResponseCode.INVALID_REQUEST, "Invalid count")
+            return
+
+        # Step 2: Check history window.
+        #
+        # We only serve blocks within the configured history window.
+        # This allows nodes to prune old state.
+        if request.start_slot < Slot(MIN_BLOCK_REQUESTS_HISTORY_SLOT):
+            await response.send_error(
+                ResponseCode.RESOURCE_UNAVAILABLE, "Requested slot predates history window"
+            )
+            return
+
+        # Step 3: Serve blocks in the range.
+        #
+        # Rules:
+        # - Only canonical blocks (handled by the callback).
+        # - Skip empty slots.
+        # - Order must be preserved.
+        for i in range(int(request.count)):
+            slot = request.start_slot + Slot(i)
+            try:
+                block = await self.block_by_slot_lookup(slot)
+                if block is not None:
+                    await response.send_success(block.encode_bytes())
+
+                # Missing/skipped slot: Skip silently.
+            except Exception as e:
+                logger.warning("Error looking up block at slot %s: %s", slot, e)
+
 
 REQRESP_PROTOCOL_IDS: Final[frozenset[ProtocolId]] = frozenset(
     {
         STATUS_PROTOCOL_V1,
         BLOCKS_BY_ROOT_PROTOCOL_V1,
+        BLOCKS_BY_RANGE_PROTOCOL_V1,
     }
 )
 """Protocol IDs handled by ReqRespServer."""
@@ -449,6 +518,21 @@ class ReqRespServer:
                 )
                 return
             await self.handler.handle_blocks_by_root(request, response)
+
+        elif protocol_id == BLOCKS_BY_RANGE_PROTOCOL_V1:
+            # BlocksByRange request: Peer wants blocks by range.
+            #
+            # The request is an SSZ object with start_slot and count.
+            try:
+                request = BlocksByRangeRequest.decode_bytes(ssz_bytes)
+            except Exception as e:
+                # SSZ decode failure: wrong size, malformed offsets, etc.
+                logger.debug("BlocksByRangeRequest decode error: %s", e)
+                await response.send_error(
+                    ResponseCode.INVALID_REQUEST, "Invalid BlocksByRangeRequest message"
+                )
+                return
+            await self.handler.handle_blocks_by_range(request, response)
 
         else:
             # Unknown protocol ID.
