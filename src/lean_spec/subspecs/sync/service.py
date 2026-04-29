@@ -274,7 +274,8 @@ class SyncService:
             peer_manager=self.peer_manager,
             block_cache=self.block_cache,
             network=self.network,
-            get_store=lambda: self.store,
+            is_known_root=lambda root: root in self.store.blocks,
+            get_finalized_slot=lambda: self.store.latest_finalized.slot,
         )
 
         # HeadSync processes incoming gossip blocks and coordinates backfill.

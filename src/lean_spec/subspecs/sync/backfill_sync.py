@@ -43,7 +43,6 @@ from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from lean_spec.forks.lstar.containers import SignedBlock, Slot
-from lean_spec.forks.lstar.store import Store
 from lean_spec.subspecs.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.types import Bytes32, Uint64
@@ -149,8 +148,11 @@ class BackfillSync:
     network: NetworkRequester
     """Network interface for block requests."""
 
-    get_store: Callable[[], Store] | None = field(default=None)
-    """Optional callback to get the current Store for known root checks."""
+    is_known_root: Callable[[Bytes32], bool] | None = field(default=None)
+    """Optional callback to check if a block root is already in the Store."""
+
+    get_finalized_slot: Callable[[], Slot] | None = field(default=None)
+    """Optional callback to get the current finalized slot."""
 
     _pending: set[Bytes32] = field(default_factory=set)
     """Roots currently being fetched (to avoid duplicate requests)."""
@@ -359,7 +361,6 @@ class BackfillSync:
             depth: Current backfill depth.
         """
         new_orphan_parents: list[Bytes32] = []
-        store = self.get_store() if self.get_store else None
 
         for block in blocks:
             # Add to cache with backfill depth tracking.
@@ -369,12 +370,11 @@ class BackfillSync:
                 backfill_depth=depth + 1,
             )
 
-            # Check if this block's parent is known.
-            #
-            # A block is an orphan if its parent is not in the cache AND not in the Store.
+            # A block is an orphan if its parent is not in the cache.
+            # (We cannot check the Store here; that is the SyncService's job.)
             parent_root = pending.parent_root
             parent_known = parent_root in self.block_cache or (
-                store and parent_root in store.blocks
+                self.is_known_root(parent_root) if self.is_known_root else False
             )
 
             if not parent_known:
@@ -390,10 +390,11 @@ class BackfillSync:
         if new_orphan_parents:
             # If the oldest block we just received has a missing parent,
             # check if there is a gap we can fill with a range request.
-            if store and blocks:
+            if self.get_finalized_slot and blocks:
                 # Find the earliest block in this batch.
                 earliest_block = min(blocks, key=lambda b: b.block.slot)
-                gap = int(earliest_block.block.slot) - int(store.latest_finalized.slot)
+                finalized_slot = self.get_finalized_slot()
+                gap = int(earliest_block.block.slot) - int(finalized_slot)
 
                 if gap > 1:
                     logger.debug(
@@ -402,7 +403,7 @@ class BackfillSync:
                         earliest_block.block.slot,
                     )
                     await self.fill_range(
-                        start_slot=Slot(int(store.latest_finalized.slot) + 1),
+                        start_slot=Slot(int(finalized_slot) + 1),
                         count=Uint64(gap - 1),
                         depth=depth + 1,
                     )
