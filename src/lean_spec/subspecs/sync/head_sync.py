@@ -49,10 +49,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from lean_spec.forks import Store
-from lean_spec.forks.lstar.containers import SignedBlock
+from lean_spec.forks.lstar.containers import SignedBlock, Slot
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32
+from lean_spec.types import Bytes32, Uint64
 
 from .backfill_sync import BackfillSync
 from .block_cache import BlockCache
@@ -375,8 +375,20 @@ class HeadSync:
         # Mark as orphan.
         self.block_cache.mark_orphan(pending.root)
 
-        # Trigger backfill for the missing parent.
-        await self.backfill.fill_missing([parent_root])
+        # Trigger backfill for the missing parent(s).
+        #
+        # If there is a gap between our finalized slot and this block,
+        # use range-based fetching to fill it efficiently.
+        gap = int(block_inner.slot - store.latest_finalized.slot)
+        if gap > 1:
+            logger.debug("Large gap detected (%d slots). Triggering range backfill.", gap)
+            await self.backfill.fill_range(
+                start_slot=Slot(int(store.latest_finalized.slot) + 1),
+                count=Uint64(gap - 1),
+            )
+        else:
+            # Direct parent missing.
+            await self.backfill.fill_missing([parent_root])
 
         return HeadSyncResult(
             processed=False,
