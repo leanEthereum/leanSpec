@@ -31,7 +31,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Final
 
 from lean_spec.forks.lstar.containers import SignedBlock, Slot
 from lean_spec.subspecs.networking.config import MAX_REQUEST_BLOCKS
@@ -56,9 +55,6 @@ from lean_spec.subspecs.networking.transport.quic.connection import (
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
-
-UINT64_MAX: Final[int] = 2**64 - 1
-"""Maximum value of a Uint64 (used to detect start_slot + count overflow)."""
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +242,7 @@ class ReqRespClient:
             return []
         if count > Uint64(MAX_REQUEST_BLOCKS):
             return []
-        if int(start_slot) + int(count) > UINT64_MAX:
+        if int(start_slot) + int(count) > int(Uint64.max_value()):
             # Range would overflow Uint64; cannot be satisfied.
             return []
 
