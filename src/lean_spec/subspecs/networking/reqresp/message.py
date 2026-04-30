@@ -75,4 +75,10 @@ class BlocksByRangeRequest(Container):
     """The starting slot of the range (inclusive)."""
 
     count: Uint64
-    """The number of blocks to request (at most `MAX_REQUEST_BLOCKS`)."""
+    """The number of blocks to request (at most MAX_REQUEST_BLOCKS).
+
+    The legacy step field is omitted.
+
+    Early phase 0 BeaconBlocksByRange v1 carried a step parameter that Altair deprecated.
+    Modern usage is equivalent to step == 1: responders return one block per slot in order.
+    """

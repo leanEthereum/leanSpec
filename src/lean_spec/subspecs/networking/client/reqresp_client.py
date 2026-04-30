@@ -31,8 +31,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import Final
 
 from lean_spec.forks.lstar.containers import SignedBlock, Slot
+from lean_spec.subspecs.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.subspecs.networking.reqresp.codec import (
     CodecError,
     ResponseCode,
@@ -54,6 +56,9 @@ from lean_spec.subspecs.networking.transport.quic.connection import (
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Uint64
+
+UINT64_MAX: Final[int] = 2**64 - 1
+"""Maximum value of a Uint64 (used to detect start_slot + count overflow)."""
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +224,13 @@ class ReqRespClient:
 
         Implements the NetworkRequester protocol method.
 
+        Returns an empty list on transport-level errors (no connection,
+        timeout, network failure).
+
+        Raises CodecError on protocol violations by the peer (non-monotonic
+        slots, out-of-range slots, parent-root mismatch, more than count
+        chunks). Callers may use this signal for peer downscoring.
+
         Args:
             peer_id: Peer to request from.
             start_slot: Start slot of the range.
@@ -226,9 +238,16 @@ class ReqRespClient:
 
         Returns:
             List of blocks received. May be fewer than requested if peer
-            doesn't have all blocks. Empty on error.
+            does not have all blocks.
         """
-        if count == 0:
+        # Local validation: matches the responder's bounds so a malformed call
+        # is rejected before opening a stream.
+        if count == Uint64(0):
+            return []
+        if count > Uint64(MAX_REQUEST_BLOCKS):
+            return []
+        if int(start_slot) + int(count) > UINT64_MAX:
+            # Range would overflow Uint64; cannot be satisfied.
             return []
 
         conn = self._connections.get(peer_id)
@@ -241,6 +260,9 @@ class ReqRespClient:
                 self._do_blocks_by_range_request(conn, start_slot, count),
                 timeout=self.timeout,
             )
+        except CodecError:
+            # Protocol violation: propagate so callers can downscore the peer.
+            raise
         except asyncio.TimeoutError:
             logger.warning("Timeout requesting blocks from %s", peer_id)
             return []
@@ -270,6 +292,7 @@ class ReqRespClient:
         """
         # Open a new stream and negotiate the protocol.
         stream = await conn.open_stream(BLOCKS_BY_RANGE_PROTOCOL_V1)
+        end_slot_exclusive = int(start_slot) + int(count)
 
         try:
             # Build and send the request.
@@ -289,50 +312,49 @@ class ReqRespClient:
             blocks: list[SignedBlock] = []
             prev_slot: Slot | None = None
             prev_root: Bytes32 | None = None
+            stream_ended = False
 
             for _ in range(int(count)):
                 try:
                     response_data = await stream.read()
                     if not response_data:
-                        # Stream closed, no more blocks.
+                        # Stream closed; no more blocks.
+                        stream_ended = True
                         break
 
                     code, ssz_bytes = ResponseCode.decode(response_data)
 
                     if code == ResponseCode.SUCCESS:
-                        block = SignedBlock.decode_bytes(ssz_bytes)
+                        inner = SignedBlock.decode_bytes(ssz_bytes).block
+                        block_slot = inner.slot
 
-                        # Step 1: Verify slot strictly increasing.
+                        # Slots MUST be strictly increasing across the stream.
+                        if prev_slot is not None and block_slot <= prev_slot:
+                            raise CodecError(f"Non-monotonic slot: {block_slot} <= {prev_slot}")
+
+                        # Block MUST fall inside the requested half-open range.
+                        # Use int math so an end_slot near 2**64 cannot wrap.
+                        if int(block_slot) < int(start_slot) or (
+                            int(block_slot) >= end_slot_exclusive
+                        ):
+                            raise CodecError(f"Block slot {block_slot} outside requested range")
+
+                        # Parent-root continuity.
                         #
-                        # Peers MUST return blocks in increasing order.
-                        if prev_slot is not None and block.block.slot <= prev_slot:
+                        # The responder serves canonical blocks only and skips
+                        # empty slots. The next non-empty block's parent_root
+                        # therefore equals the last received block's root,
+                        # regardless of how many empty slots lie between.
+                        if prev_root is not None and inner.parent_root != prev_root:
                             raise CodecError(
-                                f"Non-monotonic slot: {block.block.slot} <= {prev_slot}"
+                                f"Parent root mismatch at slot {block_slot}: "
+                                f"expected {prev_root.hex()}, "
+                                f"got {inner.parent_root.hex()}"
                             )
 
-                        # Step 2: Verify block is within requested range.
-                        if block.block.slot < start_slot or block.block.slot >= start_slot + count:
-                            raise CodecError(
-                                f"Block slot {block.block.slot} outside requested range"
-                            )
-
-                        # Step 3: Verify parent_root continuity.
-                        #
-                        # If the slots are consecutive, the parent_root MUST match the
-                        # previous root.
-                        # If there are skips, we can't verify continuity here but we still
-                        # check monotonicity.
-                        if prev_root is not None and block.block.slot == prev_slot + 1:
-                            if block.block.parent_root != prev_root:
-                                raise CodecError(
-                                    f"Parent root mismatch at slot {block.block.slot}: "
-                                    f"expected {prev_root.hex()}, "
-                                    f"got {block.block.parent_root.hex()}"
-                                )
-
-                        blocks.append(block)
-                        prev_slot = block.block.slot
-                        prev_root = hash_tree_root(block.block)
+                        blocks.append(SignedBlock.decode_bytes(ssz_bytes))
+                        prev_slot = block_slot
+                        prev_root = hash_tree_root(inner)
 
                     elif code == ResponseCode.RESOURCE_UNAVAILABLE:
                         # Peer doesn't have this block, continue.
@@ -340,12 +362,28 @@ class ReqRespClient:
                     else:
                         # Other error, stop reading.
                         logger.debug("BlocksByRange error response: %s", code)
+                        stream_ended = True
                         break
 
                 except CodecError as e:
-                    # Protocol violation: Log and re-raise to trigger downscoring.
-                    logger.warning("Protocol violation from %s: %s", conn, e)
+                    # Protocol violation: log with peer id and re-raise.
+                    logger.warning("Protocol violation from %s: %s", conn.peer_id, e)
                     raise
+
+            # No-more-than-count enforcement.
+            #
+            # After we have read count chunks the peer MUST have finished
+            # writing. Any extra response chunk is a protocol violation.
+            # Skip when the stream already ended inside the loop.
+            if not stream_ended:
+                try:
+                    extra = await stream.read()
+                except Exception:
+                    extra = b""
+                if extra:
+                    msg = "Peer sent more than count BlocksByRange chunks"
+                    logger.warning("Protocol violation from %s: %s", conn.peer_id, msg)
+                    raise CodecError(msg)
 
             return blocks
 

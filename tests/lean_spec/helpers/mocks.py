@@ -25,10 +25,11 @@ class MockNetworkRequester:
     """Mock network that returns pre-configured blocks and tracks requests."""
 
     def __init__(self) -> None:
-        """Initialize with empty block store and request log."""
+        """Initialize with empty block store and request logs."""
         self.blocks_by_root: dict[Bytes32, SignedBlock] = {}
         self.blocks_by_slot: dict[Slot, SignedBlock] = {}
-        self.request_log: list[tuple[PeerId, list[Bytes32] | tuple[Slot, Uint64]]] = []
+        self.root_request_log: list[tuple[PeerId, list[Bytes32]]] = []
+        self.range_request_log: list[tuple[PeerId, Slot, Uint64]] = []
         self.should_fail: bool = False
 
     async def request_blocks_by_root(
@@ -37,7 +38,7 @@ class MockNetworkRequester:
         roots: list[Bytes32],
     ) -> list[SignedBlock]:
         """Return blocks for requested roots."""
-        self.request_log.append((peer_id, roots))
+        self.root_request_log.append((peer_id, roots))
         if self.should_fail:
             raise ConnectionError("Network failed")
         return [self.blocks_by_root[r] for r in roots if r in self.blocks_by_root]
@@ -57,21 +58,20 @@ class MockNetworkRequester:
         count: Uint64,
     ) -> list[SignedBlock]:
         """Return blocks for requested slot range."""
-        self.request_log.append((peer_id, (start_slot, count)))
+        self.range_request_log.append((peer_id, start_slot, count))
         if self.should_fail:
             raise ConnectionError("Network failed")
 
         blocks: list[SignedBlock] = []
         for i in range(int(count)):
-            slot = Slot(int(start_slot) + i)
+            slot = start_slot + Slot(i)
             if slot in self.blocks_by_slot:
                 blocks.append(self.blocks_by_slot[slot])
         return blocks
 
-    def add_block(self, block: SignedBlock, root: Bytes32 | None = None) -> Bytes32:
+    def add_block(self, block: SignedBlock) -> Bytes32:
         """Add a block to the mock network. Returns its root."""
-        if root is None:
-            root = hash_tree_root(block.block)
+        root = hash_tree_root(block.block)
         self.blocks_by_root[root] = block
         self.blocks_by_slot[block.block.slot] = block
         return root

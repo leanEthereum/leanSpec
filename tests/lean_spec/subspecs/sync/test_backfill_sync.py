@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -16,12 +16,38 @@ from lean_spec.subspecs.sync.block_cache import BlockCache, PendingBlock
 from lean_spec.subspecs.sync.config import MAX_BACKFILL_DEPTH, MAX_BLOCKS_PER_REQUEST
 from lean_spec.subspecs.sync.peer_manager import (
     INITIAL_PEER_SCORE,
+    SCORE_FAILURE_PENALTY,
     SCORE_SUCCESS_BONUS,
     PeerManager,
     SyncPeer,
 )
 from lean_spec.types import Bytes32, Uint64
 from tests.lean_spec.helpers import MockNetworkRequester, make_signed_block
+
+
+@dataclass
+class FakeStoreView:
+    """In-memory StoreView used to drive backfill tests.
+
+    Concrete implementation. Avoids MagicMock so tests fail loudly when
+    fields drift. Tests mutate `known_roots`, `head`, and `finalized` directly.
+    """
+
+    known_roots: set[Bytes32] = field(default_factory=set)
+    head: Slot = field(default_factory=lambda: Slot(0))
+    finalized: Slot = field(default_factory=lambda: Slot(0))
+
+    def has_root(self, root: Bytes32) -> bool:
+        """Return True if the root has been registered with this view."""
+        return root in self.known_roots
+
+    def head_slot(self) -> Slot:
+        """Return the head slot stored on this view."""
+        return self.head
+
+    def finalized_slot(self) -> Slot:
+        """Return the finalized slot stored on this view."""
+        return self.finalized
 
 
 @pytest.fixture
@@ -31,29 +57,23 @@ def network() -> MockNetworkRequester:
 
 
 @pytest.fixture
-def store() -> MagicMock:
-    """Provide a mock store."""
-    store = MagicMock()
-    store.blocks = {}
-    store.latest_finalized = MagicMock()
-    store.latest_finalized.slot = Slot(0)
-    store.latest_finalized.root = Bytes32.zero()
-    return store
+def store_view() -> FakeStoreView:
+    """Provide a fresh in-memory StoreView."""
+    return FakeStoreView()
 
 
 @pytest.fixture
 def backfill_system(
-    peer_id: PeerId, network: MockNetworkRequester, store: MagicMock
+    peer_id: PeerId, network: MockNetworkRequester, store_view: FakeStoreView
 ) -> BackfillSync:
-    """Provide a complete BackfillSync with connected peer."""
+    """Provide a complete BackfillSync with connected peer and StoreView."""
     manager = PeerManager()
     manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))
     return BackfillSync(
         peer_manager=manager,
         block_cache=BlockCache(),
         network=network,
-        is_known_root=lambda root: root in store.blocks,
-        get_finalized_slot=lambda: store.latest_finalized.slot,
+        store_view=store_view,
     )
 
 
@@ -91,13 +111,21 @@ class TestBackfillChainResolution:
 
     async def test_recursive_parent_chain_resolution(
         self,
-        backfill_system: BackfillSync,
-        network: MockNetworkRequester,
         peer_id: PeerId,
+        network: MockNetworkRequester,
     ) -> None:
-        """Backfill recursively fetches missing parents up the chain."""
-        # Disable gap detection to test pure recursion.
-        backfill_system.get_finalized_slot = None
+        """Backfill recursively fetches missing parents up the chain.
+
+        No store view is supplied, so backfill resolves missing parents purely
+        by root recursion (the gap-detection path requires a view).
+        """
+        manager = PeerManager()
+        manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))
+        backfill = BackfillSync(
+            peer_manager=manager,
+            block_cache=BlockCache(),
+            network=network,
+        )
 
         grandparent = make_signed_block(
             slot=Slot(1),
@@ -123,11 +151,11 @@ class TestBackfillChainResolution:
         )
         child_root = network.add_block(child)
 
-        await backfill_system.fill_missing([child_root])
+        await backfill.fill_missing([child_root])
 
-        child_cached = backfill_system.block_cache.get(child_root)
-        parent_cached = backfill_system.block_cache.get(parent_root)
-        grandparent_cached = backfill_system.block_cache.get(grandparent_root)
+        child_cached = backfill.block_cache.get(child_root)
+        parent_cached = backfill.block_cache.get(parent_root)
+        grandparent_cached = backfill.block_cache.get(grandparent_root)
 
         assert child_cached is not None
         assert child_cached == PendingBlock(
@@ -172,7 +200,8 @@ class TestBackfillChainResolution:
 
         await backfill_system.fill_missing([root], depth=MAX_BACKFILL_DEPTH)
 
-        assert network.request_log == []
+        assert network.root_request_log == []
+        assert network.range_request_log == []
         assert root not in backfill_system.block_cache
 
     async def test_skips_already_cached_blocks(
@@ -194,7 +223,8 @@ class TestBackfillChainResolution:
 
         await backfill_system.fill_missing([block_root])
 
-        assert network.request_log == []
+        assert network.root_request_log == []
+        assert network.range_request_log == []
 
 
 class TestBatchingAndPeerManagement:
@@ -212,7 +242,7 @@ class TestBatchingAndPeerManagement:
 
         await backfill_system.fill_missing(roots)
 
-        assert network.request_log == [
+        assert network.root_request_log == [
             (peer_id, roots[:MAX_BLOCKS_PER_REQUEST]),
             (peer_id, roots[MAX_BLOCKS_PER_REQUEST:]),
         ]
@@ -231,7 +261,8 @@ class TestBatchingAndPeerManagement:
 
         await backfill.fill_missing([Bytes32(b"\x01" * 32)])
 
-        assert network.request_log == []
+        assert network.root_request_log == []
+        assert network.range_request_log == []
 
     async def test_network_failure_handled_gracefully(
         self,
@@ -292,12 +323,12 @@ class TestRequestTracking:
 
         # First call fetches the block (may also try to fetch its parent).
         await backfill_system.fill_missing([root])
-        requests_after_first = len(network.request_log)
+        requests_after_first = len(network.root_request_log)
         assert requests_after_first >= 1
 
         # Second call: root is now in cache, so no new request.
         await backfill_system.fill_missing([root])
-        assert len(network.request_log) == requests_after_first
+        assert len(network.root_request_log) == requests_after_first
 
     async def test_retry_after_failure_clears_pending(
         self,
@@ -339,17 +370,19 @@ class TestBackfillOptimizations:
         self,
         backfill_system: BackfillSync,
         network: MockNetworkRequester,
-        store: MagicMock,
+        store_view: FakeStoreView,
         peer_id: PeerId,
     ) -> None:
         """Backfill does not request parents that are already in the Store."""
-        # Parent is in the store.
+        # Parent is in the store; head is at the parent slot so no range gap fires.
         parent_root = Bytes32(b"\x01" * 32)
-        store.blocks[parent_root] = MagicMock()
+        store_view.known_roots.add(parent_root)
+        store_view.head = Slot(10)
+        store_view.finalized = Slot(10)
 
-        # Child is received.
+        # Child is received above the head.
         child = make_signed_block(
-            slot=Slot(10),
+            slot=Slot(11),
             parent_root=parent_root,
             proposer_index=ValidatorIndex(0),
             state_root=Bytes32.zero(),
@@ -358,24 +391,27 @@ class TestBackfillOptimizations:
 
         await backfill_system.fill_missing([child_root])
 
-        # Verify child was added to cache.
         assert child_root in backfill_system.block_cache
+        # Only the initial child request is made; parent is in Store.
+        assert network.root_request_log == [(peer_id, [child_root])]
+        assert network.range_request_log == []
 
-        # Verify NO request was made for parent (since it's in Store).
-        # The request_log should only contain the initial request for the child.
-        assert len(network.request_log) == 1
-        assert network.request_log[0][1] == [child_root]
-
-    async def test_range_sync_triggered_by_large_gap_during_backfill(
+    async def test_range_sync_triggered_by_gap_above_head(
         self,
         backfill_system: BackfillSync,
         network: MockNetworkRequester,
-        store: MagicMock,
+        store_view: FakeStoreView,
         peer_id: PeerId,
     ) -> None:
-        """Backfill triggers range sync when a large gap is detected."""
-        # Store is at slot 0.
-        store.latest_finalized.slot = Slot(0)
+        """A large gap above head triggers a single range request to fill it.
+
+        Floor is the head slot, not the finalized slot: slots above finalized
+        but at or below head are already canonical for us and are not refetched.
+        """
+        # Store head is at slot 49, finalized is older at slot 10.
+        store_view.head = Slot(49)
+        store_view.finalized = Slot(10)
+        store_view.known_roots.add(Bytes32.zero())
 
         # Pre-fill the parent in the network at slot 50.
         block_50 = make_signed_block(
@@ -395,49 +431,84 @@ class TestBackfillOptimizations:
         )
         root_100 = network.add_block(block_100)
 
-        # Parent of block_50 is in store.
-        store.blocks[Bytes32.zero()] = MagicMock()
-
         await backfill_system.fill_missing([root_100])
 
-        # Log should contain:
-        # 1. BlocksByRoot(root_100)
-        # 2. BlocksByRange(1, 99)
-        assert len(network.request_log) == 2
-        assert network.request_log[0][1] == [root_100]
-        assert network.request_log[1][1] == (Slot(1), Uint64(99))
+        # First call fetches root_100 by root.
+        # That returns block_100; its parent (block_50) is unknown, triggering
+        # the gap path: range fetch (head+1=50, count=100-50=50) covers block_50.
+        # block_50's parent is ZERO_HASH which IS in the store, so recursion stops.
+        assert network.root_request_log == [(peer_id, [root_100])]
+        assert network.range_request_log == [(peer_id, Slot(50), Uint64(50))]
 
     async def test_range_deduplication(
         self,
         backfill_system: BackfillSync,
         network: MockNetworkRequester,
+        peer_id: PeerId,
     ) -> None:
-        """Multiple overlapping range requests are deduplicated."""
-        # Request range 1-10.
+        """Overlapping range requests skip slots already covered by a prior fetch."""
+        # First range: 1-10 (count=10 means slots 1..10).
         await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
         assert backfill_system._max_range_slot == Slot(10)
-        assert len(network.request_log) == 1
-        assert network.request_log[0][1] == (Slot(1), Uint64(10))
+        assert network.range_request_log == [(peer_id, Slot(1), Uint64(10))]
 
-        # Request range 5-15.
+        # Overlapping range 5-15: only slots 11..15 should be re-requested.
         await backfill_system.fill_range(start_slot=Slot(5), count=Uint64(11))
 
-        # Should only request 11-15 (count=5).
-        assert len(network.request_log) == 2
-        assert network.request_log[1][1] == (Slot(11), Uint64(5))
         assert backfill_system._max_range_slot == Slot(15)
+        assert network.range_request_log == [
+            (peer_id, Slot(1), Uint64(10)),
+            (peer_id, Slot(11), Uint64(5)),
+        ]
 
     async def test_full_range_skip_if_already_covered(
         self,
         backfill_system: BackfillSync,
         network: MockNetworkRequester,
+        peer_id: PeerId,
     ) -> None:
-        """Range requests fully covered by previous ones are skipped entirely."""
+        """Range requests fully covered by previous successful ones are skipped."""
         await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(100))
-        assert len(network.request_log) == 1
+        assert network.range_request_log == [(peer_id, Slot(1), Uint64(100))]
 
-        # Request a sub-range.
+        # Sub-range: no new request.
         await backfill_system.fill_range(start_slot=Slot(10), count=Uint64(20))
 
-        # No new request should be made.
-        assert len(network.request_log) == 1
+        assert network.range_request_log == [(peer_id, Slot(1), Uint64(100))]
+
+    async def test_failed_range_does_not_advance_watermark(
+        self,
+        backfill_system: BackfillSync,
+        network: MockNetworkRequester,
+        peer_id: PeerId,
+    ) -> None:
+        """A failed range fetch leaves the watermark untouched so retries are honored."""
+        network.should_fail = True
+
+        await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
+
+        # Watermark unchanged: a future call covering the same range can retry.
+        assert backfill_system._max_range_slot == Slot(0)
+        # The peer recorded a failure (score decreased).
+        peer = backfill_system.peer_manager.get_peer(peer_id)
+        assert peer is not None
+        assert peer.score == INITIAL_PEER_SCORE - SCORE_FAILURE_PENALTY
+
+        # Retry succeeds.
+        network.should_fail = False
+        await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
+        assert backfill_system._max_range_slot == Slot(10)
+
+    async def test_reset_clears_watermark(
+        self,
+        backfill_system: BackfillSync,
+        network: MockNetworkRequester,
+    ) -> None:
+        """reset() restores the watermark so post-reset range fetches are honored."""
+        await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
+        assert backfill_system._max_range_slot == Slot(10)
+
+        backfill_system.reset()
+
+        assert backfill_system._max_range_slot == Slot(0)
+        assert backfill_system._pending == set()

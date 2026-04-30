@@ -369,6 +369,25 @@ class HeadSync:
         block_inner = block.block
         parent_root = block_inner.parent_root
 
+        # Reject blocks at or below the finalized slot.
+        #
+        # Anything at or below finalized cannot be canonical and is most likely
+        # a stale or replayed gossip from a misbehaving peer. Dropping it here
+        # also prevents the gap math below from underflowing.
+        finalized_slot = store.latest_finalized.slot
+        if block_inner.slot <= finalized_slot:
+            logger.debug(
+                "Ignoring gossip block at slot %s: at or below finalized (%s)",
+                block_inner.slot,
+                finalized_slot,
+            )
+            return HeadSyncResult(
+                processed=False,
+                cached=False,
+                backfill_triggered=False,
+                descendants_processed=0,
+            ), store
+
         # Add to cache.
         pending = self.block_cache.add(block=block, peer=peer_id)
 
@@ -377,17 +396,34 @@ class HeadSync:
 
         # Trigger backfill for the missing parent(s).
         #
-        # If there is a gap between our finalized slot and this block,
-        # use range-based fetching to fill it efficiently.
-        gap = int(block_inner.slot - store.latest_finalized.slot)
-        if gap > 1:
-            logger.debug("Large gap detected (%d slots). Triggering range backfill.", gap)
-            await self.backfill.fill_range(
-                start_slot=Slot(int(store.latest_finalized.slot) + 1),
-                count=Uint64(gap - 1),
-            )
+        # When the new block sits several slots above the current head, fetch
+        # the gap as a contiguous range rather than recursing parent-by-parent.
+        # The floor is the head slot; slots above finalized but at or below
+        # head are already in the Store.
+        #
+        # Alt-fork gossip at a slot at or below head still goes through plain
+        # parent-by-root recursion: those blocks share an ancestor with the
+        # canonical chain and a range request would just refetch known slots.
+        head_slot = store.blocks[store.head].slot
+        if block_inner.slot > head_slot:
+            gap_floor = head_slot + Slot(1)
+            gap_size = int(block_inner.slot - gap_floor)
+            if gap_size > 0:
+                logger.debug(
+                    "Backfill gap (%d slots) above head %s; range-fetching from %s.",
+                    gap_size,
+                    head_slot,
+                    gap_floor,
+                )
+                await self.backfill.fill_range(
+                    start_slot=gap_floor,
+                    count=Uint64(gap_size),
+                )
+            else:
+                # Direct parent missing (single-slot gap above head).
+                await self.backfill.fill_missing([parent_root])
         else:
-            # Direct parent missing.
+            # Alt-fork gossip at or below head: recurse by parent root only.
             await self.backfill.fill_missing([parent_root])
 
         return HeadSyncResult(

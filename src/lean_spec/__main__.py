@@ -602,6 +602,14 @@ async def run_node(
     )
     event_source.set_status(updated_status)
 
+    # Wire the responder's view of wall-clock time.
+    #
+    # Without this, the responder cannot bound the sliding history window and
+    # rejects every range request. The block-by-slot and block-by-root lookups
+    # still need SignedBlock storage; they share the same gap and are owned by
+    # a follow-up storage refactor.
+    event_source.set_current_slot_lookup(node.clock.current_slot)
+
     # Connect to bootnodes.
     #
     # Best-effort connection: failures don't abort the loop.

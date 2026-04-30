@@ -78,7 +78,9 @@ from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic, TopicKind
 from lean_spec.subspecs.networking.gossipsub.types import TopicId
 from lean_spec.subspecs.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
+    AsyncBlockBySlotLookup,
     AsyncBlockLookup,
+    CurrentSlotLookup,
     ReqRespServer,
     RequestHandler,
 )
@@ -312,6 +314,33 @@ class LiveNetworkEventSource:
                 the SignedBlock if available, None otherwise.
         """
         self._reqresp_handler.block_lookup = lookup
+
+    def set_block_by_slot_lookup(self, lookup: AsyncBlockBySlotLookup) -> None:
+        """
+        Set the callback for looking up canonical blocks by slot.
+
+        Used by the inbound ReqResp handler to serve BlocksByRange requests.
+
+        The callback MUST consult fork choice.
+        It returns the canonical block at that slot, or None for empty slots.
+
+        Args:
+            lookup: Async function from Slot to SignedBlock or None.
+        """
+        self._reqresp_handler.block_by_slot_lookup = lookup
+
+    def set_current_slot_lookup(self, lookup: CurrentSlotLookup) -> None:
+        """
+        Set the callback returning the node's current slot.
+
+        Used to compute the BlocksByRange sliding history window.
+
+        Without this callback, the responder rejects every range request with SERVER_ERROR.
+
+        Args:
+            lookup: Function returning the current Slot.
+        """
+        self._reqresp_handler.current_slot_lookup = lookup
 
     def subscribe_gossip_topic(self, topic: TopicId) -> None:
         """
