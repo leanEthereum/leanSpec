@@ -199,7 +199,7 @@ class NodeCluster:
     _genesis_time: int = field(default=0, repr=False)
     """Genesis time for all nodes."""
 
-    network_name: str = field(default="devnet0")
+    network_name: str = field(default="12345678")
     """Network name for gossip topics."""
 
     def __post_init__(self) -> None:

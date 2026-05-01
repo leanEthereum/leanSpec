@@ -14,7 +14,7 @@ class LstarSpec(ForkProtocol):
 
     NAME: ClassVar[str] = "lstar"
     VERSION: ClassVar[int] = 4
-    GOSSIP_DIGEST: ClassVar[str] = "devnet0"
+    GOSSIP_DIGEST: ClassVar[str] = "12345678"
 
     previous: ClassVar[type[ForkProtocol] | None] = None
 

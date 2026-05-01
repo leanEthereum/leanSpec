@@ -105,7 +105,7 @@ class NodeConfig:
     """
     Network name for gossip topics.
 
-    For devnet testing with ream, use "devnet0".
+    For devnet testing with ream, use "12345678".
     """
 
     is_aggregator: bool = field(default=False)

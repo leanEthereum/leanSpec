@@ -60,7 +60,7 @@ class TestLstarSpec:
 
     def test_gossip_digest(self) -> None:
         """LstarSpec carries the gossipsub fork digest as fork metadata."""
-        assert LstarSpec.GOSSIP_DIGEST == "devnet0"
+        assert LstarSpec.GOSSIP_DIGEST == "12345678"
 
     def test_previous_is_none(self) -> None:
         """LstarSpec is the root of the upgrade chain."""

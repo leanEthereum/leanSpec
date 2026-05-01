@@ -504,7 +504,7 @@ async def run_node(
     # Set the network name for incoming message validation.
     #
     # Without this, the event source defaults to "0x00000000" and rejects
-    # all messages from other clients that use "devnet0".
+    # all messages from other clients that use "12345678".
     event_source.set_network_name(fork.GOSSIP_DIGEST)
 
     # Subscribe to gossip topics.
