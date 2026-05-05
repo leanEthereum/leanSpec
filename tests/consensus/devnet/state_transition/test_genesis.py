@@ -18,17 +18,42 @@ from consensus_testing import (
 
 from lean_spec.forks.lstar.containers.block import BlockBody
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.state import State
 from lean_spec.forks.lstar.containers.state.types import (
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
 )
+from lean_spec.forks.lstar.containers.validator import Validator, Validators
 from lean_spec.forks.lstar.spec import LstarSpec
+from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Bytes52, Slot, Uint64, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
+
+
+def _generate_max_registry_pre_state() -> State:
+    """Build genesis with the registry filled to capacity using placeholder pubkeys.
+
+    XMSS key generation is intentionally skipped: every validator carries a
+    zero pubkey. This is sound because the state-transition path used here
+    counts attestation votes without verifying signatures, so the keys are
+    never read.
+    """
+    zero_pubkey = Bytes52.zero()
+    validators = Validators(
+        data=[
+            Validator(
+                attestation_pubkey=zero_pubkey,
+                proposal_pubkey=zero_pubkey,
+                index=ValidatorIndex(i),
+            )
+            for i in range(int(VALIDATOR_REGISTRY_LIMIT))
+        ]
+    )
+    return LstarSpec().generate_genesis(genesis_time=Uint64(0), validators=validators)
 
 
 def test_genesis_default_configuration(
@@ -153,6 +178,75 @@ def test_genesis_custom_validator_set(
             justified_slots=JustifiedSlots(data=[]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
+def test_genesis_maximum_validators_with_forced_threshold_attestation(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Genesis at the validator registry limit can still justify a checkpoint.
+
+    Scenario
+    --------
+    Build a genesis state with 4096 validators (the registry limit), then
+    process two blocks:
+
+    - Block 1 at slot 1, proposer = validator 1 (1 % 4096).
+    - Block 2 at slot 2, proposer = validator 2 by round-robin default,
+      with attestations from validators 0..2730 -- exactly the 2731-of-4096
+      supermajority threshold (3 * 2731 = 8193 >= 2 * 4096 = 8192).
+
+    The 2731 votes are appended directly to block 2's body to bypass the
+    builder's signing path; the placeholder validators have no real XMSS
+    keys. The state transition still tallies the votes and applies the
+    same supermajority rule as the production path.
+
+    Expected post-state
+    -------------------
+    - Validator count: 4096
+    - Slot: 2
+    - Latest justified slot: 1 (block 1 reached the 2731/4096 threshold)
+    - Latest finalized slot: 0 (no second justified checkpoint yet)
+    - Latest block header slot: 2
+    - Latest block header proposer: 2 (round-robin: 2 % 4096)
+    """
+    validator_count = int(VALIDATOR_REGISTRY_LIMIT)
+    # Spec rule: 3 * count >= 2 * len(validators).
+    # The minimum count is ceil(2 * N / 3); for 4096 validators this is 2731.
+    supermajority_threshold = (2 * validator_count + 2) // 3
+
+    state_transition_test(
+        pre=_generate_max_registry_pre_state(),
+        blocks=[
+            BlockSpec(
+                slot=Slot(1),
+                label="block_1",
+                proposer_index=ValidatorIndex(1),
+            ),
+            # Slot 2 leaves proposer_index implicit so the post-state assertion
+            # verifies the framework's round-robin default at the registry limit.
+            BlockSpec(
+                slot=Slot(2),
+                forced_attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[ValidatorIndex(i) for i in range(supermajority_threshold)],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            validator_count=validator_count,
+            latest_justified_slot=Slot(1),
+            latest_justified_root_label="block_1",
+            latest_finalized_slot=Slot(0),
+            latest_block_header_slot=Slot(2),
+            latest_block_header_proposer_index=2,
         ),
     )
 
