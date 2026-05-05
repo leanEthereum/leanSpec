@@ -23,7 +23,7 @@ Generate test fixtures using the `fill` command:
 
 ```bash
 # from `leanSpec/` (root of workspace)
-uv run fill --clean --fork=devnet
+uv run fill --clean --fork=Lstar
 ```
 
 See the main project documentation for more details.

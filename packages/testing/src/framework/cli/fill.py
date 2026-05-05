@@ -25,7 +25,7 @@ import pytest
 @click.option(
     "--fork",
     required=True,
-    help="Fork to generate fixtures for (e.g., Devnet for consensus, Shanghai for execution)",
+    help="Fork to generate fixtures for (e.g., Lstar for consensus)",
 )
 @click.option(
     "--layer",
@@ -62,16 +62,13 @@ def fill(
 
     Examples:
         # Generate consensus layer fixtures
-        fill tests/spec_tests/devnet --fork=Devnet --layer=consensus --clean -v
-
-        # Generate execution layer fixtures (future)
-        fill tests/spec_tests/shanghai --fork=Shanghai --layer=execution --clean -v
+        fill tests/consensus/devnet --fork=Lstar --layer=consensus --clean -v
 
         # Default layer is consensus
-        fill tests/spec_tests/devnet --fork=Devnet --clean -v
+        fill tests/consensus/devnet --fork=Lstar --clean -v
 
         # Use specific XMSS scheme (overrides LEAN_ENV env var)
-        fill --fork=Devnet --scheme=prod --clean -v
+        fill --fork=Lstar --scheme=prod --clean -v
     """
     # Note: It's important to never import any leanSpec modules in this file, so the
     # `LEAN_ENV` variable can be set before the config loads its value from the

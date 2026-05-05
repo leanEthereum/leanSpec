@@ -18,7 +18,7 @@ Run generated leanSpec test fixtures against a client implementation.
 Generated fixtures live at `fixtures/consensus/`. Verify it contains JSON files. If empty or missing, generate them:
 
 ```bash
-uv run fill --fork=devnet --clean -n auto --scheme=prod
+uv run fill --fork=Lstar --clean -n auto --scheme=prod
 ```
 
 Fixtures for client testing must always use `--scheme=prod` (production signatures).

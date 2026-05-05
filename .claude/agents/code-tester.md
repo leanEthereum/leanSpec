@@ -50,7 +50,7 @@ When writing tests for consensus-related code, invoke the `/consensus-testing` s
 
 ### 5. Verify
 - Run `uv run pytest <test_file>` to ensure tests pass
-- Run `uv run fill --clean --fork=devnet <test_file>` to ensure test fillers pass
+- Run `uv run fill --clean --fork=Lstar <test_file>` to ensure test fillers pass
 - Run `uv run ruff check <test_file>` for linting
 - Run `uv run ruff format <test_file>` for formatting
 - Fix any issues before presenting results

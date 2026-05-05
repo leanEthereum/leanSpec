@@ -21,7 +21,7 @@ class FixtureCollector:
 
         Args:
             output_dir: Root directory for generated fixtures.
-            fork: The fork name (e.g., "Lstar", "Shanghai").
+            fork: The fork name (e.g., "Lstar").
             layer: The Ethereum layer (e.g., "consensus", "execution").
         """
         self.output_dir = output_dir
@@ -57,7 +57,7 @@ class FixtureCollector:
 
             test_file = Path(test_file_path)
             # Extract test path relative to tests/{layer}
-            # e.g., tests/consensus/devnet/... -> devnet/...
+            # e.g., tests/consensus/lstar/... -> lstar/...
             layer = config.test_layer if hasattr(config, "test_layer") else "consensus"
 
             try:
@@ -94,7 +94,7 @@ class FixtureCollector:
             test_file = Path(test_file_path)
 
             # Extract test path relative to tests/{layer}
-            # e.g., tests/consensus/devnet/... -> devnet/...
+            # e.g., tests/consensus/lstar/... -> lstar/...
             try:
                 relative_path = test_file.relative_to(f"tests/{self.layer}")
             except ValueError:
