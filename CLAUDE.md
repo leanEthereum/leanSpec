@@ -19,7 +19,7 @@ subspecifications that the Lean Ethereum protocol relies on.
 - Use Pydantic models for validation
 - Keep specs simple, readable, and clear
 - Repository is `leanSpec` not `lean-spec`
-- **Always run linter checks before finishing**: Run `uvx tox -e all-checks` at the end of any code changes to ensure all linting, formatting, type checking, and spell checking passes.
+- **Always run linter checks before finishing**: Run `just check` at the end of any code changes to ensure all linting, formatting, type checking, and spell checking passes.
 - **CRITICAL - NO BACKWARD COMPATIBILITY**: This is a STRICT requirement. NEVER add backward compatibility code under any circumstances. This means:
   - NO legacy constants (like `KEY_TYPE_ED25519 = KeyType.ED25519`)
   - NO wrapper functions that delegate to new classes

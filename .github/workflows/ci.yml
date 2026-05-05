@@ -126,7 +126,7 @@ jobs:
           tool: just
 
       - name: Fill test fixtures
-        run: just fill
+        run: just fill-ci
 
   interop-tests:
     name: Interop tests - Multi-node consensus

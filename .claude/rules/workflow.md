@@ -14,11 +14,11 @@ uv run fill --fork=lstar --clean -n auto --scheme=prod  # Generate test vectors 
 ## Code Quality
 
 ```bash
-uv run ruff format       # Format code
-uv run ruff check --fix  # Lint and fix
-uvx tox -e typecheck     # Type check
-uvx tox -e all-checks    # All quality checks
-uvx tox                  # Everything (checks + tests + docs)
+just format     # Format code
+just fix        # Auto-fix lint, formatting, and markdown
+just typecheck  # Type check
+just check      # All quality checks (lint, format, typecheck, spell, mdformat, lock)
+just            # List all available recipes
 ```
 
 ## Common Tasks

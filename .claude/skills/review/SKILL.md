@@ -51,6 +51,6 @@ A concise checklist distilled from CLAUDE.md for reviewing leanSpec code.
 ## Before Committing
 
 ```bash
-uvx tox -e fix        # Auto-fix formatting
-uvx tox -e all-checks # Verify all checks pass
+just fix    # Auto-fix lint, formatting, and markdown
+just check  # Verify all checks pass
 ```

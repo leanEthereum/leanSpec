@@ -10,7 +10,7 @@ Automatically fix linting and formatting issues.
 ## Command
 
 ```bash
-uvx tox -e fix
+just fix
 ```
 
 ## What It Fixes

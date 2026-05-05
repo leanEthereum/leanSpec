@@ -130,13 +130,13 @@ uv run pytest -n 4
 uv run pytest -m "not slow"
 
 # Fill test vectors from pytest specs.
-# Usage: uv run fill --clean --fork=devnet [--scheme=<scheme>] [--output=<dir>]
+# Usage: uv run fill --clean --fork=Lstar [--scheme=<scheme>] [--output=<dir>]
 #   --clean  Overwrite existing fixtures
-#   --fork   Target fork (default: devnet)
+#   --fork   Target fork (e.g., Lstar)
 #   --scheme XMSS signature scheme: "test" (default, fast) or "prod" (prod config, slower)
 #   --output Optional directory for filled fixtures
-uv run fill --clean --fork=devnet
-uv run fill --clean --fork=devnet --scheme=prod
+uv run fill --clean --fork=Lstar
+uv run fill --clean --fork=Lstar --scheme=prod
 
 # Run API conformance tests against an external client implementation
 # Usage: uv run apitest <server-url> [pytest-args]
@@ -185,7 +185,7 @@ just test
 just docs
 
 # Generate consensus fixtures
-just fill
+uv run fill --fork=Lstar --clean -n auto
 ```
 
 ### Documentation
@@ -260,7 +260,7 @@ def test_withdrawal_amount_above_uint64_max():
 | Type check                                    | `just typecheck`                                       |
 | Build docs                                    | `just docs`                                            |
 | Serve docs                                    | `just docs-serve`                                      |
-| Generate consensus fixtures                   | `just fill`                                            |
+| Generate consensus fixtures                   | `uv run fill --fork=Lstar --clean -n auto`             |
 | Test external client API conformance          | `just apitest http://localhost:5052`                   |
 | Run consensus node                            | `uv run python -m lean_spec --genesis config.yaml`     |
 | Build Docker test image                       | `docker build -t lean-spec:test .`                     |
@@ -300,7 +300,7 @@ docker run --rm lean-spec:test
 docker run --rm lean-spec:test uv run pytest -n auto
 
 # Run the fill command directly
-docker run --rm lean-spec:test uv run fill --clean --fork=devnet
+docker run --rm lean-spec:test uv run fill --clean --fork=Lstar
 ```
 
 ### Running a Consensus Node with Docker

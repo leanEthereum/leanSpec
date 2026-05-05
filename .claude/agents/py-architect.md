@@ -140,7 +140,7 @@ Follow this systematic approach:
 2. **Identify** - Find code smells, duplication, unclear intent, type gaps
 3. **Preserve** - Ensure tests exist before making changes
 4. **Transform** - Make small, incremental improvements
-5. **Verify** - Confirm tests pass, types check (`uvx tox -e typecheck`), lints clean (`uv run ruff check`)
+5. **Verify** - Confirm tests pass, types check (`just typecheck`), lints clean (`just lint`)
 
 ## Quality Bar
 

@@ -10,7 +10,7 @@ Run pytest unit tests.
 ## Default
 
 ```bash
-uvx tox -e pytest
+just test
 ```
 
 ## Options

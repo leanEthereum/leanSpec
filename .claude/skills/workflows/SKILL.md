@@ -11,13 +11,13 @@ Common developer workflows and commands for working in leanSpec.
 
 ```bash
 # Single test file
-uvx tox -e pytest -- tests/lean_spec/subspecs/networking/discovery/test_transport.py -v
+just test tests/lean_spec/subspecs/networking/discovery/test_transport.py -v
 
 # Single test class or method
-uvx tox -e pytest -- -k "TestDiscoveryTransport::test_start" -v
+just test -k "TestDiscoveryTransport::test_start" -v
 
 # With print output visible
-uvx tox -e pytest -- -s -k "test_name"
+just test -s -k "test_name"
 ```
 
 ## Resolving Type Errors
@@ -26,10 +26,10 @@ The project uses two type checkers. Run them separately to isolate issues:
 
 ```bash
 # Full type check (ty — the primary checker used in CI)
-uvx tox -e typecheck
+just typecheck
 
 # Lint check (ruff — catches style and import issues)
-uvx tox -e lint
+just lint
 ```
 
 Common type error patterns:
@@ -43,7 +43,7 @@ After running tests, coverage reports are generated:
 
 ```bash
 # View coverage in terminal
-uvx tox -e pytest
+just test-cov
 
 # Open HTML report
 open htmlcov/index.html
@@ -54,14 +54,14 @@ open htmlcov/index.html
 Interop tests are excluded from the default test run. Run them explicitly:
 
 ```bash
-uv run pytest tests/interop/ -v
+just interop
 ```
 
 ## Spell Check Failures
 
 ```bash
 # Run spell check
-uvx tox -e spellcheck
+just spellcheck
 
 # Add legitimate words to the ignore list
 echo "newword" >> .codespell-ignore-words.txt
@@ -71,11 +71,11 @@ echo "newword" >> .codespell-ignore-words.txt
 
 ```bash
 # Check markdown formatting (docs only)
-uvx tox -e mdformat
+just mdformat
 ```
 
 ## Common Pitfalls
 
 - **Tests pass locally but CI fails**: CI runs checks across Python 3.12, 3.13, and 3.14. Ensure no version-specific syntax is used.
 - **`ruff format` changes after `ruff check --fix`**: Always run format after fix — the fixer doesn't guarantee formatting compliance.
-- **Import ordering issues**: Run `uvx tox -e fix` to auto-sort imports.
+- **Import ordering issues**: Run `just fix` to auto-sort imports.

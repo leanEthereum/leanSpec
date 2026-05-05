@@ -10,7 +10,7 @@ Run the complete quality check suite.
 ## Command
 
 ```bash
-uvx tox -e all-checks
+just check
 ```
 
 ## What It Runs
@@ -20,6 +20,7 @@ uvx tox -e all-checks
 3. `ty check` - Type checking
 4. `codespell` - Spell checking
 5. `mdformat` - Markdown formatting
+6. `uv lock --check` - Lockfile drift
 
 ## When to Use
 
