@@ -54,6 +54,7 @@ from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
 
+from .constants import SYNC_LAG_THRESHOLD
 from .registry import ValidatorEntry, ValidatorRegistry
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,9 @@ class ValidatorService:
 
     _attested_slots: set[Slot] = field(default_factory=set, repr=False)
     """Slots for which we've already produced attestations (prevents duplicates)."""
+
+    _duties_skipped_lag: int = field(default=0, repr=False)
+    """Counter for duties skipped because the local head trails wall clock."""
 
     async def run(self) -> None:
         """
@@ -168,7 +172,10 @@ class ValidatorService:
                 #
                 # Check if any of our validators is the proposer.
                 logger.debug("ValidatorService: checking block production for slot %d", slot)
-                await self._maybe_produce_block(slot)
+                if self._is_synced_for_duties(slot):
+                    await self._maybe_produce_block(slot)
+                else:
+                    self._record_lag_skip(slot, "block")
                 logger.debug("ValidatorService: done block production check for slot %d", slot)
 
                 # Re-fetch interval after block production.
@@ -197,16 +204,21 @@ class ValidatorService:
                     slot,
                     interval,
                 )
-                await self._produce_attestations(slot)
-                logger.debug("ValidatorService: done producing attestations for slot %d", slot)
-                self._attested_slots.add(slot)
+                if self._is_synced_for_duties(slot):
+                    await self._produce_attestations(slot)
+                    logger.debug("ValidatorService: done producing attestations for slot %d", slot)
+                    self._attested_slots.add(slot)
 
-                # Prune old entries to prevent unbounded growth.
-                #
-                # Keep only recent slots (current slot - 4) to bound memory usage.
-                # We never need to attest for slots that far in the past.
-                prune_threshold = Slot(max(0, int(slot) - 4))
-                self._attested_slots = {s for s in self._attested_slots if s >= prune_threshold}
+                    # Prune old entries to prevent unbounded growth.
+                    #
+                    # Keep only recent slots (current slot - 4) to bound memory usage.
+                    # We never need to attest for slots that far in the past.
+                    prune_threshold = Slot(max(0, int(slot) - 4))
+                    self._attested_slots = {s for s in self._attested_slots if s >= prune_threshold}
+                else:
+                    # Do NOT mark the slot attested: if the node catches up before
+                    # the slot ends, the next iteration should retry the duty.
+                    self._record_lag_skip(slot, "attestation")
 
             # Intervals 2-4 have no additional validator duties.
 
@@ -498,6 +510,73 @@ class ValidatorService:
         self.registry.add(updated_entry)
         return updated_entry, signature
 
+    def _is_synced_for_duties(self, slot: Slot) -> bool:
+        """
+        Decide whether validator duties should run for the given slot.
+
+        Combines two signals to avoid two failure modes:
+
+        1. Local lag: if our head is close to wall clock, attest and propose.
+        2. Peer max head: if even the most up-to-date peer is also far behind,
+           the network is stalling (a streak of skipped proposals) and gating
+           our duties would only deepen the stall.
+
+        Args:
+            slot: Wall-clock slot for which a duty would be performed.
+
+        Returns:
+            True when duties should run; False when the local node is
+            materially behind a network that has otherwise made progress.
+        """
+        store = self.sync_service.store
+        head_block = store.blocks.get(store.head)
+        # No head yet: nothing to compare against; duty methods will no-op.
+        if head_block is None:
+            return True
+        head_slot = head_block.slot
+        # Clock skew or chain ahead of wall clock: trust the chain.
+        if int(slot) <= int(head_slot):
+            return True
+        lag = int(slot) - int(head_slot)
+        if lag <= SYNC_LAG_THRESHOLD:
+            return True
+        # Local node is behind. Check whether the network is also behind.
+        peer_max = self.sync_service.peer_manager.get_network_head_slot()
+        # No peer evidence at all: isolated node, fall through and try.
+        if peer_max is None:
+            return True
+        # Network-wide skip: the highest peer head is also lagged. Keep duties
+        # alive so the chain can keep progressing through the skipped slots.
+        if int(slot) - int(peer_max) > SYNC_LAG_THRESHOLD:
+            return True
+        return False
+
+    def _record_lag_skip(self, slot: Slot, duty: str) -> None:
+        """
+        Emit a structured log and increment the lag-skip counter.
+
+        Args:
+            slot: Slot whose duty was skipped.
+            duty: One of "block" or "attestation". Identifies the duty type
+                in the log so operators can attribute missed signatures.
+        """
+        store = self.sync_service.store
+        head_block = store.blocks.get(store.head)
+        head_slot = head_block.slot if head_block is not None else Slot(0)
+        lag = max(0, int(slot) - int(head_slot))
+        peer_max = self.sync_service.peer_manager.get_network_head_slot()
+        peer_max_repr = int(peer_max) if peer_max is not None else "none"
+        logger.info(
+            "Validator duty skipped due to sync lag: "
+            "duty=%s slot=%d head_slot=%d lag=%d peer_max_head_slot=%s",
+            duty,
+            int(slot),
+            int(head_slot),
+            lag,
+            peer_max_repr,
+        )
+        self._duties_skipped_lag += 1
+
     def stop(self) -> None:
         """
         Stop the service.
@@ -521,3 +600,8 @@ class ValidatorService:
     def attestations_produced(self) -> int:
         """Total attestations produced since creation."""
         return self._attestations_produced
+
+    @property
+    def duties_skipped_lag(self) -> int:
+        """Total duties (block + attestation) skipped because of sync lag."""
+        return self._duties_skipped_lag

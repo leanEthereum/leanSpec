@@ -22,6 +22,7 @@ from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
+from lean_spec.subspecs.validator.constants import SYNC_LAG_THRESHOLD
 from lean_spec.subspecs.validator.registry import ValidatorEntry
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
@@ -1315,3 +1316,246 @@ class TestValidatorServiceIntegration:
                 sig=signed_att.signature,
             )
             assert not is_invalid, "Signature should not verify with the wrong slot"
+
+
+def _set_head_slot(sync_service: SyncService, slot: Slot) -> None:
+    """Replace the head block in-place so its slot reads as `slot`.
+
+    The genesis store has a single block at the head root. Mutating its slot
+    lets the duty gate observe whatever lag the test wants to exercise without
+    constructing a full chain.
+    """
+    head_root = sync_service.store.head
+    new_head = sync_service.store.blocks[head_root].model_copy(update={"slot": slot})
+    sync_service.store = sync_service.store.model_copy(update={"blocks": {head_root: new_head}})
+
+
+class TestSyncLagGate:
+    """
+    Tests for the sync-lag duty gate.
+
+    The gate combines local lag with peer-reported head slots so that:
+
+    - A node that is itself behind a network making progress is silenced
+    - A node behind because the network is also behind keeps signing duties
+    """
+
+    def test_within_threshold_allows_duties(self, sync_service: SyncService) -> None:
+        """Lag of 0..SYNC_LAG_THRESHOLD slots is allowed."""
+        _set_head_slot(sync_service, Slot(10))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+
+        for lag in range(SYNC_LAG_THRESHOLD + 1):
+            assert service._is_synced_for_duties(Slot(10 + lag))
+
+    def test_just_over_threshold_with_recent_peer_gates(self, sync_service: SyncService) -> None:
+        """Lag > THRESHOLD is gated when at least one peer has a fresh head."""
+        _set_head_slot(sync_service, Slot(10))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+
+        with patch.object(
+            PeerManager,
+            "get_network_head_slot",
+            return_value=Slot(15),
+        ):
+            assert not service._is_synced_for_duties(Slot(15))
+
+    def test_clock_skew_does_not_gate(self, sync_service: SyncService) -> None:
+        """If wall clock is behind head slot, duties are allowed (trust the chain)."""
+        _set_head_slot(sync_service, Slot(20))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+        assert service._is_synced_for_duties(Slot(15))
+
+    def test_no_peer_status_does_not_gate(self, sync_service: SyncService) -> None:
+        """An isolated node with no peer status keeps duties live."""
+        _set_head_slot(sync_service, Slot(0))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+        # peer_max defaults to None on a fresh PeerManager; lag is 100.
+        assert service._is_synced_for_duties(Slot(100))
+
+    def test_network_wide_stall_does_not_gate(self, sync_service: SyncService) -> None:
+        """When even the most up-to-date peer is far behind, duties stay live.
+
+        Regression for the consecutive skipped-slots edge case: the simple
+        local-lag check would silence every validator at the same moment and
+        make recovery impossible.
+        """
+        _set_head_slot(sync_service, Slot(0))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+        with patch.object(
+            PeerManager,
+            "get_network_head_slot",
+            return_value=Slot(0),
+        ):
+            assert service._is_synced_for_duties(Slot(50))
+
+    def test_boundary_lag_equal_threshold_allowed(self, sync_service: SyncService) -> None:
+        """Boundary: lag == SYNC_LAG_THRESHOLD is still allowed."""
+        _set_head_slot(sync_service, Slot(10))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+        wall_clock = Slot(10 + SYNC_LAG_THRESHOLD)
+        with patch.object(
+            PeerManager,
+            "get_network_head_slot",
+            return_value=wall_clock,
+        ):
+            assert service._is_synced_for_duties(wall_clock)
+
+    def test_boundary_lag_one_over_threshold_gated(self, sync_service: SyncService) -> None:
+        """Boundary: lag == SYNC_LAG_THRESHOLD + 1 with recent peer is gated."""
+        _set_head_slot(sync_service, Slot(10))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+        wall_clock = Slot(10 + SYNC_LAG_THRESHOLD + 1)
+        with patch.object(
+            PeerManager,
+            "get_network_head_slot",
+            return_value=wall_clock,
+        ):
+            assert not service._is_synced_for_duties(wall_clock)
+
+    async def test_run_loop_skips_block_production_when_gated(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Interval 0 in a gated slot does not invoke _maybe_produce_block."""
+        _set_head_slot(sync_service, Slot(0))
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 0))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+
+        block_calls: list[Slot] = []
+
+        async def mock_block(_self, slot: Slot) -> None:
+            block_calls.append(slot)
+
+        async def stop_on_sleep(_d: float) -> None:
+            service.stop()
+
+        with (
+            patch.object(
+                PeerManager,
+                "get_network_head_slot",
+                return_value=Slot(10),
+            ),
+            patch.object(ValidatorService, "_maybe_produce_block", mock_block),
+            patch("asyncio.sleep", new=stop_on_sleep),
+        ):
+            await service.run()
+
+        assert block_calls == []
+        assert service.duties_skipped_lag >= 1
+
+    async def test_run_loop_skips_attestation_when_gated(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Gated attestation: duty is skipped AND the slot stays unmarked.
+
+        The slot must stay out of `_attested_slots` so a node that catches up
+        before the slot ends can still attest in this same slot.
+        """
+        _set_head_slot(sync_service, Slot(0))
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 1))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+
+        attest_calls: list[Slot] = []
+
+        async def mock_attest(_self, slot: Slot) -> None:
+            attest_calls.append(slot)
+
+        async def stop_on_sleep(_d: float) -> None:
+            service.stop()
+
+        with (
+            patch.object(
+                PeerManager,
+                "get_network_head_slot",
+                return_value=Slot(10),
+            ),
+            patch.object(ValidatorService, "_produce_attestations", mock_attest),
+            patch("asyncio.sleep", new=stop_on_sleep),
+        ):
+            await service.run()
+
+        assert attest_calls == []
+        assert Slot(10) not in service._attested_slots
+        assert service.duties_skipped_lag >= 1
+
+    def test_record_lag_skip_logs_structured_fields_and_increments_counter(
+        self, sync_service: SyncService, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The skip log carries duty type, slot, head_slot, lag, and peer_max."""
+        _set_head_slot(sync_service, Slot(3))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+
+        with (
+            caplog.at_level("INFO"),
+            patch.object(
+                PeerManager,
+                "get_network_head_slot",
+                return_value=Slot(20),
+            ),
+        ):
+            service._record_lag_skip(Slot(20), "block")
+
+        assert "duty=block" in caplog.text
+        assert "slot=20" in caplog.text
+        assert "head_slot=3" in caplog.text
+        assert "lag=17" in caplog.text
+        assert "peer_max_head_slot=20" in caplog.text
+        assert service.duties_skipped_lag == 1
+
+    def test_record_lag_skip_with_no_peer_status_renders_none(
+        self, sync_service: SyncService, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """When no peer has reported status, the log renders peer_max as 'none'."""
+        _set_head_slot(sync_service, Slot(3))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+
+        with caplog.at_level("INFO"):
+            service._record_lag_skip(Slot(20), "attestation")
+
+        assert "duty=attestation" in caplog.text
+        assert "peer_max_head_slot=none" in caplog.text
+        assert service.duties_skipped_lag == 1

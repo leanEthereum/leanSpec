@@ -167,6 +167,23 @@ class PeerManager:
             return None
         return counter.most_common(1)[0][0]
 
+    def get_network_head_slot(self) -> Slot | None:
+        """
+        Highest head slot reported by any connected peer with status.
+
+        Used to distinguish a node that is itself behind from a network where
+        every peer is also behind (e.g. a streak of skipped proposals).
+        Returns None when no connected peer has reported a status yet.
+        """
+        slots = [
+            peer.status.head.slot
+            for peer in self._peers.values()
+            if peer.status is not None and peer.is_connected()
+        ]
+        if not slots:
+            return None
+        return max(slots)
+
     def on_request_success(self, peer_id: PeerId) -> None:
         """Record a successful request to a peer."""
         peer = self._peers.get(peer_id)
