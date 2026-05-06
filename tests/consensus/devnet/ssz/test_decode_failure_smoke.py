@@ -11,7 +11,7 @@ from consensus_testing import SSZTestFiller
 
 from lean_spec.types import BaseBitlist, Boolean
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 class SmokeBitlist8(BaseBitlist):

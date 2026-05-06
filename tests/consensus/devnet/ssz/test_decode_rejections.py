@@ -20,7 +20,7 @@ from lean_spec.types import (
 )
 from lean_spec.types.exceptions import SSZSerializationError, SSZValueError
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 class DecodeBitlist8(BaseBitlist):

@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import ApiEndpointTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_metrics_endpoint_scrape_contract(

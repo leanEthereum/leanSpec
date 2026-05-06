@@ -8,7 +8,7 @@ so clients' response shapes at non-zero slots are also captured.
 import pytest
 from consensus_testing import ApiEndpointTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 GENESIS_4V_AT_SLOT_3 = {"numValidators": 4, "genesisTime": 0, "anchorSlot": 3}

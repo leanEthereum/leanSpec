@@ -5,7 +5,7 @@ from consensus_testing import NetworkingCodecTestFiller
 
 from lean_spec.snappy.decompress import SnappyDecompressionError
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_snappy_frame_decode_rejects_empty_input(

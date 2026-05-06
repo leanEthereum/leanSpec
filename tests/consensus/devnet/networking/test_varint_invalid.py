@@ -5,7 +5,7 @@ from consensus_testing import NetworkingCodecTestFiller
 
 from lean_spec.subspecs.networking.varint import VarintError
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_varint_truncated_mid_stream_rejected(

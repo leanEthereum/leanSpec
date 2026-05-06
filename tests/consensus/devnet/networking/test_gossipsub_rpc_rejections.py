@@ -5,7 +5,7 @@ from consensus_testing import NetworkingCodecTestFiller
 
 from lean_spec.subspecs.networking.gossipsub.rpc import ProtobufDecodeError
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_gossipsub_rpc_decode_rejects_unknown_wire_type(

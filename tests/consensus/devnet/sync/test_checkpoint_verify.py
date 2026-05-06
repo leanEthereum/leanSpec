@@ -9,7 +9,7 @@ store.
 import pytest
 from consensus_testing import SyncTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_checkpoint_verify_rejects_empty_validator_set(

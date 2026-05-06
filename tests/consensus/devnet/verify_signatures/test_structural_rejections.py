@@ -16,7 +16,7 @@ from consensus_testing import (
 
 from lean_spec.types import Slot, ValidatorIndex
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_signature_group_count_mismatch_rejected(

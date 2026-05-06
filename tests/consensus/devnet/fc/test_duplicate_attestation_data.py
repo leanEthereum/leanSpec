@@ -11,7 +11,7 @@ from consensus_testing import (
 
 from lean_spec.types import Slot, ValidatorIndex
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_block_with_duplicate_aggregated_attestation_data_rejected(

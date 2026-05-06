@@ -10,7 +10,7 @@ from consensus_testing import (
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.types import Slot
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_process_slots_target_equal_to_state_slot_rejected(

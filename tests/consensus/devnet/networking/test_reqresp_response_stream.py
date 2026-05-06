@@ -9,7 +9,7 @@ and produce the same ordered list of (code, sszData) records.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_stream_two_success_chunks(networking_codec: NetworkingCodecTestFiller) -> None:

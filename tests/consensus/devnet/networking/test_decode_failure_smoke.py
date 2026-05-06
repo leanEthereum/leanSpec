@@ -7,7 +7,7 @@ independently of later negative-path content PRs.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_decode_failure_varint_truncated(networking_codec: NetworkingCodecTestFiller) -> None:

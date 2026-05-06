@@ -10,7 +10,7 @@ from consensus_testing import NetworkingCodecTestFiller
 
 from lean_spec.subspecs.networking.reqresp.codec import CodecError
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_reqresp_decode_rejects_empty_request(

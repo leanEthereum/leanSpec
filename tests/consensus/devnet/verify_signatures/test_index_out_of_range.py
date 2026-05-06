@@ -10,7 +10,7 @@ from consensus_testing import (
 
 from lean_spec.types import Slot, ValidatorIndex
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_attestation_validator_index_out_of_range_rejected(

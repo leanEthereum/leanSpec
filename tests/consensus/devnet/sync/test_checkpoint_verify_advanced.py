@@ -9,7 +9,7 @@ historical_block_hashes path that real checkpoint-sync downloads hit.
 import pytest
 from consensus_testing import SyncTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_checkpoint_verify_advanced_slot_three(sync: SyncTestFiller) -> None:

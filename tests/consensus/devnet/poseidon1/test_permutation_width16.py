@@ -10,7 +10,7 @@ from consensus_testing import PoseidonPermutationTestFiller
 
 from lean_spec.subspecs.koalabear.field import P
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 WIDTH: int = 16
 

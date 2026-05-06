@@ -5,7 +5,7 @@ from consensus_testing import NetworkingCodecTestFiller
 
 from lean_spec.subspecs.networking.discovery.codec import MessageDecodingError
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_discv5_message_decode_rejects_empty_input(

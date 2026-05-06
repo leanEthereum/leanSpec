@@ -9,7 +9,7 @@ wrong-fork messages into their subscriptions.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_gossip_topic_network_name_matches(

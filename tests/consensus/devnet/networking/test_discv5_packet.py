@@ -10,7 +10,7 @@ checks.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 DEST_NODE_ID = "0x" + "11" * 32

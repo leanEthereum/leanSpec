@@ -11,7 +11,7 @@ from consensus_testing import NetworkingCodecTestFiller
 
 from lean_spec.types.rlp import encode_rlp
 
-pytestmark = pytest.mark.valid_until("Devnet")
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def _build_unsorted_enr_rlp() -> bytes:
