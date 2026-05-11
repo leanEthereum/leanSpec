@@ -11,7 +11,6 @@ These tests cover leanSpec-specific implementation details:
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 
 import httpx
@@ -340,7 +339,13 @@ class TestAggregatorAdminEndpoint:
             await server.aclose()
 
     async def test_sequential_posts_converge(self) -> None:
-        """Multiple POSTs converge to the last-writer value."""
+        """Multiple sequential POSTs converge to the last-writer value.
+
+        Posts must be issued one at a time (not via ``asyncio.gather``);
+        with concurrent requests the server-side arrival order is racy and
+        the last-writer-wins assertion becomes flaky on slower runners
+        (observed: Python 3.14 macOS).
+        """
         controller = _make_test_controller(initial=False)
         config = ApiServerConfig(port=15067)
         server = ApiServer(config=config, aggregator_controller=controller)
@@ -350,11 +355,11 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 url = "http://127.0.0.1:15067/lean/v0/admin/aggregator"
-                responses = await asyncio.gather(
-                    client.post(url, json={"enabled": True}),
-                    client.post(url, json={"enabled": False}),
-                    client.post(url, json={"enabled": True}),
-                )
+                responses = [
+                    await client.post(url, json={"enabled": True}),
+                    await client.post(url, json={"enabled": False}),
+                    await client.post(url, json={"enabled": True}),
+                ]
 
                 assert all(r.status_code == 200 for r in responses)
                 assert controller.is_enabled() is True
