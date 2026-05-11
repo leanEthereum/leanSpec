@@ -1,5 +1,6 @@
 """Layer-agnostic pytest plugin for generating Ethereum test fixtures."""
 
+import functools
 import importlib
 import json
 import shutil
@@ -10,6 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+
+@functools.cache
+def _spec_instance_for(fork_class: type) -> Any:
+    """Build the active fork's spec instance once and reuse across collection."""
+    spec_class_method: Any = fork_class.spec_class  # ty: ignore[unresolved-attribute]
+    return spec_class_method()()
 
 
 class FixtureCollector:
@@ -228,8 +236,8 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.addinivalue_line(
         "markers",
-        "requires(*capabilities): only collect when the active fork advertises "
-        "every listed @runtime_checkable Protocol",
+        "requires(*capabilities): only collect when the active fork "
+        "advertises every listed runtime-checkable Protocol",
     )
 
     # Get options
@@ -321,10 +329,10 @@ def _check_markers_valid_for_fork(
 
     Composition rules:
 
-    - `valid_from` / `valid_until` form a fork-range intersection (AND across
-      kinds, OR across multiple markers of the same kind).
-    - `valid_at` short-circuits to exact-fork match.
-    - `requires(capability)` AND-composes on top of either branch — the
+    - Fork-range markers form an intersection across kinds and a union
+      within a kind.
+    - The exact-fork marker short-circuits to a single-fork match.
+    - The capability marker AND-composes on top of either branch — the
       active fork must satisfy every listed capability Protocol.
     """
     has_valid_from = False
@@ -362,10 +370,7 @@ def _check_markers_valid_for_fork(
         """Active fork must structurally satisfy every required capability."""
         if not required_capabilities:
             return True
-        # spec_class is a layer-specific extension on BaseFork subclasses.
-        # The framework dispatches duck-typed across layers.
-        spec_class_method: Any = fork_class.spec_class  # ty: ignore[unresolved-attribute]
-        spec = spec_class_method()()
+        spec = _spec_instance_for(fork_class)
         return all(isinstance(spec, cap) for cap in required_capabilities)
 
     if not (has_valid_from or has_valid_until or has_valid_at or required_capabilities):

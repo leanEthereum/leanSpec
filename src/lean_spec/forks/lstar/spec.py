@@ -75,7 +75,7 @@ class LstarSpec(ForkProtocol):
 
     previous: ClassVar[type[ForkProtocol] | None] = None
 
-    # Capabilities (see lean_spec/forks/capabilities.py).
+    # Capabilities advertised by this fork.
     sig_scheme: ClassVar[GeneralizedXmssScheme] = TARGET_SIGNATURE_SCHEME
 
     state_class: type[State] = State
@@ -799,7 +799,7 @@ class LstarSpec(ForkProtocol):
         - Each body attestation is signed by participating validators
         - The proposer signed the block root with the proposal key
 
-        The signing scheme is read from the SigScheme capability on this fork.
+        The signing scheme is read from this fork's capability.
 
         Args:
             signed_block: The signed block whose signatures are checked.
@@ -1040,7 +1040,7 @@ class LstarSpec(ForkProtocol):
 
         This method:
 
-        1. Verifies the XMSS signature using the fork's SigScheme
+        1. Verifies the XMSS signature using this fork's capability
         2. Stores the signature when the node is in aggregator mode
 
         Subnet filtering happens at the p2p subscription layer — only
@@ -1051,6 +1051,10 @@ class LstarSpec(ForkProtocol):
             store: The current forkchoice store.
             signed_attestation: The signed attestation to process.
             is_aggregator: True if the node is an aggregator.
+
+        Returns:
+            A new store with the attestation signature recorded when in
+            aggregator mode, otherwise the input store unchanged.
 
         Raises:
             ValueError: If validator not found in state.
@@ -1178,7 +1182,7 @@ class LstarSpec(ForkProtocol):
         3. Processing attestations included in the block body (on-chain)
         4. Updating the forkchoice head
 
-        Signatures are verified using the fork's SigScheme capability.
+        Signatures are verified using this fork's capability.
 
         Raises:
             AssertionError: If parent block/state not found in store.

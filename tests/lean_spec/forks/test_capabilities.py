@@ -1,10 +1,10 @@
-"""Tests for fork capability Protocols and the @requires marker dispatch."""
+"""Unit tests for fork capabilities and the requirement-marker dispatch."""
 
-from dataclasses import dataclass, field
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import pytest
 from framework.forks import BaseFork
+from framework.markers import requires_capability
 from framework.pytest_plugins.filler import _check_markers_valid_for_fork
 
 from lean_spec.forks import LstarSpec, SigScheme
@@ -13,26 +13,8 @@ from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME
 from lean_spec.types import ValidatorIndex
 
 
-@dataclass(frozen=True)
-class _Mark:
-    """Minimal stand-in for pytest's Mark object.
-
-    The dispatch helper only reads `.name` and `.args`, so this is enough
-    to drive it without going through real pytest collection.
-    """
-
-    name: str
-    args: tuple[Any, ...] = ()
-    kwargs: dict[str, Any] = field(default_factory=dict)
-
-
 class _NoSigSpec(ForkProtocol):
-    """Synthetic fork that does NOT advertise SigScheme.
-
-    Implements just enough abstract surface to be instantiable. Used to
-    verify the @requires marker correctly deselects against forks lacking
-    a capability.
-    """
+    """Synthetic fork without the signature-scheme capability."""
 
     NAME: ClassVar[str] = "no_sig"
     VERSION: ClassVar[int] = LstarSpec.VERSION + 1
@@ -40,11 +22,11 @@ class _NoSigSpec(ForkProtocol):
     previous: ClassVar[type[ForkProtocol] | None] = LstarSpec
 
     def upgrade_state(self, state: SpecStateType) -> SpecStateType:
-        """Root-fork identity migration."""
+        """Identity migration."""
         return state
 
     def generate_genesis(self, genesis_time: Any, validators: Any) -> SpecStateType:
-        """Not exercised by capability dispatch."""
+        """Not exercised."""
         raise NotImplementedError
 
     def create_store(
@@ -53,12 +35,12 @@ class _NoSigSpec(ForkProtocol):
         anchor_block: SpecBlockType,
         validator_id: ValidatorIndex | None,
     ) -> Any:
-        """Not exercised by capability dispatch."""
+        """Not exercised."""
         raise NotImplementedError
 
 
 class _NoSigFork(BaseFork):
-    """BaseFork wrapper exposing _NoSigSpec through spec_class()."""
+    """Fork wrapper around the no-capability synthetic spec."""
 
     @classmethod
     def name(cls) -> str:
@@ -70,12 +52,8 @@ class _NoSigFork(BaseFork):
 
 
 class _LstarLikeFork(BaseFork):
-    """Local BaseFork wrapper exposing LstarSpec.
-
-    Mirrors `consensus_testing.forks.Lstar` but kept local so capability
-    tests don't drag the entire consensus filler bootstrap into the
-    import graph.
-    """
+    """Fork wrapper around the real Lstar spec, kept local to avoid pulling
+    the consensus filler bootstrap into the unit-test import graph."""
 
     @classmethod
     def name(cls) -> str:
@@ -87,100 +65,141 @@ class _LstarLikeFork(BaseFork):
 
 
 def _fork_by_name_table(*forks: type[BaseFork]) -> Any:
-    """Build a get_fork_by_name lookup over the given fork classes."""
+    """Build a name lookup over the given forks."""
     table = {fork.name(): fork for fork in forks}
     return table.get
 
 
+def _mark(name: str, *args: Any) -> Any:
+    """Build a real pytest Mark via the public MarkDecorator path."""
+    return getattr(pytest.mark, name)(*args).mark
+
+
 class TestSigSchemeCapability:
-    """SigScheme structurally identifies forks that expose an XMSS scheme."""
+    """A fork advertises the signature-scheme capability by binding the attribute."""
 
     def test_lstar_advertises_sigscheme(self) -> None:
-        """LstarSpec satisfies SigScheme at runtime."""
+        """The real fork passes the structural check."""
         assert isinstance(LstarSpec(), SigScheme)
 
     def test_lstar_sig_scheme_is_target_scheme(self) -> None:
-        """The bound scheme is the same TARGET_SIGNATURE_SCHEME singleton."""
+        """The bound scheme is the same singleton resolved at import time."""
         assert LstarSpec.sig_scheme is TARGET_SIGNATURE_SCHEME
 
     def test_fork_without_attribute_not_recognized(self) -> None:
-        """A fork without sig_scheme is structurally rejected."""
+        """A fork lacking the attribute is structurally rejected."""
         assert not isinstance(_NoSigSpec(), SigScheme)
 
 
-class TestRequiresMarkerDispatch:
-    """`requires(capability)` composes with the fork-range markers."""
+class TestRequiresCapabilityHelper:
+    """The helper rejects non-runtime-checkable arguments at call time."""
+
+    def test_accepts_runtime_checkable_protocol(self) -> None:
+        """A runtime-checkable Protocol produces a usable marker."""
+        decorator = requires_capability(SigScheme)
+        assert decorator.mark.name == "requires"
+        assert decorator.mark.args == (SigScheme,)
+
+    def test_accepts_multiple_capabilities(self) -> None:
+        """Capabilities round-trip into marker args in the order given."""
+
+        @runtime_checkable
+        class _Other(Protocol):
+            other_attr: ClassVar[object]
+
+        decorator = requires_capability(SigScheme, _Other)
+        assert decorator.mark.args == (SigScheme, _Other)
+
+    def test_rejects_non_runtime_checkable_protocol(self) -> None:
+        """A plain Protocol is rejected at call time."""
+
+        class _NotRuntimeCheckable(Protocol):
+            sig_scheme: ClassVar[object]
+
+        with pytest.raises(TypeError, match="runtime_checkable"):
+            requires_capability(_NotRuntimeCheckable)
+
+    def test_rejects_plain_class(self) -> None:
+        """A non-Protocol class is rejected too."""
+
+        class _PlainClass:
+            sig_scheme: ClassVar[object] = object()
+
+        with pytest.raises(TypeError, match="runtime_checkable"):
+            requires_capability(_PlainClass)
+
+
+class TestMarkerDispatch:
+    """The capability marker AND-composes with the fork-range markers."""
 
     def test_no_markers_passes(self) -> None:
-        """A test with no markers runs on any fork."""
-        assert _check_markers_valid_for_fork([], _LstarLikeFork, _fork_by_name_table()) is True
+        """An unmarked test runs on any fork."""
+        assert _check_markers_valid_for_fork([], _LstarLikeFork, _fork_by_name_table())
 
-    def test_requires_passes_when_capability_present(self) -> None:
-        """LstarSpec advertises SigScheme — test is included."""
-        markers = [_Mark("requires", (SigScheme,))]
-        assert _check_markers_valid_for_fork(markers, _LstarLikeFork, _fork_by_name_table()) is True
+    def test_capability_present_passes(self) -> None:
+        """Capability advertised → test included."""
+        markers = [requires_capability(SigScheme).mark]
+        assert _check_markers_valid_for_fork(markers, _LstarLikeFork, _fork_by_name_table())
 
-    def test_requires_fails_when_capability_absent(self) -> None:
-        """_NoSigSpec doesn't advertise SigScheme — test is deselected."""
-        markers = [_Mark("requires", (SigScheme,))]
-        assert _check_markers_valid_for_fork(markers, _NoSigFork, _fork_by_name_table()) is False
+    def test_capability_absent_fails(self) -> None:
+        """Capability missing → test deselected."""
+        markers = [requires_capability(SigScheme).mark]
+        assert not _check_markers_valid_for_fork(markers, _NoSigFork, _fork_by_name_table())
 
-    def test_requires_composes_with_valid_until_and_passes(self) -> None:
-        """`valid_until` AND `requires` both pass — test is included."""
+    def test_composes_with_valid_until_and_passes(self) -> None:
+        """Fork-range and capability both satisfied → test included."""
         markers = [
-            _Mark("valid_until", (_LstarLikeFork.name(),)),
-            _Mark("requires", (SigScheme,)),
+            _mark("valid_until", _LstarLikeFork.name()),
+            requires_capability(SigScheme).mark,
         ]
-        assert (
-            _check_markers_valid_for_fork(
-                markers, _LstarLikeFork, _fork_by_name_table(_LstarLikeFork)
-            )
-            is True
+        assert _check_markers_valid_for_fork(
+            markers, _LstarLikeFork, _fork_by_name_table(_LstarLikeFork)
         )
 
-    def test_requires_composes_with_valid_until_and_fails_on_capability(self) -> None:
-        """`valid_until` passes but capability missing — deselected."""
+    def test_composes_with_valid_until_and_fails_on_capability(self) -> None:
+        """Fork-range passes but capability missing → deselected."""
         markers = [
-            _Mark("valid_until", (_NoSigFork.name(),)),
-            _Mark("requires", (SigScheme,)),
+            _mark("valid_until", _NoSigFork.name()),
+            requires_capability(SigScheme).mark,
         ]
-        assert (
-            _check_markers_valid_for_fork(markers, _NoSigFork, _fork_by_name_table(_NoSigFork))
-            is False
+        assert not _check_markers_valid_for_fork(
+            markers, _NoSigFork, _fork_by_name_table(_NoSigFork)
         )
 
     def test_valid_at_short_circuit_still_checks_capability(self) -> None:
-        """`valid_at` matches the fork name but capability missing — deselected."""
+        """Exact-fork match still requires the capability."""
         markers = [
-            _Mark("valid_at", (_NoSigFork.name(),)),
-            _Mark("requires", (SigScheme,)),
+            _mark("valid_at", _NoSigFork.name()),
+            requires_capability(SigScheme).mark,
         ]
-        assert (
-            _check_markers_valid_for_fork(markers, _NoSigFork, _fork_by_name_table(_NoSigFork))
-            is False
+        assert not _check_markers_valid_for_fork(
+            markers, _NoSigFork, _fork_by_name_table(_NoSigFork)
         )
 
-    def test_multiple_requires_markers_compose_with_and(self) -> None:
-        """Stacked @requires markers all checked — one failing fails the whole."""
+    def test_multiple_capability_markers_compose_with_and(self) -> None:
+        """Stacked capability markers fail the whole if any one fails."""
 
         @runtime_checkable
         class _Absent(Protocol):
             never_an_attribute_on_any_real_fork: ClassVar[object]
 
         markers = [
-            _Mark("requires", (SigScheme,)),
-            _Mark("requires", (_Absent,)),
+            requires_capability(SigScheme).mark,
+            requires_capability(_Absent).mark,
         ]
-        assert (
-            _check_markers_valid_for_fork(markers, _LstarLikeFork, _fork_by_name_table()) is False
-        )
+        assert not _check_markers_valid_for_fork(markers, _LstarLikeFork, _fork_by_name_table())
 
-    def test_requires_with_non_runtime_checkable_protocol_raises(self) -> None:
-        """isinstance against a plain Protocol raises TypeError at check time."""
+    def test_dispatcher_raises_on_non_runtime_checkable_protocol(self) -> None:
+        """The dispatcher's own guard rejects non-runtime-checkable Protocols.
+
+        Defense in depth: even if a marker is built without going through
+        the helper, the dispatch must not silently pass.
+        """
 
         class _NotRuntimeCheckable(Protocol):
             sig_scheme: ClassVar[object]
 
-        markers = [_Mark("requires", (_NotRuntimeCheckable,))]
+        # Bypass the helper's validation to exercise the dispatcher's guard.
+        markers = [pytest.mark.requires.with_args(_NotRuntimeCheckable).mark]
         with pytest.raises(TypeError, match="runtime_checkable"):
             _check_markers_valid_for_fork(markers, _LstarLikeFork, _fork_by_name_table())

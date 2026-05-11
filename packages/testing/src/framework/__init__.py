@@ -5,6 +5,6 @@ This module provides base classes and utilities that are common across
 both consensus and execution layer testing.
 """
 
-from .markers import requires
+from .markers import requires_capability
 
-__all__ = ["requires"]
+__all__ = ["requires_capability"]

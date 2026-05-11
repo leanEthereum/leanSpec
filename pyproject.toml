@@ -106,7 +106,10 @@ addopts = [
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "valid_from: marks tests as valid from a specific fork version",
     "valid_until: marks tests as valid until a specific fork version",
+    "valid_at: marks tests as valid only at a specific fork version",
+    "requires: marks tests as requiring one or more fork capabilities",
     "interop: integration tests for multiple leanSpec nodes",
     "num_validators: number of validators for interop test cluster",
 ]
