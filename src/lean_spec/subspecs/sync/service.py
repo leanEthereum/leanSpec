@@ -533,6 +533,7 @@ class SyncService:
             )
             self.store = new_store
             self._replay_pending_attestations()
+            await self._maybe_publish_reaggregated_attestations_from_block(block)
 
         # Each processed block might complete our sync.
         #
@@ -711,6 +712,81 @@ class SyncService:
             signed_attestation: The aggregate to publish.
         """
         await self._publish_agg_fn(signed_attestation)
+
+    async def _maybe_publish_reaggregated_attestations_from_block(
+        self,
+        block: SignedBlock,
+    ) -> None:
+        """When running as aggregator, merge block attestations with local partial aggregates.
+
+        On block import we already trust the block-attestation participant bitfields
+        via `spec.on_block` signature verification. If we also have local partial
+        aggregates for the same AttestationData, run one aggregation pass immediately
+        and gossip any improved aggregate for that data.
+        """
+        is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
+        if not is_aggregator_role:
+            return
+
+        block_attestations = list(block.block.body.attestations)
+        if not block_attestations:
+            return
+
+        # Some tests inject a lightweight mock store that does not carry
+        # aggregation payload maps.
+        if not hasattr(self.store, "latest_new_aggregated_payloads"):
+            return
+
+        # Match attestation entries by data root instead of object identity.
+        # Different code paths may produce equivalent AttestationData instances
+        # that do not share the same object key in dicts.
+        block_participants_by_root = {
+            hash_tree_root(att.data): set(att.aggregation_bits.to_validator_indices())
+            for att in block_attestations
+        }
+        pre_new_by_root = {
+            data_root: [
+                set(proof.info.participants.to_validator_indices())
+                for proof in proofs
+            ]
+            for data, proofs in self.store.latest_new_aggregated_payloads.items()
+            if (data_root := hash_tree_root(data)) in block_participants_by_root
+        }
+
+        # Only run if we already have at least one local partial aggregate for
+        # some attestation in this block.
+        if not any(pre_new_by_root.values()):
+            return
+
+        try:
+            self.store, new_aggregates = self.spec.aggregate(self.store)
+        except (AssertionError, KeyError, ValueError) as exc:
+            logger.debug("Post-block re-aggregation failed: %s", exc)
+            return
+
+        for signed_attestation in new_aggregates:
+            data_root = hash_tree_root(signed_attestation.data)
+            if data_root not in block_participants_by_root:
+                continue
+
+            local_partials = pre_new_by_root.get(data_root, [])
+            if not local_partials:
+                continue
+
+            aggregate_participants = set(
+                signed_attestation.proof.info.participants.to_validator_indices()
+            )
+            block_participants = block_participants_by_root[data_root]
+
+            # Publish only if this newly produced aggregate strictly improves at
+            # least one local partial and bridges participants observed in block.
+            should_publish = any(
+                aggregate_participants > partial
+                and bool((block_participants - partial) & aggregate_participants)
+                for partial in local_partials
+            )
+            if should_publish:
+                await self.publish_aggregated_attestation(signed_attestation)
 
     async def _check_sync_trigger(self) -> None:
         """

@@ -13,7 +13,7 @@ Attestations can be aggregated by common data to save space and bandwidth.
 
 from __future__ import annotations
 
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import AggregationBits, Checkpoint, Container, Slot, ValidatorIndex
 
@@ -75,5 +75,5 @@ class SignedAggregatedAttestation(Container):
     data: AttestationData
     """Combined attestation data similar to the beacon chain format."""
 
-    proof: AggregatedSignatureProof
-    """Aggregated signature proof covering all participating validators."""
+    proof: TypeOneMultiSignature
+    """Aggregated single-message proof covering all participating validators."""

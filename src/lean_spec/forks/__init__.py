@@ -13,8 +13,7 @@ from .lstar.containers import (
     SignedBlock,
     Validator,
 )
-from .lstar.containers.block import BlockSignatures
-from .lstar.containers.block.types import AggregatedAttestations, AttestationSignatures
+from .lstar.containers.block.types import AggregatedAttestations
 from .lstar.containers.state import State, Validators
 from .lstar.spec import LstarSpec, LstarStore
 from .lstar.store import AttestationSignatureEntry
@@ -36,11 +35,9 @@ __all__ = [
     "Attestation",
     "AttestationData",
     "AttestationSignatureEntry",
-    "AttestationSignatures",
     "Block",
     "BlockBody",
     "BlockHeader",
-    "BlockSignatures",
     "Config",
     "DEFAULT_REGISTRY",
     "FORK_SEQUENCE",

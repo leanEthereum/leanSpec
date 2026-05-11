@@ -6,21 +6,17 @@ Each references its parent, forming a chain.
 The proposer is determined by slot assignment.
 """
 
-from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.types import Bytes32, Slot, ValidatorIndex
+from lean_spec.types import ByteListMiB, Bytes32, Slot, ValidatorIndex
 from lean_spec.types.container import Container
 
-from .types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
+from .types import AggregatedAttestations
 
 
 class BlockBody(Container):
     """Payload of a block containing attestations."""
 
     attestations: AggregatedAttestations
-    """Attestations in the block. Signatures are in BlockSignatures."""
+    """Attestations in the block. Signatures are folded into the block-level proof."""
 
 
 class BlockHeader(Container):
@@ -66,21 +62,16 @@ class Block(Container):
     """The block's payload."""
 
 
-class BlockSignatures(Container):
-    """Aggregated signature payload for a block."""
-
-    attestation_signatures: AttestationSignatures
-    """Aggregated signatures for attestations in the block body."""
-
-    proposer_signature: Signature
-    """Signature over the block root using the proposer's proposal key."""
-
-
 class SignedBlock(Container):
-    """Envelope carrying a block and its aggregated signatures."""
+    """Envelope carrying a block with a single aggregated proof for all signatures.
+
+    The proof is the SSZ-encoded form of a Type-2 multi-message proof that
+    binds every attestation in the body plus the proposer's signature over
+    the block root.
+    """
 
     block: Block
     """The block being signed."""
 
-    signature: BlockSignatures
-    """Aggregated signature payload for the block."""
+    proof: ByteListMiB
+    """Single full-block proof covering attestations and the proposer signature."""

@@ -1,24 +1,26 @@
-"""Signature aggregation for the Lean Ethereum consensus specification."""
+"""Signature aggregation for the Lean Ethereum consensus specification.
+Multi-signature aggregation containers and helpers.
+
+Two proof shapes:
+
+- Type-1: many validators, one message (one AttestationData, or one block root).
+- Type-2: a merge of N Type-1 proofs, each over a distinct message.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Self
-
-from lean_multisig_py import (
-    aggregate_signatures,
-    setup_prover,
-    setup_verifier,
-    verify_aggregated_signatures,
-)
+from typing import TypeAlias
 
 from lean_spec.config import LEAN_ENV, LeanEnvMode
+from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.types import (
     AggregationBits,
     ByteListMiB,
     Bytes32,
     Container,
     Slot,
+    SSZList,
     ValidatorIndex,
     ValidatorIndices,
 )
@@ -39,154 +41,88 @@ LOG_INV_RATE_PROD = 2
 """Inverse rate exponent for production mode (balanced speed vs proof size)."""
 
 
+BytecodeClaim: TypeAlias = Bytes32
+"""Placeholder alias for the trusted Evaluation<EF> field on TypeOneInfo / TypeTwoMultiSignature.
+
+The Rust type is an extension-field evaluation. Its concrete SSZ
+serialisation will land with the lean_multisig_py bindings.
+"""
+
+
 class AggregationError(Exception):
-    """Raised when signature aggregation or verification fails."""
+    """Raised when signature aggregation, merging, splitting, or verification fails."""
 
 
-class AggregatedSignatureProof(Container):
+class TypeOneInfo(Container):
+    """Per-message metadata for a single-message multi-signer proof.
+
+    Carries everything a verifier needs to recompute the proof's binding
+    inputs without re-deriving from block content. Participants stay in
+    bitfield form for wire compactness; pubkeys are resolved at the
+    binding boundary from the validator registry.
     """
-    Cryptographic proof that a set of validators signed a message.
 
-    This container encapsulates the output of the leanVM signature aggregation,
-    combining the participant set with the proof bytes. This design ensures
-    the proof is self-describing: it carries information about which validators
-    it covers.
+    message: Bytes32
+    """The 32-byte message that was signed (e.g. hash_tree_root of attestation data or block)."""
 
-    The proof can verify that all participants signed the same message in the
-    same slot, using a single verification operation instead of checking
-    each signature individually.
-    """
+    slot: Slot
+    """The slot in which the signatures were created."""
 
     participants: AggregationBits
-    """Bitfield indicating which validators' signatures are included."""
+    """Bitfield indicating which validators contributed signatures."""
 
-    proof_data: ByteListMiB
-    """The raw aggregated proof bytes from leanVM."""
+    bytecode_claim: BytecodeClaim
+    """Trusted evaluation tied to the proof. Recomputed by the verifier when received externally."""
 
-    @classmethod
-    def aggregate(
-        cls,
-        xmss_participants: AggregationBits | None,
-        children: Sequence[tuple[Self, Sequence[PublicKey]]],
-        raw_xmss: Sequence[tuple[PublicKey, Signature]],
-        message: Bytes32,
-        slot: Slot,
-        mode: LeanEnvMode | None = None,
-    ) -> Self:
-        """
-        Aggregate raw_xmss signatures and children proofs into a single proof.
 
-        Args:
-            xmss_participants: Bitfield of validators whose raw_signatures are provided.
-            children: Sequence of (child_proof, public_keys) tuples to aggregate.
-            raw_xmss: Sequence of (public key, signature) tuples to aggregate.
-            message: The 32-byte message that was signed.
-            slot: The slot in which the signatures were created.
-            mode: The mode to use for the aggregation (test or prod).
+class TypeOneInfos(SSZList[TypeOneInfo]):
+    """List of per-message info entries inside a Type-2 proof.
 
-        Returns:
-            An aggregated signature proof covering raw signers and all child participants.
+    A valid block carries at most MAX_ATTESTATIONS_DATA distinct entries
+    plus one for the proposer's own signature. 
+    """
 
-        Raises:
-            AggregationError: If aggregation fails.
-        """
-        if not raw_xmss and not children:
-            raise AggregationError("At least one raw signature or child proof is required")
+    LIMIT = int(MAX_ATTESTATIONS_DATA) + 1
 
-        if raw_xmss and xmss_participants is None:
-            raise AggregationError("xmss_participants is required when raw_xmss is provided")
 
-        if not raw_xmss and len(children) < 2:
-            raise AggregationError(
-                "At least two child proofs are required when no raw signatures are provided"
-            )
+class TypeOneMultiSignature(Container):
+    """A single-message proof aggregating signatures from many validators."""
 
-        aggregated_validator_ids: set[ValidatorIndex] = set()
-        if xmss_participants is not None:
-            aggregated_validator_ids.update(xmss_participants.to_validator_indices())
+    info: TypeOneInfo
+    """Message, slot, participants, and trusted bytecode claim."""
 
-        if len(aggregated_validator_ids) != len(raw_xmss):
-            raise AggregationError("Raw signature count does not match XMSS participant count")
-
-        # Include child participants in the aggregated participants
-        for child_proof, _ in children:
-            aggregated_validator_ids.update(child_proof.participants.to_validator_indices())
-        participants = ValidatorIndices(data=list(aggregated_validator_ids)).to_aggregation_bits()
-
-        mode = mode or LEAN_ENV
-        setup_prover(mode=mode)
-
-        try:
-            children_bytes = [
-                (
-                    [pk.encode_bytes() for pk in child_pks],
-                    child_proof.proof_data.encode_bytes(),
-                )
-                for child_proof, child_pks in children
-            ]
-            _, proof_bytes = aggregate_signatures(
-                [pk.encode_bytes() for pk, _ in raw_xmss],
-                [sig.encode_bytes() for _, sig in raw_xmss],
-                message,
-                slot,
-                LOG_INV_RATE_TEST if mode == "test" else LOG_INV_RATE_PROD,
-                children_bytes=children_bytes,
-                mode=mode,
-            )
-            return cls(
-                participants=participants,
-                proof_data=ByteListMiB(data=proof_bytes),
-            )
-        except Exception as exc:
-            raise AggregationError(f"Signature aggregation failed: {exc}") from exc
+    proof: ByteListMiB
+    """Raw aggregated proof bytes (ExecutionProof on the Rust side)."""
 
     @staticmethod
     def select_greedily(
-        *proof_sets: set[AggregatedSignatureProof] | None,
-    ) -> tuple[list[AggregatedSignatureProof], set[ValidatorIndex]]:
-        """
-        Greedy set-cover selection of proofs to maximize validator coverage.
+        *proof_sets: set[TypeOneMultiSignature] | None,
+    ) -> tuple[list[TypeOneMultiSignature], set[ValidatorIndex]]:
+        """Greedy set-cover over Type-1 proofs to maximise validator coverage.
 
         Repeatedly selects the proof covering the most uncovered validators
-        until no proof adds new coverage. Earlier proof sets are prioritized.
+        until no proof adds new coverage. Earlier proof sets are
+        prioritised: gossip-fresh proofs win over already-known ones.
 
-        TODO: We should find a better place for this in the future.
-
-        Args:
-            proof_sets: Candidate proof sets in priority order.
-
-        Returns:
-            Selected proofs and the set of covered validator indices.
+        TODO: a more principled home for this once the proof pool layer
+        firms up.
         """
-        selected: list[AggregatedSignatureProof] = []
+        selected: list[TypeOneMultiSignature] = []
         covered: set[ValidatorIndex] = set()
 
-        # Process each priority tier in order.
-        #
-        # Earlier sets are exhausted before moving to later ones.
-        # This ensures new (pending) proofs are preferred over known
-        # (already-accepted) proofs, reducing redundant work.
         for proofs in proof_sets:
             if not proofs:
                 continue
 
             remaining = list(proofs)
 
-            # Greedy set-cover: repeatedly pick the proof that adds the
-            # most uncovered validators.
-            #
-            # The greedy approach guarantees a logarithmic approximation
-            # ratio, which is good enough for block building where we want
-            # maximum coverage with minimal proof count.
             while remaining:
                 best = max(
                     remaining,
-                    key=lambda p: len(set(p.participants.to_validator_indices()) - covered),
+                    key=lambda p: len(set(p.info.participants.to_validator_indices()) - covered),
                 )
-                new_coverage = set(best.participants.to_validator_indices()) - covered
+                new_coverage = set(best.info.participants.to_validator_indices()) - covered
 
-                # No proof in this tier adds new coverage.
-                # Remaining proofs are fully redundant with what we already have.
                 if not new_coverage:
                     break
 
@@ -196,35 +132,193 @@ class AggregatedSignatureProof(Container):
 
         return selected, covered
 
-    def verify(
-        self,
-        public_keys: Sequence[PublicKey],
-        message: Bytes32,
-        slot: Slot,
-        mode: LeanEnvMode | None = None,
-    ) -> None:
-        """
-        Verify this aggregated signature proof.
 
-        Args:
-            public_keys: Public keys of the participants.
-            message: The 32-byte message that was signed.
-            slot: The slot in which the signatures were created.
-            mode: The mode to use for the verification (test or prod).
+class TypeTwoMultiSignature(Container):
+    """A merged proof covering many distinct messages.
 
-        Raises:
-            AggregationError: If verification fails.
-        """
-        mode = mode or LEAN_ENV
-        setup_verifier(mode=mode)
+    On the wire a SignedBlock carries the SSZ-serialised form of this
+    container as its single proof blob. The block-level info list
+    enumerates every (message, slot, participants) tuple the proof
+    binds to.
+    """
 
-        try:
-            verify_aggregated_signatures(
-                [pk.encode_bytes() for pk in public_keys],
-                message,
-                self.proof_data.encode_bytes(),
-                slot,
-                mode=mode,
+    info: TypeOneInfos
+    """Per-message metadata, one entry per merged Type-1 proof."""
+
+    bytecode_claim: BytecodeClaim
+    """Aggregation-level trusted evaluation. Recomputed on receive."""
+
+    proof: ByteListMiB
+    """Raw merged proof bytes (ExecutionProof on the Rust side)."""
+
+
+def _placeholder_proof_bytes() -> ByteListMiB:
+    """Empty proof blob for stub returns. Real bytes land with the bindings."""
+    return ByteListMiB(data=b"")
+
+
+def _placeholder_bytecode_claim() -> BytecodeClaim:
+    """Zero-filled placeholder. Real evaluation lands with the bindings."""
+    return Bytes32(b"\x00" * 32)
+
+
+def aggregate_type_1(
+    children: Sequence[TypeOneMultiSignature],
+    raw_xmss: Sequence[tuple[PublicKey, Signature]],
+    xmss_participants: AggregationBits | None,
+    message: Bytes32,
+    slot: Slot,
+    mode: LeanEnvMode | None = None,
+) -> TypeOneMultiSignature:
+    """Aggregate raw XMSS signatures and child Type-1 proofs into one Type-1 proof.
+
+    All inputs must bind to the same (message, slot). The resulting proof
+    covers the union of every child's participants plus the validators
+    described by xmss_participants.
+
+    Stub: returns a placeholder proof with empty bytes and a zero
+    bytecode_claim until the binding lands. The participant union is
+    computed honestly so callers reading the participants bitfield
+    observe correct coverage.
+    """
+    _ = mode or LEAN_ENV
+
+    if not raw_xmss and not children:
+        raise AggregationError("At least one raw signature or child proof is required")
+
+    if raw_xmss and xmss_participants is None:
+        raise AggregationError("xmss_participants is required when raw_xmss is provided")
+
+    if not raw_xmss and len(children) < 2:
+        raise AggregationError(
+            "At least two child proofs are required when no raw signatures are provided"
+        )
+
+    aggregated: set[ValidatorIndex] = set()
+    if xmss_participants is not None:
+        aggregated.update(xmss_participants.to_validator_indices())
+
+    if len(aggregated) != len(raw_xmss):
+        raise AggregationError("Raw signature count does not match XMSS participant count")
+
+    for child in children:
+        aggregated.update(child.info.participants.to_validator_indices())
+
+    participants = ValidatorIndices(data=sorted(aggregated)).to_aggregation_bits()
+
+    return TypeOneMultiSignature(
+        info=TypeOneInfo(
+            message=message,
+            slot=slot,
+            participants=participants,
+            bytecode_claim=_placeholder_bytecode_claim(),
+        ),
+        proof=_placeholder_proof_bytes(),
+    )
+
+
+def verify_type_1(
+    sig: TypeOneMultiSignature,
+    public_keys: Sequence[PublicKey],
+    mode: LeanEnvMode | None = None,
+) -> None:
+    """Verify a single-message Type-1 proof against a resolved set of pubkeys.
+
+    Structural checks always run; cryptographic verification arrives with
+    the bindings. The structural side enforces:
+
+    - The pubkey list is parallel to the participants bitfield.
+
+    Stub crypto path silently accepts; once bindings ship the call
+    delegates to the multi-signature library and raises AggregationError
+    on cryptographic failure.
+    """
+    _ = mode or LEAN_ENV
+
+    expected = sum(1 for bit in sig.info.participants.data if bool(bit))
+    if len(public_keys) != expected:
+        raise AggregationError(
+            f"Type-1 verify expected {expected} pubkeys for participants, "
+            f"got {len(public_keys)}"
+        )
+
+
+def aggregate_type_2(
+    parts: Sequence[TypeOneMultiSignature],
+    mode: LeanEnvMode | None = None,
+) -> TypeTwoMultiSignature:
+    """Merge several Type-1 proofs (each over a distinct message) into one Type-2 proof.
+
+    Stub: returns a shape-correct TypeTwoMultiSignature with the supplied
+    info entries, empty proof bytes, and a zero bytecode_claim.
+    """
+    _ = mode or LEAN_ENV
+
+    if not parts:
+        raise AggregationError("aggregate_type_2 requires at least one Type-1 input")
+
+    return TypeTwoMultiSignature(
+        info=TypeOneInfos(data=[part.info for part in parts]),
+        bytecode_claim=_placeholder_bytecode_claim(),
+        proof=_placeholder_proof_bytes(),
+    )
+
+
+def split_type_2_by_msg(
+    sig: TypeTwoMultiSignature,
+    message: Bytes32,
+    mode: LeanEnvMode | None = None,
+) -> TypeOneMultiSignature:
+    """Recover the Type-1 proof bound to a specific message from a Type-2 merge.
+
+    Stub: locates the matching info entry and returns a Type-1 wrapping it
+    with empty proof bytes. Real implementation runs the binding's split.
+    """
+    _ = mode or LEAN_ENV
+
+    for entry in sig.info:
+        if entry.message == message:
+            return TypeOneMultiSignature(
+                info=entry,
+                proof=_placeholder_proof_bytes(),
             )
-        except Exception as exc:
-            raise AggregationError(f"Signature verification failed: {exc}") from exc
+
+    raise AggregationError(f"Type-2 proof has no entry for message {message.hex()}")
+
+
+def verify_type_2(
+    sig: TypeTwoMultiSignature,
+    public_keys_per_message: Sequence[Sequence[PublicKey]],
+    mode: LeanEnvMode | None = None,
+) -> None:
+    """Verify a multi-message Type-2 proof against the resolved pubkeys for each entry.
+
+    public_keys_per_message must be parallel to sig.info: one pubkey list
+    per Type-1 info entry, ordered by the participants bitfield of that
+    entry.
+
+    Structural checks always run; cryptographic verification arrives with
+    the bindings. The structural side enforces:
+
+    - The pubkey lists are parallel to the info list.
+    - Each pubkey list has the same length as its info entry's
+      participant bitfield popcount.
+
+    Stub crypto path silently accepts; once bindings ship the call
+    delegates to the multi-signature library and raises AggregationError
+    on cryptographic failure.
+    """
+    _ = mode or LEAN_ENV
+
+    if len(public_keys_per_message) != len(sig.info):
+        raise AggregationError(
+            f"Type-2 verify expected pubkey lists for {len(sig.info)} messages, "
+            f"got {len(public_keys_per_message)}"
+        )
+
+    for idx, (info, pks) in enumerate(zip(sig.info, public_keys_per_message, strict=True)):
+        expected = sum(1 for bit in info.participants.data if bool(bit))
+        if len(pks) != expected:
+            raise AggregationError(
+                f"Type-2 verify entry {idx} expected {expected} pubkeys, got {len(pks)}"
+            )

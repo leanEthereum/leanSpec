@@ -15,7 +15,7 @@ from lean_spec.forks.lstar.containers import (
     Config,
 )
 from lean_spec.subspecs.chain.clock import Interval
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, Checkpoint, ValidatorIndex
 from lean_spec.types.base import StrictBaseModel
@@ -128,7 +128,7 @@ class Store(StrictBaseModel, Generic[StateT, BlockT]):
     Keyed by AttestationData.
     """
 
-    latest_new_aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = Field(
+    latest_new_aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = Field(
         default_factory=dict
     )
     """
@@ -136,10 +136,14 @@ class Store(StrictBaseModel, Generic[StateT, BlockT]):
 
     These payloads are "new" and do not yet contribute to fork choice.
     They migrate to known payloads via interval ticks.
-    Populated from blocks or gossip aggregated attestations.
+    Populated from gossip aggregated attestations only; blocks no longer
+    feed individual proofs into this map (the block-level proof is a
+    merged Type-2 blob that the spec verifies as a whole). Aggregators will
+    still extract the individual per-message proofs using `split_type_2_by_msg`
+    and gossip aggregated attestations.
     """
 
-    latest_known_aggregated_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = Field(
+    latest_known_aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = Field(
         default_factory=dict
     )
     """

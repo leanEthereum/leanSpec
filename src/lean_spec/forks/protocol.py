@@ -90,33 +90,19 @@ class SpecAggregatedAttestationsType(SpecSSZType, Protocol):
     """
 
 
-class SpecAttestationSignaturesType(SpecSSZType, Protocol):
-    """Structural contract: any fork's AttestationSignatures list class.
-
-    Bounded SSZ list of aggregated signature proofs aligned one-for-one
-    with a block body's aggregated attestations.
-    """
-
-
 class SpecSignedBlockType(SpecSSZType, Protocol):
     """Structural contract: any fork's SignedBlock container class.
 
-    A SignedBlock wraps a Block with its proposer + attestation signatures.
-    Subspecs treat instances as opaque SSZ-encodable payloads passed
-    between sync, gossip, and storage.
+    A SignedBlock wraps a Block with a single aggregated proof covering
+    every attestation in the body plus the proposer's signature over
+    the block root. Subspecs treat instances as opaque SSZ-encodable
+    payloads passed between sync, gossip, and storage.
     """
 
     @property
     def block(self) -> SpecBlockType:
         """The wrapped Block payload."""
         ...
-
-
-class SpecBlockSignaturesType(SpecSSZType, Protocol):
-    """Structural contract: any fork's BlockSignatures container class.
-
-    Carries the proposer and attestation signature bundle for a block.
-    """
 
 
 class SpecAttestationDataType(SpecSSZType, Protocol):
@@ -316,16 +302,10 @@ class ForkProtocol(ABC):
     """Concrete BlockHeader container class owned by this fork."""
 
     signed_block_class: type[SpecSignedBlockType]
-    """Concrete SignedBlock container class — block + signatures envelope."""
-
-    block_signatures_class: type[SpecBlockSignaturesType]
-    """Concrete BlockSignatures container class — proposer + attestation signatures."""
+    """Concrete SignedBlock container class — block + merged proof envelope."""
 
     aggregated_attestations_class: type[SpecAggregatedAttestationsType]
     """Concrete AggregatedAttestations list class — block-body aggregated votes."""
-
-    attestation_signatures_class: type[SpecAttestationSignaturesType]
-    """Concrete AttestationSignatures list class — signature group bundle."""
 
     store_class: type[SpecStoreType]
     """Concrete forkchoice Store class owned by this fork."""

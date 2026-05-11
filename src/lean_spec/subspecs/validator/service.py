@@ -39,9 +39,7 @@ from typing import Literal
 
 from lean_spec.forks import (
     AttestationData,
-    AttestationSignatures,
     Block,
-    BlockSignatures,
     LstarSpec,
     SignedAttestation,
     SignedBlock,
@@ -50,9 +48,13 @@ from lean_spec.subspecs.chain.clock import Interval, SlotClock
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync import SyncService
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
-from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
+from lean_spec.subspecs.xmss.aggregation import (
+    TypeOneMultiSignature,
+    aggregate_type_1,
+    aggregate_type_2,
+)
+from lean_spec.subspecs.xmss.containers import PublicKey, Signature
+from lean_spec.types import ByteListMiB, Bytes32, Slot, Uint64, ValidatorIndex, ValidatorIndices
 
 from .registry import ValidatorEntry, ValidatorRegistry
 
@@ -285,7 +287,8 @@ class ValidatorService:
 
                 self.sync_service.store = new_store
 
-                # Sign the block: proposer_signature covers the block root.
+                # Sign the block: proposer_signature covers the block root,
+                # and is merged with attestation proofs into one block proof.
                 signed_block = self._sign_block(block, validator_index, signatures)
 
                 self._blocks_produced += 1
@@ -379,17 +382,21 @@ class ValidatorService:
         self,
         block: Block,
         validator_index: ValidatorIndex,
-        attestation_signatures: list[AggregatedSignatureProof],
+        attestation_proofs: list[TypeOneMultiSignature],
     ) -> SignedBlock:
         """
         Sign a block and wrap it for publishing.
 
-        Signs hash_tree_root(block) with the proposer's proposal key.
+        Signs the block root with the proposer's proposal key, wraps the
+        signature into a singleton Type-1 proof, and merges that with the
+        per-attestation Type-1 proofs into a single Type-2 proof. The
+        merged proof is SSZ-encoded and stored on SignedBlock.proof.
 
         Args:
             block: The block to sign.
             validator_index: Index of the proposing validator.
-            attestation_signatures: Aggregated signatures for included attestations.
+            attestation_proofs: Per-AttestationData Type-1 proofs included in
+                the block body, parallel to block.body.attestations.
 
         Returns:
             Signed block ready for publishing.
@@ -407,14 +414,31 @@ class ValidatorService:
             "proposal_secret_key",
         )
 
-        signature = BlockSignatures(
-            attestation_signatures=AttestationSignatures(data=attestation_signatures),
-            proposer_signature=proposer_signature,
+        # Reconstruct the proposer's public key from the proposal secret key.
+        proposer_pubkey = PublicKey(
+            root=entry.proposal_secret_key.top_tree.root(),
+            parameter=entry.proposal_secret_key.parameter,
         )
+
+        # Wrap the proposer's raw XMSS signature into a singleton Type-1.
+        # The participant set is just the proposer index.
+        proposer_participants = ValidatorIndices(data=[validator_index]).to_aggregation_bits()
+        proposer_type_1 = aggregate_type_1(
+            children=[],
+            raw_xmss=[(proposer_pubkey, proposer_signature)],
+            xmss_participants=proposer_participants,
+            message=block_root,
+            slot=block.slot,
+        )
+
+        # Merge the per-attestation proofs and the proposer Type-1 into one
+        # Type-2 proof. Order matters: verify_signatures expects the proposer
+        # entry to be last, parallel to block.body.attestations + 1.
+        merged = aggregate_type_2([*attestation_proofs, proposer_type_1])
 
         return SignedBlock(
             block=block,
-            signature=signature,
+            proof=ByteListMiB(data=merged.encode_bytes()),
         )
 
     def _sign_attestation(
