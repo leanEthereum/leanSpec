@@ -13,7 +13,7 @@ SYNC_LAG_THRESHOLD: Final[int] = 4
 """Slot lag past which the local view is too stale to sign.
 
 Why:
-    Lean justifies and finalizes within a handful of slots.
+    We justify and finalize within a handful of slots.
     A 4-slot lag is one full justification window behind real time.
     A vote from that view lands on a subtree the network has left.
 """
