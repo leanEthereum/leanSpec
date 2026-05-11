@@ -75,6 +75,9 @@ class LstarSpec(ForkProtocol):
 
     previous: ClassVar[type[ForkProtocol] | None] = None
 
+    # Capabilities (see lean_spec/forks/capabilities.py).
+    sig_scheme: ClassVar[GeneralizedXmssScheme] = TARGET_SIGNATURE_SCHEME
+
     state_class: type[State] = State
     block_class: type[Block] = Block
     block_body_class: type[BlockBody] = BlockBody
@@ -787,7 +790,6 @@ class LstarSpec(ForkProtocol):
         self,
         signed_block: SignedBlock,
         validators: Validators,
-        scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> bool:
         """
         Verify all XMSS signatures in this signed block.
@@ -797,10 +799,11 @@ class LstarSpec(ForkProtocol):
         - Each body attestation is signed by participating validators
         - The proposer signed the block root with the proposal key
 
+        The signing scheme is read from the SigScheme capability on this fork.
+
         Args:
             signed_block: The signed block whose signatures are checked.
             validators: Validator registry providing public keys for verification.
-            scheme: XMSS signature scheme for verification.
 
         Returns:
             True if all signatures are valid.
@@ -862,7 +865,7 @@ class LstarSpec(ForkProtocol):
         block_root = hash_tree_root(block)
 
         try:
-            valid = scheme.verify(
+            valid = self.sig_scheme.verify(
                 proposer.get_proposal_pubkey(),
                 block.slot,
                 block_root,
@@ -1031,18 +1034,23 @@ class LstarSpec(ForkProtocol):
         self,
         store: LstarStore,
         signed_attestation: SignedAttestation,
-        scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
         is_aggregator: bool = False,
     ) -> LstarStore:
         """Process a signed attestation received via gossip network.
 
         This method:
-        1. Verifies the XMSS signature
+
+        1. Verifies the XMSS signature using the fork's SigScheme
         2. Stores the signature when the node is in aggregator mode
 
         Subnet filtering happens at the p2p subscription layer — only
         attestations from subscribed subnets reach this method. No
         additional subnet check is needed here.
+
+        Args:
+            store: The current forkchoice store.
+            signed_attestation: The signed attestation to process.
+            is_aggregator: True if the node is an aggregator.
 
         Raises:
             ValueError: If validator not found in state.
@@ -1067,7 +1075,7 @@ class LstarSpec(ForkProtocol):
             )
             public_key = key_state.validators[validator_id].get_attestation_pubkey()
 
-            assert scheme.verify(
+            assert self.sig_scheme.verify(
                 public_key, attestation_data.slot, hash_tree_root(attestation_data), signature
             ), "Signature verification failed"
 
@@ -1160,15 +1168,17 @@ class LstarSpec(ForkProtocol):
         self,
         store: LstarStore,
         signed_block: SignedBlock,
-        scheme: GeneralizedXmssScheme = TARGET_SIGNATURE_SCHEME,
     ) -> LstarStore:
         """Process a new block and update the forkchoice state.
 
         This method integrates a block into the forkchoice store by:
+
         1. Validating the block's parent exists
         2. Computing the post-state via the state transition function
         3. Processing attestations included in the block body (on-chain)
         4. Updating the forkchoice head
+
+        Signatures are verified using the fork's SigScheme capability.
 
         Raises:
             AssertionError: If parent block/state not found in store.
@@ -1196,7 +1206,7 @@ class LstarSpec(ForkProtocol):
             )
 
             # Validate cryptographic signatures
-            valid_signatures = self.verify_signatures(signed_block, parent_state.validators, scheme)
+            valid_signatures = self.verify_signatures(signed_block, parent_state.validators)
 
             # Execute state transition function to compute post-block state
             post_state = self.state_transition(parent_state, block, valid_signatures)

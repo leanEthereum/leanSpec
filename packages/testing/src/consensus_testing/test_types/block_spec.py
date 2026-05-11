@@ -29,7 +29,7 @@ from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import Bytes32, CamelModel, Slot, ValidatorIndex, ValidatorIndices
 
-from ..keys import LEAN_ENV_TO_SCHEMES, XmssKeyManager, create_dummy_signature
+from ..keys import XmssKeyManager, create_dummy_signature
 from .aggregated_attestation_spec import AggregatedAttestationSpec
 
 
@@ -448,7 +448,6 @@ class BlockSpec(CamelModel):
                     data=attestation.data,
                     signature=signature,
                 ),
-                scheme=LEAN_ENV_TO_SCHEMES[lean_env],
                 is_aggregator=True,
             )
 

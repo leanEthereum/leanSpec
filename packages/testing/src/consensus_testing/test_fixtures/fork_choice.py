@@ -25,7 +25,6 @@ from lean_spec.subspecs.ssz import hash_tree_root
 from lean_spec.types import Slot, Uint64, ValidatorIndex
 
 from ..keys import (
-    LEAN_ENV_TO_SCHEMES,
     XmssKeyManager,
 )
 from ..test_types import (
@@ -330,11 +329,7 @@ class ForkChoiceTest(BaseConsensusFixture):
 
                         # Process the block through Store.
                         # This validates, applies state transition, and updates the store's head.
-                        store = spec.on_block(
-                            store,
-                            signed_block,
-                            scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
-                        )
+                        store = spec.on_block(store, signed_block)
 
                     case AttestationStep():
                         # Process a gossip attestation.
@@ -351,7 +346,6 @@ class ForkChoiceTest(BaseConsensusFixture):
                         store = spec.on_gossip_attestation(
                             store,
                             signed_attestation,
-                            scheme=LEAN_ENV_TO_SCHEMES[self.lean_env],
                             is_aggregator=step.is_aggregator,
                         )
 
