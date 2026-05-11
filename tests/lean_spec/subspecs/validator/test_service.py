@@ -1350,7 +1350,7 @@ class TestSyncLagGate:
         )
 
         for lag in range(SYNC_LAG_THRESHOLD + 1):
-            assert service._is_synced_for_duties(Slot(10 + lag))
+            assert service._is_synced_for_duties(Slot(10 + lag), "block")
 
     def test_just_over_threshold_with_recent_peer_gates(self, sync_service: SyncService) -> None:
         """Lag > THRESHOLD is gated when at least one peer has a fresh head."""
@@ -1366,7 +1366,7 @@ class TestSyncLagGate:
             "get_network_head_slot",
             return_value=Slot(15),
         ):
-            assert not service._is_synced_for_duties(Slot(15))
+            assert not service._is_synced_for_duties(Slot(15), "block")
 
     def test_clock_skew_does_not_gate(self, sync_service: SyncService) -> None:
         """If wall clock is behind head slot, duties are allowed (trust the chain)."""
@@ -1376,7 +1376,7 @@ class TestSyncLagGate:
             clock=SlotClock(genesis_time=Uint64(0)),
             registry=ValidatorRegistry(),
         )
-        assert service._is_synced_for_duties(Slot(15))
+        assert service._is_synced_for_duties(Slot(15), "block")
 
     def test_no_peer_status_does_not_gate(self, sync_service: SyncService) -> None:
         """An isolated node with no peer status keeps duties live."""
@@ -1387,7 +1387,7 @@ class TestSyncLagGate:
             registry=ValidatorRegistry(),
         )
         # peer_max defaults to None on a fresh PeerManager; lag is 100.
-        assert service._is_synced_for_duties(Slot(100))
+        assert service._is_synced_for_duties(Slot(100), "block")
 
     def test_network_wide_stall_does_not_gate(self, sync_service: SyncService) -> None:
         """When even the most up-to-date peer is far behind, duties stay live.
@@ -1407,7 +1407,7 @@ class TestSyncLagGate:
             "get_network_head_slot",
             return_value=Slot(0),
         ):
-            assert service._is_synced_for_duties(Slot(50))
+            assert service._is_synced_for_duties(Slot(50), "block")
 
     def test_boundary_lag_equal_threshold_allowed(self, sync_service: SyncService) -> None:
         """Boundary: lag == SYNC_LAG_THRESHOLD is still allowed."""
@@ -1423,7 +1423,7 @@ class TestSyncLagGate:
             "get_network_head_slot",
             return_value=wall_clock,
         ):
-            assert service._is_synced_for_duties(wall_clock)
+            assert service._is_synced_for_duties(wall_clock, "block")
 
     def test_boundary_lag_one_over_threshold_gated(self, sync_service: SyncService) -> None:
         """Boundary: lag == SYNC_LAG_THRESHOLD + 1 with recent peer is gated."""
@@ -1439,7 +1439,7 @@ class TestSyncLagGate:
             "get_network_head_slot",
             return_value=wall_clock,
         ):
-            assert not service._is_synced_for_duties(wall_clock)
+            assert not service._is_synced_for_duties(wall_clock, "block")
 
     async def test_run_loop_skips_block_production_when_gated(
         self, sync_service: SyncService, key_manager: XmssKeyManager
@@ -1514,10 +1514,10 @@ class TestSyncLagGate:
         assert Slot(10) not in service._attested_slots
         assert service.duties_skipped_lag >= 1
 
-    def test_record_lag_skip_logs_structured_fields_and_increments_counter(
+    def test_gated_call_logs_structured_fields_and_increments_counter(
         self, sync_service: SyncService, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """The skip log carries duty type, slot, head_slot, lag, and peer_max."""
+        """When the gate fires, it logs duty/slot/head/lag/peer_max and bumps the counter."""
         _set_head_slot(sync_service, Slot(3))
         service = ValidatorService(
             sync_service=sync_service,
@@ -1533,29 +1533,11 @@ class TestSyncLagGate:
                 return_value=Slot(20),
             ),
         ):
-            service._record_lag_skip(Slot(20), "block")
+            gated = service._is_synced_for_duties(Slot(20), "block")
 
-        assert "duty=block" in caplog.text
-        assert "slot=20" in caplog.text
-        assert "head_slot=3" in caplog.text
-        assert "lag=17" in caplog.text
-        assert "peer_max_head_slot=20" in caplog.text
-        assert service.duties_skipped_lag == 1
-
-    def test_record_lag_skip_with_no_peer_status_renders_none(
-        self, sync_service: SyncService, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """When no peer has reported status, the log renders peer_max as 'none'."""
-        _set_head_slot(sync_service, Slot(3))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
-
-        with caplog.at_level("INFO"):
-            service._record_lag_skip(Slot(20), "attestation")
-
-        assert "duty=attestation" in caplog.text
-        assert "peer_max_head_slot=none" in caplog.text
+        assert gated is False
+        assert [r.getMessage() for r in caplog.records] == [
+            "Validator duty skipped due to sync lag: "
+            "duty=block slot=20 head_slot=3 lag=17 peer_max_head_slot=20"
+        ]
         assert service.duties_skipped_lag == 1
