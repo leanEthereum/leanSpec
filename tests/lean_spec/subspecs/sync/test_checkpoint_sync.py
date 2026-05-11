@@ -7,17 +7,28 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from lean_spec.forks import (
+    AttestationSignatures,
+    Block,
+    BlockSignatures,
+    SignedBlock,
+)
 from lean_spec.forks.lstar import State, Store
 from lean_spec.forks.lstar.containers.state import Validators
 from lean_spec.subspecs.api import ApiServer, ApiServerConfig
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.checkpoint_sync import (
+    FINALIZED_BLOCK_ENDPOINT,
     FINALIZED_STATE_ENDPOINT,
     CheckpointSyncError,
+    fetch_finalized_anchor,
+    fetch_finalized_block,
     fetch_finalized_state,
     verify_checkpoint_state,
 )
-from lean_spec.types import Slot
+from lean_spec.types import Bytes32, Slot
+from tests.lean_spec.helpers import make_mock_signature
 
 
 class _MockTransport(httpx.AsyncBaseTransport):
@@ -218,5 +229,146 @@ class TestCheckpointSyncClientServerIntegration:
             is_valid = verify_checkpoint_state(state)
             assert is_valid is True
 
+        finally:
+            await server.aclose()
+
+
+def _wrap_as_signed_block(block: Block) -> SignedBlock:
+    """Build a SignedBlock around a Block using a mock signature.
+
+    The spec retains only Block in Store; tests need a SignedBlock for the
+    ``signed_block_getter`` callable, so we construct one with empty
+    attestation signatures and a mock proposer signature.
+    """
+    return SignedBlock(
+        block=block,
+        signature=BlockSignatures(
+            attestation_signatures=AttestationSignatures(data=[]),
+            proposer_signature=make_mock_signature(),
+        ),
+    )
+
+
+class TestFetchFinalizedBlock:
+    """Error-handling and integration tests for ``fetch_finalized_block``."""
+
+    async def test_network_error_raises_checkpoint_sync_error(self) -> None:
+        """TCP-level failure surfaces as CheckpointSyncError."""
+        transport = _MockTransport(
+            exc=httpx.RequestError(
+                "connection refused",
+                request=httpx.Request("GET", f"http://example.com{FINALIZED_BLOCK_ENDPOINT}"),
+            )
+        )
+        with (
+            patch(
+                "lean_spec.subspecs.sync.checkpoint_sync.httpx.AsyncClient",
+                return_value=httpx.AsyncClient(transport=transport),
+            ),
+            pytest.raises(CheckpointSyncError, match="Network error"),
+        ):
+            await fetch_finalized_block("http://example.com")
+
+    async def test_http_404_raises_checkpoint_sync_error(self) -> None:
+        """A 404 (anchor block not retained on server) surfaces clearly."""
+        transport = _MockTransport(status=404, content=b"Not Found")
+        with (
+            patch(
+                "lean_spec.subspecs.sync.checkpoint_sync.httpx.AsyncClient",
+                return_value=httpx.AsyncClient(transport=transport),
+            ),
+            pytest.raises(CheckpointSyncError, match="HTTP error 404"),
+        ):
+            await fetch_finalized_block("http://example.com")
+
+    async def test_corrupt_ssz_raises_checkpoint_sync_error(self) -> None:
+        """Malformed body fails at SignedBlock deserialization."""
+        transport = _MockTransport(content=b"\xff\xfe corrupt")
+        with (
+            patch(
+                "lean_spec.subspecs.sync.checkpoint_sync.httpx.AsyncClient",
+                return_value=httpx.AsyncClient(transport=transport),
+            ),
+            pytest.raises(CheckpointSyncError, match="Failed to fetch signed block"),
+        ):
+            await fetch_finalized_block("http://example.com")
+
+    async def test_client_fetches_signed_block(
+        self, base_store: Store, genesis_block: Block
+    ) -> None:
+        """Client fetches and deserializes the anchor SignedBlock from server."""
+        anchor_signed_block = _wrap_as_signed_block(genesis_block)
+        anchor_root = hash_tree_root(genesis_block)
+
+        def signed_block_lookup(root: Bytes32) -> SignedBlock | None:
+            return anchor_signed_block if root == anchor_root else None
+
+        config = ApiServerConfig(port=15059)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=signed_block_lookup,
+        )
+        await server.start()
+        try:
+            signed_block = await fetch_finalized_block("http://127.0.0.1:15059")
+            assert signed_block.block.slot == Slot(0)
+            assert hash_tree_root(signed_block.block) == anchor_root
+        finally:
+            await server.aclose()
+
+
+class TestFetchFinalizedAnchor:
+    """Integration tests for the combined ``fetch_finalized_anchor`` helper."""
+
+    async def test_returns_state_block_pair(self, base_store: Store, genesis_block: Block) -> None:
+        """Pair satisfies ``signed_block.state_root == hash_tree_root(state)``."""
+        anchor_signed_block = _wrap_as_signed_block(genesis_block)
+        anchor_root = hash_tree_root(genesis_block)
+
+        def signed_block_lookup(root: Bytes32) -> SignedBlock | None:
+            return anchor_signed_block if root == anchor_root else None
+
+        config = ApiServerConfig(port=15060)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=signed_block_lookup,
+        )
+        await server.start()
+        try:
+            state, signed_block = await fetch_finalized_anchor("http://127.0.0.1:15060", State)
+            assert state.slot == Slot(0)
+            assert signed_block.block.state_root == hash_tree_root(state)
+        finally:
+            await server.aclose()
+
+    async def test_mismatched_pair_raises(self, base_store: Store) -> None:
+        """If block.state_root != hash_tree_root(state), raise CheckpointSyncError."""
+        # Build a SignedBlock whose state_root deliberately differs from the
+        # served state's root, simulating a server that advanced finalization
+        # between the two fetches.
+        bad_block = Block(
+            slot=Slot(0),
+            proposer_index=base_store.blocks[base_store.latest_finalized.root].proposer_index,
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32(b"\x01" * 32),
+            body=base_store.blocks[base_store.latest_finalized.root].body,
+        )
+        bad_signed = _wrap_as_signed_block(bad_block)
+
+        def signed_block_lookup(_root: Bytes32) -> SignedBlock | None:
+            return bad_signed
+
+        config = ApiServerConfig(port=15061)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=signed_block_lookup,
+        )
+        await server.start()
+        try:
+            with pytest.raises(CheckpointSyncError, match="Anchor block / state mismatch"):
+                await fetch_finalized_anchor("http://127.0.0.1:15061", State)
         finally:
             await server.aclose()

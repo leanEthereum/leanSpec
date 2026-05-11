@@ -9,8 +9,16 @@ from typing import Generator
 import httpx
 import pytest
 
+from lean_spec.forks import (
+    AttestationSignatures,
+    BlockSignatures,
+    SignedBlock,
+)
 from lean_spec.subspecs.api import AggregatorController, ApiServer, ApiServerConfig
-from tests.lean_spec.helpers import make_store
+from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.types import Bytes32
+from tests.lean_spec.helpers import make_mock_signature
+from tests.lean_spec.helpers.builders import make_genesis_data
 
 # Default port for auto-started local server
 DEFAULT_PORT = 15099
@@ -65,13 +73,33 @@ class _ServerThread(threading.Thread):
 
     def _create_server(self) -> ApiServer:
         """Create the API server with a test store and aggregator controller."""
-        store = make_store(num_validators=3, validator_id=None, genesis_time=int(time.time()))
+        genesis = make_genesis_data(
+            num_validators=3, validator_id=None, genesis_time=int(time.time())
+        )
+        store = genesis.store
+
+        # Wrap the genesis Block in a SignedBlock so the
+        # /lean/v0/blocks/finalized endpoint has something to serve. Real
+        # implementations are responsible for retaining the SignedBlock for
+        # at least the finalized root; see ApiServer.signed_block_getter.
+        anchor_signed_block = SignedBlock(
+            block=genesis.block,
+            signature=BlockSignatures(
+                attestation_signatures=AttestationSignatures(data=[]),
+                proposer_signature=make_mock_signature(),
+            ),
+        )
+        anchor_root = hash_tree_root(genesis.block)
+
+        def signed_block_lookup(root: Bytes32) -> SignedBlock | None:
+            return anchor_signed_block if root == anchor_root else None
 
         controller = _make_conformance_controller(initial=False)
         config = ApiServerConfig(host="127.0.0.1", port=self.port)
         return ApiServer(
             config=config,
             store_getter=lambda: store,
+            signed_block_getter=signed_block_lookup,
             aggregator_controller=controller,
         )
 
