@@ -190,11 +190,7 @@ class TestMarkerDispatch:
         assert not _check_markers_valid_for_fork(markers, _LstarLikeFork, _fork_by_name_table())
 
     def test_dispatcher_raises_on_non_runtime_checkable_protocol(self) -> None:
-        """The dispatcher's own guard rejects non-runtime-checkable Protocols.
-
-        Defense in depth: even if a marker is built without going through
-        the helper, the dispatch must not silently pass.
-        """
+        """The dispatcher's own guard rejects non-runtime-checkable Protocols."""
 
         class _NotRuntimeCheckable(Protocol):
             sig_scheme: ClassVar[object]
