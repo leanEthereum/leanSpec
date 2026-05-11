@@ -1318,134 +1318,207 @@ class TestValidatorServiceIntegration:
             assert not is_invalid, "Signature should not verify with the wrong slot"
 
 
-def _set_head_slot(sync_service: SyncService, slot: Slot) -> None:
-    """Replace the head block in-place so its slot reads as `slot`.
+def _replace_head_at_slot(sync_service: SyncService, head_slot: Slot) -> None:
+    """Rewrite the head block at the given slot, preserving the map invariant.
 
-    The genesis store has a single block at the head root. Mutating its slot
-    lets the duty gate observe whatever lag the test wants to exercise without
-    constructing a full chain.
+    Preserves
+    ---------
+    - All other blocks already in the store stay in place.
+    - The new head is keyed by the cryptographic root of its content.
+
+    Why
+    ---
+    The duty gate reads both the head block and the freshest block in
+    the map. A helper that broke the key-equals-root invariant would
+    mask real bugs.
     """
-    head_root = sync_service.store.head
-    new_head = sync_service.store.blocks[head_root].model_copy(update={"slot": slot})
-    sync_service.store = sync_service.store.model_copy(update={"blocks": {head_root: new_head}})
+    blocks = dict(sync_service.store.blocks)
+    old_head_block = blocks.pop(sync_service.store.head)
+    new_head_block = old_head_block.model_copy(update={"slot": head_slot})
+    new_root = hash_tree_root(new_head_block)
+    blocks[new_root] = new_head_block
+    sync_service.store = sync_service.store.model_copy(update={"blocks": blocks, "head": new_root})
+
+
+def _add_block_at_slot(sync_service: SyncService, slot: Slot) -> Bytes32:
+    """Add a non-head block at the given slot, returning its root.
+
+    Why
+    ---
+    Injects freshness evidence without touching the head. The gate's
+    stall signal scans the highest slot across every block in the map.
+    """
+    template = next(iter(sync_service.store.blocks.values()))
+    new_block = template.model_copy(update={"slot": slot})
+    new_root = hash_tree_root(new_block)
+    new_blocks = {**sync_service.store.blocks, new_root: new_block}
+    sync_service.store = sync_service.store.model_copy(update={"blocks": new_blocks})
+    return new_root
+
+
+def _build_gate_service(sync_service: SyncService) -> ValidatorService:
+    """Build a service for gate-only tests with an empty registry.
+
+    The gate logic never consults the registry, so emptying it keeps
+    the focus on the predicate under test.
+    """
+    return ValidatorService(
+        sync_service=sync_service,
+        clock=SlotClock(genesis_time=Uint64(0)),
+        registry=ValidatorRegistry(),
+    )
 
 
 class TestSyncLagGate:
+    """Sync-lag duty gate.
+
+    Decision matrix
+    ---------------
+    - Lag at or under threshold: duties run.
+    - Lag over threshold, fresh blocks locally: duties skip.
+    - Lag over threshold, no fresh blocks: duties run (network stall).
+    - Once closed, the gate reopens only after lag drops past the band.
     """
-    Tests for the sync-lag duty gate.
 
-    The gate combines local lag with peer-reported head slots so that:
+    def test_lag_within_threshold_allows_duties(self, sync_service: SyncService) -> None:
+        """Lag 0..threshold leaves the gate open."""
 
-    - A node that is itself behind a network making progress is silenced
-    - A node behind because the network is also behind keeps signing duties
-    """
+        # Head at slot 10, wall clock sweeps 10..14 (lag 0..4).
+        _replace_head_at_slot(sync_service, Slot(10))
+        service = _build_gate_service(sync_service)
 
-    def test_within_threshold_allows_duties(self, sync_service: SyncService) -> None:
-        """Lag of 0..SYNC_LAG_THRESHOLD slots is allowed."""
-        _set_head_slot(sync_service, Slot(10))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
-
+        # Every lag in the inclusive range must pass.
         for lag in range(SYNC_LAG_THRESHOLD + 1):
             assert service._is_synced_for_duties(Slot(10 + lag), "block")
 
-    def test_just_over_threshold_with_recent_peer_gates(self, sync_service: SyncService) -> None:
-        """Lag > THRESHOLD is gated when at least one peer has a fresh head."""
-        _set_head_slot(sync_service, Slot(10))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
+    def test_lag_over_threshold_with_fresh_local_block_gates(
+        self, sync_service: SyncService
+    ) -> None:
+        """Stale head plus a fresh local block: gate closes."""
 
-        with patch.object(
-            PeerManager,
-            "get_network_head_slot",
-            return_value=Slot(15),
-        ):
-            assert not service._is_synced_for_duties(Slot(15), "block")
+        # Head at slot 10, wall clock at 20: local lag 10 (> 4).
+        _replace_head_at_slot(sync_service, Slot(10))
 
-    def test_clock_skew_does_not_gate(self, sync_service: SyncService) -> None:
-        """If wall clock is behind head slot, duties are allowed (trust the chain)."""
-        _set_head_slot(sync_service, Slot(20))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
+        # Fresh local block at slot 20 makes the freshest seen slot 20.
+        # Network is not stalling, only local lag drives the decision.
+        _add_block_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        assert not service._is_synced_for_duties(Slot(20), "block")
+
+    def test_clock_skew_saturates_to_zero_lag(self, sync_service: SyncService) -> None:
+        """Head ahead of wall clock saturates to zero lag, not unlimited trust."""
+
+        # Head at slot 20, wall clock at slot 15: head leads by 5 slots.
+        # Saturation pins lag at 0, which trivially passes the threshold.
+        _replace_head_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
         assert service._is_synced_for_duties(Slot(15), "block")
 
-    def test_no_peer_status_does_not_gate(self, sync_service: SyncService) -> None:
-        """An isolated node with no peer status keeps duties live."""
-        _set_head_slot(sync_service, Slot(0))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
-        # peer_max defaults to None on a fresh PeerManager; lag is 100.
+    def test_no_extra_blocks_treats_isolation_as_network_stall(
+        self, sync_service: SyncService
+    ) -> None:
+        """Isolated node with only a stale head: gate stays open."""
+
+        # Head at slot 0, wall clock at slot 100, nothing else in the map.
+        # Freshest seen slot is 0, network lag is 100 (> 8): stall fires.
+        _replace_head_at_slot(sync_service, Slot(0))
+        service = _build_gate_service(sync_service)
+
         assert service._is_synced_for_duties(Slot(100), "block")
 
-    def test_network_wide_stall_does_not_gate(self, sync_service: SyncService) -> None:
-        """When even the most up-to-date peer is far behind, duties stay live.
+    def test_network_wide_stall_keeps_duties_live(self, sync_service: SyncService) -> None:
+        """All locally-known blocks stale: gate stays open."""
 
-        Regression for the consecutive skipped-slots edge case: the simple
-        local-lag check would silence every validator at the same moment and
-        make recovery impossible.
-        """
-        _set_head_slot(sync_service, Slot(0))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
-        with patch.object(
-            PeerManager,
-            "get_network_head_slot",
-            return_value=Slot(0),
-        ):
-            assert service._is_synced_for_duties(Slot(50), "block")
+        # Head at slot 0, wall clock at slot 50, no fresh blocks.
+        # Network lag 50 (> 8). Without this branch every validator
+        # would silence at once and recovery would be impossible.
+        _replace_head_at_slot(sync_service, Slot(0))
+        service = _build_gate_service(sync_service)
+
+        assert service._is_synced_for_duties(Slot(50), "block")
 
     def test_boundary_lag_equal_threshold_allowed(self, sync_service: SyncService) -> None:
-        """Boundary: lag == SYNC_LAG_THRESHOLD is still allowed."""
-        _set_head_slot(sync_service, Slot(10))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
-        wall_clock = Slot(10 + SYNC_LAG_THRESHOLD)
-        with patch.object(
-            PeerManager,
-            "get_network_head_slot",
-            return_value=wall_clock,
-        ):
-            assert service._is_synced_for_duties(wall_clock, "block")
+        """Lag exactly at the threshold (4) leaves the gate open."""
+
+        # Head at slot 10, wall clock at slot 14: lag equals threshold.
+        # Fresh block at slot 14 keeps the stall branch from masking this.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(14))
+        service = _build_gate_service(sync_service)
+
+        assert service._is_synced_for_duties(Slot(10 + SYNC_LAG_THRESHOLD), "block")
 
     def test_boundary_lag_one_over_threshold_gated(self, sync_service: SyncService) -> None:
-        """Boundary: lag == SYNC_LAG_THRESHOLD + 1 with recent peer is gated."""
-        _set_head_slot(sync_service, Slot(10))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
-        wall_clock = Slot(10 + SYNC_LAG_THRESHOLD + 1)
-        with patch.object(
-            PeerManager,
-            "get_network_head_slot",
-            return_value=wall_clock,
-        ):
-            assert not service._is_synced_for_duties(wall_clock, "block")
+        """Lag of threshold + 1 closes the gate."""
+
+        # Head at slot 10, wall clock at slot 15: lag is 5.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(15))
+        service = _build_gate_service(sync_service)
+
+        assert not service._is_synced_for_duties(Slot(10 + SYNC_LAG_THRESHOLD + 1), "block")
+
+    def test_hysteresis_prevents_flap(self, sync_service: SyncService) -> None:
+        """Closed gate stays closed near the threshold.
+
+        Lag sequence
+        ------------
+        - 5  -> gate closes (lag past threshold of 4).
+        - 4  -> stays closed (still inside the band).
+        - 5  -> stays closed (no flap).
+        - 2  -> reopens (lag at or below 4 - 2).
+        """
+
+        # Initial head at slot 10, fresh local block at slot 20.
+        # The fresh block keeps the stall escape from masking the band test.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        # Lag = 5: gate closes.
+        assert not service._is_synced_for_duties(Slot(15), "block")
+
+        # Lag = 4: stays closed because the band requires lag <= 2.
+        _replace_head_at_slot(sync_service, Slot(11))
+        _add_block_at_slot(sync_service, Slot(20))
+        assert not service._is_synced_for_duties(Slot(15), "block")
+
+        # Lag back to 5: still closed, no flap event.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(20))
+        assert not service._is_synced_for_duties(Slot(15), "block")
+
+        # Lag = 2: at or below the 4 - 2 band, gate reopens.
+        _replace_head_at_slot(sync_service, Slot(13))
+        _add_block_at_slot(sync_service, Slot(20))
+        assert service._is_synced_for_duties(Slot(15), "block")
+
+    def test_counters_split_block_and_attestation(self, sync_service: SyncService) -> None:
+        """Counters live on the loop, not on the gate."""
+
+        # Head 0, wall clock 20, fresh block at 20: gate closes.
+        _replace_head_at_slot(sync_service, Slot(0))
+        _add_block_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        # Invariant: the gate never moves counters. Attribution belongs
+        # to the run loop. Querying the gate must leave them at zero.
+        assert not service._is_synced_for_duties(Slot(20), "block")
+        assert service.blocks_skipped_lag == 0
+        assert service.attestations_skipped_lag == 0
+        assert service.duty_gate_closed is True
 
     async def test_run_loop_skips_block_production_when_gated(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
-        """Interval 0 in a gated slot does not invoke _maybe_produce_block."""
-        _set_head_slot(sync_service, Slot(0))
+        """Closed gate at interval 0 skips block production and ticks only the block counter."""
+
+        # Wall clock at slot 10 interval 0, head stuck at slot 0.
+        # Fresh local block at slot 10 makes the lag local, not network-wide.
+        _replace_head_at_slot(sync_service, Slot(0))
+        _add_block_at_slot(sync_service, Slot(10))
         clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 0))
         service = ValidatorService(
             sync_service=sync_service,
@@ -1462,28 +1535,31 @@ class TestSyncLagGate:
             service.stop()
 
         with (
-            patch.object(
-                PeerManager,
-                "get_network_head_slot",
-                return_value=Slot(10),
-            ),
             patch.object(ValidatorService, "_maybe_produce_block", mock_block),
             patch("asyncio.sleep", new=stop_on_sleep),
         ):
             await service.run()
 
+        # Block path bypassed, attestation counter untouched.
         assert block_calls == []
-        assert service.duties_skipped_lag >= 1
+        assert service.blocks_skipped_lag >= 1
+        assert service.attestations_skipped_lag == 0
 
     async def test_run_loop_skips_attestation_when_gated(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
-        """Gated attestation: duty is skipped AND the slot stays unmarked.
+        """Closed gate at interval 1 skips attestation and leaves the slot retryable.
 
-        The slot must stay out of `_attested_slots` so a node that catches up
-        before the slot ends can still attest in this same slot.
+        Why
+        ---
+        Keeping the slot out of the attested set lets the next loop
+        iteration retry within the same slot if the node catches up
+        before slot end.
         """
-        _set_head_slot(sync_service, Slot(0))
+
+        # Same setup as the block path but advanced to interval 1.
+        _replace_head_at_slot(sync_service, Slot(0))
+        _add_block_at_slot(sync_service, Slot(10))
         clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 1))
         service = ValidatorService(
             sync_service=sync_service,
@@ -1500,44 +1576,53 @@ class TestSyncLagGate:
             service.stop()
 
         with (
-            patch.object(
-                PeerManager,
-                "get_network_head_slot",
-                return_value=Slot(10),
-            ),
             patch.object(ValidatorService, "_produce_attestations", mock_attest),
             patch("asyncio.sleep", new=stop_on_sleep),
         ):
             await service.run()
 
+        # Attestation skipped, slot retryable, block counter untouched.
         assert attest_calls == []
         assert Slot(10) not in service._attested_slots
-        assert service.duties_skipped_lag >= 1
+        assert service.attestations_skipped_lag >= 1
+        assert service.blocks_skipped_lag == 0
 
-    def test_gated_call_logs_structured_fields_and_increments_counter(
+    def test_gate_logs_only_on_transition(
         self, sync_service: SyncService, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """When the gate fires, it logs duty/slot/head/lag/peer_max and bumps the counter."""
-        _set_head_slot(sync_service, Slot(3))
-        service = ValidatorService(
-            sync_service=sync_service,
-            clock=SlotClock(genesis_time=Uint64(0)),
-            registry=ValidatorRegistry(),
-        )
+        """One INFO record per state change, not one per query.
 
-        with (
-            caplog.at_level("INFO"),
-            patch.object(
-                PeerManager,
-                "get_network_head_slot",
-                return_value=Slot(20),
-            ),
-        ):
-            gated = service._is_synced_for_duties(Slot(20), "block")
+        Fields recorded
+        ---------------
+        - duty
+        - slot
+        - head_slot
+        - lag
+        - max_seen_slot
+        """
 
-        assert gated is False
-        assert [r.getMessage() for r in caplog.records] == [
-            "Validator duty skipped due to sync lag: "
-            "duty=block slot=20 head_slot=3 lag=17 peer_max_head_slot=20"
+        # Head at slot 3, fresh block at slot 20.
+        # Wall clock 20 puts lag at 17 with no stall escape.
+        _replace_head_at_slot(sync_service, Slot(3))
+        _add_block_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        with caplog.at_level("INFO"):
+            # Two consecutive queries: only the first is a transition.
+            first = service._is_synced_for_duties(Slot(20), "block")
+            second = service._is_synced_for_duties(Slot(20), "block")
+
+        assert first is False
+        assert second is False
+
+        # Exactly one closure record, with the expected fields.
+        transition_records = [
+            r.getMessage() for r in caplog.records if "duty gate closed" in r.getMessage()
         ]
-        assert service.duties_skipped_lag == 1
+        assert len(transition_records) == 1
+        message = transition_records[0]
+        assert "duty=block" in message
+        assert "slot=20" in message
+        assert "head_slot=3" in message
+        assert "lag=17" in message
+        assert "max_seen_slot=20" in message

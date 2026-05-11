@@ -279,57 +279,6 @@ class TestPeerManagerNetworkConsensus:
         finalized = manager.get_network_finalized_slot()
         assert finalized == Slot(100)
 
-    def test_get_network_head_slot_returns_max(
-        self, peer_id: PeerId, peer_id_2: PeerId, peer_id_3: PeerId
-    ) -> None:
-        """get_network_head_slot returns the maximum head slot across peers."""
-        manager = PeerManager()
-
-        for pid, head_slot in [(peer_id, 100), (peer_id_2, 250), (peer_id_3, 175)]:
-            info = PeerInfo(peer_id=pid, state=ConnectionState.CONNECTED)
-            sync_peer = manager.add_peer(info)
-            sync_peer.status = Status(
-                finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(50)),
-                head=Checkpoint(root=Bytes32.zero(), slot=Slot(head_slot)),
-            )
-
-        assert manager.get_network_head_slot() == Slot(250)
-
-    def test_get_network_head_slot_none_without_status(self, connected_peer_info: PeerInfo) -> None:
-        """get_network_head_slot returns None when no peer has reported status."""
-        manager = PeerManager()
-        manager.add_peer(connected_peer_info)
-        assert manager.get_network_head_slot() is None
-
-    def test_get_network_head_slot_none_with_no_peers(self) -> None:
-        """get_network_head_slot returns None when there are no peers at all."""
-        manager = PeerManager()
-        assert manager.get_network_head_slot() is None
-
-    def test_get_network_head_slot_ignores_disconnected(
-        self, peer_id: PeerId, peer_id_2: PeerId
-    ) -> None:
-        """Disconnected peers are excluded even if they have a recent reported head."""
-        manager = PeerManager()
-
-        info1 = PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED)
-        info2 = PeerInfo(peer_id=peer_id_2, state=ConnectionState.DISCONNECTED)
-
-        sync_peer1 = manager.add_peer(info1)
-        sync_peer2 = manager.add_peer(info2)
-
-        sync_peer1.status = Status(
-            finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(50)),
-            head=Checkpoint(root=Bytes32.zero(), slot=Slot(100)),
-        )
-        # Disconnected peer reports a more recent head; must be ignored.
-        sync_peer2.status = Status(
-            finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(200)),
-            head=Checkpoint(root=Bytes32.zero(), slot=Slot(500)),
-        )
-
-        assert manager.get_network_head_slot() == Slot(100)
-
 
 class TestPeerManagerRequestCallbacks:
     """Tests for PeerManager request callbacks."""
