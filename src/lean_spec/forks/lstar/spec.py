@@ -667,6 +667,16 @@ class LstarSpec(ForkProtocol):
             else:
                 current_justified = state.latest_justified
 
+            # Track the justified-slot bitfield so we can skip attestations
+            # whose target slot is already justified on this chain. Extend
+            # to mirror what process_block_header will produce on the
+            # candidate block, so is_slot_justified doesn't raise for
+            # target slots between parent.slot and slot - 1.
+            current_finalized_slot = state.latest_finalized.slot
+            current_justified_slots = state.justified_slots.extend_to_slot(
+                current_finalized_slot, slot - Slot(1)
+            )
+
             processed_att_data: set[AttestationData] = set()
 
             while True:
@@ -685,6 +695,47 @@ class LstarSpec(ForkProtocol):
                         continue
 
                     if att_data.source.slot > current_justified.slot:
+                        continue
+
+                    # Source and target roots must match the chain at their
+                    # respective slots. historical_block_hashes covers
+                    # [0, parent.slot - 1]; the parent itself sits at
+                    # parent.slot (= len(historical)); empty slots between
+                    # parent and the candidate are ZERO_HASH.
+                    source_slot_int = int(att_data.source.slot)
+                    if source_slot_int < len(state.historical_block_hashes):
+                        expected_source_root = state.historical_block_hashes[source_slot_int]
+                    elif source_slot_int == len(state.historical_block_hashes):
+                        expected_source_root = parent_root
+                    else:
+                        continue
+                    if att_data.source.root != expected_source_root:
+                        continue
+
+                    target_slot_int = int(att_data.target.slot)
+                    if target_slot_int < len(state.historical_block_hashes):
+                        expected_target_root = state.historical_block_hashes[target_slot_int]
+                    elif target_slot_int == len(state.historical_block_hashes):
+                        expected_target_root = parent_root
+                    elif target_slot_int < int(slot):
+                        expected_target_root = ZERO_HASH
+                    else:
+                        continue
+                    if att_data.target.root != expected_target_root:
+                        continue
+
+                    # Skip attestations whose target slot is already
+                    # justified on this chain (the STF would drop them as
+                    # no-ops). The genesis self-vote (source.slot ==
+                    # target.slot == 0) is exempt: it's a degenerate but
+                    # legal attestation that some fixtures rely on and that
+                    # the STF still silently drops.
+                    is_genesis_self_vote = att_data.source.slot == Slot(
+                        0
+                    ) and att_data.target.slot == Slot(0)
+                    if not is_genesis_self_vote and current_justified_slots.is_slot_justified(
+                        current_finalized_slot, att_data.target.slot
+                    ):
                         continue
 
                     if att_data in processed_att_data:
@@ -720,8 +771,13 @@ class LstarSpec(ForkProtocol):
                 )
                 post_state = self.process_block(self.process_slots(state, slot), candidate_block)
 
-                if post_state.latest_justified != current_justified:
+                if (
+                    post_state.latest_justified != current_justified
+                    or post_state.latest_finalized.slot != current_finalized_slot
+                ):
                     current_justified = post_state.latest_justified
+                    current_justified_slots = post_state.justified_slots
+                    current_finalized_slot = post_state.latest_finalized.slot
                     continue
 
                 break
