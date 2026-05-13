@@ -1,7 +1,7 @@
 """Lstar fork — identity and construction facade."""
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
 from typing import Any, ClassVar
 
@@ -354,6 +354,29 @@ class LstarSpec(ForkProtocol):
 
         return self.process_attestations(state, block.body.attestations)
 
+    def _attestation_data_matches_chain(
+        self,
+        historical_block_hashes: Sequence[Bytes32],
+        attestation_data: AttestationData,
+    ) -> bool:
+        """Whether both source and target checkpoints match the chain at their slots.
+
+        Callers pass the chain's historical block hashes as they would appear
+        after process_block_header on the consuming block: covering
+        [0, block.slot - 1] with parent_root at parent.slot and ZERO_HASH
+        for empty slots between parent and the candidate.
+        """
+        source_slot = int(attestation_data.source.slot)
+        target_slot = int(attestation_data.target.slot)
+        if source_slot >= len(historical_block_hashes):
+            return False
+        if target_slot >= len(historical_block_hashes):
+            return False
+        return (
+            attestation_data.source.root == historical_block_hashes[source_slot]
+            and attestation_data.target.root == historical_block_hashes[target_slot]
+        )
+
     def process_attestations(
         self,
         state: State,
@@ -448,26 +471,10 @@ class LstarSpec(ForkProtocol):
                 continue
 
             # Ensure the vote refers to blocks that actually exist on our chain.
-            #
-            # The attestation must match our canonical chain.
-            # Both the source root and target root must equal the recorded block roots
-            # stored for those slots in history.
-            #
-            # This prevents votes about unknown or conflicting forks.
-            source_slot_int = int(source.slot)
-            target_slot_int = int(target.slot)
-            source_matches = (
-                source.root == state.historical_block_hashes[source_slot_int]
-                if source_slot_int < len(state.historical_block_hashes)
-                else False
-            )
-            target_matches = (
-                target.root == state.historical_block_hashes[target_slot_int]
-                if target_slot_int < len(state.historical_block_hashes)
-                else False
-            )
-
-            if not source_matches or not target_matches:
+            # Prevents votes about unknown or conflicting forks.
+            if not self._attestation_data_matches_chain(
+                state.historical_block_hashes, attestation.data
+            ):
                 continue
 
             # Ensure time flows forward.
@@ -676,6 +683,14 @@ class LstarSpec(ForkProtocol):
                 current_finalized_slot, slot - Slot(1)
             )
 
+            # Build the chain view that process_block_header would produce on
+            # the candidate block. Lets the chain-match helper validate source
+            # and target roots without waiting for the STF to drop mismatches.
+            num_empty_slots = int(slot - state.latest_block_header.slot - Slot(1))
+            extended_historical_block_hashes = (
+                state.historical_block_hashes + [parent_root] + [ZERO_HASH] * num_empty_slots
+            )
+
             processed_att_data: set[AttestationData] = set()
 
             while True:
@@ -696,34 +711,14 @@ class LstarSpec(ForkProtocol):
                     if att_data.source.slot > current_justified.slot:
                         continue
 
-                    # Source and target roots must match the chain at their
-                    # respective slots.
-                    source_slot_int = int(att_data.source.slot)
-                    if source_slot_int < len(state.historical_block_hashes):
-                        expected_source_root = state.historical_block_hashes[source_slot_int]
-                    elif source_slot_int == len(state.historical_block_hashes):
-                        expected_source_root = parent_root
-                    else:
-                        # Source slot is invalid
-                        continue
-                    if att_data.source.root != expected_source_root:
-                        continue
-
-                    target_slot_int = int(att_data.target.slot)
-                    if target_slot_int < len(state.historical_block_hashes):
-                        expected_target_root = state.historical_block_hashes[target_slot_int]
-                    elif target_slot_int == len(state.historical_block_hashes):
-                        expected_target_root = parent_root
-                    elif target_slot_int < int(slot):
-                        expected_target_root = ZERO_HASH
-                    else:
-                        continue
-                    if att_data.target.root != expected_target_root:
+                    if not self._attestation_data_matches_chain(
+                        extended_historical_block_hashes, att_data
+                    ):
                         continue
 
                     # Skip attestations whose target slot is already
                     # justified on this chain. Ignore genesis self-votes
-                    # for bootstrapping fork-choice
+                    # for fork-choice bootstrapping
                     is_genesis_self_vote = att_data.source.slot == Slot(
                         0
                     ) and att_data.target.slot == Slot(0)
