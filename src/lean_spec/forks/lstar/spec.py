@@ -365,7 +365,12 @@ class LstarSpec(ForkProtocol):
         after process_block_header on the consuming block: covering
         [0, block.slot - 1] with parent_root at parent.slot and ZERO_HASH
         for empty slots between parent and the candidate.
+
+        Empty slots carry ZERO_HASH; a vote referencing one is rejected here
+        even when the recorded root happens to compare equal.
         """
+        if attestation_data.source.root == ZERO_HASH or attestation_data.target.root == ZERO_HASH:
+            return False
         source_slot = int(attestation_data.source.slot)
         target_slot = int(attestation_data.target.slot)
         if source_slot >= len(historical_block_hashes):
@@ -466,12 +471,9 @@ class LstarSpec(ForkProtocol):
             if justified_slots.is_slot_justified(finalized_slot, target.slot):
                 continue
 
-            # Ignore votes that reference zero-hash slots.
-            if source.root == ZERO_HASH or target.root == ZERO_HASH:
-                continue
-
             # Ensure the vote refers to blocks that actually exist on our chain.
-            # Prevents votes about unknown or conflicting forks.
+            # Prevents votes about unknown or conflicting forks; also rejects
+            # zero-hash source or target roots inline.
             if not self._attestation_data_matches_chain(
                 state.historical_block_hashes, attestation.data
             ):
