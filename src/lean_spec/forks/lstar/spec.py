@@ -710,7 +710,10 @@ class LstarSpec(ForkProtocol):
                     if att_data.head.root not in known_block_roots:
                         continue
 
-                    if att_data.source.slot > current_justified.slot:
+                    # Source slot must already be justified on this chain.
+                    if not current_justified_slots.is_slot_justified(
+                        current_finalized_slot, att_data.source.slot
+                    ):
                         continue
 
                     if not self._attestation_data_matches_chain(
