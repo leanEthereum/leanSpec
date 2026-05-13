@@ -684,7 +684,7 @@ class LstarSpec(ForkProtocol):
                     if att_data.head.root not in known_block_roots:
                         continue
 
-                    if att_data.source != current_justified:
+                    if att_data.source.slot > current_justified.slot:
                         continue
 
                     if att_data in processed_att_data:
