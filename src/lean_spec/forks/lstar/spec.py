@@ -1,7 +1,7 @@
 """Lstar fork — identity and construction facade."""
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from typing import Any, ClassVar
 
@@ -356,7 +356,7 @@ class LstarSpec(ForkProtocol):
 
     def _attestation_data_matches_chain(
         self,
-        historical_block_hashes: Sequence[Bytes32],
+        historical_block_hashes: HistoricalBlockHashes,
         attestation_data: AttestationData,
     ) -> bool:
         """Whether both source and target checkpoints match the chain at their slots.
