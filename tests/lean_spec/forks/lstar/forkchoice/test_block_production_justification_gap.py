@@ -33,11 +33,11 @@ def test_produce_block_on_head_with_lagging_justification(
 
     Fork tree (labels are block names; slot numbers shown in parentheses)::
 
-                            block_4(4) -- block_5(5)  <-- head
-                           /
+                               block_4(4) -- block_5(5)  <-- head
+                              /
         genesis -- 1 -- 2 -- 3
-                           \
-                            block_6(6)
+                              \
+                               block_6(6)
 
     Setup:
 
