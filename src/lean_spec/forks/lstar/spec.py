@@ -669,9 +669,8 @@ class LstarSpec(ForkProtocol):
 
             # Track the justified-slot bitfield so we can skip attestations
             # whose target slot is already justified on this chain. Extend
-            # to mirror what process_block_header will produce on the
-            # candidate block, so is_slot_justified doesn't raise for
-            # target slots between parent.slot and slot - 1.
+            # so is_slot_justified doesn't raise for target slots between
+            # parent.slot and slot - 1.
             current_finalized_slot = state.latest_finalized.slot
             current_justified_slots = state.justified_slots.extend_to_slot(
                 current_finalized_slot, slot - Slot(1)
@@ -698,16 +697,14 @@ class LstarSpec(ForkProtocol):
                         continue
 
                     # Source and target roots must match the chain at their
-                    # respective slots. historical_block_hashes covers
-                    # [0, parent.slot - 1]; the parent itself sits at
-                    # parent.slot (= len(historical)); empty slots between
-                    # parent and the candidate are ZERO_HASH.
+                    # respective slots.
                     source_slot_int = int(att_data.source.slot)
                     if source_slot_int < len(state.historical_block_hashes):
                         expected_source_root = state.historical_block_hashes[source_slot_int]
                     elif source_slot_int == len(state.historical_block_hashes):
                         expected_source_root = parent_root
                     else:
+                        # Source slot is invalid
                         continue
                     if att_data.source.root != expected_source_root:
                         continue
@@ -725,11 +722,8 @@ class LstarSpec(ForkProtocol):
                         continue
 
                     # Skip attestations whose target slot is already
-                    # justified on this chain (the STF would drop them as
-                    # no-ops). The genesis self-vote (source.slot ==
-                    # target.slot == 0) is exempt: it's a degenerate but
-                    # legal attestation that some fixtures rely on and that
-                    # the STF still silently drops.
+                    # justified on this chain. Ignore genesis self-votes
+                    # for bootstrapping fork-choice
                     is_genesis_self_vote = att_data.source.slot == Slot(
                         0
                     ) and att_data.target.slot == Slot(0)
