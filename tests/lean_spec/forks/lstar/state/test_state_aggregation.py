@@ -275,11 +275,11 @@ def test_build_block_state_root_valid_when_signatures_split(
     assert len(result_state.validators.data) == num_validators
 
 
-def test_build_block_skips_non_matching_source(
+def test_build_block_skips_other_chain_source(
     container_key_manager: XmssKeyManager,
     spec: LstarSpec,
 ) -> None:
-    """Only attestation data whose source matches current_justified is included."""
+    """Only attestation data whose source matches the current chain is included."""
     state = make_keyed_genesis_state(2, container_key_manager)
     parent_header_with_state_root = state.latest_block_header.model_copy(
         update={"state_root": hash_tree_root(state)}
