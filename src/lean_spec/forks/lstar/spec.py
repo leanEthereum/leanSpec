@@ -738,8 +738,6 @@ class LstarSpec(ForkProtocol):
                     ):
                         continue
 
-                    if att_data in processed_att_data:
-                        continue
                     processed_att_data.add(att_data)
 
                     found_entries = True
