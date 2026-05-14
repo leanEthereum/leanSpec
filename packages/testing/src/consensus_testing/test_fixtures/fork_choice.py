@@ -301,7 +301,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                     case BlockStep():
                         # Build a complete signed block from the lightweight spec.
                         # The spec contains minimal fields; we fill the rest.
-                        signed_block = step.block.build_signed_block_with_store(
+                        signed_block, store = step.block.build_signed_block_with_store(
                             store, self._block_registry, key_manager, self.lean_env
                         )
 

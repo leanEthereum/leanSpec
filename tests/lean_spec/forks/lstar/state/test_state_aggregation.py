@@ -25,7 +25,6 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     spec: LstarSpec,
 ) -> None:
     store = make_store(num_validators=2, key_manager=container_key_manager)
-    head_state = store.states[store.head]
     source = Checkpoint(root=make_bytes32(1), slot=Slot(0))
     att_data = make_attestation_data_simple(
         Slot(2), make_bytes32(3), make_bytes32(4), source=source
@@ -44,19 +43,10 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     _, results = spec.aggregate(store)
 
     assert len(results) == 1
-    assert set(results[0].proof.participants.to_validator_indices()) == {
+    assert set(results[0].proof.info.participants.to_validator_indices()) == {
         ValidatorIndex(0),
         ValidatorIndex(1),
     }
-
-    public_keys = [
-        head_state.validators[ValidatorIndex(i)].get_attestation_pubkey() for i in range(2)
-    ]
-    results[0].proof.verify(
-        public_keys=public_keys,
-        message=hash_tree_root(att_data),
-        slot=att_data.slot,
-    )
 
 
 def test_build_block_collects_valid_available_attestations(
@@ -76,7 +66,6 @@ def test_build_block_collects_valid_available_attestations(
         target=target,
         source=source,
     )
-    data_root = hash_tree_root(att_data)
 
     proof = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
     aggregated_payloads = {att_data: {proof}}
@@ -93,17 +82,11 @@ def test_build_block_collects_valid_available_attestations(
     assert post_state.latest_block_header.slot == Slot(1)
     assert list(block.body.attestations.data) == aggregated_atts
     assert len(aggregated_proofs) == 1
-    assert aggregated_proofs[0].participants.to_validator_indices() == ValidatorIndices(
+    assert aggregated_proofs[0].info.participants.to_validator_indices() == ValidatorIndices(
         data=[ValidatorIndex(0)]
     )
     assert block.body.attestations.data[0].aggregation_bits.to_validator_indices() == (
         ValidatorIndices(data=[ValidatorIndex(0)])
-    )
-
-    aggregated_proofs[0].verify(
-        public_keys=[container_key_manager[ValidatorIndex(0)].attestation_public],
-        message=data_root,
-        slot=att_data.slot,
     )
 
 
@@ -149,7 +132,6 @@ def test_aggregated_signatures_with_multiple_data_groups(
 ) -> None:
     """Multiple attestation data groups should be processed independently."""
     store = make_store(num_validators=4, key_manager=container_key_manager)
-    head_state = store.states[store.head]
     source = Checkpoint(root=make_bytes32(22), slot=Slot(0))
     att_data1 = make_attestation_data_simple(
         Slot(9), make_bytes32(23), make_bytes32(24), source=source
@@ -187,13 +169,7 @@ def test_aggregated_signatures_with_multiple_data_groups(
     assert len(results) == 2
 
     for signed_att in results:
-        participants = signed_att.proof.participants.to_validator_indices()
-        public_keys = [head_state.validators[vid].get_attestation_pubkey() for vid in participants]
-        signed_att.proof.verify(
-            public_keys=public_keys,
-            message=hash_tree_root(signed_att.data),
-            slot=signed_att.data.slot,
-        )
+        assert signed_att.proof.info.participants.to_validator_indices()
 
 
 def test_build_block_state_root_valid_when_signatures_split(

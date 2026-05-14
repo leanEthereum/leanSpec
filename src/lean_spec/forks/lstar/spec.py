@@ -1,8 +1,7 @@
 """Lstar fork — identity and construction facade."""
 
 from collections import defaultdict
-from collections.abc import Iterable
-from collections.abc import Set as AbstractSet
+from collections.abc import Iterable, Set as AbstractSet
 from typing import Any, ClassVar
 
 from lean_spec.forks.lstar.containers import (
@@ -45,9 +44,6 @@ from lean_spec.subspecs.xmss.aggregation import (
     TypeOneInfo,
     TypeOneMultiSignature,
     TypeTwoMultiSignature,
-    aggregate_type_1,
-    verify_type_1,
-    verify_type_2,
 )
 from lean_spec.subspecs.xmss.containers import PublicKey
 from lean_spec.subspecs.xmss.interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
@@ -59,7 +55,6 @@ from lean_spec.types import (
     Checkpoint,
     Slot,
     SSZList,
-    Uint8,
     Uint64,
     ValidatorIndex,
     ValidatorIndices,
@@ -676,8 +671,12 @@ class LstarSpec(ForkProtocol):
                 for att_data, proofs in sorted(
                     aggregated_payloads.items(), key=lambda item: item[0].target.slot
                 ):
+                    # Stop adding new attestations once we hit the per-block
+                    # cap. The proposer signature is merged as an extra
+                    # component into the same Type-2 envelope, so total
+                    # components stay at MAX_ATTESTATIONS_DATA + 1.
                     if (
-                        Uint8(len(processed_att_data)) >= MAX_ATTESTATIONS_DATA
+                        len(processed_att_data) >= int(MAX_ATTESTATIONS_DATA)
                         and att_data not in processed_att_data
                     ):
                         break
@@ -690,11 +689,20 @@ class LstarSpec(ForkProtocol):
 
                     if att_data in processed_att_data:
                         continue
+
+                    # Placeholders carry only participant info for
+                    # fork-choice extraction. They cannot drive a real
+                    # Type-2 merge, so skip att_data entries whose only
+                    # cached proofs are empty-bytes placeholders.
+                    real_proofs = {p for p in proofs if p.proof.data}
+                    if not real_proofs:
+                        continue
+
                     processed_att_data.add(att_data)
 
                     found_entries = True
 
-                    selected, _ = TypeOneMultiSignature.select_greedily(proofs)
+                    selected, _ = TypeOneMultiSignature.select_greedily(real_proofs)
                     aggregated_signatures.extend(selected)
                     for proof in selected:
                         aggregated_attestations.append(
@@ -746,8 +754,16 @@ class LstarSpec(ForkProtocol):
                     # Multiple proofs for the same data were aggregated separately.
                     # Merge them into one recursive proof using children-only
                     # aggregation (no new raw signatures).
-                    sig = aggregate_type_1(
-                        children=proofs,
+                    sig = TypeOneMultiSignature.aggregate(
+                        children=[
+                            proof.with_public_keys(
+                                [
+                                    state.validators[vid].get_attestation_pubkey()
+                                    for vid in proof.info.participants.to_validator_indices()
+                                ]
+                            )
+                            for proof in proofs
+                        ],
                         raw_xmss=[],
                         xmss_participants=None,
                         message=hash_tree_root(att_data),
@@ -822,18 +838,15 @@ class LstarSpec(ForkProtocol):
         public_keys_per_message: list[list[PublicKey]] = []
 
         # Attestation entries: parallel to block.body.attestations.
+        # Message and slot live on the block body, not on the proof envelope —
+        # the Type-2 binding rejects anything that doesn't match what was
+        # signed, so we only cross-check the participant bitfield here.
         for idx, aggregated_attestation in enumerate(aggregated_attestations):
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
             for validator_id in validator_ids:
                 assert validator_id.is_valid(num_validators), "Validator index out of range"
 
             info = type_two.info[idx]
-            assert info.message == hash_tree_root(aggregated_attestation.data), (
-                f"Block proof entry {idx} message must equal attestation data root"
-            )
-            assert info.slot == aggregated_attestation.data.slot, (
-                f"Block proof entry {idx} slot must match attestation slot"
-            )
             assert info.participants == aggregated_attestation.aggregation_bits, (
                 f"Block proof entry {idx} participants must match aggregation bits"
             )
@@ -848,12 +861,6 @@ class LstarSpec(ForkProtocol):
 
         proposer_info = type_two.info[len(aggregated_attestations)]
         expected_proposer_bits = ValidatorIndices(data=[proposer_index]).to_aggregation_bits()
-        assert proposer_info.message == hash_tree_root(block), (
-            "Block proof proposer entry message must equal block root"
-        )
-        assert proposer_info.slot == block.slot, (
-            "Block proof proposer entry slot must equal block slot"
-        )
         assert proposer_info.participants == expected_proposer_bits, (
             "Block proof proposer entry participants must encode the proposer index"
         )
@@ -861,7 +868,7 @@ class LstarSpec(ForkProtocol):
         public_keys_per_message.append([validators[proposer_index].get_proposal_pubkey()])
 
         try:
-            verify_type_2(type_two, public_keys_per_message=public_keys_per_message)
+            type_two.verify(public_keys_per_message=public_keys_per_message)
         except AggregationError as exc:
             raise AssertionError(f"Block proof verification failed: {exc}") from exc
 
@@ -1104,17 +1111,10 @@ class LstarSpec(ForkProtocol):
 
         self.validate_attestation(store, data)
 
-        # Bind the proof's claimed message and slot to the advertised
-        # attestation data. Without this, a valid proof for one message
-        # could ride alongside a different AttestationData and end up
-        # keyed under the wrong entry in the payload pool.
-        assert proof.info.message == hash_tree_root(data), (
-            "Aggregated proof message must equal the attestation data root"
-        )
-        assert proof.info.slot == data.slot, (
-            "Aggregated proof slot must equal the attestation data slot"
-        )
-
+        # The proof envelope no longer carries the signed message and slot —
+        # they are supplied to verify() from the advertised AttestationData
+        # below. The binding rejects any mismatch, which is what would have
+        # been pinned by a structural assert here.
         # Get validator IDs who participated in this aggregation
         validator_ids = proof.info.participants.to_validator_indices()
 
@@ -1137,7 +1137,11 @@ class LstarSpec(ForkProtocol):
 
         # Verify the Type-1 single-message aggregated proof.
         try:
-            verify_type_1(proof, public_keys=public_keys)
+            proof.verify(
+                public_keys=public_keys,
+                message=hash_tree_root(data),
+                slot=data.slot,
+            )
         except AggregationError as exc:
             raise AssertionError(
                 f"Committee aggregation signature verification failed: {exc}"
@@ -1196,9 +1200,7 @@ class LstarSpec(ForkProtocol):
             )
 
             # Validate cryptographic signatures
-            valid_signatures = self.verify_signatures(
-                signed_block, parent_state.validators, scheme
-            )
+            valid_signatures = self.verify_signatures(signed_block, parent_state.validators, scheme)
 
             # Execute state transition function to compute post-block state
             post_state = self.state_transition(parent_state, block, valid_signatures)
@@ -1231,27 +1233,28 @@ class LstarSpec(ForkProtocol):
                 "Block contains duplicate AttestationData entries; "
                 "each AttestationData must appear at most once"
             )
-            assert Uint8(len(att_data_set)) <= MAX_ATTESTATIONS_DATA, (
+            # +1 accounts for the proposer signature component, which shares
+            # the same Type-2 proof envelope as the per-attestation Type-1s.
+            assert len(att_data_set) <= int(MAX_ATTESTATIONS_DATA) + 1, (
                 f"Block contains {len(att_data_set)} distinct AttestationData entries; "
                 f"maximum is {MAX_ATTESTATIONS_DATA}"
             )
 
             # Block-included attestations must contribute to fork choice
-            # weights. The merged Type-2 proof has already been verified as a
-            # whole by verify_signatures, so the participant bitfields on
-            # block.body.attestations are trustworthy. Synthesize per-data
-            # Type-1 entries (placeholder proof bytes; only the info matters
-            # for fork choice extraction) and fold them into the known pool.
+            # weights. The block-level Type-2 proof has already been
+            # verified as a whole; the body's aggregation bits are
+            # therefore trustworthy. Synthesize a placeholder Type-1 per
+            # AttestationData (real info, empty proof bytes) so the
+            # forkchoice extractor can read participants without going
+            # through a binding-driven split-by-message.
             block_proofs: dict[AttestationData, set[TypeOneMultiSignature]] = {
                 k: set(v) for k, v in store.latest_known_aggregated_payloads.items()
             }
             for aggregated_attestation in aggregated_attestations:
                 synthesized = TypeOneMultiSignature(
                     info=TypeOneInfo(
-                        message=hash_tree_root(aggregated_attestation.data),
-                        slot=aggregated_attestation.data.slot,
                         participants=aggregated_attestation.aggregation_bits,
-                        bytecode_claim=Bytes32(b"\x00" * 32),
+                        proof=ByteListMiB(data=b""),
                     ),
                     proof=ByteListMiB(data=b""),
                 )
@@ -1581,9 +1584,13 @@ class LstarSpec(ForkProtocol):
             #
             # New payloads go first because they represent uncommitted
             # work — known payloads fill remaining gaps.
-            child_proofs, covered = TypeOneMultiSignature.select_greedily(
-                new.get(data), known.get(data)
-            )
+
+            # Empty-bytes placeholders carry only participant info for
+            # fork-choice extraction. They cannot serve as child proofs
+            # in a real Type-1 aggregation, so drop them before selecting.
+            new_real = {p for p in (new.get(data) or set()) if p.proof.data} or None
+            known_real = {p for p in (known.get(data) or set()) if p.proof.data} or None
+            child_proofs, covered = TypeOneMultiSignature.select_greedily(new_real, known_real)
 
             # Phase 2: Fill
             #
@@ -1625,8 +1632,16 @@ class LstarSpec(ForkProtocol):
             # Build the recursive proof tree. Each child proof carries its
             # own participant bitfield; the binding will resolve those to
             # pubkeys against the registry when verifying inner proofs.
-            proof = aggregate_type_1(
-                children=child_proofs,
+            proof = TypeOneMultiSignature.aggregate(
+                children=[
+                    child.with_public_keys(
+                        [
+                            validators[vid].get_attestation_pubkey()
+                            for vid in child.info.participants.to_validator_indices()
+                        ]
+                    )
+                    for child in child_proofs
+                ],
                 raw_xmss=raw_xmss,
                 xmss_participants=xmss_participants,
                 message=hash_tree_root(data),

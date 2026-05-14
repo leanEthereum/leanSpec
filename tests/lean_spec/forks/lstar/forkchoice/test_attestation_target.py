@@ -12,13 +12,19 @@ from lean_spec.forks.lstar.containers import (
     SignedBlock,
 )
 from lean_spec.forks.lstar.containers.attestation import SignedAttestation
-from lean_spec.forks.lstar.containers.block import BlockSignatures
-from lean_spec.forks.lstar.containers.block.types import AttestationSignatures
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import JUSTIFICATION_LOOKBACK_SLOTS
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Checkpoint, Slot, ValidatorIndex
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
+from lean_spec.types import (
+    ByteListMiB,
+    Bytes32,
+    Checkpoint,
+    Slot,
+    ValidatorIndex,
+    ValidatorIndices,
+)
 from tests.lean_spec.helpers import make_store
 
 
@@ -569,15 +575,35 @@ class TestIntegrationScenarios:
         store, block, signatures = spec.produce_block_with_signatures(store, slot_1, proposer_1)
         block_root = hash_tree_root(block)
 
-        # Sign the block root with the proposal key
+        # Wrap the proposer's signature into a singleton Type-1, then merge
+        # with the per-attestation Type-1s into the block-level Type-2.
         proposer_signature = key_manager.sign_block_root(proposer_1, slot_1, block_root)
+        proposer_pubkey = key_manager.get_public_keys(proposer_1)[1]
+        proposer_type_1 = TypeOneMultiSignature.aggregate(
+            children=[],
+            raw_xmss=[(proposer_pubkey, proposer_signature)],
+            xmss_participants=ValidatorIndices(data=[proposer_1]).to_aggregation_bits(),
+            message=block_root,
+            slot=slot_1,
+        )
 
+        head_state = store.states[store.head]
+        public_keys_per_part: list[list] = [
+            [
+                head_state.validators[vid].get_attestation_pubkey()
+                for vid in proof.info.participants.to_validator_indices()
+            ]
+            for proof in signatures
+        ]
+        public_keys_per_part.append([proposer_pubkey])
+
+        merged = TypeTwoMultiSignature.aggregate(
+            [*signatures, proposer_type_1],
+            public_keys_per_part=public_keys_per_part,
+        )
         signed_block = SignedBlock(
             block=block,
-            signature=BlockSignatures(
-                attestation_signatures=AttestationSignatures(data=signatures),
-                proposer_signature=proposer_signature,
-            ),
+            proof=ByteListMiB(data=merged.encode_bytes()),
         )
 
         # Process block via on_block on a fresh consumer store

@@ -43,8 +43,7 @@ from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.api import ApiServerConfig
 from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.subspecs.genesis import GenesisConfig
-from lean_spec.subspecs.metrics import PrometheusObserver
-from lean_spec.subspecs.metrics import registry as metrics
+from lean_spec.subspecs.metrics import PrometheusObserver, registry as metrics
 from lean_spec.subspecs.networking.client import LiveNetworkEventSource
 from lean_spec.subspecs.networking.enr import ENR
 from lean_spec.subspecs.networking.gossipsub import GossipTopic

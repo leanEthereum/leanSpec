@@ -6,7 +6,7 @@ from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation, 
 from lean_spec.forks.lstar.containers.block.block import Block
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import State
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
 from lean_spec.types import (
     ByteListMiB,
     Bytes32,
@@ -164,7 +164,7 @@ class AggregatedAttestationSpec(CamelModel):
         state: State,
         key_manager: XmssKeyManager,
         block: Block,
-    ) -> tuple[Block, AggregatedSignatureProof]:
+    ) -> tuple[Block, TypeOneMultiSignature]:
         """
         Build an invalid attestation proof and append it to the block body.
 
@@ -190,23 +190,26 @@ class AggregatedAttestationSpec(CamelModel):
             data=attestation_data,
         )
 
+        # Empty proof bytes flag "no real Type-1 here" — the caller treats
+        # any such entry as a placeholder and bypasses real binding merges.
+        placeholder = ByteListMiB(data=b"")
+
         if not self.valid_signature:
-            # Cryptographically invalid proof (zeroed-out bytes).
-            invalid_proof = AggregatedSignatureProof(
-                participants=ValidatorIndices(data=self.validator_ids).to_aggregation_bits(),
-                proof_data=ByteListMiB(data=b"\x00" * 32),
+            invalid_proof = TypeOneMultiSignature(
+                info=TypeOneInfo(participants=aggregation_bits, proof=placeholder),
+                proof=placeholder,
             )
         elif self.signer_ids is not None:
             # Valid proof from wrong validators (participant mismatch).
             valid_proof = key_manager.sign_and_aggregate(self.signer_ids, attestation_data)
-            invalid_proof = AggregatedSignatureProof(
-                participants=aggregation_bits,
-                proof_data=valid_proof.proof_data,
+            invalid_proof = TypeOneMultiSignature(
+                info=TypeOneInfo(participants=aggregation_bits, proof=valid_proof.proof),
+                proof=valid_proof.proof,
             )
         else:
-            invalid_proof = AggregatedSignatureProof(
-                participants=ValidatorIndices(data=self.validator_ids).to_aggregation_bits(),
-                proof_data=ByteListMiB(data=b"\x00" * 32),
+            invalid_proof = TypeOneMultiSignature(
+                info=TypeOneInfo(participants=aggregation_bits, proof=placeholder),
+                proof=placeholder,
             )
 
         # Append invalid attestation to the block body.

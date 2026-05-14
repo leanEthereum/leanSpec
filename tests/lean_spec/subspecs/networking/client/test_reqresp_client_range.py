@@ -12,11 +12,7 @@ from lean_spec.forks.lstar.containers import (
     BlockBody,
     SignedBlock,
 )
-from lean_spec.forks.lstar.containers.block import BlockSignatures
-from lean_spec.forks.lstar.containers.block.types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.networking.client.reqresp_client import ReqRespClient
 from lean_spec.subspecs.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.subspecs.networking.reqresp.codec import (
@@ -28,8 +24,7 @@ from lean_spec.subspecs.networking.reqresp.message import (
 )
 from lean_spec.subspecs.networking.transport import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
-from tests.lean_spec.helpers import make_mock_signature
+from lean_spec.types import ByteListMiB, Bytes32, Slot, Uint64, ValidatorIndex
 
 
 @dataclass
@@ -119,13 +114,7 @@ def empty_signed_block(slot: Slot, parent_root: Bytes32, state_seed: int) -> Sig
         state_root=Bytes32(bytes([state_seed]) * 32),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
-    return SignedBlock(
-        block=block,
-        signature=BlockSignatures(
-            attestation_signatures=AttestationSignatures(data=[]),
-            proposer_signature=make_mock_signature(),
-        ),
-    )
+    return SignedBlock(block=block, proof=ByteListMiB(data=b""))
 
 
 def build_chain(start_slot: int, count: int, root_seed: int = 0xAA) -> list[SignedBlock]:

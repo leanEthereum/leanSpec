@@ -1,7 +1,6 @@
 """Tests for time advancement, intervals, and slot management."""
 
-from hypothesis import given, settings
-from hypothesis import strategies as st
+from hypothesis import given, settings, strategies as st
 
 from lean_spec.forks.lstar import Store
 from lean_spec.forks.lstar.containers import Block

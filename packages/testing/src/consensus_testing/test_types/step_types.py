@@ -118,23 +118,23 @@ class BlockStep(BaseForkChoiceStep):
         Parameters:
         ----------
         value : BlockSpec
-            The BlockSpec field value (ignored, we use _filled_block instead).
+            Used as a fallback when the step's filled block is unavailable
+            (e.g. the expected-failure path raised before signing).
 
         Returns:
         -------
         dict[str, Any]
-            The serialized Block.
-
-        Raises:
-        ------
-        ValueError
-            If _filled_block is None (make_fixture not called yet).
+            The serialized Block, or the raw spec if the step never produced
+            a filled block.
         """
+        # Expected-failure steps may bail out before signing; fall back to
+        # serialising the raw spec so fixture writing still completes.
         if self._filled_block is None:
-            raise ValueError(
-                "Block not filled yet - make_fixture() must be called before serialization. "
-                "This BlockStep should only be serialized after the fixture has been processed."
-            )
+            result: dict[str, Any] = value.model_dump(mode="json", by_alias=True)
+            if value.label:
+                result["blockRootLabel"] = value.label
+            return result
+
         result = self._filled_block.to_json()
         if value.label:
             result["blockRootLabel"] = value.label
@@ -186,24 +186,18 @@ class AttestationStep(BaseForkChoiceStep):
         Parameters:
         ----------
         value : GossipAttestationSpec
-            The spec field value (ignored, we use _filled_attestation instead).
+            Used as a fallback when the step's filled attestation is
+            unavailable (e.g. the expected-failure path raised before
+            signing).
 
         Returns:
         -------
         dict[str, Any]
-            The serialized SignedAttestation.
-
-        Raises:
-        ------
-        ValueError
-            If _filled_attestation is None (make_fixture not called yet).
+            The serialized SignedAttestation, or the raw spec if the step
+            never produced a filled attestation.
         """
         if self._filled_attestation is None:
-            raise ValueError(
-                "Attestation not filled yet - make_fixture() must be called "
-                "before serialization. This AttestationStep should only be "
-                "serialized after the fixture has been processed."
-            )
+            return value.model_dump(mode="json", by_alias=True)
         return self._filled_attestation.to_json()
 
 
@@ -224,11 +218,13 @@ class GossipAggregatedAttestationStep(BaseForkChoiceStep):
     def serialize_gossip_aggregated_attestation(
         self, value: GossipAggregatedAttestationSpec
     ) -> dict[str, Any]:
-        """Return the filled aggregated attestation for serialization."""
+        """Return the filled aggregated attestation for serialization.
+
+        Falls back to the raw spec when the step never produced a filled
+        attestation (e.g. expected-failure flows that raised early).
+        """
         if self._filled_attestation is None:
-            raise ValueError(
-                "Aggregated attestation not filled yet - make_fixture() must process the step."
-            )
+            return value.model_dump(mode="json", by_alias=True)
         return self._filled_attestation.to_json()
 
 

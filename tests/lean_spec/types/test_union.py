@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import io
-from typing import Type as PyType
-from typing import cast
+from typing import Type as PyType, cast
 
 import pytest
 from pydantic import ValidationError, create_model

@@ -745,10 +745,7 @@ class SyncService:
             for att in block_attestations
         }
         pre_new_by_root = {
-            data_root: [
-                set(proof.info.participants.to_validator_indices())
-                for proof in proofs
-            ]
+            data_root: [set(proof.info.participants.to_validator_indices()) for proof in proofs]
             for data, proofs in self.store.latest_new_aggregated_payloads.items()
             if (data_root := hash_tree_root(data)) in block_participants_by_root
         }

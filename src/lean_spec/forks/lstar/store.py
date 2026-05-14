@@ -139,8 +139,8 @@ class Store(StrictBaseModel, Generic[StateT, BlockT]):
     Populated from gossip aggregated attestations only; blocks no longer
     feed individual proofs into this map (the block-level proof is a
     merged Type-2 blob that the spec verifies as a whole). Aggregators will
-    still extract the individual per-message proofs using `split_type_2_by_msg`
-    and gossip aggregated attestations.
+    still extract the individual per-message proofs from the block-level
+    Type-2 and gossip aggregated attestations.
     """
 
     latest_known_aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = Field(

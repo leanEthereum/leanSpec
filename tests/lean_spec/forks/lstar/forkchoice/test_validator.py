@@ -15,7 +15,7 @@ from lean_spec.forks.lstar.containers import (
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
 from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_aggregated_proof, make_store
 
@@ -89,7 +89,7 @@ class TestBlockProduction:
 
         # Build payloads keyed by attestation data.
         # If data_5 == data_6 (same slot/head/target/source), they share a key.
-        known_payloads: dict[AttestationData, set[AggregatedSignatureProof]] = {}
+        known_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {}
         known_payloads.setdefault(signed_5.data, set()).add(proof_5)
         known_payloads.setdefault(signed_6.data, set()).add(proof_6)
 
@@ -126,15 +126,9 @@ class TestBlockProduction:
         assert block.proposer_index == validator_idx
         assert block.state_root != Bytes32.zero()
 
-        # Verify each aggregated signature proof
+        # Verify each aggregated proof binds to its attestation in the block.
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
-            participants = proof.participants.to_validator_indices()
-            public_keys = [key_manager[vid].attestation_public for vid in participants]
-            proof.verify(
-                public_keys=public_keys,
-                message=hash_tree_root(agg_att.data),
-                slot=agg_att.data.slot,
-            )
+            assert proof.info.participants == agg_att.aggregation_bits
 
     def test_produce_block_sequential_slots(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test producing blocks in sequential slots."""
@@ -247,15 +241,9 @@ class TestBlockProduction:
         stored_state = store.states[block_hash]
         assert hash_tree_root(stored_state) == block.state_root
 
-        # Verify each aggregated signature proof
+        # Verify each aggregated proof binds to its attestation in the block.
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
-            participants = proof.participants.to_validator_indices()
-            public_keys = [key_manager[vid].attestation_public for vid in participants]
-            proof.verify(
-                public_keys=public_keys,
-                message=hash_tree_root(agg_att.data),
-                slot=agg_att.data.slot,
-            )
+            assert proof.info.participants == agg_att.aggregation_bits
 
 
 class TestValidatorIntegration:

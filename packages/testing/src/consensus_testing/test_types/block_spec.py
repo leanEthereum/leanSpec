@@ -10,24 +10,29 @@ from lean_spec.forks.lstar.containers.attestation import (
     AttestationData,
     SignedAttestation,
 )
-from lean_spec.forks.lstar.containers.block import (
-    Block,
-    BlockBody,
-    BlockSignatures,
-    SignedBlock,
-)
-from lean_spec.forks.lstar.containers.block.types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
+from lean_spec.forks.lstar.containers.block import Block, BlockBody, SignedBlock
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import State
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.forks.lstar.store import Store
 from lean_spec.subspecs.chain.clock import Interval
+from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import (
+    TypeOneInfo,
+    TypeOneInfos,
+    TypeOneMultiSignature,
+    TypeTwoMultiSignature,
+)
 from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.types import Bytes32, CamelModel, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.types import (
+    ByteListMiB,
+    Bytes32,
+    CamelModel,
+    Slot,
+    ValidatorIndex,
+    ValidatorIndices,
+)
 
 from ..keys import LEAN_ENV_TO_SCHEMES, XmssKeyManager, create_dummy_signature
 from .aggregated_attestation_spec import AggregatedAttestationSpec
@@ -241,37 +246,111 @@ class BlockSpec(CamelModel):
     def _sign_block(
         self,
         final_block: Block,
-        attestation_proofs: list[AggregatedSignatureProof],
+        attestation_proofs: list[TypeOneMultiSignature],
         proposer_index: ValidatorIndex,
         key_manager: XmssKeyManager,
+        state: State,
     ) -> SignedBlock:
-        """
-        Sign a block and assemble the final SignedBlock.
+        """Sign a block and assemble the final SignedBlock with the merged proof.
+
+        Builds a Type-1 wrapping the proposer's XMSS signature, then merges
+        that with the per-attestation Type-1 proofs into a single Type-2 proof
+        and SSZ-encodes it onto the envelope. Consumers of this filler feed
+        the block through spec.on_block / verify_signatures, which decodes
+        the proof and verifies it, so an honest merged proof is required.
+
+        When valid_signature is False, the proposer signature is a dummy
+        XMSS one and the binding-driven aggregation would reject it before
+        verify_signatures ever runs. The Type-2 envelope is then assembled
+        directly from the info entries with empty proof bytes — that
+        decodes structurally and lets verify_signatures reach (and reject
+        at) the verify_type_2 call, which is the contract the test exercises.
 
         Args:
             final_block: The unsigned block.
-            attestation_proofs: Aggregated signature proofs for attestations.
+            attestation_proofs: Per-attestation Type-1 proofs (parallel to
+                final_block.body.attestations).
             proposer_index: Which validator proposes this block.
             key_manager: XMSS key manager for signing.
+            state: State providing the validator registry used to resolve
+                participant pubkeys for the merge.
 
         Returns:
             Complete signed block.
         """
-        if self.valid_signature:
+        # Mirror the consensus-level distinct-attestation cap before
+        # building the proof envelope; the binding otherwise rejects the
+        # over-cap merge first and masks the spec-level error message
+        # such fillers pin.
+        if len(attestation_proofs) > int(MAX_ATTESTATIONS_DATA):
+            raise AssertionError(
+                f"Block contains {len(attestation_proofs)} distinct AttestationData entries; "
+                f"maximum is {MAX_ATTESTATIONS_DATA}"
+            )
+
+        block_root = hash_tree_root(final_block)
+        proposer_participants = ValidatorIndices(data=[proposer_index]).to_aggregation_bits()
+        proposer_pubkey = key_manager.get_public_keys(proposer_index)[1]
+
+        # The binding rejects placeholder bytes; if anything in the merged
+        # input is a dummy (invalid proposer sig or a build_invalid_proof
+        # attestation), bypass aggregate_type_2 entirely and assemble the
+        # Type-2 envelope by hand. The result still SSZ-decodes so
+        # verify_signatures reaches verify_type_2 for the rejection.
+        any_placeholder_attestation = any(not proof.proof.data for proof in attestation_proofs)
+        use_placeholder = not self.valid_signature or any_placeholder_attestation
+
+        if not use_placeholder:
             proposer_signature = key_manager.sign_block_root(
                 proposer_index,
                 self.slot,
-                hash_tree_root(final_block),
+                block_root,
             )
+            proposer_type_1 = TypeOneMultiSignature.aggregate(
+                children=[],
+                raw_xmss=[(proposer_pubkey, proposer_signature)],
+                xmss_participants=proposer_participants,
+                message=block_root,
+                slot=self.slot,
+            )
+
+            public_keys_per_part: list[list] = [
+                [
+                    state.validators[vid].get_attestation_pubkey()
+                    for vid in proof.info.participants.to_validator_indices()
+                ]
+                for proof in attestation_proofs
+            ]
+            public_keys_per_part.append([proposer_pubkey])
+
+            merged = TypeTwoMultiSignature.aggregate(
+                [*attestation_proofs, proposer_type_1],
+                public_keys_per_part=public_keys_per_part,
+            )
+            proof_bytes = merged.encode_bytes()
         else:
-            proposer_signature = create_dummy_signature()
+            placeholder = ByteListMiB(data=b"")
+            if not self.valid_signature:
+                # Burn the dummy signature creation to mirror the legacy
+                # shape; the merged blob carries no real bytes anyway.
+                dummy_signature = create_dummy_signature()
+                del dummy_signature
+
+            proposer_info = TypeOneInfo(
+                participants=proposer_participants,
+                proof=placeholder,
+            )
+            envelope = TypeTwoMultiSignature(
+                info=TypeOneInfos(
+                    data=[*(proof.info for proof in attestation_proofs), proposer_info]
+                ),
+                proof=placeholder,
+            )
+            proof_bytes = envelope.encode_bytes()
 
         return SignedBlock(
             block=final_block,
-            signature=BlockSignatures(
-                attestation_signatures=AttestationSignatures(data=attestation_proofs),
-                proposer_signature=proposer_signature,
-            ),
+            proof=ByteListMiB(data=proof_bytes),
         )
 
     def build_signed_block(
@@ -353,13 +432,13 @@ class BlockSpec(CamelModel):
             )
             for data, validator_ids in data_to_validator_ids.items()
         ]
-        attestation_sigs = key_manager.build_attestation_signatures(
+        attestation_sigs = key_manager.build_attestation_proofs(
             AggregatedAttestations(data=aggregated_attestations),
             signature_lookup=signature_lookup,
         )
         aggregated_payloads = {
             agg_att.data: {proof}
-            for agg_att, proof in zip(aggregated_attestations, attestation_sigs.data, strict=True)
+            for agg_att, proof in zip(aggregated_attestations, attestation_sigs, strict=True)
         }
 
         final_block, _, _, aggregated_signatures = spec.build_block(
@@ -379,7 +458,9 @@ class BlockSpec(CamelModel):
             )
             aggregated_signatures.append(invalid_proof)
 
-        return self._sign_block(final_block, aggregated_signatures, proposer_index, key_manager)
+        return self._sign_block(
+            final_block, aggregated_signatures, proposer_index, key_manager, state
+        )
 
     def build_signed_block_with_store(
         self,
@@ -387,12 +468,22 @@ class BlockSpec(CamelModel):
         block_registry: dict[str, Block],
         key_manager: XmssKeyManager,
         lean_env: str,
-    ) -> SignedBlock:
+    ) -> tuple[SignedBlock, Store]:
         """
         Build a complete signed block through the Store's attestation pipeline.
 
         Simulates what a real node does when proposing a block.
         Replays the gossip, aggregation, and proposal pipeline through the Store.
+
+        Returns a Store enriched with the aggregated Type-1 payloads built
+        during the simulated pipeline. The caller can persist these so future
+        block builds can re-aggregate the same attestations rather than
+        reconstructing them from on-chain block bodies (which would require
+        splitting the block-level Type-2 proof — a heavy and, in the test
+        recursive-aggregation mode, unreliable operation). Other fields of
+        the original Store (gossip signatures, time, head, etc.) are
+        preserved so the simulated build does not consume state the caller
+        is tracking separately.
 
         Args:
             store: Fork choice store for head state lookup and gossip processing.
@@ -401,7 +492,7 @@ class BlockSpec(CamelModel):
             lean_env: Signature scheme environment name ("test" or "prod").
 
         Returns:
-            Complete signed block ready for Store processing.
+            The signed block and the Store with new known payloads merged in.
         """
         spec = LstarSpec()
         proposer_index = self.resolve_proposer_index(len(store.states[store.head].validators))
@@ -416,6 +507,11 @@ class BlockSpec(CamelModel):
                 f"Parent (root=0x{parent_root.hex()}) "
                 "has no state in store - cannot build on this fork"
             )
+
+        # Preserve the caller's Store so unrelated fields (gossip signatures,
+        # head, finalization checkpoints, time) survive the simulated pipeline.
+        # Only the freshly aggregated Type-1 payloads merge back at the end.
+        caller_store = store
 
         # Build attestations from this spec's attestation fields.
         parent_state = store.states[parent_root]
@@ -453,6 +549,9 @@ class BlockSpec(CamelModel):
             )
 
         # Trigger Store aggregation to merge gossip signatures into known payloads.
+        # Aggregation runs on a local clone: gossip pools mutate here, but the
+        # caller's gossip-signature view must not be consumed by this simulated
+        # build. Only the freshly aggregated Type-1 payloads propagate back.
         aggregation_store, _ = spec.aggregate(store)
         merged_store = spec.accept_new_attestations(aggregation_store)
 
@@ -465,6 +564,13 @@ class BlockSpec(CamelModel):
             known_block_roots=set(store.blocks.keys()),
             aggregated_payloads=merged_store.latest_known_aggregated_payloads,
         )
+
+        # Merge new known payloads (built locally) back into the caller's
+        # store while leaving every other field untouched.
+        merged_known = {k: set(v) for k, v in caller_store.latest_known_aggregated_payloads.items()}
+        for data, proofs in merged_store.latest_known_aggregated_payloads.items():
+            merged_known.setdefault(data, set()).update(proofs)
+        store = caller_store.model_copy(update={"latest_known_aggregated_payloads": merged_known})
 
         # Append forced attestations that bypass the builder's MAX cap.
         # Each entry is signed and aggregated so the block carries valid proofs.
@@ -498,4 +604,7 @@ class BlockSpec(CamelModel):
             post_state = spec.process_block(post_state, final_block)
             final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
-        return self._sign_block(final_block, block_proofs, proposer_index, key_manager)
+        signed_block = self._sign_block(
+            final_block, block_proofs, proposer_index, key_manager, parent_state
+        )
+        return signed_block, store

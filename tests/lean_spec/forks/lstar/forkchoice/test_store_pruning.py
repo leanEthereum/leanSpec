@@ -2,7 +2,7 @@
 
 from lean_spec.forks.lstar import AttestationSignatureEntry, Store
 from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
 from lean_spec.types import ByteListMiB, Bytes32, Slot, ValidatorIndex, ValidatorIndices
 from tests.lean_spec.helpers import (
     make_attestation_data,
@@ -136,10 +136,14 @@ def test_prunes_related_structures_together(spec: LstarSpec, pruning_store: Stor
         source_root=make_bytes32(255),
     )
 
-    # Create mock aggregated proof (empty proof data for testing)
-    mock_proof = AggregatedSignatureProof(
-        participants=ValidatorIndices(data=[ValidatorIndex(1)]).to_aggregation_bits(),
-        proof_data=ByteListMiB(data=b""),
+    # Create mock aggregated proof (empty proof bytes for testing)
+    placeholder = ByteListMiB(data=b"")
+    mock_proof = TypeOneMultiSignature(
+        info=TypeOneInfo(
+            participants=ValidatorIndices(data=[ValidatorIndex(1)]).to_aggregation_bits(),
+            proof=placeholder,
+        ),
+        proof=placeholder,
     )
 
     # Set up store with both stale and fresh entries in all structures

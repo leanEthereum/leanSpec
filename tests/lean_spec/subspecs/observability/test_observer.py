@@ -9,8 +9,7 @@ from typing import Any
 import pytest
 from prometheus_client import CollectorRegistry, Histogram
 
-from lean_spec.subspecs.metrics import PrometheusObserver
-from lean_spec.subspecs.metrics import registry as metrics
+from lean_spec.subspecs.metrics import PrometheusObserver, registry as metrics
 from lean_spec.subspecs.observability import (
     NullObserver,
     get_observer,

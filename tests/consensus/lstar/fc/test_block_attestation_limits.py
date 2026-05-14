@@ -10,25 +10,11 @@ from consensus_testing import (
     StoreChecks,
     generate_pre_state,
 )
-from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.types import Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
-
-
-@pytest.fixture(autouse=True)
-def _reset_xmss_signing_state():
-    """Reset XMSS signing state around each test in this module.
-
-    Tests here sign at high slots (50+). Without resetting, the advanced
-    key state poisons the shared manager for later tests on the same
-    worker that need low-slot signatures.
-    """
-    XmssKeyManager.reset_signing_state()
-    yield
-    XmssKeyManager.reset_signing_state()
 
 
 def _justifiable_slots(n: int) -> list[Slot]:
@@ -46,7 +32,7 @@ def test_block_with_maximum_attestations(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Block with MAX_ATTESTATIONS_DATA distinct entries is accepted by the store.
+    Block with MAX_ATTESTATIONS_DATA + 1 (proposer) distinct entries is accepted by the store.
 
     Scenario
     --------
@@ -61,7 +47,7 @@ def test_block_with_maximum_attestations(
     1. Store accepts the block without errors
     2. Head advances to the final block slot
     """
-    n = int(MAX_ATTESTATIONS_DATA)
+    n = int(MAX_ATTESTATIONS_DATA) + 1
     targets = _justifiable_slots(n)
     proposal_slot = Slot(targets[-1] + Slot(1))
 
@@ -107,14 +93,15 @@ def test_block_exceeding_maximum_attestations_is_rejected(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Block with MAX_ATTESTATIONS_DATA + 1 distinct entries is rejected by the store.
+    Block with more than MAX_ATTESTATIONS_DATA distinct entries is rejected.
 
     Scenario
     --------
-    1. Build the same chain as the maximum test, but with one extra justifiable
-       target slot
-    2. The final block carries MAX_ATTESTATIONS_DATA entries through the normal
-       builder, plus one forced attestation that pushes the count over the limit
+    1. Build a chain with one block per justifiable slot, enough to host
+       MAX_ATTESTATIONS_DATA + 1 distinct targets
+    2. The final block carries MAX_ATTESTATIONS_DATA entries through the
+       builder, plus one forced attestation that pushes the total in the
+       body to MAX_ATTESTATIONS_DATA + 1
 
     Expected Behavior
     -----------------

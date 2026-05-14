@@ -1,15 +1,6 @@
-from lean_spec.forks.lstar.containers.block import (
-    Block,
-    BlockBody,
-    BlockSignatures,
-    SignedBlock,
-)
-from lean_spec.forks.lstar.containers.block.types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
-from lean_spec.types import Bytes32, Slot, ValidatorIndex
-from tests.lean_spec.helpers.builders import make_mock_signature
+from lean_spec.forks.lstar.containers.block import Block, BlockBody, SignedBlock
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.types import ByteListMiB, Bytes32, Slot, ValidatorIndex
 
 
 def test_encode_decode_signed_block_roundtrip() -> None:
@@ -21,13 +12,7 @@ def test_encode_decode_signed_block_roundtrip() -> None:
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    signed_block = SignedBlock(
-        block=block,
-        signature=BlockSignatures(
-            attestation_signatures=AttestationSignatures(data=[]),
-            proposer_signature=make_mock_signature(),
-        ),
-    )
+    signed_block = SignedBlock(block=block, proof=ByteListMiB(data=b""))
 
     encode = signed_block.encode_bytes()
     decoded = SignedBlock.decode_bytes(encode)

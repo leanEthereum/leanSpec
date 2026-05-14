@@ -53,5 +53,5 @@ of approximately 12.1 days.
 ATTESTATION_COMMITTEE_COUNT: Final = Uint64(1)
 """The number of attestation committees per slot."""
 
-MAX_ATTESTATIONS_DATA: Final = Uint8(16)
+MAX_ATTESTATIONS_DATA: Final = Uint8(15)
 """Maximum number of distinct attestation data entries per block."""

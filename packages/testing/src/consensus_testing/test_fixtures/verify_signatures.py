@@ -7,16 +7,12 @@ from typing import Any, ClassVar
 from pydantic import Field
 
 from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation
-from lean_spec.forks.lstar.containers.block import (
-    SignedBlock,
-)
-from lean_spec.forks.lstar.containers.block.types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
+from lean_spec.forks.lstar.containers.block import SignedBlock
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import State
 from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.types import AggregationBits, Boolean, ValidatorIndex
+from lean_spec.subspecs.xmss.aggregation import TypeOneInfos, TypeTwoMultiSignature
+from lean_spec.types import AggregationBits, Boolean, ByteListMiB, ValidatorIndex
 
 from ..keys import XmssKeyManager
 from ..test_types import BlockSpec
@@ -60,10 +56,9 @@ class VerifySignaturesTest(BaseConsensusFixture):
 
     Supported operations:
 
-    - `{"operation": "drop_last_signature"}`: Remove the last entry
-      from the block's attestation_signatures list. Produces a signed
-      block whose signature-group count is one less than its
-      attestation count.
+    - `{"operation": "drop_last_signature"}`: Drop the last info entry from
+      the merged Type-2 proof while leaving the body unchanged. Produces a
+      signed block whose proof binds to fewer messages than expected.
     - `{"operation": "set_proposer_index", "value": int}`: Rewrite
       the block's proposer_index field. Use this to exercise the
       validator-bounds check that the builder skips because its round-
@@ -154,14 +149,16 @@ class VerifySignaturesTest(BaseConsensusFixture):
         operation = self.tamper.get("operation")
 
         if operation == "drop_last_signature":
-            original = signed_block.signature.attestation_signatures.data
-            if not original:
-                raise ValueError("drop_last_signature requires at least one attestation signature")
-            truncated = AttestationSignatures(data=list(original[:-1]))
-            tampered_signatures = signed_block.signature.model_copy(
-                update={"attestation_signatures": truncated}
+            decoded = TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
+            if len(decoded.info) <= 1:
+                raise ValueError(
+                    "drop_last_signature requires the proof to bind at least two messages"
+                )
+            truncated_info = TypeOneInfos(data=list(decoded.info)[:-1])
+            tampered = decoded.model_copy(update={"info": truncated_info})
+            return signed_block.model_copy(
+                update={"proof": ByteListMiB(data=tampered.encode_bytes())}
             )
-            return signed_block.model_copy(update={"signature": tampered_signatures})
 
         if operation == "set_proposer_index":
             value = self.tamper.get("value")

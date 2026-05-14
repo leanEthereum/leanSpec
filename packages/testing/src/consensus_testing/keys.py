@@ -41,13 +41,10 @@ from typing import ClassVar, Literal
 
 from lean_spec.config import LEAN_ENV
 from lean_spec.forks.lstar.containers import AttestationData
-from lean_spec.forks.lstar.containers.block.types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature, ValidatorKeyPair
 from lean_spec.subspecs.xmss.interface import (
@@ -61,7 +58,15 @@ from lean_spec.subspecs.xmss.types import (
     HashTreeOpening,
     Randomness,
 )
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex, ValidatorIndices
+from lean_spec.types import (
+    AggregationBits,
+    ByteListMiB,
+    Bytes32,
+    Slot,
+    Uint64,
+    ValidatorIndex,
+    ValidatorIndices,
+)
 
 SecretField = Literal["attestation_secret", "proposal_secret"]
 """Discriminator for which secret key to load from a validator key pair."""
@@ -119,6 +124,21 @@ def create_dummy_signature() -> Signature:
         path=HashTreeOpening(siblings=siblings),
         rho=Randomness(data=[Fp(0)] * TARGET_CONFIG.RAND_LEN_FE),
         hashes=hashes,
+    )
+
+
+def create_dummy_type_1(participants: AggregationBits) -> TypeOneMultiSignature:
+    """Build a structurally valid Type-1 proof with empty proof bytes.
+
+    Skips the lean_multisig_py binding entirely so tests that only check
+    the proof's shape (participants) stay fast. Verifiers will reject the
+    empty proof bytes, so this must only be used in tests that do not
+    exercise cryptographic verification.
+    """
+    placeholder = ByteListMiB(data=b"")
+    return TypeOneMultiSignature(
+        info=TypeOneInfo(participants=participants, proof=placeholder),
+        proof=placeholder,
     )
 
 
@@ -508,18 +528,22 @@ class XmssKeyManager:
         self,
         validator_ids: list[ValidatorIndex],
         attestation_data: AttestationData,
-    ) -> AggregatedSignatureProof:
+    ) -> TypeOneMultiSignature:
         """
-        Sign attestation data with each validator and aggregate into a single proof.
+        Sign attestation_data with each validator and aggregate into a Type-1 proof.
 
-        Convenience method for the common sign-each-validator-then-aggregate pattern.
+        Each validator's XMSS attestation key signs the attestation data
+        root. The signatures are then handed to the multi-signature
+        binding to produce a single cryptographically valid Type-1 proof
+        binding all participants to (data, slot).
 
         Args:
-            validator_ids: Validators to sign with.
-            attestation_data: The attestation data to sign.
+            validator_ids: Validators that contribute signatures, in the
+                order they appear in the participant bitfield.
+            attestation_data: The attestation data the proof binds to.
 
         Returns:
-            Aggregated signature proof combining all validators' signatures.
+            Cryptographically valid Type-1 proof covering validator_ids.
         """
         raw_xmss = [
             (
@@ -528,34 +552,34 @@ class XmssKeyManager:
             )
             for vid in validator_ids
         ]
-
-        xmss_participants = ValidatorIndices(data=validator_ids).to_aggregation_bits()
-
-        return AggregatedSignatureProof.aggregate(
-            xmss_participants=xmss_participants,
+        return TypeOneMultiSignature.aggregate(
             children=[],
             raw_xmss=raw_xmss,
+            xmss_participants=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
             message=hash_tree_root(attestation_data),
             slot=attestation_data.slot,
         )
 
-    def build_attestation_signatures(
+    def build_attestation_proofs(
         self,
         aggregated_attestations: AggregatedAttestations,
         signature_lookup: Mapping[AttestationData, Mapping[ValidatorIndex, Signature]]
         | None = None,
-    ) -> AttestationSignatures:
+    ) -> list[TypeOneMultiSignature]:
         """
-        Produce aggregated signature proofs for a list of attestations.
+        Produce per-attestation Type-1 proofs aligned with the given attestations.
 
         For each aggregated attestation:
 
-        1. Identify participating validators from the aggregation bitfield
-        2. Collect each participant's public key and individual signature
-        3. Combine them into a single aggregated proof for the leanVM verifier
+        1. Identify participating validators from the aggregation bitfield.
+        2. Collect each participant's attestation public key and signature.
+        3. Combine them into a single Type-1 single-message proof via the
+           multi-signature binding.
 
         Pre-computed signatures can be supplied via the lookup to avoid
-        redundant signing. Missing signatures are computed on the fly.
+        redundant signing; missing entries are signed on the fly. The
+        resulting proofs feed into block production and signature
+        verification, both of which require real cryptographic content.
 
         Args:
             aggregated_attestations: Attestations with aggregation bitfields set.
@@ -563,40 +587,32 @@ class XmssKeyManager:
                 attestation data then validator index.
 
         Returns:
-            One aggregated signature proof per attestation.
+            One Type-1 single-message proof per attestation, parallel to the input.
         """
         lookup = signature_lookup or {}
 
-        proofs: list[AggregatedSignatureProof] = []
+        proofs: list[TypeOneMultiSignature] = []
         for agg in aggregated_attestations:
-            # Decode which validators participated from the bitfield.
             validator_ids = agg.aggregation_bits.to_validator_indices()
-
-            # Try the lookup first for pre-computed signatures.
-            # Fall back to signing on the fly for any missing entries.
             sigs_for_data = lookup.get(agg.data, {})
 
-            # Collect the attestation public key for each participant.
             public_keys = [self.get_public_keys(vid)[0] for vid in validator_ids]
-
-            # Gather individual signatures, computing any that are missing.
             signatures = [
                 sigs_for_data.get(vid) or self.sign_attestation_data(vid, agg.data)
                 for vid in validator_ids
             ]
 
-            # Produce a single aggregated proof that the leanVM can verify
-            # in one pass over all participants.
-            proof = AggregatedSignatureProof.aggregate(
-                xmss_participants=agg.aggregation_bits,
-                children=[],
-                raw_xmss=list(zip(public_keys, signatures, strict=True)),
-                message=hash_tree_root(agg.data),
-                slot=agg.data.slot,
+            proofs.append(
+                TypeOneMultiSignature.aggregate(
+                    children=[],
+                    raw_xmss=list(zip(public_keys, signatures, strict=True)),
+                    xmss_participants=agg.aggregation_bits,
+                    message=hash_tree_root(agg.data),
+                    slot=agg.data.slot,
+                )
             )
-            proofs.append(proof)
 
-        return AttestationSignatures(data=proofs)
+        return proofs
 
 
 def _generate_single_keypair(

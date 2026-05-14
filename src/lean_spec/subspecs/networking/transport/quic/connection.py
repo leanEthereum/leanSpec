@@ -29,9 +29,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aioquic.asyncio import QuicConnectionProtocol
-from aioquic.asyncio import connect as quic_connect
-from aioquic.asyncio import serve as quic_serve
+from aioquic.asyncio import QuicConnectionProtocol, connect as quic_connect, serve as quic_serve
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import (
     ConnectionTerminated,

@@ -18,11 +18,7 @@ from lean_spec.forks.lstar.containers import (
     SignedBlock,
     Validator,
 )
-from lean_spec.forks.lstar.containers.block import BlockSignatures
-from lean_spec.forks.lstar.containers.block.types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state.types import (
     HistoricalBlockHashes,
     JustificationRoots,
@@ -30,7 +26,7 @@ from lean_spec.forks.lstar.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.forks.lstar.containers.validator import Validators
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
 from lean_spec.types import (
     AggregationBits,
     Boolean,
@@ -257,43 +253,11 @@ def test_block_typical(ssz: SSZTestFiller) -> None:
     )
 
 
-# --- BlockSignatures ---
-
-
-def test_block_signatures_empty(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for BlockSignatures with no attestation signatures."""
-    ssz(
-        type_name="BlockSignatures",
-        value=BlockSignatures(
-            attestation_signatures=AttestationSignatures(data=[]),
-            proposer_signature=create_dummy_signature(),
-        ),
-    )
-
-
-def test_block_signatures_with_attestation(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for BlockSignatures with attestation signatures."""
-    ssz(
-        type_name="BlockSignatures",
-        value=BlockSignatures(
-            attestation_signatures=AttestationSignatures(
-                data=[
-                    AggregatedSignatureProof(
-                        participants=AggregationBits(data=[Boolean(True)]),
-                        proof_data=ByteListMiB(data=b""),
-                    )
-                ]
-            ),
-            proposer_signature=create_dummy_signature(),
-        ),
-    )
-
-
 # --- SignedBlock ---
 
 
 def test_signed_block_minimal(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for SignedBlock with minimal values."""
+    """SSZ roundtrip for SignedBlock with empty proof bytes."""
     block = Block(
         slot=Slot(1),
         proposer_index=ValidatorIndex(0),
@@ -301,13 +265,24 @@ def test_signed_block_minimal(ssz: SSZTestFiller) -> None:
         state_root=Bytes32.zero(),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
-    signature = BlockSignatures(
-        attestation_signatures=AttestationSignatures(data=[]),
-        proposer_signature=create_dummy_signature(),
+    ssz(
+        type_name="SignedBlock",
+        value=SignedBlock(block=block, proof=ByteListMiB(data=b"")),
+    )
+
+
+def test_signed_block_with_proof_bytes(ssz: SSZTestFiller) -> None:
+    """SSZ roundtrip for SignedBlock with non-empty proof bytes."""
+    block = Block(
+        slot=Slot(2),
+        proposer_index=ValidatorIndex(1),
+        parent_root=Bytes32(b"\x01" * 32),
+        state_root=Bytes32(b"\x02" * 32),
+        body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
     ssz(
         type_name="SignedBlock",
-        value=SignedBlock(block=block, signature=signature),
+        value=SignedBlock(block=block, proof=ByteListMiB(data=b"\xde\xad\xbe\xef")),
     )
 
 
@@ -446,13 +421,17 @@ def test_state_with_validators(ssz: SSZTestFiller) -> None:
 
 def test_signed_aggregated_attestation_minimal(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for SignedAggregatedAttestation with one participant and empty proof."""
+    data = _zero_attestation_data()
     ssz(
         type_name="SignedAggregatedAttestation",
         value=SignedAggregatedAttestation(
-            data=_zero_attestation_data(),
-            proof=AggregatedSignatureProof(
-                participants=AggregationBits(data=[Boolean(True)]),
-                proof_data=ByteListMiB(data=b""),
+            data=data,
+            proof=TypeOneMultiSignature(
+                info=TypeOneInfo(
+                    participants=AggregationBits(data=[Boolean(True)]),
+                    proof=ByteListMiB(data=b""),
+                ),
+                proof=ByteListMiB(data=b""),
             ),
         ),
     )
@@ -460,15 +439,20 @@ def test_signed_aggregated_attestation_minimal(ssz: SSZTestFiller) -> None:
 
 def test_signed_aggregated_attestation_typical(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for SignedAggregatedAttestation with mixed participation bits."""
+    data = _typical_attestation_data()
+    wire = b"\xca\xfe\xba\xbe\xde\xad"
     ssz(
         type_name="SignedAggregatedAttestation",
         value=SignedAggregatedAttestation(
-            data=_typical_attestation_data(),
-            proof=AggregatedSignatureProof(
-                participants=AggregationBits(
-                    data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True)]
+            data=data,
+            proof=TypeOneMultiSignature(
+                info=TypeOneInfo(
+                    participants=AggregationBits(
+                        data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True)]
+                    ),
+                    proof=ByteListMiB(data=wire),
                 ),
-                proof_data=ByteListMiB(data=b"\xca\xfe\xba\xbe\xde\xad"),
+                proof=ByteListMiB(data=wire),
             ),
         ),
     )

@@ -48,12 +48,8 @@ from lean_spec.subspecs.chain.clock import Interval, SlotClock
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync import SyncService
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
-from lean_spec.subspecs.xmss.aggregation import (
-    TypeOneMultiSignature,
-    aggregate_type_1,
-    aggregate_type_2,
-)
-from lean_spec.subspecs.xmss.containers import PublicKey, Signature
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
+from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import ByteListMiB, Bytes32, Slot, Uint64, ValidatorIndex, ValidatorIndices
 
 from .registry import ValidatorEntry, ValidatorRegistry
@@ -414,16 +410,24 @@ class ValidatorService:
             "proposal_secret_key",
         )
 
-        # Reconstruct the proposer's public key from the proposal secret key.
-        proposer_pubkey = PublicKey(
-            root=entry.proposal_secret_key.top_tree.root(),
-            parameter=entry.proposal_secret_key.parameter,
-        )
+        # Resolve validator pubkeys from state using validator indices.
+        key_state = self.sync_service.store.states.get(block_root)
+        if key_state is None:
+            key_state = self.sync_service.store.states.get(self.sync_service.store.head)
+        if key_state is None:
+            raise ValueError(
+                "No state available to resolve validator public keys for block signing"
+            )
+
+        validators = key_state.validators
+        if not validator_index.is_valid(Uint64(len(validators))):
+            raise ValueError(f"Validator {validator_index} not found in state validators")
+        proposer_pubkey = validators[validator_index].get_proposal_pubkey()
 
         # Wrap the proposer's raw XMSS signature into a singleton Type-1.
         # The participant set is just the proposer index.
         proposer_participants = ValidatorIndices(data=[validator_index]).to_aggregation_bits()
-        proposer_type_1 = aggregate_type_1(
+        proposer_type_1 = TypeOneMultiSignature.aggregate(
             children=[],
             raw_xmss=[(proposer_pubkey, proposer_signature)],
             xmss_participants=proposer_participants,
@@ -434,7 +438,19 @@ class ValidatorService:
         # Merge the per-attestation proofs and the proposer Type-1 into one
         # Type-2 proof. Order matters: verify_signatures expects the proposer
         # entry to be last, parallel to block.body.attestations + 1.
-        merged = aggregate_type_2([*attestation_proofs, proposer_type_1])
+        public_keys_per_part = [
+            [
+                validators[vid].get_attestation_pubkey()
+                for vid in proof.info.participants.to_validator_indices()
+            ]
+            for proof in attestation_proofs
+        ]
+        public_keys_per_part.append([proposer_pubkey])
+
+        merged = TypeTwoMultiSignature.aggregate(
+            [*attestation_proofs, proposer_type_1],
+            public_keys_per_part=public_keys_per_part,
+        )
 
         return SignedBlock(
             block=block,

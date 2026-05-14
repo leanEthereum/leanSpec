@@ -24,11 +24,7 @@ from lean_spec.forks.lstar.containers.attestation import (
     AggregatedAttestation,
     SignedAggregatedAttestation,
 )
-from lean_spec.forks.lstar.containers.block import BlockSignatures
-from lean_spec.forks.lstar.containers.block.types import (
-    AggregatedAttestations,
-    AttestationSignatures,
-)
+from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import Validators
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.chain.clock import Interval, SlotClock
@@ -42,7 +38,7 @@ from lean_spec.subspecs.storage import Database
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.peer_manager import PeerManager
 from lean_spec.subspecs.sync.service import SyncService
-from lean_spec.subspecs.xmss.aggregation import AggregatedSignatureProof
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.subspecs.xmss.types import (
@@ -52,6 +48,7 @@ from lean_spec.subspecs.xmss.types import (
     Randomness,
 )
 from lean_spec.types import (
+    ByteListMiB,
     Bytes32,
     Bytes52,
     Checkpoint,
@@ -213,7 +210,11 @@ def make_signed_block(
     parent_root: Bytes32,
     state_root: Bytes32,
 ) -> SignedBlock:
-    """Create a signed block with minimal valid structure."""
+    """Create a signed block with minimal valid structure and an empty proof blob.
+
+    The empty proof carries no cryptographic content. Tests that exercise real
+    verification should build the block via the spec filler instead.
+    """
     block = Block(
         slot=slot,
         proposer_index=proposer_index,
@@ -222,13 +223,7 @@ def make_signed_block(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    return SignedBlock(
-        block=block,
-        signature=BlockSignatures(
-            attestation_signatures=AttestationSignatures(data=[]),
-            proposer_signature=make_mock_signature(),
-        ),
-    )
+    return SignedBlock(block=block, proof=ByteListMiB(data=b""))
 
 
 def make_aggregated_attestation(
@@ -430,8 +425,13 @@ def make_aggregated_proof(
     key_manager: XmssKeyManager,
     participants: list[ValidatorIndex],
     attestation_data: AttestationData,
-) -> AggregatedSignatureProof:
-    """Create a valid aggregated signature proof for the given participants."""
+) -> TypeOneMultiSignature:
+    """Create a valid Type-1 aggregated proof for the given participants.
+
+    Produces a real cryptographic proof because the resulting Type-1
+    typically feeds into production aggregation (build_block compaction,
+    on_block verification), which rejects empty proof bytes.
+    """
     data_root = hash_tree_root(attestation_data)
     xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
     raw_xmss = list(
@@ -441,10 +441,10 @@ def make_aggregated_proof(
             strict=True,
         )
     )
-    return AggregatedSignatureProof.aggregate(
-        xmss_participants=xmss_participants,
+    return TypeOneMultiSignature.aggregate(
         children=[],
         raw_xmss=raw_xmss,
+        xmss_participants=xmss_participants,
         message=data_root,
         slot=attestation_data.slot,
     )
@@ -480,18 +480,43 @@ def make_signed_block_from_store(
     """Produce a signed block and advance the consumer store to accept it.
 
     Returns the updated store (with time advanced) and the signed block.
+    The merged Type-2 proof is built honestly because callers usually
+    feed the result through spec.on_block, which decodes and verifies
+    the proof.
     """
-    _, block, _ = LstarSpec().produce_block_with_signatures(store, slot, proposer_index)
+    new_store, block, attestation_proofs = LstarSpec().produce_block_with_signatures(
+        store, slot, proposer_index
+    )
     block_root = hash_tree_root(block)
+
+    head_state = new_store.states[new_store.head]
+    public_keys_per_part: list[list] = [
+        [
+            head_state.validators[vid].get_attestation_pubkey()
+            for vid in proof.info.participants.to_validator_indices()
+        ]
+        for proof in attestation_proofs
+    ]
+    proposer_pubkey = head_state.validators[proposer_index].get_proposal_pubkey()
+    public_keys_per_part.append([proposer_pubkey])
+
     proposer_signature = key_manager.sign_block_root(proposer_index, slot, block_root)
-    attestation_signatures = key_manager.build_attestation_signatures(block.body.attestations)
+    proposer_type_1 = TypeOneMultiSignature.aggregate(
+        children=[],
+        raw_xmss=[(proposer_pubkey, proposer_signature)],
+        xmss_participants=ValidatorIndices(data=[proposer_index]).to_aggregation_bits(),
+        message=block_root,
+        slot=slot,
+    )
+
+    merged = TypeTwoMultiSignature.aggregate(
+        [*attestation_proofs, proposer_type_1],
+        public_keys_per_part=public_keys_per_part,
+    )
 
     signed_block = SignedBlock(
         block=block,
-        signature=BlockSignatures(
-            attestation_signatures=attestation_signatures,
-            proposer_signature=proposer_signature,
-        ),
+        proof=ByteListMiB(data=merged.encode_bytes()),
     )
 
     target_interval = Interval.from_slot(block.slot)
