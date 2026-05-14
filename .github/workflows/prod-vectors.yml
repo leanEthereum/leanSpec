@@ -100,7 +100,7 @@ jobs:
           mkdir -p fixtures/keys
           cp -r packages/testing/src/consensus_testing/test_keys/prod_scheme fixtures/keys/
 
-      - name: Create fixture archive
+      - name: Create reproducible fixture archive
         run: |
           tar \
             --sort=name \
