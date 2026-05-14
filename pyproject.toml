@@ -137,7 +137,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 lean-ethereum-testing = { workspace = true }
-lean-multisig-py = { git = "https://github.com/anshalshukla/leanMultisig-py", tag = "v0.0.2" }
+lean-multisig-py = { git = "https://github.com/anshalshukla/leanMultisig-py", tag = "v0.0.3" }
 
 [dependency-groups]
 test = [
