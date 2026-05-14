@@ -10,11 +10,27 @@ from consensus_testing import (
     StoreChecks,
     generate_pre_state,
 )
+from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.types import Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
+
+
+@pytest.fixture(autouse=True)
+def _reset_xmss_signing_state():
+    """Reset cached XMSS signing state around every fork-choice filler.
+
+    XMSS keys are stateful and advance past used slots on every sign.
+    Without a reset, a filler that signs at a high slot poisons the
+    shared cache for any later filler that needs to sign at a lower
+    slot — leading to "Verification failed" errors that only appear
+    when several tests share a worker.
+    """
+    XmssKeyManager.reset_signing_state()
+    yield
+    XmssKeyManager.reset_signing_state()
 
 
 def _justifiable_slots(n: int) -> list[Slot]:

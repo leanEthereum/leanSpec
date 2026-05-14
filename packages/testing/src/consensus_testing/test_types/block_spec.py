@@ -19,8 +19,6 @@ from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
-    TypeOneInfo,
-    TypeOneInfos,
     TypeOneMultiSignature,
     TypeTwoMultiSignature,
 )
@@ -336,16 +334,7 @@ class BlockSpec(CamelModel):
                 dummy_signature = create_dummy_signature()
                 del dummy_signature
 
-            proposer_info = TypeOneInfo(
-                participants=proposer_participants,
-                proof=placeholder,
-            )
-            envelope = TypeTwoMultiSignature(
-                info=TypeOneInfos(
-                    data=[*(proof.info for proof in attestation_proofs), proposer_info]
-                ),
-                proof=placeholder,
-            )
+            envelope = TypeTwoMultiSignature(proof=placeholder)
             proof_bytes = envelope.encode_bytes()
 
         return SignedBlock(

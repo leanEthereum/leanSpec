@@ -28,14 +28,12 @@ from lean_multisig_py import (
 )
 
 from lean_spec.config import LEAN_ENV, LeanEnvMode
-from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.types import (
     AggregationBits,
     ByteListMiB,
     Bytes32,
     Container,
     Slot,
-    SSZList,
     ValidatorIndex,
     ValidatorIndices,
 )
@@ -73,16 +71,6 @@ class TypeOneInfo(Container):
 
     proof: ByteListMiB
     """Compact no-pubkeys serialized Type-1 proof bytes."""
-
-
-class TypeOneInfos(SSZList[TypeOneInfo]):
-    """List of per-message info entries inside a Type-2 proof.
-
-    A valid block carries at most MAX_ATTESTATIONS_DATA total entries + 1,
-    one is reserved for the proposer's own signature.
-    """
-
-    LIMIT = int(MAX_ATTESTATIONS_DATA) + 1
 
 
 class TypeOneMultiSignature(Container):
@@ -271,14 +259,10 @@ class TypeTwoMultiSignature(Container):
     """A merged proof covering many distinct messages.
 
     On the wire a SignedBlock carries the SSZ-serialised form of this
-    container as its single proof blob. The block-level info list
-    enumerates the participant bitfield for every merged Type-1
-    component. Messages and slots are rederived by the verifier from
-    the block body, not duplicated in the proof.
+    container as its single proof blob. Participant bitfields, messages,
+    and slots are rederived by the verifier from the block body, not
+    duplicated in the proof envelope.
     """
-
-    info: TypeOneInfos
-    """Per-message metadata, one entry per merged Type-1 proof."""
 
     proof: ByteListMiB
     """Compact no-pubkeys serialized Type-2 proof bytes."""
@@ -331,10 +315,7 @@ class TypeTwoMultiSignature(Container):
         # Canonicalise to the compact no-pubkeys form the verifier expects.
         type2_wire = _coerce_type2_wire(type2_wire, pks_per_component_ssz, mode)
 
-        return TypeTwoMultiSignature(
-            info=TypeOneInfos(data=[part.info for part in parts]),
-            proof=ByteListMiB(data=type2_wire),
-        )
+        return TypeTwoMultiSignature(proof=ByteListMiB(data=type2_wire))
 
     def split_by_msg(
         self,
@@ -345,35 +326,28 @@ class TypeTwoMultiSignature(Container):
     ) -> TypeOneMultiSignature:
         """Recover the Type-1 proof bound to a specific message from this Type-2 merge.
 
-        The caller is responsible for knowing which entry index of self.info
+        The caller is responsible for knowing which entry index in the merge
         corresponds to the message being split out — the proof envelope no
-        longer stores per-entry messages.
+        longer stores per-entry messages or participant bitfields.
+
+        public_keys_per_message defines the per-component pubkey layout the
+        Type-2 was built with. Its length matches the number of components,
+        and each inner list is ordered by that component's participant
+        bitfield.
         """
         mode = mode or LEAN_ENV
         setup_prover(mode=mode)
         log_inv_rate = LOG_INV_RATE_TEST if mode == "test" else LOG_INV_RATE_PROD
 
-        if not 0 <= entry_index < len(self.info):
+        if not 0 <= entry_index < len(public_keys_per_message):
             raise AggregationError(
-                f"Type-2 split entry_index {entry_index} out of range for {len(self.info)} entries"
+                f"Type-2 split entry_index {entry_index} out of range for "
+                f"{len(public_keys_per_message)} entries"
             )
 
-        entry = self.info[entry_index]
-
-        if len(public_keys_per_message) != len(self.info):
-            raise AggregationError(
-                f"Type-2 split expected pubkey lists for {len(self.info)} messages, "
-                f"got {len(public_keys_per_message)}"
-            )
-
-        pub_keys_per_component_ssz: list[list[bytes]] = []
-        for idx, (info, pks) in enumerate(zip(self.info, public_keys_per_message, strict=True)):
-            expected = sum(1 for bit in info.participants.data if bool(bit))
-            if len(pks) != expected:
-                raise AggregationError(
-                    f"Type-2 split entry {idx} expected {expected} pubkeys, got {len(pks)}"
-                )
-            pub_keys_per_component_ssz.append([pk.encode_bytes() for pk in pks])
+        pub_keys_per_component_ssz: list[list[bytes]] = [
+            [pk.encode_bytes() for pk in pks] for pks in public_keys_per_message
+        ]
 
         type2_wire = _coerce_type2_wire(bytes(self.proof.data), pub_keys_per_component_ssz, mode)
         try:
@@ -389,8 +363,16 @@ class TypeTwoMultiSignature(Container):
 
         type1_wire = _coerce_type1_wire(type1_wire, pks_ssz, mode)
 
+        # Reconstruct the Type-1 participant bitfield from the caller-supplied
+        # pubkeys. The caller knows the validator indices behind each pubkey;
+        # encoding that here would require carrying that mapping in. Leave
+        # info.participants empty — consumers that need it construct it
+        # themselves from the block body's aggregation bits.
         return TypeOneMultiSignature(
-            info=entry,
+            info=TypeOneInfo(
+                participants=AggregationBits(data=[]),
+                proof=ByteListMiB(data=type1_wire),
+            ),
             proof=ByteListMiB(data=type1_wire),
         )
 
@@ -401,27 +383,17 @@ class TypeTwoMultiSignature(Container):
     ) -> None:
         """Verify this multi-message Type-2 proof against per-entry resolved pubkeys.
 
-        public_keys_per_message must be parallel to self.info: one pubkey
-        list per Type-1 info entry, ordered by that entry's participants
-        bitfield.
+        Each entry of public_keys_per_message corresponds to one Type-1
+        component merged into this Type-2. Inner lists are ordered by that
+        component's participant bitfield. The verifier trusts the caller to
+        rederive that ordering from the block body.
         """
         mode = mode or LEAN_ENV
         setup_prover(mode=mode)
 
-        if len(public_keys_per_message) != len(self.info):
-            raise AggregationError(
-                f"Type-2 verify expected pubkey lists for {len(self.info)} messages, "
-                f"got {len(public_keys_per_message)}"
-            )
-
-        pub_keys_per_component_ssz: list[list[bytes]] = []
-        for idx, (info, pks) in enumerate(zip(self.info, public_keys_per_message, strict=True)):
-            expected = sum(1 for bit in info.participants.data if bool(bit))
-            if len(pks) != expected:
-                raise AggregationError(
-                    f"Type-2 verify entry {idx} expected {expected} pubkeys, got {len(pks)}"
-                )
-            pub_keys_per_component_ssz.append([pk.encode_bytes() for pk in pks])
+        pub_keys_per_component_ssz: list[list[bytes]] = [
+            [pk.encode_bytes() for pk in pks] for pks in public_keys_per_message
+        ]
 
         type2_wire = _coerce_type2_wire(bytes(self.proof.data), pub_keys_per_component_ssz, mode)
         try:

@@ -130,15 +130,18 @@ class TestSignBlock:
     def test_envelope_binds_proposer_entry(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
-        """The merged Type-2 proof binds an info entry for the proposer's block-root sig."""
+        """A block with no attestations produces a decodable Type-2 envelope.
+
+        Participant identity for the proposer is rederived from the block's
+        proposer_index, not from the proof envelope.
+        """
         service, block = self._setup(sync_service, key_manager)
 
         result = service._sign_block(block, ValidatorIndex(0), [])
 
-        decoded = TypeTwoMultiSignature.decode_bytes(result.proof.data)
-        assert len(decoded.info) == 1
-        proposer_entry = decoded.info[0]
-        assert set(proposer_entry.participants.to_validator_indices()) == {ValidatorIndex(0)}
+        TypeTwoMultiSignature.decode_bytes(result.proof.data)
+        assert result.block.proposer_index == ValidatorIndex(0)
+        assert len(result.block.body.attestations) == 0
 
     def test_envelope_uses_proposal_slot(
         self, sync_service: SyncService, key_manager: XmssKeyManager
@@ -148,25 +151,26 @@ class TestSignBlock:
 
         result = service._sign_block(block, ValidatorIndex(0), [])
 
-        decoded = TypeTwoMultiSignature.decode_bytes(result.proof.data)
-        assert len(decoded.info) == 1
+        TypeTwoMultiSignature.decode_bytes(result.proof.data)
+        assert result.block.slot == Slot(2)
 
-    def test_attestation_proofs_appear_first_in_merged_info(
+    def test_attestation_proofs_merge_into_envelope(
         self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
     ) -> None:
-        """Attestation proofs land before the proposer entry in the merged info list."""
+        """Aggregated attestation proofs are merged into the block envelope.
+
+        Participant ordering and per-component messages are rederived from
+        the block body by the verifier; the proof envelope no longer
+        carries that metadata.
+        """
         service, block = self._setup(sync_service, key_manager)
         attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
         agg_proof = make_aggregated_proof(key_manager, [ValidatorIndex(0)], attestation_data)
 
         result = service._sign_block(block, ValidatorIndex(0), [agg_proof])
 
-        decoded = TypeTwoMultiSignature.decode_bytes(result.proof.data)
-        assert len(decoded.info) == 2
-        # Attestation entry: participants match the aggregated proof.
-        assert decoded.info[0].participants == agg_proof.info.participants
-        # Proposer entry: singleton bitfield for the proposer.
-        assert set(decoded.info[1].participants.to_validator_indices()) == {ValidatorIndex(0)}
+        TypeTwoMultiSignature.decode_bytes(result.proof.data)
+        assert result.block.proposer_index == ValidatorIndex(0)
 
     def test_missing_validator_raises_value_error(
         self, sync_service: SyncService, key_manager: XmssKeyManager
@@ -971,12 +975,8 @@ class TestValidatorServiceIntegration:
         assert signed_block.block.slot == Slot(1)
         assert signed_block.block.proposer_index == ValidatorIndex(1)
 
-        # The merged proof must bind a singleton info entry to the proposer.
-        decoded = TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
-        proposer_entry = decoded.info[-1]
-        assert set(proposer_entry.participants.to_validator_indices()) == {
-            signed_block.block.proposer_index
-        }
+        # The merged proof must decode and the block carries the proposer index.
+        TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
 
     async def test_produce_real_attestation_with_valid_signature(
         self,
@@ -1079,12 +1079,9 @@ class TestValidatorServiceIntegration:
         assert len(blocks_produced) == 1
         signed_block = blocks_produced[0]
 
-        # Confirm the proposer info entry binds the singleton participant set.
-        decoded = TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
-        proposer_entry = decoded.info[-1]
-        assert set(proposer_entry.participants.to_validator_indices()) == {
-            signed_block.block.proposer_index
-        }
+        # The merged proof decodes cleanly; the proposer identity now lives
+        # on the block, not inside the proof envelope.
+        TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
 
     async def test_block_includes_pending_attestations(
         self,
@@ -1146,9 +1143,9 @@ class TestValidatorServiceIntegration:
         body_attestations = signed_block.block.body.attestations
         assert len(body_attestations) > 0
 
-        # The merged proof binds one info entry per attestation plus the proposer.
-        decoded = TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
-        assert len(decoded.info) == len(body_attestations) + 1
+        # The merged proof decodes; its component count is rederived from
+        # the block body (one Type-1 per attestation plus the proposer).
+        TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
 
     async def test_multiple_slots_produce_different_attestations(
         self,

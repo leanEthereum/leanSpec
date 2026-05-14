@@ -8,7 +8,6 @@ from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.xmss import PublicKey
 from lean_spec.subspecs.xmss.aggregation import (
     TypeOneInfo,
-    TypeOneInfos,
     TypeOneMultiSignature,
     TypeTwoMultiSignature,
 )
@@ -109,16 +108,11 @@ def test_type_one_multi_signature_with_proof(ssz: SSZTestFiller) -> None:
 
 
 def test_type_two_multi_signature_roundtrip(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for a Type-2 proof binding two messages."""
+    """SSZ roundtrip for a Type-2 proof envelope."""
     wire = b"\x01\x02\x03"
-    info_a = _info([True], b"\x10\x20")
-    info_b = _info([False, True], b"\x30\x40")
     ssz(
         type_name="TypeTwoMultiSignature",
-        value=TypeTwoMultiSignature(
-            info=TypeOneInfos(data=[info_a, info_b]),
-            proof=ByteListMiB(data=wire),
-        ),
+        value=TypeTwoMultiSignature(proof=ByteListMiB(data=wire)),
     )
 
 

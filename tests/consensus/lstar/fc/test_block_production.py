@@ -279,8 +279,6 @@ def test_produce_block_enforces_max_attestations_data_limit(
     -------------------
     The produced block contains exactly MAX_ATTESTATIONS_DATA attestations.
     """
-    # The builder admits up to MAX_ATTESTATIONS_DATA distinct entries; the
-    # proposer signature occupies the remaining slot in the Type-2 envelope.
     limit = int(MAX_ATTESTATIONS_DATA)
     num_target_blocks = limit + 1
     block_production_slot = num_target_blocks + 1

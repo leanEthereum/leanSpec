@@ -389,6 +389,6 @@ class BaseByteList(SSZModel):
 
 
 class ByteListMiB(BaseByteList):
-    """Variable-length byte list with an 8 MiB limit."""
+    """Variable-length byte list with a 1 MiB limit."""
 
-    LIMIT = 8 * 1024 * 1024
+    LIMIT = 1024 * 1024

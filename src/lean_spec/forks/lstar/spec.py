@@ -55,6 +55,7 @@ from lean_spec.types import (
     Checkpoint,
     Slot,
     SSZList,
+    Uint8,
     Uint64,
     ValidatorIndex,
     ValidatorIndices,
@@ -674,12 +675,8 @@ class LstarSpec(ForkProtocol):
                 for att_data, proofs in sorted(
                     aggregated_payloads.items(), key=lambda item: item[0].target.slot
                 ):
-                    # Stop adding new attestations once we hit the per-block
-                    # cap. The proposer signature is merged as an extra
-                    # component into the same Type-2 envelope, so total
-                    # components stay at MAX_ATTESTATIONS_DATA + 1.
                     if (
-                        len(processed_att_data) >= int(MAX_ATTESTATIONS_DATA)
+                        Uint8(len(processed_att_data)) >= MAX_ATTESTATIONS_DATA
                         and att_data not in processed_att_data
                     ):
                         break
@@ -829,28 +826,17 @@ class LstarSpec(ForkProtocol):
         except Exception as exc:
             raise AssertionError(f"Block proof decoding failed: {exc}") from exc
 
-        expected_count = len(aggregated_attestations) + 1
-        assert len(type_two.info) == expected_count, (
-            f"Block proof binds to {len(type_two.info)} messages, "
-            f"expected {expected_count} (one per attestation + proposer)"
-        )
-
         num_validators = Uint64(len(validators))
         public_keys_per_message: list[list[PublicKey]] = []
 
         # Attestation entries: parallel to block.body.attestations.
-        # Message and slot live on the block body, not on the proof envelope —
-        # the Type-2 binding rejects anything that doesn't match what was
-        # signed, so we only cross-check the participant bitfield here.
-        for idx, aggregated_attestation in enumerate(aggregated_attestations):
+        # Message, slot, and participant bitfield all live on the block body.
+        # The Type-2 binding rejects anything that doesn't match what was
+        # signed, so the proof envelope itself no longer carries this metadata.
+        for aggregated_attestation in aggregated_attestations:
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
             for validator_id in validator_ids:
                 assert validator_id.is_valid(num_validators), "Validator index out of range"
-
-            info = type_two.info[idx]
-            assert info.participants == aggregated_attestation.aggregation_bits, (
-                f"Block proof entry {idx} participants must match aggregation bits"
-            )
 
             public_keys_per_message.append(
                 [validators[vid].get_attestation_pubkey() for vid in validator_ids]
@@ -859,12 +845,6 @@ class LstarSpec(ForkProtocol):
         # Proposer entry: bound to block root with a singleton participant set.
         proposer_index = block.proposer_index
         assert proposer_index.is_valid(num_validators), "Proposer index out of range"
-
-        proposer_info = type_two.info[len(aggregated_attestations)]
-        expected_proposer_bits = ValidatorIndices(data=[proposer_index]).to_aggregation_bits()
-        assert proposer_info.participants == expected_proposer_bits, (
-            "Block proof proposer entry participants must encode the proposer index"
-        )
 
         public_keys_per_message.append([validators[proposer_index].get_proposal_pubkey()])
 
@@ -1121,10 +1101,6 @@ class LstarSpec(ForkProtocol):
 
         self.validate_attestation(store, data)
 
-        # The proof envelope no longer carries the signed message and slot —
-        # they are supplied to verify() from the advertised AttestationData
-        # below. The binding rejects any mismatch, which is what would have
-        # been pinned by a structural assert here.
         # Get validator IDs who participated in this aggregation
         validator_ids = proof.info.participants.to_validator_indices()
 
@@ -1252,13 +1228,6 @@ class LstarSpec(ForkProtocol):
                 f"maximum is {MAX_ATTESTATIONS_DATA}"
             )
 
-            # Block-included attestations must contribute to fork choice
-            # weights. The block-level Type-2 proof has already been
-            # verified as a whole; the body's aggregation bits are
-            # therefore trustworthy. Synthesize a placeholder Type-1 per
-            # AttestationData (real info, empty proof bytes) so the
-            # forkchoice extractor can read participants without going
-            # through a binding-driven split-by-message.
             block_proofs: dict[AttestationData, set[TypeOneMultiSignature]] = {
                 k: set(v) for k, v in store.latest_known_aggregated_payloads.items()
             }
