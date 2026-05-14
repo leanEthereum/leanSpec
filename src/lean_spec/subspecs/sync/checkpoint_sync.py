@@ -23,7 +23,7 @@ from typing import Final
 
 import httpx
 
-from lean_spec.forks import State
+from lean_spec.forks import SignedBlock, State
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 
@@ -34,6 +34,16 @@ DEFAULT_TIMEOUT: Final = 60.0
 
 FINALIZED_STATE_ENDPOINT: Final = "/lean/v0/states/finalized"
 """API endpoint for fetching finalized state. Follows Beacon API conventions."""
+
+FINALIZED_BLOCK_ENDPOINT: Final = "/lean/v0/blocks/finalized"
+"""API endpoint for fetching the SignedBlock matching the finalized state.
+
+``Store.create_store`` requires both the finalized state and the anchor block
+(it asserts ``anchor_block.state_root == hash_tree_root(state)`` and seeds
+``store.blocks[anchor_root] = anchor_block``). The state endpoint alone is
+insufficient; this endpoint ships the matching SignedBlock so the pair can
+be obtained atomically via two requests.
+"""
 
 
 class CheckpointSyncError(Exception):
@@ -101,6 +111,98 @@ async def fetch_finalized_state(url: str, state_class: type[State]) -> State:
         ) from exc
     except Exception as e:
         raise CheckpointSyncError(f"Failed to fetch state: {e}") from e
+
+
+async def fetch_finalized_block(url: str) -> SignedBlock:
+    """
+    Fetch the SignedBlock matching the finalized state via checkpoint sync.
+
+    Retrieves the SSZ-encoded SignedBlock at ``store.latest_finalized.root``.
+    The caller is responsible for verifying that
+    ``signed_block.block.state_root == hash_tree_root(state)`` before passing
+    the pair to ``Store.create_store``.
+
+    Args:
+        url: Base URL of the node API (e.g., "http://localhost:5052").
+
+    Returns:
+        The finalized SignedBlock object.
+
+    Raises:
+        CheckpointSyncError: If the request fails or block bytes are invalid.
+    """
+    base_url = url.rstrip("/")
+    full_url = f"{base_url}{FINALIZED_BLOCK_ENDPOINT}"
+
+    logger.info("Fetching finalized signed block from %s", full_url)
+
+    headers = {"Accept": "application/octet-stream"}
+
+    try:
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.get(full_url, headers=headers)
+            response.raise_for_status()
+
+            ssz_data = response.content
+            logger.info("Downloaded %d bytes of SSZ signed block data", len(ssz_data))
+
+            signed_block = SignedBlock.decode_bytes(ssz_data)
+            logger.info(
+                "Deserialized signed block at slot %s",
+                signed_block.block.slot,
+            )
+
+            return signed_block
+
+    except httpx.RequestError as exc:
+        raise CheckpointSyncError(
+            f"Network error while connecting to {exc.request.url}: {exc}"
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise CheckpointSyncError(
+            f"HTTP error {exc.response.status_code}: {exc.response.text[:200]}"
+        ) from exc
+    except Exception as e:
+        raise CheckpointSyncError(f"Failed to fetch signed block: {e}") from e
+
+
+async def fetch_finalized_anchor(url: str, state_class: type[State]) -> tuple[State, SignedBlock]:
+    """
+    Fetch the ``(state, signed_block)`` pair required by ``Store.create_store``.
+
+    Issues two requests in sequence: ``/lean/v0/states/finalized`` then
+    ``/lean/v0/blocks/finalized``. Both endpoints serve the snapshot at
+    ``store.latest_finalized.root``; on the server side these reads are
+    expected to be consistent against a single finalized checkpoint.
+
+    Verifies the block / state pairing before returning. If the server
+    advanced finalization between the two requests the pairing assertion
+    will fail and the caller should retry.
+
+    Args:
+        url: Base URL of the node API.
+        state_class: State class used to decode the state SSZ bytes.
+
+    Returns:
+        Tuple of (finalized state, finalized signed block).
+
+    Raises:
+        CheckpointSyncError: If either fetch fails, or the block's
+            ``state_root`` does not equal ``hash_tree_root(state)``.
+    """
+    state = await fetch_finalized_state(url, state_class)
+    signed_block = await fetch_finalized_block(url)
+
+    expected_state_root = hash_tree_root(state)
+    if signed_block.block.state_root != expected_state_root:
+        raise CheckpointSyncError(
+            "Anchor block / state mismatch: "
+            f"signed_block.block.state_root={signed_block.block.state_root.hex()} "
+            f"hash_tree_root(state)={expected_state_root.hex()}. "
+            "Server may have advanced finalization between requests; retry."
+        )
+
+    return state, signed_block
 
 
 def verify_checkpoint_state(state: State) -> bool:

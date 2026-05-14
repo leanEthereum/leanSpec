@@ -1,5 +1,6 @@
 """Layer-agnostic pytest plugin for generating Ethereum test fixtures."""
 
+import functools
 import importlib
 import json
 import shutil
@@ -10,6 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+
+@functools.cache
+def _spec_instance_for(fork_class: type) -> Any:
+    """Build the active fork's spec instance once and reuse across collection."""
+    spec_class_method: Any = fork_class.spec_class  # ty: ignore[unresolved-attribute]
+    return spec_class_method()()
 
 
 class FixtureCollector:
@@ -226,6 +234,11 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "valid_at(fork): specifies at which fork a test case is valid",
     )
+    config.addinivalue_line(
+        "markers",
+        "requires(*capabilities): only collect when the active fork "
+        "advertises every listed runtime-checkable Protocol",
+    )
 
     # Get options
     output_dir = Path(config.getoption("--output"))
@@ -313,6 +326,14 @@ def _check_markers_valid_for_fork(
     """Check if test markers indicate validity for the given fork.
 
     Shared logic for both collection-time and parametrization-time fork filtering.
+
+    Composition rules:
+
+    - Fork-range markers form an intersection across kinds and a union
+      within a kind.
+    - The exact-fork marker short-circuits to a single-fork match.
+    - The capability marker AND-composes on top of either branch — the
+      active fork must satisfy every listed capability Protocol.
     """
     has_valid_from = False
     has_valid_until = False
@@ -321,6 +342,7 @@ def _check_markers_valid_for_fork(
     valid_from_forks = []
     valid_until_forks = []
     valid_at_forks = []
+    required_capabilities: list[type] = []
 
     for marker in markers:
         if marker.name == "valid_from":
@@ -341,12 +363,21 @@ def _check_markers_valid_for_fork(
                 target_fork = get_fork_by_name(fork_name)
                 if target_fork:
                     valid_at_forks.append(target_fork)
+        elif marker.name == "requires":
+            required_capabilities.extend(marker.args)
 
-    if not (has_valid_from or has_valid_until or has_valid_at):
+    def _capability_check() -> bool:
+        """Active fork must structurally satisfy every required capability."""
+        if not required_capabilities:
+            return True
+        spec = _spec_instance_for(fork_class)
+        return all(isinstance(spec, cap) for cap in required_capabilities)
+
+    if not (has_valid_from or has_valid_until or has_valid_at or required_capabilities):
         return True
 
     if has_valid_at:
-        return fork_class in valid_at_forks
+        return fork_class in valid_at_forks and _capability_check()
 
     from_valid = True
     if has_valid_from:
@@ -356,7 +387,7 @@ def _check_markers_valid_for_fork(
     if has_valid_until:
         until_valid = any(fork_class <= until_fork for until_fork in valid_until_forks)
 
-    return from_valid and until_valid
+    return from_valid and until_valid and _capability_check()
 
 
 def _is_test_item_valid_for_fork(
