@@ -6,7 +6,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: prod-vectors-latest
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -24,7 +28,7 @@ jobs:
       - name: Check if scheme changed
         id: scheme-diff
         run: |
-          if git diff HEAD~1 --name-only | grep -qE '^src/lean_spec/subspecs/(xmss|poseidon2)/'; then
+          if git diff HEAD~1 --name-only | grep -qE '^src/lean_spec/subspecs/(xmss|poseidon1)/'; then
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
@@ -33,7 +37,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/prod-keys-probe
-          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
+          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon1/**') }}
           lookup-only: true
 
   keygen:
@@ -75,7 +79,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: packages/testing/src/consensus_testing/test_keys/prod_scheme
-          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
+          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon1/**') }}
 
       - name: Download keys
         if: steps.key-cache.outputs.cache-hit != 'true'
@@ -86,7 +90,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: packages/testing/src/consensus_testing/test_keys/prod_scheme
-          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon2/**') }}
+          key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon1/**') }}
 
       - name: Fill production test fixtures
         run: just fill-ci --scheme=prod
@@ -96,9 +100,34 @@ jobs:
           mkdir -p fixtures/keys
           cp -r packages/testing/src/consensus_testing/test_keys/prod_scheme fixtures/keys/
 
-      - name: Upload fixtures + keys
+      - name: Create reproducible fixture archive
+        run: |
+          tar \
+            --sort=name \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            --mtime='UTC 2020-01-01' \
+            -cf - fixtures | gzip --no-name > fixtures-prod-scheme.tar.gz
+          sha256sum fixtures-prod-scheme.tar.gz > fixtures-prod-scheme.tar.gz.sha256
+
+      - name: Upload fixture archive
         uses: actions/upload-artifact@v4
         with:
           name: fixtures-prod-scheme
-          path: fixtures/
+          path: |
+            fixtures-prod-scheme.tar.gz
+            fixtures-prod-scheme.tar.gz.sha256
           if-no-files-found: error
+
+      - name: Publish latest release
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest \
+            fixtures-prod-scheme.tar.gz \
+            fixtures-prod-scheme.tar.gz.sha256 \
+            --target "${{ github.sha }}" \
+            --title "Latest production fixtures" \
+            --notes "Auto-generated from leanSpec@${{ github.sha }}"
+        env:
+          GH_TOKEN: ${{ github.token }}

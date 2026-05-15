@@ -354,6 +354,34 @@ class LstarSpec(ForkProtocol):
 
         return self.process_attestations(state, block.body.attestations)
 
+    def _attestation_data_matches_chain(
+        self,
+        historical_block_hashes: HistoricalBlockHashes,
+        attestation_data: AttestationData,
+    ) -> bool:
+        """Whether both source and target checkpoints match the chain at their slots.
+
+        Callers pass the chain's historical block hashes as they would appear
+        after process_block_header on the consuming block: covering
+        [0, block.slot - 1] with parent_root at parent.slot and ZERO_HASH
+        for empty slots between parent and the candidate.
+
+        Empty slots carry ZERO_HASH; a vote referencing one is rejected here
+        even when the recorded root happens to compare equal.
+        """
+        if attestation_data.source.root == ZERO_HASH or attestation_data.target.root == ZERO_HASH:
+            return False
+        source_slot = int(attestation_data.source.slot)
+        target_slot = int(attestation_data.target.slot)
+        if source_slot >= len(historical_block_hashes):
+            return False
+        if target_slot >= len(historical_block_hashes):
+            return False
+        return (
+            attestation_data.source.root == historical_block_hashes[source_slot]
+            and attestation_data.target.root == historical_block_hashes[target_slot]
+        )
+
     def process_attestations(
         self,
         state: State,
@@ -443,31 +471,12 @@ class LstarSpec(ForkProtocol):
             if justified_slots.is_slot_justified(finalized_slot, target.slot):
                 continue
 
-            # Ignore votes that reference zero-hash slots.
-            if source.root == ZERO_HASH or target.root == ZERO_HASH:
-                continue
-
             # Ensure the vote refers to blocks that actually exist on our chain.
-            #
-            # The attestation must match our canonical chain.
-            # Both the source root and target root must equal the recorded block roots
-            # stored for those slots in history.
-            #
-            # This prevents votes about unknown or conflicting forks.
-            source_slot_int = int(source.slot)
-            target_slot_int = int(target.slot)
-            source_matches = (
-                source.root == state.historical_block_hashes[source_slot_int]
-                if source_slot_int < len(state.historical_block_hashes)
-                else False
-            )
-            target_matches = (
-                target.root == state.historical_block_hashes[target_slot_int]
-                if target_slot_int < len(state.historical_block_hashes)
-                else False
-            )
-
-            if not source_matches or not target_matches:
+            # Prevents votes about unknown or conflicting forks; also rejects
+            # zero-hash source or target roots inline.
+            if not self._attestation_data_matches_chain(
+                state.historical_block_hashes, attestation.data
+            ):
                 continue
 
             # Ensure time flows forward.
@@ -667,6 +676,23 @@ class LstarSpec(ForkProtocol):
             else:
                 current_justified = state.latest_justified
 
+            # Track the justified-slot bitfield so we can skip attestations
+            # whose target slot is already justified on this chain. Extend
+            # so is_slot_justified doesn't raise for target slots between
+            # parent.slot and slot - 1.
+            current_finalized_slot = state.latest_finalized.slot
+            current_justified_slots = state.justified_slots.extend_to_slot(
+                current_finalized_slot, slot - Slot(1)
+            )
+
+            # Build the chain view that process_block_header would produce on
+            # the candidate block. Lets the chain-match helper validate source
+            # and target roots without waiting for the STF to drop mismatches.
+            num_empty_slots = int(slot - state.latest_block_header.slot - Slot(1))
+            extended_historical_block_hashes = (
+                state.historical_block_hashes + [parent_root] + [ZERO_HASH] * num_empty_slots
+            )
+
             processed_att_data: set[AttestationData] = set()
 
             while True:
@@ -684,10 +710,26 @@ class LstarSpec(ForkProtocol):
                     if att_data.head.root not in known_block_roots:
                         continue
 
-                    if att_data.source != current_justified:
+                    # Source slot must already be justified on this chain.
+                    if not current_justified_slots.is_slot_justified(
+                        current_finalized_slot, att_data.source.slot
+                    ):
                         continue
 
-                    if att_data in processed_att_data:
+                    if not self._attestation_data_matches_chain(
+                        extended_historical_block_hashes, att_data
+                    ):
+                        continue
+
+                    # Skip attestations whose target slot is already
+                    # justified on this chain. Ignore genesis self-votes
+                    # for fork-choice bootstrapping
+                    is_genesis_self_vote = att_data.source.slot == Slot(
+                        0
+                    ) and att_data.target.slot == Slot(0)
+                    if not is_genesis_self_vote and current_justified_slots.is_slot_justified(
+                        current_finalized_slot, att_data.target.slot
+                    ):
                         continue
 
                     # Placeholders carry only participant info for
@@ -729,8 +771,13 @@ class LstarSpec(ForkProtocol):
                 )
                 post_state = self.process_block(self.process_slots(state, slot), candidate_block)
 
-                if post_state.latest_justified != current_justified:
+                if (
+                    post_state.latest_justified != current_justified
+                    or post_state.latest_finalized.slot != current_finalized_slot
+                ):
                     current_justified = post_state.latest_justified
+                    current_justified_slots = post_state.justified_slots
+                    current_finalized_slot = post_state.latest_finalized.slot
                     continue
 
                 break
