@@ -54,6 +54,12 @@ from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.storage import Database
+from lean_spec.subspecs.xmss.aggregation import (
+    AggregationError,
+    TypeOneMultiSignature,
+    TypeTwoMultiSignature,
+)
+from lean_spec.subspecs.xmss.containers import PublicKey
 from lean_spec.types import ZERO_HASH, Bytes32, Slot, SubnetId
 
 from .backfill_sync import BackfillSync, NetworkRequester
@@ -717,12 +723,23 @@ class SyncService:
         self,
         block: SignedBlock,
     ) -> None:
-        """When running as aggregator, merge block attestations with local partial aggregates.
+        """When running as aggregator, propagate block attestations the node lacks.
 
-        On block import we already trust the block-attestation participant bitfields
-        via `spec.on_block` signature verification. If we also have local partial
-        aggregates for the same AttestationData, run one aggregation pass immediately
-        and gossip any improved aggregate for that data.
+        On block import we already trust the block-attestation participant
+        bitfields via `spec.on_block` signature verification. The block carries
+        one merged Type-2 proof binding every attestation in its body.
+
+        For each block attestation that covers validators this node does not
+        already hold locally:
+
+        1. Extract that data's Type-1 proof out of the block's Type-2 proof.
+        2. Merge it with all local partial Type-1 proofs for the same data into
+           one Type-1 proof whose participant bits are the union.
+        3. Gossip the combined aggregate.
+
+        If the node has never seen the data locally, the extracted Type-1 is
+        gossiped as-is. This propagates the strongest available aggregate
+        without a full re-aggregation pass.
         """
         is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
         if not is_aggregator_role:
@@ -737,53 +754,94 @@ class SyncService:
         if not hasattr(self.store, "latest_new_aggregated_payloads"):
             return
 
-        # Match attestation entries by data root instead of object identity.
-        # Different code paths may produce equivalent AttestationData instances
-        # that do not share the same object key in dicts.
-        block_participants_by_root = {
-            hash_tree_root(att.data): set(att.aggregation_bits.to_validator_indices())
-            for att in block_attestations
-        }
-        pre_new_by_root = {
-            data_root: [set(proof.info.participants.to_validator_indices()) for proof in proofs]
-            for data, proofs in self.store.latest_new_aggregated_payloads.items()
-            if (data_root := hash_tree_root(data)) in block_participants_by_root
-        }
-
-        # Only run if we already have at least one local partial aggregate for
-        # some attestation in this block.
-        if not any(pre_new_by_root.values()):
+        # The Type-2 proof was built against the parent state's validator set.
+        # Without it we cannot resolve the pubkey layout the proof was bound to.
+        parent_state = self.store.states.get(block.block.parent_root)
+        if parent_state is None:
             return
+        validators = parent_state.validators
 
         try:
-            self.store, new_aggregates = self.spec.aggregate(self.store)
-        except (AssertionError, KeyError, ValueError) as exc:
-            logger.debug("Post-block re-aggregation failed: %s", exc)
+            type_two = TypeTwoMultiSignature.decode_bytes(block.proof.data)
+        except Exception as exc:
+            logger.debug("Post-block Type-2 decode failed: %s", exc)
             return
 
-        for signed_attestation in new_aggregates:
-            data_root = hash_tree_root(signed_attestation.data)
-            if data_root not in block_participants_by_root:
+        # Index local partial Type-1 proofs by AttestationData root. Equivalent
+        # AttestationData instances from different code paths may not share a
+        # dict key, so match on the hash tree root instead.
+        local_proofs_by_root: dict[Bytes32, list[TypeOneMultiSignature]] = {}
+        for data, proofs in self.store.latest_new_aggregated_payloads.items():
+            local_proofs_by_root.setdefault(hash_tree_root(data), []).extend(proofs)
+
+        for att in block_attestations:
+            data = att.data
+            data_root = hash_tree_root(data)
+            block_participants = set(att.aggregation_bits.to_validator_indices())
+
+            local_proofs = local_proofs_by_root.get(data_root, [])
+            local_union: set = set()
+            for proof in local_proofs:
+                local_union |= set(proof.participants.to_validator_indices())
+
+            # Only propagate when the block covers validators we do not already
+            # hold. An empty local_union also covers data never seen locally.
+            if not (block_participants - local_union):
                 continue
 
-            local_partials = pre_new_by_root.get(data_root, [])
-            if not local_partials:
+            try:
+                # The Type-2 split needs the exact per-message pubkey layout
+                # the proof was built with: one entry per body attestation in
+                # order, then the proposer entry (mirrors block proof
+                # verification). Built here, only once an attestation actually
+                # needs re-aggregation.
+                public_keys_per_message: list[list[PublicKey]] = []
+                for a in block_attestations:
+                    public_keys_per_message.append(
+                        [
+                            validators[vid].get_attestation_pubkey()
+                            for vid in a.aggregation_bits.to_validator_indices()
+                        ]
+                    )
+                public_keys_per_message.append(
+                    [validators[block.block.proposer_index].get_proposal_pubkey()]
+                )
+
+                block_t1 = type_two.split_by_msg(
+                    message=data_root,
+                    public_keys_per_message=public_keys_per_message,
+                )
+                # split_by_msg returns an empty participant bitfield; restore
+                # the bits from the block attestation this component binds.
+                block_t1 = block_t1.model_copy(update={"participants": att.aggregation_bits})
+
+                if local_proofs:
+                    combined = TypeOneMultiSignature.aggregate(
+                        children=[
+                            (
+                                child,
+                                [
+                                    validators[vid].get_attestation_pubkey()
+                                    for vid in child.participants.to_validator_indices()
+                                ],
+                            )
+                            for child in (block_t1, *local_proofs)
+                        ],
+                        raw_xmss=[],
+                        xmss_participants=None,
+                        message=data_root,
+                        slot=data.slot,
+                    )
+                else:
+                    # Data unseen locally: nothing to merge, gossip as-is.
+                    combined = block_t1
+            except (AggregationError, AssertionError, KeyError, ValueError) as exc:
+                logger.debug("Post-block re-aggregation failed for %s: %s", data_root, exc)
                 continue
 
-            aggregate_participants = set(
-                signed_attestation.proof.info.participants.to_validator_indices()
+            await self.publish_aggregated_attestation(
+                SignedAggregatedAttestation(data=data, proof=combined)
             )
-            block_participants = block_participants_by_root[data_root]
-
-            # Publish only if this newly produced aggregate strictly improves at
-            # least one local partial and bridges participants observed in block.
-            should_publish = any(
-                aggregate_participants > partial
-                and bool((block_participants - partial) & aggregate_participants)
-                for partial in local_partials
-            )
-            if should_publish:
-                await self.publish_aggregated_attestation(signed_attestation)
 
     async def _check_sync_trigger(self) -> None:
         """

@@ -26,7 +26,7 @@ from lean_spec.forks.lstar.containers.state.types import (
     JustifiedSlots,
 )
 from lean_spec.forks.lstar.containers.validator import Validators
-from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
     AggregationBits,
     Boolean,
@@ -427,10 +427,7 @@ def test_signed_aggregated_attestation_minimal(ssz: SSZTestFiller) -> None:
         value=SignedAggregatedAttestation(
             data=data,
             proof=TypeOneMultiSignature(
-                info=TypeOneInfo(
-                    participants=AggregationBits(data=[Boolean(True)]),
-                    proof=ByteListMiB(data=b""),
-                ),
+                participants=AggregationBits(data=[Boolean(True)]),
                 proof=ByteListMiB(data=b""),
             ),
         ),
@@ -446,11 +443,8 @@ def test_signed_aggregated_attestation_typical(ssz: SSZTestFiller) -> None:
         value=SignedAggregatedAttestation(
             data=data,
             proof=TypeOneMultiSignature(
-                info=TypeOneInfo(
-                    participants=AggregationBits(
-                        data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True)]
-                    ),
-                    proof=ByteListMiB(data=wire),
+                participants=AggregationBits(
+                    data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True)]
                 ),
                 proof=ByteListMiB(data=wire),
             ),

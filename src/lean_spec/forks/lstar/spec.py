@@ -41,7 +41,6 @@ from lean_spec.subspecs.observability import (
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregationError,
-    TypeOneInfo,
     TypeOneMultiSignature,
     TypeTwoMultiSignature,
 )
@@ -749,7 +748,7 @@ class LstarSpec(ForkProtocol):
                     for proof in selected:
                         aggregated_attestations.append(
                             self.aggregated_attestation_class(
-                                aggregation_bits=proof.info.participants,
+                                aggregation_bits=proof.participants,
                                 data=att_data,
                             )
                         )
@@ -803,11 +802,12 @@ class LstarSpec(ForkProtocol):
                     # aggregation (no new raw signatures).
                     sig = TypeOneMultiSignature.aggregate(
                         children=[
-                            proof.with_public_keys(
+                            (
+                                proof,
                                 [
                                     state.validators[vid].get_attestation_pubkey()
-                                    for vid in proof.info.participants.to_validator_indices()
-                                ]
+                                    for vid in proof.participants.to_validator_indices()
+                                ],
                             )
                             for proof in proofs
                         ],
@@ -819,7 +819,7 @@ class LstarSpec(ForkProtocol):
                 aggregated_signatures.append(sig)
                 aggregated_attestations.append(
                     self.aggregated_attestation_class(
-                        aggregation_bits=sig.info.participants, data=att_data
+                        aggregation_bits=sig.participants, data=att_data
                     )
                 )
 
@@ -1149,7 +1149,7 @@ class LstarSpec(ForkProtocol):
         self.validate_attestation(store, data)
 
         # Get validator IDs who participated in this aggregation
-        validator_ids = proof.info.participants.to_validator_indices()
+        validator_ids = proof.participants.to_validator_indices()
 
         # Retrieve the relevant state to look up public keys for verification.
         key_state = store.states.get(data.target.root)
@@ -1280,10 +1280,7 @@ class LstarSpec(ForkProtocol):
             }
             for aggregated_attestation in aggregated_attestations:
                 synthesized = TypeOneMultiSignature(
-                    info=TypeOneInfo(
-                        participants=aggregated_attestation.aggregation_bits,
-                        proof=ByteListMiB(data=b""),
-                    ),
+                    participants=aggregated_attestation.aggregation_bits,
                     proof=ByteListMiB(data=b""),
                 )
                 block_proofs.setdefault(aggregated_attestation.data, set()).add(synthesized)
@@ -1313,7 +1310,7 @@ class LstarSpec(ForkProtocol):
 
         for attestation_data, proofs in aggregated_payloads.items():
             for proof in proofs:
-                for validator_id in proof.info.participants.to_validator_indices():
+                for validator_id in proof.participants.to_validator_indices():
                     existing = attestations.get(validator_id)
                     if existing is None or existing.slot < attestation_data.slot:
                         attestations[validator_id] = attestation_data
@@ -1662,11 +1659,12 @@ class LstarSpec(ForkProtocol):
             # pubkeys against the registry when verifying inner proofs.
             proof = TypeOneMultiSignature.aggregate(
                 children=[
-                    child.with_public_keys(
+                    (
+                        child,
                         [
                             validators[vid].get_attestation_pubkey()
-                            for vid in child.info.participants.to_validator_indices()
-                        ]
+                            for vid in child.participants.to_validator_indices()
+                        ],
                     )
                     for child in child_proofs
                 ],

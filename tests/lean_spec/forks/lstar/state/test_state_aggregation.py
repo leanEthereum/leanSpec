@@ -43,7 +43,7 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     _, results = spec.aggregate(store)
 
     assert len(results) == 1
-    assert set(results[0].proof.info.participants.to_validator_indices()) == {
+    assert set(results[0].proof.participants.to_validator_indices()) == {
         ValidatorIndex(0),
         ValidatorIndex(1),
     }
@@ -82,7 +82,7 @@ def test_build_block_collects_valid_available_attestations(
     assert post_state.latest_block_header.slot == Slot(1)
     assert list(block.body.attestations.data) == aggregated_atts
     assert len(aggregated_proofs) == 1
-    assert aggregated_proofs[0].info.participants.to_validator_indices() == ValidatorIndices(
+    assert aggregated_proofs[0].participants.to_validator_indices() == ValidatorIndices(
         data=[ValidatorIndex(0)]
     )
     assert block.body.attestations.data[0].aggregation_bits.to_validator_indices() == (
@@ -169,7 +169,7 @@ def test_aggregated_signatures_with_multiple_data_groups(
     assert len(results) == 2
 
     for signed_att in results:
-        assert signed_att.proof.info.participants.to_validator_indices()
+        assert signed_att.proof.participants.to_validator_indices()
 
 
 def test_build_block_state_root_valid_when_signatures_split(

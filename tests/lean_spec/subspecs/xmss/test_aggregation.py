@@ -8,7 +8,6 @@ from consensus_testing.keys import XmssKeyManager
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregationError,
-    TypeOneInfo,
     TypeOneMultiSignature,
 )
 from lean_spec.types import (
@@ -83,7 +82,7 @@ def test_aggregate_multiple_signatures(key_manager: XmssKeyManager) -> None:
         slot=att_data.slot,
     )
 
-    assert set(proof.info.participants.to_validator_indices()) == set(vids)
+    assert set(proof.participants.to_validator_indices()) == set(vids)
 
     public_keys = [key_manager[vid].attestation_public for vid in vids]
     proof.verify(public_keys=public_keys, message=hash_tree_root(att_data), slot=att_data.slot)
@@ -120,7 +119,7 @@ def test_aggregate_children_with_raw_signatures(key_manager: XmssKeyManager) -> 
     )
 
     expected_vids = {ValidatorIndex(i) for i in range(4)}
-    assert set(parent.info.participants.to_validator_indices()) == expected_vids
+    assert set(parent.participants.to_validator_indices()) == expected_vids
 
     public_keys = [key_manager[ValidatorIndex(i)].attestation_public for i in range(4)]
     parent.verify(public_keys=public_keys, message=hash_tree_root(att_data), slot=att_data.slot)
@@ -151,7 +150,7 @@ def test_aggregate_three_children(key_manager: XmssKeyManager) -> None:
     )
 
     expected_vids = {ValidatorIndex(i) for i in range(3)}
-    assert set(parent.info.participants.to_validator_indices()) == expected_vids
+    assert set(parent.participants.to_validator_indices()) == expected_vids
 
     public_keys = [key_manager[ValidatorIndex(i)].attestation_public for i in range(3)]
     parent.verify(public_keys=public_keys, message=hash_tree_root(att_data), slot=att_data.slot)
@@ -202,9 +201,7 @@ def test_aggregate_children_of_children(key_manager: XmssKeyManager) -> None:
         slot=att_data.slot,
     )
 
-    assert set(root.info.participants.to_validator_indices()) == {
-        ValidatorIndex(i) for i in range(4)
-    }
+    assert set(root.participants.to_validator_indices()) == {ValidatorIndex(i) for i in range(4)}
     root.verify(
         public_keys=[key_manager[ValidatorIndex(i)].attestation_public for i in range(4)],
         message=msg,
@@ -247,9 +244,7 @@ def test_aggregate_mixed_children_and_raw_multiple(key_manager: XmssKeyManager) 
         slot=att_data.slot,
     )
 
-    assert set(proof.info.participants.to_validator_indices()) == {
-        ValidatorIndex(i) for i in range(4)
-    }
+    assert set(proof.participants.to_validator_indices()) == {ValidatorIndex(i) for i in range(4)}
     proof.verify(
         public_keys=[key_manager[ValidatorIndex(i)].attestation_public for i in range(4)],
         message=msg,
@@ -301,10 +296,7 @@ def test_aggregate_corrupted_proof_fails_verification(key_manager: XmssKeyManage
     corrupted_bytes[10] ^= 0xFF
     corrupted_bytes[20] ^= 0xFF
     corrupted_blob = ByteListMiB(data=bytes(corrupted_bytes))
-    corrupted = TypeOneMultiSignature(
-        info=proof.info.model_copy(update={"proof": corrupted_blob}),
-        proof=corrupted_blob,
-    )
+    corrupted = proof.model_copy(update={"proof": corrupted_blob})
 
     with pytest.raises(AggregationError, match="verification failed"):
         corrupted.verify(
@@ -344,10 +336,7 @@ def test_aggregate_rejects_single_child_without_raw(key_manager: XmssKeyManager)
     """A single child without raw signatures is rejected (need at least two children)."""
     placeholder = ByteListMiB(data=b"\x00")
     stub_child = TypeOneMultiSignature(
-        info=TypeOneInfo(
-            participants=ValidatorIndices(data=[ValidatorIndex(0)]).to_aggregation_bits(),
-            proof=placeholder,
-        ),
+        participants=ValidatorIndices(data=[ValidatorIndex(0)]).to_aggregation_bits(),
         proof=placeholder,
     )
 

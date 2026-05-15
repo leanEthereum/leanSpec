@@ -473,7 +473,7 @@ class ValidatorService:
         public_keys_per_part = [
             [
                 validators[vid].get_attestation_pubkey()
-                for vid in proof.info.participants.to_validator_indices()
+                for vid in proof.participants.to_validator_indices()
             ]
             for proof in attestation_proofs
         ]

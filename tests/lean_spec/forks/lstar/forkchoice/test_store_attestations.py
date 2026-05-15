@@ -402,8 +402,7 @@ class TestOnGossipAggregatedAttestation:
         corrupted_bytes[10] ^= 0xFF
         corrupted_bytes[20] ^= 0xFF
         corrupted_blob = ByteListMiB(data=bytes(corrupted_bytes))
-        corrupted_info = proof.info.model_copy(update={"proof": corrupted_blob})
-        corrupted_proof = TypeOneMultiSignature(info=corrupted_info, proof=corrupted_blob)
+        corrupted_proof = proof.model_copy(update={"proof": corrupted_blob})
 
         signed_aggregated = SignedAggregatedAttestation(
             data=attestation_data,
@@ -542,7 +541,7 @@ class TestAggregateCommitteeSignatures:
         proof = next(iter(proofs))
 
         # Structural binding: proof info matches the attestation data participants.
-        assert set(proof.info.participants.to_validator_indices()) == set(attesting_validators)
+        assert set(proof.participants.to_validator_indices()) == set(attesting_validators)
 
     def test_empty_attestation_signatures_produces_no_proofs(
         self, key_manager: XmssKeyManager, spec: LstarSpec
@@ -799,4 +798,4 @@ class TestEndToEndAggregationFlow:
 
         # Step 4: Structural check that the proof binds to the expected data participants.
         proof = next(iter(store.latest_new_aggregated_payloads[attestation_data]))
-        assert proof.info.participants.to_validator_indices()
+        assert proof.participants.to_validator_indices()

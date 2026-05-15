@@ -2,7 +2,7 @@
 
 from lean_spec.forks.lstar import AttestationSignatureEntry, Store
 from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import ByteListMiB, Bytes32, Slot, ValidatorIndex, ValidatorIndices
 from tests.lean_spec.helpers import (
     make_attestation_data,
@@ -139,10 +139,7 @@ def test_prunes_related_structures_together(spec: LstarSpec, pruning_store: Stor
     # Create mock aggregated proof (empty proof bytes for testing)
     placeholder = ByteListMiB(data=b"")
     mock_proof = TypeOneMultiSignature(
-        info=TypeOneInfo(
-            participants=ValidatorIndices(data=[ValidatorIndex(1)]).to_aggregation_bits(),
-            proof=placeholder,
-        ),
+        participants=ValidatorIndices(data=[ValidatorIndex(1)]).to_aggregation_bits(),
         proof=placeholder,
     )
 

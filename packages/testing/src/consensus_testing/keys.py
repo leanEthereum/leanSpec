@@ -44,7 +44,7 @@ from lean_spec.forks.lstar.containers import AttestationData
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature, ValidatorKeyPair
 from lean_spec.subspecs.xmss.interface import (
@@ -136,10 +136,7 @@ def create_dummy_type_1(participants: AggregationBits) -> TypeOneMultiSignature:
     exercise cryptographic verification.
     """
     placeholder = ByteListMiB(data=b"")
-    return TypeOneMultiSignature(
-        info=TypeOneInfo(participants=participants, proof=placeholder),
-        proof=placeholder,
-    )
+    return TypeOneMultiSignature(participants=participants, proof=placeholder)
 
 
 DEFAULT_MAX_SLOT = Slot(10)

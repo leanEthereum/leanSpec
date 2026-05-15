@@ -6,7 +6,7 @@ from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation, 
 from lean_spec.forks.lstar.containers.block.block import Block
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import State
-from lean_spec.subspecs.xmss.aggregation import TypeOneInfo, TypeOneMultiSignature
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
     ByteListMiB,
     Bytes32,
@@ -195,22 +195,15 @@ class AggregatedAttestationSpec(CamelModel):
         placeholder = ByteListMiB(data=b"")
 
         if not self.valid_signature:
-            invalid_proof = TypeOneMultiSignature(
-                info=TypeOneInfo(participants=aggregation_bits, proof=placeholder),
-                proof=placeholder,
-            )
+            invalid_proof = TypeOneMultiSignature(participants=aggregation_bits, proof=placeholder)
         elif self.signer_ids is not None:
             # Valid proof from wrong validators (participant mismatch).
             valid_proof = key_manager.sign_and_aggregate(self.signer_ids, attestation_data)
             invalid_proof = TypeOneMultiSignature(
-                info=TypeOneInfo(participants=aggregation_bits, proof=valid_proof.proof),
-                proof=valid_proof.proof,
+                participants=aggregation_bits, proof=valid_proof.proof
             )
         else:
-            invalid_proof = TypeOneMultiSignature(
-                info=TypeOneInfo(participants=aggregation_bits, proof=placeholder),
-                proof=placeholder,
-            )
+            invalid_proof = TypeOneMultiSignature(participants=aggregation_bits, proof=placeholder)
 
         # Append invalid attestation to the block body.
         updated_block = block.model_copy(

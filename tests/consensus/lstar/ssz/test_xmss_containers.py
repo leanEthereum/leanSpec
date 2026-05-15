@@ -7,7 +7,6 @@ from consensus_testing.keys import XmssKeyManager, create_dummy_signature
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.xmss import PublicKey
 from lean_spec.subspecs.xmss.aggregation import (
-    TypeOneInfo,
     TypeOneMultiSignature,
     TypeTwoMultiSignature,
 )
@@ -73,15 +72,12 @@ def test_signature_actual(ssz: SSZTestFiller) -> None:
     ssz(type_name="Signature", value=signature)
 
 
-# --- TypeOneInfo / TypeOneMultiSignature / TypeTwoMultiSignature ---
+# --- TypeOneMultiSignature / TypeTwoMultiSignature ---
 
 
-def _info(participants: list[bool], wire: bytes) -> TypeOneInfo:
-    """Build a Type-1 info entry with the wire bytes echoed in info.proof."""
-    return TypeOneInfo(
-        participants=AggregationBits(data=[Boolean(b) for b in participants]),
-        proof=ByteListMiB(data=wire),
-    )
+def _bits(participants: list[bool]) -> AggregationBits:
+    """Build a participant bitfield from a list of booleans."""
+    return AggregationBits(data=[Boolean(b) for b in participants])
 
 
 def test_type_one_multi_signature_empty(ssz: SSZTestFiller) -> None:
@@ -89,7 +85,7 @@ def test_type_one_multi_signature_empty(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="TypeOneMultiSignature",
         value=TypeOneMultiSignature(
-            info=_info([True], b""),
+            participants=_bits([True]),
             proof=ByteListMiB(data=b""),
         ),
     )
@@ -101,7 +97,7 @@ def test_type_one_multi_signature_with_proof(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="TypeOneMultiSignature",
         value=TypeOneMultiSignature(
-            info=_info([True, False, True], wire),
+            participants=_bits([True, False, True]),
             proof=ByteListMiB(data=wire),
         ),
     )

@@ -128,7 +128,7 @@ class TestBlockProduction:
 
         # Verify each aggregated proof binds to its attestation in the block.
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
-            assert proof.info.participants == agg_att.aggregation_bits
+            assert proof.participants == agg_att.aggregation_bits
 
     def test_produce_block_sequential_slots(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test producing blocks in sequential slots."""
@@ -243,7 +243,7 @@ class TestBlockProduction:
 
         # Verify each aggregated proof binds to its attestation in the block.
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
-            assert proof.info.participants == agg_att.aggregation_bits
+            assert proof.participants == agg_att.aggregation_bits
 
 
 class TestValidatorIntegration:
