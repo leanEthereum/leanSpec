@@ -67,7 +67,7 @@ def test_produce_block_on_head_with_lagging_justification(
 
     def add_block(block_spec: BlockSpec) -> None:
         nonlocal store
-        signed_block = block_spec.build_signed_block_with_store(
+        signed_block, store = block_spec.build_signed_block_with_store(
             store, block_registry, key_manager, "test"
         )
         if block_spec.label is not None:
