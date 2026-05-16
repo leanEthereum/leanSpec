@@ -1,14 +1,4 @@
-"""
-Validator participation: bitlist + index-list pair.
-
-Two SSZ types co-located because they round-trip:
-
-- `AggregationBits.to_validator_indices()` returns the indices set in the bitlist.
-- `ValidatorIndices.to_aggregation_bits()` packs an index list back into bits.
-
-Both are sized by `VALIDATOR_REGISTRY_LIMIT`. The shape is inherited by every
-validator-keyed bitfield and index list across the spec.
-"""
+"""Validator participation"""
 
 from typing import Final
 
@@ -23,12 +13,7 @@ VALIDATOR_REGISTRY_LIMIT: Final = Uint64(2**12)
 
 
 class AggregationBits(BaseBitlist):
-    """
-    Bitlist representing validator participation in an attestation or signature.
-
-    A general-purpose bitfield for tracking which validators have participated
-    in some collective action (attestation, signature aggregation, etc.).
-    """
+    """Bitlist representing validator participation in an attestation or signature."""
 
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)
 
@@ -37,13 +22,13 @@ class AggregationBits(BaseBitlist):
         Extract all validator indices encoded in these aggregation bits.
 
         Returns:
-            ValidatorIndices containing the indices, sorted in ascending order.
+            `ValidatorIndices` containing the indices, sorted in ascending order.
 
         Raises:
-            AssertionError: If no bits are set.
+            `AssertionError`: If no bits are set.
         """
         # Extract indices where bit is set; fail if none found.
-        indices = [ValidatorIndex(i) for i, bit in enumerate(self.data) if bool(bit)]
+        indices = [ValidatorIndex(i) for i, bit in enumerate(self.data) if bit]
         if not indices:
             raise AssertionError("Aggregated attestation must reference at least one validator")
 
@@ -60,11 +45,11 @@ class ValidatorIndices(SSZList[ValidatorIndex]):
         Convert to aggregation bits marking which validators are present.
 
         Returns:
-            AggregationBits with the corresponding indices set to True.
+            `AggregationBits` with the corresponding indices set to True.
 
         Raises:
-            AssertionError: If no indices are provided.
-            AssertionError: If any index is outside the supported LIMIT.
+            `AssertionError`: If no indices are provided.
+            `AssertionError`: If any index is outside the supported LIMIT.
         """
         index_list = self.data
 

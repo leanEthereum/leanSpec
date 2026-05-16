@@ -1,12 +1,4 @@
-"""
-Block production closes the justification gap on a canonical head that lags.
-
-The scenario builds a fork tree where one branch advances the store's justified
-checkpoint past the level that the canonical head's chain has proven. The
-fixed-point attestation loop inside build_block picks up the gap-closing
-attestation from the gossip pool and produces a block whose post-state
-catches up to the store.
-"""
+"""Block production closes the justification gap when the canonical head lags."""
 
 from __future__ import annotations
 
@@ -28,63 +20,45 @@ def test_produce_block_on_head_with_lagging_justification(
     keyed_genesis_block: Block,
     key_manager: XmssKeyManager,
 ) -> None:
-    """
-    Closing the justification gap via the fixed-point attestation loop.
+    r"""Producer on a lagging head pulls a sibling's attestation to catch up.
 
-    Fork tree (labels are block names; slot numbers shown in parentheses)::
+    Fork tree::
 
-                               block_4(4) -- block_5(5)  <-- head
-                              /
+                              block_4(4) -- block_5(5)  <-- head
+                             /
         genesis -- 1 -- 2 -- 3
-                              \
-                               block_6(6)
+                             \
+                              block_6(6)
 
-    Setup:
-
-    - block_4 carries 6 of 8 attestations targeting block_1, justifying block_1.
-    - block_5 carries 2 attestations (validators 6, 7) with head=block_4. These
-      give block_5's subtree fork-choice weight against block_6.
-    - block_6 (sibling of block_4) carries 6 of 8 attestations targeting block_2.
-      Block_6 alone moves the store's latest_justified to block_2.
-
-    After all six blocks are processed:
-
-    - store.latest_justified points at block_2 (slot 2)
-    - fork choice still picks block_5 as the head:
-        validators 0-5 vote head=block_2 (a common ancestor)
-        validators 6-7 vote head=block_4 (in block_5's subtree)
-        weight on block_3's child block_4 is 2; weight on block_6 is 0
-
-    Proposing at slot 7 builds on block_5, whose post-state has
-    latest_justified=block_1. The gossip pool holds block_6's attestation
-    (source=genesis, target=block_2). The fixed-point loop accepts that
-    attestation because genesis is justified on block_5's chain and
-    block_2 is on the common ancestor segment, so the produced block's
-    post-state catches up to the store's justified checkpoint.
+    The head branch only justifies block_1.
+    The sibling branch justifies block_2 and pushes the store ahead of the head.
+    Producing on top of the head must reuse the sibling's attestation to close the gap.
     """
     store = keyed_store
     block_registry: dict[str, Block] = {"genesis": keyed_genesis_block}
 
     def add_block(block_spec: BlockSpec) -> None:
+        """Build the spec'd block on the current store and apply it."""
         nonlocal store
         signed_block, store = block_spec.build_signed_block_with_store(
             store, block_registry, key_manager, "test"
         )
         if block_spec.label is not None:
             block_registry[block_spec.label] = signed_block.block
-        # Re-align store time with the block's slot before processing.
-        # build_signed_block_with_store already ticks forward; this second tick
-        # is idempotent and mirrors the fork-choice spec-test fixture.
+        # The block builder helper ticks a local store copy and discards it.
+        # The outer store therefore still sits at genesis time.
+        # Without this tick, the block is rejected as too far in the future.
         target_interval = Interval.from_slot(signed_block.block.slot)
         store, _ = spec.on_tick(store, target_interval, has_proposal=True, is_aggregator=True)
         store = spec.on_block(store, signed_block)
 
-    # Linear chain through block_3.
+    # Phase 1: linear chain genesis -> block_1 -> block_2 -> block_3.
     add_block(BlockSpec(slot=Slot(1), label="block_1"))
     add_block(BlockSpec(slot=Slot(2), label="block_2"))
     add_block(BlockSpec(slot=Slot(3), label="block_3"))
 
-    # block_4: 6 of 8 validators attest target=block_1, justifying block_1.
+    # Phase 2a: block_4 carries 6/8 votes for target=block_1.
+    # Crosses the 2/3 threshold, so block_1 becomes justified.
     add_block(
         BlockSpec(
             slot=Slot(4),
@@ -100,12 +74,12 @@ def test_produce_block_on_head_with_lagging_justification(
             ],
         )
     )
-    assert store.latest_justified.slot == Slot(1)
-    assert store.latest_justified.root == hash_tree_root(block_registry["block_1"])
+    block_1_root = hash_tree_root(block_registry["block_1"])
+    assert store.latest_justified == Checkpoint(root=block_1_root, slot=Slot(1))
 
-    # block_5: validators 6, 7 attest target=block_4 with head=block_4.
-    # The head vote pulls fork-choice weight into block_5's subtree without
-    # advancing justification.
+    # Phase 2b: block_5 carries 2/8 head votes for block_4.
+    # Below the 2/3 threshold, so justification does not advance.
+    # The votes pull fork-choice weight into block_5's subtree.
     add_block(
         BlockSpec(
             slot=Slot(5),
@@ -121,11 +95,11 @@ def test_produce_block_on_head_with_lagging_justification(
             ],
         )
     )
-    assert store.latest_justified.slot == Slot(1)
+    assert store.latest_justified == Checkpoint(root=block_1_root, slot=Slot(1))
 
-    # block_6: sibling of block_4 (parent=block_3). 6 of 8 validators attest
-    # target=block_2 with source=genesis. After processing, the store's
-    # latest_justified advances to block_2.
+    # Phase 3: block_6 (sibling of block_4) carries 6/8 votes for target=block_2.
+    # The store learns block_2 is justified.
+    # block_5's chain still has latest_justified = block_1: the divergence.
     add_block(
         BlockSpec(
             slot=Slot(6),
@@ -142,46 +116,34 @@ def test_produce_block_on_head_with_lagging_justification(
         )
     )
 
-    # Sanity: block_5 is the head and the store's justified is block_2.
-    # Validators 0-5's latest vote is for head=block_2 (common ancestor).
-    # Validators 6, 7's latest vote is for head=block_4 (in block_5's subtree).
-    # block_4's subtree carries weight 2; block_6's subtree carries weight 0.
-    assert store.head == hash_tree_root(block_registry["block_5"])
-    assert store.latest_justified.slot == Slot(2)
-    assert store.latest_justified.root == hash_tree_root(block_registry["block_2"])
-
-    # block_6's body attestation justifying block_2 is merged into the
-    # store's known aggregated payload pool. Its source is genesis (the
-    # latest_justified at block_6's parent, block_3), so the filter must
-    # match on source-slot-justified, not full Checkpoint equality, to be
-    # able to reuse it from block_5's chain.
+    # Pre-condition: head is block_5, but the store's justified is ahead at block_2.
+    # Validators 0-5 vote head=block_2 (a common ancestor); validators 6-7 vote head=block_4.
+    # block_5's subtree wins fork choice with weight 2 vs 0.
     genesis_root = hash_tree_root(keyed_genesis_block)
     block_2_root = hash_tree_root(block_registry["block_2"])
+    block_2_checkpoint = Checkpoint(root=block_2_root, slot=Slot(2))
+    assert store.head == hash_tree_root(block_registry["block_5"])
+    assert store.latest_justified == block_2_checkpoint
+
+    # The gap-closing attestation is in the pool: source=genesis, target=block_2.
+    # Its source is NOT block_5's latest_justified (which is block_1).
+    # The filter must accept it on source-slot-justified, not full-Checkpoint equality.
     block_6_target_atts = [
-        att
-        for att in store.latest_known_aggregated_payloads
-        if att.target.root == block_2_root and att.target.slot == Slot(2)
+        att for att in store.latest_known_aggregated_payloads if att.target == block_2_checkpoint
     ]
     assert len(block_6_target_atts) == 1
     assert block_6_target_atts[0].source == Checkpoint(root=genesis_root, slot=Slot(0))
     assert block_6_target_atts[0].slot == Slot(6)
 
-    # Propose at slot 7 on top of block_5 (the head). The fixed-point loop
-    # picks up block_6's attestation (source=genesis matches the chain at
-    # slot 0) and advances the produced block's justified checkpoint to
-    # block_2 to match the store.
+    # Propose at slot 7 on top of block_5.
+    # The block builder picks up the gap-closing attestation and advances justification.
     new_store, new_block, _ = spec.produce_block_with_signatures(store, Slot(7), ValidatorIndex(7))
 
-    # The store's justified checkpoint stays at block_2; the new block
-    # closes the gap rather than leaving the producer behind.
-    block_2_checkpoint = Checkpoint(root=block_2_root, slot=Slot(2))
-    assert new_store.latest_justified == block_2_checkpoint
-
-    # The new block's post-state caught up to the store's justified checkpoint.
+    # The produced block's post-state caught up to the store's justified checkpoint.
+    # Its body carries the attestation that closed the gap.
     new_block_root = hash_tree_root(new_block)
+    body_targets = [att.data.target for att in new_block.body.attestations]
+    assert new_store.latest_justified == block_2_checkpoint
     assert new_block.parent_root == hash_tree_root(block_registry["block_5"])
     assert new_store.states[new_block_root].latest_justified == block_2_checkpoint
-
-    # The produced block must include the attestation that justifies block_2.
-    body_targets = [att.data.target for att in new_block.body.attestations]
     assert block_2_checkpoint in body_targets

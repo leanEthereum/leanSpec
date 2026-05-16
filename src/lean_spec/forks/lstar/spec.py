@@ -1,7 +1,7 @@
 """Lstar fork — identity and construction facade."""
 
 from collections import defaultdict
-from collections.abc import Iterable, Set as AbstractSet
+from collections.abc import Iterable, Sequence, Set as AbstractSet
 from typing import Any, ClassVar
 
 from lean_spec.forks.lstar.containers import (
@@ -353,29 +353,41 @@ class LstarSpec(ForkProtocol):
 
         return self.process_attestations(state, block.body.attestations)
 
+    @staticmethod
     def _attestation_data_matches_chain(
-        self,
-        historical_block_hashes: HistoricalBlockHashes,
         attestation_data: AttestationData,
+        historical_block_hashes: Sequence[Bytes32],
     ) -> bool:
-        """Whether both source and target checkpoints match the chain at their slots.
+        """Check that source and target checkpoints point to blocks on a chain.
 
-        Callers pass the chain's historical block hashes as they would appear
-        after process_block_header on the consuming block: covering
-        [0, block.slot - 1] with parent_root at parent.slot and ZERO_HASH
-        for empty slots between parent and the candidate.
+        Args:
+            attestation_data: The attestation being validated.
+            historical_block_hashes: Chain view indexed by slot.
+                Empty slots carry the zero hash.
 
-        Empty slots carry ZERO_HASH; a vote referencing one is rejected here
-        even when the recorded root happens to compare equal.
+        Returns:
+            True when both checkpoint roots match the chain at their slot.
+            False when either root is the zero hash.
+            False when either checkpoint slot is past the end of the chain view.
         """
+        # Reject zero-hash checkpoints up front.
+        #
+        # Empty slots carry the zero hash on the chain.
+        # A vote whose recorded root equals the zero hash is meaningless.
         if attestation_data.source.root == ZERO_HASH or attestation_data.target.root == ZERO_HASH:
             return False
+
+        # Reject checkpoints whose slot is beyond the chain view.
+        #
+        # Without this guard, indexed access raises IndexError.
         source_slot = int(attestation_data.source.slot)
         target_slot = int(attestation_data.target.slot)
         if source_slot >= len(historical_block_hashes):
             return False
         if target_slot >= len(historical_block_hashes):
             return False
+
+        # Both checkpoint roots must match the chain at their slot.
         return (
             attestation_data.source.root == historical_block_hashes[source_slot]
             and attestation_data.target.root == historical_block_hashes[target_slot]
@@ -471,10 +483,15 @@ class LstarSpec(ForkProtocol):
                 continue
 
             # Ensure the vote refers to blocks that actually exist on our chain.
-            # Prevents votes about unknown or conflicting forks; also rejects
-            # zero-hash source or target roots inline.
+            #
+            # The attestation must match our canonical chain.
+            # Both the source root and target root must equal the recorded block roots.
+            # The recorded roots are the ones stored for those slots in history.
+            #
+            # This prevents votes about unknown or conflicting forks.
+            # It also rejects zero-hash source or target roots.
             if not self._attestation_data_matches_chain(
-                state.historical_block_hashes, attestation.data
+                attestation.data, state.historical_block_hashes.data
             ):
                 continue
 
@@ -675,21 +692,24 @@ class LstarSpec(ForkProtocol):
             else:
                 current_justified = state.latest_justified
 
-            # Track the justified-slot bitfield so we can skip attestations
-            # whose target slot is already justified on this chain. Extend
-            # so is_slot_justified doesn't raise for target slots between
-            # parent.slot and slot - 1.
+            # Track the justified-slot bitfield to skip already-justified targets.
+            #
+            # Extend the bitfield to cover every slot we might query.
+            # The range runs from the finalized boundary up to slot - 1 inclusive.
             current_finalized_slot = state.latest_finalized.slot
             current_justified_slots = state.justified_slots.extend_to_slot(
                 current_finalized_slot, slot - Slot(1)
             )
 
-            # Build the chain view that process_block_header would produce on
-            # the candidate block. Lets the chain-match helper validate source
-            # and target roots without waiting for the STF to drop mismatches.
+            # Build the chain view as it will appear on the candidate block.
+            #
+            # The view is the recorded history up to the parent.
+            # Then comes the parent root at the parent's slot.
+            # Then zero-hash entries for any skipped slots up to the new block.
+            # The chain-match helper uses this view to validate source and target roots.
             num_empty_slots = int(slot - state.latest_block_header.slot - Slot(1))
-            extended_historical_block_hashes = (
-                state.historical_block_hashes + [parent_root] + [ZERO_HASH] * num_empty_slots
+            extended_historical_block_hashes: list[Bytes32] = (
+                list(state.historical_block_hashes) + [parent_root] + [ZERO_HASH] * num_empty_slots
             )
 
             processed_att_data: set[AttestationData] = set()
@@ -700,32 +720,46 @@ class LstarSpec(ForkProtocol):
                 for att_data, proofs in sorted(
                     aggregated_payloads.items(), key=lambda item: item[0].target.slot
                 ):
-                    if (
-                        Uint8(len(processed_att_data)) >= MAX_ATTESTATIONS_DATA
-                        and att_data not in processed_att_data
-                    ):
+                    if att_data in processed_att_data:
+                        continue
+
+                    if Uint8(len(processed_att_data)) >= MAX_ATTESTATIONS_DATA:
                         break
 
                     if att_data.head.root not in known_block_roots:
                         continue
 
-                    # Source slot must already be justified on this chain.
+                    # Chain-match runs first.
+                    #
+                    # It rejects checkpoints whose slot is past the chain view.
+                    # That prevents the bounded queries below from indexing out of range.
+                    if not self._attestation_data_matches_chain(
+                        att_data, extended_historical_block_hashes
+                    ):
+                        continue
+
+                    # The source slot must already be justified on this chain.
                     if not current_justified_slots.is_slot_justified(
                         current_finalized_slot, att_data.source.slot
                     ):
                         continue
 
-                    if not self._attestation_data_matches_chain(
-                        extended_historical_block_hashes, att_data
-                    ):
-                        continue
+                    # Genesis-anchored votes have source.slot = target.slot = 0.
+                    #
+                    # They cannot advance justification: the state transition drops them.
+                    # They still carry head-vote weight for fork choice.
+                    # Including them in the body propagates them into peers' payload pool.
+                    # The bypass below keeps them past the target-already-justified check,
+                    # since slot 0 is implicitly justified and would otherwise filter them.
+                    is_genesis_self_vote = att_data.source.slot == Slot(0) and (
+                        att_data.target.slot == Slot(0)
+                    )
 
-                    # Skip attestations whose target slot is already
-                    # justified on this chain. Ignore genesis self-votes
-                    # for fork-choice bootstrapping
-                    is_genesis_self_vote = att_data.source.slot == Slot(
-                        0
-                    ) and att_data.target.slot == Slot(0)
+                    # Skip attestations whose target slot is already justified.
+                    #
+                    # Justification adds nothing for them.
+                    # Entries the state transition will later drop are still kept here.
+                    # They carry head-vote weight for fork choice.
                     if not is_genesis_self_vote and current_justified_slots.is_slot_justified(
                         current_finalized_slot, att_data.target.slot
                     ):
@@ -770,6 +804,11 @@ class LstarSpec(ForkProtocol):
                 )
                 post_state = self.process_block(self.process_slots(state, slot), candidate_block)
 
+                # Re-run the filter when justification or finalization advanced.
+                #
+                # Both quantities are monotonic in 3SF-mini, so the loop is bounded.
+                # Finalization advancement shifts the justified window forward.
+                # That can unlock attestations whose target slot was outside it before.
                 if (
                     post_state.latest_justified != current_justified
                     or post_state.latest_finalized.slot != current_finalized_slot

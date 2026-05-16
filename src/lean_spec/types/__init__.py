@@ -1,6 +1,5 @@
 """Reusable type definitions for the Lean Ethereum specification."""
 
-from .aggregation import VALIDATOR_REGISTRY_LIMIT, AggregationBits, ValidatorIndices
 from .base import CamelModel, StrictBaseModel
 from .bitfields import BaseBitlist, BaseBitvector
 from .boolean import Boolean
@@ -29,6 +28,7 @@ from .exceptions import (
     SSZTypeError,
     SSZValueError,
 )
+from .participation import VALIDATOR_REGISTRY_LIMIT, AggregationBits, ValidatorIndices
 from .rlp import RLPDecodingError, RLPItem, decode_rlp, decode_rlp_list, encode_rlp
 from .slot import IMMEDIATE_JUSTIFICATION_WINDOW, Slot
 from .ssz_base import SSZType

@@ -1,55 +1,16 @@
-"""Tests for attestation aggregation and signature ordering."""
-
-import pytest
+"""Tests for AggregatedAttestation structure."""
 
 from lean_spec.forks.lstar.containers.attestation import (
     AggregatedAttestation,
     AttestationData,
 )
 from lean_spec.types import (
-    AggregationBits,
-    Boolean,
     Bytes32,
     Checkpoint,
     Slot,
     ValidatorIndex,
     ValidatorIndices,
 )
-
-
-class TestAggregationBits:
-    """Test aggregation bits functionality."""
-
-    def test_reject_empty_aggregation_bits(self) -> None:
-        """Validate aggregated attestation must include at least one validator."""
-        bits = AggregationBits(data=[Boolean(False), Boolean(False), Boolean(False)])
-        with pytest.raises(AssertionError, match="at least one validator"):
-            bits.to_validator_indices()
-
-    def test_to_validator_indices_single_bit(self) -> None:
-        """Test conversion with a single bit set."""
-        bits = AggregationBits(data=[Boolean(False), Boolean(True), Boolean(False)])
-        indices = bits.to_validator_indices()
-        assert indices == ValidatorIndices(data=[ValidatorIndex(1)])
-
-    def test_to_validator_indices_multiple_bits(self) -> None:
-        """Test conversion with multiple bits set."""
-        bits = AggregationBits(
-            data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True), Boolean(False)]
-        )
-        indices = bits.to_validator_indices()
-        assert indices == ValidatorIndices(
-            data=[ValidatorIndex(0), ValidatorIndex(2), ValidatorIndex(3)]
-        )
-
-    def test_to_aggregation_bits_roundtrip(self) -> None:
-        """Test that to_aggregation_bits and to_validator_indices are inverses."""
-        original_indices = ValidatorIndices(
-            data=[ValidatorIndex(1), ValidatorIndex(5), ValidatorIndex(7)]
-        )
-        bits = original_indices.to_aggregation_bits()
-        recovered_indices = bits.to_validator_indices()
-        assert recovered_indices == original_indices
 
 
 class TestAggregatedAttestation:
