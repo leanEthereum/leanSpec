@@ -21,7 +21,7 @@ from lean_spec.subspecs.xmss.types import (
 from lean_spec.types import (
     AggregationBits,
     Boolean,
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes32,
     Slot,
     Uint64,
@@ -86,7 +86,7 @@ def test_type_one_multi_signature_empty(ssz: SSZTestFiller) -> None:
         type_name="TypeOneMultiSignature",
         value=TypeOneMultiSignature(
             participants=_bits([True]),
-            proof=ByteListMiB(data=b""),
+            proof=ByteListHalfMiB(data=b""),
         ),
     )
 
@@ -98,7 +98,7 @@ def test_type_one_multi_signature_with_proof(ssz: SSZTestFiller) -> None:
         type_name="TypeOneMultiSignature",
         value=TypeOneMultiSignature(
             participants=_bits([True, False, True]),
-            proof=ByteListMiB(data=wire),
+            proof=ByteListHalfMiB(data=wire),
         ),
     )
 
@@ -108,7 +108,7 @@ def test_type_two_multi_signature_roundtrip(ssz: SSZTestFiller) -> None:
     wire = b"\x01\x02\x03"
     ssz(
         type_name="TypeTwoMultiSignature",
-        value=TypeTwoMultiSignature(proof=ByteListMiB(data=wire)),
+        value=TypeTwoMultiSignature(proof=ByteListHalfMiB(data=wire)),
     )
 
 

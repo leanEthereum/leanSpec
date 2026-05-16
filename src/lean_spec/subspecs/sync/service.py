@@ -749,10 +749,10 @@ class SyncService:
         if not block_attestations:
             return
 
-        # Some tests inject a lightweight mock store that does not carry
-        # aggregation payload maps.
-        if not hasattr(self.store, "latest_new_aggregated_payloads"):
-            return
+        # # Some tests inject a lightweight mock store that does not carry
+        # # aggregation payload maps.
+        # if not hasattr(self.store, "latest_new_aggregated_payloads"):
+        #     return
 
         # The Type-2 proof was built against the parent state's validator set.
         # Without it we cannot resolve the pubkey layout the proof was bound to.

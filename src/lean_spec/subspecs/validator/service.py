@@ -50,7 +50,7 @@ from lean_spec.subspecs.sync import SyncService
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
 from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.types import ByteListMiB, Bytes32, Slot, Uint64, ValidatorIndex, ValidatorIndices
+from lean_spec.types import ByteListHalfMiB, Bytes32, Slot, Uint64, ValidatorIndex, ValidatorIndices
 
 from .constants import HYSTERESIS_BAND, NETWORK_STALL_THRESHOLD, SYNC_LAG_THRESHOLD
 from .registry import ValidatorEntry, ValidatorRegistry
@@ -486,7 +486,7 @@ class ValidatorService:
 
         return SignedBlock(
             block=block,
-            proof=ByteListMiB(data=merged.encode_bytes()),
+            proof=ByteListHalfMiB(data=merged.encode_bytes()),
         )
 
     def _sign_attestation(

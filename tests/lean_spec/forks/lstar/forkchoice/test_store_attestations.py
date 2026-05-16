@@ -17,7 +17,7 @@ from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes32,
     Checkpoint,
     Slot,
@@ -401,7 +401,7 @@ class TestOnGossipAggregatedAttestation:
         corrupted_bytes = bytearray(proof.proof.data)
         corrupted_bytes[10] ^= 0xFF
         corrupted_bytes[20] ^= 0xFF
-        corrupted_blob = ByteListMiB(data=bytes(corrupted_bytes))
+        corrupted_blob = ByteListHalfMiB(data=bytes(corrupted_bytes))
         corrupted_proof = proof.model_copy(update={"proof": corrupted_blob})
 
         signed_aggregated = SignedAggregatedAttestation(

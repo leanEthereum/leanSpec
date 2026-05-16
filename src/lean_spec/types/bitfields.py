@@ -266,10 +266,6 @@ class BaseBitlist(SSZModel):
             return list(self.data[key])
         return self.data[key]
 
-    def count_set_bits(self) -> int:
-        """Return the number of set bits."""
-        return self.data.count(True)
-
     def __add__(self, other: Any) -> Self:
         """Concatenate with another bit sequence."""
         if isinstance(other, BaseBitlist):

@@ -11,7 +11,7 @@ from lean_spec.subspecs.xmss.aggregation import (
     TypeOneMultiSignature,
 )
 from lean_spec.types import (
-    ByteListMiB,
+    ByteListHalfMiB,
     Checkpoint,
     Slot,
     ValidatorIndex,
@@ -295,7 +295,7 @@ def test_aggregate_corrupted_proof_fails_verification(key_manager: XmssKeyManage
     corrupted_bytes = bytearray(proof.proof.data)
     corrupted_bytes[10] ^= 0xFF
     corrupted_bytes[20] ^= 0xFF
-    corrupted_blob = ByteListMiB(data=bytes(corrupted_bytes))
+    corrupted_blob = ByteListHalfMiB(data=bytes(corrupted_bytes))
     corrupted = proof.model_copy(update={"proof": corrupted_blob})
 
     with pytest.raises(AggregationError, match="verification failed"):
@@ -334,7 +334,7 @@ def test_aggregate_child_signed_different_message_fails(key_manager: XmssKeyMana
 
 def test_aggregate_rejects_single_child_without_raw(key_manager: XmssKeyManager) -> None:
     """A single child without raw signatures is rejected (need at least two children)."""
-    placeholder = ByteListMiB(data=b"\x00")
+    placeholder = ByteListHalfMiB(data=b"\x00")
     stub_child = TypeOneMultiSignature(
         participants=ValidatorIndices(data=[ValidatorIndex(0)]).to_aggregation_bits(),
         proof=placeholder,

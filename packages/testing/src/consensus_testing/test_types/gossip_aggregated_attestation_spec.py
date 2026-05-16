@@ -8,7 +8,7 @@ from lean_spec.forks.lstar.containers.block.block import Block
 from lean_spec.forks.lstar.containers.state import State
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes32,
     CamelModel,
     Checkpoint,
@@ -188,7 +188,7 @@ class GossipAggregatedAttestationSpec(CamelModel):
         # Correct participant bitfield but zeroed-out proof bytes.
         # Exercises signature verification rejection.
         if not self.valid_signature:
-            placeholder = ByteListMiB(data=b"\x00" * 32)
+            placeholder = ByteListHalfMiB(data=b"\x00" * 32)
             proof = TypeOneMultiSignature(
                 participants=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
                 proof=placeholder,

@@ -16,7 +16,6 @@ from lean_spec.forks.lstar.containers.state import State
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.forks.lstar.store import Store
 from lean_spec.subspecs.chain.clock import Interval
-from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     TypeOneMultiSignature,
@@ -24,7 +23,7 @@ from lean_spec.subspecs.xmss.aggregation import (
 )
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import (
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes32,
     CamelModel,
     Slot,
@@ -276,16 +275,6 @@ class BlockSpec(CamelModel):
         Returns:
             Complete signed block.
         """
-        # Mirror the consensus-level distinct-attestation cap before
-        # building the proof envelope; the binding otherwise rejects the
-        # over-cap merge first and masks the spec-level error message
-        # such fillers pin.
-        if len(attestation_proofs) > int(MAX_ATTESTATIONS_DATA):
-            raise AssertionError(
-                f"Block contains {len(attestation_proofs)} distinct AttestationData entries; "
-                f"maximum is {MAX_ATTESTATIONS_DATA}"
-            )
-
         block_root = hash_tree_root(final_block)
         proposer_participants = ValidatorIndices(data=[proposer_index]).to_aggregation_bits()
         proposer_pubkey = key_manager.get_public_keys(proposer_index)[1]
@@ -327,7 +316,7 @@ class BlockSpec(CamelModel):
             )
             proof_bytes = merged.encode_bytes()
         else:
-            placeholder = ByteListMiB(data=b"")
+            placeholder = ByteListHalfMiB(data=b"")
             if not self.valid_signature:
                 # Burn the dummy signature creation to mirror the legacy
                 # shape; the merged blob carries no real bytes anyway.
@@ -339,7 +328,7 @@ class BlockSpec(CamelModel):
 
         return SignedBlock(
             block=final_block,
-            proof=ByteListMiB(data=proof_bytes),
+            proof=ByteListHalfMiB(data=proof_bytes),
         )
 
     def build_signed_block(

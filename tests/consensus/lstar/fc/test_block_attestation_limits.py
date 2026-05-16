@@ -48,7 +48,7 @@ def test_block_with_maximum_attestations(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Block with MAX_ATTESTATIONS_DATA + 1 (proposer) distinct entries is accepted by the store.
+    Block with MAX_ATTESTATIONS_DATA is accepted by the store.
 
     Scenario
     --------
@@ -63,7 +63,7 @@ def test_block_with_maximum_attestations(
     1. Store accepts the block without errors
     2. Head advances to the final block slot
     """
-    n = int(MAX_ATTESTATIONS_DATA) + 1
+    n = int(MAX_ATTESTATIONS_DATA)
     targets = _justifiable_slots(n)
     proposal_slot = Slot(targets[-1] + Slot(1))
 

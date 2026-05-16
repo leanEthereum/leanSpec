@@ -18,7 +18,7 @@ from lean_spec.subspecs.chain.config import JUSTIFICATION_LOOKBACK_SLOTS
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
 from lean_spec.types import (
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes32,
     Checkpoint,
     Slot,
@@ -603,7 +603,7 @@ class TestIntegrationScenarios:
         )
         signed_block = SignedBlock(
             block=block,
-            proof=ByteListMiB(data=merged.encode_bytes()),
+            proof=ByteListHalfMiB(data=merged.encode_bytes()),
         )
 
         # Process block via on_block on a fresh consumer store

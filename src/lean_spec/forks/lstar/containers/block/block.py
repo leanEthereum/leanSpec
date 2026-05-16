@@ -6,7 +6,7 @@ Each references its parent, forming a chain.
 The proposer is determined by slot assignment.
 """
 
-from lean_spec.types import ByteListMiB, Bytes32, Slot, ValidatorIndex
+from lean_spec.types import ByteListHalfMiB, Bytes32, Slot, ValidatorIndex
 from lean_spec.types.container import Container
 
 from .types import AggregatedAttestations
@@ -73,5 +73,5 @@ class SignedBlock(Container):
     block: Block
     """The block being signed."""
 
-    proof: ByteListMiB
+    proof: ByteListHalfMiB
     """Single full-block proof covering attestations and the proposer signature."""

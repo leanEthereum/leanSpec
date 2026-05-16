@@ -444,7 +444,7 @@ def test_attestation_target_justifiable_constraint(
     }
 
     steps = []
-    for i in range(1, 31):
+    for i in range(1, 16):
         steps.append(
             BlockStep(
                 block=BlockSpec(

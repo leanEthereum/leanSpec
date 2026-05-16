@@ -11,7 +11,7 @@ from lean_spec.types import (
     BaseBitlist,
     BaseBitvector,
     Boolean,
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes4,
     Bytes32,
     Bytes52,
@@ -249,22 +249,22 @@ def test_bytes64_typical(ssz: SSZTestFiller) -> None:
     ssz(type_name="Bytes64", value=Bytes64(b"\xef" * 64))
 
 
-# --- ByteListMiB ---
+# --- ByteListHalfMiB ---
 
 
 def test_bytelist_empty(ssz: SSZTestFiller) -> None:
     """Empty byte list. Zero-length content with length mix-in of zero."""
-    ssz(type_name="ByteListMiB", value=ByteListMiB(data=b""))
+    ssz(type_name="ByteListHalfMiB", value=ByteListHalfMiB(data=b""))
 
 
 def test_bytelist_small(ssz: SSZTestFiller) -> None:
     """Byte list with 4 bytes. Fits within a single 32-byte chunk."""
-    ssz(type_name="ByteListMiB", value=ByteListMiB(data=b"\x01\x02\x03\x04"))
+    ssz(type_name="ByteListHalfMiB", value=ByteListHalfMiB(data=b"\x01\x02\x03\x04"))
 
 
 def test_bytelist_medium(ssz: SSZTestFiller) -> None:
     """Byte list with 256 bytes. Spans 8 full chunks."""
-    ssz(type_name="ByteListMiB", value=ByteListMiB(data=bytes(range(256))))
+    ssz(type_name="ByteListHalfMiB", value=ByteListHalfMiB(data=bytes(range(256))))
 
 
 # --- Bitvector ---

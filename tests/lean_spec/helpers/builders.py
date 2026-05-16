@@ -48,7 +48,7 @@ from lean_spec.subspecs.xmss.types import (
     Randomness,
 )
 from lean_spec.types import (
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes32,
     Bytes52,
     Checkpoint,
@@ -223,7 +223,7 @@ def make_signed_block(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    return SignedBlock(block=block, proof=ByteListMiB(data=b""))
+    return SignedBlock(block=block, proof=ByteListHalfMiB(data=b""))
 
 
 def make_aggregated_attestation(
@@ -516,7 +516,7 @@ def make_signed_block_from_store(
 
     signed_block = SignedBlock(
         block=block,
-        proof=ByteListMiB(data=merged.encode_bytes()),
+        proof=ByteListHalfMiB(data=merged.encode_bytes()),
     )
 
     target_interval = Interval.from_slot(block.slot)

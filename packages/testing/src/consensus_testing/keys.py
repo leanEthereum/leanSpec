@@ -59,8 +59,6 @@ from lean_spec.subspecs.xmss.types import (
     Randomness,
 )
 from lean_spec.types import (
-    AggregationBits,
-    ByteListMiB,
     Bytes32,
     Slot,
     Uint64,
@@ -125,18 +123,6 @@ def create_dummy_signature() -> Signature:
         rho=Randomness(data=[Fp(0)] * TARGET_CONFIG.RAND_LEN_FE),
         hashes=hashes,
     )
-
-
-def create_dummy_type_1(participants: AggregationBits) -> TypeOneMultiSignature:
-    """Build a structurally valid Type-1 proof with empty proof bytes.
-
-    Skips the lean_multisig_py binding entirely so tests that only check
-    the proof's shape (participants) stay fast. Verifiers will reject the
-    empty proof bytes, so this must only be used in tests that do not
-    exercise cryptographic verification.
-    """
-    placeholder = ByteListMiB(data=b"")
-    return TypeOneMultiSignature(participants=participants, proof=placeholder)
 
 
 DEFAULT_MAX_SLOT = Slot(10)
@@ -527,7 +513,7 @@ class XmssKeyManager:
         attestation_data: AttestationData,
     ) -> TypeOneMultiSignature:
         """
-        Sign attestation_data with each validator and aggregate into a Type-1 proof.
+        Sign attestation data with each validator and aggregate into a Type-1 proof.
 
         Each validator's XMSS attestation key signs the attestation data
         root. The signatures are then handed to the multi-signature
@@ -535,9 +521,8 @@ class XmssKeyManager:
         binding all participants to (data, slot).
 
         Args:
-            validator_ids: Validators that contribute signatures, in the
-                order they appear in the participant bitfield.
-            attestation_data: The attestation data the proof binds to.
+            validator_ids: Validators to sign with.
+            attestation_data: The attestation data to sign.
 
         Returns:
             Cryptographically valid Type-1 proof covering validator_ids.
@@ -574,9 +559,7 @@ class XmssKeyManager:
            multi-signature binding.
 
         Pre-computed signatures can be supplied via the lookup to avoid
-        redundant signing; missing entries are signed on the fly. The
-        resulting proofs feed into block production and signature
-        verification, both of which require real cryptographic content.
+        redundant signing; missing entries are signed on the fly.
 
         Args:
             aggregated_attestations: Attestations with aggregation bitfields set.

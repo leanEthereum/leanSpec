@@ -12,7 +12,7 @@ import pytest
 from lean_spec.forks import SignedBlock
 from lean_spec.subspecs.api import AggregatorController, ApiServer, ApiServerConfig
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import ByteListMiB, Bytes32
+from lean_spec.types import ByteListHalfMiB, Bytes32
 from tests.lean_spec.helpers.builders import make_genesis_data
 
 # Default port for auto-started local server
@@ -79,7 +79,7 @@ class _ServerThread(threading.Thread):
         # at least the finalized root; see ApiServer.signed_block_getter.
         anchor_signed_block = SignedBlock(
             block=genesis.block,
-            proof=ByteListMiB(data=b""),
+            proof=ByteListHalfMiB(data=b""),
         )
         anchor_root = hash_tree_root(genesis.block)
 

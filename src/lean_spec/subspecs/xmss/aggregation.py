@@ -24,7 +24,7 @@ from lean_multisig_py import (
 from lean_spec.config import LEAN_ENV, LeanEnvMode
 from lean_spec.types import (
     AggregationBits,
-    ByteListMiB,
+    ByteListHalfMiB,
     Bytes32,
     Container,
     Slot,
@@ -62,7 +62,7 @@ class TypeOneMultiSignature(Container):
     participants: AggregationBits
     """Bitfield indicating which validators contributed signatures."""
 
-    proof: ByteListMiB
+    proof: ByteListHalfMiB
     """Aggregated proof bytes in compact no-pubkeys representation."""
 
     @staticmethod
@@ -147,7 +147,7 @@ class TypeOneMultiSignature(Container):
         children_bytes: list[tuple[list[bytes], bytes]] = []
         for idx, (child, child_public_keys_raw) in enumerate(children):
             child_public_keys = list(child_public_keys_raw)
-            expected = child.participants.count_set_bits()
+            expected = child.participants.data.count(True)
             if len(child_public_keys) != expected:
                 raise AggregationError(
                     f"Type-1 aggregate child {idx} expected {expected} pubkeys, "
@@ -175,7 +175,7 @@ class TypeOneMultiSignature(Container):
 
         return TypeOneMultiSignature(
             participants=participants,
-            proof=ByteListMiB(data=type1_wire),
+            proof=ByteListHalfMiB(data=type1_wire),
         )
 
     def verify(
@@ -189,7 +189,7 @@ class TypeOneMultiSignature(Container):
         mode = mode or LEAN_ENV
         setup_prover(mode=mode)
 
-        expected = self.participants.count_set_bits()
+        expected = self.participants.data.count(True)
         if len(public_keys) != expected:
             raise AggregationError(
                 f"Type-1 verify expected {expected} pubkeys for participants, "
@@ -216,7 +216,7 @@ class TypeTwoMultiSignature(Container):
     container as its single proof blob.
     """
 
-    proof: ByteListMiB
+    proof: ByteListHalfMiB
     """Compact no-pubkeys serialized Type-2 proof bytes."""
 
     @staticmethod
@@ -244,7 +244,7 @@ class TypeTwoMultiSignature(Container):
 
         type1_entries: list[tuple[list[bytes], bytes]] = []
         for idx, part in enumerate(parts):
-            expected = part.participants.count_set_bits()
+            expected = part.participants.data.count(True)
             if public_keys_per_part is None:
                 raise AggregationError(
                     "public_keys_per_part is required when Type-1 proofs are stored without pubkeys"
@@ -262,7 +262,7 @@ class TypeTwoMultiSignature(Container):
         except Exception as exc:
             raise AggregationError(f"Type-2 aggregation failed: {exc}") from exc
 
-        return TypeTwoMultiSignature(proof=ByteListMiB(data=type2_wire))
+        return TypeTwoMultiSignature(proof=ByteListHalfMiB(data=type2_wire))
 
     def split_by_msg(
         self,
@@ -296,7 +296,7 @@ class TypeTwoMultiSignature(Container):
 
         return TypeOneMultiSignature(
             participants=AggregationBits(data=[]),
-            proof=ByteListMiB(data=type1_wire),
+            proof=ByteListHalfMiB(data=type1_wire),
         )
 
     def verify(
