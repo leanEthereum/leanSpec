@@ -78,7 +78,7 @@ jobs:
 
   coverage-gate:
     name: Coverage gate - Python 3.12
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -104,7 +104,7 @@ jobs:
 
   fill-tests:
     name: Fill test fixtures - Python 3.14
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -130,8 +130,8 @@ jobs:
 
   interop-tests:
     name: Interop tests - Multi-node consensus
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout leanSpec
         uses: actions/checkout@v4
