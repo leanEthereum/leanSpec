@@ -99,13 +99,16 @@ async def test_skips_when_block_adds_no_new_validators(
     assert published == []
 
 
-async def test_noop_when_not_aggregator(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
-    """A non-aggregator node never re-aggregates or publishes."""
+async def test_noop_when_not_a_validator(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
+    """A node with no validator identity never re-aggregates or publishes.
+
+    The gate is the absence of a validator id, not the aggregator role.
+    """
     base_store, signed_block, _ = _setup(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
     )
-    service, published = _aggregator_service(peer_id, base_store)
-    service.is_aggregator = False
+    store = base_store.model_copy(update={"validator_id": None})
+    service, published = _aggregator_service(peer_id, store)
 
     await service._maybe_publish_reaggregated_attestations_from_block(signed_block)
 

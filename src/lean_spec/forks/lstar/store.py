@@ -136,11 +136,11 @@ class Store(StrictBaseModel, Generic[StateT, BlockT]):
 
     These payloads are "new" and do not yet contribute to fork choice.
     They migrate to known payloads via interval ticks.
-    Populated from gossip aggregated attestations only; blocks no longer
-    feed individual proofs into this map (the block-level proof is a
-    merged Type-2 blob that the spec verifies as a whole). Aggregators will
-    still extract the individual per-message proofs from the block-level
-    Type-2 and gossip aggregated attestations.
+    Populated from gossip aggregated attestations.
+    Block import does not feed individual proofs into this map directly.
+    The block-level proof is a merged Type-2 blob verified as a whole.
+    On gossip-block import, any validator deconstructs that Type-2 into
+    per-message proofs, writes them back here, and gossips the aggregate.
     """
 
     latest_known_aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = Field(

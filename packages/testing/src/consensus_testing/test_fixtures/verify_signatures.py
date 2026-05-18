@@ -6,12 +6,20 @@ from typing import Any, ClassVar
 
 from pydantic import Field
 
-from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation
+from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation, AttestationData
 from lean_spec.forks.lstar.containers.block import SignedBlock
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import State
 from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.types import AggregationBits, Boolean, ValidatorIndex
+from lean_spec.types import (
+    AggregationBits,
+    Boolean,
+    ByteList512KiB,
+    Bytes32,
+    Checkpoint,
+    Slot,
+    ValidatorIndex,
+)
 
 from ..keys import XmssKeyManager
 from ..test_types import BlockSpec
@@ -63,6 +71,15 @@ class VerifySignaturesTest(BaseConsensusFixture):
       first body attestation with one whose aggregation_bits carry no
       set bit. Exercises the empty-participants check inside
       signature verification.
+    - `{"operation": "corrupt_proof"}`: Replace the merged proof with
+      a short non-decodable blob. Exercises the Type-2 decode check.
+    - `{"operation": "append_phantom_attestation"}`: Add a body
+      attestation with no matching proof component. Exercises the
+      component count check between the body and the merged proof.
+    - `{"operation": "mutate_state_root"}`: Change a block field after
+      signing so the block root differs. Exercises the per-component
+      message binding that prevents reusing an honest proof under a
+      different message.
 
     Tampered blocks bypass the builder's structural invariants. The
     resulting fixture pins the exact rejection a client must raise when
@@ -165,5 +182,44 @@ class VerifySignaturesTest(BaseConsensusFixture):
             new_body = body.model_copy(update={"attestations": new_attestations})
             new_block = signed_block.block.model_copy(update={"body": new_body})
             return signed_block.model_copy(update={"block": new_block})
+
+        if operation == "corrupt_proof":
+            # Replace the merged proof with a short non-decodable blob.
+            # Decoding the Type-2 envelope must fail before verification.
+            return signed_block.model_copy(
+                update={"proof": ByteList512KiB(data=b"\x00\x01\x02\x03")}
+            )
+
+        if operation == "append_phantom_attestation":
+            # Add a body attestation with no matching proof component.
+            # The proof binds one component per original attestation plus
+            # the proposer, so the body now claims more components than the
+            # proof carries.
+            body = signed_block.block.body
+            phantom_data = AttestationData(
+                slot=Slot(0),
+                head=Checkpoint(root=Bytes32(b"\x00" * 32), slot=Slot(0)),
+                target=Checkpoint(root=Bytes32(b"\x00" * 32), slot=Slot(0)),
+                source=Checkpoint(root=Bytes32(b"\x00" * 32), slot=Slot(0)),
+            )
+            phantom = AggregatedAttestation(
+                aggregation_bits=AggregationBits(data=[Boolean(True)]),
+                data=phantom_data,
+            )
+            new_attestations = AggregatedAttestations(data=[*body.attestations.data, phantom])
+            new_body = body.model_copy(update={"attestations": new_attestations})
+            new_block = signed_block.block.model_copy(update={"body": new_body})
+            return signed_block.model_copy(update={"block": new_block})
+
+        if operation == "mutate_state_root":
+            # Change a block field after signing so the block root differs.
+            # The proposer component's bound message no longer matches the
+            # recomputed block root, even though the signature is honest.
+            # This is the repackaging vector: an honest proof reused under
+            # a different message.
+            tampered_block = signed_block.block.model_copy(
+                update={"state_root": Bytes32(b"\xff" * 32)}
+            )
+            return signed_block.model_copy(update={"block": tampered_block})
 
         raise ValueError(f"Unknown tamper operation: {operation!r}")

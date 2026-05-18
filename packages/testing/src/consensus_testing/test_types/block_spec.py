@@ -317,12 +317,6 @@ class BlockSpec(CamelModel):
             proof_bytes = merged.encode_bytes()
         else:
             placeholder = ByteList512KiB(data=b"")
-            if not self.valid_signature:
-                # Burn the dummy signature creation to mirror the legacy
-                # shape; the merged blob carries no real bytes anyway.
-                dummy_signature = create_dummy_signature()
-                del dummy_signature
-
             envelope = TypeTwoMultiSignature(proof=placeholder)
             proof_bytes = envelope.encode_bytes()
 

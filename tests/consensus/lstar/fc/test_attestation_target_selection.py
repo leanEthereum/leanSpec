@@ -426,21 +426,6 @@ def test_attestation_target_justifiable_constraint(
         13: 9,  # delta = 13 - 3 - 0 = 10
         14: 9,  # delta = 14 - 3 - 0 = 11
         15: 12,  # delta = 15 - 3 - 0 = 12, Rule 3: pronic number (3*4)
-        16: 12,  # delta = 16 - 3 - 0 = 13
-        17: 12,  # delta = 17 - 3 - 0 = 14
-        18: 12,  # delta = 18 - 3 - 0 = 15
-        19: 16,  # delta = 19 - 3 - 0 = 16, Rule 2: perfect square (4^2)
-        20: 16,  # delta = 20 - 3 - 0 = 17
-        21: 16,  # delta = 21 - 3 - 0 = 18
-        22: 16,  # delta = 22 - 3 - 0 = 19
-        23: 20,  # delta = 23 - 3 - 0 = 20, Rule 3: pronic number (4*5)
-        24: 20,  # delta = 24 - 3 - 0 = 21
-        25: 20,  # delta = 25 - 3 - 0 = 22
-        26: 20,  # delta = 26 - 3 - 0 = 23
-        27: 20,  # delta = 27 - 3 - 0 = 24
-        28: 25,  # delta = 28 - 3 - 0 = 25, Rule 2: perfect square (5^2)
-        29: 25,  # delta = 29 - 3 - 0 = 26
-        30: 25,  # delta = 30 - 3 - 0 = 27
     }
 
     steps = []

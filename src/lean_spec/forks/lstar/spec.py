@@ -892,8 +892,18 @@ class LstarSpec(ForkProtocol):
         num_validators = Uint64(len(validators))
         public_keys_per_message: list[list[PublicKey]] = []
 
-        # Attestation entries: parallel to block.body.attestations.
-        # Message, slot, and participant bitfield all present in the block body.
+        # Each component is bound to the message and slot it signed.
+        #
+        # Without this binding a proposer could pair honest signatures
+        # with attacker-chosen attestation data that resolves to the same
+        # pubkeys, crediting validators for votes they never cast.
+        message_bindings: list[tuple[Bytes32, Slot]] = []
+
+        # One pubkey set per attestation, in body order.
+        #
+        # The attestation list and the proof component list are parallel.
+        # Each attestation names the validators that voted for its data.
+        # Its matching proof component proves those validators signed.
         for aggregated_attestation in aggregated_attestations:
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
             for validator_id in validator_ids:
@@ -902,15 +912,29 @@ class LstarSpec(ForkProtocol):
             public_keys_per_message.append(
                 [validators[vid].get_attestation_pubkey() for vid in validator_ids]
             )
+            message_bindings.append(
+                (
+                    hash_tree_root(aggregated_attestation.data),
+                    aggregated_attestation.data.slot,
+                )
+            )
 
-        # Proposer entry: bound to block root with a singleton participant set.
+        # Final component: the proposer's signature over the block root.
+        #
+        # The proposer signs the block root with their proposal key.
+        # This proves the proposer endorsed this specific block.
+        # It is a single-participant entry, distinct from the vote entries.
         proposer_index = block.proposer_index
         assert proposer_index.is_valid(num_validators), "Proposer index out of range"
 
         public_keys_per_message.append([validators[proposer_index].get_proposal_pubkey()])
+        message_bindings.append((hash_tree_root(block), block.slot))
 
         try:
-            type_two.verify(public_keys_per_message=public_keys_per_message)
+            type_two.verify(
+                public_keys_per_message=public_keys_per_message,
+                messages=message_bindings,
+            )
         except AggregationError as exc:
             raise AssertionError(f"Block proof verification failed: {exc}") from exc
 
@@ -1287,10 +1311,14 @@ class LstarSpec(ForkProtocol):
                 }
             )
 
-            # Copy the aggregated proof map for updates
-            # Shallow-copy the dict and its inner sets to preserve immutability
-            # Block attestations go directly to "known" payloads
-            # (like is_from_block=True in the spec)
+            # Register each block attestation's data in the known pool.
+            #
+            # Only the data key is recorded here, with an empty proof set.
+            # The block carries one merged proof for all attestations.
+            # That proof is verified as a whole and not decomposed at import.
+            # Per-attestation proofs reach the pools through the
+            # deconstruction and gossip path instead.
+            # Shallow-copy the dict and its inner sets to preserve immutability.
             block_proofs: dict[AttestationData, set[TypeOneMultiSignature]] = {
                 k: set(v) for k, v in store.latest_known_aggregated_payloads.items()
             }

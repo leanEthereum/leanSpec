@@ -740,8 +740,7 @@ class SyncService:
         gossiped as-is. This propagates the strongest available aggregate
         without a full re-aggregation pass.
         """
-        is_validtor = self.store.validator_id
-        if not is_validtor:
+        if self.store.validator_id is None:
             return
 
         block_attestations = list(block.block.body.attestations)

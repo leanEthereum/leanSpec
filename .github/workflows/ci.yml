@@ -76,6 +76,12 @@ jobs:
       - name: Run tests
         run: just test
 
+  # coverage-gate, fill-tests and interop-tests run on macOS because the
+  # lean_multisig_py prover's process-global setup is corrupted by xdist
+  # parallelism; these jobs must run serially and macOS runners were the
+  # stable choice during bring-up. This is an upstream limitation, not a
+  # preference: revisit (and prefer ubuntu for cost) once the prover setup
+  # is per-process safe. See the matching note in the Justfile fill-ci.
   coverage-gate:
     name: Coverage gate - Python 3.12
     runs-on: macos-latest

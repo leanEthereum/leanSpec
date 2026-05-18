@@ -1,11 +1,10 @@
 """
-Signature aggregation for the Lean Ethereum consensus specification.
-Multi-signature aggregation containers and helpers.
+Multi-signature aggregation for the Lean Ethereum consensus spec.
 
 Two proof shapes:
 
-- Type-1: many validators, one message (one AttestationData, or one block root).
-- Type-2: a merge of N Type-1 proofs, each over a distinct message.
+- Type-1: many validators on one message (one AttestationData, or one block root).
+- Type-2: a merge of N Type-1 proofs over distinct messages.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from lean_multisig_py import (
     setup_prover,
     split_type_2_by_msg,
     verify_type_1,
-    verify_type_2,
+    verify_type_2_with_messages,
 )
 
 from lean_spec.config import LEAN_ENV, LeanEnvMode
@@ -303,21 +302,38 @@ class TypeTwoMultiSignature(Container):
     def verify(
         self,
         public_keys_per_message: Sequence[Sequence[PublicKey]],
+        messages: Sequence[tuple[Bytes32, Slot]],
         mode: LeanEnvMode | None = None,
     ) -> None:
-        """Verify this multi-message Type-2 proof against per-entry resolved pubkeys.
+        """Verify this multi-message Type-2 proof.
 
         Each entry of public_keys_per_message corresponds to one Type-1
         component merged into this Type-2.
+        The parallel messages entry binds that component to a specific
+        message hash and slot.
+        Without this binding the proof would verify against any attacker
+        chosen attestation data that resolves to the same pubkeys.
         """
         mode = mode or LEAN_ENV
         setup_prover(mode=mode)
 
+        if len(messages) != len(public_keys_per_message):
+            raise AggregationError(
+                f"Type-2 verify expected {len(public_keys_per_message)} message bindings, "
+                f"got {len(messages)}"
+            )
+
         pub_keys_per_component_ssz: list[list[bytes]] = [
             [pk.encode_bytes() for pk in pks] for pks in public_keys_per_message
         ]
+        expected_messages = [(bytes(msg), int(slot)) for msg, slot in messages]
 
         try:
-            verify_type_2(pub_keys_per_component_ssz, bytes(self.proof.data), mode=mode)
+            verify_type_2_with_messages(
+                pub_keys_per_component_ssz,
+                expected_messages,
+                bytes(self.proof.data),
+                mode=mode,
+            )
         except Exception as exc:
             raise AggregationError(f"Type-2 verification failed: {exc}") from exc

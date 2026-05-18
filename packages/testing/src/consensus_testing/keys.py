@@ -595,7 +595,7 @@ class XmssKeyManager:
                 for vid in validator_ids
             ]
 
-            # Produce a single aggregated proof that the leanVm can verify
+            # Produce a single aggregated proof that the leanVM can verify
             # in one pass over all participants.
             proofs.append(
                 TypeOneMultiSignature.aggregate(
