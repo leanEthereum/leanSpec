@@ -25,6 +25,7 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
     spec: LstarSpec,
 ) -> None:
     store = make_store(num_validators=2, key_manager=container_key_manager)
+    head_state = store.states[store.head]
     source = Checkpoint(root=make_bytes32(1), slot=Slot(0))
     att_data = make_attestation_data_simple(
         Slot(2), make_bytes32(3), make_bytes32(4), source=source
@@ -48,6 +49,13 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
         ValidatorIndex(1),
     }
 
+    public_keys = [
+        head_state.validators[ValidatorIndex(i)].get_attestation_pubkey() for i in range(2)
+    ]
+    results[0].proof.verify(
+        public_keys=public_keys, message=hash_tree_root(att_data), slot=att_data.slot
+    )
+
 
 def test_build_block_collects_valid_available_attestations(
     container_key_manager: XmssKeyManager,
@@ -66,6 +74,7 @@ def test_build_block_collects_valid_available_attestations(
         target=target,
         source=source,
     )
+    data_root = hash_tree_root(att_data)
 
     proof = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
     aggregated_payloads = {att_data: {proof}}
@@ -87,6 +96,12 @@ def test_build_block_collects_valid_available_attestations(
     )
     assert block.body.attestations.data[0].aggregation_bits.to_validator_indices() == (
         ValidatorIndices(data=[ValidatorIndex(0)])
+    )
+
+    aggregated_proofs[0].verify(
+        public_keys=[container_key_manager[ValidatorIndex(0)].attestation_keypair.public_key],
+        message=data_root,
+        slot=att_data.slot,
     )
 
 
@@ -169,7 +184,15 @@ def test_aggregated_signatures_with_multiple_data_groups(
     assert len(results) == 2
 
     for signed_att in results:
-        assert signed_att.proof.participants.to_validator_indices()
+        participants = signed_att.proof.participants.to_validator_indices()
+        public_keys = [
+            container_key_manager[vid].attestation_keypair.public_key for vid in participants
+        ]
+        signed_att.proof.verify(
+            public_keys=public_keys,
+            message=hash_tree_root(signed_att.data),
+            slot=signed_att.data.slot,
+        )
 
 
 def test_build_block_state_root_valid_when_signatures_split(

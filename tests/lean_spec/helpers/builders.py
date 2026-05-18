@@ -48,7 +48,7 @@ from lean_spec.subspecs.xmss.types import (
     Randomness,
 )
 from lean_spec.types import (
-    ByteListHalfMiB,
+    ByteList512KiB,
     Bytes32,
     Bytes52,
     Checkpoint,
@@ -210,11 +210,7 @@ def make_signed_block(
     parent_root: Bytes32,
     state_root: Bytes32,
 ) -> SignedBlock:
-    """Create a signed block with minimal valid structure and an empty proof blob.
-
-    The empty proof carries no cryptographic content. Tests that exercise real
-    verification should build the block via the spec filler instead.
-    """
+    """Create a signed block with minimal valid structure."""
     block = Block(
         slot=slot,
         proposer_index=proposer_index,
@@ -223,7 +219,7 @@ def make_signed_block(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    return SignedBlock(block=block, proof=ByteListHalfMiB(data=b""))
+    return SignedBlock(block=block, proof=ByteList512KiB(data=b""))
 
 
 def make_aggregated_attestation(
@@ -426,12 +422,7 @@ def make_aggregated_proof(
     participants: list[ValidatorIndex],
     attestation_data: AttestationData,
 ) -> TypeOneMultiSignature:
-    """Create a valid Type-1 aggregated proof for the given participants.
-
-    Produces a real cryptographic proof because the resulting Type-1
-    typically feeds into production aggregation (build_block compaction,
-    on_block verification), which rejects empty proof bytes.
-    """
+    """Create a valid Type-1 aggregated proof for the given participants."""
     data_root = hash_tree_root(attestation_data)
     xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
     raw_xmss = list(
@@ -442,9 +433,9 @@ def make_aggregated_proof(
         )
     )
     return TypeOneMultiSignature.aggregate(
+        xmss_participants=xmss_participants,
         children=[],
         raw_xmss=raw_xmss,
-        xmss_participants=xmss_participants,
         message=data_root,
         slot=attestation_data.slot,
     )
@@ -516,7 +507,7 @@ def make_signed_block_from_store(
 
     signed_block = SignedBlock(
         block=block,
-        proof=ByteListHalfMiB(data=merged.encode_bytes()),
+        proof=ByteList512KiB(data=merged.encode_bytes()),
     )
 
     target_interval = Interval.from_slot(block.slot)

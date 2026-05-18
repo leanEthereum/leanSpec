@@ -24,7 +24,7 @@ from lean_spec.subspecs.networking.reqresp.message import (
 )
 from lean_spec.subspecs.networking.transport import PeerId
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import ByteListHalfMiB, Bytes32, Slot, Uint64, ValidatorIndex
+from lean_spec.types import ByteList512KiB, Bytes32, Slot, Uint64, ValidatorIndex
 
 
 @dataclass
@@ -114,7 +114,7 @@ def empty_signed_block(slot: Slot, parent_root: Bytes32, state_seed: int) -> Sig
         state_root=Bytes32(bytes([state_seed]) * 32),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
-    return SignedBlock(block=block, proof=ByteListHalfMiB(data=b""))
+    return SignedBlock(block=block, proof=ByteList512KiB(data=b""))
 
 
 def build_chain(start_slot: int, count: int, root_seed: int = 0xAA) -> list[SignedBlock]:

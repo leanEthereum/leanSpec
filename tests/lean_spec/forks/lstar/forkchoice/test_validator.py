@@ -126,9 +126,15 @@ class TestBlockProduction:
         assert block.proposer_index == validator_idx
         assert block.state_root != Bytes32.zero()
 
-        # Verify each aggregated proof binds to its attestation in the block.
+        # Verify each aggregated signature proof
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
-            assert proof.participants == agg_att.aggregation_bits
+            participants = proof.participants.to_validator_indices()
+            public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+            proof.verify(
+                public_keys=public_keys,
+                message=hash_tree_root(agg_att.data),
+                slot=agg_att.data.slot,
+            )
 
     def test_produce_block_sequential_slots(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test producing blocks in sequential slots."""
@@ -243,7 +249,13 @@ class TestBlockProduction:
 
         # Verify each aggregated proof binds to its attestation in the block.
         for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
-            assert proof.participants == agg_att.aggregation_bits
+            participants = proof.participants.to_validator_indices()
+            public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+            proof.verify(
+                public_keys=public_keys,
+                message=hash_tree_root(agg_att.data),
+                slot=agg_att.data.slot,
+            )
 
 
 class TestValidatorIntegration:

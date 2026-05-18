@@ -20,13 +20,11 @@ pytestmark = pytest.mark.valid_until("Lstar")
 
 @pytest.fixture(autouse=True)
 def _reset_xmss_signing_state():
-    """Reset cached XMSS signing state around every fork-choice filler.
+    """Reset XMSS signing state around each test in this module.
 
-    XMSS keys are stateful and advance past used slots on every sign.
-    Without a reset, a filler that signs at a high slot poisons the
-    shared cache for any later filler that needs to sign at a lower
-    slot — leading to "Verification failed" errors that only appear
-    when several tests share a worker.
+    Tests here sign at high slots (50+). Without resetting, the advanced
+    key state poisons the cache for any later test on the same
+    worker that need low-slot signatures.
     """
     XmssKeyManager.reset_signing_state()
     yield
@@ -48,7 +46,7 @@ def test_block_with_maximum_attestations(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Block with MAX_ATTESTATIONS_DATA is accepted by the store.
+    Block with MAX_ATTESTATIONS_DATA distinct entriesis accepted by the store.
 
     Scenario
     --------
@@ -109,15 +107,14 @@ def test_block_exceeding_maximum_attestations_is_rejected(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Block with more than MAX_ATTESTATIONS_DATA distinct entries is rejected.
+    Block with MAX_ATTESTATIONS_DATA + 1 distinct entries is rejected.
 
     Scenario
     --------
-    1. Build a chain with one block per justifiable slot, enough to host
-       MAX_ATTESTATIONS_DATA + 1 distinct targets
-    2. The final block carries MAX_ATTESTATIONS_DATA entries through the
-       builder, plus one forced attestation that pushes the total in the
-       body to MAX_ATTESTATIONS_DATA + 1
+    1. Build the same chain as the maximum test, but with one extra justifiable
+       target slot
+    2. The final block carries MAX_ATTESTATIONS_DATA entries through the normal
+       builder, plus one forced attestation that pushes the count over the limit
 
     Expected Behavior
     -----------------

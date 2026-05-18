@@ -23,7 +23,7 @@ from lean_spec.subspecs.xmss.aggregation import (
 )
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import (
-    ByteListHalfMiB,
+    ByteList512KiB,
     Bytes32,
     CamelModel,
     Slot,
@@ -316,7 +316,7 @@ class BlockSpec(CamelModel):
             )
             proof_bytes = merged.encode_bytes()
         else:
-            placeholder = ByteListHalfMiB(data=b"")
+            placeholder = ByteList512KiB(data=b"")
             if not self.valid_signature:
                 # Burn the dummy signature creation to mirror the legacy
                 # shape; the merged blob carries no real bytes anyway.
@@ -328,7 +328,7 @@ class BlockSpec(CamelModel):
 
         return SignedBlock(
             block=final_block,
-            proof=ByteListHalfMiB(data=proof_bytes),
+            proof=ByteList512KiB(data=proof_bytes),
         )
 
     def build_signed_block(

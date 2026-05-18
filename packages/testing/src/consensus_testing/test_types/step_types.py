@@ -126,7 +126,7 @@ class BlockStep(BaseForkChoiceStep):
             The serialized Block.
 
         Raises:
-        -------
+        ------
         ValueError
             If _filled_block is None (make_fixture not called yet).
         """
@@ -135,7 +135,6 @@ class BlockStep(BaseForkChoiceStep):
                 "Block not filled yet - make_fixture() must be called before serialization. "
                 "This BlockStep should only be serialized after the fixture has been processed."
             )
-
         result = self._filled_block.to_json()
         if value.label:
             result["blockRootLabel"] = value.label
@@ -195,13 +194,13 @@ class AttestationStep(BaseForkChoiceStep):
             The serialized SignedAttestation.
 
         Raises:
-        -------
+        ------
         ValueError
             If _filled_attestation is None (make_fixture not called yet).
         """
         if self._filled_attestation is None:
             raise ValueError(
-                "Attestation not filled yet - make_fixture() must be called"
+                "Attestation not filled yet - make_fixture() must be called "
                 "before serialization. This AttestationStep should only be "
                 "serialized after the fixture has been processed."
             )

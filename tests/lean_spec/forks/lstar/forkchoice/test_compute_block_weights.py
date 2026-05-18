@@ -10,13 +10,13 @@ from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import Checkpoint, Slot, ValidatorIndex, ValidatorIndices
-from lean_spec.types.byte_arrays import ByteListHalfMiB
+from lean_spec.types.byte_arrays import ByteList512KiB, Bytes32
 from tests.lean_spec.helpers import make_bytes32, make_signed_block
 
 
 def _make_empty_proof(participants: list[ValidatorIndex]) -> TypeOneMultiSignature:
     """Create a placeholder Type-1 proof carrying a participant bitfield."""
-    placeholder = ByteListHalfMiB(data=b"")
+    placeholder = ByteList512KiB(data=b"")
     return TypeOneMultiSignature(
         participants=ValidatorIndices(data=participants).to_aggregation_bits(),
         proof=placeholder,

@@ -30,7 +30,7 @@ from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
     AggregationBits,
     Boolean,
-    ByteListHalfMiB,
+    ByteList512KiB,
     Bytes32,
     Bytes52,
     Checkpoint,
@@ -267,7 +267,7 @@ def test_signed_block_minimal(ssz: SSZTestFiller) -> None:
     )
     ssz(
         type_name="SignedBlock",
-        value=SignedBlock(block=block, proof=ByteListHalfMiB(data=b"")),
+        value=SignedBlock(block=block, proof=ByteList512KiB(data=b"")),
     )
 
 
@@ -282,7 +282,7 @@ def test_signed_block_with_proof_bytes(ssz: SSZTestFiller) -> None:
     )
     ssz(
         type_name="SignedBlock",
-        value=SignedBlock(block=block, proof=ByteListHalfMiB(data=b"\xde\xad\xbe\xef")),
+        value=SignedBlock(block=block, proof=ByteList512KiB(data=b"\xde\xad\xbe\xef")),
     )
 
 
@@ -428,7 +428,7 @@ def test_signed_aggregated_attestation_minimal(ssz: SSZTestFiller) -> None:
             data=data,
             proof=TypeOneMultiSignature(
                 participants=AggregationBits(data=[Boolean(True)]),
-                proof=ByteListHalfMiB(data=b""),
+                proof=ByteList512KiB(data=b""),
             ),
         ),
     )
@@ -446,7 +446,7 @@ def test_signed_aggregated_attestation_typical(ssz: SSZTestFiller) -> None:
                 participants=AggregationBits(
                     data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True)]
                 ),
-                proof=ByteListHalfMiB(data=wire),
+                proof=ByteList512KiB(data=wire),
             ),
         ),
     )

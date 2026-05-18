@@ -8,7 +8,7 @@ from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import State
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
-    ByteListHalfMiB,
+    ByteList512KiB,
     Bytes32,
     CamelModel,
     Checkpoint,
@@ -192,7 +192,7 @@ class AggregatedAttestationSpec(CamelModel):
 
         # Empty proof bytes flag "no real Type-1 here" — the caller treats
         # any such entry as a placeholder and bypasses real binding merges.
-        placeholder = ByteListHalfMiB(data=b"")
+        placeholder = ByteList512KiB(data=b"")
 
         if not self.valid_signature:
             invalid_proof = TypeOneMultiSignature(participants=aggregation_bits, proof=placeholder)

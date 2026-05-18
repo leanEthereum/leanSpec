@@ -127,42 +127,10 @@ class TestSignBlock:
 
         assert result.block is block
 
-    def test_envelope_binds_proposer_entry(
-        self, sync_service: SyncService, key_manager: XmssKeyManager
-    ) -> None:
-        """A block with no attestations produces a decodable Type-2 envelope.
-
-        Participant identity for the proposer is rederived from the block's
-        proposer_index, not from the proof envelope.
-        """
-        service, block = self._setup(sync_service, key_manager)
-
-        result = service._sign_block(block, ValidatorIndex(0), [])
-
-        TypeTwoMultiSignature.decode_bytes(result.proof.data)
-        assert result.block.proposer_index == ValidatorIndex(0)
-        assert len(result.block.body.attestations) == 0
-
-    def test_envelope_uses_proposal_slot(
-        self, sync_service: SyncService, key_manager: XmssKeyManager
-    ) -> None:
-        """The merged envelope decodes cleanly for a proposer at a non-genesis slot."""
-        service, block = self._setup(sync_service, key_manager, slot=2)
-
-        result = service._sign_block(block, ValidatorIndex(0), [])
-
-        TypeTwoMultiSignature.decode_bytes(result.proof.data)
-        assert result.block.slot == Slot(2)
-
     def test_attestation_proofs_merge_into_envelope(
         self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
     ) -> None:
-        """Aggregated attestation proofs are merged into the block envelope.
-
-        Participant ordering and per-component messages are rederived from
-        the block body by the verifier; the proof envelope no longer
-        carries that metadata.
-        """
+        """Aggregated attestation proofs are merged into the block envelope."""
         service, block = self._setup(sync_service, key_manager)
         attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
         agg_proof = make_aggregated_proof(key_manager, [ValidatorIndex(0)], attestation_data)

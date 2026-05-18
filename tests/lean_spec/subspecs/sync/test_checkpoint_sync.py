@@ -25,7 +25,7 @@ from lean_spec.subspecs.sync.checkpoint_sync import (
     fetch_finalized_state,
     verify_checkpoint_state,
 )
-from lean_spec.types import ByteListHalfMiB, Bytes32, Slot
+from lean_spec.types import ByteList512KiB, Bytes32, Slot
 
 
 class _MockTransport(httpx.AsyncBaseTransport):
@@ -237,7 +237,7 @@ def _wrap_as_signed_block(block: Block) -> SignedBlock:
     signed-block getter callable. An empty proof is sufficient for these
     structural checks, which do not exercise cryptographic verification.
     """
-    return SignedBlock(block=block, proof=ByteListHalfMiB(data=b""))
+    return SignedBlock(block=block, proof=ByteList512KiB(data=b""))
 
 
 class TestFetchFinalizedBlock:

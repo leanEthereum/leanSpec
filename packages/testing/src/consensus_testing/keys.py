@@ -541,9 +541,9 @@ class XmssKeyManager:
             for vid in validator_ids
         ]
         return TypeOneMultiSignature.aggregate(
+            xmss_participants=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
             children=[],
             raw_xmss=raw_xmss,
-            xmss_participants=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
             message=hash_tree_root(attestation_data),
             slot=attestation_data.slot,
         )
@@ -555,7 +555,7 @@ class XmssKeyManager:
         | None = None,
     ) -> list[TypeOneMultiSignature]:
         """
-        Produce per-attestation Type-1 proofs aligned with the given attestations.
+        Produce Type-1 proofs aligned with the given attestations.
 
         For each aggregated attestation:
 
@@ -565,7 +565,7 @@ class XmssKeyManager:
            multi-signature binding.
 
         Pre-computed signatures can be supplied via the lookup to avoid
-        redundant signing; missing entries are signed on the fly.
+        redundant signing. Missing entries are signed on the fly.
 
         Args:
             aggregated_attestations: Attestations with aggregation bitfields set.
@@ -579,15 +579,24 @@ class XmssKeyManager:
 
         proofs: list[TypeOneMultiSignature] = []
         for agg in aggregated_attestations:
+            # Decode which validators participated from the bitfield.
             validator_ids = agg.aggregation_bits.to_validator_indices()
+
+            # Try the lookup first for pre-computed signatures.
+            # Fall back to signing on the fly for any missing entries.
             sigs_for_data = lookup.get(agg.data, {})
 
+            # Collect the attestation public keys for each participant.
             public_keys = [self.get_public_keys(vid)[0] for vid in validator_ids]
+
+            # Gather individual signatures, computing any that are missing.
             signatures = [
                 sigs_for_data.get(vid) or self.sign_attestation_data(vid, agg.data)
                 for vid in validator_ids
             ]
 
+            # Produce a single aggregated proof that the leanVm can verify
+            # in one pass over all participants.
             proofs.append(
                 TypeOneMultiSignature.aggregate(
                     children=[],

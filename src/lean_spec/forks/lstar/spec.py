@@ -893,9 +893,7 @@ class LstarSpec(ForkProtocol):
         public_keys_per_message: list[list[PublicKey]] = []
 
         # Attestation entries: parallel to block.body.attestations.
-        # Message, slot, and participant bitfield all live on the block body.
-        # The Type-2 binding rejects anything that doesn't match what was
-        # signed, so the proof envelope itself no longer carries this metadata.
+        # Message, slot, and participant bitfield all present in the block body.
         for aggregated_attestation in aggregated_attestations:
             validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
             for validator_id in validator_ids:

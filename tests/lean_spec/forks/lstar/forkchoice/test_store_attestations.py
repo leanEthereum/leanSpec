@@ -17,7 +17,7 @@ from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
-    ByteListHalfMiB,
+    ByteList512KiB,
     Bytes32,
     Checkpoint,
     Slot,
@@ -303,9 +303,9 @@ class TestOnGossipAggregatedAttestation:
             )
         )
         proof = TypeOneMultiSignature.aggregate(
+            xmss_participants=xmss_participants,
             children=[],
             raw_xmss=raw_xmss,
-            xmss_participants=xmss_participants,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -350,9 +350,9 @@ class TestOnGossipAggregatedAttestation:
             )
         )
         proof = TypeOneMultiSignature.aggregate(
+            xmss_participants=xmss_participants,
             children=[],
             raw_xmss=raw_xmss,
-            xmss_participants=xmss_participants,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -390,18 +390,18 @@ class TestOnGossipAggregatedAttestation:
             )
         )
         proof = TypeOneMultiSignature.aggregate(
+            xmss_participants=xmss_participants,
             children=[],
             raw_xmss=raw_xmss,
-            xmss_participants=xmss_participants,
             message=data_root,
             slot=attestation_data.slot,
         )
 
-        # Corrupt the proof bytes so the binding rejects the proof.
-        corrupted_bytes = bytearray(proof.proof.data)
-        corrupted_bytes[10] ^= 0xFF
-        corrupted_bytes[20] ^= 0xFF
-        corrupted_blob = ByteListHalfMiB(data=bytes(corrupted_bytes))
+        # Corrupt the proof data
+        corrupted_data = bytearray(proof.proof.data)
+        corrupted_data[10] ^= 0xFF
+        corrupted_data[20] ^= 0xFF
+        corrupted_blob = ByteList512KiB(data=bytes(corrupted_data))
         corrupted_proof = proof.model_copy(update={"proof": corrupted_blob})
 
         signed_aggregated = SignedAggregatedAttestation(
@@ -439,9 +439,9 @@ class TestOnGossipAggregatedAttestation:
             )
         )
         proof_1 = TypeOneMultiSignature.aggregate(
+            xmss_participants=xmss_1,
             children=[],
             raw_xmss=raw_xmss_1,
-            xmss_participants=xmss_1,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -460,9 +460,9 @@ class TestOnGossipAggregatedAttestation:
             )
         )
         proof_2 = TypeOneMultiSignature.aggregate(
+            xmss_participants=xmss_2,
             children=[],
             raw_xmss=raw_xmss_2,
-            xmss_participants=xmss_2,
             message=data_root,
             slot=attestation_data.slot,
         )
@@ -540,8 +540,16 @@ class TestAggregateCommitteeSignatures:
         proofs = updated_store.latest_new_aggregated_payloads[attestation_data]
         proof = next(iter(proofs))
 
-        # Structural binding: proof info matches the attestation data participants.
-        assert set(proof.participants.to_validator_indices()) == set(attesting_validators)
+        # Extract participants from the proof
+        participants = proof.participants.to_validator_indices()
+        public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+
+        # Verify proof is valid
+        proof.verify(
+            public_keys=public_keys,
+            message=hash_tree_root(attestation_data),
+            slot=attestation_data.slot,
+        )
 
     def test_empty_attestation_signatures_produces_no_proofs(
         self, key_manager: XmssKeyManager, spec: LstarSpec
@@ -796,6 +804,13 @@ class TestEndToEndAggregationFlow:
             "Aggregated proofs should exist after interval 2"
         )
 
-        # Step 4: Structural check that the proof binds to the expected data participants.
+        # Step 4: Verify the proof is valid
         proof = next(iter(store.latest_new_aggregated_payloads[attestation_data]))
-        assert proof.participants.to_validator_indices()
+        participants = proof.participants.to_validator_indices()
+        public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+
+        proof.verify(
+            public_keys=public_keys,
+            message=hash_tree_root(attestation_data),
+            slot=attestation_data.slot,
+        )
