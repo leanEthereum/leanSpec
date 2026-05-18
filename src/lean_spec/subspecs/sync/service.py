@@ -275,6 +275,14 @@ class SyncService:
     Same buffering strategy as individual attestations.
     """
 
+    _pending_block_aggregates: list[SignedAggregatedAttestation] = field(default_factory=list)
+    """Combined aggregates recovered from processed blocks.
+
+    Every processed block is deconstructed in the block wrapper, which
+    queues its combined aggregates here. The gossip umbrella drains and
+    publishes them after the store is updated.
+    """
+
     def set_publish_agg_fn(
         self, fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]]
     ) -> None:
@@ -351,6 +359,17 @@ class SyncService:
         #
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
+
+        # Deconstruct every processed block, regardless of how it arrived.
+        #
+        # Gossip, head-sync, and backfilled descendants all funnel through
+        # here. Recovering the per-attestation proofs from the merged block
+        # proof and writing them into the pool is what gives a catching-up
+        # node block-imported attestation weight in fork choice.
+        # The combined aggregates are queued for the gossip umbrella to
+        # publish; backfill bulk import does not add network load itself.
+        new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
+        self._pending_block_aggregates.extend(aggregates)
 
         # Persist block and state to database if available.
         #
@@ -540,7 +559,7 @@ class SyncService:
             )
             self.store = new_store
             self._replay_pending_attestations()
-            await self._maybe_publish_reaggregated_attestations_from_block(block)
+            await self._publish_pending_block_aggregates()
 
         # Each processed block might complete our sync.
         #
@@ -720,65 +739,74 @@ class SyncService:
         """
         await self._publish_agg_fn(signed_attestation)
 
-    async def _maybe_publish_reaggregated_attestations_from_block(
+    def _deconstruct_block_into_store(
         self,
+        store: Store,
         block: SignedBlock,
-    ) -> None:
-        """On block import we already trust the block-attestation participant
-        bitfields via `spec.on_block` signature verification. The block carries
+    ) -> tuple[Store, list[SignedAggregatedAttestation]]:
+        """Recover per-attestation proofs from a processed block.
+
+        On block import we already trust the block-attestation participant
+        bitfields via spec on_block signature verification. The block carries
         one merged Type-2 proof binding every attestation in its body.
 
-        For each block attestation that covers validators this node does not
-        already hold locally:
+        For each block attestation that covers validators not already held
+        in the given store:
 
         1. Extract that data's Type-1 proof out of the block's Type-2 proof.
-        2. Merge it with all local partial Type-1 proofs for the same data into
-           one Type-1 proof whose participant bits are the union.
-        3. Gossip the combined aggregate.
+        2. Merge it with all local partial Type-1 proofs for the same data
+           into one Type-1 proof whose participant bits are the union.
+        3. Write the combined proof into the pending pool.
 
-        If the node has never seen the data locally, the extracted Type-1 is
-        gossiped as-is. This propagates the strongest available aggregate
-        without a full re-aggregation pass.
+        If the data was never seen locally, the extracted Type-1 is used
+        as-is. The updated store and the combined aggregates are returned.
+        Publishing is left to the caller.
         """
-        if self.store.validator_id is None:
-            return
+        if store.validator_id is None:
+            return store, []
 
         block_attestations = list(block.block.body.attestations)
         if not block_attestations:
-            return
+            return store, []
 
         # The Type-2 proof was built against the parent state's validator set.
         # Without it we cannot resolve the pubkey layout the proof was bound to.
-        parent_state = self.store.states.get(block.block.parent_root)
+        parent_state = store.states.get(block.block.parent_root)
         if parent_state is None:
-            return
+            return store, []
         validators = parent_state.validators
 
         try:
             type_two = TypeTwoMultiSignature.decode_bytes(block.proof.data)
         except Exception as exc:
             logger.debug("Post-block Type-2 decode failed: %s", exc)
-            return
+            return store, []
 
         # Index local partial Type-1 proofs by AttestationData root. Equivalent
         # AttestationData instances from different code paths may not share a
         # dict key, so match on the hash tree root instead.
         local_proofs_by_root: dict[Bytes32, list[TypeOneMultiSignature]] = {}
-        for data, proofs in self.store.latest_new_aggregated_payloads.items():
+        for data, proofs in store.latest_new_aggregated_payloads.items():
             local_proofs_by_root.setdefault(hash_tree_root(data), []).extend(proofs)
 
         # Working copy of the pending pool.
-        # The combined proof is gossiped and also retained locally so the
-        # block-sourced aggregate survives without depending on gossip
-        # loopback. Shallow-copy the dict and its inner sets to preserve
-        # store immutability.
+        # The combined proof is retained locally so the block-sourced
+        # aggregate survives without depending on gossip loopback. Shallow
+        # copy the dict and its inner sets to preserve store immutability.
         new_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {
-            k: set(v) for k, v in self.store.latest_new_aggregated_payloads.items()
+            k: set(v) for k, v in store.latest_new_aggregated_payloads.items()
         }
-        inserted_any = False
+        aggregates: list[SignedAggregatedAttestation] = []
 
         for att in block_attestations:
             data = att.data
+
+            # Only spend a split on attestations that can still move
+            # justification forward. A target at or behind the store's
+            # justified checkpoint cannot, so skip it.
+            if data.target.slot <= store.latest_justified.slot:
+                continue
+
             data_root = hash_tree_root(data)
             block_participants = set(att.aggregation_bits.to_validator_indices())
 
@@ -787,7 +815,7 @@ class SyncService:
             for proof in local_proofs:
                 local_union |= set(proof.participants.to_validator_indices())
 
-            # Only propagate when the block covers validators we do not already
+            # Only act when the block covers validators we do not already
             # hold. An empty local_union also covers data never seen locally.
             if not (block_participants - local_union):
                 continue
@@ -836,23 +864,48 @@ class SyncService:
                         slot=data.slot,
                     )
                 else:
-                    # Data unseen locally: nothing to merge, gossip as-is.
+                    # Data unseen locally: nothing to merge, use as-is.
                     combined = block_t1
             except (AggregationError, AssertionError, KeyError, ValueError) as exc:
                 logger.debug("Post-block re-aggregation failed for %s: %s", data_root, exc)
                 continue
 
+            # The combined proof is a superset of every local partial that
+            # fed it, so those partials are now redundant. Drop them from
+            # the pool (across any data key sharing this root) and keep only
+            # the higher-coverage proof.
+            if local_proofs:
+                superseded = set(local_proofs)
+                for key in list(new_payloads):
+                    if hash_tree_root(key) != data_root:
+                        continue
+                    remaining = new_payloads[key] - superseded
+                    if remaining:
+                        new_payloads[key] = remaining
+                    else:
+                        del new_payloads[key]
+
             new_payloads.setdefault(data, set()).add(combined)
-            inserted_any = True
+            aggregates.append(SignedAggregatedAttestation(data=data, proof=combined))
 
-            await self.publish_aggregated_attestation(
-                SignedAggregatedAttestation(data=data, proof=combined)
-            )
+        if aggregates:
+            store = store.model_copy(update={"latest_new_aggregated_payloads": new_payloads})
 
-        if inserted_any:
-            self.store = self.store.model_copy(
-                update={"latest_new_aggregated_payloads": new_payloads}
-            )
+        return store, aggregates
+
+    async def _publish_pending_block_aggregates(self) -> None:
+        """Gossip the aggregates recovered from processed blocks.
+
+        Every processed block is deconstructed in the block wrapper, which
+        writes the recovered proofs into the store and queues the combined
+        aggregates here. This drains that queue onto the network.
+        """
+        if not self._pending_block_aggregates:
+            return
+        pending = self._pending_block_aggregates
+        self._pending_block_aggregates = []
+        for signed_attestation in pending:
+            await self.publish_aggregated_attestation(signed_attestation)
 
     async def _check_sync_trigger(self) -> None:
         """

@@ -1,25 +1,34 @@
-"""Tests for post-block Type-1 extraction and re-aggregation in SyncService.
+"""Tests for post-block Type-1 deconstruction in SyncService.
 
-Exercises the decision/guard logic of
-`SyncService._maybe_publish_reaggregated_attestations_from_block`: an
-aggregator that imports a block extracts each attestation's Type-1 proof out
-of the merged Type-2 proof, merges it with locally held partial aggregates
-for the same data, and gossips the combined Type-1.
+Exercises `SyncService._deconstruct_block_into_store`: for every processed
+block (gossip, head-sync, or backfilled), the merged Type-2 proof is split
+into per-attestation Type-1 proofs, merged with locally held partials, and
+written into the pending pool, replacing the partials it subsumes.
 
-These tests cover only the paths reachable without a Type-2 split. The split
-primitive (`split_type_2_by_msg`) is unsupported by the test-mode prover in
-the current `lean_multisig_py` build, so the proof-extraction path is not
-exercised here.
+Deconstruction only runs for an attestation when:
+
+- its target is ahead of the store's justified checkpoint, so the proof
+  can still help move justification, and
+- it adds at least one participant the node does not already hold.
+
+Only the decision/gate paths are exercised here. The split itself
+(`split_type_2_by_msg`) is implemented and works in the production prover,
+but the upstream `lean_multisig` `test-config` build aborts it with an
+in-circuit assertion (the reduced XMSS dimensions are inconsistent with
+the aggregation program's split branch). It is not a leanSpec defect and
+cannot be fixed here, so the split-extract-merge body is verified under a
+production prover, not in this test-mode suite.
 """
 
 from __future__ import annotations
 
 from consensus_testing.keys import XmssKeyManager
 
-from lean_spec.forks.lstar.containers import SignedAggregatedAttestation
+from lean_spec.forks.lstar.containers.attestation import AttestationData
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.networking import PeerId
-from lean_spec.types import Slot, ValidatorIndex
+from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.types import Checkpoint, Slot, ValidatorIndex
 from tests.lean_spec.helpers import (
     create_mock_sync_service,
     make_aggregated_proof,
@@ -27,8 +36,12 @@ from tests.lean_spec.helpers import (
     make_store,
 )
 
-ATTESTATION_SLOT = Slot(1)
-PROPOSER_INDEX = ValidatorIndex(1)
+# Round-robin proposer is slot % num_validators with four validators.
+NUM_VALIDATORS = 4
+CHAIN_SLOT = Slot(1)
+CHAIN_PROPOSER = ValidatorIndex(1)
+BLOCK_SLOT = Slot(2)
+BLOCK_PROPOSER = ValidatorIndex(2)
 
 
 def _setup(
@@ -36,51 +49,80 @@ def _setup(
     *,
     block_participants: list[ValidatorIndex],
 ):
-    """Build a genesis store and a signed block carrying an aggregated attestation.
+    """Build a two-block chain and a signed block carrying an attestation.
 
-    The block body holds one attestation for ``attestation_data`` whose
-    participant bits are ``block_participants``. The returned store is genesis
-    (it holds the parent state needed to resolve the Type-2 pubkey layout).
+    The chain block sits at slot 1. The returned signed block sits at slot
+    2 and carries one attestation whose target is the slot-1 block, ahead
+    of the still-genesis justified checkpoint. The returned store holds the
+    slot-1 block and its state (the parent state the Type-2 pubkey layout
+    is resolved against) with the justified checkpoint still at genesis.
     """
     spec = LstarSpec()
     base_store = make_store(
-        num_validators=4, validator_id=ValidatorIndex(0), key_manager=key_manager
+        num_validators=NUM_VALIDATORS, validator_id=ValidatorIndex(0), key_manager=key_manager
     )
-    attestation_data = spec.produce_attestation_data(base_store, ATTESTATION_SLOT)
+
+    consumer_store, chain_block = make_signed_block_from_store(
+        base_store, key_manager, CHAIN_SLOT, CHAIN_PROPOSER
+    )
+    chain_store = spec.on_block(consumer_store, chain_block)
+    chain_root = hash_tree_root(chain_block.block)
+
+    # Target the slot-1 block; source stays at the genesis justified
+    # checkpoint so the builder accepts the attestation.
+    attestation_data = AttestationData(
+        slot=BLOCK_SLOT,
+        head=Checkpoint(root=chain_root, slot=CHAIN_SLOT),
+        target=Checkpoint(root=chain_root, slot=CHAIN_SLOT),
+        source=chain_store.latest_justified,
+    )
 
     block_proof = make_aggregated_proof(key_manager, block_participants, attestation_data)
-    producer_store = base_store.model_copy(
+    producer_store = chain_store.model_copy(
         update={"latest_known_aggregated_payloads": {attestation_data: {block_proof}}}
     )
     _, signed_block = make_signed_block_from_store(
-        producer_store, key_manager, ATTESTATION_SLOT, PROPOSER_INDEX
+        producer_store, key_manager, BLOCK_SLOT, BLOCK_PROPOSER
     )
-    return base_store, signed_block, attestation_data
+    return chain_store, signed_block, attestation_data
 
 
-def _aggregator_service(peer_id: PeerId, store):
-    """A capturing aggregator SyncService wrapping the given real store."""
-    service = create_mock_sync_service(peer_id)
-    service.store = store
-    service.is_aggregator = True
-    published: list[SignedAggregatedAttestation] = []
-
-    async def capture(agg: SignedAggregatedAttestation) -> None:
-        published.append(agg)
-
-    service.set_publish_agg_fn(capture)
-    return service, published
+def _service(peer_id: PeerId):
+    """A SyncService usable to invoke the deconstruction core directly."""
+    return create_mock_sync_service(peer_id)
 
 
-async def test_skips_when_block_adds_no_new_validators(
+def test_skips_when_target_not_ahead_of_justified(
     peer_id: PeerId, key_manager: XmssKeyManager
 ) -> None:
-    """Block participants are a subset of the local union -> nothing published.
+    """Target at or behind the justified checkpoint -> no aggregates.
 
-    The trigger gate rejects the block before any Type-2 split is attempted.
+    The block's attestation cannot move justification, so the expensive
+    split is never attempted and the store is returned unchanged.
+    """
+    chain_store, signed_block, attestation_data = _setup(
+        key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
+    )
+    # Justified now sits at the attestation's target slot.
+    store = chain_store.model_copy(update={"latest_justified": attestation_data.target})
+    service = _service(peer_id)
+
+    new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
+
+    assert aggregates == []
+    assert new_store is store
+
+
+def test_skips_when_block_adds_no_new_validators(
+    peer_id: PeerId, key_manager: XmssKeyManager
+) -> None:
+    """Block participants are a subset of the local union -> no aggregates.
+
+    The target is ahead of justified, so the only thing stopping the split
+    is that the block adds no new participant. The store is unchanged.
     """
     block_participants = [ValidatorIndex(1), ValidatorIndex(2)]
-    base_store, signed_block, attestation_data = _setup(
+    chain_store, signed_block, attestation_data = _setup(
         key_manager, block_participants=block_participants
     )
 
@@ -89,40 +131,43 @@ async def test_skips_when_block_adds_no_new_validators(
         [ValidatorIndex(1), ValidatorIndex(2), ValidatorIndex(3)],
         attestation_data,
     )
-    store = base_store.model_copy(
+    store = chain_store.model_copy(
         update={"latest_new_aggregated_payloads": {attestation_data: {local_partial}}}
     )
-    service, published = _aggregator_service(peer_id, store)
+    service = _service(peer_id)
 
-    await service._maybe_publish_reaggregated_attestations_from_block(signed_block)
+    new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
 
-    assert published == []
+    assert aggregates == []
+    assert new_store is store
 
 
-async def test_noop_when_not_a_validator(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
-    """A node with no validator identity never re-aggregates or publishes.
+def test_noop_when_not_a_validator(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
+    """A node with no validator identity never re-aggregates.
 
     The gate is the absence of a validator id, not the aggregator role.
     """
-    base_store, signed_block, _ = _setup(
+    chain_store, signed_block, _ = _setup(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
     )
-    store = base_store.model_copy(update={"validator_id": None})
-    service, published = _aggregator_service(peer_id, store)
+    store = chain_store.model_copy(update={"validator_id": None})
+    service = _service(peer_id)
 
-    await service._maybe_publish_reaggregated_attestations_from_block(signed_block)
+    new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
 
-    assert published == []
+    assert aggregates == []
+    assert new_store is store
 
 
-async def test_noop_when_parent_state_missing(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
+def test_noop_when_parent_state_missing(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
     """Without the parent state the pubkey layout cannot be resolved -> no-op."""
-    base_store, signed_block, _ = _setup(
+    chain_store, signed_block, _ = _setup(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
     )
-    store = base_store.model_copy(update={"states": {}})
-    service, published = _aggregator_service(peer_id, store)
+    store = chain_store.model_copy(update={"states": {}})
+    service = _service(peer_id)
 
-    await service._maybe_publish_reaggregated_attestations_from_block(signed_block)
+    new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
 
-    assert published == []
+    assert aggregates == []
+    assert new_store is store
