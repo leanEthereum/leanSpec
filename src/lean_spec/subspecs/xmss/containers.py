@@ -1,21 +1,17 @@
-"""
-Data containers for the Generalized XMSS signature scheme.
-
-This module defines the high-level containers: PublicKey, Signature, and SecretKey.
-Base types (HashDigestVector, Parameter, etc.) are defined in types.py.
-"""
+"""Generalized XMSS containers."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import NamedTuple, override
+from typing import override
 
-from pydantic import model_serializer
+from pydantic import field_serializer, field_validator, model_serializer
 
 from lean_spec.types import Slot
+from lean_spec.types.base import StrictBaseModel
 
 from ...types import Uint64
 from ...types.container import Container
+from ...types.exceptions import SSZError
 from .constants import TARGET_CONFIG
 from .subtree import HashSubTree
 from .types import (
@@ -29,196 +25,169 @@ from .types import (
 
 
 class PublicKey(Container):
-    """
-    The public-facing component of a key pair.
-
-    This is the data a verifier needs to check signatures. It is compact, safe to
-    distribute publicly, and acts as the signer's identity.
-
-    SSZ Container with fields:
-    - root: Vector[Fp, HASH_LEN_FE]
-    - parameter: Vector[Fp, PARAMETER_LEN]
-
-    Serialization is handled automatically by SSZ.
-    """
+    """Long-lived public component of an XMSS key pair."""
 
     root: HashDigestVector
-    """The Merkle root, which commits to all one-time keys for the key's lifetime."""
+    """Merkle root over every one-time public key in the lifetime."""
+
     parameter: Parameter
-    """The public parameter `P` that personalizes the hash function."""
+    """Public personalization tag mixed into every hash."""
 
 
 class Signature(Container):
-    """
-    A signature produced by the `sign` function.
-
-    It contains all the necessary components for a verifier to confirm that a
-    specific message was signed by the owner of a `PublicKey` for a specific slot.
-
-    SSZ Container with fields:
-    - path: HashTreeOpening (container with siblings list)
-    - rho: Vector[Fp, RAND_LEN_FE]
-    - hashes: List[Vector[Fp, HASH_DIGEST_LENGTH], NODE_LIST_LIMIT]
-
-    Although the fields are internally variable-size SSZ types, every valid
-    signature serializes to exactly `SIGNATURE_LEN_BYTES`. This class overrides
-    `is_fixed_size()` to report as fixed-size so that parent containers treat
-    it as an opaque byte blob. This avoids leaking internal structure (field
-    count, offset layout) into the wire format, keeping the signature scheme
-    an implementation detail that can evolve independently.
-    """
+    """A single XMSS signature for one (slot, message) under one public key."""
 
     path: HashTreeOpening
-    """The authentication path proving the one-time key's inclusion in the Merkle tree."""
+    """Authentication path from the one-time key up to the Merkle root."""
+
     rho: Randomness
-    """The randomness used to successfully encode the message."""
+    """Randomness that succeeded in encoding the message to a valid codeword."""
+
     hashes: HashDigestList
-    """The one-time signature itself: a list of intermediate Winternitz chain hashes."""
+    """Released Winternitz chain hashes that form the one-time signature."""
 
     @classmethod
     @override
     def is_fixed_size(cls) -> bool:
-        """
-        Report as fixed-size for cross-client SSZ interoperability.
-
-        Ream serializes XMSS signatures as `FixedBytes<3112>`, so parent
-        containers must inline the bytes without an offset pointer.
-        """
+        """Always fixed-size on the wire (see class docstring for why)."""
         return True
 
     @classmethod
     @override
     def get_byte_length(cls) -> int:
-        """Return the fixed byte length of the SSZ-encoded signature."""
+        """Fixed byte length of an SSZ-encoded signature."""
         return TARGET_CONFIG.SIGNATURE_LEN_BYTES
 
     @model_serializer(mode="plain", when_used="json")
     def _serialize_as_bytes(self) -> str:
-        """Serialize as hex-encoded SSZ bytes for JSON output."""
+        """Serialize as "0x"-prefixed hex of the SSZ bytes for JSON output."""
         return "0x" + self.encode_bytes().hex()
 
 
 class SecretKey(Container):
     """
-    The private component of a key pair. **MUST BE KEPT CONFIDENTIAL.**
+    Private state of an XMSS key pair. MUST BE KEPT CONFIDENTIAL.
 
-    This object contains all the secret material and pre-computed data needed to
-    generate signatures for any slot within its active lifetime.
+    The tree of one-time keys is split into a top tree plus many bottom trees.
 
-    SSZ Container with fields:
-    - prf_key: Bytes[PRF_KEY_LENGTH]
-    - parameter: Vector[Fp, PARAMETER_LEN]
-    - activation_slot: uint64
-    - num_active_slots: uint64
-    - top_tree: HashSubTree
-    - left_bottom_tree_index: uint64
-    - left_bottom_tree: HashSubTree
-    - right_bottom_tree: HashSubTree
+    Each bottom tree:
+        - has width W = 2^(LOG_LIFETIME / 2),
+        - covers W slots.
 
-    Serialization is handled automatically by SSZ.
+    Bottom tree i covers slots [i*W, (i+1)*W).
+
+    The signer keeps the full top tree resident, plus two adjacent bottom trees.
+
+    This means that we have a sliding window of 2W consecutive slots.
+
+    These slots can be signed immediately without recomputing anything.
+
+    Memory stays O(sqrt(LIFETIME)) regardless of how long the key lives.
     """
 
     prf_key: PRFKey
-    """The master secret key used to derive all one-time secrets."""
+    """Master secret seed; every one-time key is derived from this."""
 
     parameter: Parameter
-    """The public parameter `P`, stored for convenience during signing."""
+    """Public parameter mirrored here so signing is self-contained."""
 
     activation_slot: Slot
     """
-    The first slot for which this secret key is valid.
+    First slot this key can sign for.
 
-    Note: With top-bottom trees, this is aligned to a multiple of `sqrt(LIFETIME)`
-    to ensure efficient tree partitioning.
+    Aligned down to a multiple of W so each bottom tree covers exactly W slots.
     """
 
     num_active_slots: Uint64
     """
-    The number of consecutive slots this key can be used for.
+    Number of consecutive slots this key can sign for.
 
-    Note: With top-bottom trees, this is rounded up to be a multiple of
-    `sqrt(LIFETIME)`, with a minimum of `2 * sqrt(LIFETIME)`.
+    Rounded up to a multiple of W, with a minimum of 2W so the prepared window always fits.
     """
 
     top_tree: HashSubTree
     """
-    The top tree containing the root and top `LOG_LIFETIME/2` layers.
+    Full top tree, always resident.
 
-    This tree is always kept in memory and contains the roots of all bottom trees
-    in its lowest layer. Its root is the public key's Merkle root.
+    Its lowest layer holds the bottom-tree roots; its top is the public-key root.
     """
 
     left_bottom_tree_index: Uint64
     """
-    The index of the left bottom tree in the sliding window.
+    Bottom-tree index i for the left half of the prepared window.
 
-    Bottom trees are numbered 0, 1, 2, ... where tree `i` covers slots
-    `[i * sqrt(LIFETIME), (i+1) * sqrt(LIFETIME))`.
-
-    The prepared interval is:
-    [left_bottom_tree_index * sqrt(LIFETIME), (left_bottom_tree_index + 2) * sqrt(LIFETIME))
-
+    - Tree i covers slots [i*W, (i+1)*W);
+    - The window covers [i*W, (i+2)*W).
     """
 
     left_bottom_tree: HashSubTree
-    """
-    The left bottom tree in the sliding window.
-
-    This covers slots:
-    [left_bottom_tree_index * sqrt(LIFETIME), (left_bottom_tree_index + 1) * sqrt(LIFETIME))
-    """
+    """Bottom tree at index i, covering slots [i*W, (i+1)*W)."""
 
     right_bottom_tree: HashSubTree
-    """
-    The right bottom tree in the sliding window.
-
-    This covers slots:
-    [(left_bottom_tree_index + 1) * sqrt(LIFETIME), (left_bottom_tree_index + 2) * sqrt(LIFETIME))
-
-    Together with `left_bottom_tree`, this provides a prepared interval of
-    exactly `2 * sqrt(LIFETIME)` consecutive slots.
-    """
+    """Bottom tree at index i+1, covering slots [(i+1)*W, (i+2)*W)."""
 
 
-class KeyPair(NamedTuple):
-    """
-    Immutable XMSS key pair produced by key generation.
+class KeyPair(StrictBaseModel):
+    """A single XMSS public/secret pair returned by key generation."""
 
-    Used at the scheme level for a single public/secret pair.
-    """
+    public_key: PublicKey
+    """Public key."""
 
-    public: PublicKey
-    secret: SecretKey
+    secret_key: SecretKey
+    """Secret key."""
 
-
-class ValidatorKeyPair(NamedTuple):
-    """
-    Immutable dual XMSS key pair for a validator.
-
-    Attestation and proposal keys are separate to allow independent signing
-    within the same slot. OTS requires a distinct key for each signing purpose.
-    """
-
-    attestation_public: PublicKey
-    attestation_secret: SecretKey
-    proposal_public: PublicKey
-    proposal_secret: SecretKey
-
+    @field_validator("public_key", mode="before")
     @classmethod
-    def from_dict(cls, data: Mapping[str, str]) -> ValidatorKeyPair:
-        """Deserialize from JSON-compatible dict with hex-encoded SSZ."""
-        return cls(
-            attestation_public=PublicKey.decode_bytes(bytes.fromhex(data["attestation_public"])),
-            attestation_secret=SecretKey.decode_bytes(bytes.fromhex(data["attestation_secret"])),
-            proposal_public=PublicKey.decode_bytes(bytes.fromhex(data["proposal_public"])),
-            proposal_secret=SecretKey.decode_bytes(bytes.fromhex(data["proposal_secret"])),
-        )
+    def _decode_public_key(cls, value: object) -> object:
+        """Decode a hex string into a PublicKey; pass other inputs through."""
+        if not isinstance(value, str):
+            return value
+        try:
+            return PublicKey.from_hex(value)
+        except SSZError as err:
+            raise ValueError(f"invalid public key hex: {err}") from err
 
-    def to_dict(self) -> dict[str, str]:
-        """Serialize to JSON-compatible dict with hex-encoded SSZ."""
-        return {
-            "attestation_public": self.attestation_public.encode_bytes().hex(),
-            "attestation_secret": self.attestation_secret.encode_bytes().hex(),
-            "proposal_public": self.proposal_public.encode_bytes().hex(),
-            "proposal_secret": self.proposal_secret.encode_bytes().hex(),
+    @field_validator("secret_key", mode="before")
+    @classmethod
+    def _decode_secret_key(cls, value: object) -> object:
+        """Decode a hex string into a SecretKey; pass other inputs through."""
+        if not isinstance(value, str):
+            return value
+        try:
+            return SecretKey.from_hex(value)
+        except SSZError as err:
+            raise ValueError(f"invalid secret key hex: {err}") from err
+
+    @field_serializer("public_key", "secret_key", when_used="json")
+    def _encode_hex(self, value: PublicKey | SecretKey) -> str:
+        """Emit each half as plain hex in JSON mode only."""
+        return value.to_hex()
+
+
+class ValidatorKeyPair(StrictBaseModel):
+    """
+    Two independent XMSS key pairs for one validator's two signing roles.
+
+    A validator signs two messages per slot:
+
+    - one attestation (always),
+    - one block proposal (only when chosen as proposer).
+
+    A one-time signature exhausts a leaf, so a single XMSS key cannot serve
+    both roles in the same slot.
+    Splitting into two independent pairs lets a validator sign both
+    messages from independent Winternitz chains.
+
+    JSON shape on disk:
+
+        {
+          "attestation_keypair": {"public_key": "<hex>", "secret_key": "<hex>"},
+          "proposal_keypair":    {"public_key": "<hex>", "secret_key": "<hex>"}
         }
+    """
+
+    attestation_keypair: KeyPair
+    """Key pair used to sign attestation data."""
+
+    proposal_keypair: KeyPair
+    """Key pair used to sign proposed block roots."""

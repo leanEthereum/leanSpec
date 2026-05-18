@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from lean_spec.types import BaseByteList, Uint16, Uint32, Uint64
+from lean_spec.types import BaseByteList, Uint16, Uint64
 from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.exceptions import SSZSerializationError, SSZValueError
-from lean_spec.types.union import SSZUnion
 
 # Test type definitions
 
@@ -57,18 +56,6 @@ class ByteList32(BaseByteList):
     """ByteList with max 32 bytes."""
 
     LIMIT = 32
-
-
-class UnionUint16Uint32(SSZUnion):
-    """Union of Uint16 and Uint32."""
-
-    OPTIONS = (Uint16, Uint32)
-
-
-class UnionNoneUint16(SSZUnion):
-    """Union with None option."""
-
-    OPTIONS = (None, Uint16)
 
 
 # Offset validation tests
@@ -219,61 +206,6 @@ class TestBitlistDelimiter:
 
         with pytest.raises(SSZValueError, match="exceeds limit"):
             Bitlist64.decode_bytes(data)
-
-
-# Union selector tests
-
-
-class TestUnionSelector:
-    """Tests for union selector validation."""
-
-    def test_union_selector_out_of_range(self) -> None:
-        """Selector must be within the OPTIONS range."""
-        # UnionUint16Uint32 has OPTIONS = (Uint16, Uint32), valid selectors are 0, 1
-        data = (
-            b"\x02"  # Selector: 2 (invalid - only 0 and 1 are valid)
-            b"\xab\xcd"  # Some value data
-        )
-
-        with pytest.raises(SSZValueError, match="selector 2 out of range"):
-            UnionUint16Uint32.decode_bytes(data)
-
-    def test_union_selector_max_invalid(self) -> None:
-        """Selector value 128+ is invalid even for large unions."""
-        # Any selector >= 128 is invalid (max 127 options)
-        data = (
-            b"\x80"  # Selector: 128 (invalid)
-            b"\xab\xcd"
-        )
-
-        with pytest.raises(SSZValueError, match="selector 128 out of range"):
-            UnionUint16Uint32.decode_bytes(data)
-
-    def test_union_none_arm_with_data(self) -> None:
-        """None arm must have no payload bytes."""
-        # UnionNoneUint16 selector=0 means None, should have no data
-        data = (
-            b"\x00"  # Selector: 0 (None)
-            b"\xab\xcd"  # Extra data (invalid for None arm)
-        )
-
-        with pytest.raises(SSZSerializationError, match="None arm must have no payload"):
-            UnionNoneUint16.decode_bytes(data)
-
-    def test_union_valid_none_arm(self) -> None:
-        """Valid None arm has just the selector byte."""
-        data = b"\x00"  # Selector: 0 (None), no payload
-
-        result = UnionNoneUint16.decode_bytes(data)
-        assert result.selector == 0
-        assert result.value is None
-
-    def test_union_scope_too_small(self) -> None:
-        """Union needs at least 1 byte for selector."""
-        data = b""
-
-        with pytest.raises(SSZSerializationError, match="scope too small"):
-            UnionUint16Uint32.decode_bytes(data)
 
 
 # Excess bytes tests

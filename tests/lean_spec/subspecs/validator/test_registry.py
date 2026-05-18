@@ -73,14 +73,14 @@ class TestValidatorEntry:
         kp = km[ValidatorIndex(7)]
         entry = ValidatorEntry(
             index=ValidatorIndex(7),
-            attestation_secret_key=kp.attestation_secret,
-            proposal_secret_key=kp.proposal_secret,
+            attestation_secret_key=kp.attestation_keypair.secret_key,
+            proposal_secret_key=kp.proposal_keypair.secret_key,
         )
 
         assert entry == ValidatorEntry(
             index=ValidatorIndex(7),
-            attestation_secret_key=kp.attestation_secret,
-            proposal_secret_key=kp.proposal_secret,
+            attestation_secret_key=kp.attestation_keypair.secret_key,
+            proposal_secret_key=kp.proposal_keypair.secret_key,
         )
 
 
@@ -208,8 +208,8 @@ class TestValidatorRegistry:
         kp = km[vid]
         return ValidatorEntry(
             index=vid,
-            attestation_secret_key=kp.attestation_secret,
-            proposal_secret_key=kp.proposal_secret,
+            attestation_secret_key=kp.attestation_keypair.secret_key,
+            proposal_secret_key=kp.proposal_keypair.secret_key,
         )
 
     def test_empty_registry_has_no_entries(self) -> None:
@@ -317,8 +317,8 @@ class TestValidatorRegistry:
         kp_prop = km[ValidatorIndex(7)]
         new_entry = ValidatorEntry(
             index=ValidatorIndex(5),
-            attestation_secret_key=kp_att.attestation_secret,
-            proposal_secret_key=kp_prop.proposal_secret,
+            attestation_secret_key=kp_att.attestation_keypair.secret_key,
+            proposal_secret_key=kp_prop.proposal_keypair.secret_key,
         )
 
         registry.add(old_entry)
@@ -326,7 +326,10 @@ class TestValidatorRegistry:
 
         assert len(registry) == 1
         assert registry_state(registry) == {
-            ValidatorIndex(5): (kp_att.attestation_secret, kp_prop.proposal_secret)
+            ValidatorIndex(5): (
+                kp_att.attestation_keypair.secret_key,
+                kp_prop.proposal_keypair.secret_key,
+            )
         }
 
 
@@ -354,8 +357,12 @@ class TestValidatorRegistryFromYaml:
         for i in indices:
             vid = ValidatorIndex(i)
             kp = km[vid]
-            (directory / f"att_key_{i}.ssz").write_bytes(kp.attestation_secret.encode_bytes())
-            (directory / f"prop_key_{i}.ssz").write_bytes(kp.proposal_secret.encode_bytes())
+            (directory / f"att_key_{i}.ssz").write_bytes(
+                kp.attestation_keypair.secret_key.encode_bytes()
+            )
+            (directory / f"prop_key_{i}.ssz").write_bytes(
+                kp.proposal_keypair.secret_key.encode_bytes()
+            )
 
     def test_happy_path_loads_assigned_validators(self, tmp_path: Path, km: XmssKeyManager) -> None:
         """Registry loads keys only for validators assigned to the specified node."""
@@ -383,8 +390,8 @@ class TestValidatorRegistryFromYaml:
             vid = ValidatorIndex(i)
             entry = registry.get(vid)
             assert entry is not None
-            expected_att = km[vid].attestation_secret.encode_bytes()
-            expected_prop = km[vid].proposal_secret.encode_bytes()
+            expected_att = km[vid].attestation_keypair.secret_key.encode_bytes()
+            expected_prop = km[vid].proposal_keypair.secret_key.encode_bytes()
             assert entry.attestation_secret_key.encode_bytes() == expected_att
             assert entry.proposal_secret_key.encode_bytes() == expected_prop
 
@@ -465,7 +472,7 @@ class TestValidatorRegistryFromYaml:
 
         # Write only attestation key, not proposal key.
         kp = km[ValidatorIndex(0)]
-        (tmp_path / "att_key_0.ssz").write_bytes(kp.attestation_secret.encode_bytes())
+        (tmp_path / "att_key_0.ssz").write_bytes(kp.attestation_keypair.secret_key.encode_bytes())
 
         with pytest.raises(ValueError, match="key file not found"):
             ValidatorRegistry.from_yaml(
@@ -501,7 +508,7 @@ class TestValidatorRegistryFromYaml:
 
         # Write real attestation key but corrupt proposal key.
         kp = km[ValidatorIndex(0)]
-        (tmp_path / "att_key_0.ssz").write_bytes(kp.attestation_secret.encode_bytes())
+        (tmp_path / "att_key_0.ssz").write_bytes(kp.attestation_keypair.secret_key.encode_bytes())
         (tmp_path / "prop_key_0.ssz").write_bytes(b"not valid ssz")
 
         with pytest.raises(ValueError, match="Failed to load proposal key"):

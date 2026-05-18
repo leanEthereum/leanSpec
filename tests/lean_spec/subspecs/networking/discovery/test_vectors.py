@@ -117,7 +117,7 @@ class TestOfficialNodeIdVectors:
         )
 
         computed = compute_node_id(pubkey_bytes)
-        assert bytes(computed) == NODE_B_ID
+        assert computed == NODE_B_ID
 
 
 class TestOfficialNodeIdAndKeyVectors:
@@ -136,7 +136,7 @@ class TestOfficialNodeIdAndKeyVectors:
             )
         )
         computed = compute_node_id(pubkey_bytes)
-        assert bytes(computed) == NODE_A_ID
+        assert computed == NODE_A_ID
 
     def test_bidirectional_ecdh(self):
         """ECDH(A_priv, B_pub) == ECDH(B_priv, A_pub).
@@ -177,7 +177,7 @@ class TestOfficialCryptoVectors:
 
         shared = ecdh_agree(SPEC_EPHEMERAL_KEY, SPEC_EPHEMERAL_PUBKEY)
 
-        assert shared == expected_shared
+        assert bytes(shared) == expected_shared
 
     def test_key_derivation_hkdf(self):
         """
@@ -223,7 +223,7 @@ class TestOfficialCryptoVectors:
             "94852a1e2318c4e5e9d422c98eaf19d1d90d876b29cd06ca7cb7546d0fff7b48"
             "4fe86c09a064fe72bdbef73ba8e9c34df0cd2b53e9d65528c2c7f336d5dfc6e6"
         )
-        assert signature == expected_sig
+        assert bytes(signature) == expected_sig
 
         # Also verify the signature.
         private_key = ec.derive_private_key(
@@ -331,7 +331,7 @@ class TestOfficialPacketVectors:
 
         assert header.flag == PacketFlag.WHOAREYOU
         decoded_authdata = decode_whoareyou_authdata(header.authdata)
-        assert bytes(decoded_authdata.id_nonce) == SPEC_ID_NONCE
+        assert decoded_authdata.id_nonce == SPEC_ID_NONCE
         assert int(decoded_authdata.enr_seq) == 0
 
     def test_decode_spec_handshake_packet(self):
@@ -450,10 +450,10 @@ class TestPacketEncodingRoundtrip:
         header, message, _message_ad = decode_packet_header(NODE_B_ID, packet)
 
         assert header.flag == PacketFlag.WHOAREYOU
-        assert bytes(header.nonce) == nonce
+        assert header.nonce == nonce
 
         decoded_authdata = decode_whoareyou_authdata(header.authdata)
-        assert bytes(decoded_authdata.id_nonce) == id_nonce
+        assert decoded_authdata.id_nonce == id_nonce
         assert decoded_authdata.enr_seq == enr_seq
 
     def test_handshake_packet_roundtrip(self):

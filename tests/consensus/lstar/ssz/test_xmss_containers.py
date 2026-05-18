@@ -67,7 +67,7 @@ def test_signature_actual(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for a real Signature produced by the XMSS signing algorithm."""
     key_manager = XmssKeyManager.shared()
     scheme = key_manager.scheme
-    sk = key_manager[ValidatorIndex(0)].attestation_secret
+    sk = key_manager[ValidatorIndex(0)].attestation_keypair.secret_key
     signature = scheme.sign(sk, Slot(0), Bytes32(b"\x42" * 32))
     ssz(type_name="Signature", value=signature)
 

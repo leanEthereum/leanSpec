@@ -133,15 +133,6 @@ class SpecAttestationDataType(SpecSSZType, Protocol):
         ...
 
 
-class SpecAttestationType(SpecSSZType, Protocol):
-    """Structural contract: any fork's single-validator Attestation container class."""
-
-    @property
-    def data(self) -> SpecAttestationDataType:
-        """The unsigned attestation payload."""
-        ...
-
-
 class SpecSignedAttestationType(SpecSSZType, Protocol):
     """Structural contract: any fork's SignedAttestation container class.
 
@@ -183,13 +174,6 @@ class SpecSignedAggregatedAttestationType(SpecSSZType, Protocol):
     def data(self) -> SpecAttestationDataType:
         """The unsigned attestation payload."""
         ...
-
-
-class SpecValidatorType(SpecSSZType, Protocol):
-    """Structural contract: any fork's Validator container class.
-
-    A single validator's static metadata (pubkeys, index).
-    """
 
 
 class SpecStoreType(Protocol):
@@ -301,9 +285,6 @@ class ForkProtocol(ABC):
     block_header_class: type[SpecBlockHeaderType]
     """Concrete BlockHeader container class owned by this fork."""
 
-    signed_block_class: type[SpecSignedBlockType]
-    """Concrete SignedBlock container class — block + merged proof envelope."""
-
     aggregated_attestations_class: type[SpecAggregatedAttestationsType]
     """Concrete AggregatedAttestations list class — block-body aggregated votes."""
 
@@ -313,23 +294,8 @@ class ForkProtocol(ABC):
     attestation_data_class: type[SpecAttestationDataType]
     """Concrete AttestationData container class."""
 
-    attestation_class: type[SpecAttestationType]
-    """Concrete Attestation container class — single-validator attestation."""
-
-    signed_attestation_class: type[SpecSignedAttestationType]
-    """Concrete SignedAttestation container class."""
-
     aggregated_attestation_class: type[SpecAggregatedAttestationType]
     """Concrete AggregatedAttestation container class."""
-
-    signed_aggregated_attestation_class: type[SpecSignedAggregatedAttestationType]
-    """Concrete SignedAggregatedAttestation container class."""
-
-    validator_class: type[SpecValidatorType]
-    """Concrete Validator container class — single validator's static metadata."""
-
-    validators_class: type[SSZList[Any]]
-    """Concrete Validators SSZList class — registry tracked in state."""
 
     config_class: type[SpecConfigType]
     """Concrete genesis Config container class."""

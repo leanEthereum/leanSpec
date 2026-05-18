@@ -22,7 +22,7 @@ This file provides wrappers for the two primary ways Poseidon1 is used:
 
 from __future__ import annotations
 
-from pydantic import PrivateAttr, model_validator
+from pydantic import PrivateAttr
 
 from lean_spec.types import StrictBaseModel
 
@@ -33,7 +33,6 @@ from ..poseidon1.permutation import (
     Poseidon1,
     Poseidon1Params,
 )
-from ._validation import enforce_strict_types
 from .utils import int_to_base_p
 
 
@@ -48,12 +47,6 @@ class PoseidonXmss(StrictBaseModel):
 
     _engine16: Poseidon1 | None = PrivateAttr(default=None)
     _engine24: Poseidon1 | None = PrivateAttr(default=None)
-
-    @model_validator(mode="after")
-    def _validate_strict_types(self) -> PoseidonXmss:
-        """Reject subclasses to prevent type confusion attacks."""
-        enforce_strict_types(self, params16=Poseidon1Params, params24=Poseidon1Params)
-        return self
 
     def _get_engine(self, width: int) -> Poseidon1:
         """Return a cached Poseidon1 engine for the given width."""

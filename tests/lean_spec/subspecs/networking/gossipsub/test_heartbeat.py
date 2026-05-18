@@ -191,7 +191,7 @@ class TestEmitGossip:
                 non_mesh_pid,
                 RPC(
                     control=ControlMessage(
-                        ihave=[ControlIHave(topic_id=topic, message_ids=[bytes(msg.id)])]
+                        ihave=[ControlIHave(topic_id=topic, message_ids=[msg.id])]
                     )
                 ),
             )
@@ -349,7 +349,7 @@ class TestHeartbeatIntegration:
                 fan_peer,
                 RPC(
                     control=ControlMessage(
-                        ihave=[ControlIHave(topic_id=fan_topic, message_ids=[bytes(msg.id)])]
+                        ihave=[ControlIHave(topic_id=fan_topic, message_ids=[msg.id])]
                     )
                 ),
             )

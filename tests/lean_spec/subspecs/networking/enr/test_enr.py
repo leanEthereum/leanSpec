@@ -88,7 +88,7 @@ class TestOfficialEIP778Vector:
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
         assert enr.public_key is not None
         assert len(enr.public_key) == 33
-        assert enr.public_key == OFFICIAL_SECP256K1_PUBKEY
+        assert bytes(enr.public_key) == OFFICIAL_SECP256K1_PUBKEY
 
     def test_official_enr_signature_length(self) -> None:
         """Official ENR has 64-byte signature."""
@@ -98,7 +98,7 @@ class TestOfficialEIP778Vector:
     def test_official_enr_signature_value(self) -> None:
         """Official ENR signature matches expected value."""
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
-        assert enr.signature == OFFICIAL_SIGNATURE
+        assert bytes(enr.signature) == OFFICIAL_SIGNATURE
 
     def test_official_enr_is_valid(self) -> None:
         """Official ENR passes structural validation."""
@@ -132,7 +132,7 @@ class TestOfficialEIP778Vector:
         # Get the compressed 33-byte secp256k1 public key
         compressed_pubkey = enr.public_key
         assert compressed_pubkey is not None
-        assert compressed_pubkey == OFFICIAL_SECP256K1_PUBKEY
+        assert bytes(compressed_pubkey) == OFFICIAL_SECP256K1_PUBKEY
 
         # Uncompress to 65 bytes (0x04 || x || y)
         public_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), compressed_pubkey)
@@ -285,7 +285,7 @@ class TestPropertyAccessors:
         )
         public_key = enr.public_key
         assert public_key is not None
-        assert public_key == expected_key
+        assert bytes(public_key) == expected_key
         assert len(public_key) == 33
 
     def test_public_key_returns_none_when_missing(self) -> None:

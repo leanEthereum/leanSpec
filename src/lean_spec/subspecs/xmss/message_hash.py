@@ -29,8 +29,6 @@ The encoding proceeds in two stages:
 
 from __future__ import annotations
 
-from pydantic import model_validator
-
 from lean_spec.subspecs.xmss.poseidon import (
     PROD_POSEIDON,
     TEST_POSEIDON,
@@ -39,7 +37,6 @@ from lean_spec.subspecs.xmss.poseidon import (
 from lean_spec.types import Bytes32, StrictBaseModel, Uint64
 
 from ..koalabear import Fp
-from ._validation import enforce_strict_types
 from .constants import (
     PROD_CONFIG,
     TEST_CONFIG,
@@ -58,12 +55,6 @@ class MessageHasher(StrictBaseModel):
 
     poseidon: PoseidonXmss
     """Poseidon hash engine."""
-
-    @model_validator(mode="after")
-    def _validate_strict_types(self) -> MessageHasher:
-        """Reject subclasses to prevent type confusion attacks."""
-        enforce_strict_types(self, config=XmssConfig, poseidon=PoseidonXmss)
-        return self
 
     def encode_message(self, message: Bytes32) -> list[Fp]:
         """

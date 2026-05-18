@@ -11,7 +11,7 @@ def test_public_key_ssz_roundtrip() -> None:
     # Generate a key pair
     activation_slot = Slot(0)
     num_active_slots = Uint64(32)
-    public_key, secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    public_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots).public_key
 
     # Serialize to bytes using SSZ
     pk_bytes = public_key.encode_bytes()
@@ -30,7 +30,8 @@ def test_signature_ssz_roundtrip() -> None:
     # Generate a key pair and sign a message
     activation_slot = Slot(0)
     num_active_slots = Uint64(32)
-    public_key, secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    kp = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    public_key, secret_key = kp.public_key, kp.secret_key
 
     message = Bytes32(bytes([42] * 32))
     epoch = Slot(0)
@@ -57,7 +58,8 @@ def test_secret_key_ssz_roundtrip() -> None:
     # Generate a key pair
     activation_slot = Slot(0)
     num_active_slots = Uint64(32)
-    public_key, secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    kp = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    public_key, secret_key = kp.public_key, kp.secret_key
 
     # Serialize to bytes using SSZ
     sk_bytes = secret_key.encode_bytes()
@@ -88,7 +90,8 @@ def test_deterministic_serialization() -> None:
     # Generate a key pair
     activation_slot = Slot(0)
     num_active_slots = Uint64(32)
-    public_key, secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    kp = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    public_key, secret_key = kp.public_key, kp.secret_key
 
     # Serialize multiple times
     pk_bytes1 = public_key.encode_bytes()
@@ -118,7 +121,7 @@ def test_signature_size_matches_config() -> None:
     """Verify SIGNATURE_LEN_BYTES matches actual SSZ-encoded size."""
     activation_slot = Slot(0)
     num_active_slots = Uint64(32)
-    public_key, secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    secret_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots).secret_key
 
     message = Bytes32(bytes([42] * 32))
     epoch = Slot(0)
@@ -132,7 +135,7 @@ def test_public_key_size_matches_config() -> None:
     """Verify PUBLIC_KEY_LEN_BYTES matches actual SSZ-encoded size."""
     activation_slot = Slot(0)
     num_active_slots = Uint64(32)
-    public_key, _ = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots)
+    public_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots).public_key
 
     encoded = public_key.encode_bytes()
     assert len(encoded) == TEST_CONFIG.PUBLIC_KEY_LEN_BYTES

@@ -1,9 +1,11 @@
 """
-Checkpoint Container.
+Checkpoint container.
 
-A checkpoint marks a specific moment in the chain. It combines a block
-identifier with a slot number. Checkpoints are used for justification and
-finalization.
+A checkpoint marks a specific moment in the chain.
+
+It combines a block identifier with a slot number.
+
+Checkpoints are used for justification and finalization.
 """
 
 from lean_spec.types.byte_arrays import Bytes32
@@ -27,3 +29,13 @@ class Checkpoint(Container):
             return NotImplemented
         # Slot drives the order; equal slots leave the pair incomparable.
         return self.slot < other.slot
+
+    def advance_to(self, candidate: "Checkpoint") -> "Checkpoint":
+        """
+        Return the later of two checkpoints, keeping self on a slot tie.
+
+        Forward-only progression for justified and finalized checkpoints.
+
+        The candidate replaces the receiver only when its slot is strictly higher.
+        """
+        return candidate if candidate.slot > self.slot else self

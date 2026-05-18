@@ -223,12 +223,12 @@ class NodeCluster:
         for i in range(self.num_validators):
             att_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
             prop_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
-            self._secret_keys[ValidatorIndex(i)] = (att_keypair.secret, prop_keypair.secret)
+            self._secret_keys[ValidatorIndex(i)] = (att_keypair.secret_key, prop_keypair.secret_key)
 
-            att_pubkey_bytes = att_keypair.public.encode_bytes()[:52]
+            att_pubkey_bytes = att_keypair.public_key.encode_bytes()[:52]
             att_pubkey = Bytes52(att_pubkey_bytes.ljust(52, b"\x00"))
 
-            prop_pubkey_bytes = prop_keypair.public.encode_bytes()[:52]
+            prop_pubkey_bytes = prop_keypair.public_key.encode_bytes()[:52]
             prop_pubkey = Bytes52(prop_pubkey_bytes.ljust(52, b"\x00"))
 
             validators.append(

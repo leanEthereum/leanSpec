@@ -235,7 +235,7 @@ class TestCreateExtensionPayload:
         key_len = public_key_proto[3]
         assert key_len == 33  # compressed secp256k1
         key_data = public_key_proto[4 : 4 + key_len]
-        assert key_data == identity_key.public_key.to_bytes()
+        assert key_data == bytes(identity_key.public_key.to_bytes())
 
     def test_signature_verifies(self, identity_key: IdentityKeypair) -> None:
         """The signature in the second OCTET STRING verifies against the identity key."""

@@ -13,7 +13,6 @@ from lean_spec.forks.lstar.containers import (
     Block,
     BlockBody,
 )
-from lean_spec.forks.lstar.containers.attestation import AttestationData
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.storage import (
@@ -28,7 +27,7 @@ from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
 @pytest.fixture
 def db() -> Generator[SQLiteDatabase, None, None]:
     """Create an in-memory SQLite database for testing."""
-    database = SQLiteDatabase(":memory:", State, Block, AttestationData)
+    database = SQLiteDatabase(":memory:", State, Block)
     yield database
     database.close()
 
@@ -125,49 +124,6 @@ class TestCheckpointOperations:
         """Getting nonexistent checkpoints returns None."""
         assert db.get_justified_checkpoint() is None
         assert db.get_finalized_checkpoint() is None
-
-
-class TestAttestationOperations:
-    """Tests for attestation storage operations."""
-
-    @pytest.fixture
-    def attestation_data(self) -> AttestationData:
-        """Create attestation data for testing."""
-        return AttestationData(
-            slot=Slot(5),
-            head=Checkpoint(root=Bytes32(b"\x05" * 32), slot=Slot(5)),
-            target=Checkpoint(root=Bytes32(b"\x06" * 32), slot=Slot(4)),
-            source=Checkpoint(root=Bytes32(b"\x07" * 32), slot=Slot(3)),
-        )
-
-    def test_put_and_get_latest_attestation(
-        self, db: SQLiteDatabase, attestation_data: AttestationData
-    ) -> None:
-        """Attestation can be stored and retrieved by validator index."""
-        validator_index = ValidatorIndex(42)
-        db.put_latest_attestation(validator_index, attestation_data)
-        db.commit()
-
-        assert db.get_latest_attestation(validator_index) == attestation_data
-
-    def test_get_nonexistent_attestation(self, db: SQLiteDatabase) -> None:
-        """Getting a nonexistent attestation returns None."""
-        assert db.get_latest_attestation(ValidatorIndex(999)) is None
-
-    def test_get_all_latest_attestations(
-        self, db: SQLiteDatabase, attestation_data: AttestationData
-    ) -> None:
-        """All attestations can be retrieved at once."""
-        db.put_latest_attestation(ValidatorIndex(1), attestation_data)
-        db.put_latest_attestation(ValidatorIndex(2), attestation_data)
-        db.put_latest_attestation(ValidatorIndex(3), attestation_data)
-        db.commit()
-
-        assert db.get_all_latest_attestations() == {
-            ValidatorIndex(1): attestation_data,
-            ValidatorIndex(2): attestation_data,
-            ValidatorIndex(3): attestation_data,
-        }
 
 
 class TestHeadTracking:
@@ -354,7 +310,7 @@ class TestRestartRecovery:
             genesis_time = Uint64(1000)
 
             # Write genesis data and close.
-            with SQLiteDatabase(db_path, State, Block, AttestationData) as db:
+            with SQLiteDatabase(db_path, State, Block) as db:
                 with db.batch_write():
                     db.put_block(genesis_block, block_root)
                     db.put_state(genesis_state, block_root)
@@ -365,7 +321,7 @@ class TestRestartRecovery:
                     db.put_genesis_time(genesis_time)
 
             # Reopen and verify all data survived.
-            with SQLiteDatabase(db_path, State, Block, AttestationData) as db:
+            with SQLiteDatabase(db_path, State, Block) as db:
                 assert db.get_head_root() == block_root
                 assert db.get_block(block_root) == genesis_block
                 assert db.get_state(block_root) == genesis_state
@@ -418,18 +374,6 @@ class TestErrorPaths:
 
         with pytest.raises(StorageCorruptionError, match="Corrupt justified"):
             db.get_justified_checkpoint()
-
-    def test_corrupt_attestation_data_raises_corruption_error(self, db: SQLiteDatabase) -> None:
-        """Reading corrupt attestation data raises StorageCorruptionError."""
-        cursor = db._conn.cursor()
-        cursor.execute(
-            "INSERT INTO attestations (validator_index, data) VALUES (?, ?)",
-            (42, b"not valid ssz"),
-        )
-        db._conn.commit()
-
-        with pytest.raises(StorageCorruptionError, match="Corrupt attestation"):
-            db.get_latest_attestation(ValidatorIndex(42))
 
     def test_read_after_close_raises(self, db: SQLiteDatabase) -> None:
         """Operations on a closed database raise StorageReadError."""
@@ -586,7 +530,7 @@ class TestLifecycle:
 
     def test_context_manager(self) -> None:
         """Database works as context manager."""
-        with SQLiteDatabase(":memory:", State, Block, AttestationData) as db:
+        with SQLiteDatabase(":memory:", State, Block) as db:
             root = Bytes32(b"\x0c" * 32)
             db.put_head_root(root)
             db.commit()

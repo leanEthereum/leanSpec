@@ -8,11 +8,8 @@ top of the message hash output.
 
 from __future__ import annotations
 
-from pydantic import model_validator
-
 from lean_spec.types import Bytes32, StrictBaseModel, Uint64
 
-from ._validation import enforce_strict_types
 from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
 from .message_hash import (
     PROD_MESSAGE_HASHER,
@@ -35,12 +32,6 @@ class TargetSumEncoder(StrictBaseModel):
 
     message_hasher: MessageHasher
     """Message hasher for encoding."""
-
-    @model_validator(mode="after")
-    def _validate_strict_types(self) -> TargetSumEncoder:
-        """Reject subclasses to prevent type confusion attacks."""
-        enforce_strict_types(self, config=XmssConfig, message_hasher=MessageHasher)
-        return self
 
     def encode(
         self, parameter: Parameter, message: Bytes32, rho: Randomness, epoch: Uint64

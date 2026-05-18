@@ -237,3 +237,12 @@ class Container(SSZModel):
 
         # Construct container with all fields
         return cls(**fields)
+
+    @classmethod
+    def from_hex(cls, value: str) -> Self:
+        """Decode from a hex string with an optional "0x" prefix."""
+        return cls.decode_bytes(bytes.fromhex(value.removeprefix("0x")))
+
+    def to_hex(self) -> str:
+        """Encode as a plain hex string (no "0x" prefix)."""
+        return self.encode_bytes().hex()

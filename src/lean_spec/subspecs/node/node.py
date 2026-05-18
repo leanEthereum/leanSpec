@@ -203,7 +203,6 @@ class Node:
                 config.database_path,
                 state_class=config.fork.state_class,
                 block_class=config.fork.block_class,
-                attestation_data_class=config.fork.attestation_data_class,
             )
 
         #

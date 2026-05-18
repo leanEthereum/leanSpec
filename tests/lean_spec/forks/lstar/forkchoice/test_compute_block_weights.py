@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from lean_spec.forks.lstar import Store
 from lean_spec.forks.lstar.containers.attestation import AttestationData
 from lean_spec.forks.lstar.spec import LstarSpec
@@ -126,3 +128,15 @@ def test_multiple_attestations_accumulate(spec: LstarSpec, base_store: Store) ->
 
     # Both validators contribute weight to block1
     assert weights == {block1_root: 2}
+
+
+def test_compute_lmd_ghost_head_rejects_unknown_start_root(
+    spec: LstarSpec, base_store: Store
+) -> None:
+    """An anchor missing from the store fails the head-walk invariant loudly."""
+    # A 32-byte root that is guaranteed not to be in the store.
+    unknown_root = Bytes32(b"\xee" * 32)
+    assert unknown_root not in base_store.blocks
+
+    with pytest.raises(AssertionError, match="not in store.blocks"):
+        spec._compute_lmd_ghost_head(base_store, start_root=unknown_root, attestations={})

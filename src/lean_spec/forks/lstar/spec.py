@@ -6,7 +6,6 @@ from typing import Any, ClassVar
 
 from lean_spec.forks.lstar.containers import (
     AggregatedAttestation,
-    Attestation,
     AttestationData,
     Block,
     BlockBody,
@@ -15,7 +14,6 @@ from lean_spec.forks.lstar.containers import (
     SignedAggregatedAttestation,
     SignedAttestation,
     SignedBlock,
-    Validator,
 )
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
 from lean_spec.forks.lstar.containers.state import State
@@ -82,20 +80,11 @@ class LstarSpec(ForkProtocol):
     block_class: type[Block] = Block
     block_body_class: type[BlockBody] = BlockBody
     block_header_class: type[BlockHeader] = BlockHeader
-    signed_block_class: type[SignedBlock] = SignedBlock
     aggregated_attestations_class: type[AggregatedAttestations] = AggregatedAttestations
     store_class: type[Store[State, Block]] = LstarStore
 
     attestation_data_class: type[AttestationData] = AttestationData
-    attestation_class: type[Attestation] = Attestation
-    signed_attestation_class: type[SignedAttestation] = SignedAttestation
     aggregated_attestation_class: type[AggregatedAttestation] = AggregatedAttestation
-    signed_aggregated_attestation_class: type[SignedAggregatedAttestation] = (
-        SignedAggregatedAttestation
-    )
-
-    validator_class: type[Validator] = Validator
-    validators_class: type[Validators] = Validators
 
     config_class: type[Config] = Config
 
@@ -1282,14 +1271,14 @@ class LstarSpec(ForkProtocol):
 
             # Propagate checkpoint advances from the post-state.
             #
-            # Keep the checkpoint with the higher slot.
-            # On slot ties, prefer the store's own checkpoint.
+            # A candidate replaces the store's checkpoint only when its slot is strictly higher.
+            # On slot ties the store's view stays authoritative.
             #
-            # The store's checkpoint is pinned to the anchor at init and only
-            # moves forward via real justification/finalization events.
-            # On ties the store's view is authoritative.
-            latest_justified = max(store.latest_justified, post_state.latest_justified)
-            latest_finalized = max(store.latest_finalized, post_state.latest_finalized)
+            # Why: the store's checkpoint is pinned at init.
+            # It advances only on real justification or finalization events.
+            # An incoming tie must not silently swap roots.
+            latest_justified = store.latest_justified.advance_to(post_state.latest_justified)
+            latest_finalized = store.latest_finalized.advance_to(post_state.latest_finalized)
 
             store = store.model_copy(
                 update={
@@ -1390,13 +1379,9 @@ class LstarSpec(ForkProtocol):
         When two branches have equal weight, the one with the lexicographically
         larger hash is chosen to break ties.
         """
-        # If the starting point is not defined, choose the earliest known block.
-        #
-        # This ensures that the walk always has an anchor.
-        if start_root == ZERO_HASH:
-            start_root = min(
-                store.blocks.keys(), key=lambda block_hash: store.blocks[block_hash].slot
-            )
+        # Invariant: the anchor must be a block the store already knows.
+        # A loud failure here beats a cryptic missing-key error deep in the weight loop.
+        assert start_root in store.blocks, f"start_root {start_root.hex()} not in store.blocks"
 
         # Remember the slot of the anchor once and reuse it during the walk.
         #
@@ -1421,17 +1406,15 @@ class LstarSpec(ForkProtocol):
                 weights[current_root] += 1
                 current_root = store.blocks[current_root].parent_root
 
-        # Build the adjacency tree (parent -> children).
+        # Build the parent -> children adjacency.
         #
-        # We use a defaultdict to avoid checking if keys exist.
+        # Genesis blocks land in the bucket keyed by the zero hash.
+        # That bucket is never consulted.
+        # The walk anchors at the latest justified root and only descends.
         children_map: dict[Bytes32, list[Bytes32]] = defaultdict(list)
 
         for root, block in store.blocks.items():
-            # 1. Structural check: skip blocks without parents (e.g., purely genesis/orphans)
-            if not block.parent_root:
-                continue
-
-            # 2. Heuristic check: prune branches early if they lack sufficient weight
+            # Prune low-weight branches early when a threshold is set.
             if min_score > 0 and weights[root] < min_score:
                 continue
 
@@ -1941,10 +1924,12 @@ class LstarSpec(ForkProtocol):
         # Update checkpoints from post-state.
         #
         # Locally produced blocks bypass normal block processing.
-        # We must manually propagate any checkpoint advances.
-        # Higher slots indicate more recent justified/finalized states.
-        latest_justified = max(final_post_state.latest_justified, store.latest_justified)
-        latest_finalized = max(final_post_state.latest_finalized, store.latest_finalized)
+        # Checkpoint advances must be propagated manually here.
+        #
+        # Tie semantics mirror the block-import path.
+        # A candidate needs a strictly higher slot to replace the store's view.
+        latest_justified = store.latest_justified.advance_to(final_post_state.latest_justified)
+        latest_finalized = store.latest_finalized.advance_to(final_post_state.latest_finalized)
 
         # Persist block and state immutably.
         new_store = store.model_copy(

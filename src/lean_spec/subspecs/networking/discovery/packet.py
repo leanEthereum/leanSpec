@@ -328,7 +328,7 @@ def decrypt_message(
 
 def encode_message_authdata(src_id: NodeId) -> bytes:
     """Encode MESSAGE packet authdata."""
-    return src_id
+    return bytes(src_id)
 
 
 def encode_whoareyou_authdata(id_nonce: IdNonce, enr_seq: SeqNumber) -> bytes:

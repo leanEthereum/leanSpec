@@ -395,7 +395,10 @@ class TestValidatorErrorHandling:
             validator_id=TEST_VALIDATOR_ID,
         )
 
-        with pytest.raises(KeyError):  # Missing head in get_proposal_head
+        # The forkchoice head walk asserts that the justified root is known.
+        # Calling produce_block on a store whose latest_justified.root is
+        # missing from blocks must fail loudly with that invariant message.
+        with pytest.raises(AssertionError, match="not in store.blocks"):
             spec.produce_block_with_signatures(store, Slot(1), ValidatorIndex(1))
 
     def test_validator_operations_invalid_parameters(

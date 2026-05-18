@@ -99,27 +99,6 @@ class CheckpointNamespace:
 
 
 @dataclass(frozen=True, slots=True)
-class AttestationNamespace:
-    """
-    Namespace for attestation storage.
-
-    Stores latest attestation per validator.
-    Indexed by validator index.
-    """
-
-    TABLE_NAME: str = "attestations"
-    """Table name for attestation storage."""
-
-    CREATE_TABLE: str = """
-        CREATE TABLE IF NOT EXISTS attestations (
-            validator_index INTEGER PRIMARY KEY,
-            data BLOB NOT NULL
-        )
-    """
-    """SQL to create attestations table."""
-
-
-@dataclass(frozen=True, slots=True)
 class SlotIndexNamespace:
     """
     Namespace for slot-to-root mapping.
@@ -169,9 +148,6 @@ STATES: Final = StateNamespace()
 
 CHECKPOINTS: Final = CheckpointNamespace()
 """Checkpoint tracking namespace."""
-
-ATTESTATIONS: Final = AttestationNamespace()
-"""Attestation storage namespace."""
 
 SLOT_INDEX: Final = SlotIndexNamespace()
 """Slot-to-root index namespace."""

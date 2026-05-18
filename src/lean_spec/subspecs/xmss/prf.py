@@ -13,12 +13,9 @@ import hashlib
 import os
 from typing import Final
 
-from pydantic import model_validator
-
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.types import Bytes32, StrictBaseModel, Uint64
 
-from ._validation import enforce_strict_types
 from .constants import (
     PRF_KEY_LENGTH,
     PROD_CONFIG,
@@ -90,12 +87,6 @@ class Prf(StrictBaseModel):
 
     config: XmssConfig
     """Configuration parameters for the PRF."""
-
-    @model_validator(mode="after")
-    def _validate_strict_types(self) -> Prf:
-        """Reject subclasses to prevent type confusion attacks."""
-        enforce_strict_types(self, config=XmssConfig)
-        return self
 
     def key_gen(self) -> PRFKey:
         """

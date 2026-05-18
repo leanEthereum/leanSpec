@@ -12,11 +12,10 @@ from contextlib import contextmanager
 from typing import Protocol
 
 from lean_spec.forks.protocol import (
-    SpecAttestationDataType,
     SpecBlockType,
     SpecStateType,
 )
-from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64
 
 
 class Database(Protocol):
@@ -31,7 +30,6 @@ class Database(Protocol):
     - Blocks: Indexed by block root hash
     - States: Indexed by associated block root hash (not state root)
     - Checkpoints: Justified and finalized tracking
-    - Attestations: Latest attestation per validator
     - State root index: Maps state roots to block roots
     """
 
@@ -142,45 +140,6 @@ class Database(Protocol):
 
         Args:
             checkpoint: New finalized checkpoint.
-        """
-        ...
-
-    # Attestation Operations
-
-    def get_latest_attestation(
-        self, validator_index: ValidatorIndex
-    ) -> SpecAttestationDataType | None:
-        """
-        Retrieve the latest attestation for a validator.
-
-        Args:
-            validator_index: Index of the validator.
-
-        Returns:
-            Latest attestation data, or None if not found.
-        """
-        ...
-
-    def put_latest_attestation(
-        self,
-        validator_index: ValidatorIndex,
-        attestation: SpecAttestationDataType,
-    ) -> None:
-        """
-        Store the latest attestation for a validator.
-
-        Args:
-            validator_index: Index of the validator.
-            attestation: Attestation data to store.
-        """
-        ...
-
-    def get_all_latest_attestations(self) -> dict[ValidatorIndex, SpecAttestationDataType]:
-        """
-        Retrieve all latest attestations.
-
-        Returns:
-            Mapping from validator index to attestation data.
         """
         ...
 

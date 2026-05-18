@@ -24,15 +24,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from lean_spec.forks.protocol import (
-    SpecAttestationDataType,
     SpecBlockType,
     SpecStateType,
 )
-from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64
 
 from .exceptions import StorageCorruptionError, StorageReadError, StorageWriteError
 from .namespaces import (
-    ATTESTATIONS,
     BLOCKS,
     CHECKPOINTS,
     SLOT_INDEX,
@@ -59,7 +57,6 @@ class SQLiteDatabase:
         path: Path | str,
         state_class: type[SpecStateType],
         block_class: type[SpecBlockType],
-        attestation_data_class: type[SpecAttestationDataType],
     ) -> None:
         """
         Initialize SQLite database.
@@ -71,12 +68,10 @@ class SQLiteDatabase:
                   Use ":memory:" for in-memory database.
             state_class: State class used to decode SSZ bytes.
             block_class: Block class used to decode SSZ bytes.
-            attestation_data_class: AttestationData class used to decode SSZ bytes.
         """
         self._path = Path(path) if isinstance(path, str) else path
         self._state_class = state_class
         self._block_class = block_class
-        self._attestation_data_class = attestation_data_class
 
         # SQLite handles concurrent access through file-level locking.
         #
@@ -111,12 +106,6 @@ class SQLiteDatabase:
         #
         # Only one justified and one finalized checkpoint exist at any time.
         cursor.execute(CHECKPOINTS.CREATE_TABLE)
-
-        # Attestations are indexed by validator.
-        #
-        # Fork choice needs the latest attestation from each validator
-        # to compute the canonical head.
-        cursor.execute(ATTESTATIONS.CREATE_TABLE)
 
         # Slot index maps slot numbers to block roots.
         #
@@ -340,93 +329,6 @@ class SQLiteDatabase:
             )
         except sqlite3.Error as e:
             raise StorageWriteError(f"Failed to write finalized checkpoint: {e}") from e
-
-    # Attestation Operations
-
-    #
-    # Attestations are validator votes on the canonical chain.
-    # Fork choice uses the latest attestation from each validator
-    # to determine which branch has the most support.
-
-    def get_latest_attestation(
-        self, validator_index: ValidatorIndex
-    ) -> SpecAttestationDataType | None:
-        """Retrieve the latest attestation for a validator."""
-        try:
-            cursor = self._conn.cursor()
-
-            # Only the latest attestation matters for fork choice.
-            #
-            # Each validator has at most one entry.
-            # Newer attestations replace older ones.
-            cursor.execute(
-                f"SELECT data FROM {ATTESTATIONS.TABLE_NAME} WHERE validator_index = ?",
-                (int(validator_index),),
-            )
-            row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(
-                f"Failed to read attestation for validator {validator_index}: {e}"
-            ) from e
-
-        if row is None:
-            return None
-
-        try:
-            return self._attestation_data_class.decode_bytes(row["data"])
-        except Exception as e:
-            raise StorageCorruptionError(
-                f"Corrupt attestation data for validator {validator_index}: {e}"
-            ) from e
-
-    def put_latest_attestation(
-        self,
-        validator_index: ValidatorIndex,
-        attestation: SpecAttestationDataType,
-    ) -> None:
-        """Store the latest attestation for a validator."""
-        try:
-            cursor = self._conn.cursor()
-
-            # INSERT OR REPLACE ensures we keep only the newest attestation.
-            #
-            # The validator_index is the primary key.
-            # This naturally enforces the "latest only" invariant.
-            cursor.execute(
-                f"""
-                INSERT OR REPLACE INTO {ATTESTATIONS.TABLE_NAME} (validator_index, data)
-                VALUES (?, ?)
-                """,
-                (int(validator_index), attestation.encode_bytes()),
-            )
-        except sqlite3.Error as e:
-            raise StorageWriteError(
-                f"Failed to write attestation for validator {validator_index}: {e}"
-            ) from e
-
-    def get_all_latest_attestations(self) -> dict[ValidatorIndex, SpecAttestationDataType]:
-        """Retrieve all latest attestations."""
-        try:
-            cursor = self._conn.cursor()
-
-            # Load all attestations for fork choice computation.
-            #
-            # This can be a large result set (hundreds of thousands of validators).
-            # Consider streaming or batching for production use.
-            cursor.execute(f"SELECT validator_index, data FROM {ATTESTATIONS.TABLE_NAME}")
-            rows = cursor.fetchall()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read all attestations: {e}") from e
-
-        try:
-            return {
-                ValidatorIndex(row["validator_index"]): self._attestation_data_class.decode_bytes(
-                    row["data"]
-                )
-                for row in rows
-            }
-        except Exception as e:
-            raise StorageCorruptionError(f"Corrupt attestation data: {e}") from e
 
     # Head Tracking
 

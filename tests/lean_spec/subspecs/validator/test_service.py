@@ -56,8 +56,8 @@ def _make_registry(key_manager: XmssKeyManager, *indices: int) -> ValidatorRegis
         registry.add(
             ValidatorEntry(
                 index=vid,
-                attestation_secret_key=kp.attestation_secret,
-                proposal_secret_key=kp.proposal_secret,
+                attestation_secret_key=kp.attestation_keypair.secret_key,
+                proposal_secret_key=kp.proposal_keypair.secret_key,
             )
         )
     return registry
@@ -69,8 +69,8 @@ def _make_entry(key_manager: XmssKeyManager, index: int = 0) -> ValidatorEntry:
     kp = key_manager[vid]
     return ValidatorEntry(
         index=vid,
-        attestation_secret_key=kp.attestation_secret,
-        proposal_secret_key=kp.proposal_secret,
+        attestation_secret_key=kp.attestation_keypair.secret_key,
+        proposal_secret_key=kp.proposal_keypair.secret_key,
     )
 
 
@@ -223,7 +223,7 @@ class TestSignAttestation:
         assert result.validator_id == ValidatorIndex(3)
         assert result.data is att_data
 
-        public_key = key_manager[ValidatorIndex(3)].attestation_public
+        public_key = key_manager[ValidatorIndex(3)].attestation_keypair.public_key
         assert TARGET_SIGNATURE_SCHEME.verify(
             pk=public_key,
             slot=att_data.slot,
@@ -239,7 +239,7 @@ class TestSignAttestation:
 
         result = service._sign_attestation(att_data, ValidatorIndex(0))
 
-        attestation_pk = key_manager[ValidatorIndex(0)].attestation_public
+        attestation_pk = key_manager[ValidatorIndex(0)].attestation_keypair.public_key
         assert TARGET_SIGNATURE_SCHEME.verify(
             pk=attestation_pk,
             slot=att_data.slot,
@@ -937,8 +937,8 @@ class TestValidatorServiceIntegration:
             registry.add(
                 ValidatorEntry(
                     index=validator_index,
-                    attestation_secret_key=kp.attestation_secret,
-                    proposal_secret_key=kp.proposal_secret,
+                    attestation_secret_key=kp.attestation_keypair.secret_key,
+                    proposal_secret_key=kp.proposal_keypair.secret_key,
                 )
             )
         return registry
@@ -1007,7 +1007,7 @@ class TestValidatorServiceIntegration:
 
         for signed_att in attestations_produced:
             validator_id = signed_att.validator_id
-            public_key = key_manager[validator_id].attestation_public
+            public_key = key_manager[validator_id].attestation_keypair.public_key
             message_bytes = hash_tree_root(signed_att.data)
 
             is_valid = TARGET_SIGNATURE_SCHEME.verify(
@@ -1107,7 +1107,7 @@ class TestValidatorServiceIntegration:
         for vid in participants:
             sig = key_manager.sign_attestation_data(vid, attestation_data)
             signatures.append(sig)
-            public_keys.append(key_manager[vid].attestation_public)
+            public_keys.append(key_manager[vid].attestation_keypair.public_key)
 
         xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
         proof = TypeOneMultiSignature.aggregate(
@@ -1280,7 +1280,7 @@ class TestValidatorServiceIntegration:
 
         for signed_att in attestations_produced:
             validator_id = signed_att.validator_id
-            public_key = key_manager[validator_id].attestation_public
+            public_key = key_manager[validator_id].attestation_keypair.public_key
             message_bytes = hash_tree_root(signed_att.data)
 
             is_valid = TARGET_SIGNATURE_SCHEME.verify(

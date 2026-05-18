@@ -26,7 +26,8 @@ def _test_correctness_roundtrip(
     # KEY GENERATION
     #
     # Generate a new key pair for the specified active range.
-    pk, sk = scheme.key_gen(Slot(activation_slot), Uint64(num_active_slots))
+    kp = scheme.key_gen(Slot(activation_slot), Uint64(num_active_slots))
+    pk, sk = kp.public_key, kp.secret_key
 
     # SIGN & VERIFY
     #
@@ -100,7 +101,7 @@ def test_get_activation_interval() -> None:
     """Tests that get_activation_interval returns the correct range."""
     scheme = TEST_SIGNATURE_SCHEME
     # Use 8 slots (half of LIFETIME=16)
-    pk, sk = scheme.key_gen(Slot(4), Uint64(8))
+    sk = scheme.key_gen(Slot(4), Uint64(8)).secret_key
 
     interval = scheme.get_activation_interval(sk)
 
@@ -116,7 +117,7 @@ def test_get_prepared_interval() -> None:
     """Tests that get_prepared_interval returns the correct range."""
     scheme = TEST_SIGNATURE_SCHEME
     # Use full lifetime
-    pk, sk = scheme.key_gen(Slot(0), Uint64(16))
+    sk = scheme.key_gen(Slot(0), Uint64(16)).secret_key
 
     interval = scheme.get_prepared_interval(sk)
 
@@ -134,7 +135,7 @@ def test_advance_preparation() -> None:
     scheme = TEST_SIGNATURE_SCHEME
     # Request 3 bottom trees' worth of slots to ensure room to advance
     leafs_per_bottom_tree = 1 << (scheme.config.LOG_LIFETIME // 2)
-    pk, sk = scheme.key_gen(Slot(0), Uint64(3 * leafs_per_bottom_tree))
+    sk = scheme.key_gen(Slot(0), Uint64(3 * leafs_per_bottom_tree)).secret_key
 
     # Get initial prepared interval
     initial_interval = scheme.get_prepared_interval(sk)
@@ -161,7 +162,7 @@ def test_sign_requires_prepared_interval() -> None:
     scheme = TEST_SIGNATURE_SCHEME
     # Request 3 bottom trees' worth of slots to have room for testing
     leafs_per_bottom_tree = 1 << (scheme.config.LOG_LIFETIME // 2)
-    pk, sk = scheme.key_gen(Slot(0), Uint64(3 * leafs_per_bottom_tree))
+    sk = scheme.key_gen(Slot(0), Uint64(3 * leafs_per_bottom_tree)).secret_key
 
     # Get the prepared interval
     prepared_interval = scheme.get_prepared_interval(sk)
@@ -185,7 +186,7 @@ def test_deterministic_signing() -> None:
     """Tests that signing the same message with the same key produces the same signature."""
     scheme = TEST_SIGNATURE_SCHEME
     # Use full lifetime
-    pk, sk = scheme.key_gen(Slot(0), Uint64(16))
+    sk = scheme.key_gen(Slot(0), Uint64(16)).secret_key
 
     # Use epoch within prepared interval
     epoch = Slot(4)
@@ -214,7 +215,8 @@ class TestVerifySecurityBounds:
         scheme = TEST_SIGNATURE_SCHEME
 
         # Generate valid keys.
-        pk, sk = scheme.key_gen(Slot(0), Uint64(int(scheme.config.LIFETIME)))
+        kp = scheme.key_gen(Slot(0), Uint64(int(scheme.config.LIFETIME)))
+        pk, sk = kp.public_key, kp.secret_key
 
         # Sign a valid message at a valid epoch.
         valid_epoch = Slot(4)
@@ -231,7 +233,8 @@ class TestVerifySecurityBounds:
     def test_rejects_very_large_slot(self) -> None:
         """verify returns False for absurdly large slot values."""
         scheme = TEST_SIGNATURE_SCHEME
-        pk, sk = scheme.key_gen(Slot(0), Uint64(int(scheme.config.LIFETIME)))
+        kp = scheme.key_gen(Slot(0), Uint64(int(scheme.config.LIFETIME)))
+        pk, sk = kp.public_key, kp.secret_key
 
         valid_epoch = Slot(4)
         message = Bytes32(b"\x42" * 32)

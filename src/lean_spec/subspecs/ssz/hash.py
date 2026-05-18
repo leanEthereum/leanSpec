@@ -25,9 +25,8 @@ from lean_spec.types.collections import (
 )
 from lean_spec.types.container import Container
 from lean_spec.types.uint import BaseUint
-from lean_spec.types.union import SSZUnion
 
-from .merkleization import merkleize, mix_in_length, mix_in_selector
+from .merkleization import merkleize, mix_in_length
 from .pack import pack_bits, pack_bytes
 
 
@@ -150,10 +149,3 @@ def _htr_list(value: SSZList) -> Bytes32:
 def _htr_container(value: Container) -> Bytes32:
     # Preserve declared field order from the Pydantic model
     return merkleize([hash_tree_root(getattr(value, fname)) for fname in type(value).model_fields])
-
-
-@hash_tree_root.register
-def _htr_union(value: SSZUnion) -> Bytes32:
-    if value.selected_type is None:
-        return mix_in_selector(Bytes32.zero(), 0)
-    return mix_in_selector(hash_tree_root(value.value), value.selector)

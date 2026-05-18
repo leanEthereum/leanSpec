@@ -151,11 +151,3 @@ def mix_in_length(root: Bytes32, length: int) -> Bytes32:
         raise ValueError("length must be non-negative")
     # The "mix" is `hash(root + length_uint256_le)`
     return hash_nodes(root, Bytes32(length.to_bytes(32, "little")))
-
-
-def mix_in_selector(root: Bytes32, selector: int) -> Bytes32:
-    """Mix the union selector (as uint256 little-endian) into a Merkle root."""
-    if selector < 0:
-        raise ValueError("selector must be non-negative")
-    # The "mix" is `hash(root + selector_uint256_le)`
-    return hash_nodes(root, Bytes32(selector.to_bytes(32, "little")))

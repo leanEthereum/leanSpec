@@ -494,7 +494,7 @@ class HandshakeManager:
                     # The node ID is keccak256(pubkey), so we recompute it
                     # to ensure the ENR belongs to who we think sent it.
                     computed_id = enr.compute_node_id()
-                    if computed_id is not None and bytes(computed_id) == node_id:
+                    if computed_id is not None and computed_id == node_id:
                         return Bytes33(enr.public_key)
             except (ValueError, KeyError, IndexError):
                 pass

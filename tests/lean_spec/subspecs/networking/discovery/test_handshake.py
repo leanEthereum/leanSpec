@@ -163,14 +163,14 @@ class TestHandshakeManager:
         # Verify challenge_data structure: masking-iv || static-header || authdata
         # masking-iv (16) + static-header (23) + authdata (24) = 63 bytes
         assert len(challenge_data) == 63
-        assert challenge_data[:16] == masking_iv
+        assert challenge_data[:16] == bytes(masking_iv)
         assert challenge_data[39:] == authdata  # 16 + 23 = 39
 
         # Check pending state
         pending = manager.get_pending(remote_node_id)
         assert pending is not None
         assert pending.state == HandshakeState.SENT_WHOAREYOU
-        assert pending.id_nonce == id_nonce
+        assert bytes(pending.id_nonce) == id_nonce
         assert pending.challenge_data == challenge_data
 
     def test_cleanup_expired(self, manager):
@@ -261,7 +261,7 @@ class TestHandshakeStateTransitions:
 
         assert pending is not None
         assert pending.state == HandshakeState.SENT_WHOAREYOU
-        assert pending.id_nonce == id_nonce
+        assert bytes(pending.id_nonce) == id_nonce
         assert pending.challenge_data == challenge_data
 
     def test_sent_whoareyou_state_has_challenge_data(self, manager):

@@ -531,7 +531,7 @@ class TestServiceIPAddressEncoding:
 
         encoded = service._encode_ip_address("127.0.0.1")
 
-        assert encoded == b"\x7f\x00\x00\x01"
+        assert bytes(encoded) == b"\x7f\x00\x00\x01"
         assert len(encoded) == 4
 
     def test_encode_ipv4_common_addresses(self, local_enr, local_private_key):
@@ -547,7 +547,7 @@ class TestServiceIPAddressEncoding:
 
         for ip_str, expected_bytes in test_cases:
             encoded = service._encode_ip_address(ip_str)
-            assert encoded == expected_bytes
+            assert bytes(encoded) == expected_bytes
             assert len(encoded) == 4
 
     def test_encode_ipv6_loopback(self, local_enr, local_private_key):
@@ -557,7 +557,7 @@ class TestServiceIPAddressEncoding:
         encoded = service._encode_ip_address("::1")
 
         expected = bytes(15) + b"\x01"
-        assert encoded == expected
+        assert bytes(encoded) == expected
         assert len(encoded) == 16
 
     def test_encode_ipv6_common_addresses(self, local_enr, local_private_key):
@@ -566,11 +566,11 @@ class TestServiceIPAddressEncoding:
 
         # :: (all zeros)
         encoded_zeros = service._encode_ip_address("::")
-        assert encoded_zeros == bytes(16)
+        assert bytes(encoded_zeros) == bytes(16)
 
         # ::1 (loopback)
         encoded_loopback = service._encode_ip_address("::1")
-        assert encoded_loopback == bytes(15) + b"\x01"
+        assert bytes(encoded_loopback) == bytes(15) + b"\x01"
 
 
 class TestBootstrap:

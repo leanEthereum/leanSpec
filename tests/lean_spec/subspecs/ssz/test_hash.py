@@ -15,7 +15,6 @@ from lean_spec.types.boolean import Boolean
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
 from lean_spec.types.uint import BaseUint
-from lean_spec.types.union import SSZUnion
 
 
 class Bytes48(BaseBytes):
@@ -569,24 +568,6 @@ class ByteList2048(BaseByteList):
     LIMIT = 2048
 
 
-class UnionUint16(SSZUnion):
-    """A union type that can hold Uint16."""
-
-    OPTIONS = (Uint16,)
-
-
-class UnionNoneUint16Uint32(SSZUnion):
-    """A union type that can hold None, Uint16, or Uint32."""
-
-    OPTIONS = (None, Uint16, Uint32)
-
-
-class UnionUint16Uint32(SSZUnion):
-    """A union type that can hold Uint16 or Uint32."""
-
-    OPTIONS = (Uint16, Uint32)
-
-
 # Define SSZ Container types for testing.
 class SingleField(Container):
     A: Uint8
@@ -777,60 +758,6 @@ def test_hash_tree_root_container_complex() -> None:
 
     # Verify the final calculated root.
     assert hash_tree_root(v).hex() == expected
-
-
-def test_hash_tree_root_union_single_type() -> None:
-    """
-    Tests the hash tree root of a Union object.
-    """
-    # Define a Union type with one possible member.
-    union = UnionUint16
-    # Instantiate the union, selecting the first type (selector=0).
-    u = union(selector=0, value=Uint16(0xAABB))
-    # The root is hash(root(value), chunk(selector)).
-    # For selector 0, this is hashed with a zero chunk.
-    expected = h(chunk("bbaa"), chunk(""))
-    assert hash_tree_root(u).hex() == expected
-
-
-def test_hash_tree_root_union_with_none_arm() -> None:
-    """
-    Tests a Union where the selected type is `None`.
-    """
-    # Define a Union type that includes None.
-    union = UnionNoneUint16Uint32
-    # Instantiate with the None type (selector=0).
-    u = union(selector=0, value=None)
-    # For a `None` value, the value root is a zero chunk.
-    # This is hashed with the selector (0), which is also a zero chunk.
-    expected = h(chunk(""), chunk(""))
-    assert hash_tree_root(u).hex() == expected
-
-
-def test_hash_tree_root_union_other_arm() -> None:
-    """
-    Tests a Union where a non-zero selector is used.
-    """
-    # Define the Union type.
-    union = UnionNoneUint16Uint32
-    # Instantiate with the second type (selector=1).
-    u = union(selector=1, value=Uint16(0xAABB))
-    # The root is hash(root(value), chunk(selector=1)).
-    expected = h(chunk("bbaa"), chunk("01"))
-    assert hash_tree_root(u).hex() == expected
-
-
-def test_hash_tree_root_union_multi_other_arm() -> None:
-    """
-    Tests a Union with multiple non-None types.
-    """
-    # Define a union of two integer types.
-    union = UnionUint16Uint32
-    # Instantiate with the second type (selector=1), which is Uint32.
-    u = union(selector=1, value=Uint32(0xDEADBEEF))
-    # The root is hash(root(value), chunk(selector=1)).
-    expected = h(chunk("efbeadde"), chunk("01"))
-    assert hash_tree_root(u).hex() == expected
 
 
 @pytest.mark.parametrize(

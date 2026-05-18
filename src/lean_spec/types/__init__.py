@@ -33,7 +33,6 @@ from .rlp import RLPDecodingError, RLPItem, decode_rlp, decode_rlp_list, encode_
 from .slot import IMMEDIATE_JUSTIFICATION_WINDOW, Slot
 from .ssz_base import SSZType
 from .uint import Uint8, Uint16, Uint32, Uint64
-from .union import SSZUnion
 from .validator import SubnetId, ValidatorIndex
 
 __all__ = [
@@ -63,7 +62,6 @@ __all__ = [
     "SSZList",
     "SSZVector",
     "SSZType",
-    "SSZUnion",
     "Boolean",
     "Container",
     # Domain types — fork-stable

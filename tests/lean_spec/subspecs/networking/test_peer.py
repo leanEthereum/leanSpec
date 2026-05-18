@@ -126,7 +126,8 @@ class TestPeerInfoForkDigest:
         enr = self._make_enr_with_eth2(fork_bytes)
         info = PeerInfo(peer_id=peer("test"), enr=enr)
 
-        assert info.fork_digest == fork_bytes
+        assert info.fork_digest is not None
+        assert bytes(info.fork_digest) == fork_bytes
 
     def test_enr_and_status_fields(self) -> None:
         """Test that enr and status fields exist and default to None."""

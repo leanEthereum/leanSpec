@@ -17,7 +17,6 @@ from lean_spec.types import (
     Bytes52,
     Bytes64,
     SSZList,
-    SSZUnion,
     SSZVector,
     Uint8,
     Uint16,
@@ -73,18 +72,6 @@ class SampleBytes32List8(SSZList[Bytes32]):
 
     LIMIT: ClassVar[int] = 8
     ELEMENT_TYPE = Bytes32
-
-
-class SampleUnionNone(SSZUnion):
-    """Union whose selector 0 maps to None (the "absent value" arm)."""
-
-    OPTIONS: ClassVar[tuple[type | None, ...]] = (None, Uint16, Uint32)
-
-
-class SampleUnionTypes(SSZUnion):
-    """Union with no None arm. Every selector maps to a concrete type."""
-
-    OPTIONS: ClassVar[tuple[type | None, ...]] = (Uint8, Uint16)
 
 
 # --- Boolean ---
@@ -476,49 +463,6 @@ def test_bytes32_list_multiple(ssz: SSZTestFiller) -> None:
                 Bytes32.zero(),
             ]
         ),
-    )
-
-
-# --- SSZUnion ---
-
-
-def test_union_none_arm(ssz: SSZTestFiller) -> None:
-    """Union selecting the None arm (selector 0). Encodes as a single zero byte."""
-    ssz(
-        type_name="SampleUnionNone",
-        value=SampleUnionNone(selector=0, value=None),
-    )
-
-
-def test_union_none_uint16_arm(ssz: SSZTestFiller) -> None:
-    """Union selecting the Uint16 arm (selector 1) from a None-capable union."""
-    ssz(
-        type_name="SampleUnionNone",
-        value=SampleUnionNone(selector=1, value=Uint16(1000)),
-    )
-
-
-def test_union_none_uint32_arm(ssz: SSZTestFiller) -> None:
-    """Union selecting the Uint32 arm (selector 2) from a None-capable union."""
-    ssz(
-        type_name="SampleUnionNone",
-        value=SampleUnionNone(selector=2, value=Uint32(70000)),
-    )
-
-
-def test_union_types_uint8_arm(ssz: SSZTestFiller) -> None:
-    """Union selecting the Uint8 arm (selector 0) with maximum value."""
-    ssz(
-        type_name="SampleUnionTypes",
-        value=SampleUnionTypes(selector=0, value=Uint8(255)),
-    )
-
-
-def test_union_types_uint16_arm(ssz: SSZTestFiller) -> None:
-    """Union selecting the Uint16 arm (selector 1) with maximum value."""
-    ssz(
-        type_name="SampleUnionTypes",
-        value=SampleUnionTypes(selector=1, value=Uint16(65535)),
     )
 
 

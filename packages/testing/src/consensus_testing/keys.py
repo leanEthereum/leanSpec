@@ -20,8 +20,9 @@ File format:
 
 - Each key pair is stored in a separate JSON file with hex-encoded SSZ.
 - Directory structure: `test_keys/{scheme}_scheme/{index}.json`
-- Each file has four hex-encoded SSZ fields:
-  `attestation_public`, `attestation_secret`, `proposal_public`, `proposal_secret`
+- The top-level object has two roles, each containing a public and secret blob:
+  `{"attestation_keypair": {"public_key": ..., "secret_key": ...},
+    "proposal_keypair":    {"public_key": ..., "secret_key": ...}}`
 """
 
 from __future__ import annotations
@@ -46,7 +47,12 @@ from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
-from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature, ValidatorKeyPair
+from lean_spec.subspecs.xmss.containers import (
+    PublicKey,
+    SecretKey,
+    Signature,
+    ValidatorKeyPair,
+)
 from lean_spec.subspecs.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
     TEST_SIGNATURE_SCHEME,
@@ -66,8 +72,8 @@ from lean_spec.types import (
     ValidatorIndices,
 )
 
-SecretField = Literal["attestation_secret", "proposal_secret"]
-"""Discriminator for which secret key to load from a validator key pair."""
+KeyRole = Literal["attestation", "proposal"]
+"""Discriminator for which signing role's key to load from a validator key pair."""
 
 KEY_DOWNLOAD_URLS = {
     "test": "https://github.com/leanEthereum/leansig-test-keys/releases/download/latest/test_scheme.tar.gz",
@@ -252,8 +258,8 @@ class XmssKeyManager:
         self.scheme = LEAN_ENV_TO_SCHEMES[scheme_name]
         self._keys_dir = get_keys_dir(scheme_name)
 
-        # Raw JSON cache: hex-encoded SSZ strings, very lightweight.
-        self._json_cache: dict[ValidatorIndex, dict[str, str]] = {}
+        # Raw JSON cache: nested dict of hex-encoded SSZ strings, very lightweight.
+        self._json_cache: dict[ValidatorIndex, dict[str, dict[str, str]]] = {}
 
         # Deserialized public key pairs, still avoids secret key overhead.
         self._public_cache: dict[ValidatorIndex, tuple[PublicKey, PublicKey]] = {}
@@ -264,7 +270,7 @@ class XmssKeyManager:
         # Advanced secret key state cached as raw SSZ bytes.
         # Raw bytes (~2.7 KB each) instead of deserialized objects (~370 MB each)
         # to avoid holding massive Pydantic model trees in memory.
-        self._secret_state: dict[tuple[ValidatorIndex, SecretField], bytes] = {}
+        self._secret_state: dict[tuple[ValidatorIndex, KeyRole], bytes] = {}
 
     def _scan_indices(self) -> set[ValidatorIndex]:
         """
@@ -299,18 +305,18 @@ class XmssKeyManager:
                 )
         return self._available_indices
 
-    def _load_json(self, idx: ValidatorIndex) -> dict[str, str]:
+    def _load_json(self, idx: ValidatorIndex) -> dict[str, dict[str, str]]:
         """
         Load raw JSON for a single validator, caching the result.
 
-        The JSON contains four hex-encoded SSZ fields.
+        The JSON has two role keys, each holding hex-encoded SSZ blobs.
         Keeping them as strings avoids the cost of deserializing secret keys.
 
         Args:
             idx: Validator index to load.
 
         Returns:
-            Dictionary of hex-encoded SSZ field strings.
+            Nested dictionary of hex-encoded SSZ strings keyed by role then field.
 
         Raises:
             KeyError: If no key file exists for the index.
@@ -325,23 +331,23 @@ class XmssKeyManager:
                 raise KeyError(f"Key file not found: {key_file}") from None
         return self._json_cache[idx]
 
-    def _get_secret_key(self, idx: ValidatorIndex, field: SecretField) -> SecretKey:
+    def _get_secret_key(self, idx: ValidatorIndex, role: KeyRole) -> SecretKey:
         """
         Deserialize a single secret key from disk.
 
-        Only the requested field is decoded into a full Python object.
+        Only the requested role's secret is decoded into a full Python object.
         The other three fields remain as lightweight hex strings in the cache.
 
         Args:
             idx: Validator index to look up.
-            field: Which secret key to decode (attestation or proposal).
+            role: Which signing role's secret to decode (attestation or proposal).
 
         Returns:
             The deserialized secret key.
         """
         # Load the raw JSON (cached), then decode only the requested field.
         data = self._load_json(idx)
-        return SecretKey.decode_bytes(bytes.fromhex(data[field]))
+        return SecretKey.decode_bytes(bytes.fromhex(data[f"{role}_keypair"]["secret_key"]))
 
     def __getitem__(self, idx: ValidatorIndex) -> ValidatorKeyPair:
         """
@@ -351,7 +357,7 @@ class XmssKeyManager:
         heavy secret key objects unnecessarily.
         """
         try:
-            return ValidatorKeyPair.from_dict(self._load_json(idx))
+            return ValidatorKeyPair.model_validate(self._load_json(idx))
         except KeyError:
             raise KeyError(f"Validator {idx} not found (available: {len(self)})") from None
 
@@ -386,8 +392,8 @@ class XmssKeyManager:
             # Decode only the two public key fields from the raw JSON.
             data = self._load_json(idx)
             self._public_cache[idx] = (
-                PublicKey.decode_bytes(bytes.fromhex(data["attestation_public"])),
-                PublicKey.decode_bytes(bytes.fromhex(data["proposal_public"])),
+                PublicKey.decode_bytes(bytes.fromhex(data["attestation_keypair"]["public_key"])),
+                PublicKey.decode_bytes(bytes.fromhex(data["proposal_keypair"]["public_key"])),
             )
         return self._public_cache[idx]
 
@@ -396,7 +402,7 @@ class XmssKeyManager:
         validator_id: ValidatorIndex,
         slot: Slot,
         message: Bytes32,
-        secret_field: SecretField,
+        role: KeyRole,
     ) -> Signature:
         """
         Core signing logic shared by attestation and proposal paths.
@@ -415,18 +421,18 @@ class XmssKeyManager:
             validator_id: Which validator's key to use.
             slot: Target slot to sign for.
             message: The 32-byte message digest to sign.
-            secret_field: Which secret key (attestation or proposal) to advance.
+            role: Which signing role's key (attestation or proposal) to advance.
 
         Raises:
             ValueError: If the slot exceeds the key's total lifetime.
         """
-        cache_key = (validator_id, secret_field)
+        cache_key = (validator_id, role)
 
         # Deserialize the secret key from either the byte cache or disk.
         if cache_key in self._secret_state:
             sk = SecretKey.decode_bytes(self._secret_state[cache_key])
         else:
-            sk = self._get_secret_key(validator_id, secret_field)
+            sk = self._get_secret_key(validator_id, role)
 
         # Advance the key state until the target slot falls within the prepared interval.
         #
@@ -479,7 +485,7 @@ class XmssKeyManager:
             validator_id,
             attestation_data.slot,
             hash_tree_root(attestation_data),
-            "attestation_secret",
+            "attestation",
         )
 
     def sign_block_root(
@@ -505,7 +511,7 @@ class XmssKeyManager:
         Raises:
             ValueError: If the slot exceeds key lifetime.
         """
-        return self._sign_with_secret(validator_id, slot, block_root, "proposal_secret")
+        return self._sign_with_secret(validator_id, slot, block_root, "proposal")
 
     def sign_and_aggregate(
         self,
@@ -620,23 +626,20 @@ def _generate_single_keypair(
     # without exhausting a one-time leaf.
     start = time.monotonic()
     print(f"[key #{index}] generating attestation key...", flush=True)
-    att_pk, att_sk = scheme.key_gen(Slot(0), Uint64(num_slots))
+    attestation_keypair = scheme.key_gen(Slot(0), Uint64(num_slots))
 
     elapsed = time.monotonic() - start
     print(
         f"[key #{index}] attestation key done ({elapsed:.0f}s), generating proposal key...",
         flush=True,
     )
-    prop_pk, prop_sk = scheme.key_gen(Slot(0), Uint64(num_slots))
+    proposal_keypair = scheme.key_gen(Slot(0), Uint64(num_slots))
 
     elapsed = time.monotonic() - start
     print(f"[key #{index}] done ({elapsed:.0f}s)", file=sys.stderr, flush=True)
 
     return ValidatorKeyPair(
-        attestation_public=att_pk,
-        attestation_secret=att_sk,
-        proposal_public=prop_pk,
-        proposal_secret=prop_sk,
+        attestation_keypair=attestation_keypair, proposal_keypair=proposal_keypair
     )
 
 
@@ -682,7 +685,7 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
             print(f"[{idx + 1}/{count}] saved key #{idx} ({elapsed:.0f}s elapsed)")
 
             key_file = keys_dir / f"{idx}.json"
-            key_file.write_text(json.dumps(key_pair.to_dict(), indent=2))
+            key_file.write_text(key_pair.model_dump_json(indent=2))
 
     total = time.monotonic() - gen_start
     print(f"Saved {count} key pairs to {keys_dir}/ ({total:.0f}s total)")

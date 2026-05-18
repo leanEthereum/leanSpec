@@ -10,7 +10,6 @@ from lean_spec.subspecs.ssz.merkleization import (
     _zero_tree_root,
     merkleize,
     mix_in_length,
-    mix_in_selector,
 )
 from lean_spec.subspecs.ssz.utils import hash_nodes
 from lean_spec.types import ZERO_HASH, Bytes32
@@ -126,21 +125,6 @@ def test_mix_in_length_error_on_negative() -> None:
     """Tests that mixing in a negative length raises a ValueError."""
     with pytest.raises(ValueError):
         mix_in_length(c[0], -1)
-
-
-def test_mix_in_selector() -> None:
-    """Tests mixing a selector into a root."""
-    root = c[1]
-    selector = 42
-    selector_bytes = Bytes32(selector.to_bytes(32, "little"))
-    expected = h(root, selector_bytes)
-    assert mix_in_selector(root, selector) == expected
-
-
-def test_mix_in_selector_error_on_negative() -> None:
-    """Tests that mixing in a negative selector raises a ValueError."""
-    with pytest.raises(ValueError):
-        mix_in_selector(c[1], -1)
 
 
 def test_zero_tree_root_internal() -> None:

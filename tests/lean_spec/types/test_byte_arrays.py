@@ -1,339 +1,509 @@
-# flake8: noqa E501
-import io
-import hashlib
-import json
-import pytest
+"""Tests for the BaseBytes and BaseByteList types."""
 
+import hashlib
+import io
+import json
+import re
+from typing import Any
+
+import pytest
 from pydantic import BaseModel
-from typing import Any, Type
 
 from lean_spec.types.byte_arrays import (
+    ZERO_HASH,
+    BaseByteList,
+    BaseBytes,
     Bytes1,
     Bytes4,
     Bytes32,
-    BaseBytes,
-    BaseByteList,
 )
 from lean_spec.types.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
 
 
-def sha256(b: bytes) -> bytes:
-    return hashlib.sha256(b).digest()
+class ByteList5(BaseByteList):
+    """A bytelist with limit 5 for testing."""
+
+    LIMIT = 5
 
 
-def test_bytes_inheritance_ok() -> None:
-    # Test that our concrete types properly inherit from BaseBytes
-    assert issubclass(Bytes32, BaseBytes)
-    assert Bytes32.LENGTH == 32
-    v = Bytes32(b"\x00" * 32)
-    assert isinstance(v, Bytes32)
-    assert isinstance(v, bytes)  # Should also be a bytes object
-    assert len(v) == 32
+class ByteList16(BaseByteList):
+    """A bytelist with limit 16 for testing."""
 
-
-def test_bytelist_inheritance_ok() -> None:
-    # Test that our concrete ByteList types properly inherit from BaseByteList
-    class ByteList64(BaseByteList):
-        LIMIT = 64
-
-    assert issubclass(ByteList64, BaseByteList)
-    assert ByteList64.LIMIT == 64
-    v = ByteList64(data=b"\x01\x02")
-    assert isinstance(v, ByteList64)
-    assert len(v) == 2
-
-
-@pytest.mark.parametrize(
-    "value,expected",
-    [
-        (b"\x00\x01\x02\x03", b"\x00\x01\x02\x03"),
-        (bytearray(b"\x00\x01\x02\x03"), b"\x00\x01\x02\x03"),
-        ([0, 1, 2, 3], b"\x00\x01\x02\x03"),
-        ((i for i in range(4)), b"\x00\x01\x02\x03"),
-        ("00010203", b"\x00\x01\x02\x03"),
-        ("0x00010203", b"\x00\x01\x02\x03"),
-    ],
-)
-def test_bytevector_coercion(value: Any, expected: bytes) -> None:
-    v = Bytes4(value)
-    assert bytes(v) == expected
-
-
-def test_bytevector_wrong_length_raises() -> None:
-    with pytest.raises(SSZValueError):
-        Bytes4(b"\x00\x01\x02")  # 3 != 4
-    with pytest.raises(SSZValueError):
-        Bytes4([0, 1, 2])  # 3 != 4
-    with pytest.raises(SSZValueError):
-        Bytes4("000102")  # 3 != 4 (hex nibbles -> 3 bytes)
-
-
-@pytest.mark.parametrize(
-    "value,expected",
-    [
-        (b"\x00\x01\x02\x03\x04", b"\x00\x01\x02\x03\x04"),
-        ([0, 1, 2, 3, 4], b"\x00\x01\x02\x03\x04"),
-        ("0001020304", b"\x00\x01\x02\x03\x04"),
-    ],
-)
-def test_bytelist_coercion(value: Any, expected: bytes) -> None:
-    # Use a ByteList with limit 5 for testing
-    class ByteList5(BaseByteList):
-        LIMIT = 5
-
-    v = ByteList5(data=value)
-    assert bytes(v) == expected
-    assert len(v) == len(expected)
-
-
-def test_bytelist_over_limit_raises() -> None:
-    # Create test-local ByteList64 type
-    class ByteList64(BaseByteList):
-        LIMIT = 64
-
-    # Test with ByteList64 that has limit 64
-    with pytest.raises(SSZValueError):
-        ByteList64(data=b"\x00" * 65)  # Over the limit
-
-
-def test_is_fixed_size_flags() -> None:
-    class ByteList64(BaseByteList):
-        LIMIT = 64
-
-    assert Bytes32.is_fixed_size() is True
-    assert ByteList64.is_fixed_size() is False
-
-
-def test_len_iter_getitem_repr_hash_eq() -> None:
-    v1 = Bytes4(b"\x00\x01\x02\x03")
-    v2 = Bytes4([0, 1, 2, 3])
-    v3 = Bytes4("00010203")
-    assert len(v1) == 4  # ByteVector length equals type-level constant
-    assert list(iter(v1)) == [0, 1, 2, 3]
-    assert v1[2] == 2
-    assert repr(v1).startswith("Bytes4(")
-    assert v1 == v2 == v3
-    assert hash(v1) == hash(v2) == hash(v3)
-
-
-def test_hex_and_ordering() -> None:
-    a = Bytes4(b"\x00\x00\x00\x01")
-    b = Bytes4(b"\x00\x00\x00\x02")
-    assert a.hex() == "00000001"
-    assert b.hex() == "00000002"
-    # Ordering enabled via __lt__
-    assert sorted([b, a]) == [a, b]
-
-
-def test_bytes_dunder_and_concat_and_rconcat() -> None:
-    a = Bytes4(b"\x00\x00\x00\x01")
-    b = Bytes4(b"\x00\x00\x00\x02")
-    # __bytes__
-    assert bytes(a) == b"\x00\x00\x00\x01"
-    # __add__ returns raw bytes
-    conc = a + b
-    assert isinstance(conc, (bytes, bytearray))
-    assert conc == b"\x00\x00\x00\x01\x00\x00\x00\x02"
-    # __radd__
-    conc2 = b"\xff" + a
-    assert conc2 == b"\xff\x00\x00\x00\x01"
-
-
-def test_hashlib_accepts_bytes32_via_add() -> None:
-    r1 = Bytes32(b"\x01" + b"\x00" * 31)
-    r2 = Bytes32(b"\x02" + b"\x00" * 31)
-    # a + b -> bytes, usable by hashlib.sha256
-    h = hashlib.sha256(r1 + r2).digest()
-    assert isinstance(h, bytes)
-    assert len(h) == 32
-
-
-@pytest.mark.parametrize(
-    "Typ, payload",
-    [
-        (Bytes1, b"\xaa"),
-        (Bytes4, b"\x00\x01\x02\x03"),
-        (Bytes32, b"\x11" * 32),
-    ],
-)
-def test_encode_decode_roundtrip_vector(Typ: Type[BaseBytes], payload: bytes) -> None:
-    v = Typ(payload)
-    assert v.encode_bytes() == payload
-    assert Typ.decode_bytes(payload) == v
-
-    # serialize/deserialize via IO[bytes]
-    buf = io.BytesIO()
-    n = v.serialize(buf)
-    assert n == len(payload)
-    buf.seek(0)
-    v2 = Typ.deserialize(buf, len(payload))
-    assert v == v2
-
-
-def test_vector_deserialize_scope_mismatch_raises() -> None:
-    v = Bytes4(b"\x00\x01\x02\x03")
-    buf = io.BytesIO(v.encode_bytes())
-    with pytest.raises(SSZSerializationError, match="expected 4 bytes, got 3"):
-        Bytes4.deserialize(buf, 3)  # wrong scope
-
-
-@pytest.mark.parametrize(
-    "limit,data",
-    [
-        (0, b""),
-        (1, b"\xaa"),
-        (5, b"\x00\x01\x02\x03\x04"),
-    ],
-)
-def test_encode_decode_roundtrip_list(limit: int, data: bytes) -> None:
-    # Create a test-specific ByteList class with the required limit
-    class TestByteList(BaseByteList):
-        LIMIT = limit
-
-    x = TestByteList(data=data)
-    assert x.encode_bytes() == data
-    assert TestByteList.decode_bytes(data) == x
-
-    buf = io.BytesIO()
-    n = x.serialize(buf)
-    assert n == len(data)
-    buf.seek(0)
-    y = TestByteList.deserialize(buf, len(data))
-    assert y == x
-
-
-def test_list_deserialize_over_limit_raises() -> None:
-    class TestByteList2(BaseByteList):
-        LIMIT = 2
-
-    buf = io.BytesIO(b"\x00\x01\x02")
-    with pytest.raises(SSZValueError):
-        TestByteList2.deserialize(buf, 3)
-
-
-def test_list_deserialize_short_stream_raises() -> None:
-    class TestByteList10(BaseByteList):
-        LIMIT = 10
-
-    buf = io.BytesIO(b"\x00\x01")
-    with pytest.raises(SSZSerializationError):
-        TestByteList10.deserialize(buf, 3)  # stream too short
+    LIMIT = 16
 
 
 class ModelVectors(BaseModel):
+    """Pydantic model holding fixed-length byte arrays."""
+
     root: Bytes32
     key: Bytes4
 
 
-# Create test ByteList16 for the ModelLists test
-class ByteList16(BaseByteList):
-    LIMIT = 16
-
-
 class ModelLists(BaseModel):
+    """Pydantic model holding a variable-length byte list."""
+
     payload: ByteList16
 
 
-def test_pydantic_accepts_various_inputs_for_vectors() -> None:
-    m = ModelVectors(
-        root=Bytes32("0x" + "11" * 32),
-        key=Bytes4([0, 1, 2, 3]),
+class TestBaseBytesConstruction:
+    """Construction and coercion of fixed-length byte arrays."""
+
+    def test_inheritance(self) -> None:
+        """Concrete subclasses inherit from BaseBytes and stay bytes-compatible."""
+        assert issubclass(Bytes32, BaseBytes)
+        assert Bytes32.LENGTH == 32
+        v = Bytes32(b"\x00" * 32)
+        assert isinstance(v, Bytes32)
+        assert isinstance(v, bytes)
+        assert len(v) == 32
+
+    @pytest.mark.parametrize(
+        "input_value, expected",
+        [
+            (b"\x00\x01\x02\x03", b"\x00\x01\x02\x03"),
+            (bytearray(b"\x00\x01\x02\x03"), b"\x00\x01\x02\x03"),
+            ([0, 1, 2, 3], b"\x00\x01\x02\x03"),
+            ((i for i in range(4)), b"\x00\x01\x02\x03"),
+            ("00010203", b"\x00\x01\x02\x03"),
+            ("0x00010203", b"\x00\x01\x02\x03"),
+        ],
     )
-    assert isinstance(m.root, Bytes32)
-    assert isinstance(m.key, Bytes4)
-    assert bytes(m.root) == b"\x11" * 32
-    assert bytes(m.key) == b"\x00\x01\x02\x03"
+    def test_coercion_from_supported_inputs(self, input_value: Any, expected: bytes) -> None:
+        """Bytes, bytearray, iterables, generators, and hex strings all coerce to bytes."""
+        v = Bytes4(input_value)
+        assert bytes(v) == expected
 
-    # serializer returns string representation in model_dump()
-    dumped = m.model_dump()
-    assert isinstance(dumped["root"], str)
-    assert dumped["root"] == "0x" + "11" * 32
-    assert dumped["key"] == "0x00010203"
+    @pytest.mark.parametrize(
+        "wrong_input, count",
+        [
+            (b"\x00\x01\x02", 3),
+            ([0, 1, 2], 3),
+            ("000102", 3),
+        ],
+    )
+    def test_construction_with_wrong_length_raises(self, wrong_input: Any, count: int) -> None:
+        """Inputs whose length doesn't match LENGTH raise with the exact element count."""
+        with pytest.raises(
+            SSZValueError,
+            match=re.escape(f"Bytes4 requires exactly 4 bytes, got {count}"),
+        ):
+            Bytes4(wrong_input)
 
+    @pytest.mark.parametrize("bad_input", [42, None, 1.5])
+    def test_construction_with_non_coercible_input_raises(self, bad_input: Any) -> None:
+        """Inputs outside the accepted union raise TypeError naming the offending type."""
+        name = type(bad_input).__name__
+        with pytest.raises(TypeError, match=re.escape(f"Cannot coerce {name} to bytes")):
+            Bytes4(bad_input)
 
-def test_pydantic_validates_vector_lengths() -> None:
-    with pytest.raises(SSZValueError):
-        ModelVectors(root=Bytes32(b"\x11" * 31), key=Bytes4(b"\x00\x01\x02\x03"))  # too short
-    with pytest.raises(SSZValueError):
-        ModelVectors(root=Bytes32(b"\x11" * 33), key=Bytes4(b"\x00\x01\x02\x03"))  # too long
-    with pytest.raises(SSZValueError):
-        ModelVectors(root=Bytes32(b"\x11" * 32), key=Bytes4(b"\x00\x01\x02"))  # key too short
+    def test_construction_without_length_attribute_raises(self) -> None:
+        """Direct instantiation of the abstract base raises SSZTypeError."""
+        with pytest.raises(SSZTypeError, match=re.escape("BaseBytes must define LENGTH")):
+            BaseBytes(b"")
 
-
-def test_pydantic_accepts_and_serializes_bytelist() -> None:
-    m = ModelLists(payload=ByteList16(data=bytes.fromhex("000102030405060708090a0b0c0d0e0f")))
-
-    assert isinstance(m.payload, ByteList16)
-    assert m.payload.encode_bytes() == bytes(range(16))
-
-    dumped = m.model_dump()
-    payload = dumped["payload"]
-
-    # ByteList serializes as dict with 'data' field
-    assert isinstance(payload, dict)
-    assert "data" in payload
-    assert payload["data"] == bytes(range(16))
-
-    # Round-trip back through Pydantic using the dumped Python object
-    decoded = ModelLists.model_validate(dumped)
-    assert decoded.payload.encode_bytes() == bytes(range(16))
-
-
-def test_pydantic_bytelist_limit_enforced() -> None:
-    with pytest.raises(SSZValueError):
-        ModelLists(payload=ByteList16(data=bytes(range(17))))  # over limit
+    def test_zero_factory(self) -> None:
+        """The zero classmethod returns an instance of LENGTH zero bytes."""
+        v = Bytes4.zero()
+        assert isinstance(v, Bytes4)
+        assert bytes(v) == b"\x00\x00\x00\x00"
 
 
-def test_add_repr_equality_hash_do_not_crash_on_aliases() -> None:
-    a = Bytes32(b"\xaa" * 32)
-    b = Bytes32("aa" * 32)
-    c = Bytes32(bytearray(b"\xaa" * 32))
-    assert a == b == c
-    assert hash(a) == hash(b) == hash(c)
-    assert repr(a).startswith("Bytes32(")
-    # Addition returns bytes
-    assert isinstance(a + b, (bytes, bytearray))
-    assert isinstance(b"\x00" + a, (bytes, bytearray))
+class TestBaseBytesEquality:
+    """Strict equality, inequality, and hashing of fixed-length byte arrays."""
+
+    def test_same_type_equality(self) -> None:
+        """Instances with the same value and type compare equal."""
+        v1 = Bytes4(b"\x00\x01\x02\x03")
+        v2 = Bytes4([0, 1, 2, 3])
+        v3 = Bytes4("00010203")
+        assert v1 == v2 == v3
+
+    def test_same_type_inequality(self) -> None:
+        """Instances with different values compare unequal."""
+        v1 = Bytes4(b"\x00\x00\x00\x00")
+        v2 = Bytes4(b"\x00\x00\x00\x01")
+        assert v1 != v2
+
+    @pytest.mark.parametrize("other", [b"\x00\x01\x02\x03", "string", 1.5, None, 42])
+    def test_cross_type_equality_raises(self, other: Any) -> None:
+        """Comparing with any non-BaseBytes value raises TypeError."""
+        name = type(other).__name__
+        with pytest.raises(
+            TypeError,
+            match=re.escape(f"Unsupported operand type(s) for ==: 'Bytes4' and '{name}'"),
+        ):
+            _ = Bytes4(b"\x00\x01\x02\x03") == other
+
+    @pytest.mark.parametrize("other", [b"\x00\x01\x02\x03", "string", 1.5, None, 42])
+    def test_cross_type_inequality_raises(self, other: Any) -> None:
+        """Inequality with any non-BaseBytes value raises TypeError."""
+        name = type(other).__name__
+        with pytest.raises(
+            TypeError,
+            match=re.escape(f"Unsupported operand type(s) for !=: 'Bytes4' and '{name}'"),
+        ):
+            _ = Bytes4(b"\x00\x01\x02\x03") != other
+
+    def test_hash_distinct_from_raw_bytes(self) -> None:
+        """The hash binds the value to its concrete type, so equal raw bytes hash differently."""
+        v = Bytes4(b"\x00\x01\x02\x03")
+        assert hash(v) != hash(b"\x00\x01\x02\x03")
+
+    def test_hash_same_for_equal_instances(self) -> None:
+        """Equal instances of the same type produce the same hash."""
+        v1 = Bytes4(b"\x00\x01\x02\x03")
+        v2 = Bytes4([0, 1, 2, 3])
+        v3 = Bytes4("00010203")
+        assert hash(v1) == hash(v2) == hash(v3)
 
 
-def test_sorted_bytes32_list_is_lexicographic_on_bytes() -> None:
-    a = Bytes32(b"\x00" * 31 + b"\x01")
-    b = Bytes32(b"\x00" * 31 + b"\x02")
-    c = Bytes32(b"\xff" * 32)
-    arr = [c, b, a]
-    s = sorted(arr)
-    assert s == [a, b, c]
+class TestBaseBytesOperations:
+    """Repr, hex, iteration, indexing, ordering, and concatenation."""
+
+    def test_repr(self) -> None:
+        """The repr is the class name with the hex content in parentheses."""
+        assert repr(Bytes4(b"\x00\x01\x02\x03")) == "Bytes4(00010203)"
+
+    def test_hex(self) -> None:
+        """The hex method returns the lowercase hex string."""
+        assert Bytes4(b"\x00\x01\x02\x03").hex() == "00010203"
+
+    def test_len_iter_getitem(self) -> None:
+        """The instance supports len, iteration, and integer indexing."""
+        v = Bytes4(b"\x00\x01\x02\x03")
+        assert len(v) == 4
+        assert list(iter(v)) == [0, 1, 2, 3]
+        assert v[2] == 2
+
+    def test_concatenation_returns_plain_bytes(self) -> None:
+        """Concatenation of two instances returns plain bytes."""
+        a = Bytes4(b"\x00\x00\x00\x01")
+        b = Bytes4(b"\x00\x00\x00\x02")
+        conc = a + b
+        assert type(conc) is bytes
+        assert conc == b"\x00\x00\x00\x01\x00\x00\x00\x02"
+
+    def test_reverse_concatenation_returns_plain_bytes(self) -> None:
+        """Concatenation with raw bytes on the left returns plain bytes."""
+        a = Bytes4(b"\x00\x00\x00\x01")
+        conc = b"\xff" + a
+        assert type(conc) is bytes
+        assert conc == b"\xff\x00\x00\x00\x01"
+
+    def test_sort_lexicographic(self) -> None:
+        """Instances sort lexicographically by byte content."""
+        a = Bytes32(b"\x00" * 31 + b"\x01")
+        b = Bytes32(b"\x00" * 31 + b"\x02")
+        c = Bytes32(b"\xff" * 32)
+        assert sorted([c, b, a]) == [a, b, c]
+
+    def test_hashlib_compatibility(self) -> None:
+        """An instance is usable wherever a bytes-like value is expected."""
+        r = Bytes32(b"\x01" + b"\x00" * 31)
+        digest = hashlib.sha256(r).digest()
+        assert len(digest) == 32
 
 
-def test_json_like_dump_of_vectors_lists() -> None:
-    # Create test ByteList types for this test
-    class ByteList5(BaseByteList):
-        LIMIT = 5
+class TestBaseBytesSSZ:
+    """SSZ interface methods and serialization round-trip."""
 
-    class Bytes96(BaseBytes):
-        LENGTH = 96
+    def test_is_fixed_size(self) -> None:
+        """BaseBytes subclasses are always fixed-size."""
+        assert Bytes32.is_fixed_size() is True
 
-    # Ensure users can dump simple object structures to JSON by pre-encoding to hex.
+    def test_get_byte_length(self) -> None:
+        """get_byte_length returns the declared LENGTH."""
+        assert Bytes32.get_byte_length() == 32
+        assert Bytes4.get_byte_length() == 4
+
+    @pytest.mark.parametrize(
+        "cls, payload",
+        [
+            (Bytes1, b"\xaa"),
+            (Bytes4, b"\x00\x01\x02\x03"),
+            (Bytes32, b"\x11" * 32),
+        ],
+    )
+    def test_encode_decode_roundtrip(self, cls: type[BaseBytes], payload: bytes) -> None:
+        """BaseBytes round-trips through encode_bytes, decode_bytes, and stream serialization."""
+        v = cls(payload)
+        assert v.encode_bytes() == payload
+        assert cls.decode_bytes(payload) == v
+
+        buf = io.BytesIO()
+        n = v.serialize(buf)
+        assert n == len(payload)
+
+        buf.seek(0)
+        v2 = cls.deserialize(buf, len(payload))
+        assert v == v2
+
+    def test_deserialize_scope_mismatch_raises(self) -> None:
+        """deserialize rejects a scope that doesn't match LENGTH."""
+        buf = io.BytesIO(b"\x00\x01\x02\x03")
+        with pytest.raises(
+            SSZSerializationError,
+            match=re.escape("Bytes4: expected 4 bytes, got 3"),
+        ):
+            Bytes4.deserialize(buf, 3)
+
+    def test_deserialize_stream_truncation_raises(self) -> None:
+        """deserialize detects when the stream ends before delivering scope bytes."""
+        buf = io.BytesIO(b"\x00\x01")
+        with pytest.raises(
+            SSZSerializationError,
+            match=re.escape("Bytes4: expected 4 bytes, got 2"),
+        ):
+            Bytes4.deserialize(buf, 4)
+
+
+class TestBaseBytesPydantic:
+    """Pydantic validation and JSON serialization for fixed-length byte arrays."""
+
+    def test_accepts_typed_instances_and_supported_inputs(self) -> None:
+        """Pydantic accepts existing instances built from hex strings or iterables."""
+        m = ModelVectors(
+            root=Bytes32("0x" + "11" * 32),
+            key=Bytes4([0, 1, 2, 3]),
+        )
+        assert isinstance(m.root, Bytes32)
+        assert isinstance(m.key, Bytes4)
+        assert bytes(m.root) == b"\x11" * 32
+        assert bytes(m.key) == b"\x00\x01\x02\x03"
+
+    def test_json_serialization_to_hex(self) -> None:
+        """Serialization uses 0x-prefixed lowercase hex for JSON output."""
+        m = ModelVectors(
+            root=Bytes32("0x" + "11" * 32),
+            key=Bytes4([0, 1, 2, 3]),
+        )
+        dumped = m.model_dump()
+        assert dumped["root"] == "0x" + "11" * 32
+        assert dumped["key"] == "0x00010203"
+
+
+class TestBaseByteListConstruction:
+    """Construction and coercion of variable-length byte lists."""
+
+    def test_inheritance(self) -> None:
+        """Concrete subclasses carry the declared limit."""
+        v = ByteList16(data=b"\x01\x02")
+        assert isinstance(v, ByteList16)
+        assert ByteList16.LIMIT == 16
+        assert len(v.data) == 2
+
+    @pytest.mark.parametrize(
+        "input_value, expected",
+        [
+            (b"\x00\x01\x02\x03\x04", b"\x00\x01\x02\x03\x04"),
+            (bytearray(b"\x00\x01\x02\x03\x04"), b"\x00\x01\x02\x03\x04"),
+            ([0, 1, 2, 3, 4], b"\x00\x01\x02\x03\x04"),
+            ("0001020304", b"\x00\x01\x02\x03\x04"),
+            ("0x0001020304", b"\x00\x01\x02\x03\x04"),
+        ],
+    )
+    def test_coercion_from_supported_inputs(self, input_value: Any, expected: bytes) -> None:
+        """Bytes, bytearray, iterables, and hex strings all coerce to bytes."""
+        v = ByteList5(data=input_value)
+        assert v.data == expected
+        assert len(v.data) == len(expected)
+
+    def test_construction_over_limit_raises(self) -> None:
+        """Input exceeding LIMIT raises with the exact size in the message."""
+        with pytest.raises(
+            SSZValueError,
+            match=re.escape("ByteList5 exceeds limit of 5, got 6"),
+        ):
+            ByteList5(data=b"\x00" * 6)
+
+    def test_construction_without_limit_attribute_raises(self) -> None:
+        """Direct instantiation of the abstract base raises SSZTypeError."""
+        with pytest.raises(SSZTypeError, match=re.escape("BaseByteList must define LIMIT")):
+            BaseByteList(data=b"")
+
+
+class TestBaseByteListEquality:
+    """Strict equality, inequality, and hashing of variable-length byte lists."""
+
+    def test_same_type_equality(self) -> None:
+        """Instances with the same value compare equal."""
+        v1 = ByteList16(data=b"\x00\x01\x02")
+        v2 = ByteList16(data=b"\x00\x01\x02")
+        assert v1 == v2
+
+    def test_same_type_inequality(self) -> None:
+        """Instances with different values compare unequal."""
+        v1 = ByteList16(data=b"\x00")
+        v2 = ByteList16(data=b"\x01")
+        assert v1 != v2
+
+    @pytest.mark.parametrize("other", [b"\x00\x01\x02", "string", 1.5, None, 42])
+    def test_cross_type_equality_raises(self, other: Any) -> None:
+        """Comparing with any non-BaseByteList value raises TypeError."""
+        name = type(other).__name__
+        with pytest.raises(
+            TypeError,
+            match=re.escape(f"Unsupported operand type(s) for ==: 'ByteList16' and '{name}'"),
+        ):
+            _ = ByteList16(data=b"\x00\x01\x02") == other
+
+    @pytest.mark.parametrize("other", [b"\x00\x01\x02", "string", 1.5, None, 42])
+    def test_cross_type_inequality_raises(self, other: Any) -> None:
+        """Inequality with any non-BaseByteList value raises TypeError."""
+        name = type(other).__name__
+        with pytest.raises(
+            TypeError,
+            match=re.escape(f"Unsupported operand type(s) for !=: 'ByteList16' and '{name}'"),
+        ):
+            _ = ByteList16(data=b"\x00\x01\x02") != other
+
+    def test_hash_includes_type(self) -> None:
+        """Instances of different bytelist types with the same data hash differently."""
+        v1 = ByteList5(data=b"\x00\x01")
+        v2 = ByteList16(data=b"\x00\x01")
+        assert hash(v1) != hash(v2)
+
+    def test_hash_same_for_equal_instances(self) -> None:
+        """Equal instances of the same type produce the same hash."""
+        v1 = ByteList16(data=b"\x00\x01\x02")
+        v2 = ByteList16(data=b"\x00\x01\x02")
+        assert hash(v1) == hash(v2)
+
+
+class TestBaseByteListOperations:
+    """Repr, hex, bytes coercion, and concatenation."""
+
+    def test_repr(self) -> None:
+        """The repr is the class name with the hex content in parentheses."""
+        assert repr(ByteList16(data=b"\x00\x01\x02")) == "ByteList16(000102)"
+
+    def test_hex(self) -> None:
+        """The hex method returns the lowercase hex string."""
+        assert ByteList16(data=b"\x00\x01\x02").hex() == "000102"
+
+    def test_bytes_dunder(self) -> None:
+        """Calling bytes() on an instance returns the underlying bytes."""
+        assert bytes(ByteList16(data=b"\x00\x01\x02")) == b"\x00\x01\x02"
+
+    def test_concatenation_returns_plain_bytes(self) -> None:
+        """Concatenation with a bytes-like value returns plain bytes."""
+        v = ByteList16(data=b"\x00\x01\x02")
+        conc = v + b"\x03\x04"
+        assert type(conc) is bytes
+        assert conc == b"\x00\x01\x02\x03\x04"
+
+    def test_reverse_concatenation_returns_plain_bytes(self) -> None:
+        """Concatenation with raw bytes on the left returns plain bytes."""
+        v = ByteList16(data=b"\x00\x01")
+        conc = b"\xff" + v
+        assert type(conc) is bytes
+        assert conc == b"\xff\x00\x01"
+
+
+class TestBaseByteListSSZ:
+    """SSZ interface methods and serialization round-trip."""
+
+    def test_is_fixed_size(self) -> None:
+        """BaseByteList subclasses are always variable-size."""
+        assert ByteList16.is_fixed_size() is False
+
+    def test_get_byte_length_raises(self) -> None:
+        """get_byte_length raises a descriptive error for variable-size types."""
+        with pytest.raises(
+            SSZTypeError,
+            match=re.escape("ByteList16: variable-size byte list has no fixed byte length"),
+        ):
+            ByteList16.get_byte_length()
+
+    @pytest.mark.parametrize(
+        "limit, data",
+        [
+            (0, b""),
+            (1, b"\xaa"),
+            (5, b"\x00\x01\x02\x03\x04"),
+            (16, bytes(range(16))),
+        ],
+    )
+    def test_encode_decode_roundtrip(self, limit: int, data: bytes) -> None:
+        """ByteList round-trips through encode_bytes, decode_bytes, and stream serialization."""
+
+        class TestByteList(BaseByteList):
+            LIMIT = limit
+
+        x = TestByteList(data=data)
+        assert x.encode_bytes() == data
+        assert TestByteList.decode_bytes(data) == x
+
+        buf = io.BytesIO()
+        n = x.serialize(buf)
+        assert n == len(data)
+
+        buf.seek(0)
+        y = TestByteList.deserialize(buf, len(data))
+        assert y == x
+
+    def test_deserialize_negative_scope_raises(self) -> None:
+        """deserialize rejects a negative scope."""
+        buf = io.BytesIO(b"")
+        with pytest.raises(
+            SSZSerializationError,
+            match=re.escape("ByteList16: negative scope"),
+        ):
+            ByteList16.deserialize(buf, -1)
+
+    def test_deserialize_over_limit_raises(self) -> None:
+        """deserialize rejects a scope exceeding LIMIT."""
+        buf = io.BytesIO(b"\x00" * 6)
+        with pytest.raises(
+            SSZValueError,
+            match=re.escape("ByteList5 exceeds limit of 5, got 6"),
+        ):
+            ByteList5.deserialize(buf, 6)
+
+    def test_deserialize_stream_truncation_raises(self) -> None:
+        """deserialize detects when the stream ends before delivering scope bytes."""
+        buf = io.BytesIO(b"\x00\x01")
+        with pytest.raises(
+            SSZSerializationError,
+            match=re.escape("ByteList16: expected 3 bytes, got 2"),
+        ):
+            ByteList16.deserialize(buf, 3)
+
+
+class TestBaseByteListPydantic:
+    """Pydantic validation and JSON serialization for variable-length byte lists."""
+
+    def test_accepts_valid_input(self) -> None:
+        """Pydantic accepts construction with bytes within LIMIT."""
+        data = bytes.fromhex("000102030405060708090a0b0c0d0e0f")
+        m = ModelLists(payload=ByteList16(data=data))
+        assert isinstance(m.payload, ByteList16)
+        assert m.payload.encode_bytes() == data
+
+    def test_rejects_oversized_input(self) -> None:
+        """Pydantic rejects data exceeding LIMIT via SSZValueError."""
+        with pytest.raises(SSZValueError):
+            ModelLists(payload=ByteList16(data=bytes(range(17))))
+
+    def test_json_serialization_to_hex(self) -> None:
+        """JSON-mode serialization renders the data field as a 0x-prefixed hex string."""
+        data = bytes.fromhex("0001020304")
+        m = ModelLists(payload=ByteList16(data=data))
+        dumped = m.model_dump(mode="json")
+        assert dumped["payload"]["data"] == "0x0001020304"
+
+
+def test_zero_hash_constant() -> None:
+    """The module-level ZERO_HASH is a 32-byte zero-filled Bytes32 instance."""
+    assert isinstance(ZERO_HASH, Bytes32)
+    assert bytes(ZERO_HASH) == b"\x00" * 32
+
+
+def test_json_dumpable_via_hex() -> None:
+    """Byte instances are JSON-dumpable when pre-encoded to hex strings."""
     obj = {
         "root": Bytes32(b"\x11" * 32).hex(),
-        "sig": Bytes96(bytes(range(96))).hex(),
-        "payload": ByteList5(data=b"\x00\x01\x02\x03\x04").hex(),
+        "key": Bytes4(b"\x00\x01\x02\x03").hex(),
+        "payload": ByteList5(data=b"\x00\x01\x02").hex(),
     }
-    # strings are JSON-serializable
     assert json.loads(json.dumps(obj)) == obj
-
-
-def test_bytelist_hex_and_concat_behaviour_like_vector() -> None:
-    class ByteList8(BaseByteList):
-        LIMIT = 8
-
-    x = ByteList8(data=bytes.fromhex("00010203"))
-    y = ByteList8(data=bytes([4, 5]))
-    # __add__ returns bytes
-    conc = x + y
-    assert conc == b"\x00\x01\x02\x03\x04\x05"
-    # __radd__
-    conc2 = b"\xff" + x
-    assert conc2 == b"\xff\x00\x01\x02\x03"
-    # hex via bytes().hex() or .encode_bytes().hex()
-    assert x.encode_bytes().hex() == "00010203"

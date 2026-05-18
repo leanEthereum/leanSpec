@@ -1,16 +1,20 @@
 """
-Byte array SSZ types.
+SSZ byte array types.
 
-This module provides two parameterized SSZ types:
+A byte array is a contiguous sequence of bytes serialized directly to the wire.
 
-- ByteVector[N]: a fixed-length byte vector of exactly N bytes.
-- ByteList[L]:   a variable-length byte list with an upper bound of L bytes.
+Two flavors are defined by the SSZ spec:
+
+- Fixed-length: exactly N bytes — the byte count is part of the type.
+- Variable-length: 0 to N bytes — the byte count is recovered from the surrounding context.
+
+Both flavors serialize as the raw bytes themselves — no length prefix, no delimiter.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import IO, Any, ClassVar, Self, SupportsIndex, override
+from typing import IO, Any, ClassVar, Self, override
 
 from pydantic import Field, field_serializer, field_validator
 from pydantic.annotated_handlers import GetCoreSchemaHandler
@@ -21,13 +25,16 @@ from .ssz_base import SSZModel, SSZType
 
 
 class BaseBytes(bytes, SSZType):
-    """
-    A base class for fixed-length byte types that inherits from `bytes`.
+    r"""
+    Fixed-length SSZ byte array with exactly N bytes.
 
-    Subclasses set:
-      - `LENGTH`: exact number of bytes the instance must contain.
+    - Inherits from bytes so the instance is usable wherever a bytes value is expected.
+    - Subclasses pin the byte count by setting the class-level length.
+    - Equality is strict — only another byte-array instance compares.
 
-    Instances are immutable byte objects with strict length checking.
+    For example, Bytes4 wraps four raw bytes and serializes verbatim:
+
+        Bytes4(b"\x01\x02\x03\x04")  ->  wire bytes 01 02 03 04
     """
 
     __slots__ = ()
@@ -36,36 +43,46 @@ class BaseBytes(bytes, SSZType):
     """The exact number of bytes (overridden by subclasses)."""
 
     @staticmethod
-    def _coerce_to_bytes(value: Any) -> bytes:
+    def _coerce_to_bytes(value: bytes | bytearray | str | Iterable[int]) -> bytes:
         """
-        Coerce a variety of inputs to raw bytes.
+        Coerce an input into a plain bytes object.
 
         Accepts:
-          - `bytes` / `bytearray` (returned as immutable `bytes`)
-          - Iterables of integers in [0, 255]
-          - Hex strings, with or without a '0x' prefix (e.g. "0xdeadbeef" or "deadbeef")
 
-        Raises:
-          ValueError / TypeError if conversion is not possible or out-of-range.
-        """
-        if isinstance(value, (bytes, bytearray)):
-            return bytes(value)
-        if isinstance(value, str):
-            return bytes.fromhex(value.removeprefix("0x"))
-        if isinstance(value, Iterable):
-            return bytes(bytearray(value))
-        raise TypeError(f"Cannot coerce {type(value).__name__} to bytes")
-
-    def __new__(cls, value: Any = b"") -> Self:
-        """
-        Create and validate a new Bytes instance.
+        - bytes or bytearray — returned as an immutable bytes copy.
+        - Iterables of integers in 0..255.
+        - Hex strings, optionally prefixed with 0x.
 
         Args:
-            value: Any value coercible to bytes (see `_coerce_to_bytes`).
+            value: The raw input to convert.
+
+        Returns:
+            The coerced bytes.
 
         Raises:
-            SSZTypeError: If the class doesn't define LENGTH.
-            SSZValueError: If the resulting byte length differs from `LENGTH`.
+            TypeError: If the input type is not coercible.
+            ValueError: If a hex string is malformed or an integer is out of range.
+        """
+        match value:
+            case bytes() | bytearray():
+                return bytes(value)
+            case str():
+                return bytes.fromhex(value.removeprefix("0x"))
+            case Iterable():
+                return bytes(bytearray(value))
+            case _:
+                raise TypeError(f"Cannot coerce {type(value).__name__} to bytes")
+
+    def __new__(cls, value: bytes | bytearray | str | Iterable[int] = b"") -> Self:
+        """
+        Construct and validate a new byte array.
+
+        Args:
+            value: Any input coercible to bytes — bytes, bytearray, iterable of ints, or hex string.
+
+        Raises:
+            SSZTypeError: If the subclass has not declared a length.
+            SSZValueError: If the coerced byte count differs from the declared length.
         """
         if not hasattr(cls, "LENGTH"):
             raise SSZTypeError(f"{cls.__name__} must define LENGTH")
@@ -77,34 +94,24 @@ class BaseBytes(bytes, SSZType):
 
     @classmethod
     def zero(cls) -> Self:
-        """
-        Create a new instance filled with zero bytes.
-
-        Returns:
-            A new instance of this class, zero-initialized.
-        """
+        """Return a new instance filled with zero bytes."""
         return cls(b"\x00" * cls.LENGTH)
 
     @classmethod
     @override
     def is_fixed_size(cls) -> bool:
-        """ByteVector is fixed-size (length known at the type level)."""
+        """Always fixed-size by definition."""
         return True
 
     @classmethod
     @override
     def get_byte_length(cls) -> int:
-        """Get the byte length of this fixed-size type."""
+        """Return the declared byte length."""
         return cls.LENGTH
 
     @override
     def serialize(self, stream: IO[bytes]) -> int:
-        """
-        Write the raw bytes to `stream`.
-
-        Returns:
-            Number of bytes written (always `LENGTH`).
-        """
+        """Write the raw bytes to a binary stream and return the number of bytes written."""
         stream.write(self)
         return len(self)
 
@@ -112,37 +119,37 @@ class BaseBytes(bytes, SSZType):
     @override
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
         """
-        Read exactly `scope` bytes from `stream` and build an instance.
+        Read the declared number of bytes from a stream.
 
-        For a fixed-size type, `scope` must match `LENGTH`.
+        Args:
+            stream: Source binary stream.
+            scope: Number of bytes the caller has allocated for this value (must equal LENGTH).
+
+        Returns:
+            A new instance wrapping the read bytes.
 
         Raises:
-            SSZSerializationError: if `scope` != `LENGTH` or the stream ends prematurely.
+            SSZSerializationError:
+                - When scope does not equal the declared LENGTH.
+                - When the stream ends before delivering scope bytes.
         """
         if scope != cls.LENGTH:
             raise SSZSerializationError(f"{cls.__name__}: expected {cls.LENGTH} bytes, got {scope}")
         data = stream.read(scope)
         if len(data) != scope:
             raise SSZSerializationError(f"{cls.__name__}: expected {scope} bytes, got {len(data)}")
-        return cls(data)
+        # Length already verified — bypass __new__'s coerce + revalidation.
+        return bytes.__new__(cls, data)
 
     @override
     def encode_bytes(self) -> bytes:
-        """Return the value's canonical SSZ byte representation."""
+        """Return the SSZ-encoded bytes as a plain bytes object."""
         return bytes(self)
 
     @classmethod
     @override
     def decode_bytes(cls, data: bytes) -> Self:
-        """
-        Parse `data` as a value of this type.
-
-        For a fixed-size type, the data must be exactly `LENGTH` bytes.
-        """
-        if len(data) != cls.LENGTH:
-            raise SSZValueError(
-                f"{cls.__name__} requires exactly {cls.LENGTH} bytes, got {len(data)}"
-            )
+        """Parse SSZ bytes into an instance — the constructor enforces the declared length."""
         return cls(data)
 
     @classmethod
@@ -150,18 +157,19 @@ class BaseBytes(bytes, SSZType):
         cls, source_type: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
         """
-        Hook into Pydantic's validation system.
+        Provide a Pydantic core schema for strict byte-array validation.
 
-        This schema defines how to handle the custom Bytes type:
-        1. If the input is already an instance of the class, accept it.
-        2. Otherwise, validate and coerce the input to the exact LENGTH
-            and then instantiate the class.
-        3. For serialization (e.g., to JSON), convert to hex string.
+        - Already-typed instances pass through.
+        - Plain bytes inputs go through length-checked validation, then get wrapped.
+        - JSON serialization converts the bytes to a 0x-prefixed hex string.
         """
-        # Validator that takes any bytes-like input and returns an instance of the class.
+        # Validator that wraps a verified bytes object into a typed instance.
         from_bytes_validator = core_schema.no_info_plain_validator_function(cls)
 
-        # Schema that validates bytes with exact length, then calls our validator.
+        # Two-step input validation:
+        #
+        #   - bytes_schema enforces the exact declared length.
+        #   - wrapping validator turns the validated bytes into a typed instance.
         python_schema = core_schema.chain_schema(
             [
                 core_schema.bytes_schema(min_length=cls.LENGTH, max_length=cls.LENGTH),
@@ -169,11 +177,13 @@ class BaseBytes(bytes, SSZType):
             ]
         )
 
+        # Final union accepts either branch and serializes back to a 0x-prefixed hex string:
+        #
+        #   - Branch 1: input is already a typed instance, pass through.
+        #   - Branch 2: input is bytes that need length-checking and wrapping.
         return core_schema.union_schema(
             [
-                # Case 1: The value is already the correct type.
                 core_schema.is_instance_schema(cls),
-                # Case 2: The value needs to be parsed and validated.
                 python_schema,
             ],
             serialization=core_schema.plain_serializer_function_ser_schema(
@@ -182,17 +192,36 @@ class BaseBytes(bytes, SSZType):
         )
 
     def __repr__(self) -> str:
-        """Return a string representation of the bytes."""
+        """Return the official form: ClassName(hex_string)."""
         tname = type(self).__name__
         return f"{tname}({self.hex()})"
 
-    def __hash__(self) -> int:
-        """Return a hash distinct from raw bytes."""
-        return hash((type(self), bytes(self)))
+    def __eq__(self, other: object) -> bool:
+        """Strict equality — only another byte-array instance compares; anything else raises."""
+        if not isinstance(other, BaseBytes):
+            raise TypeError(
+                f"Unsupported operand type(s) for ==: "
+                f"'{type(self).__name__}' and '{type(other).__name__}'"
+            )
+        return bytes.__eq__(self, other)
 
-    def hex(self, sep: str | bytes | None = None, bytes_per_sep: SupportsIndex = 1) -> str:
-        """Return the hexadecimal string representation of the underlying bytes."""
-        return bytes(self).hex() if sep is None else bytes(self).hex(sep, bytes_per_sep)
+    def __ne__(self, other: object) -> bool:
+        """
+        Strict inequality — only another byte-array instance compares; anything else raises.
+
+        Defined explicitly because the parent bytes class has its own not-equal
+        that would otherwise bypass the strict type contract.
+        """
+        if not isinstance(other, BaseBytes):
+            raise TypeError(
+                f"Unsupported operand type(s) for !=: "
+                f"'{type(self).__name__}' and '{type(other).__name__}'"
+            )
+        return bytes.__ne__(self, other)
+
+    def __hash__(self) -> int:
+        """Return a hash distinct from raw bytes — matches the strict equality contract."""
+        return hash((type(self), bytes(self)))
 
 
 class Bytes1(BaseBytes):
@@ -237,10 +266,6 @@ class Bytes33(BaseBytes):
     LENGTH = 33
 
 
-ZERO_HASH: Bytes32 = Bytes32.zero()
-"""All-zero hash (32 bytes of zeros)."""
-
-
 class Bytes52(BaseBytes):
     """Fixed-size byte array of exactly 52 bytes."""
 
@@ -259,14 +284,21 @@ class Bytes65(BaseBytes):
     LENGTH = 65
 
 
+ZERO_HASH: Bytes32 = Bytes32.zero()
+"""All-zero 32-byte hash, used as a canonical empty/uninitialized root."""
+
+
 class BaseByteList(SSZModel):
-    """
-    Base class for specialized `ByteList[L]`.
+    r"""
+    Variable-length SSZ byte array with 0 to N bytes.
 
-    Subclasses (created by `ByteList.__class_getitem__`) set:
-      - `LIMIT`: maximum number of bytes the instance may contain.
+    - Subclasses pin the maximum byte count by setting the class-level limit.
+    - Serialization writes the raw bytes; the length is recovered from the wrapping context.
+    - Equality is strict — only another byte-list instance compares.
 
-    Instances are immutable byte blobs whose length can vary up to `LIMIT`.
+    For example, a 4-byte payload under a limit of 10:
+
+        instance.data = b"\xde\xad\xbe\xef"  ->  wire bytes de ad be ef
     """
 
     LIMIT: ClassVar[int]
@@ -278,10 +310,12 @@ class BaseByteList(SSZModel):
     @field_validator("data", mode="before")
     @classmethod
     def _validate_byte_list_data(cls, v: Any) -> bytes:
-        """Validate and convert input to bytes with limit checking."""
+        """Enforce the maximum byte count and coerce inputs into a plain bytes object."""
+        # Subclasses must declare LIMIT before any instances can be validated.
         if not hasattr(cls, "LIMIT"):
             raise SSZTypeError(f"{cls.__name__} must define LIMIT")
 
+        # Coerce the input first, then enforce the upper bound.
         b = BaseBytes._coerce_to_bytes(v)
         if len(b) > cls.LIMIT:
             raise SSZValueError(f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {len(b)}")
@@ -289,29 +323,29 @@ class BaseByteList(SSZModel):
 
     @field_serializer("data", when_used="json")
     def _serialize_data(self, value: bytes) -> str:
-        """Serialize bytes to 0x-prefixed hex string for JSON."""
+        """Serialize the raw bytes to a 0x-prefixed hex string for JSON output."""
         return "0x" + value.hex()
 
     @classmethod
     @override
     def is_fixed_size(cls) -> bool:
-        """ByteList is variable-size (length depends on the value)."""
+        """Variable-size by definition — the byte count depends on the value."""
         return False
 
     @classmethod
     @override
     def get_byte_length(cls) -> int:
-        """ByteList is variable-size, so this should not be called."""
+        """
+        Variable-size types have no fixed byte length.
+
+        Raises:
+            SSZTypeError: Always — call this only on fixed-size types.
+        """
         raise SSZTypeError(f"{cls.__name__}: variable-size byte list has no fixed byte length")
 
     @override
     def serialize(self, stream: IO[bytes]) -> int:
-        """
-        Write the raw bytes to `stream`.
-
-        Returns:
-            Number of bytes written (the length of this instance).
-        """
+        """Write the raw bytes to a binary stream and return the number of bytes written."""
         stream.write(self.data)
         return len(self.data)
 
@@ -319,14 +353,22 @@ class BaseByteList(SSZModel):
     @override
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
         """
-        Read exactly `scope` bytes from `stream` and build an instance.
+        Read scope bytes from a stream into a new instance.
 
-        For variable-size values, `scope` is provided externally (the caller
-        knows how many bytes belong to this value in its context).
+        For variable-size values, the caller computes scope from the surrounding context.
+
+        Args:
+            stream: Source binary stream.
+            scope: Number of bytes belonging to this value.
+
+        Returns:
+            A new instance wrapping the read bytes.
 
         Raises:
-            SSZSerializationError: if the scope is negative or the stream ends prematurely.
-            SSZValueError: if the decoded length exceeds `LIMIT`.
+            SSZSerializationError:
+                - When scope is negative.
+                - When the stream ends before delivering scope bytes.
+            SSZValueError: When scope exceeds the declared LIMIT.
         """
         if scope < 0:
             raise SSZSerializationError(f"{cls.__name__}: negative scope")
@@ -339,48 +381,56 @@ class BaseByteList(SSZModel):
 
     @override
     def encode_bytes(self) -> bytes:
-        """Return the value's canonical SSZ byte representation."""
+        """Return the SSZ-encoded bytes — the raw payload, with no length prefix."""
         return self.data
 
     @classmethod
     @override
     def decode_bytes(cls, data: bytes) -> Self:
-        """
-        Parse `data` as a value of this type.
-
-        For variable-size types, the data length must be `<= LIMIT`.
-        """
-        if len(data) > cls.LIMIT:
-            raise SSZValueError(f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {len(data)}")
+        """Parse SSZ bytes into an instance — the validator enforces the LIMIT."""
         return cls(data=data)
 
     def __bytes__(self) -> bytes:
-        """Return the byte list as a bytes object."""
+        """Return the underlying raw bytes."""
         return self.data
 
     def __add__(self, other: Any) -> bytes:
-        """Return the concatenation of the byte list and the argument."""
+        """Concatenate with a bytes-like value on the right, returning plain bytes."""
         return self.data + bytes(other)
 
     def __radd__(self, other: Any) -> bytes:
-        """Return the concatenation of the argument and the byte list."""
+        """Concatenate with a bytes-like value on the left, returning plain bytes."""
         return bytes(other) + self.data
 
     def __repr__(self) -> str:
-        """Return a string representation of the byte list."""
+        """Return the official form: ClassName(hex_string)."""
         tname = type(self).__name__
         return f"{tname}({self.data.hex()})"
 
     def __eq__(self, other: object) -> bool:
-        """Return whether the two byte lists are equal."""
-        return isinstance(other, type(self)) and self.data == other.data
+        """Strict equality — only another byte-list instance compares; anything else raises."""
+        if not isinstance(other, BaseByteList):
+            raise TypeError(
+                f"Unsupported operand type(s) for ==: "
+                f"'{type(self).__name__}' and '{type(other).__name__}'"
+            )
+        return self.data == other.data
 
     def __ne__(self, other: object) -> bool:
-        """Return whether the two byte lists are not equal."""
-        return not self.__eq__(other)
+        """
+        Strict inequality — only another byte-list instance compares; anything else raises.
+
+        Mirrors the strict equality contract — both operators require a matching type.
+        """
+        if not isinstance(other, BaseByteList):
+            raise TypeError(
+                f"Unsupported operand type(s) for !=: "
+                f"'{type(self).__name__}' and '{type(other).__name__}'"
+            )
+        return self.data != other.data
 
     def __hash__(self) -> int:
-        """Return the hash of the byte list."""
+        """Return a hash that ties the value to its concrete type."""
         return hash((type(self), self.data))
 
     def hex(self) -> str:

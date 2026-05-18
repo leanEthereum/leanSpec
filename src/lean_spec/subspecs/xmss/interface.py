@@ -8,8 +8,6 @@ This constitutes the public API of the signature scheme.
 
 from __future__ import annotations
 
-from pydantic import model_validator
-
 from lean_spec.config import LEAN_ENV
 from lean_spec.subspecs.xmss.target_sum import (
     PROD_TARGET_SUM_ENCODER,
@@ -18,7 +16,6 @@ from lean_spec.subspecs.xmss.target_sum import (
 )
 from lean_spec.types import Bytes32, Slot, StrictBaseModel, Uint64
 
-from ._validation import enforce_strict_types
 from .constants import (
     PROD_CONFIG,
     TEST_CONFIG,
@@ -59,19 +56,6 @@ class GeneralizedXmssScheme(StrictBaseModel):
 
     rand: Rand
     """Random data generator for key generation."""
-
-    @model_validator(mode="after")
-    def _validate_strict_types(self) -> GeneralizedXmssScheme:
-        """Reject subclasses to prevent type confusion attacks."""
-        enforce_strict_types(
-            self,
-            config=XmssConfig,
-            prf=Prf,
-            hasher=TweakHasher,
-            encoder=TargetSumEncoder,
-            rand=Rand,
-        )
-        return self
 
     def key_gen(self, activation_slot: Slot, num_active_slots: Uint64) -> KeyPair:
         """
@@ -218,7 +202,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             left_bottom_tree=left_bottom_tree,
             right_bottom_tree=right_bottom_tree,
         )
-        return KeyPair(public=pk, secret=sk)
+        return KeyPair(public_key=pk, secret_key=sk)
 
     def sign(self, sk: SecretKey, slot: Slot, message: Bytes32) -> Signature:
         """

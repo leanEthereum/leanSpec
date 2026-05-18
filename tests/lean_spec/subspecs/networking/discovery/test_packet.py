@@ -52,7 +52,7 @@ class TestMessageAuthdata:
         authdata = encode_message_authdata(src_id)
 
         assert len(authdata) == MESSAGE_AUTHDATA_SIZE
-        assert authdata == src_id
+        assert authdata == bytes(src_id)
 
     def test_decode_message_authdata(self):
         """Test MESSAGE authdata decoding."""
