@@ -41,6 +41,7 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
 from lean_spec.forks import (
+    AttestationData,
     Block,
     LstarSpec,
     SignedAggregatedAttestation,
@@ -723,9 +724,7 @@ class SyncService:
         self,
         block: SignedBlock,
     ) -> None:
-        """When running as aggregator, propagate block attestations the node lacks.
-
-        On block import we already trust the block-attestation participant
+        """On block import we already trust the block-attestation participant
         bitfields via `spec.on_block` signature verification. The block carries
         one merged Type-2 proof binding every attestation in its body.
 
@@ -741,18 +740,13 @@ class SyncService:
         gossiped as-is. This propagates the strongest available aggregate
         without a full re-aggregation pass.
         """
-        is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
-        if not is_aggregator_role:
+        is_validtor = self.store.validator_id
+        if not is_validtor:
             return
 
         block_attestations = list(block.block.body.attestations)
         if not block_attestations:
             return
-
-        # # Some tests inject a lightweight mock store that does not carry
-        # # aggregation payload maps.
-        # if not hasattr(self.store, "latest_new_aggregated_payloads"):
-        #     return
 
         # The Type-2 proof was built against the parent state's validator set.
         # Without it we cannot resolve the pubkey layout the proof was bound to.
@@ -773,6 +767,16 @@ class SyncService:
         local_proofs_by_root: dict[Bytes32, list[TypeOneMultiSignature]] = {}
         for data, proofs in self.store.latest_new_aggregated_payloads.items():
             local_proofs_by_root.setdefault(hash_tree_root(data), []).extend(proofs)
+
+        # Working copy of the pending pool.
+        # The combined proof is gossiped and also retained locally so the
+        # block-sourced aggregate survives without depending on gossip
+        # loopback. Shallow-copy the dict and its inner sets to preserve
+        # store immutability.
+        new_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {
+            k: set(v) for k, v in self.store.latest_new_aggregated_payloads.items()
+        }
+        inserted_any = False
 
         for att in block_attestations:
             data = att.data
@@ -839,8 +843,16 @@ class SyncService:
                 logger.debug("Post-block re-aggregation failed for %s: %s", data_root, exc)
                 continue
 
+            new_payloads.setdefault(data, set()).add(combined)
+            inserted_any = True
+
             await self.publish_aggregated_attestation(
                 SignedAggregatedAttestation(data=data, proof=combined)
+            )
+
+        if inserted_any:
+            self.store = self.store.model_copy(
+                update={"latest_new_aggregated_payloads": new_payloads}
             )
 
     async def _check_sync_trigger(self) -> None:
