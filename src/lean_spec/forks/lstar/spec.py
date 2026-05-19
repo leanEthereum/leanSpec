@@ -868,7 +868,9 @@ class LstarSpec(ForkProtocol):
         """
         Verify the merged Type-2 proof carried by a signed block.
 
-        The block envelope holds one SSZ-encoded Type-2 proof binding:
+        The block envelope holds one SSZ-encoded Type-2 proof binding
+        every body attestation plus the proposer's signature over the
+        block root.
         The signing scheme is read from this fork's capability.
 
         Args:

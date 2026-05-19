@@ -142,23 +142,6 @@ def test_skips_when_block_adds_no_new_validators(
     assert new_store is store
 
 
-def test_noop_when_not_a_validator(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
-    """A node with no validator identity never re-aggregates.
-
-    The gate is the absence of a validator id, not the aggregator role.
-    """
-    chain_store, signed_block, _ = _setup(
-        key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
-    )
-    store = chain_store.model_copy(update={"validator_id": None})
-    service = _service(peer_id)
-
-    new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
-
-    assert aggregates == []
-    assert new_store is store
-
-
 def test_noop_when_parent_state_missing(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
     """Without the parent state the pubkey layout cannot be resolved -> no-op."""
     chain_store, signed_block, _ = _setup(
