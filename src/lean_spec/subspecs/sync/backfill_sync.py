@@ -55,22 +55,10 @@ logger = logging.getLogger(__name__)
 
 
 class StoreView(Protocol):
-    """
-    Read-only view of forkchoice state used by backfill.
-
-    Used to skip blocks already in the Store and to find the highest known
-    canonical slot for gap detection.
-
-    Decouples backfill from the concrete Store class.
-    Lets tests supply a tiny in-memory implementation.
-    """
+    """Read-only view of forkchoice state used by backfill."""
 
     def has_root(self, root: Bytes32) -> bool:
         """Return True if the block root is present in the Store."""
-        ...
-
-    def finalized_slot(self) -> Slot:
-        """Return the slot of the latest finalized checkpoint."""
         ...
 
     def head_slot(self) -> Slot:

@@ -5,6 +5,50 @@ import pytest
 from lean_spec.types import Slot, Uint64, ValidatorIndex
 
 
+class TestProposerForSlot:
+    """Tests for the ValidatorIndex.proposer_for_slot classmethod."""
+
+    def test_round_robin_assigns_slot_modulo_registry(self) -> None:
+        """The proposer index for slot s is s modulo registry size."""
+        num_validators = Uint64(10)
+
+        assert ValidatorIndex.proposer_for_slot(Slot(0), num_validators) == ValidatorIndex(0)
+        assert ValidatorIndex.proposer_for_slot(Slot(7), num_validators) == ValidatorIndex(7)
+        assert ValidatorIndex.proposer_for_slot(Slot(9), num_validators) == ValidatorIndex(9)
+
+    def test_wraparound_past_registry_size(self) -> None:
+        """Slots past the registry size wrap back to index 0 and continue."""
+        num_validators = Uint64(10)
+
+        assert ValidatorIndex.proposer_for_slot(Slot(10), num_validators) == ValidatorIndex(0)
+        assert ValidatorIndex.proposer_for_slot(Slot(23), num_validators) == ValidatorIndex(3)
+        assert ValidatorIndex.proposer_for_slot(Slot(100), num_validators) == ValidatorIndex(0)
+
+    def test_single_validator_always_proposes(self) -> None:
+        """A one-validator registry sees the same index at every slot."""
+        num_validators = Uint64(1)
+        only = ValidatorIndex(0)
+
+        for slot_num in (0, 1, 42, 1_000_000):
+            assert ValidatorIndex.proposer_for_slot(Slot(slot_num), num_validators) == only
+
+    def test_return_type_is_validator_index(self) -> None:
+        """The classmethod returns a ValidatorIndex, not a plain int."""
+        result = ValidatorIndex.proposer_for_slot(Slot(5), Uint64(7))
+        assert isinstance(result, ValidatorIndex)
+
+    @pytest.mark.parametrize("num_validators", [1, 2, 5, 10, 100, 1000])
+    def test_matches_is_proposer_for(self, num_validators: int) -> None:
+        """The classmethod and the predicate always agree on the chosen proposer."""
+        registry_size = Uint64(num_validators)
+        for slot_num in range(min(20, num_validators * 2)):
+            slot = Slot(slot_num)
+            chosen = ValidatorIndex.proposer_for_slot(slot, registry_size)
+            for validator_idx in range(num_validators):
+                candidate = ValidatorIndex(validator_idx)
+                assert candidate.is_proposer_for(slot, registry_size) == (candidate == chosen)
+
+
 class TestValidatorIndexIsProposerFor:
     """Test the is_proposer_for method on ValidatorIndex."""
 

@@ -275,7 +275,7 @@ class ValidatorService:
             return
 
         my_indices = list(self.registry.indices())
-        expected_proposer = int(slot) % int(num_validators)
+        expected_proposer = ValidatorIndex.proposer_for_slot(slot, num_validators)
         logger.debug(
             "Block production check: slot=%d num_validators=%d expected_proposer=%d my_indices=%s",
             slot,

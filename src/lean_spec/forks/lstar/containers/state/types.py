@@ -162,6 +162,13 @@ class JustifiedSlots(BaseBitlist):
 
 
 class JustificationValidators(BaseBitlist):
-    """Bitlist for tracking validator justifications per historical root."""
+    """Per-root validator vote bitfields, concatenated into one flat bitlist.
+
+    Each tracked root contributes one bit per registered validator.
+    The cap is the maximum tracked roots times the validator registry limit.
+
+    Why this product: a larger cap inflates the bitlist's merkle tree depth.
+    That changes the state root for identical data, so this limit is consensus-critical.
+    """
 
     LIMIT = int(HISTORICAL_ROOTS_LIMIT) * int(VALIDATOR_REGISTRY_LIMIT)

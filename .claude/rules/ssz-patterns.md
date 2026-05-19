@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/lean_spec/subspecs/containers/**/*.py"
+  - "src/lean_spec/forks/*/containers/**/*.py"
   - "src/lean_spec/types/**/*.py"
 ---
 
@@ -36,7 +36,7 @@ When creating SSZ types, follow these established patterns:
 Containers should be organized into modules with clear separation:
 
 ```
-src/lean_spec/subspecs/containers/
+src/lean_spec/forks/<fork>/containers/
 ├── state/
 │   ├── __init__.py      # Exports State and related types
 │   ├── state.py         # Main State container class
@@ -61,11 +61,15 @@ src/lean_spec/subspecs/containers/
 
 ```python
 # In state/types.py
-HISTORICAL_ROOTS_LIMIT = 262144
+HISTORICAL_ROOTS_LIMIT = 262144   # 2**18 tracked roots
+VALIDATOR_REGISTRY_LIMIT = 4096   # 2**12 registered validators
 
 class JustificationValidators(BaseBitlist):
-    """Bitlist for tracking validator justifications."""
-    LIMIT = HISTORICAL_ROOTS_LIMIT * HISTORICAL_ROOTS_LIMIT
+    """Per-root validator vote bitfields, concatenated into one flat bitlist."""
+    # Worst-case size: one bit per (tracked root, registered validator) pair.
+    # Any larger LIMIT inflates the bitlist's merkle depth and changes the
+    # state root for identical data, so this product is consensus-critical.
+    LIMIT = HISTORICAL_ROOTS_LIMIT * VALIDATOR_REGISTRY_LIMIT
 
 # In block/types.py
 class Attestations(SSZList):

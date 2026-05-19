@@ -6,158 +6,30 @@ from enum import Enum, auto
 
 
 class SyncState(Enum):
-    """
-    Sync service states representing the current synchronization phase.
+    """Three-phase progression for the sync service.
 
-    This is a simple three-state machine for reactive synchronization:
+    Lifecycle:
 
-    State Machine Diagram
+        IDLE -> SYNCING -> SYNCED
+          ^         |         |
+          +---------+---------+
 
-    ::
+    - IDLE: no peers connected, or shutdown requested.
+    - SYNCING: active block processing and backfill driven by gossip.
+    - SYNCED: caught up to the network finalized slot.
 
-        IDLE --> SYNCING --> SYNCED
-          ^         |           |
-          +---------+-----------+
-
-    The Lifecycle
-
-    A newly started node follows this progression:
-
-    1. **IDLE**: Node starts, no peers connected yet
-    2. **SYNCING**: Peers report chain ahead of us; react to gossip blocks
-    3. **SYNCED**: Local head reaches network finalized slot; fully synchronized
-
-    How It Works
-
-    - Blocks arrive via gossip
-    - If parent is known, process immediately
-    - If parent is unknown, cache block and fetch parent (backfill)
-    - Backfill happens naturally within SYNCING, not as a separate state
-
-    Transitions
-
-    IDLE -> SYNCING
-        - Triggered when: Peers connected and we need to sync
-        - Action: Start processing gossip blocks
-
-    SYNCING -> SYNCED
-        - Triggered when: local_head >= network_finalized_slot and no orphans
-        - Action: Transition to passive mode
-
-    SYNCED -> SYNCING
-        - Triggered when: Gap detected or fell behind
-        - Action: Resume active sync
-
-    Any -> IDLE
-        - Triggered when: No connected peers or shutdown requested
-        - Action: Pause all sync activity
+    Either active state may fall back to IDLE on disconnect.
+    SYNCED falls back to SYNCING when a gap reappears.
     """
 
     IDLE = auto()
-    """
-    Inactive state: no synchronization in progress.
-
-    The sync service enters IDLE when:
-
-    - **Startup**: Before any peers connect
-    - **No peers**: All peers disconnected or unreachable
-    - **Shutdown**: Graceful termination requested
-
-    While IDLE, the service waits passively. No requests are sent. The only
-    way out is connecting to peers and receiving Status messages.
-    """
-
+    """No peers connected, or shutdown requested."""
     SYNCING = auto()
-    """
-    Active synchronization state: processing gossip and backfilling.
-
-    SYNCING is the main working state. The node receives gossip blocks and
-    processes them, backfilling missing parents as needed.
-
-    In this state:
-
-    - Gossip blocks are processed immediately if parent is known
-    - Unknown parents trigger backfill requests
-    - Cached blocks are processed when parents arrive
-    """
-
+    """Active block processing and backfill driven by gossip."""
     SYNCED = auto()
-    """
-    Fully synchronized state: at or past network finalized slot.
-
-    SYNCED is the goal state. The node's head has reached or passed the
-    network's finalized checkpoint. This means:
-
-    - We have all finalized blocks
-    - We are following the chain head in real-time
-    - No active sync activity is needed
-
-    In this state:
-
-    - Gossip blocks are still processed
-    - Falls back to SYNCING if gaps appear
-    """
-
-    def can_transition_to(self, target: SyncState) -> bool:
-        """
-        Check if transition to target state is valid.
-
-        State machines enforce invariants through transition rules. This method
-        encodes those rules. Callers should check validity before transitioning
-        to catch logic errors early.
-
-        Args:
-            target: The proposed target state.
-
-        Returns:
-            True if the transition is allowed by the state machine rules.
-        """
-        return target in _VALID_TRANSITIONS.get(self, set())
-
-    @property
-    def is_idle(self) -> bool:
-        """
-        Check if this state represents inactivity.
-
-        Returns:
-            True if no synchronization is in progress.
-        """
-        return self == SyncState.IDLE
-
-    @property
-    def is_syncing(self) -> bool:
-        """
-        Check if this state represents active synchronization.
-
-        Returns:
-            True if the state involves active block processing.
-        """
-        return self == SyncState.SYNCING
-
-    @property
-    def is_synced(self) -> bool:
-        """
-        Check if this state represents full synchronization.
-
-        Returns:
-            True if the node is caught up with the network.
-        """
-        return self == SyncState.SYNCED
+    """Caught up to the network finalized slot."""
 
     @property
     def accepts_gossip(self) -> bool:
-        """
-        Check if gossip blocks should be processed in this state.
-
-        Returns:
-            True if incoming gossip blocks should be processed.
-        """
+        """Whether incoming gossip blocks should be processed in this state."""
         return self in {SyncState.SYNCING, SyncState.SYNCED}
-
-
-_VALID_TRANSITIONS: dict[SyncState, set[SyncState]] = {
-    SyncState.IDLE: {SyncState.SYNCING},
-    SyncState.SYNCING: {SyncState.SYNCED, SyncState.IDLE},
-    SyncState.SYNCED: {SyncState.SYNCING, SyncState.IDLE},
-}
-"""Valid state transitions for the sync state machine."""

@@ -296,8 +296,8 @@ class Node:
         # Wire up aggregated attestation publishing.
         #
         # SyncService delegates aggregate publishing to NetworkService
-        # via a callback, avoiding a circular dependency.
-        sync_service.set_publish_agg_fn(network_service.publish_aggregated_attestation)
+        # via a callable field, avoiding a circular dependency at construction.
+        sync_service.publish_aggregated_attestation = network_service.publish_aggregated_attestation
 
         # Create API server if configured
         api_server: ApiServer | None = None

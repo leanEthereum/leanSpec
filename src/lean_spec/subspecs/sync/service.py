@@ -1,37 +1,7 @@
 """
 Sync service orchestrator.
 
-This is the main entry point for synchronization.
-
-The Core Problem
-
-When an Ethereum node starts, it has no chain history. Before it can validate
-new blocks or produce attestations, it must synchronize with the network.
-
-This involves:
-1. **Discovery**: Finding peers with chain data
-2. **Assessment**: Determining how far behind we are
-3. **Download**: Fetching missing blocks when they arrive out of order
-4. **Validation**: Verifying and integrating blocks into our Store
-
-How It Works
-
-- Blocks arrive via gossip subscription
-- If parent is known, process immediately
-- If parent is unknown, cache block and fetch parent (backfill)
-- When parents arrive, process waiting children
-
-State Machine
-
-::
-
-    IDLE --> SYNCING --> SYNCED
-      ^         |           |
-      +---------+-----------+
-
-- **IDLE**: Not syncing. Waiting for peers.
-- **SYNCING**: Actively processing gossip and backfilling missing parents.
-- **SYNCED**: Caught up with the network. Passive gossip only.
+Drives a node from cold start to active participation in the network.
 """
 
 from __future__ import annotations
@@ -61,7 +31,7 @@ from lean_spec.subspecs.xmss.aggregation import (
     TypeTwoMultiSignature,
 )
 from lean_spec.subspecs.xmss.containers import PublicKey
-from lean_spec.types import ZERO_HASH, Bytes32, Slot, SubnetId
+from lean_spec.types import Bytes32, Slot, SubnetId
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache
@@ -71,76 +41,6 @@ from .peer_manager import PeerManager
 from .states import SyncState
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class _SyncStoreView:
-    """StoreView adapter delegating to the live SyncService.store reference.
-
-    Wraps a getter so updates to ``SyncService.store`` (assigned after each
-    block is processed) are observed by backfill without re-wiring.
-    """
-
-    _get_store: Callable[[], Store]
-
-    def has_root(self, root: Bytes32) -> bool:
-        """Return True if the block root is present in the Store."""
-        return root in self._get_store().blocks
-
-    def finalized_slot(self) -> Slot:
-        """Return the slot of the latest finalized checkpoint."""
-        return self._get_store().latest_finalized.slot
-
-    def head_slot(self) -> Slot:
-        """Return the slot of the current canonical head."""
-        store = self._get_store()
-        return store.blocks[store.head].slot
-
-
-def _ancestor_set(blocks: dict[Bytes32, Block], head: Bytes32) -> set[Bytes32]:
-    """Walk parent links from head and collect every reachable block root."""
-    seen: set[Bytes32] = set()
-    root = head
-    while root in blocks:
-        seen.add(root)
-        parent = blocks[root].parent_root
-        if parent == ZERO_HASH:
-            break
-        root = parent
-    return seen
-
-
-def make_default_block_processor(
-    spec: LstarSpec,
-) -> Callable[[Store, SignedBlock], Store]:
-    """
-    Build a default block processor bound to the given spec.
-
-    Wraps the pure spec entry point with caller-side fork-choice telemetry.
-    State transition and block processing timings are emitted by the spec
-    itself through the observer, wired at node startup. Everything else
-    here is derived by diffing pre- and post-stores.
-    """
-
-    def default_block_processor(store: Store, block: SignedBlock) -> Store:
-        new_store = spec.on_block(store, block)
-
-        metrics.lean_head_slot.set(new_store.blocks[new_store.head].slot)
-        metrics.lean_safe_target_slot.set(new_store.blocks[new_store.safe_target].slot)
-        metrics.lean_latest_justified_slot.set(new_store.latest_justified.slot)
-        metrics.lean_latest_finalized_slot.set(new_store.latest_finalized.slot)
-
-        if new_store.head != store.head:
-            depth = len(
-                _ancestor_set(new_store.blocks, store.head)
-                - _ancestor_set(new_store.blocks, new_store.head)
-            )
-            metrics.lean_fork_choice_reorgs_total.inc()
-            metrics.lean_fork_choice_reorg_depth.observe(depth)
-
-        return new_store
-
-    return default_block_processor
 
 
 async def _noop_publish_agg(signed_attestation: SignedAggregatedAttestation) -> None:
@@ -179,29 +79,7 @@ class SyncProgress:
 
 @dataclass(slots=True)
 class SyncService:
-    """
-    Main synchronization orchestrator.
-
-    SyncService is the central coordinator for all sync activities. It:
-
-    - Manages the sync state machine (IDLE -> SYNCING -> SYNCED)
-    - Coordinates HeadSync and BackfillSync
-    - Handles gossip block arrivals
-    - Tracks peer status updates
-    - Maintains the forkchoice Store
-
-    Design Philosophy
-
-    The service is designed to be:
-
-    **Reactive**: Responds to gossip blocks rather than proactively fetching.
-    **Simple**: No complex batch coordination or range downloads.
-    **Resilient**: Handles peer failures and invalid blocks gracefully.
-    **Observable**: Exposes progress for monitoring and debugging.
-
-    The service does not own the network layer. It receives events and uses
-    injected interfaces to make requests.
-    """
+    """Central coordinator for the sync state machine."""
 
     store: Store
     """Current forkchoice store. Updated as blocks are processed."""
@@ -229,22 +107,24 @@ class SyncService:
 
     aggregate_subnet_ids: tuple[SubnetId, ...] = field(default_factory=tuple)
     """
-    Explicit subnet IDs to subscribe to and aggregate from.
+    Extra subnets the aggregator subscribes to on top of its validator-derived one.
 
-    When set, the node subscribes to these subnets at the p2p layer in
-    addition to its validator-derived subnet. Only active when is_aggregator
-    is also True — non-aggregator nodes never import gossip attestations.
+    Ignored on non-aggregator nodes, which never import gossip attestations.
     """
 
     process_block: Callable[[Store, SignedBlock], Store] | None = field(default=None)
     """Block processor function. Defaults to the spec's block processing."""
 
-    _publish_agg_fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]] = field(
-        default=_noop_publish_agg
-    )
-    """Callback for publishing aggregated attestations to the network."""
+    publish_aggregated_attestation: Callable[
+        [SignedAggregatedAttestation], Coroutine[None, None, None]
+    ] = field(default=_noop_publish_agg)
+    """Async callback for publishing aggregated attestations to the network.
 
-    _state: SyncState = field(default=SyncState.IDLE)
+    Defaults to a no-op so tests and offline runs do not need a publisher wired.
+    Assign after construction once NetworkService is built.
+    """
+
+    state: SyncState = field(default=SyncState.IDLE)
     """Current sync state. Defaults to IDLE, awaiting peer status."""
 
     genesis_start: bool = field(default=False)
@@ -260,17 +140,19 @@ class SyncService:
     """Counter for processed blocks."""
 
     _pending_attestations: list[SignedAttestation] = field(default_factory=list)
-    """Attestations awaiting block processing.
+    """
+    Attestations queued for replay after the next block lands.
 
-    When an attestation arrives before its referenced block, it cannot be validated.
-    Rather than dropping it permanently, we buffer it here and retry after the next
-    block is processed.
+    An attestation referencing a not-yet-received block fails validation.
+
+    Buffering avoids dropping votes that arrived slightly out of order.
     """
 
     _pending_aggregated_attestations: list[SignedAggregatedAttestation] = field(
         default_factory=list
     )
-    """Aggregated attestations awaiting block processing.
+    """
+    Aggregated attestations awaiting block processing.
 
     Same buffering strategy as individual attestations.
     """
@@ -279,74 +161,102 @@ class SyncService:
     """Combined aggregates recovered from processed blocks.
 
     Every processed block is deconstructed in the block wrapper, which
-    queues its combined aggregates here. The gossip umbrella drains and
-    publishes them after the store is updated.
+    queues its combined aggregates when this node is in the aggregator
+    role. The gossip umbrella drains and publishes them after the store
+    is updated.
     """
 
-    def set_publish_agg_fn(
-        self, fn: Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]]
-    ) -> None:
-        """Wire the aggregated attestation publisher after construction.
-
-        Breaks circular dependency between SyncService and NetworkService.
-        NetworkService needs SyncService at construction, but SyncService
-        needs NetworkService's publish method. This setter resolves the cycle.
-        """
-        self._publish_agg_fn = fn
-
     def __post_init__(self) -> None:
-        """Initialize sync components."""
-        # Bind the default processor to the injected spec when no override is provided.
-        #
-        # Tests pass an explicit processor and skip this path.
+        """Bind the default block processor and wire sub-components."""
+        # Tests can pass an explicit processor and skip this path.
         if self.process_block is None:
-            self.process_block = make_default_block_processor(self.spec)
+            self.process_block = self._default_process_block
 
         self._init_components()
 
-        # Genesis validators already hold the full genesis state so they
-        # should process gossip blocks immediately without waiting for a
-        # peer Status exchange.
+        # Genesis validators already hold the full genesis state.
+        #
+        # They process gossip blocks immediately without a peer status exchange.
         if self.genesis_start:
-            self._state = SyncState.SYNCING
+            self.state = SyncState.SYNCING
 
     def _init_components(self) -> None:
-        """
-        Initialize sync sub-components.
-
-        Creates BackfillSync and HeadSync instances with shared dependencies.
-        """
-        # BackfillSync handles fetching missing parent blocks from peers.
+        """Wire the backfill and head-sync sub-components."""
+        # Backfill reads the store through self.
         #
-        # It needs network access to request blocks and the cache to store them.
-        # The store view is a thin adapter that always reads the current
-        # store reference, since we replace `self.store` after each block.
+        # So, the live reference is observed as we reassign store after each block.
         self._backfill = BackfillSync(
             peer_manager=self.peer_manager,
             block_cache=self.block_cache,
             network=self.network,
-            store_view=_SyncStoreView(_get_store=lambda: self.store),
+            store_view=self,
         )
 
-        # HeadSync processes incoming gossip blocks and coordinates backfill.
-        #
-        # We inject our wrapper to track block processing metrics.
+        # The wrapper adds counter and persistence tracking around each block.
         self._head_sync = HeadSync(
             block_cache=self.block_cache,
             backfill=self._backfill,
             process_block=self._process_block_wrapper,
         )
 
+    def _default_process_block(self, store: Store, block: SignedBlock) -> Store:
+        """Run the spec's block processor and emit forkchoice telemetry."""
+        new_store = self.spec.on_block(store, block)
+
+        # Live chain pointers, exposed as gauges so dashboards reflect the current view.
+        metrics.lean_head_slot.set(new_store.blocks[new_store.head].slot)
+        metrics.lean_safe_target_slot.set(new_store.blocks[new_store.safe_target].slot)
+        metrics.lean_latest_justified_slot.set(new_store.latest_justified.slot)
+        metrics.lean_latest_finalized_slot.set(new_store.latest_finalized.slot)
+
+        # A head change means forkchoice picked a different canonical tip.
+        # - A simple chain extension produces depth 0;
+        # - A true reorg produces depth > 0.
+        if new_store.head != store.head:
+            # Walk parent links from a starting root until we leave the store.
+            # Termination: the walk ends at the first parent link missing from the store.
+            #
+            # Example: store holds G (genesis, parent = 0), A (parent G), B (parent A).
+            #
+            #   ancestors(B):
+            #     root=B   parent=A   seen={B}        -> root=A
+            #     root=A   parent=G   seen={B,A}      -> root=G
+            #     root=G   parent=0   seen={B,A,G}    -> root=0
+            #     root=0   blocks.get returns None    -> stop
+            #
+            #   returns {B, A, G}
+            def ancestors(start: Bytes32) -> set[Bytes32]:
+                seen: set[Bytes32] = set()
+                root = start
+                while (b := new_store.blocks.get(root)) is not None:
+                    seen.add(root)
+                    root = b.parent_root
+                return seen
+
+            # Reorg depth = blocks that lived on the old chain but not on the new one.
+            #
+            # The two chains share a common ancestor; everything at or below it cancels:
+            #
+            #     G --- A --- B --- C        ancestors(C) = {G, A, B, C}
+            #                 \
+            #                  X --- Y       ancestors(Y) = {G, A, X, Y}
+            #
+            #     ancestors(C) - ancestors(Y) = {B, C}     -> depth = 2
+            depth = len(ancestors(store.head) - ancestors(new_store.head))
+            metrics.lean_fork_choice_reorgs_total.inc()
+            metrics.lean_fork_choice_reorg_depth.observe(depth)
+
+        return new_store
+
     def _process_block_wrapper(
         self,
         store: Store,
         block: SignedBlock,
     ) -> Store:
-        """
-        Wrapper for block processing that updates counters and persists data.
+        """Run the processor, bump the counter, and persist when wired up.
 
-        This wrapper is injected into HeadSync to track processed blocks
-        and optionally persist them to the database.
+        All block processing flows through one wrapper regardless of which
+        processor is configured.
         """
         # Delegate to the actual block processor.
         #
@@ -366,161 +276,143 @@ class SyncService:
         # here. Recovering the per-attestation proofs from the merged block
         # proof and writing them into the pool is what gives a catching-up
         # node block-imported attestation weight in fork choice.
-        # The combined aggregates are queued for the gossip umbrella to
-        # publish; backfill bulk import does not add network load itself.
+        # Non-aggregators do the work for their local pool only and never
+        # republish, so the gossip queue is only fed when this node is in
+        # the aggregator role.
         new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
-        self._pending_block_aggregates.extend(aggregates)
+        if self.is_aggregator:
+            self._pending_block_aggregates.extend(aggregates)
 
-        # Persist block and state to database if available.
-        #
-        # This is write-through: data is persisted synchronously after processing.
-        # The database call is optional - nodes can run without persistence.
+        # Write-through persistence: synchronous and optional.
         if self.database is not None:
             self._persist_block(new_store, block.block)
 
         return new_store
 
     def _persist_block(self, store: Store, block: Block) -> None:
-        """
-        Persist block and its post-state to the database.
+        """Persist the block, its state, indices, and chain pointers atomically.
 
-        Called after successful block processing to ensure data survives restarts.
-        All writes are committed atomically to prevent partial persistence on crash.
-
-        Args:
-            store: The updated store containing the new block and state.
-            block: The block that was just processed.
+        - A crash mid-batch would leave the database inconsistent.
+        - The single batch guarantees all-or-nothing persistence per block import.
         """
         if self.database is None:
             return
 
+        # The block root is the SSZ Merkle root of the block.
+        #
+        # It is the canonical key under which everything block-related is addressed.
         block_root = hash_tree_root(block)
 
-        # Atomic write ensures all-or-nothing persistence.
+        # All writes inside the with-block commit together or roll back together.
         #
-        # A crash between individual writes would leave the database
-        # inconsistent (e.g., block stored but head root not updated).
+        # A crash mid-batch leaves the database exactly as it was before entry.
         with self.database.batch_write():
+            # The block itself, keyed by its root.
             self.database.put_block(block, block_root)
 
+            # The post-state lands on disk only when the store actually has it.
+            #
+            # Light clients and observers may discard old states from memory.
             post_state = store.states.get(block_root)
             if post_state is not None:
                 self.database.put_state(post_state, block_root)
 
-                # Index state root → block root for checkpoint sync lookups.
+                # Reverse index: state root -> block root.
+                #
+                # - Block-to-state is intrinsic: a block header carries its state root.
+                # - State-to-block needs this explicit lookup table.
+                #
+                # Example: checkpoint sync flow.
+                #
+                #   1. Operator hands the node a trusted state root S.
+                #   2. Node downloads the state matching S from a snapshot peer.
+                #   3. Node looks up S in this index, returning the block root B.
+                #   4. Forkchoice anchors at B and resumes from there.
                 state_root = hash_tree_root(post_state)
                 self.database.put_block_root_by_state_root(state_root, block_root)
 
+            # Chain-position pointers, updated atomically with the block write.
+            #
+            # On restart these tell us where the chain ended last session.
+            #
+            # The node can resume forkchoice without re-deriving from scratch.
             self.database.put_block_root_by_slot(block.slot, block_root)
             self.database.put_head_root(store.head)
             self.database.put_justified_checkpoint(store.latest_justified)
             self.database.put_finalized_checkpoint(store.latest_finalized)
 
-            # Prune old data when finalization advances.
+            # Prune historical data below the finalized boundary.
             #
-            # Blocks and states before the finalized slot are no longer needed
-            # for consensus, except the finalized block itself.
-            finalized_slot = store.latest_finalized.slot
-            if finalized_slot > Slot(0):
+            # Finalized blocks can never be reverted.
+            # Keeping pre-finalized data on disk wastes space for no consensus value.
+            #
+            # **Why the slot > 0 guard:**
+            # - Genesis is the only finalized slot at startup.
+            # - Pruning before genesis would remove the chain's anchor block.
+            #
+            # **Why the finalized root stays in keep_roots:**
+            # - The finalized block is the new on-disk anchor after pruning.
+            # - Removing it would orphan the database from the chain it tracks.
+            if store.latest_finalized.slot > Slot(0):
                 self.database.prune_before_slot(
-                    finalized_slot,
+                    store.latest_finalized.slot,
                     keep_roots=frozenset({store.latest_finalized.root}),
                 )
 
-    @property
-    def state(self) -> SyncState:
-        """Current sync state."""
-        return self._state
+    def has_root(self, root: Bytes32) -> bool:
+        """Return True if the block root is present in the current store."""
+        return root in self.store.blocks
 
-    @property
-    def is_syncing(self) -> bool:
-        """Check if actively syncing."""
-        return self._state.is_syncing
-
-    @property
-    def is_synced(self) -> bool:
-        """Check if synced with network."""
-        return self._state.is_synced
+    def head_slot(self) -> Slot:
+        """Return the slot of the current canonical head."""
+        return self.store.blocks[self.store.head].slot
 
     def get_progress(self) -> SyncProgress:
-        """
-        Get current sync progress.
-
-        Returns:
-            Snapshot of sync state for monitoring.
-        """
-        # Our head slot tells us where we are in the chain.
-        #
-        # This is the slot of the block our forkchoice currently considers head.
-        head_slot = self.store.blocks[self.store.head].slot
-
-        # Network finalized slot represents consensus across peers.
-        #
-        # This is calculated as the mode of peer-reported finalized slots.
-        # A None value means we have not received enough peer status messages.
+        """Snapshot the current sync state for monitoring and logging."""
+        # Mode of peer-reported finalized slots, or None if too few peers reported.
         network_slot = self.peer_manager.get_network_finalized_slot()
 
         return SyncProgress(
-            state=self._state,
-            local_head_slot=head_slot,
+            state=self.state,
+            local_head_slot=self.head_slot(),
             network_finalized_slot=network_slot,
             blocks_processed=self._blocks_processed,
-            # Only count peers that have an active connection.
             peers_connected=sum(1 for p in self.peer_manager.get_all_peers() if p.is_connected()),
             cache_size=len(self.block_cache),
-            # Orphans are blocks waiting for parents to be fetched via backfill.
             orphan_count=self.block_cache.orphan_count,
         )
 
     async def on_peer_status(self, peer_id: PeerId, status: Status) -> None:
-        """
-        Handle peer status message.
-
-        Called when a peer sends their chain status.
-
-        This updates our view of the network and may trigger sync if we are behind.
-
-        Args:
-            peer_id: The peer that sent the status.
-            status: The peer's chain status.
-        """
-        # Record this peer's view of the chain.
-        #
-        # Status contains their head root, head slot, and finalized checkpoint.
-        # We use this to build a picture of network consensus.
+        """Record a peer's chain status and move to SYNCING if needed."""
         self.peer_manager.update_status(peer_id, status)
 
-        # Check if this new information means we should start syncing.
-        #
-        # For example: if the peer reports a finalized slot ahead of our head,
-        # we need to sync to catch up with the network.
-        await self._check_sync_trigger()
+        # Already syncing; nothing to re-trigger.
+        if self.state == SyncState.SYNCING:
+            return
+
+        # Need at least one peer's finalized slot to compare against.
+        network_finalized = self.peer_manager.get_network_finalized_slot()
+        if network_finalized is None:
+            return
+
+        # Two conditions move us into SYNCING:
+        # - the network has finalized blocks we lack (we are behind)
+        # - we are still IDLE and must enter SYNCING before any gossip is accepted
+        head_slot = self.store.blocks[self.store.head].slot
+        if network_finalized > head_slot or self.state == SyncState.IDLE:
+            await self._transition_to(SyncState.SYNCING)
 
     async def on_gossip_block(
         self,
         block: SignedBlock,
         peer_id: PeerId | None,
     ) -> None:
-        """
-        Handle block received via gossip.
-
-        Called when a block arrives from gossip subscription.
-
-        The block may be processable immediately or may need to wait for parents.
-
-        Args:
-            block: The signed block received.
-            peer_id: The peer that propagated the block.
-        """
-        # Guard: Only process gossip in states that accept it.
-        #
-        # - IDLE state does not accept gossip because we have no peer information.
-        # - SYNCING and SYNCED states accept gossip for different reasons.
-        if not self._state.accepts_gossip:
+        """Route a gossip-received block to head-sync and replay buffered votes."""
+        if not self.state.accepts_gossip:
             logger.debug(
                 "Rejecting gossip block from %s: state %s does not accept gossip",
                 peer_id,
-                self._state.name,
+                self.state.name,
             )
             return
 
@@ -528,17 +420,13 @@ class SyncService:
             "Block received from peer %s slot=%s (state=%s)",
             peer_id,
             block.block.slot,
-            self._state.name,
+            self.state.name,
         )
 
         if self._head_sync is None:
             raise RuntimeError("HeadSync not initialized")
 
-        # Delegate to HeadSync for processing logic.
-        #
-        # HeadSync determines if:
-        # - the block can be processed immediately (parent known) or
-        # - must be cached (parent unknown, triggers backfill).
+        # Head-sync either processes the block now or caches it pending backfill.
         result, new_store = await self._head_sync.on_gossip_block(
             block=block,
             peer_id=peer_id,
@@ -549,22 +437,19 @@ class SyncService:
         #
         # A block may be cached instead of processed if its parent is unknown.
         if result.processed:
-            slot = block.block.slot
             block_root = hash_tree_root(block.block)
             logger.info(
                 "Block processed slot=%s root=%s from peer %s",
-                slot,
+                block.block.slot,
                 block_root.hex(),
                 peer_id,
             )
             self.store = new_store
+            # A new block may unlock attestations buffered earlier; retry them.
             self._replay_pending_attestations()
             await self._publish_pending_block_aggregates()
 
-        # Each processed block might complete our sync.
-        #
-        # We check after every block because gossip can deliver the final
-        # block needed to catch up with the network.
+        # Gossip may deliver the final block needed to reach finalized.
         await self._check_sync_complete()
 
     async def on_gossip_attestation(
@@ -572,25 +457,9 @@ class SyncService:
         attestation: SignedAttestation,
         peer_id: PeerId | None = None,
     ) -> None:
-        """
-        Handle attestation received via gossip.
-
-        Attestations are votes from validators about which chain head they see.
-        They influence forkchoice by adding weight to branches of the block tree.
-        A branch with more attestation weight is more likely to become canonical.
-
-        Unlike blocks, attestations do not require parent lookups. They reference
-        a target checkpoint that must already exist in our store.
-
-        Args:
-            attestation: The signed attestation received.
-            peer_id: Peer that propagated the attestation (None if produced locally).
-        """
-        # Guard: Only process gossip in states that accept it.
-        #
-        # Without peer status information, we cannot assess the validity context
-        # of incoming attestations. IDLE state waits for peer discovery.
-        if not self._state.accepts_gossip:
+        """Integrate a single-validator attestation into forkchoice."""
+        # Without peer information we cannot assess validity context.
+        if not self.state.accepts_gossip:
             return
 
         slot = attestation.data.slot
@@ -603,17 +472,12 @@ class SyncService:
             validator_id,
         )
 
-        # Check if we are an aggregator.
-        #
-        # A validator acts as an aggregator when it is active (has an ID)
-        # and the node operator has enabled aggregator mode.
+        # Aggregator role requires both an active validator and operator opt-in.
         is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
 
-        # Integrate the attestation into forkchoice state.
-        #
         # The store validates the signature and updates branch weights.
-        # Invalid attestations (bad signature, unknown target) are rejected.
-        # Validation failures are logged but don't crash the event loop.
+        #
+        # Failures are logged and the event loop continues.
         try:
             self.store = self.spec.on_gossip_attestation(
                 self.store,
@@ -636,11 +500,9 @@ class SyncService:
                 validator_id,
                 e,
             )
-            # Attestation references a block not yet in our store.
+            # Target block has not arrived yet; buffer for post-block replay.
             #
-            # Buffer it for replay after the next block is processed.
-            # This handles the common case where attestations arrive
-            # slightly before the block they reference.
+            # Cap drops oldest on overflow: newer attestations are likelier to land soon.
             self._pending_attestations.append(attestation)
             if len(self._pending_attestations) > MAX_PENDING_ATTESTATIONS:
                 self._pending_attestations = self._pending_attestations[-MAX_PENDING_ATTESTATIONS:]
@@ -650,18 +512,9 @@ class SyncService:
         signed_attestation: SignedAggregatedAttestation,
         peer_id: PeerId | None = None,
     ) -> None:
-        """
-        Handle aggregated attestation received via gossip.
-
-        Aggregated attestations are collections of individual votes for the same
-        target, signed by an aggregator. They provide efficient propagation of
-        consensus weight.
-
-        Args:
-            signed_attestation: The signed aggregated attestation received.
-            peer_id: Peer that propagated the attestation (None if produced locally).
-        """
-        if not self._state.accepts_gossip:
+        """Integrate an aggregated attestation into forkchoice."""
+        # Without peer information we cannot assess validity context.
+        if not self.state.accepts_gossip:
             return
 
         slot = signed_attestation.data.slot
@@ -672,6 +525,11 @@ class SyncService:
             slot,
         )
 
+        # The store:
+        # - verifies the aggregated signature,
+        # - credits weight to every validator covered by the aggregate.
+        #
+        # Failures are logged and the event loop continues.
         try:
             self.store = self.spec.on_gossip_aggregated_attestation(self.store, signed_attestation)
             logger.info(
@@ -686,7 +544,9 @@ class SyncService:
                 slot,
                 e,
             )
-            # Target block not yet processed. Buffer for replay.
+            # Target block has not arrived yet; buffer for post-block replay.
+            #
+            # Cap drops oldest on overflow: newer aggregates are likelier to land soon.
             self._pending_aggregated_attestations.append(signed_attestation)
             if len(self._pending_aggregated_attestations) > MAX_PENDING_ATTESTATIONS:
                 self._pending_aggregated_attestations = self._pending_aggregated_attestations[
@@ -694,15 +554,18 @@ class SyncService:
                 ]
 
     def _replay_pending_attestations(self) -> None:
-        """Retry buffered attestations after a block is processed.
-
-        Drains both pending queues, attempting each attestation against the
-        updated store. Attestations that still fail (e.g., referencing a block
-        not yet received) are kept in the buffer for the next replay attempt.
-        The buffer is bounded by MAX_PENDING_ATTESTATIONS to prevent unbounded growth.
-        """
+        """Retry buffered attestations after a block is processed."""
+        # Aggregator role for this replay matches the live gossip path.
         is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
 
+        # Drain the queue into a local and iterate it.
+        # Successful retries disappear into the store.
+        # Failed retries re-append to the now-empty field.
+        #
+        # Example: queue is [A (target=T1), B (target=T2)]; a block carrying T1 just landed.
+        #   - A succeeds: T1 is in the store, A is consumed.
+        #   - B fails:    T2 still missing, B is re-appended.
+        # Post-loop queue: [B].
         pending = self._pending_attestations
         self._pending_attestations = []
         for attestation in pending:
@@ -713,8 +576,10 @@ class SyncService:
                     is_aggregator=is_aggregator_role,
                 )
             except (AssertionError, KeyError):
+                # Block still missing; preserve for the next replay cycle.
                 self._pending_attestations.append(attestation)
 
+        # Same mechanism for aggregated attestations.
         pending_agg = self._pending_aggregated_attestations
         self._pending_aggregated_attestations = []
         for signed_attestation in pending_agg:
@@ -724,20 +589,6 @@ class SyncService:
                 )
             except (AssertionError, KeyError):
                 self._pending_aggregated_attestations.append(signed_attestation)
-
-    async def publish_aggregated_attestation(
-        self,
-        signed_attestation: SignedAggregatedAttestation,
-    ) -> None:
-        """
-        Publish an aggregated attestation to the network.
-
-        Called by the chain service when this node acts as an aggregator.
-
-        Args:
-            signed_attestation: The aggregate to publish.
-        """
-        await self._publish_agg_fn(signed_attestation)
 
     def _deconstruct_block_into_store(
         self,
@@ -759,12 +610,17 @@ class SyncService:
         3. Write the combined proof into the pending pool.
 
         If the data was never seen locally, the extracted Type-1 is used
-        as-is. The updated store and the combined aggregates are returned.
-        Publishing is left to the caller.
-        """
-        if store.validator_id is None:
-            return store, []
+        as-is.
 
+        Runs for every node, including non-validators, so the per-attestation
+        proofs reach the local pool and contribute fork-choice weight after
+        the next acceptance tick. Publishing is left to the caller and only
+        the aggregator role should drain the returned list onto gossip.
+
+        Returns:
+            The store (possibly unchanged if no recovery was needed) and
+            the combined aggregates produced by this call.
+        """
         block_attestations = list(block.block.body.attestations)
         if not block_attestations:
             return store, []
@@ -776,11 +632,30 @@ class SyncService:
             return store, []
         validators = parent_state.validators
 
+        # Decode the merged proof.
+        # The block already passed signature verification upstream, so a
+        # decode failure here is a programming error rather than a bad block.
         try:
             type_two = TypeTwoMultiSignature.decode_bytes(block.proof.data)
-        except Exception as exc:
+        except (ValueError, IndexError) as exc:
             logger.debug("Post-block Type-2 decode failed: %s", exc)
             return store, []
+
+        # Build the per-message pubkey layout once.
+        # The layout is invariant per block: one entry per body attestation
+        # in order, then the proposer entry. Hoisted out of the per-att loop
+        # to avoid quadratic work when many block attestations need splitting.
+        public_keys_per_message: list[list[PublicKey]] = []
+        for a in block_attestations:
+            public_keys_per_message.append(
+                [
+                    validators[vid].get_attestation_pubkey()
+                    for vid in a.aggregation_bits.to_validator_indices()
+                ]
+            )
+        public_keys_per_message.append(
+            [validators[block.block.proposer_index].get_proposal_pubkey()]
+        )
 
         # Index local partial Type-1 proofs by AttestationData root. Equivalent
         # AttestationData instances from different code paths may not share a
@@ -821,23 +696,6 @@ class SyncService:
                 continue
 
             try:
-                # The Type-2 split needs the exact per-message pubkey layout
-                # the proof was built with: one entry per body attestation in
-                # order, then the proposer entry (mirrors block proof
-                # verification). Built here, only once an attestation actually
-                # needs re-aggregation.
-                public_keys_per_message: list[list[PublicKey]] = []
-                for a in block_attestations:
-                    public_keys_per_message.append(
-                        [
-                            validators[vid].get_attestation_pubkey()
-                            for vid in a.aggregation_bits.to_validator_indices()
-                        ]
-                    )
-                public_keys_per_message.append(
-                    [validators[block.block.proposer_index].get_proposal_pubkey()]
-                )
-
                 block_t1 = type_two.split_by_msg(
                     message=data_root,
                     public_keys_per_message=public_keys_per_message,
@@ -898,7 +756,8 @@ class SyncService:
 
         Every processed block is deconstructed in the block wrapper, which
         writes the recovered proofs into the store and queues the combined
-        aggregates here. This drains that queue onto the network.
+        aggregates here when this node acts as an aggregator. This drains
+        that queue onto the network.
         """
         if not self._pending_block_aggregates:
             return
@@ -907,57 +766,12 @@ class SyncService:
         for signed_attestation in pending:
             await self.publish_aggregated_attestation(signed_attestation)
 
-    async def _check_sync_trigger(self) -> None:
-        """
-        Check if sync should be triggered based on current state.
-
-        Transitions to SYNCING if we have peers and are behind the network.
-        """
-        # Guard: Only trigger sync from stable states.
-        #
-        # If already SYNCING, we should not re-trigger.
-        # This prevents redundant state transitions.
-        if self._state.is_syncing:
-            return
-
-        # Guard: Require peer information before syncing.
-        #
-        # Without peer status messages, we cannot determine if we are behind.
-        # A None value means no peers have reported their finalized slot yet.
-        network_finalized = self.peer_manager.get_network_finalized_slot()
-        if network_finalized is None:
-            return
-
-        head_slot = self.store.blocks[self.store.head].slot
-
-        # Trigger sync if the network has finalized blocks we do not have.
-        #
-        # Finalized blocks are guaranteed to never be reverted, so if the
-        # network has finalized past our head, we are definitely behind.
-        if network_finalized > head_slot:
-            await self._transition_to(SyncState.SYNCING)
-        elif self._state.is_idle:
-            # Transition from IDLE even if caught up.
-            #
-            # IDLE -> SYNCING enables gossip processing. Even if our head matches
-            # the network, we need to enter SYNCING to begin accepting blocks.
-            await self._transition_to(SyncState.SYNCING)
-
     async def _check_sync_complete(self) -> None:
-        """
-        Check if sync is complete and transition to SYNCED if so.
-
-        We consider sync complete when our head is at or past the network
-        finalized slot and there are no orphan blocks.
-        """
-        # Guard: Only check completion while actively syncing.
-        if not self._state.is_syncing:
+        """Move to SYNCED once head has reached finalized and no orphans remain."""
+        if self.state != SyncState.SYNCING:
             return
 
-        # Invariant: All orphan blocks must be resolved before declaring synced.
-        #
-        # Orphans indicate pending backfill requests. If we have orphans, we are
-        # still waiting for parent blocks to arrive from peers.
+        # Orphans imply pending backfill requests, so we are not yet caught up.
         if self.block_cache.orphan_count > 0:
             return
 
@@ -967,56 +781,39 @@ class SyncService:
 
         head_slot = self.store.blocks[self.store.head].slot
 
-        # Sync is complete when our head reaches the network finalized slot.
+        # Head may sit above finalized via unfinalized gossip blocks.
         #
-        # We use >= because our head might be ahead of finalized (we may have
-        # received unfinalized blocks via gossip). The key threshold is reaching
-        # finalized, which means we have the canonical chain history.
+        # The completion threshold is reaching finalized, not equality.
         if head_slot >= network_finalized:
             await self._transition_to(SyncState.SYNCED)
 
     async def _transition_to(self, new_state: SyncState) -> None:
+        """Transition to a new sync state, rejecting invalid moves.
+
+        Two invariants are enforced:
+
+        - No self-transitions: a transition must change the current state.
+        - No IDLE -> SYNCED shortcut: SYNCING must run before SYNCED is reached.
+
+        Every other (from, to) pair is allowed, including any state -> IDLE.
         """
-        Transition to a new sync state.
+        forbidden = new_state == self.state or (
+            self.state == SyncState.IDLE and new_state == SyncState.SYNCED
+        )
+        if forbidden:
+            raise ValueError(f"Invalid state transition: {self.state.name} -> {new_state.name}")
 
-        Args:
-            new_state: Target state.
-
-        Raises:
-            ValueError: If transition is not allowed.
-        """
-        # Validate the transition against the state machine rules.
-        #
-        # The state machine enforces valid transitions:
-        # - IDLE -> SYNCING (start sync)
-        # - SYNCING -> SYNCED (caught up)
-        # - SYNCED -> SYNCING (fell behind)
-        # - Any -> IDLE (reset)
-        if not self._state.can_transition_to(new_state):
-            raise ValueError(f"Invalid state transition: {self._state.name} -> {new_state.name}")
-
-        self._state = new_state
+        self.state = new_state
 
     def reset(self) -> None:
-        """
-        Reset all sync state.
-
-        Clears counters, caches, and returns to IDLE state.
-        """
-        # Return to initial state.
-        #
-        # IDLE is the starting state where we wait for peer connections.
-        self._state = SyncState.IDLE
+        """Return to IDLE and clear caches, counters, and sub-component state."""
+        self.state = SyncState.IDLE
         self._blocks_processed = 0
 
-        # Clear the block cache to free memory.
-        #
-        # Cached blocks may be invalid or stale after a reset.
+        # Cached blocks may be stale or invalid after a reset.
         self.block_cache.clear()
 
-        # Reset sub-components to clear their internal state.
-        #
-        # This ensures no stale backfill requests or pending operations remain.
+        # Sub-components hold pending requests and orphan trackers that must clear too.
         if self._backfill is not None:
             self._backfill.reset()
         if self._head_sync is not None:

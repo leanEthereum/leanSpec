@@ -28,12 +28,11 @@ class FakeStoreView:
     """In-memory StoreView used to drive backfill tests.
 
     Concrete implementation. Avoids MagicMock so tests fail loudly when
-    fields drift. Tests mutate `known_roots`, `head`, and `finalized` directly.
+    fields drift. Tests mutate `known_roots` and `head` directly.
     """
 
     known_roots: set[Bytes32] = field(default_factory=set)
     head: Slot = field(default_factory=lambda: Slot(0))
-    finalized: Slot = field(default_factory=lambda: Slot(0))
 
     def has_root(self, root: Bytes32) -> bool:
         """Return True if the root has been registered with this view."""
@@ -42,10 +41,6 @@ class FakeStoreView:
     def head_slot(self) -> Slot:
         """Return the head slot stored on this view."""
         return self.head
-
-    def finalized_slot(self) -> Slot:
-        """Return the finalized slot stored on this view."""
-        return self.finalized
 
 
 @pytest.fixture
@@ -376,7 +371,6 @@ class TestBackfillOptimizations:
         parent_root = Bytes32(b"\x01" * 32)
         store_view.known_roots.add(parent_root)
         store_view.head = Slot(10)
-        store_view.finalized = Slot(10)
 
         # Child is received above the head.
         child = make_signed_block(
@@ -406,9 +400,8 @@ class TestBackfillOptimizations:
         Floor is the head slot, not the finalized slot: slots above finalized
         but at or below head are already canonical for us and are not refetched.
         """
-        # Store head is at slot 49, finalized is older at slot 10.
+        # Store head is at slot 49.
         store_view.head = Slot(49)
-        store_view.finalized = Slot(10)
         store_view.known_roots.add(Bytes32.zero())
 
         # Pre-fill the parent in the network at slot 50.

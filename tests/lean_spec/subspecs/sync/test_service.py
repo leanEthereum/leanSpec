@@ -104,7 +104,7 @@ class TestStateMachineTransitions:
     ) -> None:
         """Transitions to SYNCED when head reaches network finalized slot."""
         # Start syncing
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         # Peer reports finalized at slot 0 (same as our head)
         status = Status(
@@ -123,7 +123,7 @@ class TestStateMachineTransitions:
         peer_id: PeerId,
     ) -> None:
         """Does not transition to SYNCED while orphans exist."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         # Add an orphan to the cache
         block = make_signed_block(
@@ -152,7 +152,7 @@ class TestStateMachineTransitions:
         peer_id: PeerId,
     ) -> None:
         """Transitions SYNCED -> SYNCING when fallen behind network."""
-        sync_service._state = SyncState.SYNCED
+        sync_service.state = SyncState.SYNCED
 
         # Peer reports being ahead
         status = Status(
@@ -231,7 +231,7 @@ class TestGossipBlockHandling:
         peer_id: PeerId,
     ) -> None:
         """Gossip blocks are processed when in SYNCING state."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         # Get genesis root from store
         genesis_root = sync_service.store.head
@@ -254,7 +254,7 @@ class TestGossipBlockHandling:
         peer_id: PeerId,
     ) -> None:
         """Orphan blocks are cached when in SYNCING state."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         # Block with unknown parent
         block = make_signed_block(
@@ -295,7 +295,7 @@ class TestProgressReporting:
         )
 
         # After processing some blocks
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
         sync_service._blocks_processed = 42
 
         progress = sync_service.get_progress()
@@ -378,7 +378,7 @@ class TestReset:
     ) -> None:
         """reset() returns service to initial state."""
         # Put service in a dirty state
-        sync_service._state = SyncState.SYNCED
+        sync_service.state = SyncState.SYNCED
         sync_service._blocks_processed = 100
 
         block = make_signed_block(
@@ -413,7 +413,7 @@ class TestAttestationGossipHandling:
         peer_id: PeerId,
     ) -> None:
         """Attestation is processed when in SYNCED state."""
-        sync_service._state = SyncState.SYNCED
+        sync_service.state = SyncState.SYNCED
 
         target = Checkpoint(root=sync_service.store.head, slot=Slot(0))
         attestation = make_signed_attestation(
@@ -449,7 +449,7 @@ class TestAttestationGossipHandling:
         sync_service: SyncService,
     ) -> None:
         """Attestation referencing unknown block is buffered for replay."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         # Make the mock store reject this attestation.
         unknown_root = Bytes32(b"\xab" * 32)
@@ -472,7 +472,7 @@ class TestAttestationGossipHandling:
         peer_id: PeerId,
     ) -> None:
         """Buffered attestation is replayed when a new block is processed."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         target = Checkpoint(root=sync_service.store.head, slot=Slot(0))
         attestation = make_signed_attestation(
@@ -509,7 +509,7 @@ class TestSyncedGossipBlocks:
         peer_id: PeerId,
     ) -> None:
         """Gossip blocks are processed when in SYNCED state."""
-        sync_service._state = SyncState.SYNCED
+        sync_service.state = SyncState.SYNCED
 
         genesis_root = sync_service.store.head
         block = make_signed_block(
@@ -536,6 +536,16 @@ class TestInvalidStateTransition:
 
         with pytest.raises(ValueError, match="Invalid state transition"):
             await sync_service._transition_to(SyncState.SYNCED)
+
+    async def test_self_transition_raises_value_error(
+        self,
+        sync_service: SyncService,
+    ) -> None:
+        """A transition to the current state is rejected as a no-op move."""
+        assert sync_service.state == SyncState.IDLE
+
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            await sync_service._transition_to(SyncState.IDLE)
 
 
 class TestIdleToCaughtUp:
@@ -577,7 +587,7 @@ class TestBlockPersistence:
     ) -> None:
         """Processed blocks are counted even when no database is configured."""
         service = create_mock_sync_service(peer_id)
-        service._state = SyncState.SYNCING
+        service.state = SyncState.SYNCING
         genesis_root = service.store.head
         block = make_signed_block(
             slot=Slot(1),
@@ -599,7 +609,7 @@ class TestBlockPersistence:
             database=cast(Database, db),
             process_block=_persist_process_block(include_post_state=False, prune=False),
         )
-        service._state = SyncState.SYNCING
+        service.state = SyncState.SYNCING
         genesis_root = service.store.head
         block = make_signed_block(
             slot=Slot(1),
@@ -641,7 +651,7 @@ class TestBlockPersistence:
             database=cast(Database, db),
             process_block=_persist_process_block(include_post_state=True, prune=True),
         )
-        service._state = SyncState.SYNCING
+        service.state = SyncState.SYNCING
         genesis_root = service.store.head
         block = make_signed_block(
             slot=Slot(1),
@@ -691,41 +701,40 @@ class TestBlockPersistence:
 class TestPublishAggregatedAttestation:
     """Tests for aggregated attestation publish wiring."""
 
-    async def test_set_publish_agg_fn_is_invoked(
+    async def test_publisher_field_is_invoked(
         self,
         peer_id: PeerId,
         key_manager: XmssKeyManager,
     ) -> None:
-        """publish_aggregated_attestation awaits the wired publisher."""
+        """The publisher field awaits whatever callable is wired to it."""
         service = create_mock_sync_service(peer_id)
         published: list[SignedAggregatedAttestation] = []
 
         async def capture(agg: SignedAggregatedAttestation) -> None:
             published.append(agg)
 
-        service.set_publish_agg_fn(capture)
+        service.publish_aggregated_attestation = capture
         signed = _signed_aggregated_attestation(key_manager)
         await service.publish_aggregated_attestation(signed)
         assert published == [signed]
 
 
 class TestSyncTriggerGuards:
-    """Tests for early returns in _check_sync_trigger."""
+    """Tests for the SYNCING trigger embedded in on_peer_status."""
 
-    async def test_check_sync_trigger_noop_when_already_syncing(
+    async def test_noop_when_already_syncing(
         self,
         sync_service: SyncService,
         peer_id: PeerId,
     ) -> None:
         """No second transition while already in SYNCING (SYNCING -> SYNCING is invalid)."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
         status = Status(
             finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(100)),
             head=Checkpoint(root=Bytes32.zero(), slot=Slot(150)),
         )
-        sync_service.peer_manager.update_status(peer_id, status)
 
-        await sync_service._check_sync_trigger()
+        await sync_service.on_peer_status(peer_id, status)
 
         assert sync_service.state == SyncState.SYNCING
 
@@ -739,7 +748,7 @@ class TestSyncCompleteGuards:
         peer_id: PeerId,
     ) -> None:
         """Completion logic only runs during SYNCING (IDLE -> SYNCED is invalid)."""
-        sync_service._state = SyncState.IDLE
+        sync_service.state = SyncState.IDLE
         status = Status(
             finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
             head=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
@@ -759,7 +768,7 @@ class TestPendingAttestationLimits:
         sync_service: SyncService,
     ) -> None:
         """Buffer keeps only the most recent MAX_PENDING_ATTESTATIONS entries."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
         unknown = Bytes32(b"\xcd" * 32)
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
@@ -780,7 +789,7 @@ class TestPendingAttestationLimits:
         key_manager: XmssKeyManager,
     ) -> None:
         """Aggregated attestation buffer uses the same cap."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
         mock_store.reject_aggregated_attestation = lambda _att: True
@@ -800,7 +809,7 @@ class TestAggregatedAttestationGossip:
         sync_service: SyncService,
         key_manager: XmssKeyManager,
     ) -> None:
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
         signed = _signed_aggregated_attestation(key_manager)
         await sync_service.on_gossip_aggregated_attestation(signed)
         mock_store = cast(MockForkchoiceStore, sync_service.store)
@@ -811,7 +820,7 @@ class TestAggregatedAttestationGossip:
         sync_service: SyncService,
         key_manager: XmssKeyManager,
     ) -> None:
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
         signed = _signed_aggregated_attestation(key_manager)
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
@@ -825,7 +834,7 @@ class TestAggregatedAttestationGossip:
         sync_service: SyncService,
         key_manager: XmssKeyManager,
     ) -> None:
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
         head = sync_service.store.head
         ok_target = Checkpoint(root=head, slot=Slot(0))
         ok_att = make_signed_attestation(ValidatorIndex(0), target=ok_target)
@@ -847,7 +856,7 @@ class TestReplayPendingAttestationsPlain:
 
     def test_replay_plain_mixed_success_and_failure(self, sync_service: SyncService) -> None:
         """Still-invalid plain attestations stay buffered after replay."""
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
         mock_store = cast(MockForkchoiceStore, sync_service.store)
         head = mock_store.head
         unknown = Bytes32(b"\xee" * 32)

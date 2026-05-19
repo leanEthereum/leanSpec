@@ -1,9 +1,4 @@
-"""Validator-side scalar types — fork-stable.
-
-Defines the integer-keyed validator identifier and the networking subnet id.
-The XMSS-bound `Validator` container itself stays in the fork package because
-its key shape is signature-scheme specific.
-"""
+"""Validator-side scalar types"""
 
 from lean_spec.types.slot import Slot
 from lean_spec.types.uint import Uint64
@@ -16,13 +11,17 @@ class SubnetId(Uint64):
 class ValidatorIndex(Uint64):
     """Represents a validator's unique index as a 64-bit unsigned integer."""
 
-    def is_proposer_for(self, slot: Slot, num_validators: Uint64) -> bool:
-        """
-        Check if this validator is the proposer for the given slot.
+    @classmethod
+    def proposer_for_slot(cls, slot: Slot, num_validators: Uint64) -> "ValidatorIndex":
+        """Return the validator index responsible for proposing at the given slot.
 
-        Uses round-robin proposer selection per the lean protocol spec.
+        Round-robin selection: the proposer is slot modulo registry size.
         """
-        return int(slot) % int(num_validators) == int(self)
+        return cls(int(slot) % int(num_validators))
+
+    def is_proposer_for(self, slot: Slot, num_validators: Uint64) -> bool:
+        """Check if this validator is the proposer for the given slot."""
+        return self == ValidatorIndex.proposer_for_slot(slot, num_validators)
 
     def is_valid(self, num_validators: Uint64) -> bool:
         """Check if this index is within valid bounds for a registry of given size."""

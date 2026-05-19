@@ -52,7 +52,7 @@ class TestBlockRoutingToForkchoice:
     ) -> None:
         """Gossip block is added to the store's blocks dictionary."""
         sync_service = create_mock_sync_service(peer_id)
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         genesis_root = sync_service.store.head
 
@@ -89,7 +89,7 @@ class TestBlockRoutingToForkchoice:
     ) -> None:
         """Store head is updated to the new block after processing."""
         sync_service = create_mock_sync_service(peer_id)
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         genesis_root = sync_service.store.head
         assert genesis_root == Bytes32.zero()
@@ -162,7 +162,7 @@ class TestAttestationRoutingToForkchoice:
     ) -> None:
         """Gossip attestation is passed to store.on_gossip_attestation."""
         sync_service = create_mock_sync_service(peer_id)
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         attestation = SignedAttestation(
             validator_id=ValidatorIndex(42),
@@ -409,7 +409,7 @@ class TestIntegrationEventSequence:
     ) -> None:
         """Multiple sequential blocks extend the chain correctly."""
         sync_service = create_mock_sync_service(peer_id)
-        sync_service._state = SyncState.SYNCING
+        sync_service.state = SyncState.SYNCING
 
         genesis_root = sync_service.store.head
 
