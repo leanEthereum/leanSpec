@@ -9,6 +9,7 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import (
     AggregationError,
     TypeOneMultiSignature,
+    TypeTwoMultiSignature,
 )
 from lean_spec.types import (
     ByteList512KiB,
@@ -393,4 +394,145 @@ def test_aggregate_rejects_mismatched_participant_count(
             raw_xmss=raw_xmss,
             message=hash_tree_root(att_data),
             slot=att_data.slot,
+        )
+
+
+def test_type_two_aggregate_rejects_empty_parts() -> None:
+    """Type-2 aggregation requires at least one Type-1 input."""
+    with pytest.raises(AggregationError, match="at least one Type-1 input"):
+        TypeTwoMultiSignature.aggregate(parts=[], public_keys_per_part=[])
+
+
+def test_type_two_aggregate_rejects_mismatched_pubkey_layout(
+    key_manager: XmssKeyManager,
+) -> None:
+    """The per-part pubkey layout must match the participant count of each part."""
+    source = Checkpoint(root=make_bytes32(200), slot=Slot(0))
+    att_args = (Slot(7), 201, 202, source)
+
+    part = _sign_and_aggregate(
+        key_manager,
+        [ValidatorIndex(0), ValidatorIndex(1)],
+        att_args,
+    )
+    # Layout claims one pubkey for a part that binds two participants.
+    wrong_layout = [[key_manager[ValidatorIndex(0)].attestation_keypair.public_key]]
+
+    with pytest.raises(AggregationError, match="expected 2 pubkeys, got 1"):
+        TypeTwoMultiSignature.aggregate(
+            parts=[part],
+            public_keys_per_part=wrong_layout,
+        )
+
+
+def test_type_two_verify_round_trip(key_manager: XmssKeyManager) -> None:
+    """A Type-2 merge of two distinct-message Type-1 proofs round-trips through verify."""
+    source = Checkpoint(root=make_bytes32(300), slot=Slot(0))
+
+    # Two distinct messages signed by disjoint validator sets.
+    att_args_a = (Slot(8), 301, 302, source)
+    att_args_b = (Slot(8), 303, 304, source)
+    att_data_a = make_attestation_data_simple(
+        att_args_a[0],
+        make_bytes32(att_args_a[1]),
+        make_bytes32(att_args_a[2]),
+        att_args_a[3],
+    )
+    att_data_b = make_attestation_data_simple(
+        att_args_b[0],
+        make_bytes32(att_args_b[1]),
+        make_bytes32(att_args_b[2]),
+        att_args_b[3],
+    )
+
+    vids_a = [ValidatorIndex(0), ValidatorIndex(1)]
+    vids_b = [ValidatorIndex(2), ValidatorIndex(3)]
+    part_a = _sign_and_aggregate(key_manager, vids_a, att_args_a)
+    part_b = _sign_and_aggregate(key_manager, vids_b, att_args_b)
+
+    pubkeys_a = [key_manager[vid].attestation_keypair.public_key for vid in vids_a]
+    pubkeys_b = [key_manager[vid].attestation_keypair.public_key for vid in vids_b]
+
+    merged = TypeTwoMultiSignature.aggregate(
+        parts=[part_a, part_b],
+        public_keys_per_part=[pubkeys_a, pubkeys_b],
+    )
+
+    merged.verify(
+        public_keys_per_message=[pubkeys_a, pubkeys_b],
+        messages=[
+            (hash_tree_root(att_data_a), att_data_a.slot),
+            (hash_tree_root(att_data_b), att_data_b.slot),
+        ],
+    )
+
+
+def test_type_two_verify_rejects_message_swap(key_manager: XmssKeyManager) -> None:
+    """Swapping the parallel message bindings causes verification to fail.
+
+    Without per-component message binding a proposer could pair honest
+    signatures with attacker-chosen attestation data.
+    """
+    source = Checkpoint(root=make_bytes32(400), slot=Slot(0))
+
+    att_args_a = (Slot(9), 401, 402, source)
+    att_args_b = (Slot(9), 403, 404, source)
+    att_data_a = make_attestation_data_simple(
+        att_args_a[0],
+        make_bytes32(att_args_a[1]),
+        make_bytes32(att_args_a[2]),
+        att_args_a[3],
+    )
+    att_data_b = make_attestation_data_simple(
+        att_args_b[0],
+        make_bytes32(att_args_b[1]),
+        make_bytes32(att_args_b[2]),
+        att_args_b[3],
+    )
+
+    vids_a = [ValidatorIndex(0), ValidatorIndex(1)]
+    vids_b = [ValidatorIndex(2), ValidatorIndex(3)]
+    part_a = _sign_and_aggregate(key_manager, vids_a, att_args_a)
+    part_b = _sign_and_aggregate(key_manager, vids_b, att_args_b)
+
+    pubkeys_a = [key_manager[vid].attestation_keypair.public_key for vid in vids_a]
+    pubkeys_b = [key_manager[vid].attestation_keypair.public_key for vid in vids_b]
+
+    merged = TypeTwoMultiSignature.aggregate(
+        parts=[part_a, part_b],
+        public_keys_per_part=[pubkeys_a, pubkeys_b],
+    )
+
+    # Swap the parallel messages: part_a's pubkeys are now paired with part_b's
+    # message and vice versa.
+    with pytest.raises(AggregationError, match="verification failed"):
+        merged.verify(
+            public_keys_per_message=[pubkeys_a, pubkeys_b],
+            messages=[
+                (hash_tree_root(att_data_b), att_data_b.slot),
+                (hash_tree_root(att_data_a), att_data_a.slot),
+            ],
+        )
+
+
+def test_type_two_verify_rejects_mismatched_messages_length(
+    key_manager: XmssKeyManager,
+) -> None:
+    """messages must have the same length as public_keys_per_message."""
+    source = Checkpoint(root=make_bytes32(500), slot=Slot(0))
+    att_args = (Slot(10), 501, 502, source)
+
+    vids = [ValidatorIndex(0), ValidatorIndex(1)]
+    part = _sign_and_aggregate(key_manager, vids, att_args)
+    pubkeys = [key_manager[vid].attestation_keypair.public_key for vid in vids]
+
+    merged = TypeTwoMultiSignature.aggregate(
+        parts=[part],
+        public_keys_per_part=[pubkeys],
+    )
+
+    with pytest.raises(AggregationError, match="expected 1 message bindings, got 0"):
+        merged.verify(
+            public_keys_per_message=[pubkeys],
+            messages=[],
         )

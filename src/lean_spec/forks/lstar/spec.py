@@ -1320,6 +1320,13 @@ class LstarSpec(ForkProtocol):
             # That proof is verified as a whole and not decomposed at import.
             # Per-attestation proofs reach the pools through the
             # deconstruction and gossip path instead.
+            #
+            # Consequence: a block's own attestations contribute zero weight
+            # to the head computation triggered by this import.
+            # Recovered Type-1 proofs land in the new pool and migrate to
+            # the known pool at the next acceptance tick.
+            # Head weight from block-imported votes is therefore deferred
+            # by up to one slot.
             # Shallow-copy the dict and its inner sets to preserve immutability.
             block_proofs: dict[AttestationData, set[TypeOneMultiSignature]] = {
                 k: set(v) for k, v in store.latest_known_aggregated_payloads.items()

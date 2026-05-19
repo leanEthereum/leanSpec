@@ -32,6 +32,7 @@ from lean_spec.subspecs.xmss.aggregation import (
 )
 from lean_spec.subspecs.xmss.containers import PublicKey
 from lean_spec.types import Bytes32, Slot, SubnetId
+from lean_spec.types.exceptions import SSZError
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache
@@ -632,12 +633,12 @@ class SyncService:
             return store, []
         validators = parent_state.validators
 
-        # Decode the merged proof.
-        # The block already passed signature verification upstream, so a
-        # decode failure here is a programming error rather than a bad block.
+        # The wrapper must not raise on a malformed proof.
+        # The block already passed signature verification upstream, so this
+        # catches the realistic SSZ deserialization failure modes only.
         try:
             type_two = TypeTwoMultiSignature.decode_bytes(block.proof.data)
-        except (ValueError, IndexError) as exc:
+        except (SSZError, ValueError, IndexError) as exc:
             logger.debug("Post-block Type-2 decode failed: %s", exc)
             return store, []
 
@@ -646,11 +647,11 @@ class SyncService:
         # in order, then the proposer entry. Hoisted out of the per-att loop
         # to avoid quadratic work when many block attestations need splitting.
         public_keys_per_message: list[list[PublicKey]] = []
-        for a in block_attestations:
+        for att in block_attestations:
             public_keys_per_message.append(
                 [
                     validators[vid].get_attestation_pubkey()
-                    for vid in a.aggregation_bits.to_validator_indices()
+                    for vid in att.aggregation_bits.to_validator_indices()
                 ]
             )
         public_keys_per_message.append(

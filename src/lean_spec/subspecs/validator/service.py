@@ -49,7 +49,7 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync import SyncService
 from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
-from lean_spec.subspecs.xmss.containers import Signature
+from lean_spec.subspecs.xmss.containers import PublicKey, Signature
 from lean_spec.types import ByteList512KiB, Bytes32, Slot, Uint64, ValidatorIndex, ValidatorIndices
 
 from .constants import HYSTERESIS_BAND, NETWORK_STALL_THRESHOLD, SYNC_LAG_THRESHOLD
@@ -470,13 +470,22 @@ class ValidatorService:
         # Merge the per-attestation proofs and the proposer Type-1 into one
         # Type-2 proof. Order matters: verify_signatures expects the proposer
         # entry to be last, parallel to block.body.attestations + 1.
-        public_keys_per_part = [
-            [
-                validators[vid].get_attestation_pubkey()
-                for vid in proof.participants.to_validator_indices()
-            ]
-            for proof in attestation_proofs
-        ]
+        # The pubkey lookup below indexes the active validator set, so each
+        # participant must fall within it.
+        # A stale partial aggregate would otherwise blow up deep inside
+        # the aggregator with an opaque KeyError.
+        num_validators = Uint64(len(validators))
+        public_keys_per_part: list[list[PublicKey]] = []
+        for proof in attestation_proofs:
+            part_pubkeys: list[PublicKey] = []
+            for vid in proof.participants.to_validator_indices():
+                if not vid.is_valid(num_validators):
+                    raise ValueError(
+                        f"Attestation proof references validator {vid}; "
+                        f"active set has {num_validators} validators"
+                    )
+                part_pubkeys.append(validators[vid].get_attestation_pubkey())
+            public_keys_per_part.append(part_pubkeys)
         public_keys_per_part.append([proposer_pubkey])
 
         merged = TypeTwoMultiSignature.aggregate(
