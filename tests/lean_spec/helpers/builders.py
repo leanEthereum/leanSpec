@@ -7,7 +7,7 @@ Each function creates minimal valid instances suitable for unit tests.
 
 from __future__ import annotations
 
-from typing import Callable, NamedTuple, cast
+from typing import NamedTuple, cast
 
 from consensus_testing.keys import XmssKeyManager
 
@@ -507,14 +507,11 @@ def create_mock_sync_service(
     *,
     database: Database | None = None,
     genesis_start: bool = False,
-    process_block: Callable[[Store, SignedBlock], Store] | None = None,
 ) -> SyncService:
     """Create a SyncService with mock dependencies for integration testing."""
     mock_store = MockForkchoiceStore(head_slot=0)
     peer_manager = PeerManager()
     peer_manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))
-
-    processor = process_block if process_block is not None else (lambda s, b: s.on_block(b))
 
     return SyncService(
         store=cast(Store, mock_store),
@@ -525,5 +522,4 @@ def create_mock_sync_service(
         spec=StoreInterceptingSpec(),
         database=database,
         genesis_start=genesis_start,
-        process_block=processor,
     )

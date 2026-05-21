@@ -41,37 +41,6 @@ def test_base_field_arithmetic() -> None:
         Fp(value=0).inverse()
 
 
-def test_bytes_protocol() -> None:
-    """Test serialization using Python's bytes protocol."""
-    # Test basic serialization
-    fp = Fp(value=42)
-    data = bytes(fp)
-    assert len(data) == 4  # P_BYTES
-    assert isinstance(data, bytes)
-
-    # Test deserialization
-    recovered = Fp.decode_bytes(data)
-    assert recovered == fp
-
-    # Test round-trip for various values
-    test_values = [0, 1, 42, 1000, P - 1]
-    for value in test_values:
-        fp = Fp(value=value)
-        assert Fp.decode_bytes(bytes(fp)) == fp
-
-    # Test error handling for invalid data length
-    with pytest.raises(ValueError, match="Expected 4 bytes for Fp, got 3"):
-        Fp.decode_bytes(b"\x01\x02\x03")
-
-    with pytest.raises(ValueError, match="Expected 4 bytes for Fp, got 5"):
-        Fp.decode_bytes(b"\x01\x02\x03\x04\x05")
-
-    # Test error handling for values exceeding the modulus
-    invalid_data = P.to_bytes(4, byteorder="little")
-    with pytest.raises(ValueError, match="exceeds field modulus"):
-        Fp.decode_bytes(invalid_data)
-
-
 def test_ssz_type_properties() -> None:
     """Test that Fp correctly implements SSZ type interface."""
     # Test is_fixed_size
@@ -156,13 +125,9 @@ def test_ssz_roundtrip() -> None:
         value = random.randint(0, P - 1)
         fp = Fp(value=value)
 
-        # Test all serialization methods give same result
-        data1 = bytes(fp)
-        data2 = fp.encode_bytes()
-        assert data1 == data2
-
         # Test deserialization works
-        recovered = Fp.decode_bytes(data1)
+        data = fp.encode_bytes()
+        recovered = Fp.decode_bytes(data)
         assert recovered == fp
 
 
@@ -173,8 +138,6 @@ def test_ssz_deterministic() -> None:
     # Serialize multiple times
     data1 = fp.encode_bytes()
     data2 = fp.encode_bytes()
-    data3 = bytes(fp)
 
-    # All should be identical
+    # Both should be identical
     assert data1 == data2
-    assert data1 == data3

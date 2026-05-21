@@ -232,45 +232,30 @@ class TestGossipsubMessageId:
         assert isinstance(msg.id, MessageId)
 
     def test_id_is_cached(self) -> None:
-        """The ID is computed once and reused on subsequent accesses."""
-        decompress_calls = 0
-
-        def counting_decompress(data: bytes) -> bytes:
-            nonlocal decompress_calls
-            decompress_calls += 1
-            return b"decompressed"
-
-        msg = GossipsubMessage(topic=b"t", raw_data=b"d", snappy_decompress=counting_decompress)
+        """The ID is computed once and the same object is returned on subsequent accesses."""
+        msg = GossipsubMessage(topic=b"t", raw_data=b"d")
         first_id = msg.id
         second_id = msg.id
 
-        assert decompress_calls == 1
         assert first_id is second_id
 
-    def test_compute_id_with_snappy(self) -> None:
-        """compute_id uses decompressed data when snappy succeeds."""
-        raw = b"compressed"
-        decompressed = b"decompressed"
-
-        id_with_snappy = GossipsubMessage.compute_id(
-            b"t", raw, snappy_decompress=lambda _: decompressed
+    def test_compute_id_default_domain_invalid_snappy(self) -> None:
+        """compute_id uses the invalid-snappy domain when domain is omitted."""
+        from lean_spec.subspecs.networking.config import (
+            MESSAGE_DOMAIN_INVALID_SNAPPY,
+            MESSAGE_DOMAIN_VALID_SNAPPY,
         )
-        id_without = GossipsubMessage.compute_id(b"t", raw)
 
-        # Different domain bytes and data -> different IDs.
-        assert id_with_snappy != id_without
+        id_default = GossipsubMessage.compute_id(b"t", b"data")
+        id_explicit_invalid = GossipsubMessage.compute_id(
+            b"t", b"data", domain=MESSAGE_DOMAIN_INVALID_SNAPPY
+        )
+        id_explicit_valid = GossipsubMessage.compute_id(
+            b"t", b"data", domain=MESSAGE_DOMAIN_VALID_SNAPPY
+        )
 
-    def test_compute_id_with_failed_snappy(self) -> None:
-        """compute_id falls back to raw data when snappy fails."""
-
-        def bad_decompress(_: bytes) -> bytes:
-            raise RuntimeError("bad snappy")
-
-        id_failed = GossipsubMessage.compute_id(b"t", b"data", snappy_decompress=bad_decompress)
-        id_none = GossipsubMessage.compute_id(b"t", b"data", snappy_decompress=None)
-
-        # Both use INVALID_SNAPPY domain + raw data -> same ID.
-        assert id_failed == id_none
+        assert id_default == id_explicit_invalid
+        assert id_default != id_explicit_valid
 
 
 class TestGossipsubMessageHash:

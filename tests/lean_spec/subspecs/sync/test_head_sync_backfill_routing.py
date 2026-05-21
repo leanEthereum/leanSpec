@@ -20,7 +20,7 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.backfill_sync import BackfillSync
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.head_sync import HeadSync, HeadSyncResult
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
 from tests.lean_spec.helpers import MockForkchoiceStore, make_signed_block
 
 
@@ -64,7 +64,7 @@ def _store_with_head(
     requested head slot so subsequent gap math sees the configured value.
     """
     store = MockForkchoiceStore()
-    store.latest_finalized.slot = Slot(finalized_slot)
+    store.latest_finalized = Checkpoint(root=Bytes32.zero(), slot=Slot(finalized_slot))
 
     head_root = Bytes32(b"\x77" * 32)
     head_block = make_signed_block(

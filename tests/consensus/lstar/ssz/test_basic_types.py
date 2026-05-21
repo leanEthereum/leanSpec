@@ -6,7 +6,7 @@ import pytest
 from consensus_testing import SSZTestFiller
 
 from lean_spec.subspecs.koalabear import Fp, P
-from lean_spec.subspecs.networking.enr.eth2 import AttestationSubnets, SyncCommitteeSubnets
+from lean_spec.subspecs.networking.enr.eth2 import AttestationSubnets
 from lean_spec.types import (
     BaseBitlist,
     BaseBitvector,
@@ -502,22 +502,4 @@ def test_attestation_subnets_partial(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="AttestationSubnets",
         value=AttestationSubnets.from_subnet_ids([0, 7, 15, 31, 63]),
-    )
-
-
-def test_sync_committee_subnets_none(ssz: SSZTestFiller) -> None:
-    """Sync committee subnets with no subscriptions (all 4 bits clear)."""
-    ssz(type_name="SyncCommitteeSubnets", value=SyncCommitteeSubnets.none())
-
-
-def test_sync_committee_subnets_all(ssz: SSZTestFiller) -> None:
-    """Sync committee subnets with all 4 subscriptions active."""
-    ssz(type_name="SyncCommitteeSubnets", value=SyncCommitteeSubnets.all())
-
-
-def test_sync_committee_subnets_partial(ssz: SSZTestFiller) -> None:
-    """Sync committee subnets with 2 of 4 selected (boundary IDs 0 and 3)."""
-    ssz(
-        type_name="SyncCommitteeSubnets",
-        value=SyncCommitteeSubnets.from_subnet_ids([0, 3]),
     )

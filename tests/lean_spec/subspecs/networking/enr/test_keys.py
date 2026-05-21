@@ -14,12 +14,9 @@ class TestEnrKeys:
     def test_network_keys(self) -> None:
         """Network keys have correct values."""
         assert keys.IP == "ip"
-        assert keys.IP6 == "ip6"
         assert keys.UDP == "udp"
-        assert keys.UDP6 == "udp6"
 
     def test_ethereum_keys(self) -> None:
         """Ethereum-specific keys have correct values."""
         assert keys.ETH2 == "eth2"
         assert keys.ATTNETS == "attnets"
-        assert keys.SYNCNETS == "syncnets"

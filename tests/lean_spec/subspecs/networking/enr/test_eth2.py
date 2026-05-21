@@ -1,4 +1,4 @@
-"""Tests for Ethereum 2.0 ENR types (Eth2Data, AttestationSubnets, SyncCommitteeSubnets)."""
+"""Tests for Ethereum 2.0 ENR types (Eth2Data, AttestationSubnets)."""
 
 import pytest
 from pydantic import ValidationError
@@ -7,7 +7,6 @@ from lean_spec.subspecs.networking.enr import Eth2Data
 from lean_spec.subspecs.networking.enr.eth2 import (
     FAR_FUTURE_EPOCH,
     AttestationSubnets,
-    SyncCommitteeSubnets,
 )
 from lean_spec.subspecs.networking.types import ForkDigest, Version
 from lean_spec.types import SubnetId, Uint64
@@ -124,97 +123,3 @@ class TestAttestationSubnets:
     def test_length_constant(self) -> None:
         """LENGTH constant is 64."""
         assert AttestationSubnets.LENGTH == 64
-
-
-class TestSyncCommitteeSubnets:
-    """Tests for SyncCommitteeSubnets bitvector."""
-
-    def test_none_creates_empty_subscriptions(self) -> None:
-        """none() creates empty subscriptions."""
-        subnets = SyncCommitteeSubnets.none()
-        for i in range(4):
-            assert not subnets.is_subscribed(i)
-
-    def test_all_creates_full_subscriptions(self) -> None:
-        """all() creates full subscriptions."""
-        subnets = SyncCommitteeSubnets.all()
-        for i in range(4):
-            assert subnets.is_subscribed(i)
-
-    def test_is_subscribed_with_valid_ids(self) -> None:
-        """is_subscribed() works for valid subnet IDs 0-3."""
-        subnets = SyncCommitteeSubnets.all()
-        assert subnets.is_subscribed(0)
-        assert subnets.is_subscribed(1)
-        assert subnets.is_subscribed(2)
-        assert subnets.is_subscribed(3)
-
-    def test_is_subscribed_raises_for_invalid_high_id(self) -> None:
-        """is_subscribed() raises for subnet ID >= 4."""
-        subnets = SyncCommitteeSubnets.none()
-        with pytest.raises(ValueError, match="must be 0-3"):
-            subnets.is_subscribed(4)
-
-    def test_is_subscribed_raises_for_negative_id(self) -> None:
-        """is_subscribed() raises for negative subnet ID."""
-        subnets = SyncCommitteeSubnets.none()
-        with pytest.raises(ValueError, match="must be 0-3"):
-            subnets.is_subscribed(-1)
-
-    def test_from_subnet_ids_specific(self) -> None:
-        """from_subnet_ids() creates specific subscriptions."""
-        subnets = SyncCommitteeSubnets.from_subnet_ids([0, 2])
-        assert subnets.is_subscribed(0)
-        assert not subnets.is_subscribed(1)
-        assert subnets.is_subscribed(2)
-        assert not subnets.is_subscribed(3)
-
-    def test_from_subnet_ids_empty_list(self) -> None:
-        """from_subnet_ids with empty list creates no subscriptions."""
-        subnets = SyncCommitteeSubnets.from_subnet_ids([])
-        assert subnets.subscription_count() == 0
-
-    def test_from_subnet_ids_with_duplicates(self) -> None:
-        """from_subnet_ids handles duplicates correctly."""
-        subnets = SyncCommitteeSubnets.from_subnet_ids([1, 1, 1, 3])
-        assert subnets.subscription_count() == 2
-        assert subnets.subscribed_subnets() == [SubnetId(1), SubnetId(3)]
-
-    def test_from_subnet_ids_invalid(self) -> None:
-        """from_subnet_ids() raises for invalid subnet IDs."""
-        with pytest.raises(ValueError, match="must be 0-3"):
-            SyncCommitteeSubnets.from_subnet_ids([4])
-
-        with pytest.raises(ValueError, match="must be 0-3"):
-            SyncCommitteeSubnets.from_subnet_ids([-1])
-
-    def test_subscribed_subnets(self) -> None:
-        """subscribed_subnets() returns correct list."""
-        subnets = SyncCommitteeSubnets.from_subnet_ids([1, 3])
-        assert subnets.subscribed_subnets() == [SubnetId(1), SubnetId(3)]
-
-    def test_subscription_count(self) -> None:
-        """subscription_count() returns correct count."""
-        subnets = SyncCommitteeSubnets.from_subnet_ids([0, 2, 3])
-        assert subnets.subscription_count() == 3
-
-    def test_encode_bytes_empty(self) -> None:
-        """Empty subscriptions serialize to 1 zero byte."""
-        subnets = SyncCommitteeSubnets.none()
-        assert subnets.encode_bytes() == b"\x00"
-
-    def test_encode_bytes_all(self) -> None:
-        """All subscriptions serialize to 0x0f (lower 4 bits set)."""
-        subnets = SyncCommitteeSubnets.all()
-        assert subnets.encode_bytes() == b"\x0f"
-
-    def test_decode_bytes_roundtrip(self) -> None:
-        """Encode then decode produces equivalent result."""
-        original = SyncCommitteeSubnets.from_subnet_ids([0, 2])
-        encoded = original.encode_bytes()
-        decoded = SyncCommitteeSubnets.decode_bytes(encoded)
-        assert decoded.subscribed_subnets() == original.subscribed_subnets()
-
-    def test_length_constant(self) -> None:
-        """LENGTH constant is 4."""
-        assert SyncCommitteeSubnets.LENGTH == 4

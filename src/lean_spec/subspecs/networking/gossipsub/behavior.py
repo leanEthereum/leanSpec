@@ -515,42 +515,21 @@ class GossipsubBehavior:
         if not self._running:
             return None
 
+        # Race the queue against the stop signal.
+        # Whichever wins decides whether to return an event or signal shutdown.
         queue_task = asyncio.create_task(self._event_queue.get())
         stop_task = asyncio.create_task(self._stop_event.wait())
-
         try:
-            done, pending = await asyncio.wait(
-                [queue_task, stop_task],
+            done, _ = await asyncio.wait(
+                {queue_task, stop_task},
                 return_when=asyncio.FIRST_COMPLETED,
             )
-
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-            if stop_task in done:
-                return None
-
             if queue_task in done:
                 return queue_task.result()
-
             return None
-
-        except asyncio.CancelledError:
+        finally:
             queue_task.cancel()
             stop_task.cancel()
-            try:
-                await queue_task
-            except asyncio.CancelledError:
-                pass
-            try:
-                await stop_task
-            except asyncio.CancelledError:
-                pass
-            return None
 
     async def _handle_rpc(self, peer_id: PeerId, rpc: RPC) -> None:
         """Dispatch an incoming RPC to the appropriate handlers."""

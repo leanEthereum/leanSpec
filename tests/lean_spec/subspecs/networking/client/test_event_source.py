@@ -203,13 +203,13 @@ class TestSupportedProtocols:
     """
     Verify the set of protocol IDs advertised during connection setup.
 
-    An Ethereum consensus node must support gossipsub v1.1, gossipsub v1.2
-    (for IDONTWANT bandwidth optimization), and all req/resp protocol IDs.
+    The node advertises gossipsub v1.2 (for IDONTWANT bandwidth optimization)
+    and all req/resp protocol IDs.
     The set must be immutable to prevent accidental mutation at runtime.
     """
 
-    def test_contains_gossipsub_v11(self) -> None:
-        """Includes gossipsub v1.1 as required by Ethereum consensus spec."""
+    def test_contains_gossipsub_default(self) -> None:
+        """Includes the default gossipsub protocol ID."""
         assert GOSSIPSUB_DEFAULT_PROTOCOL_ID in SUPPORTED_PROTOCOLS
 
     def test_contains_gossipsub_v12(self) -> None:

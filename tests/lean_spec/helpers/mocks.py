@@ -19,7 +19,7 @@ from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.service.events import NetworkEvent
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Slot, Uint64
+from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64
 
 
 class StoreInterceptingSpec(LstarSpec):
@@ -135,17 +135,10 @@ class MockEventSource:
 
 @dataclass
 class _MockBlock:
-    """Minimal block stub with a slot attribute for mock store lookups."""
+    """Minimal block stub with slot and parent_root for mock store lookups."""
 
     slot: Slot = field(default_factory=lambda: Slot(0))
-
-
-@dataclass
-class _MockCheckpoint:
-    """Minimal checkpoint stub with a slot attribute for mock store access."""
-
-    root: Bytes32 = field(default_factory=Bytes32.zero)
-    slot: Slot = field(default_factory=lambda: Slot(0))
+    parent_root: Bytes32 = field(default_factory=Bytes32.zero)
 
 
 class MockForkchoiceStore:
@@ -157,6 +150,10 @@ class MockForkchoiceStore:
 
     Optional `reject_*` predicates return True to simulate validation
     failure (`KeyError`), e.g. unknown attestation target.
+
+    The `on_block_*` flags let tests simulate forkchoice side-effects of
+    block processing (post-state indexing, justified or finalized advance)
+    without injecting a custom block processor.
     """
 
     def __init__(self, head_slot: int = 0) -> None:
@@ -164,17 +161,24 @@ class MockForkchoiceStore:
         genesis_root = Bytes32.zero()
         self.blocks: dict[Bytes32, object] = {genesis_root: _MockBlock(slot=Slot(head_slot))}
         self.head: Bytes32 = genesis_root
+        self.safe_target: Bytes32 = genesis_root
         self.head_slot: Slot = Slot(head_slot)
         self._attestations_received: list[SignedAttestation] = []
         self._aggregated_attestations_received: list[SignedAggregatedAttestation] = []
         self.validator_id = None
-        self.latest_justified = _MockCheckpoint()
-        self.latest_finalized = _MockCheckpoint()
+        self.latest_justified = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
+        self.latest_finalized = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
         self.states: dict[Bytes32, object] = {}
         self.reject_attestation: Callable[[SignedAttestation], bool] | None = None
         self.reject_aggregated_attestation: Callable[[SignedAggregatedAttestation], bool] | None = (
             None
         )
+        self.on_block_post_state: object | None = None
+        """When set, on_block stores this object as states[block_root]."""
+        self.advance_justified_on_block: bool = False
+        """When True, on_block advances latest_justified to the new block."""
+        self.advance_finalized_on_block: bool = False
+        """When True, on_block advances latest_finalized to the new block."""
 
     def on_block(
         self,
@@ -185,7 +189,15 @@ class MockForkchoiceStore:
         root = hash_tree_root(block.block)
         self.blocks[root] = block.block
         self.head = root
+        # The mock has no real safe-target rule; head doubles as safe-target.
+        self.safe_target = root
         self.head_slot = block.block.slot
+        if self.on_block_post_state is not None:
+            self.states[root] = self.on_block_post_state
+        if self.advance_justified_on_block:
+            self.latest_justified = Checkpoint(root=root, slot=block.block.slot)
+        if self.advance_finalized_on_block:
+            self.latest_finalized = Checkpoint(root=root, slot=block.block.slot)
         return self
 
     def on_gossip_attestation(

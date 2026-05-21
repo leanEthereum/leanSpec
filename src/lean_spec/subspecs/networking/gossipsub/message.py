@@ -55,21 +55,11 @@ References:
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from lean_spec.subspecs.networking.config import (
-    MESSAGE_DOMAIN_INVALID_SNAPPY,
-    MESSAGE_DOMAIN_VALID_SNAPPY,
-)
+from lean_spec.subspecs.networking.config import MESSAGE_DOMAIN_INVALID_SNAPPY
 
 from .types import MessageId
-
-type SnappyDecompressor = Callable[[bytes], bytes]
-"""Callable that decompresses snappy-compressed data.
-
-Should raise an exception if decompression fails.
-"""
 
 
 @dataclass(slots=True)
@@ -86,7 +76,7 @@ class GossipsubMessage:
 
         SHA256(domain + uint64_le(len(topic)) + topic + data)[:20]
 
-    Where `domain` depends on snappy decompression success.
+    Where `domain` is 0x01 for valid-snappy and 0x00 otherwise.
     """
 
     topic: bytes
@@ -97,14 +87,6 @@ class GossipsubMessage:
 
     Typically snappy-compressed SSZ data. The actual content
     depends on the topic (block, attestation, etc.).
-    """
-
-    snappy_decompress: SnappyDecompressor | None = field(default=None, repr=False)
-    """Optional snappy decompression function.
-
-    If provided, decompression is attempted during ID computation
-    to determine the domain byte. Pass `snappy.decompress` from
-    the python-snappy library, or any compatible callable.
     """
 
     _cached_id: MessageId | None = field(
@@ -127,14 +109,13 @@ class GossipsubMessage:
             20-byte message ID (Bytes20).
         """
         if self._cached_id is None:
-            self._cached_id = self.compute_id(self.topic, self.raw_data, self.snappy_decompress)
+            self._cached_id = self.compute_id(self.topic, self.raw_data)
         return self._cached_id
 
     @staticmethod
     def compute_id(
         topic: bytes,
         data: bytes,
-        snappy_decompress: SnappyDecompressor | None = None,
         *,
         domain: bytes | None = None,
     ) -> MessageId:
@@ -144,40 +125,22 @@ class GossipsubMessage:
 
             SHA256(domain + uint64_le(len(topic)) + topic + data)[:20]
 
-        Domain Selection
-        ----------------
-
-        - If `domain` is explicitly provided:
-            use it directly (data is assumed pre-processed by the caller)
-        - If `snappy_decompress` is provided and succeeds:
-            domain = 0x01, use decompressed data
-        - Otherwise:
-            domain = 0x00, use raw data
-
         Args:
             topic: Topic string as bytes.
-            data: Message payload (potentially compressed).
-            snappy_decompress: Optional decompression function.
-            domain: Explicit domain bytes. When provided, data is used as-is.
+            data: Message payload. Callers that have already decompressed
+                the payload must pass the explicit `domain` so the hash
+                uses the correct domain separator.
+            domain: Explicit domain bytes. Defaults to the invalid-snappy
+                domain when omitted; callers handling decompression must
+                pass the valid-snappy domain explicitly.
 
         Returns:
             20-byte message ID.
         """
-        if domain is not None:
-            # Caller already determined the domain (e.g., after pre-decompression).
-            data_for_hash = data
-        elif snappy_decompress is not None:
-            try:
-                data_for_hash = snappy_decompress(data)
-                domain = MESSAGE_DOMAIN_VALID_SNAPPY
-            except Exception:
-                data_for_hash = data
-                domain = MESSAGE_DOMAIN_INVALID_SNAPPY
-        else:
-            data_for_hash = data
+        if domain is None:
             domain = MESSAGE_DOMAIN_INVALID_SNAPPY
 
-        preimage = bytes(domain) + len(topic).to_bytes(8, "little") + topic + data_for_hash
+        preimage = bytes(domain) + len(topic).to_bytes(8, "little") + topic + data
 
         return MessageId(hashlib.sha256(preimage).digest()[:20])
 

@@ -8,10 +8,8 @@ from typing import (
     IO,
     Any,
     ClassVar,
-    Generic,
     Protocol,
     Self,
-    TypeVar,
     cast,
     overload,
     override,
@@ -36,14 +34,6 @@ class IntFieldElement(Protocol):
     """
 
     value: int
-
-
-T = TypeVar("T", bound=SSZType)
-"""Generic type parameter for SSZ collection elements.
-
-Bound to SSZType to ensure elements are valid SSZ types.
-Enables type checkers to infer correct return types for indexed access.
-"""
 
 
 def _extract_element_type_from_generic(cls: type, origin_class: type) -> type[SSZType] | None:
@@ -94,7 +84,7 @@ def _validate_offsets(offsets: list[int], scope: int, type_name: str) -> None:
         )
 
 
-class SSZVector(SSZModel, Generic[T]):
+class SSZVector[T: SSZType](SSZModel):
     """Fixed-length, immutable SSZ sequence.
 
     Contains exactly LENGTH elements of type ELEMENT_TYPE.
@@ -260,7 +250,7 @@ class SSZVector(SSZModel, Generic[T]):
         return list(self.data)
 
 
-class SSZList(SSZModel, Generic[T]):
+class SSZList[T: SSZType](SSZModel):
     """Variable-length SSZ sequence with a maximum capacity.
 
     Contains between 0 and LIMIT elements of type ELEMENT_TYPE.

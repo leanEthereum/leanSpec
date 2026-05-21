@@ -119,14 +119,3 @@ class Fp(SSZType):
     def __repr__(self) -> str:
         """String representation."""
         return f"Fp(value={self.value})"
-
-    def __bytes__(self) -> bytes:
-        """
-        Serialize the field element using Python's bytes protocol.
-
-        This enables `bytes(fp)` to work naturally with field elements.
-
-        Returns:
-            4-byte little-endian representation of the field element.
-        """
-        return self.encode_bytes()

@@ -12,13 +12,6 @@ MAX_REQUEST_BLOCKS: Final[int] = 2**10
 MAX_PAYLOAD_SIZE: Final[int] = 10 * 1024 * 1024
 """Maximum uncompressed payload size in bytes (10 MiB)."""
 
-TTFB_TIMEOUT: Final[float] = 5.0
-"""Time-to-first-byte timeout.
-
-Maximum time to wait for the first byte of a response after sending a request.
-If no data arrives within this window, the request is considered failed.
-"""
-
 RESP_TIMEOUT: Final[float] = 10.0
 """Response timeout.
 
@@ -38,22 +31,11 @@ MESSAGE_DOMAIN_VALID_SNAPPY: Final[DomainType] = DomainType(b"\x01\x00\x00\x00")
 Per Ethereum spec, prepended to the message hash when decompression succeeds.
 """
 
-GOSSIPSUB_PROTOCOL_ID_V11: Final = ProtocolId("/meshsub/1.1.0")
-"""Gossipsub v1.1 protocol ID - peer scoring, extended validators.
-
-This is the minimum version required by the Ethereum consensus spec.
-"""
-
 GOSSIPSUB_PROTOCOL_ID_V12: Final = ProtocolId("/meshsub/1.2.0")
 """Gossipsub v1.2 protocol ID - IDONTWANT bandwidth optimization."""
 
 GOSSIPSUB_DEFAULT_PROTOCOL_ID: Final = GOSSIPSUB_PROTOCOL_ID_V12
-"""
-Default protocol ID per Ethereum consensus spec requirements.
-
-The Ethereum consensus P2P spec states:
-"Clients MUST support the gossipsub v1 libp2p Protocol including the gossipsub v1.1 extension."
-"""
+"""Default gossipsub protocol ID advertised during stream negotiation."""
 
 PRUNE_BACKOFF: Final[int] = 60
 """Default PRUNE backoff duration in seconds.

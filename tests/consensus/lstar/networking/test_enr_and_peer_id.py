@@ -34,7 +34,7 @@ ENR_NO_ETH2 = (
     "gZu_w8M-3NHdkIC7dKuyKgxbxV8mr0cBgmlkgnY0gmlwhAoAAAGJc2VjcDI1NmsxoQ"
     "PKY0yuDUmstAHYpMa2_oxVtw0RW_QAdpzBQA8yWM0xOIN1ZHCCdl8"
 )
-"""ENR with ip4 + udp but no eth2, attnets, or syncnets keys."""
+"""ENR with ip4 + udp but no eth2 or attnets keys."""
 
 ENR_ETH2_FAR_FUTURE = (
     "enr:-Iu4QH9jczrZFmQYFzYOnzvoHr0x_oqo6uiVwYyfW4JqmzieRFUycscJpHoQ"
@@ -57,21 +57,6 @@ ENR_ATTNETS_ALL_ONES = (
 )
 """ENR with attnets bitfield all ones (all 64 subnets subscribed)."""
 
-ENR_SYNCNETS_ONLY = (
-    "enr:-H-4QE_YuRp32SAUCRWpLtCZnfsZWnD8SrO0SJE8T3x6XdYJvBKI9eW79Vy9"
-    "AEIjRGL8jLSgCV2BpEJ4-5NQSksSvyEBgmlkgnY0iXNlY3AyNTZrMaEDymNMrg1JrL"
-    "QB2KTGtv6MVbcNEVv0AHacwUAPMljNMTiIc3luY25ldHMK"
-)
-"""ENR with syncnets key (subnets 1, 3) but no eth2 or attnets."""
-
-ENR_IPV6_ONLY = (
-    "enr:-JK4QGjix5Zy3h0NXP7WkXobaBJtkv_bAMf5pkq17EIThF7rSvyRoBA_dQ93_u"
-    "-icZRoK_-vdEy2RM1AKuAKArf2z3UBgmlkgnY0g2lwNpAgAQ24AAAAAAAAAAAAAAAB"
-    "iXNlY3AyNTZrMaEDymNMrg1JrLQB2KTGtv6MVbcNEVv0AHacwUAPMljNMTiEdWRwNo"
-    "IjKQ"
-)
-"""ENR with IPv6 address (2001:db8::1) and udp6 port, no IPv4."""
-
 ENR_HIGH_SEQ = (
     "enr:-Hm4QIijml7AMdlciWFY1S7qh7egBawTx_IqvFhHI4xQh6jdDEJv9Slx_lVG"
     "PznU65wh0BzwxMGkbEpzuzO2K7Z_xfSE_____4JpZIJ2NIlzZWNwMjU2azGhA8pjTK"
@@ -89,7 +74,7 @@ def test_enr_official_eip778(networking_codec: NetworkingCodecTestFiller) -> Non
 
 
 def test_enr_with_extensions(networking_codec: NetworkingCodecTestFiller) -> None:
-    """ENR with all extension keys: eth2, subnets, IPv6, QUIC, udp6, quic6, is_aggregator."""
+    """ENR with extension keys: eth2, attnets, QUIC, is_aggregator."""
     networking_codec(codec_name="enr", input={"enrString": ENR_WITH_EXTENSIONS})
 
 
@@ -99,7 +84,7 @@ def test_enr_minimal_seq_zero(networking_codec: NetworkingCodecTestFiller) -> No
 
 
 def test_enr_no_eth2_field(networking_codec: NetworkingCodecTestFiller) -> None:
-    """ENR with ip4 + udp but no eth2, attnets, or syncnets. Verifies absent optional fields."""
+    """ENR with ip4 + udp but no eth2 or attnets. Verifies absent optional fields."""
     networking_codec(codec_name="enr", input={"enrString": ENR_NO_ETH2})
 
 
@@ -116,16 +101,6 @@ def test_enr_attnets_all_zeros(networking_codec: NetworkingCodecTestFiller) -> N
 def test_enr_attnets_all_ones(networking_codec: NetworkingCodecTestFiller) -> None:
     """ENR with attnets bitfield all ones. Verifies all 64 subnets are subscribed."""
     networking_codec(codec_name="enr", input={"enrString": ENR_ATTNETS_ALL_ONES})
-
-
-def test_enr_syncnets_only(networking_codec: NetworkingCodecTestFiller) -> None:
-    """ENR with syncnets (subnets 1, 3) but no eth2 or attnets. Verifies independent parsing."""
-    networking_codec(codec_name="enr", input={"enrString": ENR_SYNCNETS_ONLY})
-
-
-def test_enr_ipv6_only(networking_codec: NetworkingCodecTestFiller) -> None:
-    """ENR with IPv6 address (2001:db8::1) and udp6 port, no IPv4."""
-    networking_codec(codec_name="enr", input={"enrString": ENR_IPV6_ONLY})
 
 
 def test_enr_high_seq(networking_codec: NetworkingCodecTestFiller) -> None:

@@ -11,7 +11,7 @@ Architecture:
 
 Components:
     - quic/: QUIC transport with libp2p-tls authentication and protocol negotiation
-    - identity/: secp256k1 keypairs and identity proofs
+    - identity/: secp256k1 keypairs
 
 QUIC provides encryption and multiplexing natively, eliminating the need
 for separate Noise and yamux layers. This results
@@ -22,13 +22,7 @@ References:
     - libp2p/specs quic, tls, multistream-select
 """
 
-from .identity import (
-    NOISE_IDENTITY_PREFIX,
-    IdentityKeypair,
-    Secp256k1PublicKey,
-    create_identity_proof,
-    verify_identity_proof,
-)
+from .identity import IdentityKeypair, Secp256k1PublicKey
 from .peer_id import Base58, KeyType, Multihash, MultihashCode, PeerId, PublicKeyProto
 from .quic import (
     NegotiationError,
@@ -48,9 +42,6 @@ __all__ = [
     # Identity (secp256k1 keypair)
     "IdentityKeypair",
     "Secp256k1PublicKey",
-    "NOISE_IDENTITY_PREFIX",
-    "create_identity_proof",
-    "verify_identity_proof",
     # PeerId (peer_id module)
     "PeerId",
     "PublicKeyProto",

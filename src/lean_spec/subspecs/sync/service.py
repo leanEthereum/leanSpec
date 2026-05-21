@@ -7,6 +7,7 @@ Drives a node from cold start to active participation in the network.
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
@@ -113,9 +114,6 @@ class SyncService:
     Ignored on non-aggregator nodes, which never import gossip attestations.
     """
 
-    process_block: Callable[[Store, SignedBlock], Store] | None = field(default=None)
-    """Block processor function. Defaults to the spec's block processing."""
-
     publish_aggregated_attestation: Callable[
         [SignedAggregatedAttestation], Coroutine[None, None, None]
     ] = field(default=_noop_publish_agg)
@@ -140,17 +138,21 @@ class SyncService:
     _blocks_processed: int = field(default=0)
     """Counter for processed blocks."""
 
-    _pending_attestations: list[SignedAttestation] = field(default_factory=list)
+    _pending_attestations: deque[SignedAttestation] = field(
+        default_factory=lambda: deque(maxlen=MAX_PENDING_ATTESTATIONS)
+    )
     """
     Attestations queued for replay after the next block lands.
 
     An attestation referencing a not-yet-received block fails validation.
 
     Buffering avoids dropping votes that arrived slightly out of order.
+
+    Bounded so overflow drops the oldest entry first.
     """
 
-    _pending_aggregated_attestations: list[SignedAggregatedAttestation] = field(
-        default_factory=list
+    _pending_aggregated_attestations: deque[SignedAggregatedAttestation] = field(
+        default_factory=lambda: deque(maxlen=MAX_PENDING_ATTESTATIONS)
     )
     """
     Aggregated attestations awaiting block processing.
@@ -161,18 +163,14 @@ class SyncService:
     _pending_block_aggregates: list[SignedAggregatedAttestation] = field(default_factory=list)
     """Combined aggregates recovered from processed blocks.
 
-    Every processed block is deconstructed in the block wrapper, which
+    Every processed block is deconstructed during block processing, which
     queues its combined aggregates when this node is in the aggregator
     role. The gossip umbrella drains and publishes them after the store
     is updated.
     """
 
     def __post_init__(self) -> None:
-        """Bind the default block processor and wire sub-components."""
-        # Tests can pass an explicit processor and skip this path.
-        if self.process_block is None:
-            self.process_block = self._default_process_block
-
+        """Wire sub-components and apply the genesis-start state hint."""
         self._init_components()
 
         # Genesis validators already hold the full genesis state.
@@ -193,15 +191,14 @@ class SyncService:
             store_view=self,
         )
 
-        # The wrapper adds counter and persistence tracking around each block.
         self._head_sync = HeadSync(
             block_cache=self.block_cache,
             backfill=self._backfill,
-            process_block=self._process_block_wrapper,
+            process_block=self.process_block,
         )
 
-    def _default_process_block(self, store: Store, block: SignedBlock) -> Store:
-        """Run the spec's block processor and emit forkchoice telemetry."""
+    def process_block(self, store: Store, block: SignedBlock) -> Store:
+        """Apply a block to the store, emit telemetry, and persist when wired up."""
         new_store = self.spec.on_block(store, block)
 
         # Live chain pointers, exposed as gauges so dashboards reflect the current view.
@@ -246,25 +243,6 @@ class SyncService:
             depth = len(ancestors(store.head) - ancestors(new_store.head))
             metrics.lean_fork_choice_reorgs_total.inc()
             metrics.lean_fork_choice_reorg_depth.observe(depth)
-
-        return new_store
-
-    def _process_block_wrapper(
-        self,
-        store: Store,
-        block: SignedBlock,
-    ) -> Store:
-        """Run the processor, bump the counter, and persist when wired up.
-
-        All block processing flows through one wrapper regardless of which
-        processor is configured.
-        """
-        # Delegate to the actual block processor.
-        #
-        # The processor validates the block and updates forkchoice state.
-        processor = self.process_block
-        assert processor is not None
-        new_store = processor(store, block)
 
         # Track processed blocks.
         #
@@ -505,8 +483,6 @@ class SyncService:
             #
             # Cap drops oldest on overflow: newer attestations are likelier to land soon.
             self._pending_attestations.append(attestation)
-            if len(self._pending_attestations) > MAX_PENDING_ATTESTATIONS:
-                self._pending_attestations = self._pending_attestations[-MAX_PENDING_ATTESTATIONS:]
 
     async def on_gossip_aggregated_attestation(
         self,
@@ -549,10 +525,6 @@ class SyncService:
             #
             # Cap drops oldest on overflow: newer aggregates are likelier to land soon.
             self._pending_aggregated_attestations.append(signed_attestation)
-            if len(self._pending_aggregated_attestations) > MAX_PENDING_ATTESTATIONS:
-                self._pending_aggregated_attestations = self._pending_aggregated_attestations[
-                    -MAX_PENDING_ATTESTATIONS:
-                ]
 
     def _replay_pending_attestations(self) -> None:
         """Retry buffered attestations after a block is processed."""
@@ -568,7 +540,7 @@ class SyncService:
         #   - B fails:    T2 still missing, B is re-appended.
         # Post-loop queue: [B].
         pending = self._pending_attestations
-        self._pending_attestations = []
+        self._pending_attestations = deque(maxlen=MAX_PENDING_ATTESTATIONS)
         for attestation in pending:
             try:
                 self.store = self.spec.on_gossip_attestation(
@@ -582,7 +554,7 @@ class SyncService:
 
         # Same mechanism for aggregated attestations.
         pending_agg = self._pending_aggregated_attestations
-        self._pending_aggregated_attestations = []
+        self._pending_aggregated_attestations = deque(maxlen=MAX_PENDING_ATTESTATIONS)
         for signed_attestation in pending_agg:
             try:
                 self.store = self.spec.on_gossip_aggregated_attestation(

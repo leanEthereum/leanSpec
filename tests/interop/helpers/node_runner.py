@@ -396,7 +396,7 @@ class NodeCluster:
 
         self.nodes.append(test_node)
         # Log node startup with gossipsub instance ID for debugging.
-        gs_id = event_source._gossipsub_behavior._instance_id % 0xFFFF
+        gs_id = event_source._gossipsub_behavior._short_id
         logger.info(
             "Started node %d on %s (validators: %s, services=%s, GS=%x)",
             node_index,

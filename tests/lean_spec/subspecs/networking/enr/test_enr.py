@@ -105,11 +105,6 @@ class TestOfficialEIP778Vector:
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
         assert enr.is_valid()
 
-    def test_official_enr_no_ipv6(self) -> None:
-        """Official ENR does not have IPv6 address."""
-        enr = ENR.from_string(OFFICIAL_ENR_STRING)
-        assert enr.ip6 is None
-
     def test_official_enr_has_quic_multiaddr(self) -> None:
         """Official ENR has QUIC multiaddr (has UDP port)."""
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
@@ -344,35 +339,6 @@ class TestPropertyAccessors:
         )
         assert enr.ip4 is None
 
-    def test_ip6_formats_address_correctly(self) -> None:
-        """ip6 property formats IPv6 address as colon-separated hex."""
-        # ::1 (loopback)
-        ipv6_bytes = b"\x00" * 15 + b"\x01"
-        enr = ENR(
-            signature=Bytes64(b"\x00" * 64),
-            seq=SeqNumber(1),
-            pairs={keys.ID: b"v4", keys.IP6: ipv6_bytes},
-        )
-        assert enr.ip6 == "0000:0000:0000:0000:0000:0000:0000:0001"
-
-    def test_ip6_returns_none_when_missing(self) -> None:
-        """ip6 returns None when 'ip6' key is absent."""
-        enr = ENR(
-            signature=Bytes64(b"\x00" * 64),
-            seq=SeqNumber(1),
-            pairs={keys.ID: b"v4"},
-        )
-        assert enr.ip6 is None
-
-    def test_ip6_returns_none_for_wrong_length(self) -> None:
-        """ip6 returns None when IP bytes are not 16 bytes."""
-        enr = ENR(
-            signature=Bytes64(b"\x00" * 64),
-            seq=SeqNumber(1),
-            pairs={keys.ID: b"v4", keys.IP6: b"\x00" * 8},  # Only 8 bytes
-        )
-        assert enr.ip6 is None
-
     def test_udp_port_extracts_correctly(self) -> None:
         """udp_port extracts port number from big-endian bytes."""
         enr = ENR(
@@ -492,20 +458,6 @@ class TestMultiaddrGeneration:
         )
         assert enr.multiaddr() == "/ip4/192.168.1.1/udp/9000/quic-v1"
 
-    def test_multiaddr_with_ipv6_and_udp(self) -> None:
-        """multiaddr() generates QUIC format with IPv6 and UDP."""
-        ipv6_bytes = b"\x00" * 15 + b"\x01"  # ::1
-        enr = ENR(
-            signature=Bytes64(b"\x00" * 64),
-            seq=SeqNumber(1),
-            pairs={
-                keys.ID: b"v4",
-                keys.IP6: ipv6_bytes,
-                keys.UDP: (9000).to_bytes(2, "big"),
-            },
-        )
-        assert enr.multiaddr() == "/ip6/0000:0000:0000:0000:0000:0000:0000:0001/udp/9000/quic-v1"
-
     def test_multiaddr_returns_none_without_udp(self) -> None:
         """multiaddr() returns None when UDP port is absent."""
         enr = ENR(
@@ -526,20 +478,6 @@ class TestMultiaddrGeneration:
             pairs={keys.ID: b"v4", keys.UDP: (9000).to_bytes(2, "big")},
         )
         assert enr.multiaddr() is None
-
-    def test_multiaddr_prefers_ipv4_over_ipv6(self) -> None:
-        """multiaddr() uses IPv4 when both IPv4 and IPv6 are present."""
-        enr = ENR(
-            signature=Bytes64(b"\x00" * 64),
-            seq=SeqNumber(1),
-            pairs={
-                keys.ID: b"v4",
-                keys.IP: b"\xc0\xa8\x01\x01",  # 192.168.1.1
-                keys.IP6: b"\x00" * 15 + b"\x01",  # ::1
-                keys.UDP: (9000).to_bytes(2, "big"),
-            },
-        )
-        assert enr.multiaddr() == "/ip4/192.168.1.1/udp/9000/quic-v1"
 
 
 class TestStringRepresentation:
@@ -631,35 +569,6 @@ class TestEdgeCases:
         assert enr.is_valid()
         assert enr.ip4 is None
         assert enr.udp_port is None
-
-    def test_enr_with_ipv6_only(self) -> None:
-        """ENR with IPv6 but no IPv4 parses correctly."""
-        ipv6_bytes = bytes.fromhex("20010db8000000000000000000000001")  # 2001:db8::1
-        rlp_data = encode_rlp(
-            [
-                b"\x00" * 64,
-                b"\x01",
-                b"id",
-                b"v4",
-                b"ip6",
-                ipv6_bytes,
-                b"secp256k1",
-                b"\x02" + b"\x00" * 32,
-                b"udp",
-                (9000).to_bytes(2, "big"),
-            ]
-        )
-        b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
-
-        enr = ENR.from_string(f"enr:{b64_content}")
-        assert enr.ip4 is None
-        assert enr.ip6 is not None
-        assert enr.udp_port == Port(9000)
-        # multiaddr should use IPv6 with QUIC
-        multiaddr = enr.multiaddr()
-        assert multiaddr is not None
-        assert "/ip6/" in multiaddr
-        assert "/quic-v1" in multiaddr
 
     def test_enr_with_udp_port(self) -> None:
         """ENR with UDP port generates QUIC multiaddr correctly."""

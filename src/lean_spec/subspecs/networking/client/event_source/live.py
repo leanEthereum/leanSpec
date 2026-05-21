@@ -36,11 +36,12 @@ Snappy compression reduces bandwidth by 50-70% for typical blocks.
 Gossip uses raw Snappy block format. Req-resp uses Snappy framing with CRC32C.
 
 
-GOSSIPSUB v1.1 REQUIREMENTS
+GOSSIPSUB v1.2 REQUIREMENTS
 ---------------------------
-The Ethereum consensus spec requires gossipsub v1.1 (protocol "/meshsub/1.1.0").
-Key v1.1 features used:
+The node advertises gossipsub v1.2 (protocol "/meshsub/1.2.0").
+Key v1.2 features used:
 
+- IDONTWANT control messages for bandwidth optimization.
 - Peer scoring: Misbehaving peers get lower scores.
 - Extended validators: Message validation before forwarding.
 - Flood publishing: High-priority messages bypass mesh constraints.
@@ -48,7 +49,7 @@ Key v1.1 features used:
 
 References:
     - Ethereum P2P spec: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
-    - Gossipsub v1.1: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md
+    - Gossipsub v1.2: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.2.md
     - SSZ spec: https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md
     - Snappy format: https://github.com/google/snappy/blob/main/format_description.txt
 """
@@ -209,6 +210,12 @@ class LiveNetworkEventSource:
     """Whether the event source is running.
 
     Controls the main loop and background tasks.
+    """
+
+    _stop_event: asyncio.Event = field(default_factory=asyncio.Event)
+    """Set when the event source stops.
+
+    Lets awaiters wake immediately rather than poll the running flag.
     """
 
     _gossip_handler: GossipHandler = field(init=False)
@@ -440,14 +447,24 @@ class LiveNetworkEventSource:
         Raises:
             StopAsyncIteration: When no more events will arrive.
         """
-        while self._running:
-            try:
-                return await asyncio.wait_for(self._events.get(), timeout=0.5)
-            except asyncio.TimeoutError:
-                # Check running flag and loop.
-                continue
+        if not self._running:
+            raise StopAsyncIteration
 
-        raise StopAsyncIteration
+        # Race the queue against the stop signal.
+        # Whichever wins decides whether to return an event or end iteration.
+        get_task = asyncio.create_task(self._events.get())
+        stop_task = asyncio.create_task(self._stop_event.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {get_task, stop_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if get_task in done:
+                return get_task.result()
+            raise StopAsyncIteration
+        finally:
+            get_task.cancel()
+            stop_task.cancel()
 
     async def dial(self, multiaddr: str) -> PeerId | None:
         """
@@ -466,6 +483,7 @@ class LiveNetworkEventSource:
         # can operate. Without this, _accept_streams exits immediately if
         # dial() is called before listen().
         self._running = True
+        self._stop_event.clear()
 
         try:
             # Detect transport type and connect accordingly.
@@ -548,6 +566,7 @@ class LiveNetworkEventSource:
             multiaddr: Address to listen on (e.g., "/ip4/0.0.0.0/udp/9000/quic-v1").
         """
         self._running = True
+        self._stop_event.clear()
 
         if is_quic_multiaddr(multiaddr):
             await self._listen_quic(multiaddr)
@@ -695,6 +714,7 @@ class LiveNetworkEventSource:
     async def stop(self) -> None:
         """Stop the event source and cancel background tasks."""
         self._running = False
+        self._stop_event.set()
 
         # Cancel gossip tasks first (including event forwarding task).
         # This must happen BEFORE stopping gossipsub behavior to avoid
@@ -889,7 +909,7 @@ class LiveNetworkEventSource:
         # preserve it for later use (to avoid losing buffered data).
         try:
             wrapper = QuicStreamAdapter(stream)
-            gs_id = self._gossipsub_behavior._instance_id % 0xFFFF
+            gs_id = self._gossipsub_behavior._short_id
             logger.debug(
                 "[GS %x] Accepting inbound stream %d from %s, negotiating protocol...",
                 gs_id,
@@ -958,7 +978,7 @@ class LiveNetworkEventSource:
             peer_id: Peer that opened the stream.
             conn: Connection the stream belongs to (used to open our
                 outbound stream when needed).
-            protocol_id: Negotiated gossipsub protocol id (v1.1 or v1.2).
+            protocol_id: Negotiated gossipsub protocol id (v1.2).
             wrapper: Adapter holding any bytes already buffered during
                 multistream-select. Reusing this wrapper preserves those
                 bytes for the gossipsub behavior.
@@ -973,9 +993,8 @@ class LiveNetworkEventSource:
         # - Outbound: we opened this to send our RPCs
         # - Inbound: they opened this to send us RPCs
         #
-        # We support both v1.1 and v1.2 - the difference is IDONTWANT
-        # messages which we can handle gracefully.
-        gs_id = self._gossipsub_behavior._instance_id % 0xFFFF
+        # We advertise gossipsub v1.2 only.
+        gs_id = self._gossipsub_behavior._short_id
         logger.debug(
             "[GS %x] Received inbound gossipsub stream (%s) from %s",
             gs_id,

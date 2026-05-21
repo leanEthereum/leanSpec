@@ -170,9 +170,7 @@ class ReqRespClient:
             await stream.write(request_bytes)
 
             # Half-close to signal we're done sending.
-            finish_write = getattr(stream, "finish_write", None)
-            if finish_write is not None:
-                await finish_write()
+            await stream.finish_write()
 
             # Read response chunks.
             #
@@ -297,9 +295,7 @@ class ReqRespClient:
             await stream.write(request_bytes)
 
             # Half-close to signal we're done sending.
-            finish_write = getattr(stream, "finish_write", None)
-            if finish_write is not None:
-                await finish_write()
+            await stream.finish_write()
 
             # Read response chunks.
             #
@@ -460,9 +456,7 @@ class ReqRespClient:
             await stream.write(request_bytes)
 
             # Half-close to signal we're done sending.
-            finish_write = getattr(stream, "finish_write", None)
-            if finish_write is not None:
-                await finish_write()
+            await stream.finish_write()
 
             # Read peer's status response.
             response_data = await stream.read()

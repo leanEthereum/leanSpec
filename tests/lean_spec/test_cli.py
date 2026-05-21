@@ -77,26 +77,6 @@ def _make_enr_with_udp(ip_bytes: bytes, udp_port: int) -> str:
     return f"enr:{b64_content}"
 
 
-def _make_enr_with_ipv6_udp(ip6_bytes: bytes, udp_port: int) -> str:
-    """Create a properly signed ENR string with IPv6 and UDP port."""
-    content_items: list[RLPItem] = [
-        b"\x01",  # seq = 1
-        b"id",
-        b"v4",
-        b"ip6",
-        ip6_bytes,
-        b"secp256k1",
-        _TEST_COMPRESSED_PUBKEY,
-        b"udp",
-        udp_port.to_bytes(2, "big"),
-    ]
-    signature = _sign_enr_content(content_items)
-
-    rlp_data = encode_rlp([signature] + content_items)
-    b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
-    return f"enr:{b64_content}"
-
-
 def _make_enr_without_udp(ip_bytes: bytes) -> str:
     """Create a properly signed ENR string with IPv4 but no UDP port."""
     content_items: list[RLPItem] = [
@@ -117,12 +97,10 @@ def _make_enr_without_udp(ip_bytes: bytes) -> str:
 
 # Pre-built test ENRs
 ENR_WITH_UDP = _make_enr_with_udp(b"\xc0\xa8\x01\x01", 9000)  # 192.168.1.1:9000
-ENR_WITH_IPV6_UDP = _make_enr_with_ipv6_udp(b"\x00" * 15 + b"\x01", 9000)  # ::1:9000
 ENR_WITHOUT_UDP = _make_enr_without_udp(b"\xc0\xa8\x01\x01")  # 192.168.1.1, no UDP
 
 # Valid multiaddr strings (QUIC format)
 MULTIADDR_IPV4 = "/ip4/127.0.0.1/udp/9000/quic-v1"
-MULTIADDR_IPV6 = "/ip6/::1/udp/9000/quic-v1"
 
 
 class TestResolveBootnode:
@@ -131,7 +109,6 @@ class TestResolveBootnode:
     def test_resolve_multiaddr_unchanged(self) -> None:
         """Multiaddr strings are returned unchanged."""
         assert resolve_bootnode(MULTIADDR_IPV4) == MULTIADDR_IPV4
-        assert resolve_bootnode(MULTIADDR_IPV6) == MULTIADDR_IPV6
 
     def test_resolve_arbitrary_multiaddr_unchanged(self) -> None:
         """Any non-ENR string passes through unchanged."""
@@ -143,13 +120,6 @@ class TestResolveBootnode:
         """ENR with IPv4+UDP extracts QUIC multiaddr correctly."""
         result = resolve_bootnode(ENR_WITH_UDP)
         assert result == "/ip4/192.168.1.1/udp/9000/quic-v1"
-
-    def test_resolve_enr_ipv6(self) -> None:
-        """ENR with IPv6+UDP extracts QUIC multiaddr correctly."""
-        result = resolve_bootnode(ENR_WITH_IPV6_UDP)
-        # IPv6 loopback ::1 formatted as full hex
-        assert "/ip6/" in result
-        assert "/udp/9000/quic-v1" in result
 
     def test_resolve_enr_without_udp_raises(self) -> None:
         """ENR without UDP port raises ValueError."""

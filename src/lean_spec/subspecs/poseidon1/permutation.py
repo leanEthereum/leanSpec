@@ -30,12 +30,10 @@ def _build_circulant_mds(first_row: list[int], n: int, p: int) -> NDArray[np.int
 
     A circulant matrix C defined by first row [r0, r1, ..., rn-1]:
     C[i][j] = r[(j - i) mod n]
+
+    Row i is the first row rolled right by i positions.
     """
-    matrix = np.zeros((n, n), dtype=np.int64)
-    for i in range(n):
-        for j in range(n):
-            matrix[i][j] = first_row[(j - i) % n] % p
-    return matrix
+    return np.array([np.roll(first_row, i) for i in range(n)], dtype=np.int64) % p
 
 
 @njit(cache=True)

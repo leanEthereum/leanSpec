@@ -715,29 +715,34 @@ def download_keys(scheme: str) -> None:
 
     print(f"Downloading {scheme} keys from {url}...")
 
-    # Download to a temporary file to avoid partial-write corruption.
-    with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
-        tmp_path = Path(tmp_file.name)
-        try:
-            # Stream the response directly into the temp file.
-            with urllib.request.urlopen(url) as response:
-                shutil.copyfileobj(response, tmp_file)
+    # Reserve a temp path; we open it explicitly below so the writer can close
+    # before the reader opens.
+    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".tar.gz")
+    os.close(tmp_fd)
+    tmp_path = Path(tmp_name)
 
-            # Remove any existing keys for this scheme before extracting.
-            target_dir = base_dir / f"{scheme}_scheme"
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            base_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # Close the writer before opening the reader.
+        # Otherwise Python's userspace buffer can withhold the tail of the gzip stream.
+        # That produces a near-end decompression failure that looks like a truncated download.
+        with urllib.request.urlopen(url) as response, tmp_path.open("wb") as out:
+            shutil.copyfileobj(response, out)
 
-            # Extract the archive into the base directory.
-            # The archive root is the scheme directory itself.
-            with tarfile.open(tmp_path, "r:gz") as tar:
-                tar.extractall(path=base_dir, filter="data")
+        # Remove any existing keys for this scheme before extracting.
+        target_dir = base_dir / f"{scheme}_scheme"
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        base_dir.mkdir(parents=True, exist_ok=True)
 
-            print(f"Extracted {scheme} keys to {target_dir}/")
-        finally:
-            # Always clean up the temporary download file.
-            tmp_path.unlink(missing_ok=True)
+        # Extract the archive into the base directory.
+        # The archive root is the scheme directory itself.
+        with tarfile.open(tmp_path, "r:gz") as tar:
+            tar.extractall(path=base_dir, filter="data")
+
+        print(f"Extracted {scheme} keys to {target_dir}/")
+    finally:
+        # Always clean up the temporary download file.
+        tmp_path.unlink(missing_ok=True)
 
     print("Download complete!")
 

@@ -14,7 +14,6 @@ from lean_spec.subspecs.networking.gossipsub.rpc import (
     ControlMessage,
     ControlPrune,
     Message,
-    PrunePeerInfo,
     SubOpts,
 )
 from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic, TopicKind
@@ -341,14 +340,8 @@ class NetworkingCodecTest(BaseConsensusFixture):
             output["ip4"] = enr.ip4
         if enr.udp_port is not None:
             output["udpPort"] = int(enr.udp_port)
-        if enr.udp6_port is not None:
-            output["udp6Port"] = int(enr.udp6_port)
-        if enr.ip6:
-            output["ip6"] = enr.ip6
         if enr.quic_port is not None:
             output["quicPort"] = int(enr.quic_port)
-        if enr.quic6_port is not None:
-            output["quic6Port"] = int(enr.quic6_port)
         if (ma := enr.multiaddr()) is not None:
             output["multiaddr"] = str(ma)
         if (eth2 := enr.eth2_data) is not None:
@@ -359,8 +352,6 @@ class NetworkingCodecTest(BaseConsensusFixture):
             }
         if (subnets := enr.attestation_subnets) is not None:
             output["attestationSubnets"] = [int(s) for s in subnets.subscribed_subnets()]
-        if (sync := enr.sync_committee_subnets) is not None:
-            output["syncCommitteeSubnets"] = [int(s) for s in sync.subscribed_subnets()]
         output["isAggregator"] = enr.is_aggregator
         output["signatureValid"] = enr.verify_signature()
         output["isValid"] = enr.is_valid()
@@ -444,19 +435,9 @@ def _build_iwant(d: dict[str, Any]) -> ControlIWant:
 
 def _build_prune(d: dict[str, Any]) -> ControlPrune:
     """Build a ControlPrune from a dict."""
-    peers = [_build_prune_peer(p) for p in d.get("peers", [])]
     return ControlPrune(
         topic_id=TopicId(d.get("topicId", "")),
-        peers=peers,
         backoff=d.get("backoff", 0),
-    )
-
-
-def _build_prune_peer(p: dict[str, Any]) -> PrunePeerInfo:
-    """Build a PrunePeerInfo from a dict."""
-    return PrunePeerInfo(
-        peer_id=_from_hex(p["peerId"]) if p.get("peerId") else b"",
-        signed_peer_record=(_from_hex(p["signedPeerRecord"]) if p.get("signedPeerRecord") else b""),
     )
 
 
