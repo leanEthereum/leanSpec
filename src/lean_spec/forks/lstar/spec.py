@@ -1676,10 +1676,28 @@ class LstarSpec(ForkProtocol):
                 if e.validator_id not in covered
             ]
 
-            # The aggregation layer enforces a minimum: either at least one
-            # raw signature, or at least two child proofs to merge.
+            # Skip cases where running the prover provides no consensus value:
             #
-            # A lone child proof is already a valid proof — nothing to do.
+            #   - 0 raw + 0 children: nothing to aggregate.
+            #   - 0 raw + 1 child:    a lone child proof is already a valid
+            #                         proof; nothing to do.
+            #   - 1 raw + 0 children: a single-validator "aggregate" carries
+            #                         no information the raw gossip sig
+            #                         doesn't already carry — the sig is on
+            #                         the per-subnet `attestation_signatures`
+            #                         gossip topic at sign time, so any peer
+            #                         aggregator can fold it in as a raw
+            #                         entry next round. The recursive STARK
+            #                         prover is constant-cost in input size,
+            #                         so building a 1-validator proof spends
+            #                         the full prover budget for zero
+            #                         consensus signal. The unconsumed gossip
+            #                         sig stays in `store.attestation_signatures`
+            #                         (see bookkeeping below) and gets folded
+            #                         in by a future round once another sig
+            #                         or a child shows up.
+            if not child_proofs and len(raw_entries) <= 1:
+                continue
             if not raw_entries and len(child_proofs) < 2:
                 continue
 
