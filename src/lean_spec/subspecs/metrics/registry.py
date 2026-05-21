@@ -69,7 +69,7 @@ BLOCK_PROPOSAL_AGGREGATES_BUCKETS = (0, 1, 2, 4, 8, 16, 32, 64, 128)
 
 BLOCK_PROPOSAL_ATTESTATION_BUILD_PHASES = (
     "select_payloads",
-    "compact_ffi",
+    "compact",
     "stf_simulate",
 )
 """Phase labels for lean_block_proposal_attestation_build_phase_seconds."""
@@ -362,8 +362,9 @@ class MetricsRegistry:
             "lean_block_proposal_attestation_build_phase_seconds",
             (
                 "Phase-level time in block-proposal attestation selection: "
-                "select_payloads (greedy child-payload pick), compact_ffi "
-                "(recursive merge), stf_simulate (candidate block STF)."
+                "select_payloads (greedy child-payload pick), compact "
+                "(recursive merge of proofs per AttestationData), "
+                "stf_simulate (candidate block STF)."
             ),
             ["phase"],
             buckets=BLOCK_PROPOSAL_ATTESTATION_PHASE_BUCKETS,

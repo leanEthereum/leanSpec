@@ -863,7 +863,7 @@ class LstarSpec(ForkProtocol):
                 )
 
             metrics.lean_block_proposal_attestation_build_phase_seconds.labels(
-                phase="compact_ffi",
+                phase="compact",
             ).observe(time.perf_counter() - compact_start)
             metrics.lean_block_proposal_attestation_builds_total.inc()
             metrics.lean_block_proposal_child_payloads_consumed_total.inc(child_payloads_consumed)
