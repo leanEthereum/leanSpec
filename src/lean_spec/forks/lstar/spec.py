@@ -867,12 +867,8 @@ class LstarSpec(ForkProtocol):
             ).observe(time.perf_counter() - compact_start)
             metrics.lean_block_proposal_attestation_builds_total.inc()
             metrics.lean_block_proposal_child_payloads_consumed_total.inc(child_payloads_consumed)
-            metrics.lean_block_proposal_attestation_data_selected.observe(
-                len(processed_att_data)
-            )
-            metrics.lean_block_proposal_aggregates_selected.observe(
-                len(aggregated_signatures)
-            )
+            metrics.lean_block_proposal_attestation_data_selected.observe(len(processed_att_data))
+            metrics.lean_block_proposal_aggregates_selected.observe(len(aggregated_signatures))
 
         # Create the final block with selected attestations.
         final_block = self.block_class(
