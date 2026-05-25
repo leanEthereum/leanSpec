@@ -83,7 +83,7 @@ test-consensus *args:
 # Canonical CI fixture run; contributors should use `uv run fill` directly.
 [group('tests'), private]
 fill-ci *args:
-    RAYON_NUM_THREADS=1 uv run --group test fill --fork=Lstar --clean -n auto --dist=worksteal "$@"
+    uv run --group test fill --fork=Lstar --clean -n auto --dist=worksteal "$@"
 
 # Run API conformance tests against an external client
 [group('tests')]
