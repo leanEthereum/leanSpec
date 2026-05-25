@@ -76,9 +76,14 @@ jobs:
       - name: Run tests
         run: just test
 
+  # coverage-gate, fill-tests and interop-tests run on macOS because the
+  # SNARK-heavy fixture filler measured faster on macos-latest than on
+  # ubuntu-latest, even with RAYON_NUM_THREADS=1 pinned to avoid xdist x
+  # rayon oversubscription. The Tests matrix above already covers
+  # ubuntu-latest for cross-platform safety.
   coverage-gate:
     name: Coverage gate - Python 3.12
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -104,7 +109,7 @@ jobs:
 
   fill-tests:
     name: Fill test fixtures - Python 3.14
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout leanSpec
         uses: actions/checkout@v4
@@ -128,7 +133,6 @@ jobs:
       - name: Fill test fixtures
         run: just fill-ci
 
-  # Interop tests stay on macOS until the wall-clock-driven slot ticker tolerates Ubuntu's noisier scheduler.
   interop-tests:
     name: Interop tests - Multi-node consensus
     runs-on: macos-latest

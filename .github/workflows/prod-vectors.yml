@@ -52,7 +52,7 @@ jobs:
     needs: [check, keygen]
     # Trick to run even when keygen was skipped, but not on failure or cancel.
     if: always() && !failure() && !cancelled()
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout leanSpec
