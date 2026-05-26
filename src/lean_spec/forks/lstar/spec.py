@@ -536,7 +536,12 @@ class LstarSpec(ForkProtocol):
                 # The block becomes justified
                 #
                 # The chain now considers this block part of its safe head.
-                latest_justified = target
+                # Only advance the checkpoint forward.
+                # Attestations within a block can resolve in any order, and
+                # an earlier target processed after a later one must not
+                # drag latest_justified backwards.
+                if target.slot > latest_justified.slot:
+                    latest_justified = target
                 justified_slots = justified_slots.with_justified(
                     finalized_slot,
                     target.slot,
