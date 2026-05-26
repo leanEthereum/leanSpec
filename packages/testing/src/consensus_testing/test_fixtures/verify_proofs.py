@@ -1,0 +1,290 @@
+"""Multi-signature proof verification fixture format."""
+
+from __future__ import annotations
+
+from typing import Any, ClassVar, Literal
+
+from pydantic import Field
+
+from lean_spec.forks.lstar.containers import AttestationData
+from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.xmss.aggregation import (
+    AggregationError,
+    TypeOneMultiSignature,
+)
+from lean_spec.subspecs.xmss.containers import PublicKey
+from lean_spec.types import (
+    AggregationBits,
+    Boolean,
+    ByteList512KiB,
+    Bytes32,
+    Checkpoint,
+    Slot,
+    ValidatorIndex,
+    ValidatorIndices,
+)
+
+from ..keys import XmssKeyManager
+from .base import BaseConsensusFixture
+
+
+class VerifyProofsTest(BaseConsensusFixture):
+    """Fixture for primitive multi-signature proof verification.
+
+    Generates a Type-1 proof for the configured validators signing the
+    attestation data and emits the public inputs alongside the proof
+    bytes.
+
+    To consume a vector, clients parse the SSZ containers, confirm
+    that the recomputed attestation root matches the message field,
+    run their Type-1 verifier against the emitted public keys,
+    message, slot, and proof, and check that the outcome matches
+    expect_valid.
+    """
+
+    format_name: ClassVar[str] = "verify_proofs_test"
+    description: ClassVar[str] = (
+        "Tests multi-signature proof verification against precomputed proof bytes."
+    )
+
+    proof_type: Literal["type_1"] = "type_1"
+    """Proof shape under test.
+
+    Type-1 covers many validators signing one message.
+    """
+
+    validator_ids: list[ValidatorIndex] = Field(exclude=True)
+    """Validators contributing raw signatures to the aggregate.
+
+    Used only during generation.
+    The resolved public keys, bitfield, and proof bytes are emitted
+    instead so clients consume a self-contained vector.
+    """
+
+    attestation_data: AttestationData
+    """The signed object.
+
+    Clients re-derive its hash tree root and must match the message
+    field below.
+    """
+
+    expect_valid: bool = True
+    """Whether clients must accept the emitted proof.
+
+    A vector with expect_valid set to false carries an intentionally
+    bad proof or input combination that every conformant client must
+    reject.
+    """
+
+    tamper: dict[str, Any] | None = Field(default=None, exclude=True)
+    """Optional post-generation mutation that produces a rejection vector.
+
+    Each operation rewrites part of how the spec binds inputs to the
+    proof.
+
+    Supported operations:
+
+    - ``{"operation": "rebind_with_alt_head_root"}``
+      Generate the proof bound to a different head root inside the
+      attestation data while emitting the honest attestation data,
+      message, slot, pubkeys, and bits.
+      The proof binding then disagrees with the emitted message.
+
+    - ``{"operation": "shift_emitted_slot"}``
+      Increment the emitted slot field by one while leaving the proof
+      bound to the original slot.
+      A client verifying against the emitted slot must reject.
+
+    - ``{"operation": "swap_public_key", "index": int,``
+      ``"with_validator_id": int}``
+      Replace the emitted public key at the given index with another
+      validator's attestation public key.
+      The proof was generated honestly, so the emitted set no longer
+      matches the keys the proof was bound to.
+
+    - ``{"operation": "shrink_aggregation_bits", "length": int}``
+      Truncate the emitted aggregation bits to the given length while
+      leaving the public key count untouched.
+      The verifier's pubkey-count check rejects on the mismatch.
+    """
+
+    # Output fields below are populated by make_fixture and complete
+    # the client-visible portion of the JSON vector.
+
+    public_keys: list[PublicKey] = []
+    """Attestation public keys for the participating validators.
+
+    Ordered by validator_ids order, matching the aggregation_bits mask.
+    """
+
+    aggregation_bits: AggregationBits | None = None
+    """Participation bitfield derived from validator_ids."""
+
+    message: Bytes32 | None = None
+    """Hash tree root of attestation_data, bound into the proof."""
+
+    slot: Slot | None = None
+    """Slot bound into the proof."""
+
+    proof: ByteList512KiB | None = None
+    """Aggregated proof bytes for clients to verify."""
+
+    def make_fixture(self) -> VerifyProofsTest:
+        """Generate a Type-1 proof, optionally tamper, and self-verify.
+
+        Returns:
+            A copy with the computed output fields populated.
+
+        Raises:
+            AssertionError: If self-verification of the emitted bundle
+                disagrees with expect_valid.
+            ValueError: If the tamper operation is unknown or
+                misconfigured.
+        """
+        key_manager = XmssKeyManager.shared()
+
+        emitted = self._generate(key_manager, self.attestation_data, self.validator_ids)
+        if self.tamper is not None:
+            emitted = self._apply_tamper(key_manager, emitted)
+
+        verified = self._verify_emitted(emitted)
+        if verified != self.expect_valid:
+            raise AssertionError(
+                f"Self-verification mismatch: verified={verified}, "
+                f"expect_valid={self.expect_valid}, "
+                f"tamper={self.tamper!r}"
+            )
+
+        return self.model_copy(
+            update={
+                "attestation_data": emitted["attestation_data"],
+                "public_keys": emitted["public_keys"],
+                "aggregation_bits": emitted["aggregation_bits"],
+                "message": emitted["message"],
+                "slot": emitted["slot"],
+                "proof": emitted["proof_bytes"],
+            }
+        )
+
+    def _generate(
+        self,
+        key_manager: XmssKeyManager,
+        attestation_data: AttestationData,
+        validator_ids: list[ValidatorIndex],
+    ) -> dict[str, Any]:
+        """Generate an honest Type-1 proof bundle for the given inputs."""
+        message = hash_tree_root(attestation_data)
+        slot = attestation_data.slot
+        public_keys = [key_manager.get_public_keys(vid)[0] for vid in validator_ids]
+        bits = ValidatorIndices(data=validator_ids).to_aggregation_bits()
+        signatures = [
+            key_manager.sign_attestation_data(vid, attestation_data) for vid in validator_ids
+        ]
+        proof_obj = TypeOneMultiSignature.aggregate(
+            children=[],
+            raw_xmss=list(zip(validator_ids, public_keys, signatures, strict=True)),
+            message=message,
+            slot=slot,
+        )
+        return {
+            "attestation_data": attestation_data,
+            "message": message,
+            "slot": slot,
+            "public_keys": public_keys,
+            "aggregation_bits": bits,
+            "proof_bytes": proof_obj.proof,
+        }
+
+    def _apply_tamper(
+        self,
+        key_manager: XmssKeyManager,
+        emitted: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Apply the configured tamper to the honest bundle."""
+        assert self.tamper is not None
+        operation = self.tamper.get("operation")
+
+        if operation == "rebind_with_alt_head_root":
+            return self._tamper_rebind_with_alt_head_root(key_manager, emitted)
+        if operation == "shift_emitted_slot":
+            return self._tamper_shift_emitted_slot(emitted)
+        if operation == "swap_public_key":
+            return self._tamper_swap_public_key(key_manager, emitted)
+        if operation == "shrink_aggregation_bits":
+            return self._tamper_shrink_aggregation_bits(emitted)
+
+        raise ValueError(f"Unknown tamper operation: {operation!r}")
+
+    def _tamper_rebind_with_alt_head_root(
+        self,
+        key_manager: XmssKeyManager,
+        emitted: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Regenerate the proof against an alternate head root.
+
+        The emitted attestation data, message, slot, pubkeys, and bits
+        stay honest.
+        Only the proof bytes carry a binding to the alternate root, so
+        the verifier rejects on the message mismatch.
+        """
+        honest_data: AttestationData = emitted["attestation_data"]
+        alt_head_root = Bytes32(b"\xee" * 32)
+        alt_data = honest_data.model_copy(
+            update={"head": Checkpoint(root=alt_head_root, slot=honest_data.slot)}
+        )
+        alt_bundle = self._generate(key_manager, alt_data, self.validator_ids)
+        return {**emitted, "proof_bytes": alt_bundle["proof_bytes"]}
+
+    def _tamper_shift_emitted_slot(self, emitted: dict[str, Any]) -> dict[str, Any]:
+        """Increment the emitted slot field while leaving the proof bound to the original."""
+        return {**emitted, "slot": Slot(int(emitted["slot"]) + 1)}
+
+    def _tamper_swap_public_key(
+        self,
+        key_manager: XmssKeyManager,
+        emitted: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Replace the emitted pubkey at index i with another validator's."""
+        index = int(self.tamper["index"])  # type: ignore[index]
+        with_validator_id = ValidatorIndex(int(self.tamper["with_validator_id"]))  # type: ignore[index]
+
+        public_keys: list[PublicKey] = list(emitted["public_keys"])
+        if not 0 <= index < len(public_keys):
+            raise ValueError(
+                f"swap_public_key index {index} out of range for {len(public_keys)} keys"
+            )
+
+        replacement = key_manager.get_public_keys(with_validator_id)[0]
+        public_keys[index] = replacement
+        return {**emitted, "public_keys": public_keys}
+
+    def _tamper_shrink_aggregation_bits(self, emitted: dict[str, Any]) -> dict[str, Any]:
+        """Truncate emitted aggregation_bits to a shorter length."""
+        length = int(self.tamper["length"])  # type: ignore[index]
+        bits: AggregationBits = emitted["aggregation_bits"]
+        if length < 0 or length >= len(bits.data):
+            raise ValueError(
+                f"shrink_aggregation_bits length {length} must be in [0, {len(bits.data)})"
+            )
+        truncated = AggregationBits(data=[Boolean(bool(b)) for b in bits.data[:length]])
+        return {**emitted, "aggregation_bits": truncated}
+
+    def _verify_emitted(self, emitted: dict[str, Any]) -> bool:
+        """Run the verifier against the emitted bundle.
+
+        Catches every failure mode a client would surface so the self-
+        check stays aligned with what a conformant client must do.
+        """
+        try:
+            candidate = TypeOneMultiSignature(
+                participants=emitted["aggregation_bits"],
+                proof=emitted["proof_bytes"],
+            )
+            candidate.verify(
+                emitted["public_keys"],
+                emitted["message"],
+                emitted["slot"],
+            )
+            return True
+        except (AggregationError, AssertionError, ValueError):
+            return False
