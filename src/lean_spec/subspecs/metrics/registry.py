@@ -45,6 +45,35 @@ STATE_TRANSITION_BUCKETS = (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4)
 REORG_DEPTH_BUCKETS = (1, 2, 3, 5, 7, 10, 20, 30, 50, 100)
 """Block count. Reorg depths above 10 are rare and signal network issues."""
 
+BLOCK_PROPOSAL_ATTESTATION_PHASE_BUCKETS = (
+    0.001,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1,
+    2,
+    4,
+    8,
+)
+"""Seconds. Phase-level time inside block-proposal attestation selection."""
+
+BLOCK_PROPOSAL_ATTESTATION_DATA_BUCKETS = (0, 1, 2, 4, 8, 16, 32)
+"""Distinct AttestationData entries selected per proposal build."""
+
+BLOCK_PROPOSAL_AGGREGATES_BUCKETS = (0, 1, 2, 4, 8, 16, 32, 64, 128)
+"""Aggregated signature proofs in the proposal result after compaction."""
+
+BLOCK_PROPOSAL_ATTESTATION_BUILD_PHASES = (
+    "select_payloads",
+    "compact",
+    "stf_simulate",
+)
+"""Phase labels for lean_block_proposal_attestation_build_phase_seconds."""
+
 # Section labels for attestation aggregate coverage gauges. These match the
 # names printed in slot/report logs: timely, late, block, combined,
 # agg_start_new, proposal_payloads, proposal_gossip, and proposal_combined.
@@ -153,6 +182,18 @@ class MetricsRegistry:
     """Number of covered subnets in attestation aggregate reports, by section."""
     lean_attestation_aggregate_coverage_diff_validators: Gauge | _NoOpMetric = _NOOP
     """Validator coverage delta between block payloads and timely pre-merge payloads."""
+
+    # Block proposal attestation selection (build_block fixed-point loop)
+    lean_block_proposal_attestation_build_phase_seconds: Histogram | _NoOpMetric = _NOOP
+    """Phase-level time in block-proposal attestation selection."""
+    lean_block_proposal_attestation_builds_total: Counter | _NoOpMetric = _NOOP
+    """Completed block-proposal attestation selection runs."""
+    lean_block_proposal_child_payloads_consumed_total: Counter | _NoOpMetric = _NOOP
+    """Child aggregated payloads selected during greedy proof picking."""
+    lean_block_proposal_attestation_data_selected: Histogram | _NoOpMetric = _NOOP
+    """Distinct AttestationData entries in the proposal block body."""
+    lean_block_proposal_aggregates_selected: Histogram | _NoOpMetric = _NOOP
+    """Aggregated signature proofs in the proposal result after compaction."""
 
     # State transition
     lean_latest_justified_slot: Gauge | _NoOpMetric = _NOOP
@@ -315,6 +356,45 @@ class MetricsRegistry:
             self.lean_attestation_aggregate_coverage_diff_validators.labels(
                 direction=direction,
             ).set(0)
+
+        # Block proposal attestation selection (build_block / getProposalAttestations)
+        self.lean_block_proposal_attestation_build_phase_seconds = Histogram(
+            "lean_block_proposal_attestation_build_phase_seconds",
+            (
+                "Phase-level time in block-proposal attestation selection: "
+                "select_payloads (greedy child-payload pick), compact "
+                "(recursive merge of proofs per AttestationData), "
+                "stf_simulate (candidate block STF)."
+            ),
+            ["phase"],
+            buckets=BLOCK_PROPOSAL_ATTESTATION_PHASE_BUCKETS,
+            registry=reg,
+        )
+        self.lean_block_proposal_attestation_builds_total = Counter(
+            "lean_block_proposal_attestation_builds_total",
+            "Completed block-proposal attestation selection runs (one per proposal attempt).",
+            registry=reg,
+        )
+        self.lean_block_proposal_child_payloads_consumed_total = Counter(
+            "lean_block_proposal_child_payloads_consumed_total",
+            (
+                "Child aggregated payloads selected during greedy proof picking "
+                "(before recursive compaction)."
+            ),
+            registry=reg,
+        )
+        self.lean_block_proposal_attestation_data_selected = Histogram(
+            "lean_block_proposal_attestation_data_selected",
+            "Distinct AttestationData entries in the proposal block body.",
+            buckets=BLOCK_PROPOSAL_ATTESTATION_DATA_BUCKETS,
+            registry=reg,
+        )
+        self.lean_block_proposal_aggregates_selected = Histogram(
+            "lean_block_proposal_aggregates_selected",
+            "Aggregated signature proofs in the proposal result after compaction.",
+            buckets=BLOCK_PROPOSAL_AGGREGATES_BUCKETS,
+            registry=reg,
+        )
 
         # State transition (leanMetrics: State Transition Metrics)
         self.lean_latest_justified_slot = Gauge(

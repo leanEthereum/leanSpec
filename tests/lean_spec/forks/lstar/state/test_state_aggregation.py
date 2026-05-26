@@ -141,6 +141,41 @@ def test_aggregate_with_empty_attestation_signatures(
     assert results == []
 
 
+def test_aggregate_skips_single_gossip_sig_with_no_children(
+    container_key_manager: XmssKeyManager,
+    spec: LstarSpec,
+) -> None:
+    """Trivial 1 raw sig + 0 children case: aggregate returns nothing.
+
+    A single-validator "aggregate" carries no information the raw gossip
+    sig doesn't already carry — the sig is on the per-subnet
+    `attestation_signatures` gossip topic at sign time, so any peer
+    aggregator can fold it in as a raw entry next round. The recursive
+    STARK prover is constant-cost in input size, so building a
+    1-validator proof spends the full prover budget for zero consensus
+    signal. The unconsumed gossip sig must remain in
+    `store.attestation_signatures` so it is folded in by a future round
+    once another sig or a child shows up.
+    """
+    store = make_store(num_validators=2, key_manager=container_key_manager)
+    source = Checkpoint(root=make_bytes32(1), slot=Slot(0))
+    att_data = make_attestation_data_simple(
+        Slot(2), make_bytes32(3), make_bytes32(4), source=source
+    )
+    sig_entry = AttestationSignatureEntry(
+        ValidatorIndex(0),
+        container_key_manager.sign_attestation_data(ValidatorIndex(0), att_data),
+    )
+    attestation_signatures = {att_data: {sig_entry}}
+
+    store = store.model_copy(update={"attestation_signatures": attestation_signatures})
+    updated_store, results = spec.aggregate(store)
+
+    assert results == []
+    # The lone sig must survive untouched for a later, non-trivial pass.
+    assert updated_store.attestation_signatures == attestation_signatures
+
+
 def test_aggregated_signatures_with_multiple_data_groups(
     container_key_manager: XmssKeyManager,
     spec: LstarSpec,

@@ -1,6 +1,7 @@
 """Lstar fork — identity and construction facade."""
 
 import math
+import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence, Set as AbstractSet
 from typing import Any, ClassVar
@@ -32,6 +33,7 @@ from lean_spec.subspecs.chain.config import (
     JUSTIFICATION_LOOKBACK_SLOTS,
     MAX_ATTESTATIONS_DATA,
 )
+from lean_spec.subspecs.metrics.registry import registry as metrics
 from lean_spec.subspecs.observability import (
     observe_on_attestation,
     observe_on_block,
@@ -707,8 +709,10 @@ class LstarSpec(ForkProtocol):
             )
 
             processed_att_data: set[AttestationData] = set()
+            child_payloads_consumed = 0
 
             while True:
+                select_start = time.perf_counter()
                 found_entries = False
 
                 for att_data, proofs in sorted(
@@ -764,6 +768,7 @@ class LstarSpec(ForkProtocol):
                     found_entries = True
 
                     selected, _ = TypeOneMultiSignature.select_greedily(proofs)
+                    child_payloads_consumed += len(selected)
                     aggregated_signatures.extend(selected)
                     for proof in selected:
                         aggregated_attestations.append(
@@ -773,8 +778,14 @@ class LstarSpec(ForkProtocol):
                             )
                         )
 
+                metrics.lean_block_proposal_attestation_build_phase_seconds.labels(
+                    phase="select_payloads",
+                ).observe(time.perf_counter() - select_start)
+
                 if not found_entries:
                     break
+
+                stf_start = time.perf_counter()
 
                 # Build candidate block and check if justification changed.
                 candidate_block = self.block_class(
@@ -799,11 +810,17 @@ class LstarSpec(ForkProtocol):
                     post_state.latest_justified != current_justified
                     or post_state.latest_finalized.slot != current_finalized_slot
                 ):
+                    metrics.lean_block_proposal_attestation_build_phase_seconds.labels(
+                        phase="stf_simulate",
+                    ).observe(time.perf_counter() - stf_start)
                     current_justified = post_state.latest_justified
                     current_justified_slots = post_state.justified_slots
                     current_finalized_slot = post_state.latest_finalized.slot
                     continue
 
+                metrics.lean_block_proposal_attestation_build_phase_seconds.labels(
+                    phase="stf_simulate",
+                ).observe(time.perf_counter() - stf_start)
                 break
 
             # Compact: merge all proofs sharing the same AttestationData into one
@@ -812,6 +829,7 @@ class LstarSpec(ForkProtocol):
             # During the fixed-point loop above, multiple proofs may have been
             # selected for the same AttestationData across iterations. Group them
             # and merge each group into a single recursive proof.
+            compact_start = time.perf_counter()
             proof_groups: dict[AttestationData, list[TypeOneMultiSignature]] = {}
             for att, sig in zip(aggregated_attestations, aggregated_signatures, strict=True):
                 proof_groups.setdefault(att.data, []).append(sig)
@@ -848,6 +866,14 @@ class LstarSpec(ForkProtocol):
                         aggregation_bits=sig.participants, data=att_data
                     )
                 )
+
+            metrics.lean_block_proposal_attestation_build_phase_seconds.labels(
+                phase="compact",
+            ).observe(time.perf_counter() - compact_start)
+            metrics.lean_block_proposal_attestation_builds_total.inc()
+            metrics.lean_block_proposal_child_payloads_consumed_total.inc(child_payloads_consumed)
+            metrics.lean_block_proposal_attestation_data_selected.observe(len(processed_att_data))
+            metrics.lean_block_proposal_aggregates_selected.observe(len(aggregated_signatures))
 
         # Create the final block with selected attestations.
         final_block = self.block_class(
@@ -1609,12 +1635,26 @@ class LstarSpec(ForkProtocol):
         # The head and attestation pools remain unchanged.
         return store.model_copy(update={"safe_target": safe_target})
 
-    def aggregate(self, store: LstarStore) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
+    def aggregate(
+        self,
+        store: LstarStore,
+        *,
+        skip_trivial_inputs: bool = True,
+    ) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
         """Turn raw validator votes into compact aggregated attestations.
 
         Validators cast individual signatures over gossip. Before those
         votes can influence fork choice or be included in a block, they
         must be combined into compact cryptographic proofs.
+
+        ``skip_trivial_inputs`` (default ``True``) is an **aggregator-role**
+        policy: when set, the ``1 raw + 0 children`` shape is skipped because
+        a single-validator "aggregate" carries no consensus signal beyond the
+        raw gossip sig already on the network (see issue #747). Interval-2
+        aggregator ticks use the default. Block-building callers that must
+        fold every chosen ``att_data`` into ``latest_known_aggregated_payloads``
+        (including lone gossip sigs) pass ``skip_trivial_inputs=False`` —
+        see ``BlockSpec`` in the consensus-testing filler.
 
         The store holds three pools of attestation evidence:
 
@@ -1682,11 +1722,17 @@ class LstarSpec(ForkProtocol):
                 if e.validator_id not in covered
             ]
 
-            # The aggregation layer enforces a minimum: either at least one
-            # raw signature, or at least two child proofs to merge.
-            #
-            # A lone child proof is already a valid proof — nothing to do.
+            # Always skip cases where there is nothing to aggregate:
+            #   - 0 raw + 0 children: nothing to aggregate.
+            #   - 0 raw + 1 child:    a lone child proof is already valid.
             if not raw_entries and len(child_proofs) < 2:
+                continue
+
+            # Aggregator-role optimization (``skip_trivial_inputs=True``, the
+            # default): skip ``1 raw + 0 children``. Block-building callers
+            # pass ``skip_trivial_inputs=False`` so every gossip sig they
+            # seeded is folded into ``latest_known_aggregated_payloads``.
+            if skip_trivial_inputs and not child_proofs and len(raw_entries) <= 1:
                 continue
 
             # Encode raw signers as a compact bitfield when present.

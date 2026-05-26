@@ -523,7 +523,7 @@ class BlockSpec(CamelModel):
         # Aggregation runs on a local clone: gossip pools mutate here, but the
         # caller's gossip-signature view must not be consumed by this simulated
         # build. Only the freshly aggregated Type-1 payloads propagate back.
-        aggregation_store, _ = spec.aggregate(store)
+        aggregation_store, _ = spec.aggregate(store, skip_trivial_inputs=False)
         merged_store = spec.accept_new_attestations(aggregation_store)
 
         # Build the block through the spec's State.build_block().
