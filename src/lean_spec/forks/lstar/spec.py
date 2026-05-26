@@ -1609,12 +1609,26 @@ class LstarSpec(ForkProtocol):
         # The head and attestation pools remain unchanged.
         return store.model_copy(update={"safe_target": safe_target})
 
-    def aggregate(self, store: LstarStore) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
+    def aggregate(
+        self,
+        store: LstarStore,
+        *,
+        skip_trivial_inputs: bool = True,
+    ) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
         """Turn raw validator votes into compact aggregated attestations.
 
         Validators cast individual signatures over gossip. Before those
         votes can influence fork choice or be included in a block, they
         must be combined into compact cryptographic proofs.
+
+        ``skip_trivial_inputs`` (default ``True``) is an **aggregator-role**
+        policy: when set, the ``1 raw + 0 children`` shape is skipped because
+        a single-validator "aggregate" carries no consensus signal beyond the
+        raw gossip sig already on the network (see issue #747). Interval-2
+        aggregator ticks use the default. Block-building callers that must
+        fold every chosen ``att_data`` into ``latest_known_aggregated_payloads``
+        (including lone gossip sigs) pass ``skip_trivial_inputs=False`` —
+        see ``BlockSpec`` in the consensus-testing filler.
 
         The store holds three pools of attestation evidence:
 
@@ -1682,11 +1696,17 @@ class LstarSpec(ForkProtocol):
                 if e.validator_id not in covered
             ]
 
-            # The aggregation layer enforces a minimum: either at least one
-            # raw signature, or at least two child proofs to merge.
-            #
-            # A lone child proof is already a valid proof — nothing to do.
+            # Always skip cases where there is nothing to aggregate:
+            #   - 0 raw + 0 children: nothing to aggregate.
+            #   - 0 raw + 1 child:    a lone child proof is already valid.
             if not raw_entries and len(child_proofs) < 2:
+                continue
+
+            # Aggregator-role optimization (``skip_trivial_inputs=True``, the
+            # default): skip ``1 raw + 0 children``. Block-building callers
+            # pass ``skip_trivial_inputs=False`` so every gossip sig they
+            # seeded is folded into ``latest_known_aggregated_payloads``.
+            if skip_trivial_inputs and not child_proofs and len(raw_entries) <= 1:
                 continue
 
             # Encode raw signers as a compact bitfield when present.

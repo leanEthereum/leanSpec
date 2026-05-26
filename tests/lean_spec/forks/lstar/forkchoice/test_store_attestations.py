@@ -592,12 +592,33 @@ class TestAggregateCommitteeSignatures:
             source=att_data_1.source,
         )
 
-        # Validators 1 attests to data_1, validator 2 attests to data_2
-        sig_1 = key_manager.sign_attestation_data(ValidatorIndex(1), att_data_1)
-        sig_2 = key_manager.sign_attestation_data(ValidatorIndex(2), att_data_2)
+        # Validators 1, 3 attest to data_1; validators 2, 0 attest to data_2.
+        # Two distinct sigs per att_data is the minimum non-trivial shape:
+        # `aggregate()` skips the `1 raw + 0 children` case (a single-validator
+        # "aggregate" carries no information the raw gossip sig doesn't
+        # already carry), so this test must seed at least two raw sigs per
+        # `att_data` for the per-data grouping it is asserting.
         attestation_signatures = {
-            att_data_1: {AttestationSignatureEntry(ValidatorIndex(1), sig_1)},
-            att_data_2: {AttestationSignatureEntry(ValidatorIndex(2), sig_2)},
+            att_data_1: {
+                AttestationSignatureEntry(
+                    ValidatorIndex(1),
+                    key_manager.sign_attestation_data(ValidatorIndex(1), att_data_1),
+                ),
+                AttestationSignatureEntry(
+                    ValidatorIndex(3),
+                    key_manager.sign_attestation_data(ValidatorIndex(3), att_data_1),
+                ),
+            },
+            att_data_2: {
+                AttestationSignatureEntry(
+                    ValidatorIndex(2),
+                    key_manager.sign_attestation_data(ValidatorIndex(2), att_data_2),
+                ),
+                AttestationSignatureEntry(
+                    ValidatorIndex(0),
+                    key_manager.sign_attestation_data(ValidatorIndex(0), att_data_2),
+                ),
+            },
         }
 
         store = base_store.model_copy(
