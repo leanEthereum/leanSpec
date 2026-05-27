@@ -8,9 +8,12 @@ from lean_spec.forks.lstar import AttestationSignatureEntry
 from lean_spec.forks.lstar.containers.attestation import AttestationData
 from lean_spec.forks.lstar.containers.block import Block, BlockBody
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.state import State
 from lean_spec.forks.lstar.containers.state.types import JustifiedSlots
 from lean_spec.forks.lstar.spec import LstarSpec, _Tier
+from lean_spec.subspecs.chain.config import MAX_ATTESTATIONS_DATA
 from lean_spec.subspecs.ssz.hash import hash_tree_root
+from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import Boolean, Bytes32, Checkpoint, Slot, ValidatorIndex, ValidatorIndices
 from tests.lean_spec.helpers import (
     make_aggregated_proof,
@@ -19,6 +22,40 @@ from tests.lean_spec.helpers import (
     make_keyed_genesis_state,
     make_store,
 )
+
+
+def _build_empty_chain(
+    spec: LstarSpec,
+    key_manager: XmssKeyManager,
+    num_validators: int,
+    num_blocks: int,
+) -> tuple[State, list[Bytes32]]:
+    """Build genesis -> block_1 -> ... -> block_{num_blocks} with empty bodies.
+
+    Returns the head state and a list of block roots indexed by slot, where
+    index 0 is the genesis root and index k is the root of the slot-k block.
+    """
+    state = make_keyed_genesis_state(num_validators, key_manager)
+    roots: list[Bytes32] = [
+        hash_tree_root(
+            state.latest_block_header.model_copy(update={"state_root": hash_tree_root(state)})
+        )
+    ]
+    for slot in range(1, num_blocks + 1):
+        block = Block(
+            slot=Slot(slot),
+            proposer_index=ValidatorIndex(slot % num_validators),
+            parent_root=roots[-1],
+            state_root=Bytes32.zero(),
+            body=BlockBody(attestations=AggregatedAttestations(data=[])),
+        )
+        state = spec.process_block(spec.process_slots(state, Slot(slot)), block)
+        roots.append(
+            hash_tree_root(
+                state.latest_block_header.model_copy(update={"state_root": hash_tree_root(state)})
+            )
+        )
+    return state, roots
 
 
 def test_aggregated_signatures_prefers_full_gossip_payload(
@@ -567,3 +604,159 @@ def test_entry_passes_filters_accepts_valid_gap_closer() -> None:
         projected_justified_slots=JustifiedSlots(data=[Boolean(False), Boolean(False)]),
         projected_finalized_slot=Slot(0),
     )
+
+
+def test_build_block_cascades_projected_justification_across_rounds(
+    container_key_manager: XmssKeyManager,
+    spec: LstarSpec,
+) -> None:
+    # Round 1 selects A (source slot 0, target slot 1), projecting slot 1
+    # justified in-loop. B has source slot 1, which is NOT justified against
+    # the initial state; the projection admits B in round 2 so the proposer
+    # packs both attestations without re-running the state transition.
+    num_validators = 4
+    head_state, roots = _build_empty_chain(spec, container_key_manager, num_validators, 2)
+    parent_root = roots[2]  # head is the slot-2 block
+
+    all_validators = [ValidatorIndex(i) for i in range(num_validators)]
+    att_a = AttestationData(
+        slot=Slot(3),
+        head=Checkpoint(root=roots[0], slot=Slot(0)),
+        target=Checkpoint(root=roots[1], slot=Slot(1)),
+        source=Checkpoint(root=roots[0], slot=Slot(0)),
+    )
+    att_b = AttestationData(
+        slot=Slot(3),
+        head=Checkpoint(root=roots[0], slot=Slot(0)),
+        target=Checkpoint(root=roots[2], slot=Slot(2)),
+        source=Checkpoint(root=roots[1], slot=Slot(1)),
+    )
+    proof_a = make_aggregated_proof(container_key_manager, all_validators, att_a)
+    proof_b = make_aggregated_proof(container_key_manager, all_validators, att_b)
+
+    block, post_state, _atts, _sigs = spec.build_block(
+        head_state,
+        slot=Slot(3),
+        proposer_index=ValidatorIndex(3),
+        parent_root=parent_root,
+        known_block_roots={roots[0], roots[1], roots[2]},
+        aggregated_payloads={att_a: {proof_a}, att_b: {proof_b}},
+    )
+
+    target_slots = {att.data.target.slot for att in block.body.attestations.data}
+    assert Slot(1) in target_slots, f"A (target slot 1) missing: {target_slots}"
+    assert Slot(2) in target_slots, (
+        f"B (target slot 2) missing despite cascading projection: {target_slots}"
+    )
+    # Both attestations justify their targets; the final STF lands on slot 2.
+    assert post_state.latest_justified.slot == Slot(2)
+
+
+def test_build_block_absorbs_older_but_justified_source(
+    container_key_manager: XmssKeyManager,
+    spec: LstarSpec,
+) -> None:
+    # Drive the head's latest_justified to slot 1, then feed a pool attestation
+    # whose source is genesis (slot 0, OLDER than latest_justified). The
+    # is_slot_justified(source.slot) filter still accepts it (slot 0 is behind
+    # the finalized boundary), so it is absorbed and justifies slot 2.
+    num_validators = 4
+    supermajority = [ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)]  # 3/4 >= ceil(8/3)
+    head_state, roots = _build_empty_chain(spec, container_key_manager, num_validators, 2)
+
+    # Justify slot 1 on the head chain by processing a slot-3 block whose body
+    # carries 3/4 votes for the slot-1 block.
+    just_att = AttestationData(
+        slot=Slot(3),
+        head=Checkpoint(root=roots[1], slot=Slot(1)),
+        target=Checkpoint(root=roots[1], slot=Slot(1)),
+        source=Checkpoint(root=roots[0], slot=Slot(0)),
+    )
+    just_proof = make_aggregated_proof(container_key_manager, supermajority, just_att)
+    justifying_block = Block(
+        slot=Slot(3),
+        proposer_index=ValidatorIndex(3),
+        parent_root=roots[2],
+        state_root=Bytes32.zero(),
+        body=BlockBody(
+            attestations=AggregatedAttestations(
+                data=[
+                    spec.aggregated_attestation_class(
+                        aggregation_bits=just_proof.participants, data=just_att
+                    )
+                ]
+            )
+        ),
+    )
+    head_state = spec.process_block(spec.process_slots(head_state, Slot(3)), justifying_block)
+    block_3_root = hash_tree_root(
+        head_state.latest_block_header.model_copy(
+            update={"state_root": hash_tree_root(head_state)}
+        )
+    )
+    assert head_state.latest_justified.slot == Slot(1)
+
+    # Pool attestation: source = genesis (older than justified slot 1),
+    # target = slot 2. Build a block at slot 4 on the slot-3 head.
+    gap_att = AttestationData(
+        slot=Slot(4),
+        head=Checkpoint(root=roots[0], slot=Slot(0)),
+        target=Checkpoint(root=roots[2], slot=Slot(2)),
+        source=Checkpoint(root=roots[0], slot=Slot(0)),
+    )
+    gap_proof = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(i) for i in range(num_validators)], gap_att
+    )
+
+    block, post_state, _atts, _sigs = spec.build_block(
+        head_state,
+        slot=Slot(4),
+        proposer_index=ValidatorIndex(0),
+        parent_root=block_3_root,
+        known_block_roots={roots[0], roots[1], roots[2], block_3_root},
+        aggregated_payloads={gap_att: {gap_proof}},
+    )
+
+    targets = {att.data.target for att in block.body.attestations.data}
+    assert gap_att.target in targets, f"missing gap-closing attestation: {targets}"
+    assert post_state.latest_justified.slot == Slot(2)
+
+
+def test_build_block_caps_attestation_data_entries(
+    container_key_manager: XmssKeyManager,
+    spec: LstarSpec,
+) -> None:
+    # Nine distinct entries each target a different justifiable slot with a single
+    # voter. With 8 validators the supermajority is 6, so no individual entry
+    # justifies its target (1/8 < 2/3), and selection stops at MAX_ATTESTATIONS_DATA (8).
+    #
+    # Justifiable slots after slot 0: 1, 2, 3, 4, 5, 6, 9, 12, 16 (first nine).
+    # Build chain to slot 16 so all target roots exist on-chain.
+    num_validators = 8
+    target_slots = [1, 2, 3, 4, 5, 6, 9, 12, 16]  # 9 slots, all justifiable after slot 0
+    head_state, roots = _build_empty_chain(spec, container_key_manager, num_validators, 16)
+    parent_root = roots[16]  # head is the slot-16 block
+
+    aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {}
+    for t in target_slots:
+        # One voter per entry so no target ever reaches supermajority (1/8 < 2/3).
+        att_data = AttestationData(
+            slot=Slot(17),  # attestation slot 17, well within max_slot=20
+            head=Checkpoint(root=roots[t], slot=Slot(t)),
+            target=Checkpoint(root=roots[t], slot=Slot(t)),
+            source=Checkpoint(root=roots[0], slot=Slot(0)),
+        )
+        proof = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
+        aggregated_payloads[att_data] = {proof}
+
+    block, _post_state, _atts, _sigs = spec.build_block(
+        head_state,
+        slot=Slot(17),
+        proposer_index=ValidatorIndex(1),
+        parent_root=parent_root,
+        known_block_roots={roots[s] for s in range(17)},
+        aggregated_payloads=aggregated_payloads,
+    )
+
+    distinct_data = {att.data for att in block.body.attestations.data}
+    assert len(distinct_data) == int(MAX_ATTESTATIONS_DATA)
