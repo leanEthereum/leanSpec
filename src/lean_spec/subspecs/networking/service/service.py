@@ -76,9 +76,6 @@ class NetworkService:
     is_aggregator: bool = field(default=False)
     """Whether this node functions as an aggregator."""
 
-    aggregate_subnet_ids: tuple[SubnetId, ...] = field(default_factory=tuple)
-    """Explicit attestation subnets to subscribe and aggregate from (requires is_aggregator)."""
-
     _running: bool = field(default=False, repr=False)
     """Whether the event loop is running."""
 

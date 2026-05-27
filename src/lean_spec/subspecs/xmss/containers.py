@@ -1,7 +1,5 @@
 """Generalized XMSS containers."""
 
-from __future__ import annotations
-
 from typing import override
 
 from pydantic import field_serializer, field_validator, model_serializer
@@ -161,7 +159,7 @@ class KeyPair(StrictBaseModel):
     @field_serializer("public_key", "secret_key", when_used="json")
     def _encode_hex(self, value: PublicKey | SecretKey) -> str:
         """Emit each half as plain hex in JSON mode only."""
-        return value.to_hex()
+        return value.encode_bytes().hex()
 
 
 class ValidatorKeyPair(StrictBaseModel):

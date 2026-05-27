@@ -27,6 +27,7 @@ from lean_spec.forks.lstar.containers.state.types import (
 )
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.api import ApiServerConfig
+from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import (
     ATTESTATION_COMMITTEE_COUNT,
     HISTORICAL_ROOTS_LIMIT,
@@ -34,11 +35,17 @@ from lean_spec.subspecs.chain.config import (
     SECONDS_PER_SLOT,
 )
 from lean_spec.subspecs.node import Node, NodeConfig
+from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.storage.sqlite import SQLiteDatabase
 from lean_spec.subspecs.validator import ValidatorRegistry
 from lean_spec.subspecs.validator.registry import ValidatorEntry
 from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
-from tests.lean_spec.helpers import MockEventSource, MockNetworkRequester, make_validators
+from tests.lean_spec.helpers import (
+    MockEventSource,
+    MockNetworkRequester,
+    make_genesis_state,
+    make_validators,
+)
 
 GENESIS_TIME = Uint64(1704067200)
 
@@ -236,9 +243,9 @@ class TestDatabaseLoading:
         assert store is not None
 
         # Wall clock: 100s * 5 intervals / 4 seconds = 125 intervals.
-        expected_wall = Uint64(100) * INTERVALS_PER_SLOT // SECONDS_PER_SLOT
+        expected_wall = Interval(100 * int(INTERVALS_PER_SLOT) // int(SECONDS_PER_SLOT))
         # Block-based: slot 10 * 5 = 50 intervals.
-        expected_block = test_slot * INTERVALS_PER_SLOT
+        expected_block = Interval(int(test_slot) * int(INTERVALS_PER_SLOT))
         assert expected_wall > expected_block
         assert store.time == expected_wall
 
@@ -259,7 +266,7 @@ class TestDatabaseLoading:
         assert store is not None
 
         # Block-based: slot 100 * 5 = 500 intervals.
-        expected_block = test_slot * INTERVALS_PER_SLOT
+        expected_block = Interval(int(test_slot) * int(INTERVALS_PER_SLOT))
         assert store.time == expected_block
 
 
@@ -403,7 +410,7 @@ class TestDatabaseGenesisTimeFallback:
 
         # Same math as test_successful_load_uses_wall_clock_time:
         # wall clock 100s * 5 intervals / 4 seconds = 125 intervals.
-        expected_wall = Uint64(100) * INTERVALS_PER_SLOT // SECONDS_PER_SLOT
+        expected_wall = Interval(100 * int(INTERVALS_PER_SLOT) // int(SECONDS_PER_SLOT))
         assert store.time == expected_wall
 
     def test_zero_genesis_time_when_database_returns_none(self) -> None:
@@ -421,8 +428,8 @@ class TestDatabaseGenesisTimeFallback:
 
         assert store is not None
         # With genesis_time=0, wall clock = 200s * INTERVALS_PER_SLOT / SECONDS_PER_SLOT
-        expected_wall = Uint64(200) * INTERVALS_PER_SLOT // SECONDS_PER_SLOT
-        expected_block = test_slot * INTERVALS_PER_SLOT
+        expected_wall = Interval(200 * int(INTERVALS_PER_SLOT) // int(SECONDS_PER_SLOT))
+        expected_block = Interval(int(test_slot) * int(INTERVALS_PER_SLOT))
         assert store.time == max(expected_wall, expected_block)
 
 
@@ -730,3 +737,32 @@ class TestNodeIntegration:
 
         head_block = node.sync_service.store.blocks[node.sync_service.store.head]
         assert head_block.slot == Slot(0)
+
+
+class TestNodeFromGenesisAnchorStore:
+    """Regression guard for the anchor_store wiring on NodeConfig."""
+
+    def test_anchor_store_is_used_when_provided(self, spec: LstarSpec) -> None:
+        """The node adopts the provided anchor store rather than synthesising one."""
+        state = make_genesis_state(num_validators=3, genesis_time=1000)
+        anchor_block = Block(
+            slot=state.latest_block_header.slot,
+            proposer_index=state.latest_block_header.proposer_index,
+            parent_root=state.latest_block_header.parent_root,
+            state_root=hash_tree_root(state),
+            body=BlockBody(attestations=AggregatedAttestations(data=[])),
+        )
+        anchor_store = spec.create_store(state, anchor_block, None)
+
+        config = NodeConfig(
+            genesis_time=Uint64(1000),
+            validators=state.validators,
+            event_source=MockEventSource(),
+            network=MockNetworkRequester(),
+            fork=spec,
+            anchor_store=anchor_store,
+        )
+
+        node = Node.from_genesis(config)
+
+        assert node.store is anchor_store

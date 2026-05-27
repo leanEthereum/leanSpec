@@ -14,8 +14,6 @@ from .compress import compress, max_compressed_length
 from .decompress import (
     SnappyDecompressionError,
     decompress,
-    get_uncompressed_length,
-    is_valid_compressed_data,
 )
 from .framing import frame_compress, frame_decompress
 
@@ -28,8 +26,6 @@ __all__ = [
     "frame_decompress",
     # Utilities
     "max_compressed_length",
-    "get_uncompressed_length",
-    "is_valid_compressed_data",
     # Exceptions
     "SnappyDecompressionError",
 ]

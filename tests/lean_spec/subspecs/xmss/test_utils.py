@@ -49,7 +49,7 @@ def test_int_to_base_p_roundtrip() -> None:
 
     # Decompose the integer into base-P limbs using the function under test.
     decomposed_limbs_fp = int_to_base_p(original_value, num_limbs)
-    decomposed_limbs = [fp.value for fp in decomposed_limbs_fp]
+    decomposed_limbs = [int(fp) for fp in decomposed_limbs_fp]
 
     # Reconstruct the integer from the decomposed limbs.
     reconstructed_value = sum(val * (P**i) for i, val in enumerate(decomposed_limbs))

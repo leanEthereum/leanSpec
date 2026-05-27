@@ -11,8 +11,6 @@ Each attestation specifies:
 Attestations can be aggregated by common data to save space and bandwidth.
 """
 
-from __future__ import annotations
-
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.subspecs.xmss.containers import Signature
 from lean_spec.types import AggregationBits, Checkpoint, Container, Slot, ValidatorIndex

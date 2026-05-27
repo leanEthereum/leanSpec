@@ -478,25 +478,13 @@ class TestNetworkServiceInit:
         )
         assert svc.is_aggregator is False
 
-    def test_default_aggregate_subnet_ids(self, peer_id: PeerId) -> None:
-        """aggregate_subnet_ids defaults to an empty tuple."""
-        source = MockEventSource(events=[])
-        sync_service = create_mock_sync_service(peer_id)
-        svc = NetworkService(
-            sync_service=sync_service,
-            event_source=source,
-        )
-        assert svc.aggregate_subnet_ids == ()
-
-    def test_custom_aggregator_fields(self, peer_id: PeerId) -> None:
-        """Constructor accepts is_aggregator and aggregate_subnet_ids."""
+    def test_custom_is_aggregator(self, peer_id: PeerId) -> None:
+        """Constructor accepts is_aggregator."""
         source = MockEventSource(events=[])
         sync_service = create_mock_sync_service(peer_id)
         svc = NetworkService(
             sync_service=sync_service,
             event_source=source,
             is_aggregator=True,
-            aggregate_subnet_ids=(SubnetId(0), SubnetId(3)),
         )
         assert svc.is_aggregator is True
-        assert svc.aggregate_subnet_ids == (SubnetId(0), SubnetId(3))

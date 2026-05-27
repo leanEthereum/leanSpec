@@ -18,7 +18,7 @@ from lean_spec.types import Bytes32, Slot, ValidatorIndex
 pytestmark = pytest.mark.valid_until("Lstar")
 
 
-SLOT_3_BOUNDARY_INTERVAL = int(Interval.from_slot(Slot(3)) - GOSSIP_DISPARITY_INTERVALS)
+SLOT_3_BOUNDARY_INTERVAL = int(Interval.from_slot(Slot(3))) - int(GOSSIP_DISPARITY_INTERVALS)
 """Latest local interval that still admits a slot-3 aggregate."""
 
 SLOT_3_JUST_BEYOND_BOUNDARY_INTERVAL = SLOT_3_BOUNDARY_INTERVAL - 1

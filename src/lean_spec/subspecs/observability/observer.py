@@ -42,7 +42,7 @@ class SpecObserver(Protocol):
         """Report the wall time of validating and integrating a gossip attestation."""
 
 
-class NullObserver:
+class _NullObserver:
     """
     Default observer that discards every event.
 
@@ -60,11 +60,11 @@ class NullObserver:
         """Accept and discard."""
 
 
-_observer: SpecObserver = NullObserver()
+_observer: SpecObserver = _NullObserver()
 """
 Process-wide observer singleton.
 
-Starts as a NullObserver so spec imports are side-effect-free.
+Starts as a _NullObserver so spec imports are side-effect-free.
 Replaced by the client at startup via set_observer.
 """
 
@@ -79,16 +79,6 @@ def set_observer(observer: SpecObserver) -> None:
     """
     global _observer
     _observer = observer
-
-
-def get_observer() -> SpecObserver:
-    """
-    Return the currently registered observer.
-
-    Spec code calls this to publish events.
-    When no observer has been registered the returned value is a NullObserver.
-    """
-    return _observer
 
 
 @contextmanager

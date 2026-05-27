@@ -31,6 +31,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from ..identity import IdentityKeypair
+from ..peer_id import KeyType
 
 LIBP2P_EXTENSION_OID: Final = x509.ObjectIdentifier("1.3.6.1.4.1.53594.1.1")
 """libp2p TLS extension OID (Protocol Labs assigned)."""
@@ -42,10 +43,6 @@ Prefix for the signed payload.
 The signature proves ownership of the identity key over this specific TLS key.
 Without a prefix, the signature could potentially be replayed in other contexts.
 """
-
-# Key type identifiers matching libp2p protobuf definitions
-KEY_TYPE_SECP256K1: Final = 2
-"""secp256k1 key type in libp2p protobuf."""
 
 
 def generate_libp2p_certificate(
@@ -174,7 +171,7 @@ def _create_extension_payload(
     #   Field 1 (Type): tag=0x08, value=2 (secp256k1)
     #   Field 2 (Data): tag=0x12, length, bytes
     public_key_proto = (
-        bytes([0x08, KEY_TYPE_SECP256K1, 0x12, len(public_key_compressed)]) + public_key_compressed
+        bytes([0x08, KeyType.SECP256K1, 0x12, len(public_key_compressed)]) + public_key_compressed
     )
 
     # Encode as ASN.1 DER SEQUENCE.

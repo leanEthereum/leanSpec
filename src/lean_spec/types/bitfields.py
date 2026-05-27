@@ -12,8 +12,6 @@ Both flavors pack bits little-endian within each byte.
 Bit i of the input lands in byte i // 8 at position i % 8.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Sequence
 from typing import (

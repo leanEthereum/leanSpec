@@ -57,18 +57,6 @@ class Database(Protocol):
         """
         ...
 
-    def has_block(self, root: Bytes32) -> bool:
-        """
-        Check if a block exists in storage.
-
-        Args:
-            root: SSZ hash tree root of the block.
-
-        Returns:
-            True if block exists.
-        """
-        ...
-
     # State Operations
 
     def get_state(self, root: Bytes32) -> SpecStateType | None:
@@ -90,18 +78,6 @@ class Database(Protocol):
         Args:
             state: State to store.
             root: Block root hash associated with this state.
-        """
-        ...
-
-    def has_state(self, root: Bytes32) -> bool:
-        """
-        Check if a state exists in storage.
-
-        Args:
-            root: Block root hash associated with the state.
-
-        Returns:
-            True if state exists.
         """
         ...
 
@@ -236,15 +212,6 @@ class Database(Protocol):
         ...
 
     # Transaction Control
-
-    def commit(self) -> None:
-        """
-        Commit pending writes to durable storage.
-
-        All writes via put_* methods are buffered until commit() or batch_write().
-        Callers must explicitly commit after writes.
-        """
-        ...
 
     @contextmanager
     def batch_write(self) -> Generator[None]:

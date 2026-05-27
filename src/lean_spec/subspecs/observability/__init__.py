@@ -12,9 +12,7 @@ their own.
 """
 
 from .observer import (
-    NullObserver,
     SpecObserver,
-    get_observer,
     observe_on_attestation,
     observe_on_block,
     observe_state_transition,
@@ -22,9 +20,7 @@ from .observer import (
 )
 
 __all__ = [
-    "NullObserver",
     "SpecObserver",
-    "get_observer",
     "observe_on_attestation",
     "observe_on_block",
     "observe_state_transition",

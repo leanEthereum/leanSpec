@@ -11,6 +11,7 @@ from lean_spec.subspecs.xmss.message_hash import (
     TEST_MESSAGE_HASHER,
 )
 from lean_spec.subspecs.xmss.rand import TEST_RAND
+from lean_spec.subspecs.xmss.types import Randomness
 from lean_spec.subspecs.xmss.utils import int_to_base_p
 from lean_spec.types import Bytes32, Uint64
 
@@ -24,7 +25,7 @@ def test_encode_message() -> None:
     msg_zeros = Bytes32(b"\x00" * 32)
     encoded_zeros = hasher.encode_message(msg_zeros)
     assert len(encoded_zeros) == config.MSG_LEN_FE
-    assert all(fe.value == 0 for fe in encoded_zeros)
+    assert all(fe == Fp(value=0) for fe in encoded_zeros)
 
     # All-max message (0xff)
     msg_max = Bytes32(b"\xff" * 32)
@@ -43,7 +44,7 @@ def test_encode_epoch() -> None:
     # Test specific values from the Rust reference tests.
     test_epochs = [0, 42, 2**32 - 1]
     for epoch in test_epochs:
-        acc = (epoch << 8) | TWEAK_PREFIX_MESSAGE.value
+        acc = (epoch << 8) | TWEAK_PREFIX_MESSAGE
         expected = int_to_base_p(acc, config.TWEAK_LEN_FE)
         assert hasher.encode_epoch(Uint64(epoch)) == expected
 
@@ -110,7 +111,7 @@ def test_apply_output_is_valid_codeword() -> None:
     # Setup with random inputs.
     parameter = rand.parameter()
     epoch = Uint64(313)
-    randomness = rand.rho()
+    randomness = Randomness(data=rand.field_elements(config.RAND_LEN_FE))
     message = Bytes32(b"\xaa" * 32)
 
     # Call the message hash function.

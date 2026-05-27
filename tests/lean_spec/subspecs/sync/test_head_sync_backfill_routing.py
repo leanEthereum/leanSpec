@@ -20,7 +20,7 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.backfill_sync import BackfillSync
 from lean_spec.subspecs.sync.block_cache import BlockCache
 from lean_spec.subspecs.sync.head_sync import HeadSync, HeadSyncResult
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
 from tests.lean_spec.helpers import MockForkchoiceStore, make_signed_block
 
 
@@ -64,7 +64,7 @@ def _store_with_head(
     requested head slot so subsequent gap math sees the configured value.
     """
     store = MockForkchoiceStore()
-    store.latest_finalized.slot = Slot(finalized_slot)
+    store.latest_finalized = Checkpoint(root=Bytes32.zero(), slot=Slot(finalized_slot))
 
     head_root = Bytes32(b"\x77" * 32)
     head_block = make_signed_block(
@@ -120,9 +120,6 @@ class TestRejectionBelowFinalized:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=0,
         )
         assert returned_store is store
         assert recorder.range_calls == []
@@ -143,9 +140,6 @@ class TestRejectionBelowFinalized:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=0,
         )
         assert returned_store is store
         assert recorder.range_calls == []
@@ -170,9 +164,6 @@ class TestBackfillRoutingAboveHead:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=True,
-            backfill_triggered=True,
-            descendants_processed=0,
         )
         assert recorder.range_calls == []
         assert recorder.missing_calls == [[unknown_parent]]
@@ -192,9 +183,6 @@ class TestBackfillRoutingAboveHead:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=True,
-            backfill_triggered=True,
-            descendants_processed=0,
         )
         # gap_floor = head+1 = 21, gap_size = 100 - 21 = 79.
         assert recorder.range_calls == [(Slot(21), Uint64(79))]
@@ -221,9 +209,6 @@ class TestAltForkRoutingAtOrBelowHead:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=True,
-            backfill_triggered=True,
-            descendants_processed=0,
         )
         assert recorder.range_calls == []
         assert recorder.missing_calls == [[unknown_parent]]

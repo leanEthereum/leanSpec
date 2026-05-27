@@ -29,7 +29,6 @@ from dataclasses import dataclass, field
 from lean_spec.forks import LstarSpec, SignedAggregatedAttestation
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
 from lean_spec.subspecs.sync import SyncService
-from lean_spec.types import Uint64
 
 from .clock import Interval, SlotClock
 
@@ -167,9 +166,10 @@ class ChainService:
         # Jump to the last full slot boundary before the target.
         # The final slot's worth of intervals still runs normally so that
         # aggregation, safe target, and attestation acceptance happen.
+        intervals_per_slot = Interval(int(INTERVALS_PER_SLOT))
         gap = target_interval - store.time
-        if gap > INTERVALS_PER_SLOT:
-            skip_to = Uint64(target_interval - INTERVALS_PER_SLOT)
+        if gap > intervals_per_slot:
+            skip_to = target_interval - intervals_per_slot
             store = store.model_copy(update={"time": skip_to})
             self.sync_service.store = store
 

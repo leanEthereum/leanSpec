@@ -13,7 +13,7 @@ from lean_spec.subspecs.chain.config import (
     MILLISECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
 )
-from lean_spec.types import Uint64
+from lean_spec.types import Slot, Uint64
 
 from .base import BaseConsensusFixture
 
@@ -72,7 +72,7 @@ class SlotClockTest(BaseConsensusFixture):
 
     def _make_from_slot(self) -> dict[str, Any]:
         """Convert slot number to interval at that slot's start."""
-        slot = Uint64(self.input["slot"])
+        slot = Slot(self.input["slot"])
         interval = Interval.from_slot(slot)
         return {"interval": int(interval)}
 

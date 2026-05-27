@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from lean_spec.forks.lstar import Store
-from lean_spec.types import Uint64
+from lean_spec.subspecs.chain.clock import Interval
 from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_store
 
 
@@ -23,4 +23,4 @@ def pruning_store() -> Store:
 def sample_store(store_factory):
     """Store with 8 validators, genesis_time=1000, time=100."""
     store = store_factory(num_validators=8, genesis_time=1000)
-    return store.model_copy(update={"time": Uint64(100)})
+    return store.model_copy(update={"time": Interval(100)})

@@ -80,14 +80,10 @@ test-cov-gate *args:
 test-consensus *args:
     uv run --group test pytest -n auto --maxprocesses=10 --durations=10 --dist=worksteal tests/lean_spec/subspecs/containers tests/lean_spec/subspecs/forkchoice tests/lean_spec/subspecs/networking "$@"
 
-# Canonical CI fixture run; contributors should use `uv run fill` directly
-# Runs serially (no -n auto): xdist workers race on the lean_multisig_py
-# prover's process-global setup, which corrupts proofs intermittently.
-# This is an upstream limitation; restore -n auto once the prover setup
-# is per-process safe. See the matching note in .github/workflows/ci.yml.
+# Canonical CI fixture run; contributors should use `uv run fill` directly.
 [group('tests'), private]
 fill-ci *args:
-    uv run --group test fill --fork=Lstar --clean "$@"
+    uv run --group test fill --fork=Lstar --clean -n auto --dist=worksteal "$@"
 
 # Run API conformance tests against an external client
 [group('tests')]

@@ -184,12 +184,6 @@ class Prf(StrictBaseModel):
         """
         config = self.config
 
-        # Validate message length
-        if len(message) != config.MESSAGE_LENGTH:
-            raise ValueError(
-                f"Message must be exactly {config.MESSAGE_LENGTH} bytes, got {len(message)}"
-            )
-
         # Construct input: DOMAIN_SEP || 0x01 || key || epoch || message || counter
         input_data = (
             PRF_DOMAIN_SEP

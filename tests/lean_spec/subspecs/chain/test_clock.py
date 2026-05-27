@@ -82,34 +82,34 @@ class TestIntervalFromSlot:
 
     def test_slot_zero(self) -> None:
         """Slot 0 maps to interval 0."""
-        assert Interval.from_slot(Uint64(0)) == Interval(0)
+        assert Interval.from_slot(Slot(0)) == Interval(0)
 
     def test_slot_one(self) -> None:
         """Slot 1 maps to interval equal to INTERVALS_PER_SLOT."""
-        assert Interval.from_slot(Uint64(1)) == Interval(INTERVALS_PER_SLOT)
+        assert Interval.from_slot(Slot(1)) == Interval(INTERVALS_PER_SLOT)
 
     def test_slot_three(self) -> None:
         """Slot 3 maps to interval 3 * INTERVALS_PER_SLOT."""
-        assert Interval.from_slot(Uint64(3)) == Interval(Uint64(3) * INTERVALS_PER_SLOT)
+        assert Interval.from_slot(Slot(3)) == Interval(3 * int(INTERVALS_PER_SLOT))
 
     def test_multiple_slots(self) -> None:
         """Each slot N maps to interval N * INTERVALS_PER_SLOT."""
         for n in range(10):
-            slot = Uint64(n)
-            assert Interval.from_slot(slot) == Interval(slot * INTERVALS_PER_SLOT)
+            slot = Slot(n)
+            assert Interval.from_slot(slot) == Interval(int(slot) * int(INTERVALS_PER_SLOT))
 
     def test_return_type_is_interval(self) -> None:
         """Return value is an Interval instance, not a plain Uint64."""
-        result = Interval.from_slot(Uint64(2))
+        result = Interval.from_slot(Slot(2))
         assert isinstance(result, Interval)
 
     def test_consistent_with_from_unix_time(self) -> None:
         """from_slot(N) equals from_unix_time at genesis + N * SECONDS_PER_SLOT."""
         for n in range(5):
-            slot = Uint64(n)
+            slot = Slot(n)
             from_slot_result = Interval.from_slot(slot)
             from_unix_result = Interval.from_unix_time(
-                GENESIS_TIME + slot * SECONDS_PER_SLOT, GENESIS_TIME
+                GENESIS_TIME + Uint64(int(slot) * int(SECONDS_PER_SLOT)), GENESIS_TIME
             )
             assert from_slot_result == from_unix_result
 

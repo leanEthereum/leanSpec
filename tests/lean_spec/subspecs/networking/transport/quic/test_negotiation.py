@@ -53,89 +53,6 @@ class TestConstants:
         assert NA == "na"
 
 
-class TestNegotiateClient:
-    """Tests for client-side negotiation."""
-
-    async def test_client_accepts_first_protocol(self) -> None:
-        """Client successfully negotiates first proposed protocol."""
-        client, server = _create_stream_pair()
-
-        async def server_task() -> None:
-            await _read_message(server)
-            await _write_message(server, MULTISTREAM_PROTOCOL_ID)
-            protocol = await _read_message(server)
-            await _write_message(server, protocol)
-
-        task = asyncio.create_task(server_task())
-        result = await client.negotiate_client([GOSSIPSUB_ID])
-        await task
-        assert result == GOSSIPSUB_ID
-
-    async def test_client_tries_multiple_protocols(self) -> None:
-        """Client tries protocols until one is accepted."""
-        client, server = _create_stream_pair()
-
-        async def server_task() -> None:
-            await _read_message(server)
-            await _write_message(server, MULTISTREAM_PROTOCOL_ID)
-            await _read_message(server)
-            await _write_message(server, NA)
-            protocol = await _read_message(server)
-            await _write_message(server, protocol)
-
-        task = asyncio.create_task(server_task())
-        result = await client.negotiate_client([GOSSIPSUB_V12_ID, GOSSIPSUB_ID])
-        await task
-        assert result == GOSSIPSUB_ID
-
-    async def test_client_all_rejected(self) -> None:
-        """Client raises error when all protocols rejected."""
-        client, server = _create_stream_pair()
-
-        async def server_task() -> None:
-            await _read_message(server)
-            await _write_message(server, MULTISTREAM_PROTOCOL_ID)
-            await _read_message(server)
-            await _write_message(server, NA)
-            await _read_message(server)
-            await _write_message(server, NA)
-
-        task = asyncio.create_task(server_task())
-        with pytest.raises(NegotiationError, match="No protocols accepted"):
-            await client.negotiate_client([ProtocolId("/proto1"), ProtocolId("/proto2")])
-        await task
-
-    async def test_client_empty_protocols(self) -> None:
-        """Client raises error when no protocols provided."""
-        stream, _ = _create_stream_pair()
-        with pytest.raises(NegotiationError, match="No protocols to negotiate"):
-            await stream.negotiate_client([])
-
-    async def test_client_invalid_header(self) -> None:
-        """Client raises error on invalid header."""
-        client, server = _create_stream_pair()
-        await _write_message(server, "/wrong/1.0.0")
-
-        with pytest.raises(NegotiationError, match="Invalid multistream header"):
-            await client.negotiate_client([GOSSIPSUB_ID])
-
-    async def test_client_unexpected_response(self) -> None:
-        """Client gets neither protocol nor na"""
-        client, server = _create_stream_pair()
-
-        async def server_task() -> None:
-            await _read_message(server)
-            await _write_message(server, MULTISTREAM_PROTOCOL_ID)
-            await _read_message(server)
-            await _write_message(server, "/unexpected/response")
-            await _write_message(server, "<><><>")
-
-        task = asyncio.create_task(server_task())
-        with pytest.raises(NegotiationError, match="Unexpected response"):
-            await client.negotiate_client([GOSSIPSUB_ID])
-        await task
-
-
 class TestNegotiateServer:
     """Tests for server-side negotiation."""
 
@@ -186,23 +103,6 @@ class TestNegotiateServer:
 
         with pytest.raises(NegotiationError, match="Invalid multistream header"):
             await server.negotiate_server({GOSSIPSUB_ID})
-
-    async def test_server_client_unsupported_server_supported(self) -> None:
-        """Client proposes unsupported, then supported protocol"""
-        server, client = _create_stream_pair()
-
-        async def server_task() -> None:
-            await _read_message(server)
-            await _write_message(server, MULTISTREAM_PROTOCOL_ID)
-            await _read_message(server)
-            await _write_message(server, NA)
-            protocol = await _read_message(server)
-            await _write_message(server, protocol)
-
-        task = asyncio.create_task(server_task())
-        result = await client.negotiate_client([ProtocolId("/unsupported"), GOSSIPSUB_ID])
-        await task
-        assert result == GOSSIPSUB_ID
 
     async def test_server_too_many_attempts(self) -> None:
         """Client uses too many attempts"""
@@ -672,61 +572,6 @@ class TestReadNegotiationMessage:
         stream._buffer = length_prefix + payload
         with pytest.raises(NegotiationError, match="Message must end with newline"):
             await stream._read_negotiation_message()
-
-
-class TestFullNegotiation:
-    """Integration tests for full negotiation scenarios."""
-
-    async def test_bidirectional_negotiation(self) -> None:
-        """Client and server negotiate successfully."""
-        client, server = _create_stream_pair()
-
-        async def client_task() -> str:
-            return await client.negotiate_client([GOSSIPSUB_ID, STATUS_ID])
-
-        async def server_task() -> str:
-            return await server.negotiate_server({GOSSIPSUB_ID, BLOCKS_BY_ROOT_ID})
-
-        client_result, server_result = await asyncio.gather(
-            client_task(),
-            server_task(),
-        )
-        assert client_result == GOSSIPSUB_ID
-        assert server_result == GOSSIPSUB_ID
-
-    async def test_negotiate_status(self) -> None:
-        """Negotiate status protocol."""
-        client, server = _create_stream_pair()
-
-        async def client_task() -> str:
-            return await client.negotiate_client([STATUS_ID])
-
-        async def server_task() -> str:
-            return await server.negotiate_server({STATUS_ID})
-
-        client_result, server_result = await asyncio.gather(
-            client_task(),
-            server_task(),
-        )
-        assert client_result == STATUS_ID
-        assert server_result == STATUS_ID
-
-    async def test_negotiate_with_fallback(self) -> None:
-        """Client falls back to second option when first rejected."""
-        client, server = _create_stream_pair()
-
-        async def client_task() -> str:
-            return await client.negotiate_client([GOSSIPSUB_V12_ID, GOSSIPSUB_ID])
-
-        async def server_task() -> str:
-            return await server.negotiate_server({GOSSIPSUB_ID})
-
-        client_result, server_result = await asyncio.gather(
-            client_task(),
-            server_task(),
-        )
-        assert client_result == GOSSIPSUB_ID
-        assert server_result == GOSSIPSUB_ID
 
 
 @dataclass

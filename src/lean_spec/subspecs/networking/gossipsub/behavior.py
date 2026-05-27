@@ -223,14 +223,17 @@ class GossipsubBehavior:
     )
     """Queue of events for the application."""
 
-    _running: bool = False
-    """Whether the behavior is running."""
-
     _heartbeat_task: asyncio.Task[None] | None = None
     """Background heartbeat task."""
 
     _stop_event: asyncio.Event = field(default_factory=asyncio.Event)
-    """Event to signal stop to the events generator."""
+    """Lifecycle signal.
+
+    Set means "stopped": fresh instances start stopped (the event is
+    forced to the set state in __post_init__) and stay stopped until
+    start clears it. Awaiters of wait() wake the moment stop sets it
+    again.
+    """
 
     _background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
     """Tracked background tasks for subscribe/unsubscribe broadcasts.
@@ -252,6 +255,8 @@ class GossipsubBehavior:
             mcache_gossip=self.params.mcache_gossip,
         )
         self.seen_cache = SeenCache(ttl_seconds=self.params.seen_ttl_secs)
+        # Initial lifecycle: stopped. start() clears the event to begin running.
+        self._stop_event.set()
 
     def subscribe(self, topic: TopicId) -> None:
         """Subscribe to a topic.
@@ -273,7 +278,7 @@ class GossipsubBehavior:
 
         logger.debug("Subscribed to topic %s", topic)
 
-        if self._running:
+        if not self._stop_event.is_set():
             self._spawn_background_task(self._broadcast_subscription(topic, subscribe=True))
 
     def unsubscribe(self, topic: TopicId) -> None:
@@ -297,24 +302,22 @@ class GossipsubBehavior:
 
         logger.debug("Unsubscribed from topic %s", topic)
 
-        if self._running:
+        if not self._stop_event.is_set():
             self._spawn_background_task(
                 self._broadcast_subscription(topic, subscribe=False, prune_peers=mesh_peers)
             )
 
     async def start(self) -> None:
         """Start the gossipsub behavior (heartbeat loop)."""
-        if self._running:
+        if not self._stop_event.is_set():
             return
 
-        self._running = True
+        self._stop_event.clear()
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         logger.info("[GS %x] GossipsubBehavior started", self._short_id)
 
     async def stop(self) -> None:
         """Stop the gossipsub behavior."""
-        self._running = False
-
         self._stop_event.set()
 
         if self._heartbeat_task:
@@ -512,45 +515,24 @@ class GossipsubBehavior:
 
         Returns None when stopped or no event available.
         """
-        if not self._running:
+        if self._stop_event.is_set():
             return None
 
+        # Race the queue against the stop signal.
+        # Whichever wins decides whether to return an event or signal shutdown.
         queue_task = asyncio.create_task(self._event_queue.get())
         stop_task = asyncio.create_task(self._stop_event.wait())
-
         try:
-            done, pending = await asyncio.wait(
-                [queue_task, stop_task],
+            done, _ = await asyncio.wait(
+                {queue_task, stop_task},
                 return_when=asyncio.FIRST_COMPLETED,
             )
-
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-            if stop_task in done:
-                return None
-
             if queue_task in done:
                 return queue_task.result()
-
             return None
-
-        except asyncio.CancelledError:
+        finally:
             queue_task.cancel()
             stop_task.cancel()
-            try:
-                await queue_task
-            except asyncio.CancelledError:
-                pass
-            try:
-                await stop_task
-            except asyncio.CancelledError:
-                pass
-            return None
 
     async def _handle_rpc(self, peer_id: PeerId, rpc: RPC) -> None:
         """Dispatch an incoming RPC to the appropriate handlers."""
@@ -775,7 +757,7 @@ class GossipsubBehavior:
         """Background heartbeat for mesh maintenance."""
         interval = self.params.heartbeat_interval_secs
 
-        while self._running:
+        while not self._stop_event.is_set():
             try:
                 await asyncio.sleep(interval)
                 await self._heartbeat()

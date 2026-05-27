@@ -1,123 +1,131 @@
-"""Base classes and interfaces for all SSZ types."""
-
-from __future__ import annotations
+"""Abstract bases for the SSZ type system."""
 
 import io
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
-from typing import IO, Any, Self
+from typing import IO, Final, Self
 
 from .base import StrictBaseModel
+from .exceptions import SSZSerializationError
+
+BYTES_PER_LENGTH_OFFSET: Final = 4
+"""Width of an SSZ offset prefixing each variable-size element.
+
+Encoded as a uint32 in little-endian byte order."""
 
 
 class SSZType(ABC):
-    """
-    Abstract base class for all SSZ types.
-
-    This is the minimal interface that all SSZ types must implement.
-    Use SSZModel for Pydantic-based SSZ types.
-    """
+    """Abstract base for every SSZ-encodable type."""
 
     @classmethod
     @abstractmethod
     def is_fixed_size(cls) -> bool:
-        """
-        Check if the type has a fixed size in bytes.
+        """Whether every instance encodes to the same number of bytes.
 
         Returns:
-            bool: True if the size is fixed, False otherwise.
+            True for fixed-size types, False for variable-size.
         """
         ...
 
     @classmethod
     @abstractmethod
     def get_byte_length(cls) -> int:
-        """
-        Get the byte length of the type if it is fixed-size.
-
-        Raises:
-            TypeError: If the type is not fixed-size.
+        """Fixed encoded byte length of this type.
 
         Returns:
-            int: The number of bytes.
+            The constant byte width every instance encodes to.
+
+        Raises:
+            SSZTypeError: If the type is variable-size.
         """
         ...
 
     @abstractmethod
     def serialize(self, stream: IO[bytes]) -> int:
-        """
-        Serializes the object and writes it to a binary stream.
+        """Write the SSZ encoding to a binary stream.
 
         Args:
-            stream (IO[bytes]): The stream to write the serialized data to.
+            stream: Output binary stream.
 
         Returns:
-            int: The number of bytes written.
+            Number of bytes written.
         """
         ...
 
     @classmethod
     @abstractmethod
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
-        """
-        Deserializes an object from a binary stream within a given scope.
+        """Read one value from a binary stream within a bounded byte budget.
 
         Args:
-            stream (IO[bytes]): The stream to read from.
-            scope (int): The number of bytes available to read for this object.
+            stream: Source binary stream.
+            scope: Number of bytes belonging to this value.
 
         Returns:
-            Self: An instance of the class.
+            A new instance reconstructed from the stream.
         """
         ...
 
     def encode_bytes(self) -> bytes:
-        """
-        Serializes the SSZ object to a byte string.
+        """Encode this value to its SSZ byte representation.
 
         Returns:
-            bytes: The serialized byte string.
+            Serialized bytes.
         """
-        with io.BytesIO() as stream:
-            self.serialize(stream)
-            return stream.getvalue()
+        stream = io.BytesIO()
+        self.serialize(stream)
+        return stream.getvalue()
 
     @classmethod
     def decode_bytes(cls, data: bytes) -> Self:
-        """
-        Deserializes a byte string into an SSZ object.
+        """Decode SSZ bytes into a new instance.
+
+        Rejects trailing bytes left over after the stream-based decoder finishes.
+        A spec decoder must accept exactly one canonical encoding per value.
 
         Args:
-            data (bytes): The byte string to deserialize.
+            data: SSZ-encoded bytes containing exactly one value.
 
         Returns:
-            Self: An instance of the class.
+            A new instance reconstructed from the input.
+
+        Raises:
+            SSZSerializationError: If the input carries bytes past the decoded value.
         """
-        with io.BytesIO(data) as stream:
-            return cls.deserialize(stream, len(data))
+        stream = io.BytesIO(data)
+        instance = cls.deserialize(stream, len(data))
+
+        # Spec contract: each canonical encoding maps to exactly one value.
+        #
+        # Any unread bytes mean the input either over-allocated or carries noise.
+        leftover = len(data) - stream.tell()
+        if leftover:
+            raise SSZSerializationError(f"{cls.__name__}: {leftover} trailing byte(s) after decode")
+        return instance
 
 
 class SSZModel(StrictBaseModel, SSZType):
-    """
-    Base class for SSZ types that use Pydantic validation.
+    """Pydantic-backed SSZ base used by containers, lists, vectors, and bitfields.
 
-    This combines StrictBaseModel (Pydantic validation + immutability) with SSZ serialization.
-    Use this for containers and complex types that can benefit from Pydantic.
+    Two shapes share this base:
 
-    For simple types that need special inheritance (like int), use SSZType directly.
+    - Collections wrap an inner sequence in one Pydantic field called data.
+    - Containers expose multiple named Pydantic fields that map to a struct on the wire.
+
+    The default length and string forms switch on which shape the subclass uses.
     """
 
     def __len__(self) -> int:
-        """Return the length of the collection's data or number of container fields."""
-        data: Sequence[Any] | None = getattr(self, "data", None)
+        """Element count for collections, field count for containers."""
+        data = getattr(self, "data", None)
         if data is not None:
             return len(data)
         return len(type(self).model_fields)
 
     def __repr__(self) -> str:
-        """String representation showing the class name and data."""
-        data: Sequence[Any] | None = getattr(self, "data", None)
+        """Show collection contents as data=[...] or container fields as name=value pairs."""
+        cls_name = type(self).__name__
+        data = getattr(self, "data", None)
         if data is not None:
-            return f"{self.__class__.__name__}(data={list(data)!r})"
+            return f"{cls_name}(data={list(data)!r})"
         field_strs = [f"{name}={getattr(self, name)!r}" for name in type(self).model_fields]
-        return f"{self.__class__.__name__}({' '.join(field_strs)})"
+        return f"{cls_name}({' '.join(field_strs)})"

@@ -11,13 +11,13 @@ from prometheus_client import CollectorRegistry, Histogram
 
 from lean_spec.subspecs.metrics import PrometheusObserver, registry as metrics
 from lean_spec.subspecs.observability import (
-    NullObserver,
-    get_observer,
     observe_on_attestation,
     observe_on_block,
     observe_state_transition,
+    observer as observer_module,
     set_observer,
 )
+from lean_spec.subspecs.observability.observer import _NullObserver
 
 
 @pytest.fixture
@@ -36,9 +36,9 @@ def _reset_metrics() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _reset_observer() -> Iterator[None]:
-    """Restore the default NullObserver between tests."""
+    """Restore the default no-op observer between tests."""
     yield
-    set_observer(NullObserver())
+    set_observer(_NullObserver())
 
 
 def _init_metrics(registry: CollectorRegistry) -> None:
@@ -77,10 +77,10 @@ SPEC_EVENTS = [
 
 
 class TestNullObserverDefault:
-    """NullObserver is the registered singleton until set_observer is called."""
+    """The no-op observer is the registered singleton until set_observer is called."""
 
-    def test_get_observer_returns_null_by_default(self) -> None:
-        assert isinstance(get_observer(), NullObserver)
+    def test_default_observer_is_null(self) -> None:
+        assert isinstance(observer_module._observer, _NullObserver)
 
     @pytest.mark.parametrize(("method_name", "_metric_attr", "_cm"), SPEC_EVENTS)
     def test_null_observer_discards_events(
@@ -89,7 +89,7 @@ class TestNullObserverDefault:
         _metric_attr: str,
         _cm: Callable[[], AbstractContextManager[None]],
     ) -> None:
-        getattr(NullObserver(), method_name)(0.5)
+        getattr(_NullObserver(), method_name)(0.5)
 
 
 class TestSetObserver:
@@ -98,7 +98,7 @@ class TestSetObserver:
     def test_replaces_singleton(self) -> None:
         observer = PrometheusObserver()
         set_observer(observer)
-        assert get_observer() is observer
+        assert observer_module._observer is observer
 
 
 class TestPrometheusObserverUninitialized:

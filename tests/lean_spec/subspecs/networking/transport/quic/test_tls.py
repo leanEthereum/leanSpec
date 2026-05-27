@@ -18,8 +18,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from lean_spec.subspecs.networking.transport.identity.keypair import IdentityKeypair
+from lean_spec.subspecs.networking.transport.peer_id import KeyType
 from lean_spec.subspecs.networking.transport.quic.tls import (
-    KEY_TYPE_SECP256K1,
     LIBP2P_EXTENSION_OID,
     SIGNATURE_PREFIX,
     _create_extension_payload,
@@ -59,7 +59,7 @@ class TestConstants:
 
     def test_key_type_secp256k1(self) -> None:
         """Key type 2 matches the libp2p protobuf KeyType enum for secp256k1."""
-        assert KEY_TYPE_SECP256K1 == 2
+        assert KeyType.SECP256K1 == 2
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +229,7 @@ class TestCreateExtensionPayload:
 
         # Protobuf field 1 (Type): varint tag=0x08, value=2 (secp256k1)
         assert public_key_proto[0] == 0x08
-        assert public_key_proto[1] == KEY_TYPE_SECP256K1
+        assert public_key_proto[1] == KeyType.SECP256K1
         # Protobuf field 2 (Data): length-delimited tag=0x12
         assert public_key_proto[2] == 0x12
         key_len = public_key_proto[3]

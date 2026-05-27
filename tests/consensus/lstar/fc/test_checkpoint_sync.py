@@ -11,9 +11,10 @@ from consensus_testing import (
     build_anchor,
 )
 
+from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT, SECONDS_PER_SLOT
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -63,7 +64,7 @@ def test_store_init_from_non_genesis_anchor(
 
     # Derive the expected store.time from the anchor slot.
     # The store clock is in intervals since genesis, not seconds.
-    anchor_time_intervals = Uint64(int(ANCHOR_SLOT) * int(INTERVALS_PER_SLOT))
+    anchor_time_intervals = Interval(int(ANCHOR_SLOT) * int(INTERVALS_PER_SLOT))
 
     fork_choice_test(
         anchor_state=anchor_state,

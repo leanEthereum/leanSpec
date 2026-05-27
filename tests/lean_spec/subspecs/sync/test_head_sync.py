@@ -80,9 +80,6 @@ class TestGossipBlockProcessing:
 
         assert result == HeadSyncResult(
             processed=True,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=0,
         )
         assert block_root in processed_blocks
 
@@ -113,9 +110,6 @@ class TestGossipBlockProcessing:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=True,
-            backfill_triggered=True,
-            descendants_processed=0,
         )
         assert block_root in head_sync.block_cache
         assert head_sync.block_cache.orphan_count == 1
@@ -156,9 +150,6 @@ class TestGossipBlockProcessing:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=0,
         )
         assert call_count == 0
 
@@ -218,9 +209,6 @@ class TestDescendantProcessing:
 
         assert result == HeadSyncResult(
             processed=True,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=1,
         )
         assert processing_order == [parent_root, child_root]
         assert child_root not in block_cache  # Removed after processing
@@ -274,9 +262,6 @@ class TestDescendantProcessing:
 
         assert result == HeadSyncResult(
             processed=True,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=3,
         )
         assert processing_order == [1, 2, 3, 4]
 
@@ -314,9 +299,6 @@ class TestErrorHandling:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=0,
             error="State transition failed",
         )
         assert returned_store is store  # Original store returned on error
@@ -382,9 +364,6 @@ class TestStorePropagation:
 
         assert result == HeadSyncResult(
             processed=True,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=2,
         )
         assert {parent_root, child1_root, child2_root} <= set(new_store.blocks.keys())
 
@@ -397,7 +376,7 @@ class TestReentrantGuard:
         genesis_block,
         peer_id: PeerId,
     ) -> None:
-        """Block already in _processing returns processed=False, cached=False."""
+        """Block already in _processing returns processed=False."""
         genesis_root = hash_tree_root(genesis_block)
         store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
@@ -430,9 +409,6 @@ class TestReentrantGuard:
 
         assert result == HeadSyncResult(
             processed=False,
-            cached=False,
-            backfill_triggered=False,
-            descendants_processed=0,
         )
         assert returned_store is store
         assert call_count == 0

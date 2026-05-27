@@ -1,7 +1,5 @@
 """State Container for the Lean Ethereum consensus specification."""
 
-from __future__ import annotations
-
 from lean_spec.forks.lstar.containers.block import BlockHeader
 from lean_spec.forks.lstar.containers.config import Config
 from lean_spec.forks.lstar.containers.state.types import (

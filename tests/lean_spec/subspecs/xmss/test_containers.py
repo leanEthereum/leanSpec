@@ -27,12 +27,12 @@ def hex_dict(keypair_a: KeyPair, keypair_b: KeyPair) -> dict[str, dict[str, str]
     """Nested-hex JSON mapping that mirrors the on-disk format."""
     return {
         "attestation_keypair": {
-            "public_key": keypair_a.public_key.to_hex(),
-            "secret_key": keypair_a.secret_key.to_hex(),
+            "public_key": keypair_a.public_key.encode_bytes().hex(),
+            "secret_key": keypair_a.secret_key.encode_bytes().hex(),
         },
         "proposal_keypair": {
-            "public_key": keypair_b.public_key.to_hex(),
-            "secret_key": keypair_b.secret_key.to_hex(),
+            "public_key": keypair_b.public_key.encode_bytes().hex(),
+            "secret_key": keypair_b.secret_key.encode_bytes().hex(),
         },
     }
 
@@ -76,8 +76,8 @@ def test_validator_accepts_mixed_inputs(keypair_a: KeyPair, keypair_b: KeyPair) 
     data = {
         "attestation_keypair": keypair_a,
         "proposal_keypair": {
-            "public_key": keypair_b.public_key.to_hex(),
-            "secret_key": keypair_b.secret_key.to_hex(),
+            "public_key": keypair_b.public_key.encode_bytes().hex(),
+            "secret_key": keypair_b.secret_key.encode_bytes().hex(),
         },
     }
     vkp = ValidatorKeyPair.model_validate(data)
@@ -137,7 +137,7 @@ def test_rejects_missing_public_key(
     """A role mapping without the public half fails to decode."""
     # KeyError on value["public_key"] surfaces as ValidationError.
     data = {
-        "attestation_keypair": {"secret_key": keypair_a.secret_key.to_hex()},
+        "attestation_keypair": {"secret_key": keypair_a.secret_key.encode_bytes().hex()},
         "proposal_keypair": hex_dict["proposal_keypair"],
     }
     with pytest.raises(ValidationError):
@@ -150,7 +150,7 @@ def test_rejects_missing_secret_key(
     """A role mapping without the secret half fails to decode."""
     # KeyError on value["secret_key"] surfaces as ValidationError.
     data = {
-        "attestation_keypair": {"public_key": keypair_a.public_key.to_hex()},
+        "attestation_keypair": {"public_key": keypair_a.public_key.encode_bytes().hex()},
         "proposal_keypair": hex_dict["proposal_keypair"],
     }
     with pytest.raises(ValidationError):
@@ -163,7 +163,10 @@ def test_rejects_non_string_hex_value(
     """Hex fields must be strings; an integer is rejected before SSZ decoding."""
     # AttributeError on int.removeprefix surfaces as ValidationError.
     data = {
-        "attestation_keypair": {"public_key": 12345, "secret_key": keypair_a.secret_key.to_hex()},
+        "attestation_keypair": {
+            "public_key": 12345,
+            "secret_key": keypair_a.secret_key.encode_bytes().hex(),
+        },
         "proposal_keypair": hex_dict["proposal_keypair"],
     }
     with pytest.raises(ValidationError):
@@ -178,7 +181,7 @@ def test_rejects_invalid_hex_characters(
     data = {
         "attestation_keypair": {
             "public_key": "zz" * 26,
-            "secret_key": keypair_a.secret_key.to_hex(),
+            "secret_key": keypair_a.secret_key.encode_bytes().hex(),
         },
         "proposal_keypair": hex_dict["proposal_keypair"],
     }
@@ -192,7 +195,7 @@ def test_rejects_wrong_length_hex(keypair_a: KeyPair, hex_dict: dict[str, dict[s
     data = {
         "attestation_keypair": {
             "public_key": "deadbeef",
-            "secret_key": keypair_a.secret_key.to_hex(),
+            "secret_key": keypair_a.secret_key.encode_bytes().hex(),
         },
         "proposal_keypair": hex_dict["proposal_keypair"],
     }

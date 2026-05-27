@@ -49,19 +49,16 @@ class TestApiServerConfiguration:
 
         assert config.host == "0.0.0.0"
         assert config.port == 5052
-        assert config.enabled is True
 
     def test_custom_config_values_are_respected(self) -> None:
         """Custom configuration values override defaults."""
         config = ApiServerConfig(
             host="127.0.0.1",
             port=8080,
-            enabled=False,
         )
 
         assert config.host == "127.0.0.1"
         assert config.port == 8080
-        assert config.enabled is False
 
 
 class TestApiServerStoreIntegration:

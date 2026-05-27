@@ -46,6 +46,6 @@ SUPPORTED_PROTOCOLS: Final[frozenset[ProtocolId]] = (
 
 Includes:
 
-- GossipSub v1.1 and v1.2
+- GossipSub v1.2
 - Request/response protocols (Status, BlocksByRoot)
 """

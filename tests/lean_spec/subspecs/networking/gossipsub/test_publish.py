@@ -108,7 +108,7 @@ class TestBroadcastSubscription:
     async def test_subscribe_sends_subscription_to_all_peers(self) -> None:
         """Subscribing broadcasts a subscription RPC to all peers."""
         behavior, capture = make_behavior(d=2, d_low=1, d_high=4)
-        behavior._running = True
+        behavior._stop_event.clear()
 
         p1 = add_peer(behavior, "peerA", set())
         p2 = add_peer(behavior, "peerB", set())
@@ -126,7 +126,7 @@ class TestBroadcastSubscription:
     async def test_subscribe_grafts_eligible_peers(self) -> None:
         """Subscribing GRAFTs eligible peers into the mesh."""
         behavior, capture = make_behavior(d=2, d_low=1, d_high=4)
-        behavior._running = True
+        behavior._stop_event.clear()
 
         topic = TopicId("graftTopic")
         # These peers are already subscribed to the topic.
@@ -148,7 +148,7 @@ class TestBroadcastSubscription:
     async def test_subscribe_respects_fanout_promotion(self) -> None:
         """When subscribing, fanout peers are promoted and GRAFT fills to D."""
         behavior, capture = make_behavior(d=3, d_low=2, d_high=6)
-        behavior._running = True
+        behavior._stop_event.clear()
 
         topic = TopicId("promoteTopic")
         p1 = add_peer(behavior, "peerA", {topic})
@@ -176,7 +176,7 @@ class TestBroadcastSubscription:
     async def test_unsubscribe_prunes_mesh_peers(self) -> None:
         """Unsubscribing sends PRUNE to former mesh peers."""
         behavior, capture = make_behavior()
-        behavior._running = True
+        behavior._stop_event.clear()
 
         topic = TopicId("pruneTopic")
         behavior.subscribe(topic)

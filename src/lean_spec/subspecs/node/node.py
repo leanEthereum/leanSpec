@@ -42,7 +42,7 @@ from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.storage import Database, SQLiteDatabase
 from lean_spec.subspecs.sync import BlockCache, NetworkRequester, PeerManager, SyncService
 from lean_spec.subspecs.validator import ValidatorRegistry, ValidatorService
-from lean_spec.types import Bytes32, Slot, SubnetId, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -132,15 +132,19 @@ class NodeConfig:
     restarts and do not update the local ENR or subnet subscriptions.
     """
 
-    aggregate_subnet_ids: tuple[SubnetId, ...] = field(default_factory=tuple)
-    """
-    Additional attestation subnets to subscribe to and aggregate from.
+    anchor_store: Store | None = field(default=None)
+    """Pre-built forkchoice store to anchor the node on.
 
-    When set, the node subscribes to these subnets at the p2p layer in
-    addition to validator-derived subnets. Effective only when is_aggregator
-    is True — only aggregators import gossip attestations into forkchoice.
+    A non-None value replaces genesis synthesis with the supplied store.
+    The checkpoint sync path produces one from a peer-fetched finalized state.
 
-    Additive to the validator-derived subnet.
+    Store-load order on boot:
+
+    1. Database, when a path is set and contains valid state.
+    2. This field, when provided.
+    3. Fresh synthesis from the genesis validator set.
+
+    The validator set must match the validators inside the supplied store.
     """
 
 
@@ -223,6 +227,11 @@ class Node:
             database, validator_id, config.genesis_time, config.time_fn, fork
         )
 
+        # An explicit anchor wins over genesis synthesis but loses to the database.
+        # A restart with persisted state recovers from disk even with a checkpoint anchor.
+        if store is None and config.anchor_store is not None:
+            store = config.anchor_store
+
         if store is None:
             # Generate genesis state from validators.
             #
@@ -280,7 +289,6 @@ class Node:
             spec=fork,
             database=database,
             is_aggregator=config.is_aggregator,
-            aggregate_subnet_ids=config.aggregate_subnet_ids,
             genesis_start=True,
         )
 
@@ -290,7 +298,6 @@ class Node:
             event_source=config.event_source,
             network_name=config.network_name,
             is_aggregator=config.is_aggregator,
-            aggregate_subnet_ids=config.aggregate_subnet_ids,
         )
 
         # Wire up aggregated attestation publishing.
@@ -514,7 +521,7 @@ class Node:
                 break
             store = self.sync_service.store
             peers_connected = sum(
-                1 for p in self.sync_service.peer_manager.get_all_peers() if p.is_connected()
+                1 for p in self.sync_service.peer_manager.peers.values() if p.is_connected()
             )
             metrics.lean_current_slot.set(self.clock.current_slot())
             metrics.lean_connected_peers.set(peers_connected)

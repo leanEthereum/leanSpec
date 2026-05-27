@@ -24,9 +24,7 @@ unique across the entire scheme, we guarantee that every hash computation is
 **domain-separated**, eliminating the risk of cross-context collisions.
 """
 
-from __future__ import annotations
-
-from pydantic import Field
+from typing import NamedTuple
 
 from lean_spec.types import StrictBaseModel, Uint64
 
@@ -47,7 +45,7 @@ from .types import HashDigestVector, Parameter
 from .utils import int_to_base_p
 
 
-class TreeTweak(StrictBaseModel):
+class TreeTweak(NamedTuple):
     """
     A tweak used for hashing nodes within the Merkle tree.
 
@@ -55,13 +53,14 @@ class TreeTweak(StrictBaseModel):
     Merkle tree has a unique context.
     """
 
-    level: int = Field(
-        ge=0, description="The level (height) in the Merkle tree, where 0 is the leaf level."
-    )
-    index: Uint64 = Field(description="The node's index (from the left) within that level.")
+    level: int
+    """The level (height) in the Merkle tree, where 0 is the leaf level."""
+
+    index: Uint64
+    """The node's index (from the left) within that level."""
 
 
-class ChainTweak(StrictBaseModel):
+class ChainTweak(NamedTuple):
     """
     A tweak used for hashing elements within a WOTS+ hash chain.
 
@@ -69,11 +68,14 @@ class ChainTweak(StrictBaseModel):
     chain is distinct across all epochs.
     """
 
-    epoch: Uint64 = Field(description="The signature epoch.")
-    chain_index: int = Field(
-        ge=0, description="The index of the hash chain (from 0 to DIMENSION-1)."
-    )
-    step: int = Field(ge=0, description="The step number within the chain (from 1 to BASE-1).")
+    epoch: Uint64
+    """The signature epoch."""
+
+    chain_index: int
+    """The index of the hash chain (from 0 to DIMENSION-1)."""
+
+    step: int
+    """The step number within the chain (from 1 to BASE-1)."""
 
 
 class TweakHasher(StrictBaseModel):
@@ -117,15 +119,10 @@ class TweakHasher(StrictBaseModel):
         match tweak:
             case TreeTweak(level=level, index=index):
                 # Packing scheme: (level << 40) | (index << 8) | PREFIX
-                acc = (level << 40) | (int(index) << 8) | TWEAK_PREFIX_TREE.value
+                acc = (level << 40) | (int(index) << 8) | TWEAK_PREFIX_TREE
             case ChainTweak(epoch=epoch, chain_index=chain_index, step=step):
                 # Packing scheme: (epoch << 24) | (chain_index << 16) | (step << 8) | PREFIX
-                acc = (
-                    (int(epoch) << 24)
-                    | (chain_index << 16)
-                    | (step << 8)
-                    | TWEAK_PREFIX_CHAIN.value
-                )
+                acc = (int(epoch) << 24) | (chain_index << 16) | (step << 8) | TWEAK_PREFIX_CHAIN
 
         # Decompose the packed integer `acc` into a list of base-P field elements.
         return int_to_base_p(acc, length)

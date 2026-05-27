@@ -146,44 +146,6 @@ class QuicStreamAdapter:
             self._write_buffer = b""
         await self._stream.finish_write()
 
-    async def negotiate_client(self, protocols: list[ProtocolId]) -> ProtocolId:
-        """Client-side protocol negotiation.
-
-        Proposes protocols in order until one is accepted.
-
-        Args:
-            protocols: Protocols to propose, in preference order.
-
-        Returns:
-            The accepted protocol ID.
-
-        Raises:
-            NegotiationError: If no protocol is accepted or protocol error.
-        """
-        if not protocols:
-            raise NegotiationError("No protocols to negotiate")
-
-        # Exchange multistream headers.
-        await self._write_negotiation_message(MULTISTREAM_PROTOCOL_ID)
-        header = await self._read_negotiation_message()
-
-        if header != MULTISTREAM_PROTOCOL_ID:
-            raise NegotiationError(f"Invalid multistream header: {header!r}")
-
-        # Try each protocol in order.
-        for protocol in protocols:
-            await self._write_negotiation_message(protocol)
-            response = await self._read_negotiation_message()
-
-            if response == protocol:
-                return protocol
-            elif response == NA:
-                continue
-            else:
-                raise NegotiationError(f"Unexpected response: {response!r}")
-
-        raise NegotiationError(f"No protocols accepted from: {protocols}")
-
     async def negotiate_server(
         self,
         supported: set[ProtocolId],

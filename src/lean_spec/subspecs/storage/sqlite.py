@@ -31,11 +31,22 @@ from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64
 
 from .exceptions import StorageCorruptionError, StorageReadError, StorageWriteError
 from .namespaces import (
-    BLOCKS,
-    CHECKPOINTS,
-    SLOT_INDEX,
-    STATE_ROOT_INDEX,
-    STATES,
+    BLOCKS_CREATE_INDEX,
+    BLOCKS_CREATE_TABLE,
+    BLOCKS_TABLE_NAME,
+    CHECKPOINTS_CREATE_TABLE,
+    CHECKPOINTS_KEY_FINALIZED,
+    CHECKPOINTS_KEY_GENESIS_TIME,
+    CHECKPOINTS_KEY_HEAD,
+    CHECKPOINTS_KEY_JUSTIFIED,
+    CHECKPOINTS_TABLE_NAME,
+    SLOT_INDEX_CREATE_TABLE,
+    SLOT_INDEX_TABLE_NAME,
+    STATE_ROOT_INDEX_CREATE_TABLE,
+    STATE_ROOT_INDEX_TABLE_NAME,
+    STATES_CREATE_INDEX,
+    STATES_CREATE_TABLE,
+    STATES_TABLE_NAME,
 )
 
 
@@ -97,25 +108,25 @@ class SQLiteDatabase:
         #
         # This matches how consensus clients identify data: by SSZ merkle root.
         # The slot index enables efficient range queries for historical data.
-        cursor.execute(BLOCKS.CREATE_TABLE)
-        cursor.execute(BLOCKS.CREATE_INDEX)
-        cursor.execute(STATES.CREATE_TABLE)
-        cursor.execute(STATES.CREATE_INDEX)
+        cursor.execute(BLOCKS_CREATE_TABLE)
+        cursor.execute(BLOCKS_CREATE_INDEX)
+        cursor.execute(STATES_CREATE_TABLE)
+        cursor.execute(STATES_CREATE_INDEX)
 
         # Checkpoints use a key-value pattern for singleton values.
         #
         # Only one justified and one finalized checkpoint exist at any time.
-        cursor.execute(CHECKPOINTS.CREATE_TABLE)
+        cursor.execute(CHECKPOINTS_CREATE_TABLE)
 
         # Slot index maps slot numbers to block roots.
         #
         # Enables queries like "what block was at slot N?"
-        cursor.execute(SLOT_INDEX.CREATE_TABLE)
+        cursor.execute(SLOT_INDEX_CREATE_TABLE)
 
         # State root index maps state roots to block roots.
         #
         # Needed for checkpoint sync and API endpoints that query by state root.
-        cursor.execute(STATE_ROOT_INDEX.CREATE_TABLE)
+        cursor.execute(STATE_ROOT_INDEX_CREATE_TABLE)
 
         self._conn.commit()
 
@@ -131,7 +142,7 @@ class SQLiteDatabase:
             # The root is the SSZ merkle root of the block.
             # This 32-byte hash uniquely identifies the block content.
             cursor.execute(
-                f"SELECT data FROM {BLOCKS.TABLE_NAME} WHERE root = ?",
+                f"SELECT data FROM {BLOCKS_TABLE_NAME} WHERE root = ?",
                 (bytes(root),),
             )
             row = cursor.fetchone()
@@ -158,30 +169,13 @@ class SQLiteDatabase:
             # The slot column enables efficient historical range queries.
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {BLOCKS.TABLE_NAME} (root, slot, data)
+                INSERT OR REPLACE INTO {BLOCKS_TABLE_NAME} (root, slot, data)
                 VALUES (?, ?, ?)
                 """,
                 (bytes(root), int(block.slot), block.encode_bytes()),
             )
         except sqlite3.Error as e:
             raise StorageWriteError(f"Failed to write block {root.hex()}: {e}") from e
-
-    def has_block(self, root: Bytes32) -> bool:
-        """Check if a block exists in storage."""
-        try:
-            cursor = self._conn.cursor()
-
-            # SELECT 1 is an existence check optimization.
-            #
-            # We only care whether a row exists, not its contents.
-            # This avoids deserializing potentially large SSZ data.
-            cursor.execute(
-                f"SELECT 1 FROM {BLOCKS.TABLE_NAME} WHERE root = ?",
-                (bytes(root),),
-            )
-            return cursor.fetchone() is not None
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to check block existence {root.hex()}: {e}") from e
 
     # State Operations
 
@@ -195,7 +189,7 @@ class SQLiteDatabase:
         try:
             cursor = self._conn.cursor()
             cursor.execute(
-                f"SELECT data FROM {STATES.TABLE_NAME} WHERE root = ?",
+                f"SELECT data FROM {STATES_TABLE_NAME} WHERE root = ?",
                 (bytes(root),),
             )
             row = cursor.fetchone()
@@ -223,27 +217,13 @@ class SQLiteDatabase:
             # storage costs against replay costs for intermediate slots.
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {STATES.TABLE_NAME} (root, slot, data)
+                INSERT OR REPLACE INTO {STATES_TABLE_NAME} (root, slot, data)
                 VALUES (?, ?, ?)
                 """,
                 (bytes(root), int(state.slot), state.encode_bytes()),
             )
         except sqlite3.Error as e:
             raise StorageWriteError(f"Failed to write state for block {root.hex()}: {e}") from e
-
-    def has_state(self, root: Bytes32) -> bool:
-        """Check if a state exists in storage."""
-        try:
-            cursor = self._conn.cursor()
-            cursor.execute(
-                f"SELECT 1 FROM {STATES.TABLE_NAME} WHERE root = ?",
-                (bytes(root),),
-            )
-            return cursor.fetchone() is not None
-        except sqlite3.Error as e:
-            raise StorageReadError(
-                f"Failed to check state existence for block {root.hex()}: {e}"
-            ) from e
 
     # Checkpoint Operations
 
@@ -262,8 +242,8 @@ class SQLiteDatabase:
             # This checkpoint may still be reverted if a competing
             # checkpoint gains more support. Not yet final.
             cursor.execute(
-                f"SELECT data FROM {CHECKPOINTS.TABLE_NAME} WHERE key = ?",
-                (CHECKPOINTS.KEY_JUSTIFIED,),
+                f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
+                (CHECKPOINTS_KEY_JUSTIFIED,),
             )
             row = cursor.fetchone()
         except sqlite3.Error as e:
@@ -283,10 +263,10 @@ class SQLiteDatabase:
             cursor = self._conn.cursor()
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {CHECKPOINTS.TABLE_NAME} (key, data)
+                INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
                 VALUES (?, ?)
                 """,
-                (CHECKPOINTS.KEY_JUSTIFIED, checkpoint.encode_bytes()),
+                (CHECKPOINTS_KEY_JUSTIFIED, checkpoint.encode_bytes()),
             )
         except sqlite3.Error as e:
             raise StorageWriteError(f"Failed to write justified checkpoint: {e}") from e
@@ -301,8 +281,8 @@ class SQLiteDatabase:
             # Once finalized, all blocks in the checkpoint's chain are permanent.
             # Reorging past finality requires 1/3 validators to be slashed.
             cursor.execute(
-                f"SELECT data FROM {CHECKPOINTS.TABLE_NAME} WHERE key = ?",
-                (CHECKPOINTS.KEY_FINALIZED,),
+                f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
+                (CHECKPOINTS_KEY_FINALIZED,),
             )
             row = cursor.fetchone()
         except sqlite3.Error as e:
@@ -322,10 +302,10 @@ class SQLiteDatabase:
             cursor = self._conn.cursor()
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {CHECKPOINTS.TABLE_NAME} (key, data)
+                INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
                 VALUES (?, ?)
                 """,
-                (CHECKPOINTS.KEY_FINALIZED, checkpoint.encode_bytes()),
+                (CHECKPOINTS_KEY_FINALIZED, checkpoint.encode_bytes()),
             )
         except sqlite3.Error as e:
             raise StorageWriteError(f"Failed to write finalized checkpoint: {e}") from e
@@ -346,8 +326,8 @@ class SQLiteDatabase:
             # Fork choice updates this after processing each new block.
             # Stored in the checkpoints table as a special singleton key.
             cursor.execute(
-                f"SELECT data FROM {CHECKPOINTS.TABLE_NAME} WHERE key = ?",
-                (CHECKPOINTS.KEY_HEAD,),
+                f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
+                (CHECKPOINTS_KEY_HEAD,),
             )
             row = cursor.fetchone()
         except sqlite3.Error as e:
@@ -365,10 +345,10 @@ class SQLiteDatabase:
             cursor = self._conn.cursor()
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {CHECKPOINTS.TABLE_NAME} (key, data)
+                INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
                 VALUES (?, ?)
                 """,
-                (CHECKPOINTS.KEY_HEAD, bytes(root)),
+                (CHECKPOINTS_KEY_HEAD, bytes(root)),
             )
         except sqlite3.Error as e:
             raise StorageWriteError(f"Failed to write head root: {e}") from e
@@ -390,7 +370,7 @@ class SQLiteDatabase:
             # A slot may have no block (proposer missed their turn).
             # A slot may have had multiple competing blocks (only one is canonical).
             cursor.execute(
-                f"SELECT root FROM {SLOT_INDEX.TABLE_NAME} WHERE slot = ?",
+                f"SELECT root FROM {SLOT_INDEX_TABLE_NAME} WHERE slot = ?",
                 (int(slot),),
             )
             row = cursor.fetchone()
@@ -412,7 +392,7 @@ class SQLiteDatabase:
             # at different times. This always reflects the current canonical chain.
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {SLOT_INDEX.TABLE_NAME} (slot, root)
+                INSERT OR REPLACE INTO {SLOT_INDEX_TABLE_NAME} (slot, root)
                 VALUES (?, ?)
                 """,
                 (int(slot), bytes(root)),
@@ -432,7 +412,7 @@ class SQLiteDatabase:
         try:
             cursor = self._conn.cursor()
             cursor.execute(
-                f"SELECT block_root FROM {STATE_ROOT_INDEX.TABLE_NAME} WHERE state_root = ?",
+                f"SELECT block_root FROM {STATE_ROOT_INDEX_TABLE_NAME} WHERE state_root = ?",
                 (bytes(state_root),),
             )
             row = cursor.fetchone()
@@ -451,7 +431,7 @@ class SQLiteDatabase:
             cursor = self._conn.cursor()
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {STATE_ROOT_INDEX.TABLE_NAME} (state_root, block_root)
+                INSERT OR REPLACE INTO {STATE_ROOT_INDEX_TABLE_NAME} (state_root, block_root)
                 VALUES (?, ?)
                 """,
                 (bytes(state_root), bytes(block_root)),
@@ -472,8 +452,8 @@ class SQLiteDatabase:
         try:
             cursor = self._conn.cursor()
             cursor.execute(
-                f"SELECT data FROM {CHECKPOINTS.TABLE_NAME} WHERE key = ?",
-                (CHECKPOINTS.KEY_GENESIS_TIME,),
+                f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
+                (CHECKPOINTS_KEY_GENESIS_TIME,),
             )
             row = cursor.fetchone()
         except sqlite3.Error as e:
@@ -491,22 +471,15 @@ class SQLiteDatabase:
             cursor = self._conn.cursor()
             cursor.execute(
                 f"""
-                INSERT OR REPLACE INTO {CHECKPOINTS.TABLE_NAME} (key, data)
+                INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
                 VALUES (?, ?)
                 """,
-                (CHECKPOINTS.KEY_GENESIS_TIME, int(genesis_time).to_bytes(8, byteorder="little")),
+                (CHECKPOINTS_KEY_GENESIS_TIME, int(genesis_time).to_bytes(8, byteorder="little")),
             )
         except sqlite3.Error as e:
             raise StorageWriteError(f"Failed to write genesis time: {e}") from e
 
     # Transaction Control
-
-    def commit(self) -> None:
-        """Commit pending writes to durable storage."""
-        try:
-            self._conn.commit()
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to commit: {e}") from e
 
     @contextmanager
     def batch_write(self) -> Generator[None]:
@@ -560,13 +533,13 @@ class SQLiteDatabase:
             # Prune blocks below the threshold, preserving kept roots.
             if keep_bytes:
                 cursor.execute(
-                    f"DELETE FROM {BLOCKS.TABLE_NAME} "
+                    f"DELETE FROM {BLOCKS_TABLE_NAME} "
                     f"WHERE slot < ? AND root NOT IN ({placeholders})",
                     [int(slot), *keep_bytes],
                 )
             else:
                 cursor.execute(
-                    f"DELETE FROM {BLOCKS.TABLE_NAME} WHERE slot < ?",
+                    f"DELETE FROM {BLOCKS_TABLE_NAME} WHERE slot < ?",
                     (int(slot),),
                 )
             total_pruned += cursor.rowcount
@@ -574,20 +547,20 @@ class SQLiteDatabase:
             # Prune states below the threshold, preserving kept roots.
             if keep_bytes:
                 cursor.execute(
-                    f"DELETE FROM {STATES.TABLE_NAME} "
+                    f"DELETE FROM {STATES_TABLE_NAME} "
                     f"WHERE slot < ? AND root NOT IN ({placeholders})",
                     [int(slot), *keep_bytes],
                 )
             else:
                 cursor.execute(
-                    f"DELETE FROM {STATES.TABLE_NAME} WHERE slot < ?",
+                    f"DELETE FROM {STATES_TABLE_NAME} WHERE slot < ?",
                     (int(slot),),
                 )
             total_pruned += cursor.rowcount
 
             # Prune slot index entries below the threshold.
             cursor.execute(
-                f"DELETE FROM {SLOT_INDEX.TABLE_NAME} WHERE slot < ?",
+                f"DELETE FROM {SLOT_INDEX_TABLE_NAME} WHERE slot < ?",
                 (int(slot),),
             )
             total_pruned += cursor.rowcount

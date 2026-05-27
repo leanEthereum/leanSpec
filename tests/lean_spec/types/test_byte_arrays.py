@@ -13,7 +13,6 @@ from lean_spec.types.byte_arrays import (
     ZERO_HASH,
     BaseByteList,
     BaseBytes,
-    Bytes1,
     Bytes4,
     Bytes32,
 )
@@ -219,7 +218,6 @@ class TestBaseBytesSSZ:
     @pytest.mark.parametrize(
         "cls, payload",
         [
-            (Bytes1, b"\xaa"),
             (Bytes4, b"\x00\x01\x02\x03"),
             (Bytes32, b"\x11" * 32),
         ],

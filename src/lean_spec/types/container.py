@@ -1,248 +1,96 @@
-"""
-SSZ Container Type: Ordered heterogeneous collections with named fields.
+"""SSZ Container Type."""
 
-This module implements the SSZ Container type specification.
+import io
+from itertools import pairwise
+from typing import IO, Self, override
 
-Containers are the primary way to define structured data in
-Ethereum's serialization format.
-"""
-
-from __future__ import annotations
-
-from typing import IO, Any, Self, override
-
-from .constants import OFFSET_BYTE_LENGTH
 from .exceptions import SSZSerializationError, SSZTypeError
-from .ssz_base import SSZModel, SSZType
+from .ssz_base import BYTES_PER_LENGTH_OFFSET, SSZModel, SSZType
 from .uint import Uint32
 
 
 class Container(SSZModel):
-    """
-    SSZ Container: A strict, ordered collection of heterogeneous named fields.
-
-    Containers are the fundamental composite type in SSZ, similar to structs
-    in C or dataclasses in Python. Each field has a name and type, and the
-    serialization preserves field order.
-
-    Inherits from SSZModel to get:
-    - Pydantic validation and immutability (StrictBaseModel)
-    - SSZ serialization interface (SSZType)
-    - Collection methods that work with named fields
-
-    Key properties:
-    - Fields are serialized in definition order
-    - Fixed-size fields are packed directly
-    - Variable-size fields use offset pointers
-    - Field iteration via inherited __iter__ method
-
-    Serialization format:
-        [fixed_field_1][fixed_field_2]...[offset_1][offset_2]...[variable_data_1][variable_data_2]...
-    """
-
-    @staticmethod
-    def _get_ssz_field_type(annotation: Any) -> type[SSZType]:
-        """
-        Extract the SSZType class from a field annotation, with validation.
-
-        Args:
-            annotation: The field type annotation.
-
-        Returns:
-            The SSZType class.
-
-        Raises:
-            SSZTypeError: If the annotation is not a valid SSZType class.
-        """
-        if not (isinstance(annotation, type) and issubclass(annotation, SSZType)):
-            raise SSZTypeError(f"Expected SSZType subclass, got {annotation}")
-        return annotation
+    """Ordered struct of named heterogeneous SSZ fields."""
 
     @classmethod
     @override
     def is_fixed_size(cls) -> bool:
-        """
-        Check if this container has a fixed byte length.
-
-        A container is fixed-size only when ALL its fields are fixed-size.
-        This affects how the container is serialized and merkleized.
-
-        Returns:
-            True if all fields have fixed size, False if any field is variable.
-        """
-        # Check each field's type for fixed size property
-        return all(
-            cls._get_ssz_field_type(field.annotation).is_fixed_size()
-            for field in cls.model_fields.values()
-        )
+        """True only when every field is fixed-size."""
+        return all(f.annotation.is_fixed_size() for f in cls.model_fields.values())
 
     @classmethod
     @override
     def get_byte_length(cls) -> int:
-        """
-        Calculate the exact byte length for fixed-size containers.
-
-        Returns:
-            Total byte length of all fields summed together.
-
-        Raises:
-            SSZTypeDefinitionError: If called on a variable-size container.
-        """
-        # Only fixed-size containers have a deterministic byte length
+        """Sum of field widths; raises for variable-size containers."""
         if not cls.is_fixed_size():
             raise SSZTypeError(f"{cls.__name__}: variable-size container has no fixed byte length")
-
-        # Sum the byte lengths of all fixed-size fields
-        return sum(
-            cls._get_ssz_field_type(field.annotation).get_byte_length()
-            for field in cls.model_fields.values()
-        )
+        return sum(f.annotation.get_byte_length() for f in cls.model_fields.values())
 
     @override
     def serialize(self, stream: IO[bytes]) -> int:
-        """
-        Serialize container to bytes following SSZ specification.
+        """Write the fixed part with offsets, then the variable payloads."""
+        values = [getattr(self, name) for name in type(self).model_fields]
 
-        SSZ serialization uses a two-part format:
-        1. Fixed part: Fixed-size fields and offsets for variable fields
-        2. Variable part: Actual data of variable-size fields
+        # Leading-part width: each slot is either the field's byte length or one offset.
+        offset = sum(
+            type(v).get_byte_length() if type(v).is_fixed_size() else BYTES_PER_LENGTH_OFFSET
+            for v in values
+        )
 
-        Args:
-            stream: Binary stream to write serialized bytes to.
-
-        Returns:
-            Number of bytes written to the stream.
-        """
-        # Collect serialized field data
-        #
-        # Fixed-size field bytes or empty for variable fields
-        fixed_parts = []
-        # Actual data for variable-size fields
-        variable_data = []
-
-        # Process each field in definition order
-        for field_name in type(self).model_fields:
-            # Get the field value and its type
-            value = getattr(self, field_name)
-            # Use the actual runtime type of the value, which should be an SSZType
-            field_type = type(value)
-
-            # Serialize based on field type
-            if field_type.is_fixed_size():
-                # Fixed fields go directly in the fixed part
-                fixed_parts.append(value.encode_bytes())
+        # Variable payloads stage in a buffer while the output takes the fixed part.
+        tail = io.BytesIO()
+        for value in values:
+            if type(value).is_fixed_size():
+                value.serialize(stream)
             else:
-                # Variable fields: placeholder in fixed part, data in variable part
-                #
-                # Will be replaced with offset
-                fixed_parts.append(b"")
-                variable_data.append(value.encode_bytes())
-
-        # Calculate where variable data starts (after all fixed parts)
-        offset = sum(len(part) if part else OFFSET_BYTE_LENGTH for part in fixed_parts)
-
-        # Write fixed part with calculated offsets
-        var_iter = iter(variable_data)
-        for part in fixed_parts:
-            if part:  # Fixed-size field data
-                stream.write(part)
-            else:  # Variable-size field offset
-                stream.write(Uint32(offset).encode_bytes())
-                offset += len(next(var_iter))
-
-        # Append all variable data at the end
-        for data in variable_data:
-            stream.write(data)
-
-        return offset  # Total bytes written
+                Uint32(offset).serialize(stream)
+                offset += value.serialize(tail)
+        stream.write(tail.getvalue())
+        return offset
 
     @classmethod
     @override
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
-        """
-        Deserialize container from byte stream.
+        """Read the fixed part with offsets, then each variable payload by its offset window."""
+        fields: dict[str, SSZType] = {}
+        var_fields: list[tuple[str, type[SSZType], int]] = []
+        bytes_read = 0
 
-        Reverses the serialization process by:
-        1. Reading fixed fields and offsets from the fixed part
-        2. Using offsets to locate and read variable field data
-
-        Args:
-            stream: Binary stream to read from.
-            scope: Total bytes available for this container.
-
-        Returns:
-            New container instance with deserialized values.
-
-        Raises:
-            SSZSerializationError: If stream ends unexpectedly or offsets are invalid.
-        """
-        fields = {}  # Collected field values
-        var_fields = []  # (name, type, offset) for variable fields
-        bytes_read = 0  # Track position in fixed part
-
-        # Phase 1: Read fixed part
-        for field_name, field_info in cls.model_fields.items():
-            field_type = cls._get_ssz_field_type(field_info.annotation)
-
-            if field_type.is_fixed_size():
-                # Read and deserialize fixed field directly
-                size = field_type.get_byte_length()
-                data = stream.read(size)
-                if len(data) != size:
-                    raise SSZSerializationError(
-                        f"{cls.__name__}.{field_name}: expected {size} bytes, got {len(data)}"
-                    )
-                fields[field_name] = field_type.decode_bytes(data)
-                bytes_read += size
+        # Phase 1: each slot is either the field itself or an offset to its tail payload.
+        for name, info in cls.model_fields.items():
+            ftype: type[SSZType] = info.annotation
+            if ftype.is_fixed_size():
+                width = ftype.get_byte_length()
+                fields[name] = ftype.deserialize(stream, width)
+                bytes_read += width
             else:
-                # Read offset pointer for variable field
-                offset_bytes = stream.read(OFFSET_BYTE_LENGTH)
-                if len(offset_bytes) != OFFSET_BYTE_LENGTH:
-                    raise SSZSerializationError(
-                        f"{cls.__name__}.{field_name}: "
-                        f"expected {OFFSET_BYTE_LENGTH} offset bytes, got {len(offset_bytes)}"
-                    )
-                offset = int(Uint32.decode_bytes(offset_bytes))
-                var_fields.append((field_name, field_type, offset))
-                bytes_read += OFFSET_BYTE_LENGTH
+                offset = int(Uint32.deserialize(stream, BYTES_PER_LENGTH_OFFSET))
+                var_fields.append((name, ftype, offset))
+                bytes_read += BYTES_PER_LENGTH_OFFSET
 
-        # Phase 2: Read variable part if present
-        if var_fields:
-            # Read entire variable section at once
-            var_section_size = scope - bytes_read
-            var_section = stream.read(var_section_size)
-            if len(var_section) != var_section_size:
+        if not var_fields:
+            return cls(**fields)
+
+        # Canonical form: the first offset must point to the end of the fixed part.
+        # Any other value leaves a gap or overlap, allowing two encodings of one value.
+        if var_fields[0][2] != bytes_read:
+            raise SSZSerializationError(
+                f"{cls.__name__}: first offset {var_fields[0][2]} != fixed-part end {bytes_read}"
+            )
+
+        # Phase 2: each variable payload spans from its offset to the next.
+        # Scope closes the final span.
+        boundaries = [o for _, _, o in var_fields] + [scope]
+        for (name, ftype, _), (start, end) in zip(var_fields, pairwise(boundaries), strict=True):
+            if end < start:
                 raise SSZSerializationError(
-                    f"{cls.__name__}: "
-                    f"expected {var_section_size} variable bytes, got {len(var_section)}"
+                    f"{cls.__name__}.{name}: non-monotonic offsets ({start} > {end})"
                 )
+            fields[name] = ftype.deserialize(stream, end - start)
 
-            # Extract each variable field using offsets
-            offsets = [offset for _, _, offset in var_fields] + [scope]
-            for i, (name, field_type, start) in enumerate(var_fields):
-                # Calculate slice boundaries relative to variable section
-                end = offsets[i + 1]
-                rel_start = start - bytes_read
-                rel_end = end - bytes_read
-
-                # Validate offset bounds
-                if rel_start < 0 or rel_start > rel_end:
-                    raise SSZSerializationError(
-                        f"{cls.__name__}.{name}: invalid offsets start={start}, end={end}"
-                    )
-
-                # Deserialize field from its slice
-                field_data = var_section[rel_start:rel_end]
-                fields[name] = field_type.decode_bytes(field_data)
-
-        # Construct container with all fields
         return cls(**fields)
 
     @classmethod
     def from_hex(cls, value: str) -> Self:
-        """Decode from a hex string with an optional "0x" prefix."""
+        """Decode from a hex string with an optional 0x prefix."""
         return cls.decode_bytes(bytes.fromhex(value.removeprefix("0x")))
-
-    def to_hex(self) -> str:
-        """Encode as a plain hex string (no "0x" prefix)."""
-        return self.encode_bytes().hex()

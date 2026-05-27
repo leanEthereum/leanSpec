@@ -1,5 +1,7 @@
 """Registry of registered forks, ordered oldest to newest."""
 
+from itertools import pairwise
+
 from .protocol import ForkProtocol
 
 
@@ -26,7 +28,7 @@ class ForkRegistry:
             raise ValueError("ForkRegistry requires at least one fork")
 
         versions = [f.VERSION for f in forks]
-        if any(versions[i] >= versions[i + 1] for i in range(len(versions) - 1)):
+        if any(a >= b for a, b in pairwise(versions)):
             raise ValueError(f"Forks must be ordered by strictly increasing VERSION: {versions}")
 
         names = [f.NAME for f in forks]

@@ -203,13 +203,13 @@ class TestSupportedProtocols:
     """
     Verify the set of protocol IDs advertised during connection setup.
 
-    An Ethereum consensus node must support gossipsub v1.1, gossipsub v1.2
-    (for IDONTWANT bandwidth optimization), and all req/resp protocol IDs.
+    The node advertises gossipsub v1.2 (for IDONTWANT bandwidth optimization)
+    and all req/resp protocol IDs.
     The set must be immutable to prevent accidental mutation at runtime.
     """
 
-    def test_contains_gossipsub_v11(self) -> None:
-        """Includes gossipsub v1.1 as required by Ethereum consensus spec."""
+    def test_contains_gossipsub_default(self) -> None:
+        """Includes the default gossipsub protocol ID."""
         assert GOSSIPSUB_DEFAULT_PROTOCOL_ID in SUPPORTED_PROTOCOLS
 
     def test_contains_gossipsub_v12(self) -> None:
@@ -513,18 +513,18 @@ class TestLiveNetworkEventSourceStop:
     """
 
     async def test_stop_sets_running_false(self) -> None:
-        """Stopping clears the running flag."""
+        """Stopping flips the stop event back to set."""
         es = _make_event_source()
-        es._running = True
+        es._stop_event.clear()
 
         await es.stop()
 
-        assert es._running is False
+        assert es._stop_event.is_set()
 
     async def test_stop_cancels_gossip_tasks(self) -> None:
         """Stopping cancels all tracked background tasks."""
         es = _make_event_source()
-        es._running = True
+        es._stop_event.clear()
 
         task = asyncio.create_task(asyncio.sleep(100))
         es._gossip_tasks.add(task)
@@ -536,7 +536,7 @@ class TestLiveNetworkEventSourceStop:
     async def test_stop_clears_task_set(self) -> None:
         """The gossip task set is empty after stopping."""
         es = _make_event_source()
-        es._running = True
+        es._stop_event.clear()
 
         task = asyncio.create_task(asyncio.sleep(100))
         es._gossip_tasks.add(task)
@@ -614,7 +614,7 @@ class TestLiveNetworkEventSourceInit:
     def test_not_running_initially(self) -> None:
         """Event source starts in stopped state."""
         es = _make_event_source()
-        assert es._running is False
+        assert es._stop_event.is_set()
 
     def test_no_connections_initially(self) -> None:
         """No peer connections on construction."""

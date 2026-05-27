@@ -1,14 +1,11 @@
-"""Constants defined in the SSZ specification."""
+"""Constants used by SSZ merkleization."""
 
 from __future__ import annotations
 
 from typing import Final
 
 BYTES_PER_CHUNK: Final = 32
-"""Number of bytes per Merkle chunk."""
+"""Width of a Merkle leaf chunk in bytes."""
 
-BITS_PER_BYTE: Final = 8
-"""Number of bits per byte."""
-
-BITS_PER_CHUNK: Final = BYTES_PER_CHUNK * BITS_PER_BYTE
-"""Number of bits per Merkle chunk (256 bits)."""
+BITS_PER_CHUNK: Final = BYTES_PER_CHUNK * 8
+"""Width of a Merkle leaf chunk in bits."""

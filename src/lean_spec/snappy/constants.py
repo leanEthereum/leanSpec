@@ -12,10 +12,7 @@ from typing import Final
 # Snappy processes data in fixed-size blocks to bound memory usage and
 # enable streaming. Each block is compressed independently.
 
-BLOCK_LOG: Final = 16
-"""Log2 of the maximum block size (2^16 = 65536 bytes)."""
-
-BLOCK_SIZE: Final = 1 << BLOCK_LOG
+BLOCK_SIZE: Final = 1 << 16
 """Maximum block size in bytes (64 KB).
 
 Large inputs are split into 64 KB blocks, each compressed independently.
@@ -151,13 +148,6 @@ MAX_COPY_2_OFFSET: Final = 65535
 # The uncompressed length is encoded as a varint at the start of the
 # compressed data. Varints use 7 bits per byte, with the high bit
 # indicating continuation.
-
-MAX_VARINT_LENGTH: Final = 5
-"""Maximum bytes needed for a 32-bit varint.
-
-Each byte encodes 7 bits, so 5 bytes can encode up to 35 bits.
-This is sufficient for any 32-bit value.
-"""
 
 VARINT_CONTINUATION_BIT: Final = 0x80
 """High bit set in varint bytes to indicate more bytes follow."""

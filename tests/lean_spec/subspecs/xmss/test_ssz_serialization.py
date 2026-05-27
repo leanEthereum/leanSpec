@@ -1,5 +1,6 @@
 """Tests for SSZ serialization of XMSS types."""
 
+from lean_spec.subspecs.koalabear.field import P_BYTES
 from lean_spec.subspecs.xmss.constants import TEST_CONFIG
 from lean_spec.subspecs.xmss.containers import PublicKey, SecretKey, Signature
 from lean_spec.subspecs.xmss.interface import TEST_SIGNATURE_SCHEME
@@ -132,10 +133,15 @@ def test_signature_size_matches_config() -> None:
 
 
 def test_public_key_size_matches_config() -> None:
-    """Verify PUBLIC_KEY_LEN_BYTES matches actual SSZ-encoded size."""
+    """Verify the encoded public key size matches its SSZ shape.
+
+    A public key is a HASH_LEN_FE-element hash digest plus a PARAMETER_LEN
+    public parameter, each field element packed into P_BYTES bytes.
+    """
     activation_slot = Slot(0)
     num_active_slots = Uint64(32)
     public_key = TEST_SIGNATURE_SCHEME.key_gen(activation_slot, num_active_slots).public_key
 
     encoded = public_key.encode_bytes()
-    assert len(encoded) == TEST_CONFIG.PUBLIC_KEY_LEN_BYTES
+    expected = (TEST_CONFIG.HASH_LEN_FE + TEST_CONFIG.PARAMETER_LEN) * P_BYTES
+    assert len(encoded) == expected

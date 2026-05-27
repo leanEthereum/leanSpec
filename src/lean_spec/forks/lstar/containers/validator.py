@@ -1,7 +1,5 @@
 """Validator container for the Lean Ethereum consensus specification."""
 
-from __future__ import annotations
-
 from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
 from lean_spec.subspecs.xmss.containers import PublicKey
 from lean_spec.types import Bytes52, Container, SSZList, ValidatorIndex

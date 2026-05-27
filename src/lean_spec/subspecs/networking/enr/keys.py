@@ -32,18 +32,9 @@ IP: Final = EnrKey("ip")
 UDP: Final = EnrKey("udp")
 """UDP port for discovery (big-endian integer)."""
 
-IP6: Final = EnrKey("ip6")
-"""IPv6 address (16 bytes)."""
-
-UDP6: Final = EnrKey("udp6")
-"""IPv6-specific UDP port (big-endian integer)."""
-
 # QUIC Keys
 QUIC: Final = EnrKey("quic")
 """QUIC port for QUIC connections (big-endian integer)."""
-
-QUIC6: Final = EnrKey("quic6")
-"""IPv6-specific QUIC port (big-endian integer)."""
 
 # Ethereum Consensus Extensions
 ETH2: Final = EnrKey("eth2")
@@ -51,9 +42,6 @@ ETH2: Final = EnrKey("eth2")
 
 ATTNETS: Final = EnrKey("attnets")
 """Attestation subnet subscriptions (8 bytes bitvector)."""
-
-SYNCNETS: Final = EnrKey("syncnets")
-"""Sync committee subnet subscriptions (1 byte bitvector)."""
 
 IS_AGGREGATOR: Final = EnrKey("is_aggregator")
 """Aggregator capability flag (1 byte: 0x00 = false, 0x01 = true)."""

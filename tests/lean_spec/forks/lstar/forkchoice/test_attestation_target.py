@@ -82,7 +82,7 @@ class TestGetAttestationTarget:
         target_slot = target.slot
 
         # The target should be at most JUSTIFICATION_LOOKBACK_SLOTS behind head
-        assert target_slot >= head_slot - JUSTIFICATION_LOOKBACK_SLOTS
+        assert int(target_slot) >= int(head_slot) - int(JUSTIFICATION_LOOKBACK_SLOTS)
 
     def test_attestation_target_respects_justifiable_slots(
         self,
@@ -505,7 +505,7 @@ class TestAttestationTargetEdgeCases:
         head_slot = store.blocks[store.head].slot
 
         # Target should not be more than JUSTIFICATION_LOOKBACK_SLOTS behind head
-        assert target.slot >= head_slot - JUSTIFICATION_LOOKBACK_SLOTS
+        assert int(target.slot) >= int(head_slot) - int(JUSTIFICATION_LOOKBACK_SLOTS)
 
 
 class TestIntegrationScenarios:

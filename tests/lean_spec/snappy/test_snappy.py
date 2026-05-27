@@ -12,8 +12,6 @@ from lean_spec.snappy import (
     SnappyDecompressionError,
     compress,
     decompress,
-    get_uncompressed_length,
-    is_valid_compressed_data,
     max_compressed_length,
 )
 from lean_spec.snappy.encoding import (
@@ -303,20 +301,6 @@ class TestRealDataFiles:
         compressed = compress(data)
         assert len(compressed) <= max_compressed_length(len(data))
 
-    @pytest.mark.parametrize("label,filename,size_limit", TEST_DATA_FILES)
-    def test_valid_compressed_check(self, label: str, filename: str, size_limit: int) -> None:
-        """Test that is_valid_compressed_data returns True for valid data."""
-        data = load_test_file(filename, size_limit)
-        compressed = compress(data)
-        assert is_valid_compressed_data(compressed)
-
-    @pytest.mark.parametrize("label,filename,size_limit", TEST_DATA_FILES)
-    def test_uncompressed_length(self, label: str, filename: str, size_limit: int) -> None:
-        """Test that get_uncompressed_length returns correct value."""
-        data = load_test_file(filename, size_limit)
-        compressed = compress(data)
-        assert get_uncompressed_length(compressed) == len(data)
-
     def test_text_compression_ratio(self) -> None:
         """Text files should achieve good compression."""
         for label, filename, _ in TEST_DATA_FILES:
@@ -351,8 +335,6 @@ class TestCorruptedData:
         corrupted[1] -= 1
         corrupted[3] += 1
 
-        # Note: is_valid_compressed_data only checks the varint header,
-        # so corrupted data may still pass basic validation.
         # The important thing is that decompression fails gracefully.
         with pytest.raises(SnappyDecompressionError):
             decompress(bytes(corrupted))
@@ -366,12 +348,11 @@ class TestCorruptedData:
         corrupted = bytearray(compressed)
         corrupted[0] = corrupted[1] = corrupted[2] = corrupted[3] = 0
 
-        # Should either fail validation or decompress to empty
-        result_is_valid = is_valid_compressed_data(bytes(corrupted))
-        if result_is_valid:
-            # If it's "valid", decompression should give empty result
-            result = decompress(bytes(corrupted))
-            assert result == b""
+        # Should either decompress to empty or raise gracefully.
+        try:
+            assert decompress(bytes(corrupted)) == b""
+        except SnappyDecompressionError:
+            pass
 
     def test_large_declared_length(self) -> None:
         """Test data claiming very large uncompressed size."""
@@ -383,8 +364,6 @@ class TestCorruptedData:
         corrupted[0] = corrupted[1] = corrupted[2] = 0xFF
         corrupted[3] = 0x00
 
-        # Note: is_valid_compressed_data only checks varint validity,
-        # not whether the declared length is achievable.
         # Decompression should fail because we can't produce that many bytes.
         with pytest.raises(SnappyDecompressionError):
             decompress(bytes(corrupted))
@@ -394,19 +373,11 @@ class TestCorruptedData:
         """Test that bad data files from C++ test suite are rejected."""
         data = load_test_file(bad_file)
 
-        # Either get_uncompressed_length should fail or return a reasonable value
+        # Bad data must either decompress safely or raise.
         try:
-            ulen = get_uncompressed_length(data)
-            # If it succeeds, length should be less than 1MB (reasonable bound)
-            assert ulen < (1 << 20)
+            decompress(data)
         except SnappyDecompressionError:
-            pass  # Expected
-
-        # Should not validate as good data
-        # Note: Some bad data might pass basic validation but fail decompression
-        if is_valid_compressed_data(data):
-            with pytest.raises(SnappyDecompressionError):
-                decompress(data)
+            pass
 
     def test_truncated_literal(self) -> None:
         """Test handling of truncated literal data."""
@@ -445,21 +416,6 @@ class TestDecompressionEdgeCases:
 
 class TestUtilities:
     """Tests for utility functions."""
-
-    def test_get_uncompressed_length(self) -> None:
-        """get_uncompressed_length returns the correct value."""
-        for size in [0, 1, 100, 10000, 100000]:
-            data = bytes(range(256)) * (size // 256 + 1)
-            data = data[:size]
-            compressed = compress(data)
-            assert get_uncompressed_length(compressed) == len(data)
-
-    def test_is_valid_compressed_data(self) -> None:
-        """is_valid_compressed_data identifies valid and invalid data."""
-        data = b"Test data"
-        compressed = compress(data)
-        assert is_valid_compressed_data(compressed) is True
-        assert is_valid_compressed_data(b"") is False
 
     def test_max_compressed_length(self) -> None:
         """max_compressed_length returns a valid upper bound."""

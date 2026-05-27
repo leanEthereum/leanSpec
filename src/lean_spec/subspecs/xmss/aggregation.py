@@ -7,8 +7,6 @@ Two proof shapes:
 - Type-2: a merge of N Type-1 proofs over distinct messages.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 from lean_multisig_py import (
@@ -67,8 +65,8 @@ class TypeOneMultiSignature(Container):
 
     @staticmethod
     def select_greedily(
-        *proof_sets: set[TypeOneMultiSignature] | None,
-    ) -> tuple[list[TypeOneMultiSignature], set[ValidatorIndex]]:
+        *proof_sets: set["TypeOneMultiSignature"] | None,
+    ) -> tuple[list["TypeOneMultiSignature"], set[ValidatorIndex]]:
         """Greedy set-cover over Type-1 proofs to maximise validator coverage.
 
         Repeatedly selects the proof covering the most uncovered validators
@@ -102,13 +100,13 @@ class TypeOneMultiSignature(Container):
 
     @staticmethod
     def aggregate(
-        children: Sequence[tuple[TypeOneMultiSignature, Sequence[PublicKey]]],
+        children: Sequence[tuple["TypeOneMultiSignature", Sequence[PublicKey]]],
         raw_xmss: Sequence[tuple[PublicKey, Signature]],
         xmss_participants: AggregationBits | None,
         message: Bytes32,
         slot: Slot,
         mode: LeanEnvMode | None = None,
-    ) -> TypeOneMultiSignature:
+    ) -> "TypeOneMultiSignature":
         """Aggregate raw XMSS signatures and child Type-1 proofs into one Type-1 proof.
 
         Proof bytes are stored in compact no-pubkeys form. Participant identity is
@@ -224,7 +222,7 @@ class TypeTwoMultiSignature(Container):
         parts: Sequence[TypeOneMultiSignature],
         public_keys_per_part: Sequence[Sequence[PublicKey]] | None = None,
         mode: LeanEnvMode | None = None,
-    ) -> TypeTwoMultiSignature:
+    ) -> "TypeTwoMultiSignature":
         """Merge several Type-1 proofs (each over a distinct message) into one Type-2 proof.
 
         The returned Type-2 proof bytes are stored in compact no-pubkeys form.

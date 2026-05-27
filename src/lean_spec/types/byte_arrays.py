@@ -11,8 +11,6 @@ Two flavors are defined by the SSZ spec:
 Both flavors serialize as the raw bytes themselves — no length prefix, no delimiter.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from typing import IO, Any, ClassVar, Self, override
 
@@ -222,12 +220,6 @@ class BaseBytes(bytes, SSZType):
     def __hash__(self) -> int:
         """Return a hash distinct from raw bytes — matches the strict equality contract."""
         return hash((type(self), bytes(self)))
-
-
-class Bytes1(BaseBytes):
-    """Fixed-size byte array of exactly 1 byte."""
-
-    LENGTH = 1
 
 
 class Bytes4(BaseBytes):

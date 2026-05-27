@@ -125,7 +125,7 @@ class TestNode:
         """Stop the node gracefully."""
         # Signal the node and event source to stop.
         self.node.stop()
-        self.event_source._running = False
+        self.event_source._stop_event.set()
 
         # Set the stop event on gossipsub to release waiting tasks.
         self.event_source._gossipsub_behavior._stop_event.set()
@@ -341,10 +341,10 @@ class NodeCluster:
 
         # Start listener in background (listen() calls serve_forever() which blocks).
         #
-        # Set _running BEFORE starting the listener to avoid race conditions.
-        # The network service checks _running when iterating over events.
-        # If _running is False, the iteration stops immediately.
-        event_source._running = True
+        # Clear the stop event BEFORE starting the listener to avoid race conditions.
+        # The network service checks the stop event when iterating over events.
+        # If the stop event is set, iteration stops immediately.
+        event_source._stop_event.clear()
 
         listener_task = asyncio.create_task(
             event_source.listen(listen_addr),
@@ -396,7 +396,7 @@ class NodeCluster:
 
         self.nodes.append(test_node)
         # Log node startup with gossipsub instance ID for debugging.
-        gs_id = event_source._gossipsub_behavior._instance_id % 0xFFFF
+        gs_id = event_source._gossipsub_behavior._short_id
         logger.info(
             "Started node %d on %s (validators: %s, services=%s, GS=%x)",
             node_index,

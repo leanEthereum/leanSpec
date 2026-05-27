@@ -12,7 +12,8 @@ from consensus_testing import (
     TickStep,
 )
 
-from lean_spec.types import Slot, Uint64, ValidatorIndex
+from lean_spec.subspecs.chain.clock import Interval
+from lean_spec.types import Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -59,7 +60,7 @@ def test_tick_interval_progression_through_full_slot(
             TickStep(
                 time=12,
                 checks=StoreChecks(
-                    time=Uint64(15),
+                    time=Interval(15),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                 ),
@@ -69,7 +70,7 @@ def test_tick_interval_progression_through_full_slot(
             TickStep(
                 time=13,
                 checks=StoreChecks(
-                    time=Uint64(16),
+                    time=Interval(16),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                 ),
@@ -80,7 +81,7 @@ def test_tick_interval_progression_through_full_slot(
             TickStep(
                 time=14,
                 checks=StoreChecks(
-                    time=Uint64(17),
+                    time=Interval(17),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                 ),
@@ -125,7 +126,7 @@ def test_tick_interval_progression_through_full_slot(
             TickStep(
                 time=15,
                 checks=StoreChecks(
-                    time=Uint64(18),
+                    time=Interval(18),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                     safe_target_slot=Slot(2),
@@ -145,7 +146,7 @@ def test_tick_interval_progression_through_full_slot(
             TickStep(
                 time=16,
                 checks=StoreChecks(
-                    time=Uint64(20),
+                    time=Interval(20),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                     safe_target_slot=Slot(2),
@@ -178,7 +179,7 @@ def test_on_tick_advances_across_multiple_empty_slots(
             TickStep(
                 time=8,
                 checks=StoreChecks(
-                    time=Uint64(10),
+                    time=Interval(10),
                     head_slot=Slot(1),
                     head_root_label="block_1",
                 ),
@@ -187,7 +188,7 @@ def test_on_tick_advances_across_multiple_empty_slots(
             TickStep(
                 time=12,
                 checks=StoreChecks(
-                    time=Uint64(15),
+                    time=Interval(15),
                     head_slot=Slot(1),
                     head_root_label="block_1",
                 ),
@@ -196,7 +197,7 @@ def test_on_tick_advances_across_multiple_empty_slots(
             TickStep(
                 time=16,
                 checks=StoreChecks(
-                    time=Uint64(20),
+                    time=Interval(20),
                     head_slot=Slot(1),
                     head_root_label="block_1",
                 ),
@@ -240,7 +241,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             TickStep(
                 interval=14,
                 checks=StoreChecks(
-                    time=Uint64(14),
+                    time=Interval(14),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                 ),
@@ -274,7 +275,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             TickStep(
                 interval=15,
                 checks=StoreChecks(
-                    time=Uint64(15),
+                    time=Interval(15),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                     attestation_checks=[
@@ -293,7 +294,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             TickStep(
                 interval=19,
                 checks=StoreChecks(
-                    time=Uint64(19),
+                    time=Interval(19),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                 ),
@@ -330,7 +331,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
                 interval=20,
                 has_proposal=True,
                 checks=StoreChecks(
-                    time=Uint64(20),
+                    time=Interval(20),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                     attestation_checks=[
@@ -349,7 +350,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             TickStep(
                 interval=28,
                 checks=StoreChecks(
-                    time=Uint64(28),
+                    time=Interval(28),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                 ),
@@ -379,7 +380,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             TickStep(
                 interval=29,
                 checks=StoreChecks(
-                    time=Uint64(29),
+                    time=Interval(29),
                     head_slot=Slot(2),
                     head_root_label="block_2",
                     attestation_checks=[

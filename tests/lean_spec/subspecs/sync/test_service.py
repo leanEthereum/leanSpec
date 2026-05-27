@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from types import MappingProxyType
 from typing import cast
 
@@ -11,15 +10,13 @@ from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.forks.lstar.containers import (
     SignedAggregatedAttestation,
-    SignedBlock,
 )
-from lean_spec.forks.lstar.store import Store
 from lean_spec.subspecs.networking import PeerId
 from lean_spec.subspecs.networking.reqresp.message import Status
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.storage.database import Database
 from lean_spec.subspecs.sync.config import MAX_PENDING_ATTESTATIONS
-from lean_spec.subspecs.sync.service import SyncProgress, SyncService
+from lean_spec.subspecs.sync.service import SyncService
 from lean_spec.subspecs.sync.states import SyncState
 from lean_spec.types import Bytes32, Checkpoint, Slot, ValidatorIndex
 from tests.lean_spec.helpers import (
@@ -43,30 +40,6 @@ def _signed_aggregated_attestation(key_manager: XmssKeyManager) -> SignedAggrega
     )
     proof = make_aggregated_proof(key_manager, [ValidatorIndex(1)], attestation_data)
     return SignedAggregatedAttestation(data=attestation_data, proof=proof)
-
-
-def _persist_process_block(
-    *,
-    include_post_state: bool,
-    prune: bool,
-) -> Callable[[Store, SignedBlock], Store]:
-    post_state = make_genesis_state(num_validators=1)
-
-    def process_block(store: Store, block: SignedBlock) -> Store:
-        ms = cast(MockForkchoiceStore, store)
-        ms.on_block(block)
-        block_root = hash_tree_root(block.block)
-        if include_post_state:
-            ms.states[block_root] = post_state
-        slot = block.block.slot
-        ms.latest_justified = Checkpoint(root=block_root, slot=slot)
-        if prune:
-            ms.latest_finalized = Checkpoint(root=block_root, slot=slot)
-        else:
-            ms.latest_finalized = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
-        return cast(Store, ms)
-
-    return process_block
 
 
 @pytest.fixture
@@ -273,137 +246,6 @@ class TestGossipBlockHandling:
         assert sync_service.block_cache.orphan_count == 1
 
 
-class TestProgressReporting:
-    """Tests for sync progress reporting."""
-
-    def test_progress_reflects_current_state(
-        self,
-        sync_service: SyncService,
-        peer_id: PeerId,
-    ) -> None:
-        """get_progress accurately reflects service state."""
-        # Initial progress
-        progress = sync_service.get_progress()
-        assert progress == SyncProgress(
-            state=SyncState.IDLE,
-            local_head_slot=Slot(0),
-            network_finalized_slot=None,
-            blocks_processed=0,
-            peers_connected=1,
-            cache_size=0,
-            orphan_count=0,
-        )
-
-        # After processing some blocks
-        sync_service.state = SyncState.SYNCING
-        sync_service._blocks_processed = 42
-
-        progress = sync_service.get_progress()
-        assert progress == SyncProgress(
-            state=SyncState.SYNCING,
-            local_head_slot=Slot(0),
-            network_finalized_slot=None,
-            blocks_processed=42,
-            peers_connected=1,
-            cache_size=0,
-            orphan_count=0,
-        )
-
-    def test_progress_includes_network_consensus(
-        self,
-        sync_service: SyncService,
-        peer_id: PeerId,
-    ) -> None:
-        """Progress includes network finalized slot from peers."""
-        status = Status(
-            finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(100)),
-            head=Checkpoint(root=Bytes32.zero(), slot=Slot(150)),
-        )
-        sync_service.peer_manager.update_status(peer_id, status)
-
-        progress = sync_service.get_progress()
-        assert progress == SyncProgress(
-            state=SyncState.IDLE,
-            local_head_slot=Slot(0),
-            network_finalized_slot=Slot(100),
-            blocks_processed=0,
-            peers_connected=1,
-            cache_size=0,
-            orphan_count=0,
-        )
-
-    def test_progress_tracks_cache_state(
-        self,
-        sync_service: SyncService,
-        peer_id: PeerId,
-    ) -> None:
-        """Progress includes cache size and orphan count."""
-        # Add blocks to cache
-        block1 = make_signed_block(
-            slot=Slot(1),
-            proposer_index=ValidatorIndex(0),
-            parent_root=Bytes32(b"\x01" * 32),
-            state_root=Bytes32(b"\x01" * 32),
-        )
-        block2 = make_signed_block(
-            slot=Slot(2),
-            proposer_index=ValidatorIndex(0),
-            parent_root=Bytes32(b"\x02" * 32),
-            state_root=Bytes32(b"\x02" * 32),
-        )
-
-        pending1 = sync_service.block_cache.add(block1, peer_id)
-        sync_service.block_cache.add(block2, peer_id)
-        sync_service.block_cache.mark_orphan(pending1.root)
-
-        progress = sync_service.get_progress()
-        assert progress == SyncProgress(
-            state=SyncState.IDLE,
-            local_head_slot=Slot(0),
-            network_finalized_slot=None,
-            blocks_processed=0,
-            peers_connected=1,
-            cache_size=2,
-            orphan_count=1,
-        )
-
-
-class TestReset:
-    """Tests for service reset functionality."""
-
-    def test_reset_clears_all_state(
-        self,
-        sync_service: SyncService,
-        peer_id: PeerId,
-    ) -> None:
-        """reset() returns service to initial state."""
-        # Put service in a dirty state
-        sync_service.state = SyncState.SYNCED
-        sync_service._blocks_processed = 100
-
-        block = make_signed_block(
-            slot=Slot(1),
-            proposer_index=ValidatorIndex(0),
-            parent_root=Bytes32(b"\x01" * 32),
-            state_root=Bytes32.zero(),
-        )
-        sync_service.block_cache.add(block, peer_id)
-
-        # Verify backfill component exists before adding pending
-        assert sync_service._backfill is not None
-        sync_service._backfill._pending.add(Bytes32(b"\x02" * 32))
-
-        # Reset
-        sync_service.reset()
-
-        # Verify clean state
-        assert sync_service.state == SyncState.IDLE
-        assert sync_service._blocks_processed == 0
-        assert len(sync_service.block_cache) == 0
-        assert sync_service._backfill is not None
-        assert sync_service._backfill._pending == set()
-
-
 class TestAttestationGossipHandling:
     """Tests for attestation gossip handling."""
 
@@ -464,7 +306,7 @@ class TestAttestationGossipHandling:
 
         await sync_service.on_gossip_attestation(attestation)
 
-        assert sync_service._pending_attestations == [attestation]
+        assert list(sync_service._pending_attestations) == [attestation]
 
     async def test_buffered_attestation_replayed_after_block(
         self,
@@ -495,7 +337,7 @@ class TestAttestationGossipHandling:
         await sync_service.on_gossip_block(block, peer_id)
 
         # Attestation was replayed (accepted by mock store).
-        assert sync_service._pending_attestations == []
+        assert list(sync_service._pending_attestations) == []
         mock_store = cast(MockForkchoiceStore, sync_service.store)
         assert attestation in mock_store._attestations_received
 
@@ -579,7 +421,7 @@ class TestGenesisStart:
 
 
 class TestBlockPersistence:
-    """Tests for _process_block_wrapper and database persistence."""
+    """Tests for process_block and database persistence."""
 
     def test_process_block_increments_counter_without_database(
         self,
@@ -595,7 +437,7 @@ class TestBlockPersistence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        service.store = service._process_block_wrapper(service.store, block)
+        service.store = service.process_block(service.store, block)
         assert service._blocks_processed == 1
 
     def test_persist_skips_state_when_post_state_missing(
@@ -607,8 +449,10 @@ class TestBlockPersistence:
         service = create_mock_sync_service(
             peer_id,
             database=cast(Database, db),
-            process_block=_persist_process_block(include_post_state=False, prune=False),
         )
+        mock_store = cast(MockForkchoiceStore, service.store)
+        # Justified advances each block; finalized stays at genesis (no prune).
+        mock_store.advance_justified_on_block = True
         service.state = SyncState.SYNCING
         genesis_root = service.store.head
         block = make_signed_block(
@@ -617,7 +461,7 @@ class TestBlockPersistence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        service.store = service._process_block_wrapper(service.store, block)
+        service.store = service.process_block(service.store, block)
 
         block_root = hash_tree_root(block.block)
         assert db.calls[0].name == "batch_write_enter"
@@ -649,8 +493,12 @@ class TestBlockPersistence:
         service = create_mock_sync_service(
             peer_id,
             database=cast(Database, db),
-            process_block=_persist_process_block(include_post_state=True, prune=True),
         )
+        mock_store = cast(MockForkchoiceStore, service.store)
+        # Post-state indexing requires both a state to index and an advanced finalized.
+        mock_store.on_block_post_state = make_genesis_state(num_validators=1)
+        mock_store.advance_justified_on_block = True
+        mock_store.advance_finalized_on_block = True
         service.state = SyncState.SYNCING
         genesis_root = service.store.head
         block = make_signed_block(
@@ -659,7 +507,7 @@ class TestBlockPersistence:
             parent_root=genesis_root,
             state_root=Bytes32.zero(),
         )
-        service.store = service._process_block_wrapper(service.store, block)
+        service.store = service.process_block(service.store, block)
 
         block_root = hash_tree_root(block.block)
         assert db.calls[0].name == "batch_write_enter"
@@ -827,7 +675,7 @@ class TestAggregatedAttestationGossip:
         mock_store.reject_aggregated_attestation = lambda _att: True
 
         await sync_service.on_gossip_aggregated_attestation(signed)
-        assert sync_service._pending_aggregated_attestations == [signed]
+        assert list(sync_service._pending_aggregated_attestations) == [signed]
 
     async def test_replay_pending_mixed_success_and_failure(
         self,
@@ -848,7 +696,7 @@ class TestAggregatedAttestationGossip:
         sync_service._replay_pending_attestations()
 
         assert ok_att in mock_store._attestations_received
-        assert sync_service._pending_aggregated_attestations == [bad_signed]
+        assert list(sync_service._pending_aggregated_attestations) == [bad_signed]
 
 
 class TestReplayPendingAttestationsPlain:
@@ -877,4 +725,4 @@ class TestReplayPendingAttestationsPlain:
         sync_service._replay_pending_attestations()
 
         assert ok_att in mock_store._attestations_received
-        assert sync_service._pending_attestations == [bad_att]
+        assert list(sync_service._pending_attestations) == [bad_att]

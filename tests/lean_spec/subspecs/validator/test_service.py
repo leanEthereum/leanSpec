@@ -1446,25 +1446,10 @@ class TestSyncLagGate:
         _add_block_at_slot(sync_service, Slot(20))
         assert service._is_synced_for_duties(Slot(15), "block")
 
-    def test_counters_split_block_and_attestation(self, sync_service: SyncService) -> None:
-        """Counters live on the loop, not on the gate."""
-
-        # Head 0, wall clock 20, fresh block at 20: gate closes.
-        _replace_head_at_slot(sync_service, Slot(0))
-        _add_block_at_slot(sync_service, Slot(20))
-        service = _build_gate_service(sync_service)
-
-        # Invariant: the gate never moves counters. Attribution belongs
-        # to the run loop. Querying the gate must leave them at zero.
-        assert not service._is_synced_for_duties(Slot(20), "block")
-        assert service.blocks_skipped_lag == 0
-        assert service.attestations_skipped_lag == 0
-        assert service.duty_gate_closed is True
-
     async def test_run_loop_skips_block_production_when_gated(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
-        """Closed gate at interval 0 skips block production and ticks only the block counter."""
+        """Closed gate at interval 0 skips block production."""
 
         # Wall clock at slot 10 interval 0, head stuck at slot 0.
         # Fresh local block at slot 10 makes the lag local, not network-wide.
@@ -1491,10 +1476,8 @@ class TestSyncLagGate:
         ):
             await service.run()
 
-        # Block path bypassed, attestation counter untouched.
+        # Block path bypassed.
         assert block_calls == []
-        assert service.blocks_skipped_lag >= 1
-        assert service.attestations_skipped_lag == 0
 
     async def test_run_loop_skips_attestation_when_gated(
         self, sync_service: SyncService, key_manager: XmssKeyManager
@@ -1532,11 +1515,9 @@ class TestSyncLagGate:
         ):
             await service.run()
 
-        # Attestation skipped, slot retryable, block counter untouched.
+        # Attestation skipped, slot retryable.
         assert attest_calls == []
         assert Slot(10) not in service._attested_slots
-        assert service.attestations_skipped_lag >= 1
-        assert service.blocks_skipped_lag == 0
 
     def test_gate_logs_only_on_transition(
         self, sync_service: SyncService, caplog: pytest.LogCaptureFixture

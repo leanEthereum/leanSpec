@@ -41,7 +41,6 @@ from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
-from time import time
 
 from lean_spec.forks import SignedBlock, Store
 from lean_spec.subspecs.networking.transport.peer_id import PeerId
@@ -108,15 +107,6 @@ class PendingBlock:
 
     This creates incentives for good behavior.
     None for self-produced blocks.
-    """
-
-    received_at: float = field(default_factory=time)
-    """
-    Unix timestamp when the block was received.
-
-    Enables staleness detection and debugging.
-
-    Very old pending blocks may indicate a stuck backfill or network issues.
     """
 
     backfill_depth: int = 0

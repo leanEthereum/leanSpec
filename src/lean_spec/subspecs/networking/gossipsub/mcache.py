@@ -64,6 +64,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from itertools import islice
 
 from .message import GossipsubMessage
 from .types import MessageId, Timestamp, TopicId
@@ -194,8 +195,8 @@ class MessageCache:
 
         windows_to_check = min(self.mcache_gossip, len(self._windows))
 
-        for i in range(windows_to_check):
-            for msg_id in self._windows[i]:
+        for window in islice(self._windows, windows_to_check):
+            for msg_id in window:
                 entry = self._by_id.get(msg_id)
                 if entry and entry.topic == topic:
                     result.append(msg_id)

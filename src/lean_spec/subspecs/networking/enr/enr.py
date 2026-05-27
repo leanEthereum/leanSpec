@@ -68,7 +68,7 @@ from lean_spec.types import (
 )
 
 from . import keys
-from .eth2 import AttestationSubnets, Eth2Data, SyncCommitteeSubnets
+from .eth2 import AttestationSubnets, Eth2Data
 from .keys import EnrKey
 
 ENR_PREFIX: Final = "enr:"
@@ -128,23 +128,9 @@ class ENR(StrictBaseModel):
         return ".".join(str(b) for b in ip_bytes) if ip_bytes and len(ip_bytes) == 4 else None
 
     @property
-    def ip6(self) -> str | None:
-        """IPv6 address as colon-separated hex."""
-        ip_bytes = self.get(keys.IP6)
-        if ip_bytes and len(ip_bytes) == 16:
-            return ":".join(ip_bytes[i : i + 2].hex() for i in range(0, 16, 2))
-        return None
-
-    @property
     def udp_port(self) -> Port | None:
         """UDP port for discovery."""
         raw = self.get(keys.UDP)
-        return Port(int.from_bytes(raw, "big")) if raw else None
-
-    @property
-    def udp6_port(self) -> Port | None:
-        """IPv6-specific UDP port."""
-        raw = self.get(keys.UDP6)
         return Port(int.from_bytes(raw, "big")) if raw else None
 
     @property
@@ -153,22 +139,14 @@ class ENR(StrictBaseModel):
         raw = self.get(keys.QUIC)
         return Port(int.from_bytes(raw, "big")) if raw else None
 
-    @property
-    def quic6_port(self) -> Port | None:
-        """IPv6-specific QUIC port."""
-        raw = self.get(keys.QUIC6)
-        return Port(int.from_bytes(raw, "big")) if raw else None
-
     def multiaddr(self) -> Multiaddr | None:
-        """
-        Construct QUIC multiaddress from endpoint info.
+        """Construct QUIC multiaddress from endpoint info.
+
         Use QUIC port if available, otherwise UDP port.
         """
         port = self.quic_port or self.udp_port
         if self.ip4 and port:
             return Multiaddr(f"/ip4/{self.ip4}/udp/{port}/quic-v1")
-        if self.ip6 and port:
-            return Multiaddr(f"/ip6/{self.ip6}/udp/{port}/quic-v1")
         return None
 
     @property
@@ -188,14 +166,6 @@ class ENR(StrictBaseModel):
         """Parse attnets key (SSZ Bitvector[64])."""
         attnets = self.get(keys.ATTNETS)
         return AttestationSubnets.decode_bytes(attnets) if attnets and len(attnets) == 8 else None
-
-    @property
-    def sync_committee_subnets(self) -> SyncCommitteeSubnets | None:
-        """Parse syncnets key (SSZ Bitvector[4])."""
-        syncnets = self.get(keys.SYNCNETS)
-        if syncnets and len(syncnets) == 1:
-            return SyncCommitteeSubnets.decode_bytes(syncnets)
-        return None
 
     @property
     def is_aggregator(self) -> bool:

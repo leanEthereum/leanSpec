@@ -107,7 +107,7 @@ class TestIntervalTicking:
         sample_store, _ = spec.tick_interval(sample_store, has_proposal=False)
 
         # Time should advance by one interval
-        assert sample_store.time == initial_time + Uint64(1)
+        assert sample_store.time == initial_time + Interval(1)
 
     def test_tick_interval_with_proposal(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test interval ticking with proposal."""
@@ -116,7 +116,7 @@ class TestIntervalTicking:
         sample_store, _ = spec.tick_interval(sample_store, has_proposal=True)
 
         # Time should advance
-        assert sample_store.time == initial_time + Uint64(1)
+        assert sample_store.time == initial_time + Interval(1)
 
     def test_tick_interval_sequence(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test sequence of interval ticks."""
@@ -127,21 +127,21 @@ class TestIntervalTicking:
             sample_store, _ = spec.tick_interval(sample_store, has_proposal=(i % 2 == 0))
 
         # Should have advanced by 5 intervals
-        assert sample_store.time == initial_time + Uint64(5)
+        assert sample_store.time == initial_time + Interval(5)
 
     def test_tick_interval_actions_by_phase(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test different actions performed based on interval phase."""
         # Reset store to known state
-        initial_time = Uint64(0)
+        initial_time = Interval(0)
         object.__setattr__(sample_store, "time", initial_time)
 
         # Tick through a complete slot cycle
-        for interval in range(INTERVALS_PER_SLOT):
+        for interval in range(int(INTERVALS_PER_SLOT)):
             has_proposal = interval == 0  # Proposal only in first interval
             sample_store, _ = spec.tick_interval(sample_store, has_proposal=has_proposal)
 
-            current_interval = sample_store.time % INTERVALS_PER_SLOT
-            expected_interval = Uint64((interval + 1)) % INTERVALS_PER_SLOT
+            current_interval = Interval(int(sample_store.time) % int(INTERVALS_PER_SLOT))
+            expected_interval = Interval((interval + 1) % int(INTERVALS_PER_SLOT))
             assert current_interval == expected_interval
 
 

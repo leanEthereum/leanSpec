@@ -539,3 +539,12 @@ class TestValidatorRegistryFromYaml:
         assert set(registry.indices()) == {ValidatorIndex(0)}
         assert ValidatorIndex(1) not in registry
         assert ValidatorIndex(2) not in registry
+
+
+class TestValidatorRegistryFromKeysDirectory:
+    """Tests for the ream/zeam-layout registry loader."""
+
+    def test_missing_manifest_raises(self, tmp_path: Path) -> None:
+        """The loader raises when the manifest file is absent."""
+        with pytest.raises(FileNotFoundError, match="Validator keys manifest not found"):
+            ValidatorRegistry.from_keys_directory(node_id="lean_spec_0", base_dir=tmp_path)

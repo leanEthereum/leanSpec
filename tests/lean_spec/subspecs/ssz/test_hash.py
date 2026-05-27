@@ -1,779 +1,692 @@
-""" "SSZ hash tree root tests."""
+"""Unit tests for the SSZ hash_tree_root dispatch."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from hashlib import sha256
-from typing import Iterable, Tuple, Type
 
 import pytest
 
 from lean_spec.subspecs.koalabear import Fp
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import BaseByteList, BaseBytes, Bytes32, Uint8, Uint16, Uint32, Uint64
+from lean_spec.types import (
+    BaseByteList,
+    BaseBytes,
+    Bytes32,
+    Uint8,
+    Uint16,
+    Uint32,
+    Uint64,
+)
 from lean_spec.types.bitfields import BaseBitlist, BaseBitvector
 from lean_spec.types.boolean import Boolean
 from lean_spec.types.collections import SSZList, SSZVector
 from lean_spec.types.container import Container
-from lean_spec.types.uint import BaseUint
+
+
+def h(a: bytes, b: bytes) -> Bytes32:
+    """Pairwise SHA-256 over two 32-byte nodes."""
+    return Bytes32(sha256(a + b).digest())
+
+
+def pad(payload: bytes) -> Bytes32:
+    """Right-pad a payload to 32 bytes."""
+    return Bytes32(payload.ljust(32, b"\x00"))
+
+
+# Precomputed zero subtree roots indexed by depth, used to build expected outputs.
+Z: list[Bytes32] = [Bytes32(b"\x00" * 32)]
+for _ in range(20):
+    Z.append(h(Z[-1], Z[-1]))
+
+
+def merge(leaf: Bytes32, branch: Iterable[Bytes32]) -> Bytes32:
+    """Walk a single leaf up a chain of right siblings, hashing left at each step."""
+    out = leaf
+    for sibling in branch:
+        out = h(out, sibling)
+    return out
 
 
 class Bytes48(BaseBytes):
-    """Fixed-size byte array of exactly 48 bytes (test-local definition)."""
+    """Test-local fixed-size byte array of 48 bytes."""
 
     LENGTH = 48
 
 
-# Concrete SSZList classes for tests
-class Uint16List32(SSZList[Uint16]):
-    LIMIT = 32
+class Bytes96(BaseBytes):
+    """Test-local fixed-size byte array of 96 bytes spanning three chunks."""
 
-
-class Uint16List128(SSZList[Uint16]):
-    LIMIT = 128
-
-
-class Uint16List1024(SSZList[Uint16]):
-    LIMIT = 1024
-
-
-class Uint32List128(SSZList[Uint32]):
-    LIMIT = 128
-
-
-class Bytes32List32(SSZList[Bytes32]):
-    LIMIT = 32
-
-
-def _le_hex(value: int, byte_len: int) -> str:
-    """
-    Converts an integer to a little-endian hexadecimal string of a fixed length.
-
-    Args:
-        value: The integer to convert.
-        byte_len: The exact number of bytes the output hex string should represent.
-
-    Returns:
-        A hexadecimal string representation of the integer.
-    """
-    return value.to_bytes(byte_len, "little").hex()
-
-
-def chunk(payload_hex: str) -> str:
-    """
-    Pads or truncates a hexadecimal string to form a 32-byte chunk.
-
-    According to SSZ, data is processed in 32-byte chunks. This function
-    ensures that any given hex string is correctly formatted as a 32-byte
-    (64-character) hex string by right-padding with '00' or truncating if necessary.
-
-    Args:
-        payload_hex: The input hexadecimal string.
-
-    Returns:
-        A 64-character hexadecimal string representing a 32-byte chunk.
-    """
-    return (payload_hex + ("00" * 32))[:64]
-
-
-def h(a_hex: str, b_hex: str) -> str:
-    """
-    Computes the SHA-256 hash of the concatenation of two 32-byte hex chunks.
-
-    This is the core Merkle tree hashing operation, combining two child nodes
-    to form a parent node.
-
-    Args:
-        a_hex: The left 32-byte chunk as a hex string.
-        b_hex: The right 32-byte chunk as a hex string.
-
-    Returns:
-        The resulting 32-byte SHA-256 hash as a hex string.
-    """
-    a = bytes.fromhex(a_hex)
-    b = bytes.fromhex(b_hex)
-    return sha256(a + b).hexdigest()
-
-
-# Precompute the "zero hashes" used for padding Merkle trees.
-#
-# ZERO_HASHES[i] is the hash of two ZERO_HASHES[i-1] nodes, forming a
-# balanced Merkle subtree of zero chunks at increasing depths.
-ZERO_HASHES = [chunk("")]
-for _ in range(1, 32):
-    ZERO_HASHES.append(h(ZERO_HASHES[-1], ZERO_HASHES[-1]))
-
-
-def merge(leaf: str, branch: Iterable[str]) -> str:
-    """
-    Merges a leaf with a branch of nodes in a Merkle tree structure.
-
-    This helper simulates the process of hashing a leaf up a series of parent
-    nodes in a Merkle proof, combining the current hash with a sibling node at
-    each level.
-
-    Args:
-        leaf: The initial leaf hash as a hex string.
-        branch: An iterable of sibling node hashes to merge with.
-
-    Returns:
-        The final root hash after merging the leaf all the way up the branch.
-    """
-    out = leaf
-    for b in branch:
-        out = h(out, b)
-    return out
-
-
-def _chunk_hex(payload_hex: str) -> str:
-    """
-    Alias for the `chunk` function for semantic clarity in tests.
-    """
-    return chunk(payload_hex)
-
-
-@pytest.mark.parametrize(
-    "uint_type,value_int,le_hex",
-    [
-        # uint8
-        (Uint8, 0x00, _le_hex(0x00, 1)),
-        (Uint8, 0x01, _le_hex(0x01, 1)),
-        (Uint8, 0xAB, _le_hex(0xAB, 1)),
-        # uint16
-        (Uint16, 0x0000, _le_hex(0x0000, 2)),
-        (Uint16, 0xABCD, _le_hex(0xABCD, 2)),
-        # uint32
-        (Uint32, 0x00000000, _le_hex(0x00000000, 4)),
-        (Uint32, 0x01234567, _le_hex(0x01234567, 4)),
-        # uint64
-        (Uint64, 0x0000000000000000, _le_hex(0x0000000000000000, 8)),
-        (Uint64, 0x0123456789ABCDEF, _le_hex(0x0123456789ABCDEF, 8)),
-    ],
-)
-def test_hash_tree_root_uints(uint_type: Type[BaseUint], value_int: int, le_hex: str) -> None:
-    """
-    Tests the hash tree root of various unsigned integer types (Uint).
-
-    For basic types like integers, the hash tree root is simply their
-    little-endian byte representation, right-padded with zeros to 32 bytes.
-
-    This test covers integers of different bit lengths.
-    """
-    # Instantiate the specific SSZ integer type with the test value.
-    val = uint_type(value_int)
-    # Calculate the hash tree root using both the functional and object-oriented approaches.
-    root_fn = hash_tree_root(val)
-    root_oo = hash_tree_root(val)
-    # The expected root is the little-endian hex string padded to a 32-byte chunk.
-    expected_chunk = _chunk_hex(le_hex)
-    # Verify that both calculated roots match the expected chunk.
-    assert root_fn.hex() == expected_chunk
-    assert root_oo.hex() == expected_chunk
-    # Ensure both calculation methods produce the exact same result.
-    assert root_fn == root_oo
-
-
-@pytest.mark.parametrize(
-    "val, serialized_hex",
-    [
-        (Boolean(False), "00"),
-        (Boolean(True), "01"),
-    ],
-)
-def test_hash_tree_root_boolean(val: Boolean, serialized_hex: str) -> None:
-    """
-    Tests the hash tree root of the Boolean type.
-
-    A boolean is serialized as `0x01` for True and `0x00` for False.
-
-    Its hash tree root is this single byte, right-padded to 32 bytes.
-    """
-    # The expected root is the boolean's serialized hex byte ('00' or '01') padded to 32 bytes.
-    expected = chunk(serialized_hex)
-    # Verify the functional approach gives the correct root.
-    assert hash_tree_root(val).hex() == expected
-    # Verify the object-oriented approach gives the correct root.
-    assert hash_tree_root(val).hex() == expected
-
-
-@pytest.mark.parametrize(
-    "payload_hex",
-    [
-        "",  # Empty bytes
-        "00",  # Single byte
-        "01",
-        "ab",
-        "00010203",  # Multiple bytes
-        "ff" * 31,  # 31 bytes, requires padding
-        "ff" * 32,  # Exactly one chunk
-        "ff" * 33,  # More than one chunk, requires Merklization
-    ],
-)
-def test_hash_tree_root_raw_bytes_like(payload_hex: str) -> None:
-    """Tests that `hash_tree_root` handles various raw byte-like inputs consistently."""
-    # Convert the hex payload to a bytes object.
-    data = bytes.fromhex(payload_hex)
-
-    # Compute the hash tree root for `bytes`.
-    got_b = hash_tree_root(data).hex()
-    # Compute the hash tree root for `bytearray`.
-    got_ba = hash_tree_root(bytearray(data)).hex()
-    # Compute the hash tree root for `memoryview`.
-    got_mv = hash_tree_root(memoryview(data)).hex()
-
-    # The core SSZ logic is to pack the data into chunks and then Merkleize.
-    # - For a single chunk or less, the root is just the padded chunk.
-    # - For multiple chunks, it's the root of the Merkle tree.
-    #
-    # This assertion verifies that all byte-like input types are treated identically.
-    assert got_b == got_ba == got_mv
-
-
-def test_hash_tree_root_bytevector_48() -> None:
-    """Tests the hash tree root of a fixed-size `ByteVector` that spans multiple chunks."""
-    # Create a ByteVector of 48 bytes with values 0x00 to 0x2F (47).
-    bv = Bytes48(bytes(range(48)))
-    # Define the first 32-byte chunk (bytes 0-31).
-    left = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-    # Define the second chunk (bytes 32-47), right-padded with zeros to 32 bytes.
-    right = "202122232425262728292a2b2c2d2e2f00000000000000000000000000000000"
-    # The expected root is the hash of the two chunks.
-    expected = h(left, right)
-    # Verify the calculated root matches the expected hash.
-    assert hash_tree_root(bv).hex() == expected
-
-
-def test_hash_tree_root_bytelist_small_empty() -> None:
-    """
-    Tests the hash tree root of an empty, small-capacity `ByteList`.
-
-    For a list, the root is a mix-in of the Merkle root of the data and the list's
-    length. For an empty list with a capacity of 10 bytes (which fits in one
-    chunk), the data root is a single zero chunk. This is then hashed with the
-    list's length (0) to get the final root.
-    """
-    # Create an empty ByteList with a capacity of 10 bytes.
-    bl = ByteList10(data=b"")
-    # The data root for an empty list within a single-chunk capacity is the zero chunk.
-    # - The length (0) is serialized and chunked.
-    # - The final root is hash(zero_chunk, chunk(length)).
-    expected = h(chunk(""), chunk("00"))
-    # Verify the calculated root.
-    assert hash_tree_root(bl).hex() == expected
-
-
-def test_hash_tree_root_bytelist_big_empty() -> None:
-    """
-    Tests the hash tree root of an empty, large-capacity `ByteList`.
-
-    If the list's capacity (2048 bytes = 64 chunks) requires a non-trivial Merkle
-    tree, the data root for an empty list is the root of a balanced tree of zero
-    chunks. For 64 chunks, this is `ZERO_HASHES[6]`. This root is then mixed in
-    with the length (0).
-    """
-    # Create an empty ByteList with a capacity of 2048 bytes.
-    bl = ByteList2048(data=b"")
-    # The data root for a 64-chunk capacity is the precomputed zero hash at depth 6.
-    # This is then hashed with the length (0).
-    expected = h(ZERO_HASHES[6], chunk("00"))
-    # Verify the calculated root.
-    assert hash_tree_root(bl).hex() == expected
-
-
-@pytest.mark.parametrize(
-    "limit, payload_hex, expected_root_hex",
-    [
-        # Case 1: 7-byte list. Fits in one chunk. Root is hash(chunk(data), chunk(length=7)).
-        (7, "00010203040506", h(chunk("00010203040506"), chunk("07"))),
-        # Case 2: 50-byte list. Spans two chunks. Merkleize data chunks, then mix in length.
-        (
-            50,
-            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f3031",
-            h(
-                h(
-                    # Chunk 1
-                    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-                    # Chunk 2 (padded)
-                    "202122232425262728292a2b2c2d2e2f30310000000000000000000000000000",
-                ),
-                chunk("32"),  # Length is 50 (0x32)
-            ),
-        ),
-        # Case 3: 256-byte limit, but only 6 bytes of data.
-        # Data root requires padding up to the capacity's Merkle tree depth.
-        # 256 bytes = 8 chunks, depth = 3.
-        (
-            256,
-            "000102030405",
-            h(
-                # Merkleize the single data chunk with zero hashes to a depth of 3.
-                h(h(h(chunk("000102030405"), ZERO_HASHES[0]), ZERO_HASHES[1]), ZERO_HASHES[2]),
-                # Mix in the length (6).
-                chunk("06"),
-            ),
-        ),
-    ],
-)
-def test_hash_tree_root_bytelist_various(
-    limit: int, payload_hex: str, expected_root_hex: str
-) -> None:
-    """
-    Tests `ByteList` hash tree root calculation for various sizes and capacities.
-    """
-    # Create the ByteList instance for the current test case.
-    # Map limit values to explicit ByteList classes
-    bytelist_classes = {
-        7: ByteList7,
-        50: ByteList50,
-        256: ByteList256,
-    }
-    bytelist_class = bytelist_classes[limit]
-    bl = bytelist_class(data=bytes.fromhex(payload_hex))
-    # Verify the calculated root matches the pre-computed expected root.
-    assert hash_tree_root(bl).hex() == expected_root_hex
-
-
-@pytest.mark.parametrize(
-    "bits, expect_serial_hex, expect_root_hex",
-    [
-        # Bitvector[8]: 8 bits fit in 1 byte. Root is the chunk of that byte.
-        ((1, 1, 0, 1, 0, 1, 0, 0), "2b", chunk("2b")),
-        # Bitvector[4]: 4 bits fit in 1 byte.
-        ((0, 1, 0, 1), "0a", chunk("0a")),
-        # Bitvector[3]: 3 bits fit in 1 byte.
-        ((0, 1, 0), "02", chunk("02")),
-    ],
-)
-def test_hash_tree_root_bitvector(
-    bits: Tuple[int, ...], expect_serial_hex: str, expect_root_hex: str
-) -> None:
-    """
-    Tests the hash tree root of `Bitvector` (fixed-size bitfield).
-
-    A `Bitvector` is serialized into the minimum number of bytes required.
-    Its hash tree root is the Merkle root of these bytes, treated like a `ByteVector`.
-    """
-
-    # Create the Bitvector instance with Boolean values.
-    class TestBitvector(BaseBitvector):
-        LENGTH = len(bits)
-
-    bool_bits = tuple(Boolean(b) for b in bits)
-    bv = TestBitvector(data=bool_bits)
-    # Sanity check: ensure the serialization is correct.
-    assert bv.encode_bytes().hex() == expect_serial_hex
-    # Verify the hash tree root.
-    assert hash_tree_root(bv).hex() == expect_root_hex
-
-
-@pytest.mark.parametrize(
-    "limit, bits, expect_serial_hex, expect_root_hex",
-    [
-        # Bitlist[8]: 8 bits + length bit serialize to 2 bytes ("2b01").
-        # The data root is chunk("2b"), mixed with length 8.
-        (8, (1, 1, 0, 1, 0, 1, 0, 0), "2b01", h(chunk("2b"), chunk("08"))),
-        # Bitlist[4]: 4 bits + length bit serialize to 1 byte ("1a").
-        # The data part is "0a". The root is hash(chunk("0a"), chunk(length=4)).
-        (4, (0, 1, 0, 1), "1a", h(chunk("0a"), chunk("04"))),
-        # Bitlist[3]: 3 bits + length bit serialize to 1 byte ("0a").
-        # Data part is "02". Root is hash(chunk("02"), chunk(length=3)).
-        (3, (0, 1, 0), "0a", h(chunk("02"), chunk("03"))),
-    ],
-)
-def test_hash_tree_root_bitlist(
-    limit: int, bits: Tuple[int, ...], expect_serial_hex: str, expect_root_hex: str
-) -> None:
-    """
-    Tests the hash tree root of `Bitlist` (variable-size bitfield).
-
-    A `Bitlist`'s serialization includes a "length bit". The hash tree root
-    calculation separates the data bits from the length, Merkleizes the data
-    part, and then mixes in the number of bits.
-    """
-
-    # Create the Bitlist instance with Boolean values.
-    class TestBitlist(BaseBitlist):
-        LIMIT = limit
-
-    bool_bits = tuple(Boolean(b) for b in bits)
-    bl = TestBitlist(data=bool_bits)
-    # Sanity check the SSZ serialization.
-    assert bl.encode_bytes().hex() == expect_serial_hex
-    # Verify the hash tree root.
-    assert hash_tree_root(bl).hex() == expect_root_hex
-
-
-def test_hash_tree_root_bitvector_512_all_ones() -> None:
-    """
-    Tests the hash tree root of a large `Bitvector` that spans multiple chunks.
-    """
-
-    # A 512-bit vector is 64 bytes, which is exactly two 32-byte chunks.
-    class Bitvector512(BaseBitvector):
-        LENGTH = 512
-
-    bv = Bitvector512(data=tuple(Boolean(1) for _ in range(512)))
-    # Both chunks will be all `0xff` bytes.
-    left = "ff" * 32
-    right = "ff" * 32
-    # The root is the hash of these two chunks.
-    expected = h(left, right)
-    # Verify the result.
-    assert hash_tree_root(bv).hex() == expected
-
-
-def test_hash_tree_root_bitlist_512_all_ones() -> None:
-    """
-    Tests the hash tree root of a large `Bitlist`.
-    """
-
-    # Create a Bitlist of 512 bits.
-    class Bitlist512(BaseBitlist):
-        LIMIT = 512
-
-    bl = Bitlist512(data=tuple(Boolean(1) for _ in range(512)))
-    # The data part is 512 bits (64 bytes), which forms two full chunks of `0xff`.
-    # The Merkle root of the data is the hash of these two chunks.
-    base = h("ff" * 32, "ff" * 32)
-    # This data root is then hashed with the list's length (512).
-    # 512 in little-endian is `0x0002`, which is hex "0002".
-    expected = h(base, chunk("0002"))
-    # Verify the result.
-    assert hash_tree_root(bl).hex() == expected
-
-
-# Define explicit SSZVector types for testing our new approach
-class Uint16Vector2(SSZVector[Uint16]):
-    """A vector of exactly 2 Uint16 values."""
-
-    LENGTH = 2
-
-
-# Forward declare classes for Complex container test
-class FixedVector4(SSZVector):
-    """A vector of exactly 4 Fixed values."""
-
-    ELEMENT_TYPE = None  # type: ignore[assignment] # Will be set after Fixed is defined
-    LENGTH = 4
-
-
-class VarVector2(SSZVector):
-    """A vector of exactly 2 Var values."""
-
-    ELEMENT_TYPE = None  # type: ignore[assignment] # Will be set after Var is defined
-    LENGTH = 2
-
-
-def test_hash_tree_root_vector_uint16_2() -> None:
-    """
-    Tests the hash tree root of an `SSZVector` of basic types.
-
-    If the total serialized size of an SSZVector is <= 32 bytes, the root is
-    simply the serialized bytes, right-padded to 32 bytes.
-    """
-    # SSZVector of two Uint16 values - using our new explicit class definition
-    v = Uint16Vector2(data=[Uint16(0x4567), Uint16(0x0123)])
-    # Serialization (little-endian): 0x4567 -> "6745", 0x0123 -> "2301".
-    # Concatenated: "67452301". This is 4 bytes, which fits in one chunk.
-    expected = chunk("67452301")
-    # Verify the root is the padded serialization.
-    assert hash_tree_root(v).hex() == expected
-
-
-def test_hash_tree_root_list_uint16() -> None:
-    """
-    Tests the hash tree root of a `List` of basic types.
-    """
-    # Create a list of three Uint16 elements.
-    test_list = Uint16List32(data=(Uint16(0xAABB), Uint16(0xC0AD), Uint16(0xEEFF)))
-    # The serialized data is "bbaaadc0ffee" (3 * 2 = 6 bytes).
-    # The capacity is 32 * 2 = 64 bytes = 2 chunks.
-    # The data is packed into chunks and Merkleized. Here, it's one data chunk and one zero chunk.
-    base = h(chunk("bbaaadc0ffee"), chunk(""))
-    # This data root is mixed in with the element count (3).
-    expected = h(base, chunk("03"))
-    # Verify the result.
-    assert hash_tree_root(test_list).hex() == expected
-
-
-def test_hash_tree_root_list_uint32_large_limit() -> None:
-    """
-    Tests a `List` of basic types with a large capacity, requiring padding.
-    """
-    # List of three Uint32s, capacity 128 elements.
-    test_list = Uint32List128(data=(Uint32(0xAABB), Uint32(0xC0AD), Uint32(0xEEFF)))
-    # Capacity: 128 * 4 = 512 bytes = 16 chunks. Tree depth is 4 (2^4=16).
-    # Serialized data: "bbaa0000adc00000ffee0000" (3 * 4 = 12 bytes), fits in one chunk.
-    # This single chunk must be Merkleized with zero hashes up to depth 4.
-    base = merge(chunk("bbaa0000adc00000ffee0000"), ZERO_HASHES[0:4])
-    # Finally, mix in the element count (3).
-    expected = h(base, chunk("03"))
-    # Verify the result.
-    assert hash_tree_root(test_list).hex() == expected
-
-
-def test_hash_tree_root_list_bytes32() -> None:
-    """
-    Tests a `List` where each element is itself a 32-byte chunk.
-    """
-    # Create a list of three Bytes32 elements.
-    test_list = Bytes32List32(
-        data=(
-            Bytes32(b"\xbb\xaa" + b"\x00" * 30),
-            Bytes32(b"\xad\xc0" + b"\x00" * 30),
-            Bytes32(b"\xff\xee" + b"\x00" * 30),
-        )
-    )
-    # Each Bytes32 is a 32-byte leaf. We have 3 leaves.
-    a = chunk("bbaa")  # first two bytes
-    b = chunk("adc0")  # first two bytes
-    c = chunk("ffee")  # first two bytes
-    # Merkleize the three leaves, padding to 4 with a zero chunk.
-    base = h(h(a, b), h(c, chunk("")))
-    # The list capacity is 32 elements, so the tree depth is 5 (2^5=32).
-    # We already have a root for 4 leaves (depth 2), so merge with zero hashes from depth 2 to 5.
-    merkle = merge(base, ZERO_HASHES[2:5])
-    # Mix in the element count (3).
-    expected = h(merkle, chunk("03"))
-    # Verify the result.
-    assert hash_tree_root(test_list).hex() == expected
-
-
-class ByteList10(BaseByteList):
-    """A variable-size byte list with a maximum of 10 bytes."""
-
-    LIMIT = 10
+    LENGTH = 96
 
 
 class ByteList7(BaseByteList):
-    """A variable-size byte list with a maximum of 7 bytes."""
+    """Byte list with a single-chunk capacity of 7 bytes."""
 
     LIMIT = 7
 
 
+class ByteList10(BaseByteList):
+    """Byte list with a single-chunk capacity of 10 bytes."""
+
+    LIMIT = 10
+
+
+class ByteList32(BaseByteList):
+    """Byte list whose capacity exactly fills one chunk."""
+
+    LIMIT = 32
+
+
 class ByteList50(BaseByteList):
-    """A variable-size byte list with a maximum of 50 bytes."""
+    """Byte list spanning two chunks of capacity."""
 
     LIMIT = 50
 
 
 class ByteList256(BaseByteList):
-    """A variable-size byte list with a maximum of 256 bytes."""
+    """Byte list with capacity for eight chunks."""
 
     LIMIT = 256
 
 
 class ByteList2048(BaseByteList):
-    """A variable-size byte list with a maximum of 2048 bytes."""
+    """Byte list with capacity for sixty-four chunks."""
 
     LIMIT = 2048
 
 
-# Define SSZ Container types for testing.
+class Bitvector1(BaseBitvector):
+    """Single-bit bitvector."""
+
+    LENGTH = 1
+
+
+class Bitvector3(BaseBitvector):
+    """Three-bit bitvector inside one byte."""
+
+    LENGTH = 3
+
+
+class Bitvector8(BaseBitvector):
+    """Bitvector aligned to one byte."""
+
+    LENGTH = 8
+
+
+class Bitvector9(BaseBitvector):
+    """Bitvector spilling into a second byte."""
+
+    LENGTH = 9
+
+
+class Bitvector256(BaseBitvector):
+    """Bitvector whose data fills exactly one 32-byte chunk."""
+
+    LENGTH = 256
+
+
+class Bitvector512(BaseBitvector):
+    """Bitvector whose data fills exactly two chunks."""
+
+    LENGTH = 512
+
+
+class Bitlist3(BaseBitlist):
+    """Bitlist limit of three bits."""
+
+    LIMIT = 3
+
+
+class Bitlist8(BaseBitlist):
+    """Bitlist limit of eight bits."""
+
+    LIMIT = 8
+
+
+class Bitlist256(BaseBitlist):
+    """Bitlist whose data root fits one chunk."""
+
+    LIMIT = 256
+
+
+class Bitlist512(BaseBitlist):
+    """Bitlist whose data root spans two chunks."""
+
+    LIMIT = 512
+
+
+class Uint16Vector1(SSZVector[Uint16]):
+    """Single-element vector of Uint16."""
+
+    LENGTH = 1
+
+
+class Uint16Vector2(SSZVector[Uint16]):
+    """Two-element vector of Uint16."""
+
+    LENGTH = 2
+
+
+class Uint16Vector16(SSZVector[Uint16]):
+    """Sixteen-element vector of Uint16 filling exactly one chunk."""
+
+    LENGTH = 16
+
+
+class Bytes32Vector3(SSZVector[Bytes32]):
+    """Vector of three composite Bytes32 elements."""
+
+    LENGTH = 3
+
+
+class Uint16List32(SSZList[Uint16]):
+    """List of Uint16 with a 32-element limit."""
+
+    LIMIT = 32
+
+
+class Uint16List1024(SSZList[Uint16]):
+    """List of Uint16 with a 1024-element limit used as a container field."""
+
+    LIMIT = 1024
+
+
+class Uint32List128(SSZList[Uint32]):
+    """List of Uint32 with a 128-element limit."""
+
+    LIMIT = 128
+
+
+class Bytes32List32(SSZList[Bytes32]):
+    """List of composite Bytes32 elements with a 32-element limit."""
+
+    LIMIT = 32
+
+
 class SingleField(Container):
+    """Container holding a single basic field."""
+
     A: Uint8
 
 
 class Small(Container):
+    """Container with two byte-aligned fields fitting in one chunk each."""
+
     A: Uint16
     B: Uint16
 
 
 class Fixed(Container):
+    """Container with three fixed-size fields needing tree padding."""
+
     A: Uint8
     B: Uint64
     C: Uint32
 
 
 class Var(Container):
+    """Container with a variable-size middle field."""
+
     A: Uint16
     B: Uint16List1024
     C: Uint8
 
 
-# Set the ELEMENT_TYPE now that the classes are defined
-FixedVector4.ELEMENT_TYPE = Fixed  # type: ignore[assignment]
-VarVector2.ELEMENT_TYPE = Var  # type: ignore[assignment]
+class FixedVector4(SSZVector[Fixed]):
+    """Vector of four fixed-size containers."""
+
+    LENGTH = 4
 
 
-class Complex(Container):
-    A: Uint16
-    B: Uint16List128
-    C: Uint8
-    D: ByteList256
-    E: Var
-    F: FixedVector4
-    G: VarVector2
+class VarVector2(SSZVector[Var]):
+    """Vector of two variable-size containers."""
+
+    LENGTH = 2
 
 
-def test_hash_tree_root_container_singlefield() -> None:
-    """
-    Tests the hash tree root of a container with a single basic field.
-    """
-    # For a container with one basic field, the root is just the chunk of that field.
+class EmptyContainer(Container):
+    """Container with zero fields."""
+
+
+def le_padded(value: int, byte_len: int) -> Bytes32:
+    """Encode an integer little-endian and right-pad to one chunk."""
+    return pad(value.to_bytes(byte_len, "little"))
+
+
+@pytest.mark.parametrize(
+    "uint_type, byte_len, value",
+    [
+        (Uint8, 1, 0x00),
+        (Uint8, 1, 0x01),
+        (Uint8, 1, 0xAB),
+        (Uint8, 1, 0xFF),
+        (Uint16, 2, 0x0000),
+        (Uint16, 2, 0xABCD),
+        (Uint16, 2, 0xFFFF),
+        (Uint32, 4, 0x00000000),
+        (Uint32, 4, 0x01234567),
+        (Uint32, 4, 0xFFFFFFFF),
+        (Uint64, 8, 0x0000000000000000),
+        (Uint64, 8, 0x0123456789ABCDEF),
+        (Uint64, 8, 0xFFFFFFFFFFFFFFFF),
+    ],
+)
+def test_hash_tree_root_uints(uint_type: type, byte_len: int, value: int) -> None:
+    """Unsigned integers hash as their little-endian bytes padded to one chunk."""
+    assert hash_tree_root(uint_type(value)) == le_padded(value, byte_len)
+
+
+@pytest.mark.parametrize(
+    "value, byte",
+    [
+        (Boolean(False), b"\x00"),
+        (Boolean(True), b"\x01"),
+    ],
+)
+def test_hash_tree_root_boolean(value: Boolean, byte: bytes) -> None:
+    """Boolean hashes to a single byte padded to one chunk."""
+    assert hash_tree_root(value) == pad(byte)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        0,
+        1,
+        42,
+        (1 << 31) - 2**24,  # Largest residue under the KoalaBear modulus.
+    ],
+)
+def test_hash_tree_root_fp(value: int) -> None:
+    """KoalaBear field elements hash as their four-byte little-endian encoding."""
+    assert hash_tree_root(Fp(value)) == le_padded(value, 4)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"",
+        b"\x00",
+        b"\x01",
+        b"\xab",
+        b"\x00\x01\x02\x03",
+        b"\xff" * 31,
+        b"\xff" * 32,
+        b"\xff" * 33,
+    ],
+)
+def test_hash_tree_root_raw_bytes_like(payload: bytes) -> None:
+    """Raw bytes, bytearray, and memoryview hash identically."""
+    from_bytes = hash_tree_root(payload)
+    from_bytearray = hash_tree_root(bytearray(payload))
+    from_memoryview = hash_tree_root(memoryview(payload))
+    assert from_bytes == from_bytearray == from_memoryview
+
+
+@pytest.mark.parametrize(
+    "payload, expected",
+    [
+        # Empty: zero chunks merkleizes to the all-zero leaf.
+        (b"", Z[0]),
+        # One byte fits in one chunk and is its own root.
+        (b"\xab", pad(b"\xab")),
+        # 31 bytes still hash to a single padded chunk.
+        (b"\xff" * 31, pad(b"\xff" * 31)),
+        # 32 bytes are exactly one chunk and are their own root.
+        (b"\xff" * 32, Bytes32(b"\xff" * 32)),
+        # 33 bytes form two chunks; the second is padded.
+        (b"\xff" * 32 + b"\x01", h(b"\xff" * 32, pad(b"\x01"))),
+        # 64 bytes form two full chunks hashed together.
+        (b"\xaa" * 32 + b"\xbb" * 32, h(b"\xaa" * 32, b"\xbb" * 32)),
+    ],
+)
+def test_hash_tree_root_bytes_known_vectors(payload: bytes, expected: Bytes32) -> None:
+    """Raw byte payloads hash to the merkle root of their packed chunks."""
+    assert hash_tree_root(payload) == expected
+
+
+def test_hash_tree_root_bytevector_single_chunk() -> None:
+    """A 32-byte vector is exactly one chunk and is its own root."""
+    payload = bytes(range(32))
+    assert hash_tree_root(Bytes32(payload)) == Bytes32(payload)
+
+
+def test_hash_tree_root_bytevector_two_chunks() -> None:
+    """A 48-byte vector hashes its two chunks together; the trailing chunk is padded."""
+    payload = bytes(range(48))
+    expected = h(payload[:32], pad(payload[32:]))
+    assert hash_tree_root(Bytes48(payload)) == expected
+
+
+def test_hash_tree_root_bytevector_three_chunks() -> None:
+    """A 96-byte vector merkleizes its three chunks with a zero pad to width four."""
+    payload = bytes(range(96))
+    left = h(payload[0:32], payload[32:64])
+    right = h(payload[64:96], Z[0])
+    assert hash_tree_root(Bytes96(payload)) == h(left, right)
+
+
+def test_hash_tree_root_bytelist_empty_single_chunk_capacity() -> None:
+    """An empty list with single-chunk capacity mixes a zero chunk with length zero."""
+    expected = h(Z[0], pad(b"\x00"))
+    assert hash_tree_root(ByteList10(data=b"")) == expected
+
+
+def test_hash_tree_root_bytelist_empty_large_capacity() -> None:
+    """An empty list with 64-chunk capacity uses the depth-6 zero root before mix-in."""
+    expected = h(Z[6], pad(b"\x00"))
+    assert hash_tree_root(ByteList2048(data=b"")) == expected
+
+
+@pytest.mark.parametrize(
+    "list_cls, payload, expected",
+    [
+        # Small list fits in one chunk; data root is the padded payload.
+        (
+            ByteList7,
+            b"\x00\x01\x02\x03\x04\x05\x06",
+            h(pad(b"\x00\x01\x02\x03\x04\x05\x06"), pad(b"\x07")),
+        ),
+        # Two-chunk capacity holds a 50-byte payload that spans both chunks.
+        (
+            ByteList50,
+            bytes(range(50)),
+            h(
+                h(bytes(range(32)), pad(bytes(range(32, 50)))),
+                pad(b"\x32"),
+            ),
+        ),
+        # Eight-chunk capacity with six bytes pads the lone data chunk to depth three.
+        (
+            ByteList256,
+            b"\x00\x01\x02\x03\x04\x05",
+            h(
+                merge(pad(b"\x00\x01\x02\x03\x04\x05"), [Z[0], Z[1], Z[2]]),
+                pad(b"\x06"),
+            ),
+        ),
+        # Capacity boundary: a full single chunk of data uses the chunk as the data root.
+        (
+            ByteList32,
+            bytes(range(32)),
+            h(Bytes32(bytes(range(32))), pad(b"\x20")),
+        ),
+    ],
+)
+def test_hash_tree_root_bytelist_various(
+    list_cls: type[BaseByteList], payload: bytes, expected: Bytes32
+) -> None:
+    """Variable-length byte lists merkleize their packed data then mix in the length."""
+    assert hash_tree_root(list_cls(data=payload)) == expected
+
+
+def _bools(*values: int) -> list[Boolean]:
+    """Build a typed boolean sequence from 0/1 integers."""
+    return [Boolean(bool(v)) for v in values]
+
+
+@pytest.mark.parametrize(
+    "bv_cls, bits, expected_payload",
+    [
+        # Single bit set produces 0x01 padded.
+        (Bitvector1, _bools(1), b"\x01"),
+        # Three bits 0,1,0 produce 0b010 = 0x02 padded.
+        (Bitvector3, _bools(0, 1, 0), b"\x02"),
+        # Eight ones fill one byte at 0xff.
+        (Bitvector8, _bools(*([1] * 8)), b"\xff"),
+        # Nine ones spill into a second byte at 0x01.
+        (Bitvector9, _bools(*([1] * 9)), b"\xff\x01"),
+    ],
+)
+def test_hash_tree_root_bitvector_single_chunk(
+    bv_cls: type[BaseBitvector],
+    bits: list[Boolean],
+    expected_payload: bytes,
+) -> None:
+    """Small bitvectors merkleize to a single padded chunk of their packed bytes."""
+    bv = bv_cls(data=bits)
+    assert bv.encode_bytes() == expected_payload
+    assert hash_tree_root(bv) == pad(expected_payload)
+
+
+def test_hash_tree_root_bitvector_one_chunk_boundary() -> None:
+    """A 256-bit vector of ones packs into exactly one all-ones chunk."""
+    bv = Bitvector256(data=_bools(*([1] * 256)))
+    assert hash_tree_root(bv) == Bytes32(b"\xff" * 32)
+
+
+def test_hash_tree_root_bitvector_two_chunks() -> None:
+    """A 512-bit vector of ones hashes two all-ones chunks together."""
+    bv = Bitvector512(data=_bools(*([1] * 512)))
+    assert hash_tree_root(bv) == h(b"\xff" * 32, b"\xff" * 32)
+
+
+@pytest.mark.parametrize(
+    "bl_cls, bits, expected_data_root, expected_length",
+    [
+        # Bitlist[3] with 0,1,0 has data byte 0x02 and length 3.
+        (Bitlist3, _bools(0, 1, 0), pad(b"\x02"), 3),
+        # Bitlist[8] with all ones has data byte 0xff and length 8.
+        (Bitlist8, _bools(*([1] * 8)), pad(b"\xff"), 8),
+        # Bitlist[8] empty: data root is the zero chunk and length is 0.
+        (Bitlist8, _bools(), Z[0], 0),
+    ],
+)
+def test_hash_tree_root_bitlist_small(
+    bl_cls: type[BaseBitlist],
+    bits: list[Boolean],
+    expected_data_root: Bytes32,
+    expected_length: int,
+) -> None:
+    """Short bitlists hash the data chunk and mix in the bit count."""
+    bl = bl_cls(data=bits)
+    expected = h(expected_data_root, pad(expected_length.to_bytes(32, "little")))
+    assert hash_tree_root(bl) == expected
+
+
+def test_hash_tree_root_bitlist_chunk_boundary() -> None:
+    """A bitlist whose data fills exactly one chunk mixes its 256-bit length in."""
+    bl = Bitlist256(data=_bools(*([1] * 256)))
+    expected = h(b"\xff" * 32, pad((256).to_bytes(32, "little")))
+    assert hash_tree_root(bl) == expected
+
+
+def test_hash_tree_root_bitlist_two_chunks() -> None:
+    """A bitlist whose data spans two chunks merkleizes them and mixes in 512."""
+    bl = Bitlist512(data=_bools(*([1] * 512)))
+    base = h(b"\xff" * 32, b"\xff" * 32)
+    expected = h(base, pad((512).to_bytes(32, "little")))
+    assert hash_tree_root(bl) == expected
+
+
+def test_hash_tree_root_vector_basic_single_chunk() -> None:
+    """A vector of two Uint16 fits in one chunk; the root is the padded payload."""
+    v = Uint16Vector2(data=[Uint16(0x4567), Uint16(0x0123)])
+    assert hash_tree_root(v) == pad(b"\x67\x45\x23\x01")
+
+
+def test_hash_tree_root_vector_basic_chunk_boundary() -> None:
+    """A vector of sixteen Uint16 fills exactly one 32-byte chunk."""
+    v = Uint16Vector16(data=[Uint16(i) for i in range(16)])
+    payload = b"".join(i.to_bytes(2, "little") for i in range(16))
+    assert hash_tree_root(v) == Bytes32(payload)
+
+
+def test_hash_tree_root_vector_single_element() -> None:
+    """A one-element vector of Uint16 yields the padded little-endian element."""
+    v = Uint16Vector1(data=[Uint16(0xABCD)])
+    assert hash_tree_root(v) == pad(b"\xcd\xab")
+
+
+def test_hash_tree_root_vector_composite_elements() -> None:
+    """A vector of three Bytes32 leaves merkleizes its element roots padded to width four."""
+    a = Bytes32(b"\xbb\xaa" + b"\x00" * 30)
+    b = Bytes32(b"\xad\xc0" + b"\x00" * 30)
+    c = Bytes32(b"\xff\xee" + b"\x00" * 30)
+    v = Bytes32Vector3(data=[a, b, c])
+    assert hash_tree_root(v) == h(h(a, b), h(c, Z[0]))
+
+
+def test_hash_tree_root_list_basic_small_limit() -> None:
+    """A list of three Uint16 with capacity for 32 elements packs into a two-chunk tree."""
+    test_list = Uint16List32(data=[Uint16(0xAABB), Uint16(0xC0AD), Uint16(0xEEFF)])
+    base = h(pad(b"\xbb\xaa\xad\xc0\xff\xee"), Z[0])
+    expected = h(base, pad(b"\x03"))
+    assert hash_tree_root(test_list) == expected
+
+
+def test_hash_tree_root_list_basic_large_limit() -> None:
+    """A list of three Uint32 with capacity 128 pads up four levels then mixes in the length."""
+    test_list = Uint32List128(data=[Uint32(0xAABB), Uint32(0xC0AD), Uint32(0xEEFF)])
+    base = merge(pad(b"\xbb\xaa\x00\x00\xad\xc0\x00\x00\xff\xee\x00\x00"), Z[0:4])
+    expected = h(base, pad(b"\x03"))
+    assert hash_tree_root(test_list) == expected
+
+
+def test_hash_tree_root_list_basic_empty() -> None:
+    """An empty list with a large capacity uses the all-zero subtree at the capacity depth."""
+    test_list = Uint32List128(data=[])
+    expected = h(Z[4], pad(b"\x00"))
+    assert hash_tree_root(test_list) == expected
+
+
+def test_hash_tree_root_list_composite_elements() -> None:
+    """A list of three Bytes32 elements merkleizes leaves to capacity depth then mixes length."""
+    a = Bytes32(b"\xbb\xaa" + b"\x00" * 30)
+    b = Bytes32(b"\xad\xc0" + b"\x00" * 30)
+    c = Bytes32(b"\xff\xee" + b"\x00" * 30)
+    test_list = Bytes32List32(data=[a, b, c])
+    base = h(h(a, b), h(c, Z[0]))
+    merkle = merge(base, Z[2:5])
+    expected = h(merkle, pad(b"\x03"))
+    assert hash_tree_root(test_list) == expected
+
+
+def test_hash_tree_root_container_empty() -> None:
+    """A container with no fields hashes to the empty-input merkle root."""
+    assert hash_tree_root(EmptyContainer()) == Z[0]
+
+
+def test_hash_tree_root_container_single_field() -> None:
+    """A container with one basic field hashes that field as its only leaf."""
     v = SingleField(A=Uint8(0xAB))
-    expected = chunk("ab")
-    assert hash_tree_root(v).hex() == expected
+    assert hash_tree_root(v) == pad(b"\xab")
 
 
-def test_hash_tree_root_container_small() -> None:
-    """
-    Tests a container with two basic fields that fit within one chunk.
-    """
-    # Create a container with two Uint16 fields.
+def test_hash_tree_root_container_two_fields() -> None:
+    """A container with two basic fields hashes each as its own leaf."""
     v = Small(A=Uint16(0x4567), B=Uint16(0x0123))
-    # The fields are chunked separately and then hashed.
-    # Note: SSZ chunks fields, not their concatenated serialization.
-    expected = h(chunk("6745"), chunk("2301"))
-    assert hash_tree_root(v).hex() == expected
+    assert hash_tree_root(v) == h(pad(b"\x67\x45"), pad(b"\x23\x01"))
 
 
-def test_hash_tree_root_container_fixed() -> None:
-    """
-    Tests a container with multiple fixed-size fields, requiring Merklization.
-    """
-    # Create the container instance.
+def test_hash_tree_root_container_three_fields_pads_to_four() -> None:
+    """A three-field container pads its leaves with one zero chunk to width four."""
     v = Fixed(A=Uint8(0xAB), B=Uint64(0xAABBCCDDEEFF0011), C=Uint32(0x12345678))
-    # The fields A, B, C are chunked. Since there are 3 fields, the tree is padded to 4.
-    # Tree structure: h( h(chunk(A), chunk(B)), h(chunk(C), zero_chunk) )
-    expected = h(h(chunk("ab"), chunk("1100ffeeddccbbaa")), h(chunk("78563412"), chunk("")))
-    assert hash_tree_root(v).hex() == expected
+    left = h(pad(b"\xab"), pad(b"\x11\x00\xff\xee\xdd\xcc\xbb\xaa"))
+    right = h(pad(b"\x78\x56\x34\x12"), Z[0])
+    assert hash_tree_root(v) == h(left, right)
 
 
-def test_hash_tree_root_container_var_empty() -> None:
-    """
-    Tests a container with a variable-size list that is empty.
-    """
-    # Create a container where field B is an empty List.
+def test_hash_tree_root_container_with_empty_list_field() -> None:
+    """An empty variable-size field contributes its own zero-tree root with length zero."""
     v = Var(A=Uint16(0xABCD), B=Uint16List1024(data=()), C=Uint8(0xFF))
-    # The root of the empty list B is calculated first.
-    # Capacity 1024*2 bytes = 64 chunks, so empty root is ZERO_HASHES[6].
-    # This is mixed with length 0.
-    expected_b = h(ZERO_HASHES[6], chunk("00000000"))  # Length for basic lists is uint64
-    # The container's fields are then Merkleized.
-    expected = h(h(chunk("cdab"), expected_b), h(chunk("ff"), chunk("")))
-    assert hash_tree_root(v).hex() == expected
+    expected_b = h(Z[6], pad(b"\x00"))
+    left = h(pad(b"\xcd\xab"), expected_b)
+    right = h(pad(b"\xff"), Z[0])
+    assert hash_tree_root(v) == h(left, right)
 
 
-def test_hash_tree_root_container_var_some() -> None:
-    """
-    Tests a container with a populated variable-size list.
-    """
-    # Create a container with a list containing three elements.
+def test_hash_tree_root_container_with_populated_list_field() -> None:
+    """A populated variable-size field contributes its data root with the element count."""
     v = Var(
         A=Uint16(0xABCD),
         B=Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3))),
         C=Uint8(0xFF),
     )
-    # Calculate the root of list B.
-    # Data "010002000300" is padded to capacity (64 chunks, depth 6).
-    base = merge(chunk("010002000300"), ZERO_HASHES[0:6])
-    # Mix in the length (3).
-    expected_b = h(base, chunk("03"))
-    # Merkleize the container fields' roots.
-    expected = h(h(chunk("cdab"), expected_b), h(chunk("ff"), chunk("")))
-    assert hash_tree_root(v).hex() == expected
+    base = merge(pad(b"\x01\x00\x02\x00\x03\x00"), Z[0:6])
+    expected_b = h(base, pad(b"\x03"))
+    left = h(pad(b"\xcd\xab"), expected_b)
+    right = h(pad(b"\xff"), Z[0])
+    assert hash_tree_root(v) == h(left, right)
 
 
-def test_hash_tree_root_container_complex() -> None:
-    """
-    Tests a complex, nested container with all types of fields.
-    """
-    # Instantiate the deeply nested container.
-    v = Complex(
-        A=Uint16(0xAABB),
-        B=Uint16List128(data=(Uint16(0x1122), Uint16(0x3344))),
-        C=Uint8(0xFF),
-        D=ByteList256(data=b"foobar"),
-        E=Var(
-            A=Uint16(0xABCD),
-            B=Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3))),
-            C=Uint8(0xFF),
-        ),
-        F=FixedVector4(
-            data=[
-                Fixed(A=Uint8(0xCC), B=Uint64(0x4242424242424242), C=Uint32(0x13371337)),
-                Fixed(A=Uint8(0xDD), B=Uint64(0x3333333333333333), C=Uint32(0xABCDABCD)),
-                Fixed(A=Uint8(0xEE), B=Uint64(0x4444444444444444), C=Uint32(0x00112233)),
-                Fixed(A=Uint8(0xFF), B=Uint64(0x5555555555555555), C=Uint32(0x44556677)),
-            ]
-        ),
-        G=VarVector2(
-            data=[
-                Var(
-                    A=Uint16(0xDEAD),
-                    B=Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3))),
-                    C=Uint8(0x11),
-                ),
-                Var(
-                    A=Uint16(0xBEEF),
-                    B=Uint16List1024(data=(Uint16(4), Uint16(5), Uint16(6))),
-                    C=Uint8(0x22),
-                ),
-            ]
-        ),
+def test_hash_tree_root_vector_of_composite_containers() -> None:
+    """A fixed-length vector of containers hashes the per-element roots into a balanced tree."""
+
+    def fixed_root(a: bytes, b: bytes, c: bytes) -> Bytes32:
+        return h(h(pad(a), pad(b)), h(pad(c), Z[0]))
+
+    fv = FixedVector4(
+        data=[
+            Fixed(A=Uint8(0xCC), B=Uint64(0x4242424242424242), C=Uint32(0x13371337)),
+            Fixed(A=Uint8(0xDD), B=Uint64(0x3333333333333333), C=Uint32(0xABCDABCD)),
+            Fixed(A=Uint8(0xEE), B=Uint64(0x4444444444444444), C=Uint32(0x00112233)),
+            Fixed(A=Uint8(0xFF), B=Uint64(0x5555555555555555), C=Uint32(0x44556677)),
+        ]
     )
+    r0 = fixed_root(b"\xcc", b"\x42" * 8, b"\x37\x13\x37\x13")
+    r1 = fixed_root(b"\xdd", b"\x33" * 8, b"\xcd\xab\xcd\xab")
+    r2 = fixed_root(b"\xee", b"\x44" * 8, b"\x33\x22\x11\x00")
+    r3 = fixed_root(b"\xff", b"\x55" * 8, b"\x77\x66\x55\x44")
+    assert hash_tree_root(fv) == h(h(r0, r1), h(r2, r3))
 
-    # Manually build the expected root by calculating the root of each field
-    # and then Merkleizing them together, mirroring the container structure.
 
-    # Root of field B: List[Uint16, 128]
-    b_base = merge(chunk("22114433"), ZERO_HASHES[0:3])
-    b_root = h(b_base, chunk("02"))
+def test_hash_tree_root_vector_of_variable_containers() -> None:
+    """A vector of variable-size containers still hashes the per-element roots."""
 
-    # Root of field D: ByteList[256]
-    d_base = merge(chunk("666f6f626172"), ZERO_HASHES[0:3])
-    d_root = h(d_base, chunk("06"))
+    def var_root(a: bytes, payload: bytes, count: int, c: bytes) -> Bytes32:
+        base = merge(pad(payload), Z[0:6])
+        b_root = h(base, pad(count.to_bytes(32, "little")))
+        return h(h(pad(a), b_root), h(pad(c), Z[0]))
 
-    # Root of field E: Var container
-    e_data_base = merge(chunk("010002000300"), ZERO_HASHES[0:6])
-    e_b_root = h(e_data_base, chunk("03"))
-    e_root = h(h(chunk("cdab"), e_b_root), h(chunk("ff"), chunk("")))
-
-    # Root of field F: FixedVector4
-    def fixed_root(a: str, b: str, c: str) -> str:
-        return h(h(chunk(a), chunk(b)), h(chunk(c), chunk("")))
-
-    f_roots = [
-        fixed_root("cc", "4242424242424242", "37133713"),
-        fixed_root("dd", "3333333333333333", "cdabcdab"),
-        fixed_root("ee", "4444444444444444", "33221100"),
-        fixed_root("ff", "5555555555555555", "77665544"),
-    ]
-    f_root = h(h(f_roots[0], f_roots[1]), h(f_roots[2], f_roots[3]))
-
-    # Root of field G: VarVector2
-    def var_root(a_hex: str, payload_hex: str, count_hex: str, c_hex: str) -> str:
-        b_base_local = merge(chunk(payload_hex), ZERO_HASHES[0:6])
-        b_root_local = h(b_base_local, chunk(count_hex))
-        return h(h(chunk(a_hex), b_root_local), h(chunk(c_hex), chunk("")))
-
-    g0 = var_root("adde", "010002000300", "03", "11")
-    g1 = var_root("efbe", "040005000600", "03", "22")
-    g_root = h(g0, g1)
-
-    # Final Merklization of all field roots (A, B, C, D, E, F, G), padded to 8 leaves.
-    left = h(h(chunk("bbaa"), b_root), h(chunk("ff"), d_root))
-    right = h(h(e_root, f_root), h(g_root, chunk("")))
-    expected = h(left, right)
-
-    # Verify the final calculated root.
-    assert hash_tree_root(v).hex() == expected
+    vv = VarVector2(
+        data=[
+            Var(
+                A=Uint16(0xDEAD),
+                B=Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3))),
+                C=Uint8(0x11),
+            ),
+            Var(
+                A=Uint16(0xBEEF),
+                B=Uint16List1024(data=(Uint16(4), Uint16(5), Uint16(6))),
+                C=Uint8(0x22),
+            ),
+        ]
+    )
+    g0 = var_root(b"\xad\xde", b"\x01\x00\x02\x00\x03\x00", 3, b"\x11")
+    g1 = var_root(b"\xef\xbe", b"\x04\x00\x05\x00\x06\x00", 3, b"\x22")
+    assert hash_tree_root(vv) == h(g0, g1)
 
 
 @pytest.mark.parametrize(
     "value",
-    [42, "hello", [1, 2, 3]],
-    ids=["int", "str", "list"],
+    [
+        42,
+        "hello",
+        [1, 2, 3],
+        {"k": 1},
+        (1, 2),
+        3.14,
+        None,
+    ],
+    ids=["int", "str", "list", "dict", "tuple", "float", "none"],
 )
-def test_hash_tree_root_unsupported_type(value: object) -> None:
-    """Raises TypeError for types with no registered dispatch implementation."""
+def test_hash_tree_root_unsupported_type_raises(value: object) -> None:
+    """The dispatch fallback rejects values without a registered handler."""
     with pytest.raises(TypeError, match=r"hash_tree_root: unsupported value type"):
         hash_tree_root(value)
 
 
-def test_hash_tree_root_fp() -> None:
-    """Computes the correct Merkle root for a KoalaBear field element."""
-    fp = Fp(42)
-    # Fp serializes as 4-byte little-endian: 42 = 0x2a -> "2a000000"
-    expected = chunk("2a000000")
-    assert hash_tree_root(fp).hex() == expected
+def test_hash_tree_root_is_deterministic() -> None:
+    """Repeated calls on equal inputs return byte-identical roots."""
+    a = Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3)))
+    b = Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(3)))
+    assert hash_tree_root(a) == hash_tree_root(b)
+
+
+def test_hash_tree_root_distinguishes_by_length() -> None:
+    """Variable-length types with the same data but different lengths produce different roots."""
+    short_list = Uint16List1024(data=(Uint16(1), Uint16(2)))
+    long_list = Uint16List1024(data=(Uint16(1), Uint16(2), Uint16(0)))
+    assert hash_tree_root(short_list) != hash_tree_root(long_list)

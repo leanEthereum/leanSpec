@@ -230,6 +230,37 @@ class ValidatorRegistry:
         return len(self._validators)
 
     @classmethod
+    def from_keys_directory(cls, node_id: str, base_dir: Path | str) -> ValidatorRegistry:
+        """Load a validator registry from the ream/zeam keystore layout.
+
+        Two files relative to the base directory:
+
+        - validators.yaml: maps each node to its validator indices.
+        - hash-sig-keys/validator-keys-manifest.yaml: lists each validator's
+          key metadata and SSZ file path.
+
+        Args:
+            node_id: Identifier looked up in the node-to-validator mapping.
+            base_dir: Directory containing the two layout files.
+
+        Returns:
+            Registry populated with the keys assigned to the node.
+
+        Raises:
+            FileNotFoundError: If the manifest file is missing.
+                A missing validators mapping is allowed and yields an empty registry.
+        """
+        base = Path(base_dir)
+        manifest_path = base / "hash-sig-keys" / "validator-keys-manifest.yaml"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"Validator keys manifest not found: {manifest_path}")
+        return cls.from_yaml(
+            node_id=node_id,
+            validators_path=base / "validators.yaml",
+            manifest_path=manifest_path,
+        )
+
+    @classmethod
     def from_yaml(
         cls,
         node_id: str,

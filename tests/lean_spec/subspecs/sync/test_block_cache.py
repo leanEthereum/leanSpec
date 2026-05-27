@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from time import time
 from typing import cast
 
 from lean_spec.forks.lstar import Store
@@ -41,31 +40,8 @@ class TestPendingBlock:
             parent_root=Bytes32.zero(),
             slot=Slot(1),
             received_from=peer_id,
-            received_at=pending.received_at,
             backfill_depth=0,
         )
-
-    def test_pending_block_default_received_at(self, peer_id: PeerId) -> None:
-        """PendingBlock sets received_at to current time by default."""
-        before = time()
-        block = make_signed_block(
-            slot=Slot(1),
-            proposer_index=ValidatorIndex(0),
-            parent_root=Bytes32.zero(),
-            state_root=Bytes32.zero(),
-        )
-        root = hash_tree_root(block.block)
-
-        pending = PendingBlock(
-            block=block,
-            root=root,
-            parent_root=Bytes32.zero(),
-            slot=Slot(1),
-            received_from=peer_id,
-        )
-        after = time()
-
-        assert before <= pending.received_at <= after
 
     def test_pending_block_custom_backfill_depth(self, peer_id: PeerId) -> None:
         """PendingBlock can be created with custom backfill depth."""
@@ -92,7 +68,6 @@ class TestPendingBlock:
             parent_root=Bytes32.zero(),
             slot=Slot(1),
             received_from=peer_id,
-            received_at=pending.received_at,
             backfill_depth=5,
         )
 
@@ -127,7 +102,6 @@ class TestBlockCacheBasicOperations:
             parent_root=Bytes32.zero(),
             slot=Slot(1),
             received_from=peer_id,
-            received_at=pending.received_at,
             backfill_depth=0,
         )
 
@@ -644,7 +618,6 @@ class TestBlockCacheBackfillDepth:
             parent_root=Bytes32.zero(),
             slot=Slot(1),
             received_from=peer_id,
-            received_at=pending.received_at,
             backfill_depth=10,
         )
 
@@ -667,6 +640,5 @@ class TestBlockCacheBackfillDepth:
             parent_root=Bytes32.zero(),
             slot=Slot(1),
             received_from=peer_id,
-            received_at=pending.received_at,
             backfill_depth=0,
         )

@@ -36,11 +36,12 @@ Snappy compression reduces bandwidth by 50-70% for typical blocks.
 Gossip uses raw Snappy block format. Req-resp uses Snappy framing with CRC32C.
 
 
-GOSSIPSUB v1.1 REQUIREMENTS
+GOSSIPSUB v1.2 REQUIREMENTS
 ---------------------------
-The Ethereum consensus spec requires gossipsub v1.1 (protocol "/meshsub/1.1.0").
-Key v1.1 features used:
+The node advertises gossipsub v1.2 (protocol "/meshsub/1.2.0").
+Key v1.2 features used:
 
+- IDONTWANT control messages for bandwidth optimization.
 - Peer scoring: Misbehaving peers get lower scores.
 - Extended validators: Message validation before forwarding.
 - Flood publishing: High-priority messages bypass mesh constraints.
@@ -48,7 +49,7 @@ Key v1.1 features used:
 
 References:
     - Ethereum P2P spec: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
-    - Gossipsub v1.1: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md
+    - Gossipsub v1.2: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.2.md
     - SSZ spec: https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md
     - Snappy format: https://github.com/google/snappy/blob/main/format_description.txt
 """
@@ -57,6 +58,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from lean_spec.forks import SignedAggregatedAttestation, SignedAttestation, SignedBlock
@@ -205,10 +207,13 @@ class LiveNetworkEventSource:
     Used to validate incoming messages belong to the same fork.
     """
 
-    _running: bool = False
-    """Whether the event source is running.
+    _stop_event: asyncio.Event = field(default_factory=asyncio.Event)
+    """Lifecycle signal.
 
-    Controls the main loop and background tasks.
+    Set means "stopped": fresh instances start stopped (the event is
+    forced to the set state in __post_init__) and stay stopped until
+    dial or listen clears it. Awaiters of wait() wake the moment
+    stop() sets it again.
     """
 
     _gossip_handler: GossipHandler = field(init=False)
@@ -245,12 +250,23 @@ class LiveNetworkEventSource:
     _gossipsub_event_task: asyncio.Task | None = None
     """Background task forwarding gossipsub events to our event queue."""
 
+    _outbound_setup_locks: dict[PeerId, asyncio.Lock] = field(default_factory=dict)
+    """Per-peer lock serialising outbound gossipsub stream setup.
+
+    Two code paths can race to open the outbound stream for the same peer:
+    the dialing path opens it directly after status exchange,
+    and the inbound-stream handler opens it once the peer's reciprocal stream arrives.
+    Without a lock, both paths can pass the has-outbound-stream check before either
+    registers, leaving an orphaned QUIC stream behind."""
+
     def __post_init__(self) -> None:
         """Wire up internal handlers from configuration."""
         self._gossip_handler = GossipHandler(network_name=self._network_name)
         self._reqresp_handler = RequestHandler()
         self._reqresp_server = ReqRespServer(handler=self._reqresp_handler)
         self._gossipsub_behavior = GossipsubBehavior(params=GossipsubParameters())
+        # Initial lifecycle: stopped. dial() or listen() clears the event to start.
+        self._stop_event.set()
 
     @classmethod
     async def create(
@@ -367,10 +383,71 @@ class LiveNetworkEventSource:
 
         logger.info("GossipSub behavior started")
 
+    async def start_serving(
+        self,
+        *,
+        status: Status,
+        current_slot_lookup: CurrentSlotLookup,
+        listen_addr: str | None,
+        bootnode_multiaddrs: Sequence[str],
+    ) -> None:
+        """
+        Bring the event source online in the spec-required order.
+
+        Five steps, each a precondition for the next:
+
+        1. Set the Status the responder serves.
+        2. Wire the current-slot lookup the range queries depend on.
+        3. Dial bootnodes best-effort, since a peerless honest node remains valid.
+        4. Bind the listener with a short bind-error probe window.
+        5. Start gossipsub last so the heartbeat reaches reachable peers only.
+
+        Args:
+            status: Initial finalized and head checkpoints the responder serves.
+            current_slot_lookup: Wall-clock-to-slot callback for range bounds.
+            listen_addr: Multiaddr to bind for inbound connections, or None for dial-only.
+            bootnode_multiaddrs: Pre-resolved outbound peers.
+
+        Raises:
+            OSError: If the listener fails to bind within the probe window.
+        """
+        # Status and current-slot lookup must be set before the responder serves.
+        # Without them, range queries return SERVER_ERROR.
+        self.set_status(status)
+        self.set_current_slot_lookup(current_slot_lookup)
+
+        # Dial and listen each clear the stop event internally.
+        # Clearing it here covers the no-bootnodes, no-listen case.
+        self._stop_event.clear()
+
+        for multiaddr in bootnode_multiaddrs:
+            logger.info("Connecting to bootnode %s", multiaddr)
+            try:
+                peer_id = await self.dial(multiaddr)
+            except Exception as exc:
+                logger.warning("Failed to connect to bootnode %s: %s", multiaddr, exc)
+                continue
+            if peer_id is not None:
+                logger.info("Connected to bootnode, peer_id=%s", peer_id)
+            else:
+                logger.warning("Failed to connect to bootnode %s", multiaddr)
+
+        if listen_addr:
+            logger.info("Starting listener on %s", listen_addr)
+            listener_task = asyncio.create_task(self.listen(listen_addr))
+
+            # Surface bind failures synchronously instead of as silent crashes.
+            await asyncio.sleep(0.1)
+            if listener_task.done():
+                listener_task.result()
+
+        logger.info("Starting gossipsub behavior...")
+        await self.start_gossipsub()
+
     async def _forward_gossipsub_events(self) -> None:
         """Forward events from GossipsubBehavior to our event queue."""
         try:
-            while self._running:
+            while not self._stop_event.is_set():
                 event = await self._gossipsub_behavior.get_next_event()
                 if event is None:
                     # Stopped or no event.
@@ -440,14 +517,24 @@ class LiveNetworkEventSource:
         Raises:
             StopAsyncIteration: When no more events will arrive.
         """
-        while self._running:
-            try:
-                return await asyncio.wait_for(self._events.get(), timeout=0.5)
-            except asyncio.TimeoutError:
-                # Check running flag and loop.
-                continue
+        if self._stop_event.is_set():
+            raise StopAsyncIteration
 
-        raise StopAsyncIteration
+        # Race the queue against the stop signal.
+        # Whichever wins decides whether to return an event or end iteration.
+        get_task = asyncio.create_task(self._events.get())
+        stop_task = asyncio.create_task(self._stop_event.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {get_task, stop_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if get_task in done:
+                return get_task.result()
+            raise StopAsyncIteration
+        finally:
+            get_task.cancel()
+            stop_task.cancel()
 
     async def dial(self, multiaddr: str) -> PeerId | None:
         """
@@ -462,10 +549,10 @@ class LiveNetworkEventSource:
         Returns:
             Peer ID on success, None on failure.
         """
-        # Ensure _running is set so background tasks (like _accept_streams)
+        # Clear the stop signal so background tasks (like _accept_streams)
         # can operate. Without this, _accept_streams exits immediately if
         # dial() is called before listen().
-        self._running = True
+        self._stop_event.clear()
 
         try:
             # Detect transport type and connect accordingly.
@@ -547,7 +634,7 @@ class LiveNetworkEventSource:
         Args:
             multiaddr: Address to listen on (e.g., "/ip4/0.0.0.0/udp/9000/quic-v1").
         """
-        self._running = True
+        self._stop_event.clear()
 
         if is_quic_multiaddr(multiaddr):
             await self._listen_quic(multiaddr)
@@ -650,33 +737,48 @@ class LiveNetworkEventSource:
         Opens a persistent stream for gossipsub protocol and registers
         the peer with the GossipsubBehavior.
 
+        Idempotent: if an outbound stream is already registered for the peer,
+        returns without opening a new one.
+
         Args:
             peer_id: Peer identifier.
             conn: QuicConnection to use.
         """
-        try:
-            # Open the gossipsub stream.
-            stream = await conn.open_stream(GOSSIPSUB_DEFAULT_PROTOCOL_ID)
-            logger.info(
-                "Opened outbound gossipsub stream_id=%d to %s (expect odd=server-initiated)",
-                stream.stream_id,
-                peer_id,
-            )
+        # Why:
+        # The dialing path and the inbound-stream handler can both reach this
+        # method concurrently for the same peer.
+        # The lock serialises the check-and-open so only one stream is opened.
+        lock = self._outbound_setup_locks.setdefault(peer_id, asyncio.Lock())
+        async with lock:
+            if self._gossipsub_behavior.has_outbound_stream(peer_id):
+                logger.debug(
+                    "Peer %s already has outbound gossipsub stream, skipping setup",
+                    peer_id,
+                )
+                return
+            try:
+                # Open the gossipsub stream.
+                stream = await conn.open_stream(GOSSIPSUB_DEFAULT_PROTOCOL_ID)
+                logger.info(
+                    "Opened outbound gossipsub stream_id=%d to %s (expect odd=server-initiated)",
+                    stream.stream_id,
+                    peer_id,
+                )
 
-            # Wrap in reader/writer for buffered I/O.
-            wrapped_stream = QuicStreamAdapter(stream)
+                # Wrap in reader/writer for buffered I/O.
+                wrapped_stream = QuicStreamAdapter(stream)
 
-            # Add peer to the gossipsub behavior (outbound stream).
-            await self._gossipsub_behavior.add_peer(peer_id, wrapped_stream, inbound=False)
+                # Add peer to the gossipsub behavior (outbound stream).
+                await self._gossipsub_behavior.add_peer(peer_id, wrapped_stream, inbound=False)
 
-            logger.info(
-                "GossipSub outbound stream established with %s (stream_id=%d)",
-                peer_id,
-                stream.stream_id,
-            )
+                logger.info(
+                    "GossipSub outbound stream established with %s (stream_id=%d)",
+                    peer_id,
+                    stream.stream_id,
+                )
 
-        except Exception as e:
-            logger.warning("Failed to setup gossipsub stream with %s: %s", peer_id, e)
+            except Exception as e:
+                logger.warning("Failed to setup gossipsub stream with %s: %s", peer_id, e)
 
     async def disconnect(self, peer_id: PeerId) -> None:
         """
@@ -686,6 +788,7 @@ class LiveNetworkEventSource:
             peer_id: Peer to disconnect.
         """
         conn = self._connections.pop(peer_id, None)
+        self._outbound_setup_locks.pop(peer_id, None)
         if conn is not None:
             self.reqresp_client.unregister_connection(peer_id)
             await conn.close()
@@ -694,7 +797,7 @@ class LiveNetworkEventSource:
 
     async def stop(self) -> None:
         """Stop the event source and cancel background tasks."""
-        self._running = False
+        self._stop_event.set()
 
         # Cancel gossip tasks first (including event forwarding task).
         # This must happen BEFORE stopping gossipsub behavior to avoid
@@ -810,9 +913,9 @@ class LiveNetworkEventSource:
             # Main loop: accept streams until shutdown or disconnection.
             #
             # The loop continues as long as:
-            #   - We haven't been told to stop (_running is True).
+            #   - We haven't been told to stop (stop event is clear).
             #   - The peer is still connected (peer_id in _connections).
-            while self._running and peer_id in self._connections:
+            while not self._stop_event.is_set() and peer_id in self._connections:
                 try:
                     # Accept the next incoming stream.
                     #
@@ -889,7 +992,7 @@ class LiveNetworkEventSource:
         # preserve it for later use (to avoid losing buffered data).
         try:
             wrapper = QuicStreamAdapter(stream)
-            gs_id = self._gossipsub_behavior._instance_id % 0xFFFF
+            gs_id = self._gossipsub_behavior._short_id
             logger.debug(
                 "[GS %x] Accepting inbound stream %d from %s, negotiating protocol...",
                 gs_id,
@@ -958,7 +1061,7 @@ class LiveNetworkEventSource:
             peer_id: Peer that opened the stream.
             conn: Connection the stream belongs to (used to open our
                 outbound stream when needed).
-            protocol_id: Negotiated gossipsub protocol id (v1.1 or v1.2).
+            protocol_id: Negotiated gossipsub protocol id (v1.2).
             wrapper: Adapter holding any bytes already buffered during
                 multistream-select. Reusing this wrapper preserves those
                 bytes for the gossipsub behavior.
@@ -973,9 +1076,8 @@ class LiveNetworkEventSource:
         # - Outbound: we opened this to send our RPCs
         # - Inbound: they opened this to send us RPCs
         #
-        # We support both v1.1 and v1.2 - the difference is IDONTWANT
-        # messages which we can handle gracefully.
-        gs_id = self._gossipsub_behavior._instance_id % 0xFFFF
+        # We advertise gossipsub v1.2 only.
+        gs_id = self._gossipsub_behavior._short_id
         logger.debug(
             "[GS %x] Received inbound gossipsub stream (%s) from %s",
             gs_id,
@@ -990,63 +1092,13 @@ class LiveNetworkEventSource:
         # Await directly to ensure peer is registered before setting up outbound.
         await self._gossipsub_behavior.add_peer(peer_id, wrapper, inbound=True)
 
-        # Now that we've received the peer's inbound stream, set up our
-        # outbound stream if we don't have one yet.
+        # Open our reciprocal outbound stream as a background task.
         #
-        # For dialers: The outbound stream was already set up during
-        # the dialing path, so this check prevents a duplicate.
-        #
-        # For listeners: The outbound stream is NOT set up immediately
-        # (to avoid interfering with the dialer's status exchange).
-        # This is where the listener's outbound stream gets created.
-        #
-        # IMPORTANT: We add a small delay before setting up the outbound
-        # stream to allow the dialer to complete their operations first.
-        # This prevents deadlock while still ensuring the outbound stream
-        # is set up quickly enough for mesh formation.
-        if self._gossipsub_behavior.has_outbound_stream(peer_id):
-            logger.info(
-                "Peer %s already has outbound gossipsub stream, skipping setup",
-                peer_id,
-            )
-            return
-
-        gossip_task = asyncio.create_task(self._setup_outbound_gossipsub_after_delay(peer_id, conn))
+        # Idempotent and serialised internally: a concurrent dialing-path
+        # setup for the same peer will not race with this one.
+        gossip_task = asyncio.create_task(self._setup_gossipsub_stream(peer_id, conn))
         self._gossip_tasks.add(gossip_task)
         gossip_task.add_done_callback(self._gossip_tasks.discard)
-
-    async def _setup_outbound_gossipsub_after_delay(
-        self,
-        peer_id: PeerId,
-        conn: QuicConnection,
-    ) -> None:
-        """
-        Open our outbound gossipsub stream after a small delay.
-
-        The delay lets the dialer complete its status exchange first.
-        Re-checks the outbound-stream flag right before opening: the
-        dialer path may have set up the stream while we were sleeping.
-
-        Args:
-            peer_id: Peer to open the outbound stream to.
-            conn: Connection to use.
-        """
-        try:
-            await asyncio.sleep(0.1)  # Small delay to avoid contention
-            # Re-check BEFORE opening a stream. The dialing path
-            # may have set up the outbound stream while we were
-            # sleeping. Opening a duplicate gossipsub stream would
-            # cause the handler to replace its reader with an orphan.
-            if self._gossipsub_behavior.has_outbound_stream(peer_id):
-                logger.info(
-                    "Peer %s already has outbound stream (set by dialer), skipping duplicate setup",
-                    peer_id,
-                )
-                return
-            logger.info("Setting up outbound gossipsub stream for %s", peer_id)
-            await self._setup_gossipsub_stream(peer_id, conn)
-        except Exception as e:
-            logger.warning("setup_outbound_with_delay failed for %s: %s", peer_id, e)
 
     def _handle_reqresp_inbound_stream(
         self,

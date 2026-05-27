@@ -2,155 +2,98 @@
 Database namespace definitions for storage tables.
 
 Defines table names and schema constants for SQLite storage.
-Each namespace represents a logical grouping of related data.
+Each prefix marks a logical grouping of related data.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Final
 
+# Blocks: SSZ root primary key, SSZ-encoded bytes stored directly.
 
-@dataclass(frozen=True, slots=True)
-class BlockNamespace:
-    """
-    Namespace for block storage.
+BLOCKS_TABLE_NAME: Final = "blocks"
+"""Table name for block storage."""
 
-    Blocks are stored by their SSZ root hash.
-    SSZ-encoded bytes are stored directly.
-    """
+BLOCKS_CREATE_TABLE: Final = """
+    CREATE TABLE IF NOT EXISTS blocks (
+        root BLOB PRIMARY KEY,
+        slot INTEGER NOT NULL,
+        data BLOB NOT NULL
+    )
+"""
+"""SQL to create blocks table."""
 
-    TABLE_NAME: str = "blocks"
-    """Table name for block storage."""
+BLOCKS_CREATE_INDEX: Final = """
+    CREATE INDEX IF NOT EXISTS idx_blocks_slot ON blocks(slot)
+"""
+"""SQL to create slot index."""
 
-    CREATE_TABLE: str = """
-        CREATE TABLE IF NOT EXISTS blocks (
-            root BLOB PRIMARY KEY,
-            slot INTEGER NOT NULL,
-            data BLOB NOT NULL
-        )
-    """
-    """SQL to create blocks table."""
+# States: SSZ root primary key, SSZ-encoded bytes stored directly.
 
-    CREATE_INDEX: str = """
-        CREATE INDEX IF NOT EXISTS idx_blocks_slot ON blocks(slot)
-    """
-    """SQL to create slot index."""
+STATES_TABLE_NAME: Final = "states"
+"""Table name for state storage."""
 
+STATES_CREATE_TABLE: Final = """
+    CREATE TABLE IF NOT EXISTS states (
+        root BLOB PRIMARY KEY,
+        slot INTEGER NOT NULL,
+        data BLOB NOT NULL
+    )
+"""
+"""SQL to create states table."""
 
-@dataclass(frozen=True, slots=True)
-class StateNamespace:
-    """
-    Namespace for state storage.
+STATES_CREATE_INDEX: Final = """
+    CREATE INDEX IF NOT EXISTS idx_states_slot ON states(slot)
+"""
+"""SQL to create slot index."""
 
-    States are stored by their SSZ root hash.
-    SSZ-encoded bytes are stored directly.
-    """
+# Checkpoints: key-value table with fixed keys for justified/finalized/head/genesis-time.
 
-    TABLE_NAME: str = "states"
-    """Table name for state storage."""
+CHECKPOINTS_TABLE_NAME: Final = "checkpoints"
+"""Table name for checkpoint storage."""
 
-    CREATE_TABLE: str = """
-        CREATE TABLE IF NOT EXISTS states (
-            root BLOB PRIMARY KEY,
-            slot INTEGER NOT NULL,
-            data BLOB NOT NULL
-        )
-    """
-    """SQL to create states table."""
+CHECKPOINTS_KEY_JUSTIFIED: Final = "justified"
+"""Key for justified checkpoint."""
 
-    CREATE_INDEX: str = """
-        CREATE INDEX IF NOT EXISTS idx_states_slot ON states(slot)
-    """
-    """SQL to create slot index."""
+CHECKPOINTS_KEY_FINALIZED: Final = "finalized"
+"""Key for finalized checkpoint."""
 
+CHECKPOINTS_KEY_HEAD: Final = "head"
+"""Key for head block root."""
 
-@dataclass(frozen=True, slots=True)
-class CheckpointNamespace:
-    """
-    Namespace for checkpoint tracking.
+CHECKPOINTS_KEY_GENESIS_TIME: Final = "genesis_time"
+"""Key for genesis time. Enables self-contained restarts without external config."""
 
-    Stores latest justified and finalized checkpoints.
-    Uses a key-value pattern with fixed keys.
-    """
+CHECKPOINTS_CREATE_TABLE: Final = """
+    CREATE TABLE IF NOT EXISTS checkpoints (
+        key TEXT PRIMARY KEY,
+        data BLOB NOT NULL
+    )
+"""
+"""SQL to create checkpoints table."""
 
-    TABLE_NAME: str = "checkpoints"
-    """Table name for checkpoint storage."""
+# Slot index: slot-to-root mapping for historical queries.
 
-    KEY_JUSTIFIED: str = "justified"
-    """Key for justified checkpoint."""
+SLOT_INDEX_TABLE_NAME: Final = "slot_index"
+"""Table name for slot index."""
 
-    KEY_FINALIZED: str = "finalized"
-    """Key for finalized checkpoint."""
+SLOT_INDEX_CREATE_TABLE: Final = """
+    CREATE TABLE IF NOT EXISTS slot_index (
+        slot INTEGER PRIMARY KEY,
+        root BLOB NOT NULL
+    )
+"""
+"""SQL to create slot index table."""
 
-    KEY_HEAD: str = "head"
-    """Key for head block root."""
+# State root index: state-root-to-block-root mapping for checkpoint sync and API.
 
-    KEY_GENESIS_TIME: str = "genesis_time"
-    """Key for genesis time. Enables self-contained restarts without external config."""
+STATE_ROOT_INDEX_TABLE_NAME: Final = "state_root_index"
+"""Table name for state root index."""
 
-    CREATE_TABLE: str = """
-        CREATE TABLE IF NOT EXISTS checkpoints (
-            key TEXT PRIMARY KEY,
-            data BLOB NOT NULL
-        )
-    """
-    """SQL to create checkpoints table."""
-
-
-@dataclass(frozen=True, slots=True)
-class SlotIndexNamespace:
-    """
-    Namespace for slot-to-root mapping.
-
-    Enables lookup of block by slot number.
-    Used for historical queries.
-    """
-
-    TABLE_NAME: str = "slot_index"
-    """Table name for slot index."""
-
-    CREATE_TABLE: str = """
-        CREATE TABLE IF NOT EXISTS slot_index (
-            slot INTEGER PRIMARY KEY,
-            root BLOB NOT NULL
-        )
-    """
-    """SQL to create slot index table."""
-
-
-@dataclass(frozen=True, slots=True)
-class StateRootIndexNamespace:
-    """
-    Namespace for state root to block root mapping.
-
-    Enables lookup of block root by state root.
-    Needed for checkpoint sync and API queries by state root.
-    """
-
-    TABLE_NAME: str = "state_root_index"
-    """Table name for state root index."""
-
-    CREATE_TABLE: str = """
-        CREATE TABLE IF NOT EXISTS state_root_index (
-            state_root BLOB PRIMARY KEY,
-            block_root BLOB NOT NULL
-        )
-    """
-    """SQL to create state root index table."""
-
-
-BLOCKS: Final = BlockNamespace()
-"""Block storage namespace."""
-
-STATES: Final = StateNamespace()
-"""State storage namespace."""
-
-CHECKPOINTS: Final = CheckpointNamespace()
-"""Checkpoint tracking namespace."""
-
-SLOT_INDEX: Final = SlotIndexNamespace()
-"""Slot-to-root index namespace."""
-
-STATE_ROOT_INDEX: Final = StateRootIndexNamespace()
-"""State root to block root index namespace."""
+STATE_ROOT_INDEX_CREATE_TABLE: Final = """
+    CREATE TABLE IF NOT EXISTS state_root_index (
+        state_root BLOB PRIMARY KEY,
+        block_root BLOB NOT NULL
+    )
+"""
+"""SQL to create state root index table."""

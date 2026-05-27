@@ -64,21 +64,12 @@ class HeadSyncResult:
     """
     Result of processing a gossip block.
 
-    Provides detailed feedback about what happened when a block was received.
-    This allows the SyncService to make informed decisions about state.
+    The SyncService only branches on the processed flag; the error string is
+    retained for incident-response logs and post-mortem inspection.
     """
 
     processed: bool
     """True if the block was immediately integrated into the Store."""
-
-    cached: bool
-    """True if the block was added to the cache (parent unknown)."""
-
-    backfill_triggered: bool
-    """True if backfill was initiated for missing parents."""
-
-    descendants_processed: int
-    """Number of cached descendants that were also processed."""
 
     error: str | None = None
     """Error message if processing failed."""
@@ -177,9 +168,6 @@ class HeadSync:
             logger.debug("on_gossip_block: skipping - already processing")
             return HeadSyncResult(
                 processed=False,
-                cached=False,
-                backfill_triggered=False,
-                descendants_processed=0,
             ), store
 
         # Skip if already in store (duplicate).
@@ -187,9 +175,6 @@ class HeadSync:
             logger.debug("on_gossip_block: skipping - already in store")
             return HeadSyncResult(
                 processed=False,
-                cached=False,
-                backfill_triggered=False,
-                descendants_processed=0,
             ), store
 
         # Check if parent exists in store.
@@ -255,24 +240,17 @@ class HeadSync:
                 )
                 return HeadSyncResult(
                     processed=False,
-                    cached=False,
-                    backfill_triggered=False,
-                    descendants_processed=0,
                     error=str(e),
                 ), store
 
             # Process cached descendants.
-            descendants_count, store = await self._process_cached_descendants(
+            _, store = await self._process_cached_descendants(
                 parent_root=block_root,
                 store=store,
-                peer_id=peer_id,
             )
 
             return HeadSyncResult(
                 processed=True,
-                cached=False,
-                backfill_triggered=False,
-                descendants_processed=descendants_count,
             ), store
 
         finally:
@@ -282,7 +260,6 @@ class HeadSync:
         self,
         parent_root: Bytes32,
         store: Store,
-        peer_id: PeerId | None,
     ) -> tuple[int, Store]:
         """
         Process any cached blocks that descend from the given parent.
@@ -296,7 +273,6 @@ class HeadSync:
         Args:
             parent_root: Root of the parent block just processed.
             store: Current store (may be updated during processing).
-            peer_id: Peer ID for error attribution.
 
         Returns:
             Tuple of (descendants successfully processed, updated store).
@@ -331,7 +307,6 @@ class HeadSync:
                     desc_count, store = await self._process_cached_descendants(
                         parent_root=child_root,
                         store=store,
-                        peer_id=peer_id,
                     )
                     processed_count += desc_count
 
@@ -382,9 +357,6 @@ class HeadSync:
             )
             return HeadSyncResult(
                 processed=False,
-                cached=False,
-                backfill_triggered=False,
-                descendants_processed=0,
             ), store
 
         # Add to cache.
@@ -427,9 +399,6 @@ class HeadSync:
 
         return HeadSyncResult(
             processed=False,
-            cached=True,
-            backfill_triggered=True,
-            descendants_processed=0,
         ), store
 
     def reset(self) -> None:

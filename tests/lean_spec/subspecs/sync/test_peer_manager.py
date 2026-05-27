@@ -144,17 +144,17 @@ class TestPeerManagerBasicOperations:
         assert manager.remove_peer(peer("16Uiu2HAmNonexistent")) is None
 
     def test_get_peer(self, connected_peer_info: PeerInfo) -> None:
-        """Getting a peer by ID returns the SyncPeer."""
+        """Looking up a tracked peer by ID returns the SyncPeer."""
         manager = PeerManager()
         manager.add_peer(connected_peer_info)
 
-        peer = manager.get_peer(connected_peer_info.peer_id)
+        peer = manager.peers.get(connected_peer_info.peer_id)
         assert peer == SyncPeer(info=connected_peer_info)
 
     def test_get_nonexistent_peer(self) -> None:
-        """Getting a nonexistent peer returns None."""
+        """Looking up an unknown peer returns None."""
         manager = PeerManager()
-        assert manager.get_peer(peer("16Uiu2HAmNonexistent")) is None
+        assert manager.peers.get(peer("16Uiu2HAmNonexistent")) is None
 
 
 class TestPeerManagerStatusTracking:
@@ -167,7 +167,7 @@ class TestPeerManagerStatusTracking:
 
         manager.update_status(connected_peer_info.peer_id, sample_status)
 
-        peer = manager.get_peer(connected_peer_info.peer_id)
+        peer = manager.peers.get(connected_peer_info.peer_id)
         assert peer == SyncPeer(info=connected_peer_info, status=sample_status)
 
     def test_update_status_nonexistent_peer(self, sample_status: Status) -> None:
@@ -322,27 +322,6 @@ class TestPeerManagerRequestCallbacks:
         manager.on_request_failure(peer("16Uiu2HAmNonexistent"))
 
 
-class TestPeerManagerGetAllPeers:
-    """Tests for PeerManager get_all_peers method."""
-
-    def test_get_all_peers_empty(self) -> None:
-        """get_all_peers returns empty list when no peers."""
-        manager = PeerManager()
-        assert manager.get_all_peers() == []
-
-    def test_get_all_peers_returns_all(self, peer_id: PeerId, peer_id_2: PeerId) -> None:
-        """get_all_peers returns all tracked peers."""
-        manager = PeerManager()
-
-        info1 = PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED)
-        info2 = PeerInfo(peer_id=peer_id_2, state=ConnectionState.CONNECTED)
-        manager.add_peer(info1)
-        manager.add_peer(info2)
-
-        peers = manager.get_all_peers()
-        assert peers == [SyncPeer(info=info1), SyncPeer(info=info2)]
-
-
 class TestPeerScoring:
     """Tests for peer scoring and weighted selection."""
 
@@ -399,6 +378,6 @@ class TestPeerScoring:
 
         peer1.requests_in_flight = MAX_CONCURRENT_REQUESTS
 
-        peer2 = manager.get_peer(peer_id_2)
+        peer2 = manager.peers.get(peer_id_2)
         selected = manager.select_peer_for_request()
         assert selected == peer2

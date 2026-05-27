@@ -38,8 +38,8 @@ class TestBlockOperations:
     def test_put_and_get_block(self, db: SQLiteDatabase, genesis_block: Block) -> None:
         """Block can be stored and retrieved by root."""
         root = hash_tree_root(genesis_block)
-        db.put_block(genesis_block, root)
-        db.commit()
+        with db.batch_write():
+            db.put_block(genesis_block, root)
 
         assert db.get_block(root) == genesis_block
 
@@ -47,15 +47,6 @@ class TestBlockOperations:
         """Getting a nonexistent block returns None."""
         fake_root = Bytes32(b"\x01" * 32)
         assert db.get_block(fake_root) is None
-
-    def test_has_block(self, db: SQLiteDatabase, genesis_block: Block) -> None:
-        """has_block returns correct existence status."""
-        root = hash_tree_root(genesis_block)
-
-        assert not db.has_block(root)
-        db.put_block(genesis_block, root)
-        db.commit()
-        assert db.has_block(root)
 
     def test_put_block_overwrites(self, db: SQLiteDatabase, genesis_state: State) -> None:
         """Putting a block with same root overwrites previous."""
@@ -68,11 +59,11 @@ class TestBlockOperations:
         )
         root = hash_tree_root(block1)
 
-        db.put_block(block1, root)
-        db.put_block(block1, root)  # Same block again
-        db.commit()
+        with db.batch_write():
+            db.put_block(block1, root)
+            db.put_block(block1, root)  # Same block again
 
-        assert db.has_block(root)
+        assert db.get_block(root) == block1
 
 
 class TestStateOperations:
@@ -81,8 +72,8 @@ class TestStateOperations:
     def test_put_and_get_state(self, db: SQLiteDatabase, genesis_state: State) -> None:
         """State can be stored and retrieved by block root."""
         root = hash_tree_root(genesis_state)
-        db.put_state(genesis_state, root)
-        db.commit()
+        with db.batch_write():
+            db.put_state(genesis_state, root)
 
         assert db.get_state(root) == genesis_state
 
@@ -91,15 +82,6 @@ class TestStateOperations:
         fake_root = Bytes32(b"\x02" * 32)
         assert db.get_state(fake_root) is None
 
-    def test_has_state(self, db: SQLiteDatabase, genesis_state: State) -> None:
-        """has_state returns correct existence status."""
-        root = hash_tree_root(genesis_state)
-
-        assert not db.has_state(root)
-        db.put_state(genesis_state, root)
-        db.commit()
-        assert db.has_state(root)
-
 
 class TestCheckpointOperations:
     """Tests for checkpoint storage operations."""
@@ -107,16 +89,16 @@ class TestCheckpointOperations:
     def test_put_and_get_justified_checkpoint(self, db: SQLiteDatabase) -> None:
         """Justified checkpoint can be stored and retrieved."""
         checkpoint = Checkpoint(root=Bytes32(b"\x03" * 32), slot=Slot(10))
-        db.put_justified_checkpoint(checkpoint)
-        db.commit()
+        with db.batch_write():
+            db.put_justified_checkpoint(checkpoint)
 
         assert db.get_justified_checkpoint() == checkpoint
 
     def test_put_and_get_finalized_checkpoint(self, db: SQLiteDatabase) -> None:
         """Finalized checkpoint can be stored and retrieved."""
         checkpoint = Checkpoint(root=Bytes32(b"\x04" * 32), slot=Slot(5))
-        db.put_finalized_checkpoint(checkpoint)
-        db.commit()
+        with db.batch_write():
+            db.put_finalized_checkpoint(checkpoint)
 
         assert db.get_finalized_checkpoint() == checkpoint
 
@@ -132,8 +114,8 @@ class TestHeadTracking:
     def test_put_and_get_head_root(self, db: SQLiteDatabase) -> None:
         """Head root can be stored and retrieved."""
         head_root = Bytes32(b"\x08" * 32)
-        db.put_head_root(head_root)
-        db.commit()
+        with db.batch_write():
+            db.put_head_root(head_root)
 
         assert db.get_head_root() == head_root
 
@@ -146,12 +128,12 @@ class TestHeadTracking:
         root1 = Bytes32(b"\x09" * 32)
         root2 = Bytes32(b"\x0a" * 32)
 
-        db.put_head_root(root1)
-        db.commit()
+        with db.batch_write():
+            db.put_head_root(root1)
         assert db.get_head_root() == root1
 
-        db.put_head_root(root2)
-        db.commit()
+        with db.batch_write():
+            db.put_head_root(root2)
         assert db.get_head_root() == root2
 
 
@@ -162,8 +144,8 @@ class TestSlotIndex:
         """Block root can be stored and retrieved by slot."""
         slot = Slot(100)
         root = Bytes32(b"\x0b" * 32)
-        db.put_block_root_by_slot(slot, root)
-        db.commit()
+        with db.batch_write():
+            db.put_block_root_by_slot(slot, root)
 
         assert db.get_block_root_by_slot(slot) == root
 
@@ -177,13 +159,13 @@ class TestSlotIndex:
         root_a = Bytes32(b"\x0b" * 32)
         root_b = Bytes32(b"\x0c" * 32)
 
-        db.put_block_root_by_slot(slot, root_a)
-        db.commit()
+        with db.batch_write():
+            db.put_block_root_by_slot(slot, root_a)
         assert db.get_block_root_by_slot(slot) == root_a
 
         # Reorg: overwrite with different root at same slot
-        db.put_block_root_by_slot(slot, root_b)
-        db.commit()
+        with db.batch_write():
+            db.put_block_root_by_slot(slot, root_b)
         assert db.get_block_root_by_slot(slot) == root_b
 
 
@@ -195,8 +177,8 @@ class TestStateRootIndex:
         state_root = Bytes32(b"\x0d" * 32)
         block_root = Bytes32(b"\x0e" * 32)
 
-        db.put_block_root_by_state_root(state_root, block_root)
-        db.commit()
+        with db.batch_write():
+            db.put_block_root_by_state_root(state_root, block_root)
 
         assert db.get_block_root_by_state_root(state_root) == block_root
 
@@ -211,8 +193,8 @@ class TestGenesisTime:
     def test_put_and_get_genesis_time(self, db: SQLiteDatabase) -> None:
         """Genesis time can be stored and retrieved."""
         genesis_time = Uint64(1606824023)
-        db.put_genesis_time(genesis_time)
-        db.commit()
+        with db.batch_write():
+            db.put_genesis_time(genesis_time)
 
         assert db.get_genesis_time() == genesis_time
 
@@ -222,8 +204,8 @@ class TestGenesisTime:
 
     def test_genesis_time_zero(self, db: SQLiteDatabase) -> None:
         """Genesis time of zero round-trips correctly."""
-        db.put_genesis_time(Uint64(0))
-        db.commit()
+        with db.batch_write():
+            db.put_genesis_time(Uint64(0))
 
         assert db.get_genesis_time() == Uint64(0)
 
@@ -246,8 +228,8 @@ class TestBatchWrite:
     def test_batch_write_rolls_back_on_exception(self, db: SQLiteDatabase) -> None:
         """Writes are rolled back when an exception occurs within batch."""
         root = Bytes32(b"\x12" * 32)
-        db.put_head_root(root)
-        db.commit()
+        with db.batch_write():
+            db.put_head_root(root)
 
         with pytest.raises(ValueError, match="intentional"):
             with db.batch_write():
@@ -286,8 +268,8 @@ class TestBatchWrite:
     def test_batch_write_rolls_back_storage_write_error(self, db: SQLiteDatabase) -> None:
         """StorageWriteError within batch triggers rollback."""
         root = Bytes32(b"\x15" * 32)
-        db.put_head_root(root)
-        db.commit()
+        with db.batch_write():
+            db.put_head_root(root)
 
         with pytest.raises(StorageWriteError):
             with db.batch_write():
@@ -532,8 +514,8 @@ class TestLifecycle:
         """Database works as context manager."""
         with SQLiteDatabase(":memory:", State, Block) as db:
             root = Bytes32(b"\x0c" * 32)
-            db.put_head_root(root)
-            db.commit()
+            with db.batch_write():
+                db.put_head_root(root)
             assert db.get_head_root() == root
 
     def test_close_is_idempotent(self, db: SQLiteDatabase) -> None:

@@ -52,7 +52,7 @@ jobs:
     needs: [check, keygen]
     # Trick to run even when keygen was skipped, but not on failure or cancel.
     if: always() && !failure() && !cancelled()
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout leanSpec
@@ -93,6 +93,9 @@ jobs:
           key: prod-keys-${{ hashFiles('src/lean_spec/subspecs/xmss/**', 'src/lean_spec/subspecs/poseidon1/**') }}
 
       - name: Fill production test fixtures
+        env:
+          # RAYON_NUM_THREADS=1 keeps the runner from oversubscribing cores by giving each xdist worker one rayon thread.
+          RAYON_NUM_THREADS: "1"
         run: just fill-ci --scheme=prod
 
       - name: Bundle keys with fixtures

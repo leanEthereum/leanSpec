@@ -9,7 +9,13 @@ import yaml
 from pydantic import ValidationError
 
 from lean_spec.subspecs.genesis import GenesisConfig
-from lean_spec.types import Bytes52, SSZValueError, Uint64
+from lean_spec.types import Bytes52, SSZValueError, Uint64, ValidatorIndex
+
+
+def _load(content: str) -> GenesisConfig:
+    """Parse a YAML string into a GenesisConfig (test ergonomics helper)."""
+    return GenesisConfig.model_validate(yaml.safe_load(content))
+
 
 # Sample pubkeys (52 bytes each, hex-encoded)
 SAMPLE_PUBKEY_1 = "0x" + "00" * 52
@@ -47,7 +53,7 @@ class TestGenesisConfigYamlLoading:
 
     def test_load_from_yaml_string(self) -> None:
         """Parses YAML with UPPERCASE keys."""
-        config = GenesisConfig.from_yaml(SAMPLE_YAML)
+        config = _load(SAMPLE_YAML)
 
         assert config.genesis_time == Uint64(1704085200)
         assert len(config.genesis_validators) == 3
@@ -65,7 +71,7 @@ class TestGenesisConfigYamlLoading:
 
     def test_pubkeys_parsed_correctly(self) -> None:
         """Pubkeys are converted to Bytes52 instances."""
-        config = GenesisConfig.from_yaml(SAMPLE_YAML)
+        config = _load(SAMPLE_YAML)
 
         for entry in config.genesis_validators:
             assert isinstance(entry.attestation_pubkey, Bytes52)
@@ -84,7 +90,7 @@ class TestGenesisConfigYamlLoading:
                 ],
             }
         )
-        config = GenesisConfig.from_yaml(yaml_content)
+        config = _load(yaml_content)
 
         assert len(config.genesis_validators) == 2
         assert config.genesis_validators[0].attestation_pubkey == Bytes52(b"\x00" * 52)
@@ -95,13 +101,13 @@ class TestGenesisConfigValidators:
 
     def test_to_validators_creates_indexed_list(self) -> None:
         """Validators have correct indices."""
-        config = GenesisConfig.from_yaml(SAMPLE_YAML)
+        config = _load(SAMPLE_YAML)
         validators = config.to_validators()
 
         assert len(validators.data) == 3
 
         for i, validator in enumerate(validators.data):
-            assert validator.index == Uint64(i)
+            assert validator.index == ValidatorIndex(i)
             assert validator.attestation_pubkey == config.genesis_validators[i].attestation_pubkey
             assert validator.proposal_pubkey == config.genesis_validators[i].proposal_pubkey
 
@@ -113,7 +119,7 @@ class TestGenesisConfigValidators:
                 "GENESIS_VALIDATORS": [],
             }
         )
-        config = GenesisConfig.from_yaml(yaml_content)
+        config = _load(yaml_content)
         validators = config.to_validators()
 
         assert len(validators.data) == 0
@@ -133,7 +139,7 @@ class TestGenesisConfigValidation:
             }
         )
         with pytest.raises(ValidationError):
-            GenesisConfig.from_yaml(yaml_content)
+            _load(yaml_content)
 
     def test_wrong_length_pubkey_raises_error(self) -> None:
         """Rejects pubkeys with wrong length."""
@@ -146,7 +152,7 @@ class TestGenesisConfigValidation:
             }
         )
         with pytest.raises(SSZValueError):
-            GenesisConfig.from_yaml(yaml_content)
+            _load(yaml_content)
 
     def test_missing_genesis_time_raises_error(self) -> None:
         """Requires GENESIS_TIME field."""
@@ -161,7 +167,7 @@ class TestGenesisConfigValidation:
             }
         )
         with pytest.raises(ValidationError):
-            GenesisConfig.from_yaml(yaml_content)
+            _load(yaml_content)
 
     def test_missing_validators_raises_error(self) -> None:
         """Requires GENESIS_VALIDATORS field."""
@@ -171,7 +177,7 @@ class TestGenesisConfigValidation:
             }
         )
         with pytest.raises(ValidationError):
-            GenesisConfig.from_yaml(yaml_content)
+            _load(yaml_content)
 
     def test_validators_not_a_list_raises_error(self) -> None:
         """Rejects GENESIS_VALIDATORS that is not a list."""
@@ -182,51 +188,7 @@ class TestGenesisConfigValidation:
             }
         )
         with pytest.raises(ValidationError):
-            GenesisConfig.from_yaml(yaml_content)
-
-    def test_num_validators_mismatch_raises_error(self) -> None:
-        """Rejects config where NUM_VALIDATORS does not match actual count."""
-        yaml_content = yaml.dump(
-            {
-                "GENESIS_TIME": 1704085200,
-                "NUM_VALIDATORS": 5,
-                "GENESIS_VALIDATORS": [
-                    {
-                        "attestation_pubkey": SAMPLE_PUBKEY_1,
-                        "proposal_pubkey": SAMPLE_PUBKEY_1,
-                    },
-                    {
-                        "attestation_pubkey": SAMPLE_PUBKEY_2,
-                        "proposal_pubkey": SAMPLE_PUBKEY_2,
-                    },
-                ],
-            }
-        )
-        with pytest.raises(ValidationError, match="does not match"):
-            GenesisConfig.from_yaml(yaml_content)
-
-    def test_num_validators_correct_value_accepted(self) -> None:
-        """Accepts config where NUM_VALIDATORS matches actual count."""
-        yaml_content = yaml.dump(
-            {
-                "GENESIS_TIME": 1704085200,
-                "NUM_VALIDATORS": 2,
-                "GENESIS_VALIDATORS": [
-                    {
-                        "attestation_pubkey": SAMPLE_PUBKEY_1,
-                        "proposal_pubkey": SAMPLE_PUBKEY_1,
-                    },
-                    {
-                        "attestation_pubkey": SAMPLE_PUBKEY_2,
-                        "proposal_pubkey": SAMPLE_PUBKEY_2,
-                    },
-                ],
-            }
-        )
-        config = GenesisConfig.from_yaml(yaml_content)
-
-        assert config.num_validators == Uint64(2)
-        assert len(config.genesis_validators) == 2
+            _load(yaml_content)
 
 
 class TestCrossClientFormat:
@@ -244,7 +206,7 @@ class TestCrossClientFormat:
                 ],
             }
         )
-        config = GenesisConfig.from_yaml(yaml_content)
+        config = _load(yaml_content)
 
         assert config.genesis_time == Uint64(1704085200)
         assert len(config.genesis_validators) == 3

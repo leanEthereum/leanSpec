@@ -86,7 +86,6 @@ class TestIsQuicMultiaddr:
             ("/ip4/127.0.0.1/udp/9000/quic-v1", True),
             ("/ip4/10.0.0.1/udp/4001/quic", True),
             ("/ip4/0.0.0.0/udp/9000/quic-v1/p2p/peerA", True),
-            ("/ip6/::1/udp/9000/quic-v1", True),
             # Not QUIC
             ("/ip4/127.0.0.1/tcp/9000", False),
             ("/ip4/127.0.0.1/udp/9000", False),
@@ -101,7 +100,6 @@ class TestIsQuicMultiaddr:
             "quic-v1",
             "quic-legacy",
             "quic-v1-with-peer",
-            "ipv6-quic-v1",
             "tcp-not-quic",
             "udp-only-not-quic",
             "empty-string",
@@ -127,15 +125,6 @@ class TestParseMultiaddr:
         """Standard QUIC-v1 multiaddr yields host, port, transport, and no peer."""
         assert parse_multiaddr("/ip4/127.0.0.1/udp/9000/quic-v1") == (
             "127.0.0.1",
-            9000,
-            "quic",
-            None,
-        )
-
-    def test_ipv6_quic_v1(self) -> None:
-        """IPv6 QUIC multiaddr is parsed correctly per the libp2p-QUIC spec."""
-        assert parse_multiaddr("/ip6/::1/udp/9000/quic-v1") == (
-            "::1",
             9000,
             "quic",
             None,

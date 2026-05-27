@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from time import time
+from dataclasses import dataclass
 
 from .enr import ENR
 from .reqresp import Status
 from .transport import PeerId
-from .types import ConnectionState, Direction, ForkDigest, Multiaddr
+from .types import ConnectionState, Direction, Multiaddr
 
 
 @dataclass(slots=True)
@@ -38,9 +37,6 @@ class PeerInfo:
     address: Multiaddr | None = None
     """Last known network address for this peer."""
 
-    last_seen: float = field(default_factory=time)
-    """Unix timestamp of last successful interaction."""
-
     enr: ENR | None = None
     """Cached ENR from peer configuration. Contains eth2 fork_digest for compatibility checks."""
 
@@ -50,22 +46,3 @@ class PeerInfo:
     def is_connected(self) -> bool:
         """Check if peer has an active connection."""
         return self.state == ConnectionState.CONNECTED
-
-    def update_last_seen(self) -> None:
-        """Update the last seen timestamp to now."""
-        self.last_seen = time()
-
-    @property
-    def fork_digest(self) -> ForkDigest | None:
-        """
-        Get the peer's fork_digest from cached ENR.
-
-        Returns:
-            4-byte fork_digest or None if ENR/eth2 data unavailable.
-        """
-        if self.enr is None:
-            return None
-        eth2_data = self.enr.eth2_data
-        if eth2_data is None:
-            return None
-        return eth2_data.fork_digest

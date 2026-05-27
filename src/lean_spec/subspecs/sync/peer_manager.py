@@ -88,38 +88,34 @@ class PeerManager:
     Tracks peer chain status and provides peer selection for block requests.
     """
 
-    _peers: dict[PeerId, SyncPeer] = field(default_factory=dict)
-    """Mapping of peer ID to SyncPeer."""
+    peers: dict[PeerId, SyncPeer] = field(default_factory=dict)
+    """Mapping of peer ID to SyncPeer. Public so callers can iterate or look up directly."""
 
     def __len__(self) -> int:
         """Return the number of tracked peers."""
-        return len(self._peers)
+        return len(self.peers)
 
     def __contains__(self, peer_id: PeerId) -> bool:
         """Check if a peer is being tracked."""
-        return peer_id in self._peers
+        return peer_id in self.peers
 
     def add_peer(self, info: PeerInfo) -> SyncPeer:
         """Register a new peer or update existing."""
-        if info.peer_id in self._peers:
-            self._peers[info.peer_id].info = info
-            return self._peers[info.peer_id]
+        if info.peer_id in self.peers:
+            self.peers[info.peer_id].info = info
+            return self.peers[info.peer_id]
 
         sync_peer = SyncPeer(info=info)
-        self._peers[info.peer_id] = sync_peer
+        self.peers[info.peer_id] = sync_peer
         return sync_peer
 
     def remove_peer(self, peer_id: PeerId) -> SyncPeer | None:
         """Remove a peer from tracking."""
-        return self._peers.pop(peer_id, None)
-
-    def get_peer(self, peer_id: PeerId) -> SyncPeer | None:
-        """Get a tracked peer by ID."""
-        return self._peers.get(peer_id)
+        return self.peers.pop(peer_id, None)
 
     def update_status(self, peer_id: PeerId, status: Status) -> None:
         """Update a peer's chain status."""
-        peer = self._peers.get(peer_id)
+        peer = self.peers.get(peer_id)
         if peer is not None:
             peer.status = status
 
@@ -137,7 +133,7 @@ class PeerManager:
             An available SyncPeer, or None if no suitable peer exists.
         """
         candidates: list[SyncPeer] = []
-        for peer in self._peers.values():
+        for peer in self.peers.values():
             if not peer.is_available():
                 continue
             if min_slot is not None and not peer.has_slot(min_slot):
@@ -159,7 +155,7 @@ class PeerManager:
         """
         slots = (
             peer.status.finalized.slot
-            for peer in self._peers.values()
+            for peer in self.peers.values()
             if peer.status is not None and peer.is_connected()
         )
         counter = Counter(slots)
@@ -169,18 +165,14 @@ class PeerManager:
 
     def on_request_success(self, peer_id: PeerId) -> None:
         """Record a successful request to a peer."""
-        peer = self._peers.get(peer_id)
+        peer = self.peers.get(peer_id)
         if peer is not None:
             peer.on_request_complete()
             peer.score = min(peer.score + SCORE_SUCCESS_BONUS, MAX_PEER_SCORE)
 
     def on_request_failure(self, peer_id: PeerId) -> None:
         """Record a failed request to a peer."""
-        peer = self._peers.get(peer_id)
+        peer = self.peers.get(peer_id)
         if peer is not None:
             peer.on_request_complete()
             peer.score = max(peer.score - SCORE_FAILURE_PENALTY, MIN_PEER_SCORE)
-
-    def get_all_peers(self) -> list[SyncPeer]:
-        """Get all tracked peers."""
-        return list(self._peers.values())

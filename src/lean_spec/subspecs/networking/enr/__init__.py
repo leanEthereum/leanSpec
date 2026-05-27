@@ -7,7 +7,7 @@ References:
 
 from . import keys
 from .enr import ENR
-from .eth2 import FAR_FUTURE_EPOCH, AttestationSubnets, Eth2Data, SyncCommitteeSubnets
+from .eth2 import FAR_FUTURE_EPOCH, AttestationSubnets, Eth2Data
 from .keys import EnrKey
 
 __all__ = [
@@ -16,6 +16,5 @@ __all__ = [
     "keys",
     "Eth2Data",
     "AttestationSubnets",
-    "SyncCommitteeSubnets",
     "FAR_FUTURE_EPOCH",
 ]

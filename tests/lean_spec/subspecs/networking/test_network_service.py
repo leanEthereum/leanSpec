@@ -20,7 +20,7 @@ from lean_spec.subspecs.networking.service import (
 )
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.sync.states import SyncState
-from lean_spec.types import Bytes32, Checkpoint, Slot, Uint64, ValidatorIndex
+from lean_spec.types import Bytes32, Checkpoint, Slot, ValidatorIndex
 from tests.lean_spec.helpers import (
     MockEventSource,
     MockForkchoiceStore,
@@ -197,7 +197,7 @@ class TestAttestationRoutingToForkchoice:
         # Verify attestation was passed to store
         updated_store = cast(MockForkchoiceStore, sync_service.store)
         assert len(updated_store._attestations_received) == initial_count + 1
-        assert updated_store._attestations_received[-1].validator_id == Uint64(42)
+        assert updated_store._attestations_received[-1].validator_id == ValidatorIndex(42)
 
     async def test_attestation_ignored_in_idle_state(
         self,

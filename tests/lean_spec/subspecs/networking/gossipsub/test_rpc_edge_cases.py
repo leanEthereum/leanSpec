@@ -17,54 +17,12 @@ from lean_spec.subspecs.networking.gossipsub.rpc import (
     ControlPrune,
     Message,
     ProtobufDecodeError,
-    PrunePeerInfo,
     SubOpts,
     _skip_field,
     encode_bytes,
     encode_tag,
 )
 from lean_spec.subspecs.networking.gossipsub.types import TopicId
-
-
-class TestPrunePeerInfoRoundtrip:
-    """Tests for PrunePeerInfo protobuf encoding/decoding."""
-
-    def test_peer_info_with_both_fields(self) -> None:
-        """PrunePeerInfo roundtrips with both peer_id and signed_peer_record."""
-        info = PrunePeerInfo(peer_id=b"peer123", signed_peer_record=b"record456")
-        assert PrunePeerInfo.decode(info.encode()) == info
-
-    def test_peer_info_peer_id_only(self) -> None:
-        """PrunePeerInfo roundtrips with only peer_id."""
-        info = PrunePeerInfo(peer_id=b"peerOnly")
-        assert PrunePeerInfo.decode(info.encode()) == info
-
-    def test_peer_info_empty(self) -> None:
-        """Empty PrunePeerInfo produces empty encoding."""
-        info = PrunePeerInfo()
-        assert info.encode() == b""
-        assert PrunePeerInfo.decode(b"") == PrunePeerInfo()
-
-
-class TestPruneWithPeerExchange:
-    """Tests for ControlPrune with the peers field."""
-
-    def test_prune_with_peers(self) -> None:
-        """ControlPrune roundtrips with peer exchange info."""
-        prune = ControlPrune(
-            topic_id=TopicId("/topic"),
-            peers=[
-                PrunePeerInfo(peer_id=b"alt1", signed_peer_record=b"rec1"),
-                PrunePeerInfo(peer_id=b"alt2"),
-            ],
-            backoff=120,
-        )
-        assert ControlPrune.decode(prune.encode()) == prune
-
-    def test_prune_no_peers(self) -> None:
-        """ControlPrune without peers field."""
-        prune = ControlPrune(topic_id=TopicId("/topic"), backoff=60)
-        assert ControlPrune.decode(prune.encode()) == prune
 
 
 class TestSkipField:

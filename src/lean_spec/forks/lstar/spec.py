@@ -1,5 +1,6 @@
 """Lstar fork — identity and construction facade."""
 
+import math
 import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence, Set as AbstractSet
@@ -445,8 +446,8 @@ class LstarSpec(ForkProtocol):
         # where a root appears to decide whether it is still unfinalized.
         start_slot = int(finalized_slot) + 1
         root_to_slot: dict[Bytes32, Slot] = {}
-        for i in range(start_slot, len(state.historical_block_hashes)):
-            root_to_slot[state.historical_block_hashes[i]] = Slot(i)
+        for i, root in enumerate(state.historical_block_hashes[start_slot:], start=start_slot):
+            root_to_slot[root] = Slot(i)
 
         # Process each attestation independently.
         #
@@ -537,7 +538,12 @@ class LstarSpec(ForkProtocol):
                 # The block becomes justified
                 #
                 # The chain now considers this block part of its safe head.
-                latest_justified = target
+                # Only advance the checkpoint forward.
+                # Attestations within a block can resolve in any order, and
+                # an earlier target processed after a later one must not
+                # drag latest_justified backwards.
+                if target.slot > latest_justified.slot:
+                    latest_justified = target
                 justified_slots = justified_slots.with_justified(
                     finalized_slot,
                     target.slot,
@@ -1093,7 +1099,8 @@ class LstarSpec(ForkProtocol):
         # let an adversary pre-publish next-slot aggregates ahead of any
         # honest validator.
         attestation_start_interval = Interval.from_slot(data.slot)
-        assert attestation_start_interval <= store.time + GOSSIP_DISPARITY_INTERVALS, (
+        gossip_disparity = Interval(int(GOSSIP_DISPARITY_INTERVALS))
+        assert attestation_start_interval <= store.time + gossip_disparity, (
             "Attestation too far in future"
         )
 
@@ -1572,9 +1579,9 @@ class LstarSpec(ForkProtocol):
         # Compute the 2/3 supermajority threshold.
         #
         # A block needs at least this many attestation votes to be "safe".
-        # The ceiling division (negation trick) ensures we round UP.
+        # The threshold is rounded UP so a strict majority is required.
         # For example, 100 validators => threshold is 67, not 66.
-        min_target_score = -(-num_validators * 2 // 3)
+        min_target_score = math.ceil(int(num_validators) * 2 / 3)
 
         # Unpack "new" payloads into a flat validator -> vote mapping.
         # "Known" is excluded by design.
@@ -1793,7 +1800,7 @@ class LstarSpec(ForkProtocol):
         """
         # Advance time by one interval
         store = store.model_copy(update={"time": store.time + Interval(1)})
-        current_interval = store.time % INTERVALS_PER_SLOT
+        current_interval = Interval(int(store.time) % int(INTERVALS_PER_SLOT))
         new_aggregates: list[SignedAggregatedAttestation] = []
 
         if current_interval == Interval(0) and has_proposal:

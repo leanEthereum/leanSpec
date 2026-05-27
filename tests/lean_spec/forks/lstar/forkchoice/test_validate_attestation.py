@@ -22,13 +22,13 @@ ATTESTATION_SLOT = Slot(2)
 ATTESTATION_START_INTERVAL = Interval.from_slot(ATTESTATION_SLOT)
 """First interval at which ATTESTATION_SLOT begins."""
 
-DISPARITY_BOUNDARY_INTERVAL = ATTESTATION_START_INTERVAL - GOSSIP_DISPARITY_INTERVALS
+DISPARITY_BOUNDARY_INTERVAL = ATTESTATION_START_INTERVAL - Interval(int(GOSSIP_DISPARITY_INTERVALS))
 """Latest local interval that still admits the attestation."""
 
 JUST_BEYOND_DISPARITY_BOUNDARY_INTERVAL = DISPARITY_BOUNDARY_INTERVAL - Interval(1)
 """First local interval that rejects the attestation."""
 
-ONE_FULL_SLOT_BEHIND_INTERVAL = ATTESTATION_START_INTERVAL - INTERVALS_PER_SLOT
+ONE_FULL_SLOT_BEHIND_INTERVAL = ATTESTATION_START_INTERVAL - Interval(int(INTERVALS_PER_SLOT))
 """Local interval one full slot behind the attestation's slot start."""
 
 
@@ -248,7 +248,7 @@ class TestValidateAttestationTimeCheck:
         store, data = self._build_two_block_chain(spec, observer_store)
 
         # Place the local clock several slots ahead.
-        far_future = ATTESTATION_START_INTERVAL + INTERVALS_PER_SLOT * Interval(10)
+        far_future = ATTESTATION_START_INTERVAL + Interval(int(INTERVALS_PER_SLOT) * 10)
         store = store.model_copy(update={"time": far_future})
         spec.validate_attestation(store, data)
 

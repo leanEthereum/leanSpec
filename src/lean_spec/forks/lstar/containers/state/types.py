@@ -1,6 +1,6 @@
 """State-specific SSZ types for the Lean Ethereum consensus specification."""
 
-from __future__ import annotations
+from typing import Self
 
 from lean_spec.subspecs.chain.config import HISTORICAL_ROOTS_LIMIT, VALIDATOR_REGISTRY_LIMIT
 from lean_spec.types import Boolean, Bytes32, Slot, SSZList
@@ -67,7 +67,7 @@ class JustifiedSlots(BaseBitlist):
         finalized_slot: Slot,
         target_slot: Slot,
         value: Boolean,
-    ) -> JustifiedSlots:
+    ) -> Self:
         """
         Return a new bitfield with the justification status updated.
 
@@ -112,7 +112,7 @@ class JustifiedSlots(BaseBitlist):
 
         return self.model_copy(update={"data": new_data})
 
-    def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> JustifiedSlots:
+    def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> Self:
         """
         Extend the tracking capacity to cover a new target slot.
 
@@ -147,7 +147,7 @@ class JustifiedSlots(BaseBitlist):
         # We extend the existing data with False values to bridge the gap.
         return self.model_copy(update={"data": list(self.data) + [Boolean(False)] * gap_size})
 
-    def shift_window(self, delta: int) -> JustifiedSlots:
+    def shift_window(self, delta: int) -> Self:
         """
         Advance the tracking window by dropping slots that became finalized.
 

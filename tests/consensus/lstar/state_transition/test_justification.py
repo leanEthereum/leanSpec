@@ -1386,3 +1386,93 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
             ),
         ),
     )
+
+
+def test_same_block_multi_target_attestations_advance_to_highest_slot(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Multiple supermajority attestations in one block advance latest_justified
+    to the highest justified slot, not the last one processed.
+
+    Scenario
+    --------
+    Four validators.
+    Linear chain block_1 through block_9 with empty blocks.
+    Block 10 carries three supermajority attestations in this order:
+
+    - validators 0, 1, 2 with target slot 4 (delta=4, immediate window)
+    - validators 0, 1, 2 with target slot 9 (delta=9, perfect square)
+    - validators 0, 1, 2 with target slot 6 (delta=6, pronic number)
+
+    Expected post-state
+    -------------------
+    - latest_justified_slot: 9 (the highest justified target)
+    - justified_slots: slots 4, 6, and 9 all marked True
+
+    Why this test exists
+    --------------------
+    Iteration order must not move the justified checkpoint backwards.
+    Processing slot 6 after slot 9 should leave latest_justified at slot 9,
+    since slot 9 is later in chain history.
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
+            BlockSpec(slot=Slot(3), parent_label="block_2", label="block_3"),
+            BlockSpec(slot=Slot(4), parent_label="block_3", label="block_4"),
+            BlockSpec(slot=Slot(5), parent_label="block_4", label="block_5"),
+            BlockSpec(slot=Slot(6), parent_label="block_5", label="block_6"),
+            BlockSpec(slot=Slot(7), parent_label="block_6", label="block_7"),
+            BlockSpec(slot=Slot(8), parent_label="block_7", label="block_8"),
+            BlockSpec(slot=Slot(9), parent_label="block_8", label="block_9"),
+            # The block builder sorts attestations by target slot ascending.
+            # Slots 4 and 9 go through the builder; the slot 6 entry is forced
+            # in last so the on-chain body order becomes [4, 9, 6].
+            BlockSpec(
+                slot=Slot(10),
+                parent_label="block_9",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(10),
+                        target_slot=Slot(4),
+                        target_root_label="block_4",
+                    ),
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(10),
+                        target_slot=Slot(9),
+                        target_root_label="block_9",
+                    ),
+                ],
+                forced_attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(10),
+                        target_slot=Slot(6),
+                        target_root_label="block_6",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(10),
+            latest_justified_slot=Slot(9),
+            latest_finalized_slot=Slot(0),
+        ),
+    )

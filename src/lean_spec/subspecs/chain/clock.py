@@ -53,7 +53,7 @@ class Interval(Uint64):
         return cls(delta_ms // MILLISECONDS_PER_INTERVAL)
 
     @classmethod
-    def from_slot(cls, slot: Uint64) -> Interval:
+    def from_slot(cls, slot: Slot) -> Interval:
         """
         Convert a slot number to the interval at that slot's start.
 
@@ -67,7 +67,7 @@ class Interval(Uint64):
             Interval count at the start of the given slot.
         """
         # Slot boundaries fall on exact multiples of the interval count.
-        return cls(slot * INTERVALS_PER_SLOT)
+        return cls(int(slot) * int(INTERVALS_PER_SLOT))
 
 
 @dataclass(frozen=True, slots=True)

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 
 from lean_spec.forks import Validator, Validators
 from lean_spec.types import Bytes52, StrictBaseModel, Uint64, ValidatorIndex
@@ -79,14 +79,6 @@ class GenesisConfig(StrictBaseModel):
     Immutable once the chain launches.
     """
 
-    num_validators: Uint64 | None = Field(default=None, alias="NUM_VALIDATORS")
-    """
-    Number of validators (optional).
-
-    This field is informational and may be included in config files.
-    The actual validator count is derived from the genesis validator list.
-    """
-
     genesis_validators: list[GenesisValidatorEntry] = Field(alias="GENESIS_VALIDATORS")
     """
     Validators trusted to secure the chain from slot 0.
@@ -98,18 +90,6 @@ class GenesisConfig(StrictBaseModel):
 
     Security note: 2/3+ collusion controls the chain until new validators join.
     """
-
-    @model_validator(mode="after")
-    def validate_num_validators_consistency(self) -> GenesisConfig:
-        """Verify num_validators matches actual count when provided."""
-        if self.num_validators is not None:
-            actual_count = len(self.genesis_validators)
-            if int(self.num_validators) != actual_count:
-                raise ValueError(
-                    f"NUM_VALIDATORS ({self.num_validators}) does not match "
-                    f"actual validator count ({actual_count})"
-                )
-        return self
 
     def to_validators(self) -> Validators:
         """
@@ -145,14 +125,4 @@ class GenesisConfig(StrictBaseModel):
         path = Path(path)
         with path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        return cls.model_validate(data)
-
-    @classmethod
-    def from_yaml(cls, content: str) -> GenesisConfig:
-        """
-        Load configuration from a YAML string.
-
-        Useful for testing or programmatic config generation.
-        """
-        data = yaml.safe_load(content)
         return cls.model_validate(data)

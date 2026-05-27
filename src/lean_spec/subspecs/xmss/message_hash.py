@@ -80,7 +80,7 @@ class MessageHasher(StrictBaseModel):
         hash input in a structured, domain-separated way.
         """
         # Combine the epoch and the message hash prefix into a single integer.
-        acc = (int(epoch) << 8) | TWEAK_PREFIX_MESSAGE.value
+        acc = (int(epoch) << 8) | TWEAK_PREFIX_MESSAGE
 
         # Decompose the integer into its base-P representation.
         return int_to_base_p(acc, self.config.TWEAK_LEN_FE)
@@ -102,7 +102,7 @@ class MessageHasher(StrictBaseModel):
 
         digits: list[int] = []
         for fe in field_elements:
-            a = fe.value
+            a = int(fe)
 
             # Rejection: the only failing case is A_i == P - 1.
             if a >= threshold:
@@ -113,8 +113,8 @@ class MessageHasher(StrictBaseModel):
 
             # Decompose d into Z base-BASE digits, least significant first.
             for _ in range(config.Z):
-                digits.append(d % config.BASE)
-                d //= config.BASE
+                d, digit = divmod(d, config.BASE)
+                digits.append(digit)
 
         # Take exactly DIMENSION digits.
         return digits[: config.DIMENSION]

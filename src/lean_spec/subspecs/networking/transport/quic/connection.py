@@ -291,7 +291,7 @@ def parse_multiaddr(multiaddr: str) -> tuple[str, int, str | None, PeerId | None
 
     i = 0
     while i < len(parts):
-        if parts[i] in ("ip4", "ip6") and i + 1 < len(parts):
+        if parts[i] == "ip4" and i + 1 < len(parts):
             host = parts[i + 1]
             i += 2
         elif parts[i] == "udp" and i + 1 < len(parts):

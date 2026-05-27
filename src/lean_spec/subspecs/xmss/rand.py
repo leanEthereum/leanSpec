@@ -1,14 +1,12 @@
 """Random data generator for the XMSS signature scheme."""
 
-from __future__ import annotations
-
 import secrets
 
 from lean_spec.types import StrictBaseModel
 
 from ..koalabear import Fp, P
 from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
-from .types import HashDigestVector, Parameter, Randomness
+from .types import HashDigestVector, Parameter
 
 
 class Rand(StrictBaseModel):
@@ -29,10 +27,6 @@ class Rand(StrictBaseModel):
     def domain(self) -> HashDigestVector:
         """Generates a random hash digest."""
         return HashDigestVector(data=self.field_elements(self.config.HASH_LEN_FE))
-
-    def rho(self) -> Randomness:
-        """Generates randomness `rho` for message encoding."""
-        return Randomness(data=self.field_elements(self.config.RAND_LEN_FE))
 
 
 PROD_RAND = Rand(config=PROD_CONFIG)

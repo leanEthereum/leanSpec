@@ -132,12 +132,7 @@ class Base58:
             Base58-encoded string.
         """
         # Count leading zeros (become leading '1's)
-        leading_zeros = 0
-        for byte in data:
-            if byte == 0:
-                leading_zeros += 1
-            else:
-                break
+        leading_zeros = len(data) - len(data.lstrip(b"\x00"))
 
         # Convert to big integer and then to base58
         num = int.from_bytes(data, "big")
@@ -168,12 +163,7 @@ class Base58:
             ValueError: If string contains invalid characters.
         """
         # Count leading '1's (they represent leading zeros)
-        leading_ones = 0
-        for char in s:
-            if char == "1":
-                leading_ones += 1
-            else:
-                break
+        leading_ones = len(s) - len(s.lstrip("1"))
 
         # Convert from base58 to integer
         num = 0

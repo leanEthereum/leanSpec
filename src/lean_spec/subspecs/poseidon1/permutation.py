@@ -4,17 +4,17 @@ A minimal Python specification for the Poseidon1 permutation.
 Based on "Poseidon: A New Hash Function for Zero-Knowledge Proof Systems".
 See https://eprint.iacr.org/2019/458.
 
+This is the original Hades-based design.
+
 Uses Numba JIT compilation for native-speed permutation.
 """
-
-from __future__ import annotations
 
 from typing import Self
 
 import numpy as np
 from numba import njit
 from numpy.typing import NDArray
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from ...types import StrictBaseModel
 from ..koalabear.field import Fp, P
@@ -22,20 +22,6 @@ from .constants import (
     ROUND_CONSTANTS_16,
     ROUND_CONSTANTS_24,
 )
-
-
-def _build_circulant_mds(first_row: list[int], n: int, p: int) -> NDArray[np.int64]:
-    """
-    Expand a circulant matrix from its first row into a dense NxN matrix.
-
-    A circulant matrix C defined by first row [r0, r1, ..., rn-1]:
-    C[i][j] = r[(j - i) mod n]
-    """
-    matrix = np.zeros((n, n), dtype=np.int64)
-    for i in range(n):
-        for j in range(n):
-            matrix[i][j] = first_row[(j - i) % n] % p
-    return matrix
 
 
 @njit(cache=True)
@@ -48,13 +34,26 @@ def _mds_multiply_jit(
     Computes y = MDS * x where MDS is the circulant MDS matrix.
     Each product is reduced mod p before accumulation to prevent overflow.
     """
+    # State length doubles as the matrix dimension since MDS is square.
     n = state.shape[0]
+
+    # Output buffer, written in place by the inner loop.
     result = np.empty(n, dtype=np.int64)
+
+    # One iteration computes a single row of the matrix-vector product.
     for i in range(n):
+        # Accumulator collects n pre-reduced contributions before the final fold.
         s = np.int64(0)
+
         for j in range(n):
+            # Each factor sits below p, so the product fits in 62 bits.
+            #
+            # Without per-product reduction, summing n products would risk int64 overflow.
             s += (mds[i, j] * state[j]) % p
+
+        # Final fold back into the field after n already-reduced terms.
         result[i] = s % p
+
     return result
 
 
@@ -74,44 +73,51 @@ def _permute_jit(
     Modifies state array in-place.
     S-box: x^3 computed as (x*x % p) * x % p to avoid int64 overflow.
 
-    Round structure: AddRoundConstants -> S-box -> MDS multiply.
-    No initial linear layer is applied before the round structure begins.
+    - Round structure: AddRoundConstants -> S-box -> MDS multiply.
+    - No initial linear layer is applied before the round structure begins.
+    - This matches the original Poseidon1 design.
     """
     const_idx = 0
 
-    # 1. First half of full rounds.
+    # Phase 1: opening full rounds.
     #
-    # Full rounds apply the S-box to every state element.
-    # Note: for S_BOX_DEGREE=3, state**3 would overflow int64 before modulo.
-    # Expand S-box to `(state*state % P) * state % P` to stay in range.
+    # Full S-boxes at the boundary maximize non-linearity where
+    # attacker control over inputs is highest.
     for _ in range(half_rounds_f):
         # Add round constants to entire state.
         state[:] = (state + round_constants[const_idx : const_idx + width]) % p
         const_idx += width
 
         # Apply S-box (x -> x^d) to full state.
+        #
+        # Cubing in one shot would overflow int64 inside Numba.
+        # Splitting into two modular multiplies keeps each intermediate below p squared.
         state[:] = (state * state % p) * state % p
 
         # Apply dense MDS multiply for diffusion.
         state[:] = _mds_multiply_jit(state, mds, p)
 
-    # 2. Partial rounds.
+    # Phase 2: partial rounds.
     #
-    # Partial rounds add constants to ALL state elements but apply
-    # the S-box only to state[0]. The same dense MDS matrix is used.
+    # AddRoundConstants and the MDS multiply still run on the entire state.
+    # Only the S-box layer is partial.
+    # Applying the S-box to only one element is the central Hades optimization.
+    # It still saturates algebraic degree while cutting SNARK constraint cost.
     for _ in range(rounds_p):
         # Add round constants to entire state.
         state[:] = (state + round_constants[const_idx : const_idx + width]) % p
         const_idx += width
 
         # Apply S-box to first element only.
-        # This is the main optimization of the Hades design.
         state[0] = (state[0] * state[0] % p) * state[0] % p
 
         # Apply dense MDS multiply.
         state[:] = _mds_multiply_jit(state, mds, p)
 
-    # 3. Second half of full rounds.
+    # Phase 3: closing full rounds.
+    #
+    # A second wall of full S-boxes blocks algebraic attacks that could
+    # unwind the partial-round middle.
     for _ in range(half_rounds_f):
         # Add round constants to entire state.
         state[:] = (state + round_constants[const_idx : const_idx + width]) % p
@@ -125,7 +131,12 @@ def _permute_jit(
 
 
 class Poseidon1Params(StrictBaseModel):
-    """Parameters for a specific Poseidon1 instance."""
+    """Parameters for a specific Poseidon1 instance.
+
+    - The paper requires at least 6 full rounds for statistical-attack security.
+    - Some regimes raise this bound to 10 per Eq. 2 of the paper.
+    - This minimum is not enforced here. Callers must choose secure parameters.
+    """
 
     width: int = Field(gt=0, description="The size of the state (t).")
     rounds_f: int = Field(gt=0, description="Total number of 'full' rounds.")
@@ -138,6 +149,19 @@ class Poseidon1Params(StrictBaseModel):
         min_length=1,
         description="The list of pre-computed constants for all rounds.",
     )
+
+    @field_validator("rounds_f")
+    @classmethod
+    def _rounds_f_must_be_even(cls, value: int) -> int:
+        """Require an even full-round count.
+
+        - The permutation runs equal halves of full rounds before and after the partial middle.
+        - An odd count silently drops one full round and orphans a width-sized block of constants.
+        - The original Poseidon design assumes an even split.
+        """
+        if value % 2 != 0:
+            raise ValueError("Full-round count must be even.")
+        return value
 
     @model_validator(mode="after")
     def check_lengths(self) -> Self:
@@ -153,12 +177,7 @@ class Poseidon1Params(StrictBaseModel):
 
 
 class Poseidon1:
-    """
-    Optimized execution engine for Poseidon1.
-
-    Pre-processes parameters into numpy arrays during initialization.
-    Minimizes overhead during permute calls.
-    """
+    """Execution engine for Poseidon1."""
 
     __slots__ = ("_width", "_half_rounds_f", "_rounds_p", "_mds", "_round_constants")
 
@@ -188,14 +207,17 @@ class Poseidon1:
         self._half_rounds_f = params.rounds_f // 2
         self._rounds_p = params.rounds_p
 
-        # Build the dense circulant MDS matrix from first row.
-        first_row_ints = [fp.value for fp in params.mds_first_row]
-        self._mds = _build_circulant_mds(first_row_ints, params.width, P)
+        # Expand the n-by-n circulant MDS matrix from its first row r.
+        #
+        # Row i is r rolled right by i positions.
+        # Equivalently, C[i][j] = r[(j - i) mod n].
+        first_row = [int(fp) for fp in params.mds_first_row]
+        self._mds = (
+            np.array([np.roll(first_row, i) for i in range(self._width)], dtype=np.int64) % P
+        )
 
         # Pre-convert round constants to numpy array.
-        self._round_constants = np.array(
-            [fp.value for fp in params.round_constants], dtype=np.int64
-        )
+        self._round_constants = np.array([int(fp) for fp in params.round_constants], dtype=np.int64)
 
     def permute(self, current_state: list[Fp]) -> list[Fp]:
         """
@@ -216,7 +238,7 @@ class Poseidon1:
         if len(current_state) != self._width:
             raise ValueError(f"Input state must have length {self._width}")
 
-        state = np.array([fp.value for fp in current_state], dtype=np.int64)
+        state = np.array([int(fp) for fp in current_state], dtype=np.int64)
 
         _permute_jit(
             state,
@@ -232,7 +254,12 @@ class Poseidon1:
 
 
 _MDS_FIRST_ROW_16: list[int] = [1, 1, 51, 1, 11, 17, 2, 1, 101, 63, 15, 2, 67, 22, 13, 3]
-"""MDS first row for width-16 circulant matrix. From Plonky3: koala-bear/src/mds.rs."""
+"""MDS first row for width-16 circulant matrix.
+
+- From Plonky3: https://github.com/Plonky3/Plonky3/blob/main/koala-bear/src/mds.rs
+- The paper recommends Cauchy matrices over the circulant family used here.
+- The matrix must avoid invariant subspace trails per GRS21.
+"""
 
 _MDS_FIRST_ROW_24: list[int] = [
     0x2D0AAAAB,
@@ -260,7 +287,12 @@ _MDS_FIRST_ROW_24: list[int] = [
     0x17E118F6,
     0x0878A07F,
 ]
-"""MDS first row for width-24 circulant matrix. From Plonky3: koala-bear/src/mds.rs."""
+"""MDS first row for width-24 circulant matrix.
+
+- From Plonky3: https://github.com/Plonky3/Plonky3/blob/main/koala-bear/src/mds.rs
+- The paper recommends Cauchy matrices over the circulant family used here.
+- The matrix must avoid invariant subspace trails per GRS21.
+"""
 
 PARAMS_16 = Poseidon1Params(
     width=16,

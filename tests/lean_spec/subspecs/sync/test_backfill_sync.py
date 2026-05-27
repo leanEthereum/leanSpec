@@ -98,7 +98,6 @@ class TestBackfillChainResolution:
             parent_root=Bytes32.zero(),
             slot=Slot(10),
             received_from=peer_id,
-            received_at=cached.received_at,
             backfill_depth=1,
         )
 
@@ -157,7 +156,6 @@ class TestBackfillChainResolution:
             parent_root=parent_root,
             slot=Slot(3),
             received_from=peer_id,
-            received_at=child_cached.received_at,
             backfill_depth=1,
         )
 
@@ -168,7 +166,6 @@ class TestBackfillChainResolution:
             parent_root=grandparent_root,
             slot=Slot(2),
             received_from=peer_id,
-            received_at=parent_cached.received_at,
             backfill_depth=2,
         )
 
@@ -179,7 +176,6 @@ class TestBackfillChainResolution:
             parent_root=Bytes32.zero(),
             slot=Slot(1),
             received_from=peer_id,
-            received_at=grandparent_cached.received_at,
             backfill_depth=3,
         )
 
@@ -293,7 +289,7 @@ class TestRequestTracking:
         unknown_root = Bytes32(b"\xff" * 32)
         await backfill.fill_missing([unknown_root])
 
-        peer = manager.get_peer(peer_id)
+        peer = manager.peers.get(peer_id)
         assert peer == SyncPeer(
             info=info,
             requests_in_flight=0,
@@ -481,7 +477,7 @@ class TestBackfillOptimizations:
         # Watermark unchanged: a future call covering the same range can retry.
         assert backfill_system._max_range_slot == Slot(0)
         # The peer recorded a failure (score decreased).
-        peer = backfill_system.peer_manager.get_peer(peer_id)
+        peer = backfill_system.peer_manager.peers.get(peer_id)
         assert peer is not None
         assert peer.score == INITIAL_PEER_SCORE - SCORE_FAILURE_PENALTY
 

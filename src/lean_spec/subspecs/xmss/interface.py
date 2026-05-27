@@ -117,7 +117,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         config = self.config
 
         # Ensure the requested activation range is within the scheme's total supported lifetime.
-        if activation_slot + num_active_slots > config.LIFETIME:
+        if int(activation_slot) + int(num_active_slots) > int(config.LIFETIME):
             raise ValueError("Activation range exceeds the key's lifetime.")
 
         # Generate the random public parameter `P` and the master PRF key.
@@ -330,7 +330,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         bottom_tree = sk.left_bottom_tree if slot_int < boundary else sk.right_bottom_tree
 
         # Generate the combined authentication path
-        path = combined_path(sk.top_tree, bottom_tree, slot)
+        path = combined_path(sk.top_tree, bottom_tree, Uint64(int(slot)))
 
         # Assemble and return the final signature, which contains:
         # - The OTS,
@@ -385,7 +385,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         #
         # Return False instead of raising to avoid panic on invalid signatures.
         # The slot is attacker-controlled input.
-        if slot >= self.config.LIFETIME:
+        if int(slot) >= int(self.config.LIFETIME):
             return False
 
         # Re-encode the message using the randomness `rho` from the signature.

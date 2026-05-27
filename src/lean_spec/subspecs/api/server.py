@@ -14,8 +14,7 @@ from dataclasses import dataclass, field
 
 from aiohttp import web
 
-from lean_spec.forks import LstarSpec, SignedBlock, Store
-from lean_spec.types import Bytes32
+from lean_spec.forks import LstarSpec, Store
 
 from .aggregator_controller import AggregatorController
 from .routes import ADMIN_ROUTES, ROUTES
@@ -46,9 +45,6 @@ class ApiServerConfig:
     port: int = 5052
     """Port to listen on."""
 
-    enabled: bool = True
-    """Whether the API server is enabled."""
-
 
 @dataclass(slots=True)
 class ApiServer:
@@ -72,17 +68,6 @@ class ApiServer:
     store_getter: Callable[[], Store | None] | None = None
     """Callable that returns the current Store instance."""
 
-    signed_block_getter: Callable[[Bytes32], SignedBlock | None] | None = None
-    """
-    Callable that returns the SignedBlock for a given block root, if available.
-
-    Used by ``/lean/v0/blocks/finalized`` to serve the anchor block alongside
-    the finalized state for checkpoint sync. Implementations must retain the
-    SignedBlock for at least ``store.latest_finalized.root``; ``Store.blocks``
-    holds only unsigned ``Block`` objects, so a separate signed-block source
-    is required (e.g. a long-lived anchor cache or a SignedBlock-aware store).
-    """
-
     aggregator_controller: AggregatorController | None = None
     """
     Optional controller for toggling the aggregator role at runtime.
@@ -97,6 +82,9 @@ class ApiServer:
     _site: web.TCPSite | None = field(default=None, init=False)
     """TCP site for the server."""
 
+    _stop_event: asyncio.Event = field(default_factory=asyncio.Event, init=False)
+    """Set when the server stops, so run() can return without polling."""
+
     @property
     def store(self) -> Store | None:
         """Get the current Store instance."""
@@ -104,18 +92,10 @@ class ApiServer:
 
     async def start(self) -> None:
         """Start the API server in the background."""
-        if not self.config.enabled:
-            logger.info("API server is disabled")
-            return
-
         app = web.Application()
 
         # Store the store_getter in app for handlers that need store access
         app["store_getter"] = self.store_getter
-
-        # Expose the signed-block lookup for endpoints serving SignedBlocks
-        # (e.g. /lean/v0/blocks/finalized for checkpoint-sync anchor block).
-        app["signed_block_getter"] = self.signed_block_getter
 
         # Expose the fork spec for handlers that drive consensus computations.
         app["spec"] = self.spec
@@ -142,9 +122,7 @@ class ApiServer:
         Blocks until stop() is called.
         """
         await self.start()
-
-        while self._runner is not None:
-            await asyncio.sleep(1)
+        await self._stop_event.wait()
 
     def stop(self) -> None:
         """Request graceful shutdown (fire-and-forget). Prefer aclose() in async code."""
@@ -162,3 +140,4 @@ class ApiServer:
             self._runner = None
             self._site = None
             logger.info("API server stopped")
+        self._stop_event.set()

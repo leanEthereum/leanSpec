@@ -22,14 +22,6 @@ class Checkpoint(Container):
     slot: Slot
     """The slot number of the checkpoint's block."""
 
-    def __lt__(self, other: "Checkpoint") -> bool:
-        """Order checkpoints by slot."""
-        # Foreign types: defer to Python's reflected fallback.
-        if not isinstance(other, Checkpoint):
-            return NotImplemented
-        # Slot drives the order; equal slots leave the pair incomparable.
-        return self.slot < other.slot
-
     def advance_to(self, candidate: "Checkpoint") -> "Checkpoint":
         """
         Return the later of two checkpoints, keeping self on a slot tie.

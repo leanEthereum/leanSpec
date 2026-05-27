@@ -48,6 +48,25 @@ REORG_DEPTH_BUCKETS = (1, 2, 3, 5, 7, 10, 20, 30, 50, 100)
 PQ_SIG_AGGREGATED_BUILDING_TIME_BUCKETS = (0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4)
 """Seconds. Aggregated-signature STARK prove latency from interval-2 start."""
 
+# Section labels for attestation aggregate coverage gauges. These match the
+# names printed in slot/report logs: timely, late, block, combined,
+# agg_start_new, proposal_payloads, proposal_gossip, and proposal_combined.
+# Slot is the X-axis (time series progression), not a label dimension.
+ATTESTATION_AGGREGATE_COVERAGE_SECTIONS = (
+    "timely",
+    "late",
+    "block",
+    "combined",
+    "agg_start_new",
+    "proposal_payloads",
+    "proposal_gossip",
+    "proposal_combined",
+)
+"""Coverage report sections keyed by attestation aggregate source."""
+
+ATTESTATION_AGGREGATE_COVERAGE_DIFF_DIRECTIONS = ("block_only", "timely_only")
+"""Validator coverage delta directions between block and timely pre-merge payloads."""
+
 
 class _NoOpMetric:
     """
@@ -131,6 +150,12 @@ class MetricsRegistry:
     """Running count of chain head reorganizations."""
     lean_fork_choice_reorg_depth: Histogram | _NoOpMetric = _NOOP
     """Number of blocks rolled back during each reorg event."""
+    lean_attestation_aggregate_coverage_validators: Gauge | _NoOpMetric = _NOOP
+    """Validator coverage in attestation aggregate reports, by section and subnet."""
+    lean_attestation_aggregate_coverage_subnets: Gauge | _NoOpMetric = _NOOP
+    """Number of covered subnets in attestation aggregate reports, by section."""
+    lean_attestation_aggregate_coverage_diff_validators: Gauge | _NoOpMetric = _NOOP
+    """Validator coverage delta between block payloads and timely pre-merge payloads."""
 
     # PQ signature (leanMetrics: PQ Signature Metrics)
     lean_pq_sig_aggregated_signatures_total: Counter | _NoOpMetric = _NOOP
@@ -257,6 +282,50 @@ class MetricsRegistry:
             buckets=REORG_DEPTH_BUCKETS,
             registry=reg,
         )
+        # Attestation aggregate coverage (leanMetrics: Fork-Choice Metrics)
+        #
+        # `subnet="combined"` is the all-subnet validator total for the section;
+        # `subnet="subnet_N"` is that section's validator coverage on one subnet.
+        self.lean_attestation_aggregate_coverage_validators = Gauge(
+            "lean_attestation_aggregate_coverage_validators",
+            (
+                "Validator coverage in attestation aggregate reports, labeled by "
+                "section and subnet. subnet=combined is the section total; "
+                "subnet=subnet_N is per-subnet coverage. Updated each slot "
+                "(slot is the X-axis)."
+            ),
+            ["section", "subnet"],
+            registry=reg,
+        )
+        self.lean_attestation_aggregate_coverage_subnets = Gauge(
+            "lean_attestation_aggregate_coverage_subnets",
+            (
+                "Number of covered subnets in attestation aggregate reports, "
+                "labeled by section. Updated each slot (slot is the X-axis)."
+            ),
+            ["section"],
+            registry=reg,
+        )
+        self.lean_attestation_aggregate_coverage_diff_validators = Gauge(
+            "lean_attestation_aggregate_coverage_diff_validators",
+            (
+                "Validator coverage delta between block payloads and timely "
+                "pre-merge payloads, labeled by direction (block_only|timely_only). "
+                "Updated each slot (slot is the X-axis)."
+            ),
+            ["direction"],
+            registry=reg,
+        )
+        for section in ATTESTATION_AGGREGATE_COVERAGE_SECTIONS:
+            self.lean_attestation_aggregate_coverage_validators.labels(
+                section=section,
+                subnet="combined",
+            ).set(0)
+            self.lean_attestation_aggregate_coverage_subnets.labels(section=section).set(0)
+        for direction in ATTESTATION_AGGREGATE_COVERAGE_DIFF_DIRECTIONS:
+            self.lean_attestation_aggregate_coverage_diff_validators.labels(
+                direction=direction,
+            ).set(0)
 
         # PQ signature (leanMetrics: PQ Signature Metrics)
         self.lean_pq_sig_aggregated_signatures_total = Counter(

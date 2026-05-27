@@ -18,9 +18,9 @@ from pydantic import model_validator
 
 from lean_spec.config import LEAN_ENV
 from lean_spec.types import StrictBaseModel, Uint64
-from lean_spec.types.constants import OFFSET_BYTE_LENGTH
+from lean_spec.types.ssz_base import BYTES_PER_LENGTH_OFFSET
 
-from ..koalabear import P_BYTES, Fp, P
+from ..koalabear import P_BYTES, P
 
 
 class XmssConfig(StrictBaseModel):
@@ -100,11 +100,6 @@ class XmssConfig(StrictBaseModel):
         return math.ceil(self.DIMENSION / self.Z)
 
     @property
-    def PUBLIC_KEY_LEN_BYTES(self) -> int:  # noqa: N802
-        """The size of the public key in bytes."""
-        return self.HASH_LEN_FE * P_BYTES + self.PARAMETER_LEN * P_BYTES
-
-    @property
     def SIGNATURE_LEN_BYTES(self) -> int:  # noqa: N802
         """
         The SSZ-encoded size of a signature in bytes.
@@ -120,7 +115,7 @@ class XmssConfig(StrictBaseModel):
         hashes_size = self.DIMENSION * self.HASH_LEN_FE * P_BYTES
 
         # SSZ offset overhead: 3 variable fields × 4 bytes each
-        ssz_offset_overhead = 3 * OFFSET_BYTE_LENGTH
+        ssz_offset_overhead = 3 * BYTES_PER_LENGTH_OFFSET
 
         return path_siblings_size + rho_size + hashes_size + ssz_offset_overhead
 
@@ -163,13 +158,13 @@ TEST_CONFIG: Final = XmssConfig(
 """Lightweight XMSS configuration for fast test execution."""
 
 
-TWEAK_PREFIX_CHAIN: Final = Fp(value=0x00)
+TWEAK_PREFIX_CHAIN: Final[int] = 0x00
 """The unique prefix for tweaks used in Winternitz-style hash chains."""
 
-TWEAK_PREFIX_TREE: Final = Fp(value=0x01)
+TWEAK_PREFIX_TREE: Final[int] = 0x01
 """The unique prefix for tweaks used when hashing Merkle tree nodes."""
 
-TWEAK_PREFIX_MESSAGE: Final = Fp(value=0x02)
+TWEAK_PREFIX_MESSAGE: Final[int] = 0x02
 """The unique prefix for tweaks used in the initial message hashing step."""
 
 PRF_KEY_LENGTH: Final = 32

@@ -4,9 +4,9 @@ Forkchoice store for tracking chain state and attestations.
 The Store tracks all information required for the LMD GHOST forkchoice algorithm.
 """
 
-__all__ = ["AttestationSignatureEntry", "BlockT", "StateT", "Store"]
+__all__ = ["AttestationSignatureEntry", "Store"]
 
-from typing import Generic, NamedTuple, TypeVar
+from typing import NamedTuple
 
 from pydantic import Field
 
@@ -21,12 +21,6 @@ from lean_spec.types import Bytes32, Checkpoint, ValidatorIndex
 from lean_spec.types.base import StrictBaseModel
 from lean_spec.types.container import Container
 
-StateT = TypeVar("StateT", bound=Container)
-"""Per-fork post-state type tracked alongside each known block."""
-
-BlockT = TypeVar("BlockT", bound=Container)
-"""Per-fork block type stored in the forkchoice view."""
-
 
 class AttestationSignatureEntry(NamedTuple):
     """
@@ -40,7 +34,7 @@ class AttestationSignatureEntry(NamedTuple):
     signature: Signature
 
 
-class Store(StrictBaseModel, Generic[StateT, BlockT]):
+class Store[StateT: Container, BlockT: Container](StrictBaseModel):
     """
     Forkchoice store tracking chain state and validator attestations.
 

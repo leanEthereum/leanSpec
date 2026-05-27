@@ -6,8 +6,9 @@ from lean_spec.forks.lstar.containers import AttestationData
 from lean_spec.forks.lstar.containers.block.block import Block
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.forks.lstar.store import Store
+from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.ssz import hash_tree_root
-from lean_spec.types import ZERO_HASH, Bytes32, CamelModel, Slot, Uint64, ValidatorIndex
+from lean_spec.types import ZERO_HASH, Bytes32, CamelModel, Slot, ValidatorIndex
 
 from .utils import resolve_block_root
 
@@ -123,7 +124,7 @@ class StoreChecks(CamelModel):
     This allows tests to focus on the properties they care about.
     """
 
-    time: Uint64 | None = None
+    time: Interval | None = None
     """Expected store time (in intervals since genesis)."""
 
     head_slot: Slot | None = None

@@ -180,7 +180,7 @@ class XmssKeyManager:
 
     - Raw JSON (lightweight hex strings, ~2.7 KB per validator)
     - Deserialized public keys only (avoids the heavy secret key objects)
-    - Advanced secret key state as compact SSZ bytes
+    - Advanced secret key state as live Python objects
     """
 
     __slots__ = (
@@ -267,10 +267,8 @@ class XmssKeyManager:
         # Populated lazily on first directory scan.
         self._available_indices: set[ValidatorIndex] | None = None
 
-        # Advanced secret key state cached as raw SSZ bytes.
-        # Raw bytes (~2.7 KB each) instead of deserialized objects (~370 MB each)
-        # to avoid holding massive Pydantic model trees in memory.
-        self._secret_state: dict[tuple[ValidatorIndex, KeyRole], bytes] = {}
+        # Advanced secret-key state held as live Python objects.
+        self._secret_state: dict[tuple[ValidatorIndex, KeyRole], SecretKey] = {}
 
     def _scan_indices(self) -> set[ValidatorIndex]:
         """
@@ -413,9 +411,9 @@ class XmssKeyManager:
 
         Memory strategy:
 
-        1. Deserialize the secret key from cached bytes or disk
-        2. Advance and sign (only one full key object in memory)
-        3. Re-serialize to compact bytes (~2.7 KB) for caching
+        1. On cache miss, deserialize the key once from disk
+        2. Advance and sign
+        3. Keep the advanced object for the next sign
 
         Args:
             validator_id: Which validator's key to use.
@@ -428,9 +426,11 @@ class XmssKeyManager:
         """
         cache_key = (validator_id, role)
 
-        # Deserialize the secret key from either the byte cache or disk.
+        # Reuse the cached object directly when present, else decode from disk.
+        # Holding the object avoids the bytes-to-object round-trip on every sign.
+        # That round-trip dominated prod-scheme runtime under the compact-bytes cache.
         if cache_key in self._secret_state:
-            sk = SecretKey.decode_bytes(self._secret_state[cache_key])
+            sk = self._secret_state[cache_key]
         else:
             sk = self._get_secret_key(validator_id, role)
 
@@ -452,9 +452,8 @@ class XmssKeyManager:
         # Produce the signature for the target slot.
         signature = self.scheme.sign(sk, slot, message)
 
-        # Re-serialize the advanced key state to compact bytes for caching.
-        # This drops the full Python object tree from memory immediately.
-        self._secret_state[cache_key] = sk.encode_bytes()
+        # Park the advanced object back in the cache for the next sign.
+        self._secret_state[cache_key] = sk
 
         return signature
 
@@ -715,29 +714,34 @@ def download_keys(scheme: str) -> None:
 
     print(f"Downloading {scheme} keys from {url}...")
 
-    # Download to a temporary file to avoid partial-write corruption.
-    with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
-        tmp_path = Path(tmp_file.name)
-        try:
-            # Stream the response directly into the temp file.
-            with urllib.request.urlopen(url) as response:
-                shutil.copyfileobj(response, tmp_file)
+    # Reserve a temp path; we open it explicitly below so the writer can close
+    # before the reader opens.
+    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".tar.gz")
+    os.close(tmp_fd)
+    tmp_path = Path(tmp_name)
 
-            # Remove any existing keys for this scheme before extracting.
-            target_dir = base_dir / f"{scheme}_scheme"
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            base_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # Close the writer before opening the reader.
+        # Otherwise Python's userspace buffer can withhold the tail of the gzip stream.
+        # That produces a near-end decompression failure that looks like a truncated download.
+        with urllib.request.urlopen(url) as response, tmp_path.open("wb") as out:
+            shutil.copyfileobj(response, out)
 
-            # Extract the archive into the base directory.
-            # The archive root is the scheme directory itself.
-            with tarfile.open(tmp_path, "r:gz") as tar:
-                tar.extractall(path=base_dir, filter="data")
+        # Remove any existing keys for this scheme before extracting.
+        target_dir = base_dir / f"{scheme}_scheme"
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        base_dir.mkdir(parents=True, exist_ok=True)
 
-            print(f"Extracted {scheme} keys to {target_dir}/")
-        finally:
-            # Always clean up the temporary download file.
-            tmp_path.unlink(missing_ok=True)
+        # Extract the archive into the base directory.
+        # The archive root is the scheme directory itself.
+        with tarfile.open(tmp_path, "r:gz") as tar:
+            tar.extractall(path=base_dir, filter="data")
+
+        print(f"Extracted {scheme} keys to {target_dir}/")
+    finally:
+        # Always clean up the temporary download file.
+        tmp_path.unlink(missing_ok=True)
 
     print("Download complete!")
 

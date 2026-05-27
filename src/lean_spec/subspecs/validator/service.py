@@ -110,12 +110,6 @@ class ValidatorService:
     _attested_slots: set[Slot] = field(default_factory=set, repr=False)
     """Slots for which we've already produced attestations (prevents duplicates)."""
 
-    _blocks_skipped_lag: int = field(default=0, repr=False)
-    """Block proposals skipped because the local view was too stale."""
-
-    _attestations_skipped_lag: int = field(default=0, repr=False)
-    """Attestations skipped because the local view was too stale."""
-
     _duty_gate_closed: bool = field(default=False, repr=False)
     """Hysteresis flag. True while signing is silenced."""
 
@@ -171,15 +165,13 @@ class ValidatorService:
                 my_indices,
             )
 
-            if interval == Uint64(0):
+            if interval == Interval(0):
                 # Block production interval.
                 #
                 # Check if any of our validators is the proposer.
                 logger.debug("ValidatorService: checking block production for slot %d", slot)
                 if self._is_synced_for_duties(slot, "block"):
                     await self._maybe_produce_block(slot)
-                else:
-                    self._blocks_skipped_lag += 1
                 logger.debug("ValidatorService: done block production check for slot %d", slot)
 
                 # Re-fetch interval after block production.
@@ -212,7 +204,7 @@ class ValidatorService:
             # Why split eligibility from the sync gate: the skip counter
             # must only tick on real misses, never on wrong-interval
             # iterations.
-            needs_attestation = interval >= Uint64(1) and slot not in self._attested_slots
+            needs_attestation = interval >= Interval(1) and slot not in self._attested_slots
             if needs_attestation:
                 logger.debug(
                     "ValidatorService: producing attestations for slot %d (interval %d)",
@@ -235,8 +227,6 @@ class ValidatorService:
                     # Older slots are no longer attestable.
                     prune_threshold = Slot(max(0, int(slot) - 4))
                     self._attested_slots = {s for s in self._attested_slots if s >= prune_threshold}
-                else:
-                    self._attestations_skipped_lag += 1
 
             # Intervals 2-4 have no additional validator duties.
 
@@ -700,18 +690,3 @@ class ValidatorService:
     def attestations_produced(self) -> int:
         """Total attestations produced since creation."""
         return self._attestations_produced
-
-    @property
-    def blocks_skipped_lag(self) -> int:
-        """Block proposals skipped because the local view was too stale."""
-        return self._blocks_skipped_lag
-
-    @property
-    def attestations_skipped_lag(self) -> int:
-        """Attestations skipped because the local view was too stale."""
-        return self._attestations_skipped_lag
-
-    @property
-    def duty_gate_closed(self) -> bool:
-        """True while the sync-lag gate is silencing duties."""
-        return self._duty_gate_closed

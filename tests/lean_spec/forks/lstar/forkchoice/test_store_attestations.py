@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from consensus_testing.keys import XmssKeyManager
+from prometheus_client import CollectorRegistry
 
 from lean_spec.forks.lstar import AttestationSignatureEntry
 from lean_spec.forks.lstar.containers.attestation import (
@@ -14,6 +15,7 @@ from lean_spec.forks.lstar.containers.attestation import (
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
+from lean_spec.subspecs.metrics.registry import registry as metrics_registry
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
@@ -21,7 +23,6 @@ from lean_spec.types import (
     Bytes32,
     Checkpoint,
     Slot,
-    Uint64,
     ValidatorIndex,
     ValidatorIndices,
 )
@@ -643,7 +644,7 @@ class TestTickIntervalAggregation:
         # Set time to interval 1 (so next tick goes to interval 2)
         # time % INTERVALS_PER_SLOT determines current interval
         # We want to end up at interval 2 after tick
-        store = store.model_copy(update={"time": Uint64(1)})
+        store = store.model_copy(update={"time": Interval(1)})
 
         # Tick to interval 2 as aggregator
         updated_store, _ = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
@@ -671,7 +672,7 @@ class TestTickIntervalAggregation:
         )
 
         # Set time to interval 1
-        store = store.model_copy(update={"time": Uint64(1)})
+        store = store.model_copy(update={"time": Interval(1)})
 
         # Tick to interval 2 as NON-aggregator
         updated_store, _ = spec.tick_interval(store, has_proposal=False, is_aggregator=False)
@@ -707,7 +708,7 @@ class TestTickIntervalAggregation:
             # So we need time+1 % 5 == target_interval
             # Therefore time = target_interval - 1 (mod 5)
             pre_tick_time = (target_interval - 1) % int(INTERVALS_PER_SLOT)
-            test_store = store.model_copy(update={"time": Uint64(pre_tick_time)})
+            test_store = store.model_copy(update={"time": Interval(pre_tick_time)})
 
             updated_store, _ = spec.tick_interval(
                 test_store, has_proposal=False, is_aggregator=True
@@ -731,15 +732,15 @@ class TestTickIntervalAggregation:
         )
 
         # Set time to interval 4 (so next tick wraps to interval 0)
-        store = store.model_copy(update={"time": Uint64(4)})
+        store = store.model_copy(update={"time": Interval(4)})
 
         # Tick to interval 0 with proposal
         updated_store, _ = spec.tick_interval(store, has_proposal=True, is_aggregator=True)
 
         # Verify time advanced
-        assert updated_store.time == Uint64(5)
+        assert updated_store.time == Interval(5)
         # Interval should now be 0
-        assert updated_store.time % INTERVALS_PER_SLOT == Uint64(0)
+        assert Interval(int(updated_store.time) % int(INTERVALS_PER_SLOT)) == Interval(0)
 
 
 class TestEndToEndAggregationFlow:
@@ -796,7 +797,7 @@ class TestEndToEndAggregationFlow:
             assert vid in stored_validators, f"Signature for {vid} should be stored"
 
         # Step 2: Advance to interval 2 (aggregation interval)
-        store = store.model_copy(update={"time": Uint64(1)})
+        store = store.model_copy(update={"time": Interval(1)})
         store, _ = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
 
         # Step 3: Verify aggregated proofs were created
@@ -820,46 +821,44 @@ def test_interval_2_records_pq_sig_building_time_metric(
     key_manager: XmssKeyManager, spec: LstarSpec
 ) -> None:
     """Interval-2 aggregation observes building-time from interval start to STARK done."""
-    from prometheus_client import CollectorRegistry
-
-    from lean_spec.subspecs.metrics.registry import registry as metrics_registry
-
     metrics_registry.reset()
-    metrics_registry._initialized = False
     test_reg = CollectorRegistry()
     metrics_registry.init(registry=test_reg)
+    try:
+        num_validators = 4
+        store = make_store(num_validators=num_validators, key_manager=key_manager)
+        # Set time so gossip-attestation accepts votes for Slot(1); the override
+        # below moves time back to interval 1, so the next tick lands on interval 2.
+        store = store.model_copy(update={"time": Interval.from_slot(Slot(1))})
+        attestation_data = spec.produce_attestation_data(store, Slot(1))
 
-    num_validators = 4
-    store = make_store(num_validators=num_validators, key_manager=key_manager)
-    store = store.model_copy(update={"time": Interval.from_slot(Slot(1))})
-    attestation_data = spec.produce_attestation_data(store, Slot(1))
+        for vid in (ValidatorIndex(1), ValidatorIndex(2)):
+            signed_attestation = SignedAttestation(
+                validator_id=vid,
+                data=attestation_data,
+                signature=key_manager.sign_attestation_data(vid, attestation_data),
+            )
+            store = spec.on_gossip_attestation(store, signed_attestation, is_aggregator=True)
 
-    for vid in (ValidatorIndex(1), ValidatorIndex(2)):
-        signed_attestation = SignedAttestation(
-            validator_id=vid,
-            data=attestation_data,
-            signature=key_manager.sign_attestation_data(vid, attestation_data),
+        store = store.model_copy(update={"time": Interval(1)})
+        store, aggregates = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
+
+        assert len(aggregates) == 1
+        assert test_reg.get_sample_value("lean_pq_sig_aggregated_signatures_total") == 1.0
+        assert (
+            test_reg.get_sample_value("lean_pq_sig_attestations_in_aggregated_signatures_total")
+            == 2.0
         )
-        store = spec.on_gossip_attestation(store, signed_attestation, is_aggregator=True)
-
-    store = store.model_copy(update={"time": Uint64(1)})
-    store, aggregates = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
-
-    assert len(aggregates) == 1
-    assert test_reg.get_sample_value("lean_pq_sig_aggregated_signatures_total") == 1.0
-    assert (
-        test_reg.get_sample_value("lean_pq_sig_attestations_in_aggregated_signatures_total")
-        == 2.0
-    )
-    assert (
-        test_reg.get_sample_value("lean_pq_sig_aggregated_signatures_building_time_seconds_count")
-        == 1.0
-    )
-    building_sum = test_reg.get_sample_value(
-        "lean_pq_sig_aggregated_signatures_building_time_seconds_sum"
-    )
-    assert building_sum is not None
-    assert building_sum >= 0.0
-
-    metrics_registry.reset()
-    metrics_registry._initialized = False
+        assert (
+            test_reg.get_sample_value(
+                "lean_pq_sig_aggregated_signatures_building_time_seconds_count"
+            )
+            == 1.0
+        )
+        building_sum = test_reg.get_sample_value(
+            "lean_pq_sig_aggregated_signatures_building_time_seconds_sum"
+        )
+        assert building_sum is not None
+        assert building_sum >= 0.0
+    finally:
+        metrics_registry.reset()

@@ -1,10 +1,4 @@
-"""Slot type — fork-stable consensus-time index.
-
-A slot is the smallest unit of consensus time. The numeric type and the
-justifiability rule are stable across the leanSpec fork chain; later forks
-that change the rule should override the relevant fork-class methods rather
-than fork the type itself.
-"""
+"""Slot type: the smallest unit of consensus time."""
 
 import math
 from typing import Final
