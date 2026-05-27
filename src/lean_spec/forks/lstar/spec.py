@@ -747,9 +747,15 @@ class LstarSpec(ForkProtocol):
         # 3SF-mini finalization requires no slot strictly between source and target
         # to still be justifiable, so source and target are consecutive justified
         # checkpoints in the projected post-state.
+        #
+        # The scan starts above the finalized boundary as well as above the source.
+        # Slots at or below the finalized slot are already finalized, not pending.
+        # They never block finalization, and is_justifiable_after rejects a slot
+        # behind the finalized boundary, so an older source must not be scanned there.
+        scan_start = max(int(att_data.source.slot) + 1, int(projected_finalized_slot) + 1)
         finalizes = crosses_two_thirds and all(
             not Slot(s).is_justifiable_after(projected_finalized_slot)
-            for s in range(int(att_data.source.slot) + 1, int(att_data.target.slot))
+            for s in range(scan_start, int(att_data.target.slot))
         )
 
         if is_genesis_self_vote or not crosses_two_thirds:
@@ -2085,8 +2091,8 @@ class LstarSpec(ForkProtocol):
         3. Build the block with maximal valid attestations
         4. Store the block and update checkpoints
 
-        The block builder uses a fixed-point algorithm to collect attestations.
-        Each iteration may update the justified checkpoint.
+        The block builder uses a tiered greedy scorer to collect attestations.
+        Each round projects justification forward, unlocking dependent entries.
 
         Returns the per-attestation Type-1 proofs unmerged. The validator
         service signs the block root with the proposal key, wraps that into
@@ -2116,9 +2122,9 @@ class LstarSpec(ForkProtocol):
 
         # Build the block.
         #
-        # The builder iteratively collects valid attestations from aggregated
-        # payloads matching the justified checkpoint. Each iteration may advance
-        # justification, unlocking more attestation data entries.
+        # The builder scores valid attestations from aggregated payloads against
+        # a projected post-state. Each round projects justification forward,
+        # unlocking more attestation data entries.
         final_block, final_post_state, _, signatures = self.build_block(
             head_state,
             slot=slot,
@@ -2131,8 +2137,8 @@ class LstarSpec(ForkProtocol):
         # Invariant: the produced block must close any justified divergence.
         #
         # The store may have advanced its justified checkpoint from attestations
-        # on a minority fork that the head state never processed. The fixed-point
-        # loop above must incorporate those attestations from the pool, advancing
+        # on a minority fork that the head state never processed. The selection
+        # above must incorporate those attestations from the pool, advancing
         # the block's justified checkpoint to at least match the store.
         #
         # Without this, other nodes processing the block would never see the
@@ -2142,7 +2148,7 @@ class LstarSpec(ForkProtocol):
         store_justified = store.latest_justified.slot
         assert block_justified >= store_justified, (
             f"Produced block justified={block_justified} < store justified="
-            f"{store_justified}. Fixed-point attestation loop did not converge."
+            f"{store_justified}. Attestation selection did not close the divergence."
         )
 
         # Compute block hash for storage.

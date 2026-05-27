@@ -574,6 +574,64 @@ def test_score_entry_returns_none_when_no_new_voters(
     assert scored is None
 
 
+def test_score_entry_finalize_tier_when_gap_slots_not_justifiable(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    # Source slot 6, target slot 9: slots 7 and 8 are not justifiable after
+    # finalized 0 (distances 7 and 8).
+    # Source and target are therefore consecutive justified checkpoints, so a
+    # supermajority entry finalizes its source.
+    source = Checkpoint(root=make_bytes32(1), slot=Slot(6))
+    target = Checkpoint(root=make_bytes32(2), slot=Slot(9))
+    head = Checkpoint(root=make_bytes32(3), slot=Slot(0))
+    att_data = AttestationData(slot=Slot(9), head=head, target=target, source=source)
+    proof = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(i) for i in range(4)], att_data
+    )
+
+    scored = LstarSpec._score_entry(
+        att_data,
+        {proof},
+        current_votes={},
+        projected_finalized_slot=Slot(0),
+        validator_count=4,
+    )
+    assert scored is not None
+    score, _ = scored
+    assert score.tier == _Tier.FINALIZE
+
+
+def test_score_entry_older_source_after_finalization_does_not_raise(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    # Regression: with the finalized boundary advanced to slot 6, a candidate
+    # sourced at genesis (slot 0) must be scored without scanning slots at or
+    # below the finalized boundary.
+    # is_justifiable_after rejects a slot behind the finalized boundary, so an
+    # unclamped scan would raise here.
+    source = Checkpoint(root=make_bytes32(1), slot=Slot(0))
+    target = Checkpoint(root=make_bytes32(2), slot=Slot(9))
+    head = Checkpoint(root=make_bytes32(3), slot=Slot(0))
+    att_data = AttestationData(slot=Slot(9), head=head, target=target, source=source)
+    proof = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(i) for i in range(4)], att_data
+    )
+
+    scored = LstarSpec._score_entry(
+        att_data,
+        {proof},
+        current_votes={},
+        projected_finalized_slot=Slot(6),
+        validator_count=4,
+    )
+    assert scored is not None
+    score, _ = scored
+    # Slot 7 is justifiable after finalized 6 (distance 1), so this justifies
+    # rather than finalizes.
+    # The regression point is that scoring completes without raising.
+    assert score.tier == _Tier.JUSTIFY
+
+
 def test_entry_passes_filters_rejects_unknown_head() -> None:
     chain = [make_bytes32(10), make_bytes32(11)]  # slots 0, 1
     source = Checkpoint(root=chain[0], slot=Slot(0))
