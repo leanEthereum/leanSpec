@@ -817,6 +817,146 @@ class LstarSpec(ForkProtocol):
             return False
         return True
 
+    def _pick_best_candidate(
+        self,
+        aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]],
+        known_block_roots: AbstractSet[Bytes32],
+        extended_historical_block_hashes: Sequence[Bytes32],
+        processed: AbstractSet[AttestationData],
+        projected_justified_slots: JustifiedSlots,
+        projected_finalized_slot: Slot,
+        current_votes: dict[Bytes32, set[ValidatorIndex]],
+        validator_count: int,
+    ) -> tuple[AttestationData, _EntryScore, set[ValidatorIndex]] | None:
+        """Scan candidate entries and return the highest-scoring one.
+
+        Skips entries already processed, those failing the projected-chain
+        filters, and those with zero new voters.
+        Returns the entry with the best
+        ordering key (smaller is better), or None when nothing scores.
+        """
+        best: tuple[AttestationData, _EntryScore, set[ValidatorIndex]] | None = None
+        best_key: tuple[int, int, int, int, bytes] | None = None
+
+        for att_data, proofs in aggregated_payloads.items():
+            if att_data in processed:
+                continue
+            if not self._entry_passes_filters(
+                att_data,
+                known_block_roots,
+                extended_historical_block_hashes,
+                projected_justified_slots,
+                projected_finalized_slot,
+            ):
+                continue
+            scored = self._score_entry(
+                att_data,
+                proofs,
+                current_votes,
+                projected_finalized_slot,
+                validator_count,
+            )
+            if scored is None:
+                continue
+            score, new_voters = scored
+
+            candidate_key = score.ordering_key(hash_tree_root(att_data))
+            if best_key is None or candidate_key < best_key:
+                best = (att_data, score, new_voters)
+                best_key = candidate_key
+
+        return best
+
+    def _select_attestations(
+        self,
+        head_state: State,
+        slot: Slot,
+        parent_root: Bytes32,
+        known_block_roots: AbstractSet[Bytes32],
+        aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]],
+    ) -> list[tuple[AggregatedAttestation, TypeOneMultiSignature]]:
+        """Tiered greedy attestation selection for block proposal.
+
+        Each round scores remaining candidates against a projected post-state and
+        picks the best: finalize beats justify beats build.
+        Justification and finalization are projected incrementally so dependent
+        attestations become eligible on the next round without re-running the
+        state transition.
+        Stops at the data-entry cap or when no remaining candidate scores.
+        """
+        selected: list[tuple[AggregatedAttestation, TypeOneMultiSignature]] = []
+        if not aggregated_payloads:
+            return selected
+
+        # Chain view the block header would produce: recorded history up to the
+        # parent, then the parent root at the parent slot, then zero hashes for any
+        # skipped slots up to the new block.
+        parent_slot = head_state.latest_block_header.slot
+        num_empty_slots = int(slot - parent_slot - Slot(1))
+        extended_historical_block_hashes: list[Bytes32] = (
+            list(head_state.historical_block_hashes) + [parent_root] + [ZERO_HASH] * num_empty_slots
+        )
+        validator_count = len(head_state.validators)
+
+        # Projected post-state, updated incrementally as entries are selected.
+        finalized_slot = head_state.latest_finalized.slot
+        justified_slots = head_state.justified_slots.extend_to_slot(finalized_slot, slot - Slot(1))
+        current_votes = self._build_running_votes(head_state)
+        processed: set[AttestationData] = set()
+
+        for _round in range(int(MAX_ATTESTATIONS_DATA)):
+            best = self._pick_best_candidate(
+                aggregated_payloads,
+                known_block_roots,
+                extended_historical_block_hashes,
+                processed,
+                justified_slots,
+                finalized_slot,
+                current_votes,
+                validator_count,
+            )
+            if best is None:
+                break
+            att_data, score, new_voters = best
+            processed.add(att_data)
+
+            # Pack proofs that maximize new validator coverage for this entry.
+            selected_proofs, _ = TypeOneMultiSignature.select_greedily(
+                aggregated_payloads[att_data]
+            )
+            for proof in selected_proofs:
+                selected.append(
+                    (
+                        self.aggregated_attestation_class(
+                            aggregation_bits=proof.participants,
+                            data=att_data,
+                        ),
+                        proof,
+                    )
+                )
+
+            target_root = att_data.target.root
+            current_votes.setdefault(target_root, set()).update(new_voters)
+
+            # Project justification and finalization. Finalize implies justify.
+            if score.tier <= _Tier.JUSTIFY:
+                justified_slots = justified_slots.extend_to_slot(
+                    finalized_slot, att_data.target.slot
+                )
+                justified_slots = justified_slots.with_justified(
+                    finalized_slot, att_data.target.slot, Boolean(True)
+                )
+                # A justified target can no longer be a candidate target, so its
+                # voter bucket is irrelevant for further scoring.
+                current_votes.pop(target_root, None)
+            if score.tier == _Tier.FINALIZE:
+                new_finalized = att_data.source.slot
+                delta = int(new_finalized) - int(finalized_slot)
+                justified_slots = justified_slots.shift_window(delta)
+                finalized_slot = new_finalized
+
+        return selected
+
     def build_block(
         self,
         state: State,
