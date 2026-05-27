@@ -814,3 +814,52 @@ class TestEndToEndAggregationFlow:
             message=hash_tree_root(attestation_data),
             slot=attestation_data.slot,
         )
+
+
+def test_interval_2_records_pq_sig_building_time_metric(
+    key_manager: XmssKeyManager, spec: LstarSpec
+) -> None:
+    """Interval-2 aggregation observes building-time from interval start to STARK done."""
+    from prometheus_client import CollectorRegistry
+
+    from lean_spec.subspecs.metrics.registry import registry as metrics_registry
+
+    metrics_registry.reset()
+    metrics_registry._initialized = False
+    test_reg = CollectorRegistry()
+    metrics_registry.init(registry=test_reg)
+
+    num_validators = 4
+    store = make_store(num_validators=num_validators, key_manager=key_manager)
+    store = store.model_copy(update={"time": Interval.from_slot(Slot(1))})
+    attestation_data = spec.produce_attestation_data(store, Slot(1))
+
+    for vid in (ValidatorIndex(1), ValidatorIndex(2)):
+        signed_attestation = SignedAttestation(
+            validator_id=vid,
+            data=attestation_data,
+            signature=key_manager.sign_attestation_data(vid, attestation_data),
+        )
+        store = spec.on_gossip_attestation(store, signed_attestation, is_aggregator=True)
+
+    store = store.model_copy(update={"time": Uint64(1)})
+    store, aggregates = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
+
+    assert len(aggregates) == 1
+    assert test_reg.get_sample_value("lean_pq_sig_aggregated_signatures_total") == 1.0
+    assert (
+        test_reg.get_sample_value("lean_pq_sig_attestations_in_aggregated_signatures_total")
+        == 2.0
+    )
+    assert (
+        test_reg.get_sample_value("lean_pq_sig_aggregated_signatures_building_time_seconds_count")
+        == 1.0
+    )
+    building_sum = test_reg.get_sample_value(
+        "lean_pq_sig_aggregated_signatures_building_time_seconds_sum"
+    )
+    assert building_sum is not None
+    assert building_sum >= 0.0
+
+    metrics_registry.reset()
+    metrics_registry._initialized = False

@@ -1,5 +1,6 @@
 """Lstar fork — identity and construction facade."""
 
+import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence, Set as AbstractSet
 from typing import Any, ClassVar
@@ -31,6 +32,7 @@ from lean_spec.subspecs.chain.config import (
     JUSTIFICATION_LOOKBACK_SLOTS,
     MAX_ATTESTATIONS_DATA,
 )
+from lean_spec.subspecs.metrics.registry import registry as metrics
 from lean_spec.subspecs.observability import (
     observe_on_attestation,
     observe_on_block,
@@ -1602,7 +1604,12 @@ class LstarSpec(ForkProtocol):
         # The head and attestation pools remain unchanged.
         return store.model_copy(update={"safe_target": safe_target})
 
-    def aggregate(self, store: LstarStore) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
+    def aggregate(
+        self,
+        store: LstarStore,
+        *,
+        aggregation_interval_start: float | None = None,
+    ) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
         """Turn raw validator votes into compact aggregated attestations.
 
         Validators cast individual signatures over gossip. Before those
@@ -1630,6 +1637,12 @@ class LstarSpec(ForkProtocol):
 
         - Consumed gossip signatures are removed.
         - Newly produced proofs are recorded for future reuse.
+
+        ``aggregation_interval_start`` (``perf_counter`` value) anchors
+        ``lean_pq_sig_aggregated_signatures_building_time_seconds``: wall time
+        from the beginning of the aggregation slot interval (interval 2) until
+        each STARK proof completes. Pass it from ``tick_interval`` on the
+        aggregator-duty path only.
         """
         validators = store.states[store.head].validators
         gossip_sigs = store.attestation_signatures
@@ -1720,6 +1733,10 @@ class LstarSpec(ForkProtocol):
                 message=hash_tree_root(data),
                 slot=data.slot,
             )
+            self._observe_aggregated_signature_produced(
+                proof,
+                aggregation_interval_start=aggregation_interval_start,
+            )
             new_aggregates.append(SignedAggregatedAttestation(data=data, proof=proof))
 
         # ── Store bookkeeping ────────────────────────────────────────
@@ -1742,6 +1759,22 @@ class LstarSpec(ForkProtocol):
                 "attestation_signatures": remaining_attestation_signatures,
             }
         ), new_aggregates
+
+    def _observe_aggregated_signature_produced(
+        self,
+        proof: TypeOneMultiSignature,
+        *,
+        aggregation_interval_start: float | None,
+    ) -> None:
+        """Record PQ-signature production metrics for one aggregate."""
+        if aggregation_interval_start is not None:
+            metrics.lean_pq_sig_aggregated_signatures_building_time_seconds.observe(
+                time.perf_counter() - aggregation_interval_start
+            )
+        metrics.lean_pq_sig_aggregated_signatures_total.inc()
+        metrics.lean_pq_sig_attestations_in_aggregated_signatures_total.inc(
+            len(proof.participants.to_validator_indices())
+        )
 
     def tick_interval(
         self,
@@ -1766,7 +1799,11 @@ class LstarSpec(ForkProtocol):
         if current_interval == Interval(0) and has_proposal:
             store = self.accept_new_attestations(store)
         elif current_interval == Interval(2) and is_aggregator:
-            store, new_aggregates = self.aggregate(store)
+            interval_start = time.perf_counter()
+            store, new_aggregates = self.aggregate(
+                store,
+                aggregation_interval_start=interval_start,
+            )
         elif current_interval == Interval(3):
             store = self.update_safe_target(store)
         elif current_interval == Interval(4):

@@ -45,6 +45,9 @@ STATE_TRANSITION_BUCKETS = (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4)
 REORG_DEPTH_BUCKETS = (1, 2, 3, 5, 7, 10, 20, 30, 50, 100)
 """Block count. Reorg depths above 10 are rare and signal network issues."""
 
+PQ_SIG_AGGREGATED_BUILDING_TIME_BUCKETS = (0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4)
+"""Seconds. Aggregated-signature STARK prove latency from interval-2 start."""
+
 
 class _NoOpMetric:
     """
@@ -128,6 +131,14 @@ class MetricsRegistry:
     """Running count of chain head reorganizations."""
     lean_fork_choice_reorg_depth: Histogram | _NoOpMetric = _NOOP
     """Number of blocks rolled back during each reorg event."""
+
+    # PQ signature (leanMetrics: PQ Signature Metrics)
+    lean_pq_sig_aggregated_signatures_total: Counter | _NoOpMetric = _NOOP
+    """Running count of aggregated signatures produced."""
+    lean_pq_sig_attestations_in_aggregated_signatures_total: Counter | _NoOpMetric = _NOOP
+    """Running count of validator attestations folded into produced aggregates."""
+    lean_pq_sig_aggregated_signatures_building_time_seconds: Histogram | _NoOpMetric = _NOOP
+    """Wall time from aggregation interval start until STARK proof completion."""
 
     # State transition
     lean_latest_justified_slot: Gauge | _NoOpMetric = _NOOP
@@ -244,6 +255,29 @@ class MetricsRegistry:
             "lean_fork_choice_reorg_depth",
             "Depth of fork choice reorgs (in blocks).",
             buckets=REORG_DEPTH_BUCKETS,
+            registry=reg,
+        )
+
+        # PQ signature (leanMetrics: PQ Signature Metrics)
+        self.lean_pq_sig_aggregated_signatures_total = Counter(
+            "lean_pq_sig_aggregated_signatures_total",
+            "Total number of aggregated signatures.",
+            registry=reg,
+        )
+        self.lean_pq_sig_attestations_in_aggregated_signatures_total = Counter(
+            "lean_pq_sig_attestations_in_aggregated_signatures_total",
+            "Total number of attestations included into aggregated signatures.",
+            registry=reg,
+        )
+        self.lean_pq_sig_aggregated_signatures_building_time_seconds = Histogram(
+            "lean_pq_sig_aggregated_signatures_building_time_seconds",
+            (
+                "Wall-clock time from the start of the aggregation slot interval "
+                "(interval 2) until completion of the STARK proof "
+                "(TypeOneMultiSignature.aggregate). One observation per produced "
+                "aggregate on the aggregator-duty path."
+            ),
+            buckets=PQ_SIG_AGGREGATED_BUILDING_TIME_BUCKETS,
             registry=reg,
         )
 
