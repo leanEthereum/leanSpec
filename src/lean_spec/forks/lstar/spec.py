@@ -770,6 +770,53 @@ class LstarSpec(ForkProtocol):
             new_voters,
         )
 
+    @staticmethod
+    def _entry_passes_filters(
+        att_data: AttestationData,
+        known_block_roots: AbstractSet[Bytes32],
+        extended_historical_block_hashes: Sequence[Bytes32],
+        projected_justified_slots: JustifiedSlots,
+        projected_finalized_slot: Slot,
+    ) -> bool:
+        """Validate a candidate entry against the projected chain view.
+
+        Mirrors the vote-validity rules: head must be known, source must be
+        justified, source and target must match the candidate-block chain view,
+        target must be after source, target must not already be justified, and
+        target must be justifiable relative to the projected finalized slot.
+
+        The genesis self-vote (source.slot == target.slot == 0) is exempt from the
+        target-after-source and target-already-justified checks; the state
+        transition drops it but it carries fork-choice signal.
+
+        Chain-match runs before the justified-slot queries: it rejects checkpoints
+        whose slot is past the chain view, which keeps the bounded justification
+        queries from raising IndexError.
+        """
+        if att_data.head.root not in known_block_roots:
+            return False
+        if not LstarSpec._attestation_data_matches_chain(
+            att_data, extended_historical_block_hashes
+        ):
+            return False
+        if not projected_justified_slots.is_slot_justified(
+            projected_finalized_slot, att_data.source.slot
+        ):
+            return False
+
+        is_genesis_self_vote = att_data.source.slot == Slot(0) and att_data.target.slot == Slot(0)
+        if not is_genesis_self_vote and att_data.target.slot <= att_data.source.slot:
+            return False
+        if not is_genesis_self_vote and projected_justified_slots.is_slot_justified(
+            projected_finalized_slot, att_data.target.slot
+        ):
+            return False
+        if not is_genesis_self_vote and not att_data.target.slot.is_justifiable_after(
+            projected_finalized_slot
+        ):
+            return False
+        return True
+
     def build_block(
         self,
         state: State,

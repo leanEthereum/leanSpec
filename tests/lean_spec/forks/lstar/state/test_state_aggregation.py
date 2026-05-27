@@ -8,9 +8,10 @@ from lean_spec.forks.lstar import AttestationSignatureEntry
 from lean_spec.forks.lstar.containers.attestation import AttestationData
 from lean_spec.forks.lstar.containers.block import Block, BlockBody
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
+from lean_spec.forks.lstar.containers.state.types import JustifiedSlots
 from lean_spec.forks.lstar.spec import LstarSpec, _Tier
 from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Checkpoint, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.types import Boolean, Bytes32, Checkpoint, Slot, ValidatorIndex, ValidatorIndices
 from tests.lean_spec.helpers import (
     make_aggregated_proof,
     make_attestation_data_simple,
@@ -534,3 +535,35 @@ def test_score_entry_returns_none_when_no_new_voters(
         validator_count=2,
     )
     assert scored is None
+
+
+def test_entry_passes_filters_rejects_unknown_head() -> None:
+    chain = [make_bytes32(10), make_bytes32(11)]  # slots 0, 1
+    source = Checkpoint(root=chain[0], slot=Slot(0))
+    target = Checkpoint(root=chain[1], slot=Slot(1))
+    head = Checkpoint(root=make_bytes32(99), slot=Slot(0))  # not in known roots
+    att_data = AttestationData(slot=Slot(1), head=head, target=target, source=source)
+
+    assert not LstarSpec._entry_passes_filters(
+        att_data,
+        known_block_roots=set(),
+        extended_historical_block_hashes=chain,
+        projected_justified_slots=JustifiedSlots(data=[]),
+        projected_finalized_slot=Slot(0),
+    )
+
+
+def test_entry_passes_filters_accepts_valid_gap_closer() -> None:
+    chain = [make_bytes32(10), make_bytes32(11), make_bytes32(12)]  # slots 0, 1, 2
+    source = Checkpoint(root=chain[0], slot=Slot(0))  # slot 0 is implicitly justified
+    target = Checkpoint(root=chain[2], slot=Slot(2))
+    head = Checkpoint(root=chain[0], slot=Slot(0))
+    att_data = AttestationData(slot=Slot(3), head=head, target=target, source=source)
+
+    assert LstarSpec._entry_passes_filters(
+        att_data,
+        known_block_roots={chain[0]},
+        extended_historical_block_hashes=chain,
+        projected_justified_slots=JustifiedSlots(data=[Boolean(False), Boolean(False)]),
+        projected_finalized_slot=Slot(0),
+    )
