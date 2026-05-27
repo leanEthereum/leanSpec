@@ -693,6 +693,26 @@ class LstarSpec(ForkProtocol):
 
         return new_state
 
+    @staticmethod
+    def _build_running_votes(state: State) -> dict[Bytes32, set[ValidatorIndex]]:
+        """Deserialize the flat justification bitlist into a per-target-root voter map.
+
+        The state layout is bit at index (i * N + j) means validator j voted for
+        justifications_roots[i], where N is the validator count.
+        Seeds the running voter set so scoring counts on-chain voters toward the
+        two-thirds threshold.
+        """
+        num_validators = len(state.validators)
+        votes: dict[Bytes32, set[ValidatorIndex]] = {}
+        for i, root in enumerate(state.justifications_roots):
+            voters = {
+                ValidatorIndex(j)
+                for j in range(num_validators)
+                if state.justifications_validators[i * num_validators + j]
+            }
+            votes[root] = voters
+        return votes
+
     def build_block(
         self,
         state: State,

@@ -375,6 +375,13 @@ def test_aggregate_with_no_signatures(
     assert results == []
 
 
+def test_build_running_votes_empty_for_fresh_genesis(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    state = make_keyed_genesis_state(3, container_key_manager)
+    assert LstarSpec._build_running_votes(state) == {}
+
+
 def test_build_block_fixed_point_closes_justified_divergence(
     container_key_manager: XmssKeyManager,
     spec: LstarSpec,
