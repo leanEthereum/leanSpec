@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from consensus_testing.keys import XmssKeyManager
 from prometheus_client import CollectorRegistry
@@ -820,13 +822,25 @@ class TestEndToEndAggregationFlow:
 def test_interval_2_records_pq_sig_building_time_metric(
     key_manager: XmssKeyManager, spec: LstarSpec
 ) -> None:
-    """Interval-2 aggregation observes building-time from interval start to STARK done."""
+    """Interval-2 aggregation observes building-time from interval-2 wall-clock start.
+
+    The metric anchors at ``genesis_time + store.time * interval_duration``.
+    The elapsed value at proof completion should be small (under one slot)
+    when ``genesis_time`` is set to roughly "now" minus interval-2 offset.
+    """
     metrics_registry.reset()
     test_reg = CollectorRegistry()
     metrics_registry.init(registry=test_reg)
     try:
         num_validators = 4
-        store = make_store(num_validators=num_validators, key_manager=key_manager)
+        # Anchor genesis_time so interval 2 of slot 0 has just begun.
+        # interval-2 wall start = genesis_time + 2 * 0.8s = genesis_time + 1.6s
+        genesis_time = int(time.time()) - 2
+        store = make_store(
+            num_validators=num_validators,
+            key_manager=key_manager,
+            genesis_time=genesis_time,
+        )
         # Set time so gossip-attestation accepts votes for Slot(1); the override
         # below moves time back to interval 1, so the next tick lands on interval 2.
         store = store.model_copy(update={"time": Interval.from_slot(Slot(1))})
@@ -859,6 +873,8 @@ def test_interval_2_records_pq_sig_building_time_metric(
             "lean_pq_sig_aggregated_signatures_building_time_seconds_sum"
         )
         assert building_sum is not None
-        assert building_sum >= 0.0
+        # Anchored at interval-2 wall start (~now - 0.4s), then STARK prove
+        # runs. Bound at 60s catches anchoring against unix epoch.
+        assert 0.0 <= building_sum < 60.0
     finally:
         metrics_registry.reset()
