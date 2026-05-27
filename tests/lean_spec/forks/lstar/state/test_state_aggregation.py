@@ -690,9 +690,7 @@ def test_build_block_absorbs_older_but_justified_source(
     )
     head_state = spec.process_block(spec.process_slots(head_state, Slot(3)), justifying_block)
     block_3_root = hash_tree_root(
-        head_state.latest_block_header.model_copy(
-            update={"state_root": hash_tree_root(head_state)}
-        )
+        head_state.latest_block_header.model_copy(update={"state_root": hash_tree_root(head_state)})
     )
     assert head_state.latest_justified.slot == Slot(1)
 

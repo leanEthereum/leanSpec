@@ -54,7 +54,6 @@ from lean_spec.types import (
     Checkpoint,
     Slot,
     SSZList,
-    Uint8,
     Uint64,
     ValidatorIndex,
     ValidatorIndices,
