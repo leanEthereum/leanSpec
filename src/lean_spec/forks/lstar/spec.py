@@ -1,6 +1,7 @@
 """Lstar fork — identity and construction facade."""
 
 import math
+import time
 from collections import defaultdict
 from collections.abc import Iterable, Sequence, Set as AbstractSet
 from typing import Any, ClassVar
@@ -31,7 +32,9 @@ from lean_spec.subspecs.chain.config import (
     INTERVALS_PER_SLOT,
     JUSTIFICATION_LOOKBACK_SLOTS,
     MAX_ATTESTATIONS_DATA,
+    MILLISECONDS_PER_INTERVAL,
 )
+from lean_spec.subspecs.metrics.registry import registry as metrics
 from lean_spec.subspecs.observability import (
     observe_on_attestation,
     observe_on_block,
@@ -1637,7 +1640,20 @@ class LstarSpec(ForkProtocol):
 
         - Consumed gossip signatures are removed.
         - Newly produced proofs are recorded for future reuse.
+
+        ``lean_pq_sig_aggregated_signatures_building_time_seconds`` is anchored
+        at the wall-clock start of the current aggregation interval (derived
+        from ``store.config.genesis_time`` and ``store.time``) and recorded at
+        each STARK proof completion. ``aggregate`` is the interval-2 action,
+        so ``store.time`` IS that interval.
         """
+        # Wall-clock start of the current interval. Derived from chain config
+        # so the metric reflects "interval boundary → proof done", independent
+        # of when the host scheduler actually fired tick_interval.
+        interval_start_unix_seconds = (
+            float(store.config.genesis_time)
+            + int(store.time) * float(MILLISECONDS_PER_INTERVAL) / 1000.0
+        )
         validators = store.states[store.head].validators
         gossip_sigs = store.attestation_signatures
         new = store.latest_new_aggregated_payloads
@@ -1727,6 +1743,10 @@ class LstarSpec(ForkProtocol):
                 message=hash_tree_root(data),
                 slot=data.slot,
             )
+            self._observe_aggregated_signature_produced(
+                proof,
+                interval_start_unix_seconds=interval_start_unix_seconds,
+            )
             new_aggregates.append(SignedAggregatedAttestation(data=data, proof=proof))
 
         # ── Store bookkeeping ────────────────────────────────────────
@@ -1749,6 +1769,22 @@ class LstarSpec(ForkProtocol):
                 "attestation_signatures": remaining_attestation_signatures,
             }
         ), new_aggregates
+
+    def _observe_aggregated_signature_produced(
+        self,
+        proof: TypeOneMultiSignature,
+        *,
+        interval_start_unix_seconds: float,
+    ) -> None:
+        """Record PQ-signature production metrics for one aggregate."""
+        # Clamp to 0 to guard against clock skew or tests with future-dated
+        # genesis_time; building time is physically non-negative.
+        elapsed = max(0.0, time.time() - interval_start_unix_seconds)
+        metrics.lean_pq_sig_aggregated_signatures_building_time_seconds.observe(elapsed)
+        metrics.lean_pq_sig_aggregated_signatures_total.inc()
+        metrics.lean_pq_sig_attestations_in_aggregated_signatures_total.inc(
+            len(proof.participants.to_validator_indices())
+        )
 
     def tick_interval(
         self,

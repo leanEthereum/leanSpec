@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from consensus_testing.keys import XmssKeyManager
+from prometheus_client import CollectorRegistry
 
 from lean_spec.forks.lstar import AttestationSignatureEntry
 from lean_spec.forks.lstar.containers.attestation import (
@@ -14,6 +17,7 @@ from lean_spec.forks.lstar.containers.attestation import (
 from lean_spec.forks.lstar.spec import LstarSpec
 from lean_spec.subspecs.chain.clock import Interval
 from lean_spec.subspecs.chain.config import INTERVALS_PER_SLOT
+from lean_spec.subspecs.metrics.registry import registry as metrics_registry
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.types import (
@@ -813,3 +817,64 @@ class TestEndToEndAggregationFlow:
             message=hash_tree_root(attestation_data),
             slot=attestation_data.slot,
         )
+
+
+def test_interval_2_records_pq_sig_building_time_metric(
+    key_manager: XmssKeyManager, spec: LstarSpec
+) -> None:
+    """Interval-2 aggregation observes building-time from interval-2 wall-clock start.
+
+    The metric anchors at ``genesis_time + store.time * interval_duration``.
+    The elapsed value at proof completion should be small (under one slot)
+    when ``genesis_time`` is set to roughly "now" minus interval-2 offset.
+    """
+    metrics_registry.reset()
+    test_reg = CollectorRegistry()
+    metrics_registry.init(registry=test_reg)
+    try:
+        num_validators = 4
+        # Anchor genesis_time so interval 2 of slot 0 has just begun.
+        # interval-2 wall start = genesis_time + 2 * 0.8s = genesis_time + 1.6s
+        genesis_time = int(time.time()) - 2
+        store = make_store(
+            num_validators=num_validators,
+            key_manager=key_manager,
+            genesis_time=genesis_time,
+        )
+        # Set time so gossip-attestation accepts votes for Slot(1); the override
+        # below moves time back to interval 1, so the next tick lands on interval 2.
+        store = store.model_copy(update={"time": Interval.from_slot(Slot(1))})
+        attestation_data = spec.produce_attestation_data(store, Slot(1))
+
+        for vid in (ValidatorIndex(1), ValidatorIndex(2)):
+            signed_attestation = SignedAttestation(
+                validator_id=vid,
+                data=attestation_data,
+                signature=key_manager.sign_attestation_data(vid, attestation_data),
+            )
+            store = spec.on_gossip_attestation(store, signed_attestation, is_aggregator=True)
+
+        store = store.model_copy(update={"time": Interval(1)})
+        store, aggregates = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
+
+        assert len(aggregates) == 1
+        assert test_reg.get_sample_value("lean_pq_sig_aggregated_signatures_total") == 1.0
+        assert (
+            test_reg.get_sample_value("lean_pq_sig_attestations_in_aggregated_signatures_total")
+            == 2.0
+        )
+        assert (
+            test_reg.get_sample_value(
+                "lean_pq_sig_aggregated_signatures_building_time_seconds_count"
+            )
+            == 1.0
+        )
+        building_sum = test_reg.get_sample_value(
+            "lean_pq_sig_aggregated_signatures_building_time_seconds_sum"
+        )
+        assert building_sum is not None
+        # Anchored at interval-2 wall start (~now - 0.4s), then STARK prove
+        # runs. Bound at 60s catches anchoring against unix epoch.
+        assert 0.0 <= building_sum < 60.0
+    finally:
+        metrics_registry.reset()
