@@ -8,7 +8,7 @@ from lean_spec.forks.lstar import AttestationSignatureEntry
 from lean_spec.forks.lstar.containers.attestation import AttestationData
 from lean_spec.forks.lstar.containers.block import Block, BlockBody
 from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.spec import LstarSpec
+from lean_spec.forks.lstar.spec import LstarSpec, _Tier
 from lean_spec.subspecs.ssz.hash import hash_tree_root
 from lean_spec.types import Bytes32, Checkpoint, Slot, ValidatorIndex, ValidatorIndices
 from tests.lean_spec.helpers import (
@@ -492,3 +492,45 @@ def test_build_block_fixed_point_closes_justified_divergence(
     # Justification must have advanced: the fixed-point loop closed the gap.
     assert post_state.latest_justified.slot >= Slot(1)
     assert post_state.latest_justified == target
+
+
+def test_score_entry_genesis_self_vote_is_build_tier(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    # Genesis self-vote: source.slot == target.slot == 0.
+    # Even with a supermajority it can never justify or finalize, so it scores BUILD.
+    genesis = Checkpoint(root=make_bytes32(7), slot=Slot(0))
+    att_data = AttestationData(slot=Slot(1), head=genesis, target=genesis, source=genesis)
+    proof = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(0), ValidatorIndex(1)], att_data
+    )
+
+    scored = LstarSpec._score_entry(
+        att_data,
+        {proof},
+        current_votes={},
+        projected_finalized_slot=Slot(0),
+        validator_count=2,
+    )
+    assert scored is not None
+    score, new_voters = scored
+    assert score.tier == _Tier.BUILD
+    assert new_voters == {ValidatorIndex(0), ValidatorIndex(1)}
+
+
+def test_score_entry_returns_none_when_no_new_voters(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    genesis = Checkpoint(root=make_bytes32(7), slot=Slot(0))
+    att_data = AttestationData(slot=Slot(1), head=genesis, target=genesis, source=genesis)
+    proof = make_aggregated_proof(container_key_manager, [ValidatorIndex(0)], att_data)
+
+    # Validator 0 already recorded for this target root: zero new voters.
+    scored = LstarSpec._score_entry(
+        att_data,
+        {proof},
+        current_votes={att_data.target.root: {ValidatorIndex(0)}},
+        projected_finalized_slot=Slot(0),
+        validator_count=2,
+    )
+    assert scored is None

@@ -713,6 +713,63 @@ class LstarSpec(ForkProtocol):
             votes[root] = voters
         return votes
 
+    @staticmethod
+    def _score_entry(
+        att_data: AttestationData,
+        proofs: AbstractSet[TypeOneMultiSignature],
+        current_votes: dict[Bytes32, set[ValidatorIndex]],
+        projected_finalized_slot: Slot,
+        validator_count: int,
+    ) -> tuple[_EntryScore, set[ValidatorIndex]] | None:
+        """Score a single candidate entry under the current projected state.
+
+        Returns None if the entry adds zero validators relative to the running
+        voter set for its target root.
+        On Some, the returned set is the new voters this entry contributes.
+        A genesis self-vote cannot justify or finalize and is always BUILD tier.
+        """
+        prior_voters = current_votes.get(att_data.target.root, set())
+
+        # New voters: participants across all proofs not already recorded for the target.
+        new_voters: set[ValidatorIndex] = set()
+        for proof in proofs:
+            for vid in proof.participants.to_validator_indices():
+                if vid not in prior_voters:
+                    new_voters.add(vid)
+        if not new_voters:
+            return None
+
+        # Threshold: total voters (prior plus new) crossing two-thirds.
+        total = len(prior_voters) + len(new_voters)
+        crosses_two_thirds = 3 * total >= 2 * validator_count
+
+        is_genesis_self_vote = att_data.source.slot == Slot(0) and att_data.target.slot == Slot(0)
+
+        # 3SF-mini finalization requires no slot strictly between source and target
+        # to still be justifiable, so source and target are consecutive justified
+        # checkpoints in the projected post-state.
+        finalizes = crosses_two_thirds and all(
+            not Slot(s).is_justifiable_after(projected_finalized_slot)
+            for s in range(int(att_data.source.slot) + 1, int(att_data.target.slot))
+        )
+
+        if is_genesis_self_vote or not crosses_two_thirds:
+            tier = _Tier.BUILD
+        elif finalizes:
+            tier = _Tier.FINALIZE
+        else:
+            tier = _Tier.JUSTIFY
+
+        return (
+            _EntryScore(
+                tier=tier,
+                new_voters=len(new_voters),
+                target_slot=att_data.target.slot,
+                att_slot=att_data.slot,
+            ),
+            new_voters,
+        )
+
     def build_block(
         self,
         state: State,
