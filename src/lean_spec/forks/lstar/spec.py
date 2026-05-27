@@ -3,6 +3,8 @@
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence, Set as AbstractSet
+from dataclasses import dataclass
+from enum import IntEnum
 from typing import Any, ClassVar
 
 from lean_spec.forks.lstar.containers import (
@@ -63,6 +65,45 @@ from .store import AttestationSignatureEntry, Store
 
 LstarStore = Store[State, Block]
 """Concrete Store specialization owned by the lstar fork."""
+
+
+class _Tier(IntEnum):
+    """Selection tier for a candidate attestation data entry.
+
+    Declared in priority order: a lower value wins.
+    """
+
+    FINALIZE = 1
+    """Applying the entry crosses two-thirds on target and finalizes the source."""
+    JUSTIFY = 2
+    """Applying the entry crosses two-thirds on target but does not finalize."""
+    BUILD = 3
+    """Adds marginal new voters toward target's two-thirds supermajority."""
+
+
+@dataclass(frozen=True)
+class _EntryScore:
+    """Tiered score for a candidate attestation data entry during block building.
+
+    Lower tier wins.
+    Within a tier, more new voters wins, then a smaller target slot, then a
+    smaller attestation slot, then the entry's data root for determinism.
+    """
+
+    tier: _Tier
+    new_voters: int
+    target_slot: Slot
+    att_slot: Slot
+
+    def ordering_key(self, data_root: Bytes32) -> tuple[int, int, int, int, bytes]:
+        """Sort key where the smallest tuple is the best candidate."""
+        return (
+            int(self.tier),
+            -self.new_voters,
+            int(self.target_slot),
+            int(self.att_slot),
+            bytes(data_root),
+        )
 
 
 class LstarSpec(ForkProtocol):
