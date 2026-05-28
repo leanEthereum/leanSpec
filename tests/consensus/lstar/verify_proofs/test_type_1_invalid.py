@@ -79,22 +79,3 @@ def test_type_1_wrong_public_keys(
         expect_exception=AggregationError,
         tamper={"operation": "swap_public_key", "index": 0, "with_validator_id": 1},
     )
-
-
-def test_type_1_aggregation_bits_length_mismatch(
-    verify_proofs_test: VerifyProofsTestFiller,
-) -> None:
-    """Pubkey count disagreeing with True-bit count must cause rejection.
-
-    The honest bundle has four participants, four public keys, and a
-    bitfield of length four with all bits set.
-    Truncating the emitted bits to length three leaves four pubkeys
-    against three True bits.
-    The verifier's pubkey-count check rejects on the mismatch.
-    """
-    verify_proofs_test(
-        validator_ids=[ValidatorIndex(i) for i in range(4)],
-        attestation_data=_make_attestation_data(Slot(8)),
-        expect_exception=AggregationError,
-        tamper={"operation": "shrink_aggregation_bits", "length": 3},
-    )

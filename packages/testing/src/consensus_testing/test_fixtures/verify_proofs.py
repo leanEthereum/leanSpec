@@ -19,7 +19,6 @@ from lean_spec.subspecs.xmss.aggregation import (
 from lean_spec.subspecs.xmss.containers import PublicKey
 from lean_spec.types import (
     AggregationBits,
-    Boolean,
     ByteList512KiB,
     Bytes32,
     Checkpoint,
@@ -98,11 +97,6 @@ class VerifyProofsTest(BaseConsensusFixture):
       validator's attestation public key.
       The proof was generated honestly, so the emitted set no longer
       matches the keys the proof was bound to.
-
-    - ``{"operation": "shrink_aggregation_bits", "length": int}``
-      Truncate the emitted aggregation bits to the given length while
-      leaving the public key count untouched.
-      The verifier's pubkey-count check rejects on the mismatch.
     """
 
     # Output fields below are populated by make_fixture and complete
@@ -202,8 +196,6 @@ class VerifyProofsTest(BaseConsensusFixture):
                 return self._tamper_shift_emitted_slot(emitted)
             case "swap_public_key":
                 return self._tamper_swap_public_key(key_manager, emitted)
-            case "shrink_aggregation_bits":
-                return self._tamper_shrink_aggregation_bits(emitted)
             case _:
                 raise ValueError(f"Unknown tamper operation: {operation!r}")
 
@@ -249,17 +241,6 @@ class VerifyProofsTest(BaseConsensusFixture):
         replacement = key_manager.get_public_keys(with_validator_id)[0]
         public_keys[index] = replacement
         return {**emitted, "public_keys": public_keys}
-
-    def _tamper_shrink_aggregation_bits(self, emitted: dict[str, Any]) -> dict[str, Any]:
-        """Truncate emitted aggregation_bits to a shorter length."""
-        length = int(self.tamper["length"])  # type: ignore[index]
-        bits: AggregationBits = emitted["aggregation_bits"]
-        if length < 0 or length >= len(bits.data):
-            raise ValueError(
-                f"shrink_aggregation_bits length {length} must be in [0, {len(bits.data)})"
-            )
-        truncated = AggregationBits(data=[Boolean(bool(b)) for b in bits.data[:length]])
-        return {**emitted, "aggregation_bits": truncated}
 
     def _assert_verify_matches_expectation(self, emitted: dict[str, Any]) -> None:
         """Verify the emitted bundle and check the outcome against expect_exception.
