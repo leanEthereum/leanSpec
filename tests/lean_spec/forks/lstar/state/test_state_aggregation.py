@@ -632,6 +632,36 @@ def test_score_entry_older_source_after_finalization_does_not_raise(
     assert score.tier == _Tier.JUSTIFY
 
 
+def test_score_entry_older_source_with_short_gap_is_not_finalize(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    # Regression for the boundary-regression bug.
+    # Source at genesis (slot 0) is behind a projected finalized boundary at
+    # slot 5; target at slot 6 leaves an empty gap range (6, 6).
+    # An unguarded predicate would let all([]) vacuously hold and misclassify
+    # the entry as FINALIZE, after which _select_attestations would assign
+    # finalized_slot = 0 and corrupt the projection window.
+    # Finalization is monotonic, so this candidate must score as JUSTIFY.
+    source = Checkpoint(root=make_bytes32(1), slot=Slot(0))
+    target = Checkpoint(root=make_bytes32(2), slot=Slot(6))
+    head = Checkpoint(root=make_bytes32(3), slot=Slot(0))
+    att_data = AttestationData(slot=Slot(6), head=head, target=target, source=source)
+    proof = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(i) for i in range(4)], att_data
+    )
+
+    scored = LstarSpec._score_entry(
+        att_data,
+        {proof},
+        current_votes={},
+        projected_finalized_slot=Slot(5),
+        validator_count=4,
+    )
+    assert scored is not None
+    score, _ = scored
+    assert score.tier == _Tier.JUSTIFY
+
+
 def test_entry_passes_filters_rejects_unknown_head() -> None:
     chain = [make_bytes32(10), make_bytes32(11)]  # slots 0, 1
     source = Checkpoint(root=chain[0], slot=Slot(0))

@@ -713,6 +713,15 @@ class LstarSpec(ForkProtocol):
         return votes
 
     @staticmethod
+    def _is_genesis_self_vote(att_data: AttestationData) -> bool:
+        """Genesis self-votes (source and target at slot 0) are exempt from
+        target-after-source and target-already-justified filters.
+
+        They cannot justify or finalize, but they carry fork-choice signal.
+        """
+        return att_data.source.slot == Slot(0) and att_data.target.slot == Slot(0)
+
+    @staticmethod
     def _score_entry(
         att_data: AttestationData,
         proofs: AbstractSet[TypeOneMultiSignature],
@@ -742,20 +751,24 @@ class LstarSpec(ForkProtocol):
         total = len(prior_voters) + len(new_voters)
         crosses_two_thirds = 3 * total >= 2 * validator_count
 
-        is_genesis_self_vote = att_data.source.slot == Slot(0) and att_data.target.slot == Slot(0)
+        is_genesis_self_vote = LstarSpec._is_genesis_self_vote(att_data)
 
         # 3SF-mini finalization requires no slot strictly between source and target
         # to still be justifiable, so source and target are consecutive justified
         # checkpoints in the projected post-state.
         #
-        # The scan starts above the finalized boundary as well as above the source.
-        # Slots at or below the finalized slot are already finalized, not pending.
-        # They never block finalization, and is_justifiable_after rejects a slot
-        # behind the finalized boundary, so an older source must not be scanned there.
-        scan_start = max(int(att_data.source.slot) + 1, int(projected_finalized_slot) + 1)
-        finalizes = crosses_two_thirds and all(
-            not Slot(s).is_justifiable_after(projected_finalized_slot)
-            for s in range(scan_start, int(att_data.target.slot))
+        # Finalization is monotonic in 3SF-mini, so a candidate whose source is
+        # behind the projected finalized boundary cannot advance it.
+        # Restricting FINALIZE tier to sources at or beyond the boundary also keeps
+        # every scanned slot strictly above the boundary, where is_justifiable_after
+        # is defined.
+        finalizes = (
+            crosses_two_thirds
+            and att_data.source.slot >= projected_finalized_slot
+            and all(
+                not Slot(s).is_justifiable_after(projected_finalized_slot)
+                for s in range(int(att_data.source.slot) + 1, int(att_data.target.slot))
+            )
         )
 
         if is_genesis_self_vote or not crosses_two_thirds:
@@ -809,7 +822,7 @@ class LstarSpec(ForkProtocol):
         ):
             return False
 
-        is_genesis_self_vote = att_data.source.slot == Slot(0) and att_data.target.slot == Slot(0)
+        is_genesis_self_vote = LstarSpec._is_genesis_self_vote(att_data)
         if not is_genesis_self_vote and att_data.target.slot <= att_data.source.slot:
             return False
         if not is_genesis_self_vote and projected_justified_slots.is_slot_justified(
@@ -896,7 +909,12 @@ class LstarSpec(ForkProtocol):
         # Chain view the block header would produce: recorded history up to the
         # parent, then the parent root at the parent slot, then zero hashes for any
         # skipped slots up to the new block.
+        #
+        # Precondition: the new slot must lie strictly after the parent slot.
+        # Without the guard, Uint64 subtraction underflows and the empty-slot
+        # padding allocates an astronomically large list.
         parent_slot = head_state.latest_block_header.slot
+        assert slot > parent_slot, f"Cannot build block at slot {slot} <= parent slot {parent_slot}"
         num_empty_slots = int(slot - parent_slot - Slot(1))
         extended_historical_block_hashes: list[Bytes32] = (
             list(head_state.historical_block_hashes) + [parent_root] + [ZERO_HASH] * num_empty_slots
