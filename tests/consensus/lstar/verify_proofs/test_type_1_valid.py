@@ -36,7 +36,6 @@ def test_type_1_single_validator(
     verify_proofs_test(
         validator_ids=[ValidatorIndex(0)],
         attestation_data=_make_attestation_data(Slot(1)),
-        expect_valid=True,
     )
 
 
@@ -51,7 +50,6 @@ def test_type_1_four_validators(
     verify_proofs_test(
         validator_ids=[ValidatorIndex(i) for i in range(4)],
         attestation_data=_make_attestation_data(Slot(2)),
-        expect_valid=True,
     )
 
 
@@ -67,5 +65,4 @@ def test_type_1_four_validators_partial(
     verify_proofs_test(
         validator_ids=[ValidatorIndex(0), ValidatorIndex(2), ValidatorIndex(3)],
         attestation_data=_make_attestation_data(Slot(3)),
-        expect_valid=True,
     )

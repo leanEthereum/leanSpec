@@ -1,6 +1,10 @@
-"""Multi-signature proof verification fixture format."""
+"""Multi-signature proof verification fixture format.
 
-from __future__ import annotations
+Generates JSON test vectors for the Type-1 multi-signature primitive.
+Each vector emits the public inputs and proof bytes a conformant
+client must verify, plus the attestation data the message hash is
+derived from so SSZ hashing agreement is exercised on the same path.
+"""
 
 from typing import Any, ClassVar, Literal
 
@@ -39,7 +43,8 @@ class VerifyProofsTest(BaseConsensusFixture):
     that the recomputed attestation root matches the message field,
     run their Type-1 verifier against the emitted public keys,
     message, slot, and proof, and check that the outcome matches
-    expect_valid.
+    expect_exception (None means verify must succeed; a class name
+    means verify must reject).
     """
 
     format_name: ClassVar[str] = "verify_proofs_test"
@@ -66,14 +71,6 @@ class VerifyProofsTest(BaseConsensusFixture):
 
     Clients re-derive its hash tree root and must match the message
     field below.
-    """
-
-    expect_valid: bool = True
-    """Whether clients must accept the emitted proof.
-
-    A vector with expect_valid set to false carries an intentionally
-    bad proof or input combination that every conformant client must
-    reject.
     """
 
     tamper: dict[str, Any] | None = Field(default=None, exclude=True)
@@ -111,7 +108,7 @@ class VerifyProofsTest(BaseConsensusFixture):
     # Output fields below are populated by make_fixture and complete
     # the client-visible portion of the JSON vector.
 
-    public_keys: list[PublicKey] = []
+    public_keys: list[PublicKey] | None = None
     """Attestation public keys for the participating validators.
 
     Ordered by validator_ids order, matching the aggregation_bits mask.
@@ -129,15 +126,15 @@ class VerifyProofsTest(BaseConsensusFixture):
     proof: ByteList512KiB | None = None
     """Aggregated proof bytes for clients to verify."""
 
-    def make_fixture(self) -> VerifyProofsTest:
+    def make_fixture(self) -> "VerifyProofsTest":
         """Generate a Type-1 proof, optionally tamper, and self-verify.
 
         Returns:
             A copy with the computed output fields populated.
 
         Raises:
-            AssertionError: If self-verification of the emitted bundle
-                disagrees with expect_valid.
+            AssertionError: If the verifier outcome on the emitted
+                bundle disagrees with expect_exception.
             ValueError: If the tamper operation is unknown or
                 misconfigured.
         """
@@ -147,13 +144,7 @@ class VerifyProofsTest(BaseConsensusFixture):
         if self.tamper is not None:
             emitted = self._apply_tamper(key_manager, emitted)
 
-        verified = self._verify_emitted(emitted)
-        if verified != self.expect_valid:
-            raise AssertionError(
-                f"Self-verification mismatch: verified={verified}, "
-                f"expect_valid={self.expect_valid}, "
-                f"tamper={self.tamper!r}"
-            )
+        self._assert_verify_matches_expectation(emitted)
 
         return self.model_copy(
             update={
@@ -204,16 +195,17 @@ class VerifyProofsTest(BaseConsensusFixture):
         assert self.tamper is not None
         operation = self.tamper.get("operation")
 
-        if operation == "rebind_with_alt_head_root":
-            return self._tamper_rebind_with_alt_head_root(key_manager, emitted)
-        if operation == "shift_emitted_slot":
-            return self._tamper_shift_emitted_slot(emitted)
-        if operation == "swap_public_key":
-            return self._tamper_swap_public_key(key_manager, emitted)
-        if operation == "shrink_aggregation_bits":
-            return self._tamper_shrink_aggregation_bits(emitted)
-
-        raise ValueError(f"Unknown tamper operation: {operation!r}")
+        match operation:
+            case "rebind_with_alt_head_root":
+                return self._tamper_rebind_with_alt_head_root(key_manager, emitted)
+            case "shift_emitted_slot":
+                return self._tamper_shift_emitted_slot(emitted)
+            case "swap_public_key":
+                return self._tamper_swap_public_key(key_manager, emitted)
+            case "shrink_aggregation_bits":
+                return self._tamper_shrink_aggregation_bits(emitted)
+            case _:
+                raise ValueError(f"Unknown tamper operation: {operation!r}")
 
     def _tamper_rebind_with_alt_head_root(
         self,
@@ -269,22 +261,37 @@ class VerifyProofsTest(BaseConsensusFixture):
         truncated = AggregationBits(data=[Boolean(bool(b)) for b in bits.data[:length]])
         return {**emitted, "aggregation_bits": truncated}
 
-    def _verify_emitted(self, emitted: dict[str, Any]) -> bool:
-        """Run the verifier against the emitted bundle.
+    def _assert_verify_matches_expectation(self, emitted: dict[str, Any]) -> None:
+        """Verify the emitted bundle and check the outcome against expect_exception.
 
-        Catches every failure mode a client would surface so the self-
-        check stays aligned with what a conformant client must do.
+        Honest vectors expect verification to succeed (expect_exception is None).
+        Tampered vectors expect a specific exception type to be raised.
         """
+        candidate = TypeOneMultiSignature(
+            participants=emitted["aggregation_bits"],
+            proof=emitted["proof_bytes"],
+        )
+        exception_raised: Exception | None = None
         try:
-            candidate = TypeOneMultiSignature(
-                participants=emitted["aggregation_bits"],
-                proof=emitted["proof_bytes"],
-            )
             candidate.verify(
                 emitted["public_keys"],
                 emitted["message"],
                 emitted["slot"],
             )
-            return True
-        except (AggregationError, AssertionError, ValueError):
-            return False
+        except AggregationError as exc:
+            exception_raised = exc
+
+        if self.expect_exception is None:
+            if exception_raised is not None:
+                raise AssertionError(f"Verifier rejected an honest bundle: {exception_raised}")
+            return
+
+        if exception_raised is None:
+            raise AssertionError(
+                f"Expected {self.expect_exception.__name__} but verification succeeded"
+            )
+        if not isinstance(exception_raised, self.expect_exception):
+            raise AssertionError(
+                f"Expected {self.expect_exception.__name__} but got "
+                f"{type(exception_raised).__name__}: {exception_raised}"
+            )

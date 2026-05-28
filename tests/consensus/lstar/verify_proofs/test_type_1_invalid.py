@@ -4,6 +4,7 @@ import pytest
 from consensus_testing import VerifyProofsTestFiller
 
 from lean_spec.forks.lstar.containers import AttestationData
+from lean_spec.subspecs.xmss.aggregation import AggregationError
 from lean_spec.types import Bytes32, Checkpoint, Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
@@ -39,7 +40,7 @@ def test_type_1_wrong_message(
     verify_proofs_test(
         validator_ids=[ValidatorIndex(0)],
         attestation_data=_make_attestation_data(Slot(6)),
-        expect_valid=False,
+        expect_exception=AggregationError,
         tamper={"operation": "rebind_with_alt_head_root"},
     )
 
@@ -59,7 +60,7 @@ def test_type_1_wrong_slot(
     verify_proofs_test(
         validator_ids=[ValidatorIndex(0)],
         attestation_data=_make_attestation_data(Slot(4)),
-        expect_valid=False,
+        expect_exception=AggregationError,
         tamper={"operation": "shift_emitted_slot"},
     )
 
@@ -75,7 +76,7 @@ def test_type_1_wrong_public_keys(
     verify_proofs_test(
         validator_ids=[ValidatorIndex(0)],
         attestation_data=_make_attestation_data(Slot(7)),
-        expect_valid=False,
+        expect_exception=AggregationError,
         tamper={"operation": "swap_public_key", "index": 0, "with_validator_id": 1},
     )
 
@@ -94,6 +95,6 @@ def test_type_1_aggregation_bits_length_mismatch(
     verify_proofs_test(
         validator_ids=[ValidatorIndex(i) for i in range(4)],
         attestation_data=_make_attestation_data(Slot(8)),
-        expect_valid=False,
+        expect_exception=AggregationError,
         tamper={"operation": "shrink_aggregation_bits", "length": 3},
     )
