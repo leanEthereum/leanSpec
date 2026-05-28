@@ -15,9 +15,9 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import Prehashed, decode_dss_signature
 
 from lean_spec.cli import CliValidationError, NodeBootstrap, parse_args
-from lean_spec.subspecs.api import ApiServerConfig
-from lean_spec.types import Slot, SubnetId, ValidatorIndex
-from lean_spec.types.rlp import RLPItem, encode_rlp
+from lean_spec.node.api import ApiServerConfig
+from lean_spec.node.networking.enr.rlp import RLPItem, encode_rlp
+from lean_spec.spec.forks import Slot, SubnetId, ValidatorIndex
 
 MULTIADDR_IPV4 = "/ip4/127.0.0.1/udp/9000/quic-v1"
 """Valid QUIC multiaddr used to exercise the pass-through resolution path."""

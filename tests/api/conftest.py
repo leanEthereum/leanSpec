@@ -9,7 +9,7 @@ from typing import Generator
 import httpx
 import pytest
 
-from lean_spec.subspecs.api import AggregatorController, ApiServer, ApiServerConfig
+from lean_spec.node.api import AggregatorController, ApiServer, ApiServerConfig
 from tests.lean_spec.helpers.builders import make_genesis_data
 
 # Default port for auto-started local server

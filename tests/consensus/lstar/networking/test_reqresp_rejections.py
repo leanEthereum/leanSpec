@@ -8,7 +8,7 @@ peer sends malformed framing.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-from lean_spec.subspecs.networking.reqresp.codec import CodecError
+from lean_spec.node.networking.reqresp.codec import CodecError
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

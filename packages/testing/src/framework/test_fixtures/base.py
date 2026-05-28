@@ -8,8 +8,8 @@ from typing import Any, ClassVar
 from pydantic import Field
 
 from framework.forks import BaseFork
+from lean_spec.base import CamelModel
 from lean_spec.config import LEAN_ENV
-from lean_spec.types import CamelModel
 
 
 class BaseFixture(CamelModel):

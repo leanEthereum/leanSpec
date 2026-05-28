@@ -11,14 +11,8 @@ from typing import ClassVar
 import pytest
 from consensus_testing import SSZTestFiller
 
-from lean_spec.types import (
-    BaseBitlist,
-    BaseBitvector,
-    Boolean,
-    Bytes4,
-    Uint32,
-)
-from lean_spec.types.exceptions import SSZSerializationError, SSZValueError
+from lean_spec.spec.ssz import BaseBitlist, BaseBitvector, Boolean, Bytes4, Uint32
+from lean_spec.spec.ssz.exceptions import SSZSerializationError, SSZValueError
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

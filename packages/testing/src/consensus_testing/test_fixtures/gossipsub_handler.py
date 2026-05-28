@@ -13,11 +13,11 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 from unittest.mock import patch
 
-from lean_spec.subspecs.networking import PeerId
-from lean_spec.subspecs.networking.gossipsub.behavior import GossipsubBehavior, PeerState
-from lean_spec.subspecs.networking.gossipsub.message import GossipsubMessage
-from lean_spec.subspecs.networking.gossipsub.parameters import GossipsubParameters
-from lean_spec.subspecs.networking.gossipsub.rpc import (
+from lean_spec.node.networking import PeerId
+from lean_spec.node.networking.gossipsub.behavior import GossipsubBehavior, PeerState
+from lean_spec.node.networking.gossipsub.message import GossipsubMessage
+from lean_spec.node.networking.gossipsub.parameters import GossipsubParameters
+from lean_spec.node.networking.gossipsub.rpc import (
     RPC,
     ControlGraft,
     ControlIDontWant,
@@ -27,7 +27,7 @@ from lean_spec.subspecs.networking.gossipsub.rpc import (
     ControlPrune,
     Message,
 )
-from lean_spec.subspecs.networking.gossipsub.types import MessageId, Timestamp, TopicId
+from lean_spec.node.networking.gossipsub.types import MessageId, Timestamp, TopicId
 
 from .base import BaseConsensusFixture
 

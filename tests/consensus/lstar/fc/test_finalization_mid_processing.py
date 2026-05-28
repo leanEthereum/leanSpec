@@ -15,7 +15,7 @@ from consensus_testing import (
     StoreChecks,
 )
 
-from lean_spec.types import Slot, ValidatorIndex
+from lean_spec.spec.forks import Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

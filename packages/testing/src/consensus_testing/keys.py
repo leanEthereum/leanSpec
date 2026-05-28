@@ -41,36 +41,30 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 from lean_spec.config import LEAN_ENV
-from lean_spec.forks.lstar.containers import AttestationData
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.subspecs.koalabear import Fp
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
-from lean_spec.subspecs.xmss.containers import (
+from lean_spec.spec.crypto.koalabear import Fp
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
+from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
+from lean_spec.spec.crypto.xmss.containers import (
     PublicKey,
     SecretKey,
     Signature,
     ValidatorKeyPair,
 )
-from lean_spec.subspecs.xmss.interface import (
+from lean_spec.spec.crypto.xmss.interface import (
     PROD_SIGNATURE_SCHEME,
     TEST_SIGNATURE_SCHEME,
     GeneralizedXmssScheme,
 )
-from lean_spec.subspecs.xmss.types import (
+from lean_spec.spec.crypto.xmss.types import (
     HashDigestList,
     HashDigestVector,
     HashTreeOpening,
     Randomness,
 )
-from lean_spec.types import (
-    Bytes32,
-    Slot,
-    Uint64,
-    ValidatorIndex,
-    ValidatorIndices,
-)
+from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar.containers import AggregatedAttestations, AttestationData
+from lean_spec.spec.ssz import Bytes32, Uint64
 
 KeyRole = Literal["attestation", "proposal"]
 """Discriminator for which signing role's key to load from a validator key pair."""
@@ -534,13 +528,13 @@ class XmssKeyManager:
         """
         raw_xmss = [
             (
+                vid,
                 self.get_public_keys(vid)[0],
                 self.sign_attestation_data(vid, attestation_data),
             )
             for vid in validator_ids
         ]
         return TypeOneMultiSignature.aggregate(
-            xmss_participants=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
             children=[],
             raw_xmss=raw_xmss,
             message=hash_tree_root(attestation_data),
@@ -599,8 +593,7 @@ class XmssKeyManager:
             proofs.append(
                 TypeOneMultiSignature.aggregate(
                     children=[],
-                    raw_xmss=list(zip(public_keys, signatures, strict=True)),
-                    xmss_participants=agg.aggregation_bits,
+                    raw_xmss=list(zip(validator_ids, public_keys, signatures, strict=True)),
                     message=hash_tree_root(agg.data),
                     slot=agg.data.slot,
                 )

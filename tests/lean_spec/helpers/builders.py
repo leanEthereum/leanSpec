@@ -11,52 +11,42 @@ from typing import NamedTuple, cast
 
 from consensus_testing.keys import XmssKeyManager
 
-from lean_spec.forks.lstar import AttestationSignatureEntry, State, Store
-from lean_spec.forks.lstar.containers import (
-    AttestationData,
-    Block,
-    BlockBody,
-    SignedAttestation,
-    SignedBlock,
-    Validator,
-)
-from lean_spec.forks.lstar.containers.attestation import (
-    AggregatedAttestation,
-    SignedAggregatedAttestation,
-)
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.containers.state import Validators
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.subspecs.chain.clock import Interval, SlotClock
-from lean_spec.subspecs.koalabear import Fp
-from lean_spec.subspecs.networking import PeerId
-from lean_spec.subspecs.networking.peer import PeerInfo
-from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.networking.types import ConnectionState
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.storage import Database
-from lean_spec.subspecs.sync.block_cache import BlockCache
-from lean_spec.subspecs.sync.peer_manager import PeerManager
-from lean_spec.subspecs.sync.service import SyncService
-from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
-from lean_spec.subspecs.xmss.constants import TARGET_CONFIG
-from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.subspecs.xmss.types import (
+from lean_spec.node.chain.clock import Interval, SlotClock
+from lean_spec.node.networking import PeerId
+from lean_spec.node.networking.peer import PeerInfo
+from lean_spec.node.networking.reqresp.message import Status
+from lean_spec.node.networking.types import ConnectionState
+from lean_spec.node.storage import Database
+from lean_spec.node.sync.block_cache import BlockCache
+from lean_spec.node.sync.peer_manager import PeerManager
+from lean_spec.node.sync.service import SyncService
+from lean_spec.spec.crypto.koalabear import Fp
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
+from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
+from lean_spec.spec.crypto.xmss.containers import Signature
+from lean_spec.spec.crypto.xmss.types import (
     HashDigestList,
     HashDigestVector,
     HashTreeOpening,
     Randomness,
 )
-from lean_spec.types import (
-    ByteList512KiB,
-    Bytes32,
-    Bytes52,
-    Checkpoint,
-    Slot,
-    Uint64,
-    ValidatorIndex,
-    ValidatorIndices,
+from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks.lstar import AttestationSignatureEntry, State, Store
+from lean_spec.spec.forks.lstar.containers import (
+    AggregatedAttestation,
+    AggregatedAttestations,
+    AttestationData,
+    Block,
+    BlockBody,
+    SignedAggregatedAttestation,
+    SignedAttestation,
+    SignedBlock,
+    Validator,
+    Validators,
 )
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Bytes52, Uint64
 
 from .mocks import MockForkchoiceStore, MockNetworkRequester, StoreInterceptingSpec
 
@@ -410,16 +400,15 @@ def make_aggregated_proof(
 ) -> TypeOneMultiSignature:
     """Create a valid Type-1 aggregated proof for the given participants."""
     data_root = hash_tree_root(attestation_data)
-    xmss_participants = ValidatorIndices(data=participants).to_aggregation_bits()
-    raw_xmss = list(
-        zip(
-            [key_manager.get_public_keys(vid)[0] for vid in participants],
-            [key_manager.sign_attestation_data(vid, attestation_data) for vid in participants],
-            strict=True,
+    raw_xmss = [
+        (
+            vid,
+            key_manager.get_public_keys(vid)[0],
+            key_manager.sign_attestation_data(vid, attestation_data),
         )
-    )
+        for vid in participants
+    ]
     return TypeOneMultiSignature.aggregate(
-        xmss_participants=xmss_participants,
         children=[],
         raw_xmss=raw_xmss,
         message=data_root,
@@ -480,8 +469,7 @@ def make_signed_block_from_store(
     proposer_signature = key_manager.sign_block_root(proposer_index, slot, block_root)
     proposer_type_1 = TypeOneMultiSignature.aggregate(
         children=[],
-        raw_xmss=[(proposer_pubkey, proposer_signature)],
-        xmss_participants=ValidatorIndices(data=[proposer_index]).to_aggregation_bits(),
+        raw_xmss=[(proposer_index, proposer_pubkey, proposer_signature)],
         message=block_root,
         slot=slot,
     )

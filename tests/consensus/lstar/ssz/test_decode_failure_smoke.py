@@ -9,7 +9,7 @@ from typing import ClassVar
 import pytest
 from consensus_testing import SSZTestFiller
 
-from lean_spec.types import BaseBitlist, Boolean
+from lean_spec.spec.ssz import BaseBitlist, Boolean
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

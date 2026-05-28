@@ -4,14 +4,19 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
-from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation, AttestationData
-from lean_spec.forks.lstar.containers.block.block import Block, BlockBody
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.containers.state import State
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.types import Bytes32, ValidatorIndices
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
+from lean_spec.spec.forks import ValidatorIndices
+from lean_spec.spec.forks.lstar.containers import (
+    AggregatedAttestation,
+    AggregatedAttestations,
+    AttestationData,
+    Block,
+    BlockBody,
+    State,
+)
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.ssz import Bytes32
 
 from ..keys import XmssKeyManager
 from ..test_types import AggregatedAttestationSpec, BlockSpec, StateExpectation

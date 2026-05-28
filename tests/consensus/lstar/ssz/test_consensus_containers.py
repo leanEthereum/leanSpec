@@ -4,40 +4,29 @@ import pytest
 from consensus_testing import SSZTestFiller
 from consensus_testing.keys import create_dummy_signature
 
-from lean_spec.forks.lstar import State
-from lean_spec.forks.lstar.containers import (
+from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
+from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar import State
+from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
+    AggregatedAttestations,
     Attestation,
     AttestationData,
     Block,
     BlockBody,
     BlockHeader,
     Config,
-    SignedAggregatedAttestation,
-    SignedAttestation,
-    SignedBlock,
-    Validator,
-)
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.containers.state.types import (
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    SignedAggregatedAttestation,
+    SignedAttestation,
+    SignedBlock,
+    Validator,
+    Validators,
 )
-from lean_spec.forks.lstar.containers.validator import Validators
-from lean_spec.subspecs.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.types import (
-    AggregationBits,
-    Boolean,
-    ByteList512KiB,
-    Bytes32,
-    Bytes52,
-    Checkpoint,
-    Slot,
-    Uint64,
-    ValidatorIndex,
-)
+from lean_spec.spec.ssz import Boolean, ByteList512KiB, Bytes32, Bytes52, Uint64
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

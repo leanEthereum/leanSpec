@@ -16,13 +16,13 @@ from consensus_testing import (
     TickStep,
 )
 
-from lean_spec.subspecs.chain.config import (
+from lean_spec.node.chain.config import (
     INTERVALS_PER_SLOT,
     MAX_ATTESTATIONS_DATA,
     MILLISECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
 )
-from lean_spec.types import Slot, ValidatorIndex
+from lean_spec.spec.forks import Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

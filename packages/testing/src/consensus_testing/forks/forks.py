@@ -2,7 +2,7 @@
 
 from framework.forks import BaseFork
 
-from lean_spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.forks.lstar.spec import LstarSpec
 
 
 class Lstar(BaseFork):

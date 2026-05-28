@@ -4,12 +4,12 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import ConfigDict, Field, PrivateAttr, field_serializer, model_validator
 
-from lean_spec.forks.lstar.containers.attestation import (
+from lean_spec.base import CamelModel
+from lean_spec.spec.forks.lstar.containers import (
+    Block,
     SignedAggregatedAttestation,
     SignedAttestation,
 )
-from lean_spec.forks.lstar.containers.block.block import Block
-from lean_spec.types import CamelModel
 
 from .block_spec import BlockSpec
 from .gossip_aggregated_attestation_spec import GossipAggregatedAttestationSpec

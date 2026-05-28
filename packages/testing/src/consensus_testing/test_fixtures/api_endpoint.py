@@ -3,14 +3,12 @@
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from lean_spec.forks.lstar import Store
-from lean_spec.forks.lstar.containers import BlockBody
-from lean_spec.forks.lstar.containers.block import Block
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.containers.state import State
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Slot, Uint64, ValidatorIndex
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar import Store
+from lean_spec.spec.forks.lstar.containers import AggregatedAttestations, Block, BlockBody, State
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.ssz import Bytes32, Uint64
 
 from ..genesis import build_anchor, generate_pre_state
 from .base import BaseConsensusFixture
@@ -153,7 +151,7 @@ def _metrics_response(_store: Store, _fixture: "ApiEndpointTest") -> dict[str, A
     so the fixture pins only the stable contract: status, content-type,
     and the full list of metric names clients must expose.
     """
-    from lean_spec.subspecs.metrics.registry import registry as metrics_registry
+    from lean_spec.node.metrics.registry import registry as metrics_registry
 
     # Names enumerated from the leanMetrics spec. Any change to this list
     # is a cross-client-visible metrics surface change and should be

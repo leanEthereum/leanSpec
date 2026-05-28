@@ -5,9 +5,9 @@ from typing import ClassVar
 import pytest
 from consensus_testing import SSZTestFiller
 
-from lean_spec.subspecs.koalabear import Fp, P
-from lean_spec.subspecs.networking.enr.eth2 import AttestationSubnets
-from lean_spec.types import (
+from lean_spec.node.networking.enr.eth2 import AttestationSubnets
+from lean_spec.spec.crypto.koalabear import Fp, P
+from lean_spec.spec.ssz import (
     BaseBitlist,
     BaseBitvector,
     Boolean,

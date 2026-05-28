@@ -12,22 +12,22 @@ import time
 from dataclasses import dataclass, field
 from typing import cast
 
-from lean_spec.forks.lstar import Store
-from lean_spec.forks.lstar.containers import Validator
-from lean_spec.forks.lstar.containers.state import Validators
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
-from lean_spec.subspecs.networking import PeerId
-from lean_spec.subspecs.networking.client import LiveNetworkEventSource
-from lean_spec.subspecs.networking.gossipsub.types import TopicId
-from lean_spec.subspecs.networking.peer import PeerInfo
-from lean_spec.subspecs.networking.reqresp.message import Status
-from lean_spec.subspecs.networking.types import ConnectionState
-from lean_spec.subspecs.node import Node, NodeConfig
-from lean_spec.subspecs.validator import ValidatorRegistry
-from lean_spec.subspecs.validator.registry import ValidatorEntry
-from lean_spec.subspecs.xmss import TARGET_SIGNATURE_SCHEME, SecretKey
-from lean_spec.types import Bytes52, Checkpoint, Slot, Uint64, ValidatorIndex
+from lean_spec.node.chain.config import ATTESTATION_COMMITTEE_COUNT
+from lean_spec.node.networking import PeerId
+from lean_spec.node.networking.client import LiveNetworkEventSource
+from lean_spec.node.networking.gossipsub.types import TopicId
+from lean_spec.node.networking.peer import PeerInfo
+from lean_spec.node.networking.reqresp.message import Status
+from lean_spec.node.networking.types import ConnectionState
+from lean_spec.node.node import Node, NodeConfig
+from lean_spec.node.validator import ValidatorRegistry
+from lean_spec.node.validator.registry import ValidatorEntry
+from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME, SecretKey
+from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar import Store
+from lean_spec.spec.forks.lstar.containers import Validator, Validators
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.ssz import Bytes52, Uint64
 
 from .diagnostics import PipelineDiagnostics
 from .port_allocator import PortAllocator

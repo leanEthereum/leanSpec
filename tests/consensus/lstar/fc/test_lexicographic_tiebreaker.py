@@ -13,7 +13,7 @@ from consensus_testing import (
     StoreChecks,
 )
 
-from lean_spec.types import Slot
+from lean_spec.spec.forks import Slot
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

@@ -7,8 +7,8 @@ from consensus_testing import (
     generate_pre_state,
 )
 
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.types import Slot
+from lean_spec.spec.forks import Slot
+from lean_spec.spec.forks.lstar.spec import LstarSpec
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

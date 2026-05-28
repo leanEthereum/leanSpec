@@ -4,32 +4,29 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from lean_spec.forks.lstar.containers.attestation import (
-    AggregatedAttestation,
-    Attestation,
-    AttestationData,
-    SignedAttestation,
-)
-from lean_spec.forks.lstar.containers.block import Block, BlockBody, SignedBlock
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.containers.state import State
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.forks.lstar.store import Store
-from lean_spec.subspecs.chain.clock import Interval
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.subspecs.xmss.aggregation import (
+from lean_spec.base import CamelModel
+from lean_spec.node.chain.clock import Interval
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.crypto.xmss.aggregation import (
     TypeOneMultiSignature,
     TypeTwoMultiSignature,
 )
-from lean_spec.subspecs.xmss.containers import Signature
-from lean_spec.types import (
-    ByteList512KiB,
-    Bytes32,
-    CamelModel,
-    Slot,
-    ValidatorIndex,
-    ValidatorIndices,
+from lean_spec.spec.crypto.xmss.containers import Signature
+from lean_spec.spec.forks import Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks.lstar.containers import (
+    AggregatedAttestation,
+    AggregatedAttestations,
+    Attestation,
+    AttestationData,
+    Block,
+    BlockBody,
+    SignedAttestation,
+    SignedBlock,
+    State,
 )
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.forks.lstar.store import Store
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 
 from ..keys import XmssKeyManager, create_dummy_signature
 from .aggregated_attestation_spec import AggregatedAttestationSpec
@@ -276,7 +273,6 @@ class BlockSpec(CamelModel):
             Complete signed block.
         """
         block_root = hash_tree_root(final_block)
-        proposer_participants = ValidatorIndices(data=[proposer_index]).to_aggregation_bits()
         proposer_pubkey = key_manager.get_public_keys(proposer_index)[1]
 
         # The binding rejects placeholder bytes; if anything in the merged
@@ -295,8 +291,7 @@ class BlockSpec(CamelModel):
             )
             proposer_type_1 = TypeOneMultiSignature.aggregate(
                 children=[],
-                raw_xmss=[(proposer_pubkey, proposer_signature)],
-                xmss_participants=proposer_participants,
+                raw_xmss=[(proposer_index, proposer_pubkey, proposer_signature)],
                 message=block_root,
                 slot=self.slot,
             )

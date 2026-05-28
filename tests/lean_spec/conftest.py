@@ -12,10 +12,10 @@ from collections.abc import Callable
 import pytest
 from consensus_testing.keys import XmssKeyManager
 
-from lean_spec.forks.lstar import State, Store
-from lean_spec.forks.lstar.containers import Block
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.types import Slot, ValidatorIndex
+from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar import State, Store
+from lean_spec.spec.forks.lstar.containers import Block
+from lean_spec.spec.forks.lstar.spec import LstarSpec
 from tests.lean_spec.helpers import (
     GenesisData,
     make_genesis_block,

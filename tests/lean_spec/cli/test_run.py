@@ -11,13 +11,12 @@ from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.cli import NodeBootstrap
 from lean_spec.cli.run import _build_event_source
-from lean_spec.forks import DEFAULT_REGISTRY
-from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
-from lean_spec.subspecs.genesis import GenesisConfig
-from lean_spec.subspecs.networking.gossipsub import GossipTopic
-from lean_spec.subspecs.validator import ValidatorRegistry
-from lean_spec.subspecs.validator.registry import ValidatorEntry
-from lean_spec.types import Slot, ValidatorIndex
+from lean_spec.node.chain.config import ATTESTATION_COMMITTEE_COUNT
+from lean_spec.node.genesis import GenesisConfig
+from lean_spec.node.networking.gossipsub import GossipTopic
+from lean_spec.node.validator import ValidatorRegistry
+from lean_spec.node.validator.registry import ValidatorEntry
+from lean_spec.spec.forks import DEFAULT_REGISTRY, Slot, ValidatorIndex
 
 
 class _RecordingEventSource:

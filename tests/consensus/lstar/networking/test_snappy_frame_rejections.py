@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-from lean_spec.snappy.decompress import SnappyDecompressionError
+from lean_spec.node.snappy.decompress import SnappyDecompressionError
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

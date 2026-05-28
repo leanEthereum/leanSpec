@@ -9,8 +9,8 @@ from consensus_testing import (
     StoreChecks,
 )
 
-from lean_spec.subspecs.chain.config import JUSTIFICATION_LOOKBACK_SLOTS
-from lean_spec.types import Slot, ValidatorIndex
+from lean_spec.node.chain.config import JUSTIFICATION_LOOKBACK_SLOTS
+from lean_spec.spec.forks import Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

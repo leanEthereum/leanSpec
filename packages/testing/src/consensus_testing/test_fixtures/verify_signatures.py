@@ -6,20 +6,16 @@ from typing import Any, ClassVar
 
 from pydantic import Field
 
-from lean_spec.forks.lstar.containers.attestation import AggregatedAttestation, AttestationData
-from lean_spec.forks.lstar.containers.block import SignedBlock
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.containers.state import State
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.types import (
-    AggregationBits,
-    Boolean,
-    ByteList512KiB,
-    Bytes32,
-    Checkpoint,
-    Slot,
-    ValidatorIndex,
+from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar.containers import (
+    AggregatedAttestation,
+    AggregatedAttestations,
+    AttestationData,
+    SignedBlock,
+    State,
 )
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.ssz import Boolean, ByteList512KiB, Bytes32
 
 from ..keys import XmssKeyManager
 from ..test_types import BlockSpec

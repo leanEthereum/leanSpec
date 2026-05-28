@@ -2,10 +2,9 @@
 
 from typing import Any, ClassVar
 
-from lean_spec.snappy import compress, decompress, frame_compress, frame_decompress
-from lean_spec.subspecs.networking.enr.enr import ENR
-from lean_spec.subspecs.networking.gossipsub.message import GossipsubMessage
-from lean_spec.subspecs.networking.gossipsub.rpc import (
+from lean_spec.node.networking.enr.enr import ENR
+from lean_spec.node.networking.gossipsub.message import GossipsubMessage
+from lean_spec.node.networking.gossipsub.rpc import (
     RPC,
     ControlGraft,
     ControlIDontWant,
@@ -16,16 +15,17 @@ from lean_spec.subspecs.networking.gossipsub.rpc import (
     Message,
     SubOpts,
 )
-from lean_spec.subspecs.networking.gossipsub.topic import GossipTopic, TopicKind
-from lean_spec.subspecs.networking.gossipsub.types import TopicId
-from lean_spec.subspecs.networking.reqresp.codec import (
+from lean_spec.node.networking.gossipsub.topic import GossipTopic, TopicKind
+from lean_spec.node.networking.gossipsub.types import TopicId
+from lean_spec.node.networking.reqresp.codec import (
     ResponseCode,
     decode_request,
     encode_request,
 )
-from lean_spec.subspecs.networking.transport.peer_id import KeyType, PeerId, PublicKeyProto
-from lean_spec.subspecs.networking.varint import decode_varint, encode_varint
-from lean_spec.types import SubnetId
+from lean_spec.node.networking.transport.peer_id import KeyType, PeerId, PublicKeyProto
+from lean_spec.node.networking.varint import decode_varint, encode_varint
+from lean_spec.node.snappy import compress, decompress, frame_compress, frame_decompress
+from lean_spec.spec.forks import SubnetId
 
 from .base import BaseConsensusFixture
 

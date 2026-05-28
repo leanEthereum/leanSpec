@@ -3,7 +3,7 @@
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-from lean_spec.subspecs.networking.varint import VarintError
+from lean_spec.node.networking.varint import VarintError
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

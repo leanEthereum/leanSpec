@@ -40,7 +40,7 @@ typecheck *args:
 # Spell check source, tests, packages, and docs
 [group('quality')]
 spellcheck *args:
-    uv run --group lint codespell src tests packages docs README.md CLAUDE.md --skip="*.lock,*.svg,.git,__pycache__,.pytest_cache,tests/lean_spec/snappy/testdata" --ignore-words=.codespell-ignore-words.txt "$@"
+    uv run --group lint codespell src tests packages docs README.md CLAUDE.md --skip="*.lock,*.svg,.git,__pycache__,.pytest_cache,tests/lean_spec/node/snappy/testdata" --ignore-words=.codespell-ignore-words.txt "$@"
 
 # Verify markdown formatting in docs/
 [group('quality')]
@@ -78,7 +78,7 @@ test-cov-gate *args:
 # Run consensus-only unit tests (containers, forkchoice, networking)
 [group('tests')]
 test-consensus *args:
-    uv run --group test pytest -n auto --maxprocesses=10 --durations=10 --dist=worksteal tests/lean_spec/subspecs/containers tests/lean_spec/subspecs/forkchoice tests/lean_spec/subspecs/networking "$@"
+    uv run --group test pytest -n auto --maxprocesses=10 --durations=10 --dist=worksteal tests/lean_spec/spec/forks tests/lean_spec/node/networking "$@"
 
 # Canonical CI fixture run; contributors should use `uv run fill` directly.
 [group('tests'), private]

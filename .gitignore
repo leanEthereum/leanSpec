@@ -168,3 +168,6 @@ scripts/
 
 # Client codebase used by Claude skill for running reference tests
 clients/
+
+# Local agent worktrees
+.claude/worktrees/

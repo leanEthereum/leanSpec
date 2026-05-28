@@ -2,7 +2,7 @@
 
 import httpx
 
-from lean_spec.subspecs.api.endpoints import health
+from lean_spec.node.api.endpoints import health
 
 
 def get_health(server_url: str) -> httpx.Response:

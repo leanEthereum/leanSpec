@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import logging
 
-from lean_spec.subspecs.chain.config import ATTESTATION_COMMITTEE_COUNT
-from lean_spec.subspecs.metrics import PrometheusObserver, registry as metrics
-from lean_spec.subspecs.networking.client import LiveNetworkEventSource
-from lean_spec.subspecs.networking.gossipsub import GossipTopic
-from lean_spec.subspecs.node import Node, NodeConfig
-from lean_spec.subspecs.observability import set_observer
-from lean_spec.types import SubnetId
+from lean_spec.node.chain.config import ATTESTATION_COMMITTEE_COUNT
+from lean_spec.node.metrics import PrometheusObserver, registry as metrics
+from lean_spec.node.networking.client import LiveNetworkEventSource
+from lean_spec.node.networking.gossipsub import GossipTopic
+from lean_spec.node.node import Node, NodeConfig
+from lean_spec.node.observability import set_observer
+from lean_spec.spec.forks import SubnetId
 
 from .bootstrap import NodeBootstrap
 

@@ -9,7 +9,7 @@ wire, breaking the signature covenant.
 import pytest
 from consensus_testing import NetworkingCodecTestFiller
 
-from lean_spec.types.rlp import encode_rlp
+from lean_spec.node.networking.enr.rlp import encode_rlp
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

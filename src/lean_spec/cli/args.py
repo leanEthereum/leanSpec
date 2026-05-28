@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import StrictBool
 
-from lean_spec.types import StrictBaseModel
+from lean_spec.base import StrictBaseModel
 
 
 class CliArgs(StrictBaseModel):

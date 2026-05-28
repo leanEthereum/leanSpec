@@ -19,7 +19,7 @@ import logging
 
 import pytest
 
-from lean_spec.types import ValidatorIndex
+from lean_spec.spec.forks import ValidatorIndex
 
 from .helpers import (
     NodeCluster,

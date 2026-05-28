@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lean_spec.types import ValidatorIndex
+from lean_spec.spec.forks import ValidatorIndex
 
 from .builders import (
     GenesisData,

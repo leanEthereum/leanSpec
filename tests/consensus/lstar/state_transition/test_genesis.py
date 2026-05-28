@@ -16,20 +16,21 @@ from consensus_testing import (
     generate_pre_state,
 )
 
-from lean_spec.forks.lstar.containers.block import BlockBody
-from lean_spec.forks.lstar.containers.block.types import AggregatedAttestations
-from lean_spec.forks.lstar.containers.state import State
-from lean_spec.forks.lstar.containers.state.types import (
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar.containers import (
+    AggregatedAttestations,
+    BlockBody,
     HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    State,
+    Validator,
+    Validators,
 )
-from lean_spec.forks.lstar.containers.validator import Validator, Validators
-from lean_spec.forks.lstar.spec import LstarSpec
-from lean_spec.subspecs.chain.config import VALIDATOR_REGISTRY_LIMIT
-from lean_spec.subspecs.ssz.hash import hash_tree_root
-from lean_spec.types import Bytes32, Bytes52, Slot, Uint64, ValidatorIndex
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.ssz import Bytes32, Bytes52, Uint64
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

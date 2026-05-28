@@ -78,9 +78,13 @@ known-first-party = ["lean_spec"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
+"src/lean_spec/spec/crypto/xmss/constants.py" = ["N802"]
 
 [tool.ty.environment]
 python-version = "3.12"
+
+[tool.ty.src]
+exclude = [".claude/"]
 
 [tool.ty.terminal]
 error-on-warning = true
@@ -107,10 +111,7 @@ addopts = [
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "valid_from: marks tests as valid from a specific fork version",
     "valid_until: marks tests as valid until a specific fork version",
-    "valid_at: marks tests as valid only at a specific fork version",
-    "requires: marks tests as requiring one or more fork capabilities",
     "interop: integration tests for multiple leanSpec nodes",
     "num_validators: number of validators for interop test cluster",
 ]

@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/lean_spec/forks/*/containers/**/*.py"
+  - "src/lean_spec/spec/forks/*/containers/**/*.py"
   - "src/lean_spec/types/**/*.py"
 ---
 
@@ -36,7 +36,7 @@ When creating SSZ types, follow these established patterns:
 Containers should be organized into modules with clear separation:
 
 ```
-src/lean_spec/forks/<fork>/containers/
+src/lean_spec/spec/forks/<fork>/containers/
 ├── state/
 │   ├── __init__.py      # Exports State and related types
 │   ├── state.py         # Main State container class
