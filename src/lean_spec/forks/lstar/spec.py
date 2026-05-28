@@ -845,7 +845,6 @@ class LstarSpec(ForkProtocol):
         projected_finalized_slot: Slot,
         current_votes: dict[Bytes32, set[ValidatorIndex]],
         validator_count: int,
-        data_roots: dict[AttestationData, Bytes32],
     ) -> tuple[AttestationData, _EntryScore, set[ValidatorIndex]] | None:
         """Scan candidate entries and return the highest-scoring one.
 
@@ -879,7 +878,7 @@ class LstarSpec(ForkProtocol):
                 continue
             score, new_voters = scored
 
-            candidate_key = score.ordering_key(data_roots[att_data])
+            candidate_key = score.ordering_key(hash_tree_root(att_data))
             if best_key is None or candidate_key < best_key:
                 best = (att_data, score, new_voters)
                 best_key = candidate_key
@@ -928,10 +927,6 @@ class LstarSpec(ForkProtocol):
         current_votes = self._build_running_votes(head_state)
         processed: set[AttestationData] = set()
 
-        # Each entry's data root is its immutable tiebreaker, so hash once up front
-        # rather than re-hashing every candidate on every selection round.
-        data_roots = {att_data: hash_tree_root(att_data) for att_data in aggregated_payloads}
-
         for _round in range(int(MAX_ATTESTATIONS_DATA)):
             best = self._pick_best_candidate(
                 aggregated_payloads,
@@ -942,7 +937,6 @@ class LstarSpec(ForkProtocol):
                 finalized_slot,
                 current_votes,
                 validator_count,
-                data_roots,
             )
             if best is None:
                 break
