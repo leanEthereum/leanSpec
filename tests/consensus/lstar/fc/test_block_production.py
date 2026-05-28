@@ -257,10 +257,23 @@ def test_produce_block_enforces_max_attestations_data_limit(
 
     Scenario
     --------
-    Linear chain through MAX_ATTESTATIONS_DATA + 1 blocks. After building
-    the chain, the same number of aggregated attestations are gossiped —
-    each targeting a different block — producing one more distinct
-    AttestationData entry than the limit allows.
+    Gossip one more distinct AttestationData entry than the limit allows,
+    each targeting a different justifiable slot. The builder must drop the
+    surplus entry.
+
+    Why justifiable slots
+    ---------------------
+    The builder only includes attestations whose target is justifiable after
+    the finalized boundary; the state transition skips the rest. Targeting
+    only justifiable slots ensures every gossiped entry is a real candidate,
+    so the cap is what bounds the count rather than the filter.
+
+    Why one voter per entry
+    -----------------------
+    A single validator never reaches the two-thirds supermajority, so no
+    entry justifies its target. The cap is then exercised purely by the
+    number of distinct entries, with no justification or finalization
+    dynamics shifting the candidate set mid-selection.
 
     Timing
     ------
@@ -270,24 +283,34 @@ def test_produce_block_enforces_max_attestations_data_limit(
 
     Block builder behavior
     ----------------------
-    The builder sorts entries by target.slot and processes them in order.
-    After selecting MAX_ATTESTATIONS_DATA entries it breaks, excluding the
-    entries with the highest target slots. The proposer signature occupies
-    the remaining slot in the Type-2 proof envelope.
+    Same-tier entries are ordered by target slot, so the builder selects the
+    MAX_ATTESTATIONS_DATA lowest target slots and drops the highest. The
+    proposer signature occupies the remaining slot in the Type-2 envelope.
 
     Expected post-state
     -------------------
     The produced block contains exactly MAX_ATTESTATIONS_DATA attestations.
     """
     limit = int(MAX_ATTESTATIONS_DATA)
-    num_target_blocks = limit + 1
-    block_production_slot = num_target_blocks + 1
-    validators = [ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)]
+
+    # The first limit + 1 slots that are justifiable after genesis.
+    # One more than the cap, so exactly one candidate must be dropped.
+    target_slots: list[int] = []
+    candidate = 1
+    while len(target_slots) < limit + 1:
+        if Slot(candidate).is_justifiable_after(Slot(0)):
+            target_slots.append(candidate)
+        candidate += 1
+
+    # Build a contiguous chain up to the highest target slot, then produce one
+    # slot later. Every target block must exist on-chain to be a valid target.
+    chain_length = target_slots[-1]
+    block_production_slot = chain_length + 1
 
     # Aggregate fires at interval 2 of the last chain slot.
     # With an empty pool this is a no-op, so no payloads are lost.
     # Compute the minimum integer second that reaches this interval.
-    aggregate_interval = num_target_blocks * int(INTERVALS_PER_SLOT) + 2
+    aggregate_interval = chain_length * int(INTERVALS_PER_SLOT) + 2
     aggregate_time = math.ceil(aggregate_interval * int(MILLISECONDS_PER_INTERVAL) / 1000)
     # Next slot start migrates gossip payloads from "new" to "known".
     next_slot_time = block_production_slot * int(SECONDS_PER_SLOT)
@@ -297,25 +320,24 @@ def test_produce_block_enforces_max_attestations_data_limit(
     chain_steps: list[BlockStep] = [
         BlockStep(
             block=BlockSpec(slot=Slot(n), label=f"block_{n}"),
-            checks=(StoreChecks(head_slot=Slot(n)) if n == 1 or n == num_target_blocks else None),
+            checks=(StoreChecks(head_slot=Slot(n)) if n == 1 or n == chain_length else None),
         )
-        for n in range(1, num_target_blocks + 1)
+        for n in range(1, chain_length + 1)
     ]
 
-    # One gossip attestation per target block.
-    # Each has a different target checkpoint → num_target_blocks distinct
-    # AttestationData entries.
+    # One gossip attestation per target block, each from a single validator.
+    # Each has a different target checkpoint → limit + 1 distinct entries.
     # Source auto-resolves to the genesis justified checkpoint.
     attestation_steps: list[GossipAggregatedAttestationStep] = [
         GossipAggregatedAttestationStep(
             attestation=GossipAggregatedAttestationSpec(
-                validator_ids=validators,
-                slot=Slot(num_target_blocks),
+                validator_ids=[ValidatorIndex(0)],
+                slot=Slot(chain_length),
                 target_slot=Slot(n),
                 target_root_label=f"block_{n}",
             ),
         )
-        for n in range(1, num_target_blocks + 1)
+        for n in target_slots
     ]
 
     fork_choice_test(

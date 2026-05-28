@@ -38,11 +38,11 @@ def test_justified_divergence_self_heals_in_next_block(
     Self-healing
     ------------
     Block 5 is built on the head chain (no explicit attestations).
-    The builder's fixed-point loop resolves the divergence:
+    The tiered scorer resolves the divergence:
 
-    1. Pool contains fork B's attestations (source=0, target=1)
-    2. Builder starts with current_justified=0 (head state)
-    3. Fork B's attestations match (source=0). Included. Justifies slot 1.
+    1. Pool contains fork B's attestation (source=0, target=1)
+    2. Builder projects from head state justified=0
+    3. Fork B's attestation matches (source=0). Selected. Projects slot 1 justified.
     4. Divergence closed in one block.
 
     Expected post-state
@@ -128,18 +128,17 @@ def test_justified_divergence_self_heals_in_next_block(
             #
             # No explicit attestations. The builder reads from the pool.
             #
-            # The pool has fork B's attestations (source=0, target=1)
-            # because on_block added them when processing fork_4.
+            # The pool has fork B's attestation (source=0, target=1)
+            # because on_block added it when processing fork_4.
             #
-            # Fixed-point loop:
-            #   Pass 1: justified=0 -> fork B's attestations match (source=0)
-            #           3/4 supermajority -> justifies slot 1
-            #           justified advances to 1
-            #   Pass 2: nothing new -> break
+            # The tiered scorer projects justification forward:
+            #   Round 1: source=0 is justified -> V1+V2+V3 target slot 1
+            #            3/4 supermajority -> projects slot 1 justified
+            #   Later rounds: nothing new scores -> stop
             #
             # Divergence closed: head state justified = 1 = store justified.
             #
-            # The produced block MUST carry the justifying attestations so that
+            # The produced block MUST carry the justifying attestation so that
             # other nodes processing it also advance their justified checkpoint.
             # Block production asserts this invariant.
             BlockStep(
@@ -150,25 +149,20 @@ def test_justified_divergence_self_heals_in_next_block(
                     # Both store and head agree: justified = slot 1.
                     latest_justified_slot=Slot(1),
                     latest_justified_root_label="common",
-                    # The block body must contain fork B's attestations.
+                    # The block body carries the one attestation that advances
+                    # the chain: V1+V2+V3 targeting slot 1, the minority fork's
+                    # justifying vote that closes the divergence.
                     #
-                    # The builder picks up all pool entries whose source matches
-                    # the current justified checkpoint (genesis). Two match:
-                    #
-                    # 1. V1+V2+V3 targeting slot 1 — the minority fork's
-                    #    justifying attestation. This is the one that closes
-                    #    the divergence.
-                    # 2. V0 targeting slot 2 — originally in block_3's body,
-                    #    still in the attestation pool.
-                    block_attestation_count=2,
+                    # V0 targeting slot 2 is also in the pool (originally in
+                    # block_3's body), but every one of its voters is already
+                    # recorded on the head chain for that target. It adds no new
+                    # voters, so the scorer omits it rather than re-stating a
+                    # vote the post-state already holds.
+                    block_attestation_count=1,
                     block_attestations=[
                         AggregatedAttestationCheck(
                             participants={1, 2, 3},
                             target_slot=Slot(1),
-                        ),
-                        AggregatedAttestationCheck(
-                            participants={0},
-                            target_slot=Slot(2),
                         ),
                     ],
                 ),
