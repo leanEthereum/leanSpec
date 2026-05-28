@@ -352,7 +352,7 @@ def test_repeated_validator_does_not_double_count_within_same_block(
             slot=Slot(2),
             latest_justified_slot=Slot(0),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(False)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(False)]),
             justifications_validators=JustificationValidators(
                 data=[
                     Boolean(True),
@@ -587,7 +587,7 @@ def test_split_supermajority_aggregations_in_same_block_justify(
             slot=Slot(2),
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -639,7 +639,7 @@ def test_odd_validator_threshold_boundary_justifies(
             slot=Slot(2),
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -690,7 +690,7 @@ def test_odd_validator_threshold_boundary_does_not_justify(
             slot=Slot(2),
             latest_justified_slot=Slot(0),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(False)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(False)]),
             justifications_validators=JustificationValidators(
                 data=[
                     Boolean(True),
@@ -884,9 +884,7 @@ def test_justification_clears_only_the_resolved_target_votes(
             slot=Slot(4),
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(True), Boolean(False), Boolean(False)]}
-            ),
+            justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False), Boolean(False)]),
             justifications_validators=JustificationValidators(
                 data=[
                     Boolean(True),
@@ -1000,16 +998,14 @@ def test_target_at_or_before_source_is_ignored(
             slot=Slot(6),
             latest_justified_slot=Slot(4),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={
-                    "data": [
-                        Boolean(True),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(True),
-                        Boolean(False),
-                    ]
-                }
+            justified_slots=JustifiedSlots(
+                data=[
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(True),
+                    Boolean(False),
+                ]
             ),
             justifications_validators=JustificationValidators(
                 data=[
@@ -1091,9 +1087,7 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
             # Assertion B — No additional state change from the duplicate attestation
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(True), Boolean(False)]}
-            ),
+            justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -1174,7 +1168,7 @@ def test_attestation_with_zero_hash_source_root_is_skipped(
             # Only the valid attestation produced state changes.
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(True)]),
             # No pending votes: the malformed attestation did not create
             # any entries, and the valid one's votes were cleared on
             # justification.
@@ -1250,7 +1244,7 @@ def test_attestation_with_zero_hash_target_root_is_skipped(
             slot=Slot(2),
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -1365,9 +1359,7 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
             # Slot 1 justified, slots 2 and 3 not.
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(True), Boolean(False), Boolean(False)]}
-            ),
+            justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False), Boolean(False)]),
             # Exactly 1 pending target root (the valid attestation's target = block_2).
             # If the forced attestation had been processed, there would be 2 roots
             # (block_2 and block_3).

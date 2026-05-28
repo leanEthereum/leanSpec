@@ -78,9 +78,8 @@ def _setup(
     )
 
     block_proof = make_aggregated_proof(key_manager, block_participants, attestation_data)
-    producer_store = chain_store.model_copy(
-        update={"latest_known_aggregated_payloads": {attestation_data: {block_proof}}}
-    )
+    chain_store.latest_known_aggregated_payloads = {attestation_data: {block_proof}}
+    producer_store = chain_store
     _, signed_block = make_signed_block_from_store(
         producer_store, key_manager, BLOCK_SLOT, BLOCK_PROPOSER
     )
@@ -104,7 +103,8 @@ def test_skips_when_target_not_ahead_of_justified(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
     )
     # Justified now sits at the attestation's target slot.
-    store = chain_store.model_copy(update={"latest_justified": attestation_data.target})
+    chain_store.latest_justified = attestation_data.target
+    store = chain_store
     service = _service(peer_id)
 
     new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
@@ -131,9 +131,8 @@ def test_skips_when_block_adds_no_new_validators(
         [ValidatorIndex(1), ValidatorIndex(2), ValidatorIndex(3)],
         attestation_data,
     )
-    store = chain_store.model_copy(
-        update={"latest_new_aggregated_payloads": {attestation_data: {local_partial}}}
-    )
+    chain_store.latest_new_aggregated_payloads = {attestation_data: {local_partial}}
+    store = chain_store
     service = _service(peer_id)
 
     new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
@@ -147,7 +146,8 @@ def test_noop_when_parent_state_missing(peer_id: PeerId, key_manager: XmssKeyMan
     chain_store, signed_block, _ = _setup(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
     )
-    store = chain_store.model_copy(update={"states": {}})
+    chain_store.states = {}
+    store = chain_store
     service = _service(peer_id)
 
     new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)

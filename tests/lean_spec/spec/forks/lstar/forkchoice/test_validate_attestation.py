@@ -240,7 +240,8 @@ class TestValidateAttestationTimeCheck:
 
         # Sweep every interval in the attestation's slot.
         for offset in range(int(INTERVALS_PER_SLOT)):
-            local = store.model_copy(update={"time": ATTESTATION_START_INTERVAL + Interval(offset)})
+            store.time = ATTESTATION_START_INTERVAL + Interval(offset)
+            local = store
             spec.validate_attestation(local, data)
 
     def test_attestation_in_past_passes(self, spec: LstarSpec, observer_store: Store) -> None:
@@ -249,7 +250,7 @@ class TestValidateAttestationTimeCheck:
 
         # Place the local clock several slots ahead.
         far_future = ATTESTATION_START_INTERVAL + Interval(int(INTERVALS_PER_SLOT) * 10)
-        store = store.model_copy(update={"time": far_future})
+        store.time = far_future
         spec.validate_attestation(store, data)
 
     def test_attestation_at_disparity_boundary_passes(
@@ -258,7 +259,7 @@ class TestValidateAttestationTimeCheck:
         """At the disparity boundary the attestation is still accepted."""
         store, data = self._build_two_block_chain(spec, observer_store)
 
-        store = store.model_copy(update={"time": DISPARITY_BOUNDARY_INTERVAL})
+        store.time = DISPARITY_BOUNDARY_INTERVAL
         spec.validate_attestation(store, data)
 
     def test_attestation_just_beyond_disparity_boundary_rejected(
@@ -267,7 +268,7 @@ class TestValidateAttestationTimeCheck:
         """One interval past the disparity boundary the attestation is rejected."""
         store, data = self._build_two_block_chain(spec, observer_store)
 
-        store = store.model_copy(update={"time": JUST_BEYOND_DISPARITY_BOUNDARY_INTERVAL})
+        store.time = JUST_BEYOND_DISPARITY_BOUNDARY_INTERVAL
 
         with pytest.raises(AssertionError, match="Attestation too far in future"):
             spec.validate_attestation(store, data)
@@ -284,7 +285,7 @@ class TestValidateAttestationTimeCheck:
         """
         store, data = self._build_two_block_chain(spec, observer_store)
 
-        store = store.model_copy(update={"time": ONE_FULL_SLOT_BEHIND_INTERVAL})
+        store.time = ONE_FULL_SLOT_BEHIND_INTERVAL
 
         with pytest.raises(AssertionError, match="Attestation too far in future"):
             spec.validate_attestation(store, data)

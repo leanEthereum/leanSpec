@@ -283,16 +283,8 @@ class StateTransitionTest(BaseConsensusFixture):
                 )
                 for fa in spec.forced_attestations
             ]
-            block = block.model_copy(
-                update={
-                    "body": block.body.model_copy(
-                        update={
-                            "attestations": AggregatedAttestations(
-                                data=[*block.body.attestations.data, *forced]
-                            )
-                        }
-                    )
-                }
+            block.body.attestations = AggregatedAttestations(
+                data=[*block.body.attestations.data, *forced]
             )
 
             # The body changed, so re-run the transition to get the correct
@@ -300,7 +292,7 @@ class StateTransitionTest(BaseConsensusFixture):
             if post_state is not None:
                 post_state = LstarSpec().process_slots(state, spec.slot)
                 post_state = LstarSpec().process_block(post_state, block)
-                block = block.model_copy(update={"state_root": hash_tree_root(post_state)})
+                block.state_root = hash_tree_root(post_state)
 
         return block, post_state
 

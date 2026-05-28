@@ -68,14 +68,11 @@ def test_linear_chain_weight_accumulates_upward(spec: LstarSpec, base_store: Sto
         att_data: {proof},
     }
 
-    store = base_store.model_copy(
-        update={
-            "blocks": new_blocks,
-            "states": new_states,
-            "head": block2_root,
-            "latest_known_aggregated_payloads": aggregated_payloads,
-        }
-    )
+    base_store.blocks = new_blocks
+    base_store.states = new_states
+    base_store.head = block2_root
+    base_store.latest_known_aggregated_payloads = aggregated_payloads
+    store = base_store
 
     weights = spec.compute_block_weights(store)
 
@@ -115,14 +112,11 @@ def test_multiple_attestations_accumulate(spec: LstarSpec, base_store: Store) ->
         att_data: {proof},
     }
 
-    store = base_store.model_copy(
-        update={
-            "blocks": new_blocks,
-            "states": new_states,
-            "head": block1_root,
-            "latest_known_aggregated_payloads": aggregated_payloads,
-        }
-    )
+    base_store.blocks = new_blocks
+    base_store.states = new_states
+    base_store.head = block1_root
+    base_store.latest_known_aggregated_payloads = aggregated_payloads
+    store = base_store
 
     weights = spec.compute_block_weights(store)
 

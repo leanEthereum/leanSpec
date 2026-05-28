@@ -160,12 +160,8 @@ def test_pruning_keeps_pending_justifications(spec: LstarSpec) -> None:
     # comes after the finalized boundary.
     pending_votes = [Boolean(True), Boolean(False), Boolean(False)]
 
-    state = state.model_copy(
-        update={
-            "justifications_roots": JustificationRoots(data=[slot_3_root]),
-            "justifications_validators": JustificationValidators(data=pending_votes),
-        }
-    )
+    state.justifications_roots = JustificationRoots(data=[slot_3_root])
+    state.justifications_validators = JustificationValidators(data=pending_votes)
 
     # Sanity check: slot 3 root is present in history.
     assert state.historical_block_hashes[3] == slot_3_root

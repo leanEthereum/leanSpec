@@ -61,8 +61,8 @@ class SlotClockTest(BaseConsensusFixture):
                 result = self._make_total_intervals()
             case _:
                 raise ValueError(f"Unknown operation: {self.operation}")
-        output = {"config": config, **result}
-        return self.model_copy(update={"output": output})
+        self.output = {"config": config, **result}
+        return self
 
     def _make_from_unix_time(self) -> dict[str, Any]:
         """Convert unix timestamp to interval count since genesis."""

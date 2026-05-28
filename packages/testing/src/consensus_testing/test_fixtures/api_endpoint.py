@@ -283,4 +283,6 @@ class ApiEndpointTest(BaseConsensusFixture):
             genesis_time=self.genesis_params.get("genesisTime", 0),
             anchor_slot=self.genesis_params.get("anchorSlot", 0),
         )
-        return self.model_copy(update=handler(store, self))
+        for k, v in handler(store, self).items():
+            setattr(self, k, v)
+        return self

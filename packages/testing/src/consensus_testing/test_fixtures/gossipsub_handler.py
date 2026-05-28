@@ -159,8 +159,8 @@ class GossipsubHandlerTest(BaseConsensusFixture):
 
     def make_fixture(self) -> "GossipsubHandlerTest":
         """Produce the completed fixture with expected outputs filled in."""
-        expected = asyncio.run(self._execute())
-        return self.model_copy(update={"expected": expected})
+        self.expected = asyncio.run(self._execute())
+        return self
 
     async def _execute(self) -> dict[str, Any]:
         """

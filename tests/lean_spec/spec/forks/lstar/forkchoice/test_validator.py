@@ -102,12 +102,8 @@ class TestBlockProduction:
             AttestationSignatureEntry(ValidatorIndex(6), signed_6.signature)
         )
 
-        sample_store = sample_store.model_copy(
-            update={
-                "latest_known_aggregated_payloads": known_payloads,
-                "attestation_signatures": gossip_sigs,
-            }
-        )
+        sample_store.latest_known_aggregated_payloads = known_payloads
+        sample_store.attestation_signatures = gossip_sigs
 
         slot = Slot(2)
         validator_idx = ValidatorIndex(2)  # Proposer for slot 2
@@ -184,11 +180,7 @@ class TestBlockProduction:
         validator_idx = ValidatorIndex(3)
 
         # Ensure no attestations in store (clear aggregated payloads)
-        sample_store = sample_store.model_copy(
-            update={
-                "latest_known_aggregated_payloads": {},
-            }
-        )
+        sample_store.latest_known_aggregated_payloads = {}
 
         store, block, _signatures = spec.produce_block_with_signatures(
             sample_store,
@@ -226,16 +218,10 @@ class TestBlockProduction:
 
         proof_7 = make_aggregated_proof(key_manager, [ValidatorIndex(7)], signed_7.data)
 
-        sample_store = sample_store.model_copy(
-            update={
-                "latest_known_aggregated_payloads": {signed_7.data: {proof_7}},
-                "attestation_signatures": {
-                    signed_7.data: {
-                        AttestationSignatureEntry(ValidatorIndex(7), signed_7.signature)
-                    },
-                },
-            }
-        )
+        sample_store.latest_known_aggregated_payloads = {signed_7.data: {proof_7}}
+        sample_store.attestation_signatures = {
+            signed_7.data: {AttestationSignatureEntry(ValidatorIndex(7), signed_7.signature)},
+        }
 
         store, block, signatures = spec.produce_block_with_signatures(
             sample_store,

@@ -35,6 +35,8 @@ class Eth2Data(StrictBaseModel):
     SSZ: fork_digest (4) + next_fork_version (4) + next_fork_epoch (8)
     """
 
+    model_config = StrictBaseModel.model_config | {"frozen": True}
+
     fork_digest: ForkDigest
     """Current active fork identifier (4 bytes)."""
 

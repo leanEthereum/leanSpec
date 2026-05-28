@@ -98,12 +98,9 @@ class SSZTest(BaseConsensusFixture):
 
         root = hash_tree_root(self.value)
 
-        return self.model_copy(
-            update={
-                "serialized": "0x" + ssz_bytes.hex(),
-                "root": "0x" + root.hex(),
-            }
-        )
+        self.serialized = "0x" + ssz_bytes.hex()
+        self.root = "0x" + root.hex()
+        return self
 
     def _make_decode_failure(self) -> "SSZTest":
         """Run the decode-failure path: assert decoding `raw_bytes` raises.
@@ -138,9 +135,6 @@ class SSZTest(BaseConsensusFixture):
                 f"{type(exception_raised).__name__}: {exception_raised}"
             )
 
-        return self.model_copy(
-            update={
-                "serialized": "0x" + raw.hex(),
-                "root": "",
-            }
-        )
+        self.serialized = "0x" + raw.hex()
+        self.root = ""
+        return self

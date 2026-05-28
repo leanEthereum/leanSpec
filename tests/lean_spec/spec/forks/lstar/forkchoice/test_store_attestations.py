@@ -44,11 +44,8 @@ def test_on_block_processes_multi_validator_aggregations(
 
     aggregated_payloads = {attestation_data: {proof}}
 
-    producer_store = base_store.model_copy(
-        update={
-            "latest_known_aggregated_payloads": aggregated_payloads,
-        }
-    )
+    base_store.latest_known_aggregated_payloads = aggregated_payloads
+    producer_store = base_store
 
     proposer_index = ValidatorIndex(1)
     consumer_store, signed_block = make_signed_block_from_store(
@@ -89,11 +86,8 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
         },
     }
 
-    producer_store_1 = base_store.model_copy(
-        update={
-            "attestation_signatures": gossip_sigs_1,
-        }
-    )
+    base_store.attestation_signatures = gossip_sigs_1
+    producer_store_1 = base_store
 
     consumer_store_1, signed_block_1 = make_signed_block_from_store(
         producer_store_1, key_manager, attestation_slot_1, ValidatorIndex(1)
@@ -113,11 +107,8 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
         },
     }
 
-    producer_store_2 = store_after_block_1.model_copy(
-        update={
-            "attestation_signatures": gossip_sigs_2,
-        }
-    )
+    store_after_block_1.attestation_signatures = gossip_sigs_2
+    producer_store_2 = store_after_block_1
 
     store_before_block_2, signed_block_2 = make_signed_block_from_store(
         producer_store_2, key_manager, attestation_slot_2, ValidatorIndex(2)
@@ -391,8 +382,10 @@ class TestOnGossipAggregatedAttestation:
         corrupted_data = bytearray(proof.proof.data)
         corrupted_data[10] ^= 0xFF
         corrupted_data[20] ^= 0xFF
-        corrupted_blob = ByteList512KiB(data=bytes(corrupted_data))
-        corrupted_proof = proof.model_copy(update={"proof": corrupted_blob})
+        corrupted_proof = TypeOneMultiSignature(
+            participants=proof.participants,
+            proof=ByteList512KiB(data=bytes(corrupted_data)),
+        )
 
         signed_aggregated = SignedAggregatedAttestation(
             data=attestation_data,
@@ -583,11 +576,8 @@ class TestAggregateCommitteeSignatures:
             att_data_2: {AttestationSignatureEntry(ValidatorIndex(2), sig_2)},
         }
 
-        store = base_store.model_copy(
-            update={
-                "attestation_signatures": attestation_signatures,
-            }
-        )
+        base_store.attestation_signatures = attestation_signatures
+        store = base_store
 
         updated_store, _ = spec.aggregate(store)
 
@@ -625,7 +615,7 @@ class TestTickIntervalAggregation:
         # Set time to interval 1 (so next tick goes to interval 2)
         # time % INTERVALS_PER_SLOT determines current interval
         # We want to end up at interval 2 after tick
-        store = store.model_copy(update={"time": Interval(1)})
+        store.time = Interval(1)
 
         # Tick to interval 2 as aggregator
         updated_store, _ = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
@@ -653,7 +643,7 @@ class TestTickIntervalAggregation:
         )
 
         # Set time to interval 1
-        store = store.model_copy(update={"time": Interval(1)})
+        store.time = Interval(1)
 
         # Tick to interval 2 as NON-aggregator
         updated_store, _ = spec.tick_interval(store, has_proposal=False, is_aggregator=False)
@@ -689,7 +679,8 @@ class TestTickIntervalAggregation:
             # So we need time+1 % 5 == target_interval
             # Therefore time = target_interval - 1 (mod 5)
             pre_tick_time = (target_interval - 1) % int(INTERVALS_PER_SLOT)
-            test_store = store.model_copy(update={"time": Interval(pre_tick_time)})
+            store.time = Interval(pre_tick_time)
+            test_store = store
 
             updated_store, _ = spec.tick_interval(
                 test_store, has_proposal=False, is_aggregator=True
@@ -713,7 +704,7 @@ class TestTickIntervalAggregation:
         )
 
         # Set time to interval 4 (so next tick wraps to interval 0)
-        store = store.model_copy(update={"time": Interval(4)})
+        store.time = Interval(4)
 
         # Tick to interval 0 with proposal
         updated_store, _ = spec.tick_interval(store, has_proposal=True, is_aggregator=True)
@@ -751,7 +742,7 @@ class TestEndToEndAggregationFlow:
             num_validators=num_validators, key_manager=key_manager, validator_id=aggregator_id
         )
         # Advance the clock to slot 1 so the attestation's slot has begun.
-        store = store.model_copy(update={"time": Interval.from_slot(Slot(1))})
+        store.time = Interval.from_slot(Slot(1))
 
         attestation_data = spec.produce_attestation_data(store, Slot(1))
 
@@ -778,7 +769,7 @@ class TestEndToEndAggregationFlow:
             assert vid in stored_validators, f"Signature for {vid} should be stored"
 
         # Step 2: Advance to interval 2 (aggregation interval)
-        store = store.model_copy(update={"time": Interval(1)})
+        store.time = Interval(1)
         store, _ = spec.tick_interval(store, has_proposal=False, is_aggregator=True)
 
         # Step 3: Verify aggregated proofs were created

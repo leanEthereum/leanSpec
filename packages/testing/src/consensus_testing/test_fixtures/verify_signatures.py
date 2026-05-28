@@ -161,37 +161,32 @@ class VerifySignaturesTest(BaseConsensusFixture):
             value = self.tamper.get("value")
             if value is None:
                 raise ValueError("set_proposer_index requires a value")
-            tampered_block = signed_block.block.model_copy(
-                update={"proposer_index": ValidatorIndex(int(value))}
-            )
-            return signed_block.model_copy(update={"block": tampered_block})
+            signed_block.block.proposer_index = ValidatorIndex(int(value))
+            return signed_block
 
         if operation == "clear_first_attestation_bits":
-            body = signed_block.block.body
-            original = body.attestations.data
+            original = signed_block.block.body.attestations.data
             if not original:
                 raise ValueError("clear_first_attestation_bits requires at least one attestation")
             first = original[0]
             empty_bits = AggregationBits(data=[Boolean(False)] * len(first.aggregation_bits.data))
             cleared = AggregatedAttestation(aggregation_bits=empty_bits, data=first.data)
-            new_attestations = AggregatedAttestations(data=[cleared, *original[1:]])
-            new_body = body.model_copy(update={"attestations": new_attestations})
-            new_block = signed_block.block.model_copy(update={"body": new_body})
-            return signed_block.model_copy(update={"block": new_block})
+            signed_block.block.body.attestations = AggregatedAttestations(
+                data=[cleared, *original[1:]]
+            )
+            return signed_block
 
         if operation == "corrupt_proof":
             # Replace the merged proof with a short non-decodable blob.
             # Decoding the Type-2 envelope must fail before verification.
-            return signed_block.model_copy(
-                update={"proof": ByteList512KiB(data=b"\x00\x01\x02\x03")}
-            )
+            signed_block.proof = ByteList512KiB(data=b"\x00\x01\x02\x03")
+            return signed_block
 
         if operation == "append_phantom_attestation":
             # Add a body attestation with no matching proof component.
             # The proof binds one component per original attestation plus
             # the proposer, so the body now claims more components than the
             # proof carries.
-            body = signed_block.block.body
             phantom_data = AttestationData(
                 slot=Slot(0),
                 head=Checkpoint(root=Bytes32(b"\x00" * 32), slot=Slot(0)),
@@ -202,10 +197,10 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 aggregation_bits=AggregationBits(data=[Boolean(True)]),
                 data=phantom_data,
             )
-            new_attestations = AggregatedAttestations(data=[*body.attestations.data, phantom])
-            new_body = body.model_copy(update={"attestations": new_attestations})
-            new_block = signed_block.block.model_copy(update={"body": new_body})
-            return signed_block.model_copy(update={"block": new_block})
+            signed_block.block.body.attestations = AggregatedAttestations(
+                data=[*signed_block.block.body.attestations.data, phantom]
+            )
+            return signed_block
 
         if operation == "mutate_state_root":
             # Change a block field after signing so the block root differs.
@@ -213,9 +208,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
             # recomputed block root, even though the signature is honest.
             # This is the repackaging vector: an honest proof reused under
             # a different message.
-            tampered_block = signed_block.block.model_copy(
-                update={"state_root": Bytes32(b"\xff" * 32)}
-            )
-            return signed_block.model_copy(update={"block": tampered_block})
+            signed_block.block.state_root = Bytes32(b"\xff" * 32)
+            return signed_block
 
         raise ValueError(f"Unknown tamper operation: {operation!r}")

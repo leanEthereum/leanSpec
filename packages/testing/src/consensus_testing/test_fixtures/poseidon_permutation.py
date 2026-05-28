@@ -60,6 +60,5 @@ class PoseidonPermutationTest(BaseConsensusFixture):
         input_state = [Fp(v) for v in state_ints]
         output_state = engine.permute(input_state)
 
-        return self.model_copy(
-            update={"output": {"outputState": [str(int(fp)) for fp in output_state]}}
-        )
+        self.output = {"outputState": [str(int(fp)) for fp in output_state]}
+        return self

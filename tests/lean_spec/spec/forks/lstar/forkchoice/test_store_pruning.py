@@ -27,16 +27,10 @@ def test_prunes_entries_with_target_at_finalized(spec: LstarSpec, pruning_store:
     )
 
     # Set up store with attestation data and finalized slot at 5
-    store = store.model_copy(
-        update={
-            "attestation_signatures": {
-                attestation_data: {
-                    AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())
-                },
-            },
-            "latest_finalized": make_checkpoint(root_seed=255, slot=5),
-        }
-    )
+    store.attestation_signatures = {
+        attestation_data: {AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())},
+    }
+    store.latest_finalized = make_checkpoint(root_seed=255, slot=5)
 
     # Verify data exists before pruning
     assert attestation_data in store.attestation_signatures
@@ -61,16 +55,10 @@ def test_prunes_entries_with_target_before_finalized(spec: LstarSpec, pruning_st
     )
 
     # Set up store with finalized slot at 5 (greater than target.slot)
-    store = store.model_copy(
-        update={
-            "attestation_signatures": {
-                attestation_data: {
-                    AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())
-                },
-            },
-            "latest_finalized": make_checkpoint(root_seed=255, slot=5),
-        }
-    )
+    store.attestation_signatures = {
+        attestation_data: {AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())},
+    }
+    store.latest_finalized = make_checkpoint(root_seed=255, slot=5)
 
     # Verify data exists before pruning
     assert attestation_data in store.attestation_signatures
@@ -95,16 +83,10 @@ def test_keeps_entries_with_target_after_finalized(spec: LstarSpec, pruning_stor
     )
 
     # Set up store with finalized slot at 5 (less than target.slot)
-    store = store.model_copy(
-        update={
-            "attestation_signatures": {
-                attestation_data: {
-                    AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())
-                },
-            },
-            "latest_finalized": make_checkpoint(root_seed=255, slot=5),
-        }
-    )
+    store.attestation_signatures = {
+        attestation_data: {AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())},
+    }
+    store.latest_finalized = make_checkpoint(root_seed=255, slot=5)
 
     # Verify data exists before pruning
     assert attestation_data in store.attestation_signatures
@@ -145,27 +127,19 @@ def test_prunes_related_structures_together(spec: LstarSpec, pruning_store: Stor
     )
 
     # Set up store with both stale and fresh entries in all structures
-    store = store.model_copy(
-        update={
-            "attestation_signatures": {
-                stale_attestation: {
-                    AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())
-                },
-                fresh_attestation: {
-                    AttestationSignatureEntry(ValidatorIndex(2), make_mock_signature())
-                },
-            },
-            "latest_new_aggregated_payloads": {
-                stale_attestation: {mock_proof},
-                fresh_attestation: {mock_proof},
-            },
-            "latest_known_aggregated_payloads": {
-                stale_attestation: {mock_proof},
-                fresh_attestation: {mock_proof},
-            },
-            "latest_finalized": make_checkpoint(root_seed=255, slot=5),
-        }
-    )
+    store.attestation_signatures = {
+        stale_attestation: {AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())},
+        fresh_attestation: {AttestationSignatureEntry(ValidatorIndex(2), make_mock_signature())},
+    }
+    store.latest_new_aggregated_payloads = {
+        stale_attestation: {mock_proof},
+        fresh_attestation: {mock_proof},
+    }
+    store.latest_known_aggregated_payloads = {
+        stale_attestation: {mock_proof},
+        fresh_attestation: {mock_proof},
+    }
+    store.latest_finalized = make_checkpoint(root_seed=255, slot=5)
 
     # Verify all data exists before pruning
     assert stale_attestation in store.attestation_signatures
@@ -217,17 +191,13 @@ def test_prunes_multiple_validators_same_attestation_data(
     )
 
     # Multiple validators signed the same attestation data
-    store = store.model_copy(
-        update={
-            "attestation_signatures": {
-                stale_attestation: {
-                    AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature()),
-                    AttestationSignatureEntry(ValidatorIndex(2), make_mock_signature()),
-                },
-            },
-            "latest_finalized": make_checkpoint(root_seed=255, slot=5),
-        }
-    )
+    store.attestation_signatures = {
+        stale_attestation: {
+            AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature()),
+            AttestationSignatureEntry(ValidatorIndex(2), make_mock_signature()),
+        },
+    }
+    store.latest_finalized = make_checkpoint(root_seed=255, slot=5)
 
     # Verify data exists before pruning
     assert stale_attestation in store.attestation_signatures
@@ -261,12 +231,8 @@ def test_mixed_stale_and_fresh_entries(spec: LstarSpec, pruning_store: Store) ->
     }
 
     # Finalized at slot 5 means slots 1-5 are stale, 6-10 are fresh
-    store = store.model_copy(
-        update={
-            "attestation_signatures": gossip_sigs,
-            "latest_finalized": make_checkpoint(root_seed=255, slot=5),
-        }
-    )
+    store.attestation_signatures = gossip_sigs
+    store.latest_finalized = make_checkpoint(root_seed=255, slot=5)
 
     # Verify all data exists before pruning
     for att in attestations:

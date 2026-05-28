@@ -46,8 +46,8 @@ class JustifiabilityTest(BaseConsensusFixture):
         delta = self.slot - self.finalized_slot
         justifiable = s.is_justifiable_after(f)
 
-        output = {
+        self.output = {
             "delta": delta,
             "isJustifiable": justifiable,
         }
-        return self.model_copy(update={"output": output})
+        return self

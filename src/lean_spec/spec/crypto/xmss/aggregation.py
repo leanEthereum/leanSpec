@@ -56,6 +56,8 @@ class TypeOneMultiSignature(Container):
     The verifier rederives them from the block body it already trusts.
     """
 
+    model_config = Container.model_config | {"frozen": True}
+
     participants: AggregationBits
     """Bitfield indicating which validators contributed signatures."""
 
@@ -174,6 +176,10 @@ class TypeOneMultiSignature(Container):
         except Exception as exc:
             raise AggregationError(f"Type-1 verification failed: {exc}") from exc
 
+    def __hash__(self) -> int:
+        """Content-deterministic hash via SSZ encoding."""
+        return hash(self.encode_bytes())
+
 
 class TypeTwoMultiSignature(Container):
     """Merged proof covering many distinct messages.
@@ -183,6 +189,8 @@ class TypeTwoMultiSignature(Container):
 
     A signed block stores this proof as a single serialized blob.
     """
+
+    model_config = Container.model_config | {"frozen": True}
 
     proof: ByteList512KiB
     """Compact no-pubkeys serialized Type-2 proof bytes."""
@@ -333,3 +341,7 @@ class TypeTwoMultiSignature(Container):
             )
         except Exception as exc:
             raise AggregationError(f"Type-2 verification failed: {exc}") from exc
+
+    def __hash__(self) -> int:
+        """Content-deterministic hash via SSZ encoding."""
+        return hash(self.encode_bytes())

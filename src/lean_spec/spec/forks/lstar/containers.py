@@ -230,6 +230,8 @@ class Checkpoint(Container):
     Checkpoints are used for justification and finalization.
     """
 
+    model_config = Container.model_config | {"frozen": True}
+
     root: Bytes32
     """The root hash of the checkpoint's block."""
 
@@ -250,6 +252,8 @@ class Checkpoint(Container):
 class AttestationData(Container):
     """Attestation content describing the validator's observed chain view."""
 
+    model_config = Container.model_config | {"frozen": True}
+
     slot: Slot
     """The slot for which the attestation is made."""
 
@@ -265,6 +269,8 @@ class AttestationData(Container):
 
 class Attestation(Container):
     """Validator specific attestation wrapping shared attestation data."""
+
+    model_config = Container.model_config | {"frozen": True}
 
     validator_id: ValidatorIndex
     """The index of the validator making the attestation."""
@@ -478,11 +484,11 @@ class JustifiedSlots(BaseBitlist):
         #
         # 1. Create a shallow copy of the data list to avoid mutating the original.
         # 2. Update the specific bit in the copy.
-        # 3. Use model_copy to return a new instance with the updated data.
+        # 3. Construct a new instance with the updated data.
         new_data = list(self.data)
         new_data[relative_index] = value
 
-        return self.model_copy(update={"data": new_data})
+        return type(self)(data=new_data)
 
     def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> Self:
         """
@@ -517,7 +523,7 @@ class JustifiedSlots(BaseBitlist):
         # Return a new instance with the extended data list.
         #
         # We extend the existing data with False values to bridge the gap.
-        return self.model_copy(update={"data": list(self.data) + [Boolean(False)] * gap_size})
+        return type(self)(data=list(self.data) + [Boolean(False)] * gap_size)
 
     def shift_window(self, delta: int) -> Self:
         """
@@ -530,7 +536,7 @@ class JustifiedSlots(BaseBitlist):
             return self
 
         # Return a new instance containing only the relevant subset of data.
-        return self.model_copy(update={"data": self.data[delta:]})
+        return type(self)(data=self.data[delta:])
 
 
 class JustificationValidators(BaseBitlist):

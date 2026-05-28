@@ -200,7 +200,8 @@ class TestProposalHeadTiming:
         # Use immutable update to add block
         new_blocks = dict(sample_store.blocks)
         new_blocks[genesis_hash] = genesis_block
-        sample_store = sample_store.model_copy(update={"blocks": new_blocks, "head": genesis_hash})
+        sample_store.blocks = new_blocks
+        sample_store.head = genesis_hash
 
         # Get proposal head for slot 0
         store, head = spec.get_proposal_head(sample_store, Slot(0))

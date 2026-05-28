@@ -1,5 +1,6 @@
 """Lstar fork — identity and construction facade."""
 
+import copy
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence, Set as AbstractSet
@@ -176,6 +177,9 @@ class LstarSpec(ForkProtocol):
         # The target must be strictly greater than the current slot.
         assert state.slot < target_slot, "Target slot must be in the future"
 
+        # Work on a copy so the caller's state is untouched.
+        state = copy.deepcopy(state)
+
         # Step through each missing slot.
         while state.slot < target_slot:
             # Per-Slot Housekeeping & Slot Increment
@@ -205,18 +209,9 @@ class LstarSpec(ForkProtocol):
                 hash_tree_root(state) if needs_state_root else state.latest_block_header.state_root
             )
 
-            state = state.model_copy(
-                update={
-                    "latest_block_header": (
-                        state.latest_block_header.model_copy(
-                            update={"state_root": cached_state_root}
-                        )
-                        if needs_state_root
-                        else state.latest_block_header
-                    ),
-                    "slot": Slot(state.slot + Slot(1)),
-                }
-            )
+            if needs_state_root:
+                state.latest_block_header.state_root = cached_state_root
+            state.slot = Slot(state.slot + Slot(1))
 
         # Reached the target slot. Return the advanced state.
         return state
@@ -291,11 +286,8 @@ class LstarSpec(ForkProtocol):
         #   updates rely entirely on validator attestations which are processed
         #   later in the block body.
         if is_genesis_parent:
-            new_latest_justified = state.latest_justified.model_copy(update={"root": parent_root})
-            new_latest_finalized = state.latest_finalized.model_copy(update={"root": parent_root})
-        else:
-            new_latest_justified = state.latest_justified
-            new_latest_finalized = state.latest_finalized
+            state.latest_justified = Checkpoint(slot=state.latest_justified.slot, root=parent_root)
+            state.latest_finalized = Checkpoint(slot=state.latest_finalized.slot, root=parent_root)
 
         # Historical Data Management
 
@@ -309,7 +301,7 @@ class LstarSpec(ForkProtocol):
         # Update the list of historical block roots.
         #
         # Structure: [Existing history] + [Parent root] + [Zero hash for gaps]
-        new_historical_hashes_data = (
+        state.historical_block_hashes = (
             state.historical_block_hashes + [parent_root] + [ZERO_HASH] * num_empty_slots
         )
 
@@ -325,7 +317,7 @@ class LstarSpec(ForkProtocol):
         # and addressable. The current block's slot is not materialized until
         # its header is fully processed, so we stop at slot (block.slot - 1).
         last_materialized_slot = block.slot - Slot(1)
-        new_justified_slots_data = state.justified_slots.extend_to_slot(
+        state.justified_slots = state.justified_slots.extend_to_slot(
             state.latest_finalized.slot,
             last_materialized_slot,
         )
@@ -336,7 +328,7 @@ class LstarSpec(ForkProtocol):
         #
         # Leave state root empty.
         # It is not computed until the block body is fully processed or the next slot begins.
-        new_header = self.block_header_class(
+        state.latest_block_header = self.block_header_class(
             slot=block.slot,
             proposer_index=block.proposer_index,
             parent_root=block.parent_root,
@@ -344,19 +336,7 @@ class LstarSpec(ForkProtocol):
             state_root=Bytes32.zero(),
         )
 
-        # Final Immutable Copy
-        #
-        # Return a new immutable state instance.
-        # All calculated updates are applied atomically here.
-        return state.model_copy(
-            update={
-                "latest_justified": new_latest_justified,
-                "latest_finalized": new_latest_finalized,
-                "historical_block_hashes": new_historical_hashes_data,
-                "justified_slots": new_justified_slots_data,
-                "latest_block_header": new_header,
-            }
-        )
+        return state
 
     def process_block(self, state: State, block: Block) -> State:
         """
@@ -632,18 +612,15 @@ class LstarSpec(ForkProtocol):
         # Sorting ensures that every node produces identical state representation.
         sorted_roots = sorted(justifications.keys())
 
-        # Construct and return the updated state
-        return state.model_copy(
-            update={
-                "justifications_roots": JustificationRoots(data=sorted_roots),
-                "justifications_validators": JustificationValidators(
-                    data=[vote for root in sorted_roots for vote in justifications[root]]
-                ),
-                "justified_slots": justified_slots,
-                "latest_justified": latest_justified,
-                "latest_finalized": latest_finalized,
-            }
+        # Apply the updated state
+        state.justifications_roots = JustificationRoots(data=sorted_roots)
+        state.justifications_validators = JustificationValidators(
+            data=[vote for root in sorted_roots for vote in justifications[root]]
         )
+        state.justified_slots = justified_slots
+        state.latest_justified = latest_justified
+        state.latest_finalized = latest_finalized
+        return state
 
     def state_transition(
         self,
@@ -1060,7 +1037,7 @@ class LstarSpec(ForkProtocol):
 
         # Recompute state from the final block.
         post_state = self.process_block(self.process_slots(state, slot), final_block)
-        final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
+        final_block.state_root = hash_tree_root(post_state)
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures
 
@@ -1226,25 +1203,22 @@ class LstarSpec(ForkProtocol):
         #
         # Each mapping is keyed by attestation data, so we check membership by slot
         # against the finalized slot.
-        return store.model_copy(
-            update={
-                "attestation_signatures": {
-                    attestation_data: sigs
-                    for attestation_data, sigs in store.attestation_signatures.items()
-                    if attestation_data.target.slot > store.latest_finalized.slot
-                },
-                "latest_new_aggregated_payloads": {
-                    attestation_data: proofs
-                    for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
-                    if attestation_data.target.slot > store.latest_finalized.slot
-                },
-                "latest_known_aggregated_payloads": {
-                    attestation_data: proofs
-                    for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                    if attestation_data.target.slot > store.latest_finalized.slot
-                },
-            }
-        )
+        store.attestation_signatures = {
+            attestation_data: sigs
+            for attestation_data, sigs in store.attestation_signatures.items()
+            if attestation_data.target.slot > store.latest_finalized.slot
+        }
+        store.latest_new_aggregated_payloads = {
+            attestation_data: proofs
+            for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
+            if attestation_data.target.slot > store.latest_finalized.slot
+        }
+        store.latest_known_aggregated_payloads = {
+            attestation_data: proofs
+            for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
+            if attestation_data.target.slot > store.latest_finalized.slot
+        }
+        return store
 
     def validate_attestation(self, store: LstarStore, attestation_data: AttestationData) -> None:
         """Validate incoming attestation before processing.
@@ -1354,23 +1328,20 @@ class LstarSpec(ForkProtocol):
 
             # Store signature and attestation data for later aggregation.
             # Copy the inner sets so we can add to them without mutating the previous store.
-            new_committee_sigs = {k: set(v) for k, v in store.attestation_signatures.items()}
+            store.attestation_signatures = {
+                k: set(v) for k, v in store.attestation_signatures.items()
+            }
 
             # Aggregators store all received gossip signatures.
             # The p2p layer only delivers attestations from subscribed subnets,
             # so subnet filtering happens at subscription time, not here.
             # Non-aggregator nodes validate and drop — they never store gossip signatures.
             if is_aggregator:
-                new_committee_sigs.setdefault(attestation_data, set()).add(
+                store.attestation_signatures.setdefault(attestation_data, set()).add(
                     AttestationSignatureEntry(validator_id, signature)
                 )
 
-            # Return store with updated signature map and attestation data
-            return store.model_copy(
-                update={
-                    "attestation_signatures": new_committee_sigs,
-                }
-            )
+            return store
 
     def on_gossip_aggregated_attestation(
         self,
@@ -1425,17 +1396,12 @@ class LstarSpec(ForkProtocol):
             ) from exc
 
         # Shallow-copy the dict and its inner sets to preserve immutability.
-        new_aggregated_payloads = {
+        store.latest_new_aggregated_payloads = {
             k: set(v) for k, v in store.latest_new_aggregated_payloads.items()
         }
-        new_aggregated_payloads.setdefault(data, set()).add(proof)
+        store.latest_new_aggregated_payloads.setdefault(data, set()).add(proof)
 
-        # Return store with updated aggregated payloads and attestation data
-        return store.model_copy(
-            update={
-                "latest_new_aggregated_payloads": new_aggregated_payloads,
-            }
-        )
+        return store
 
     def on_block(
         self,
@@ -1506,14 +1472,10 @@ class LstarSpec(ForkProtocol):
             latest_justified = store.latest_justified.advance_to(post_state.latest_justified)
             latest_finalized = store.latest_finalized.advance_to(post_state.latest_finalized)
 
-            store = store.model_copy(
-                update={
-                    "blocks": store.blocks | {block_root: block},
-                    "states": store.states | {block_root: post_state},
-                    "latest_justified": latest_justified,
-                    "latest_finalized": latest_finalized,
-                }
-            )
+            store.blocks = store.blocks | {block_root: block}
+            store.states = store.states | {block_root: post_state}
+            store.latest_justified = latest_justified
+            store.latest_finalized = latest_finalized
 
             # Register each block attestation's data in the known pool.
             #
@@ -1530,14 +1492,14 @@ class LstarSpec(ForkProtocol):
             # Head weight from block-imported votes is therefore deferred
             # by up to one slot.
             # Shallow-copy the dict and its inner sets to preserve immutability.
-            block_proofs: dict[AttestationData, set[TypeOneMultiSignature]] = {
+            store.latest_known_aggregated_payloads = {
                 k: set(v) for k, v in store.latest_known_aggregated_payloads.items()
             }
 
             for aggregated_attestation in aggregated_attestations:
-                block_proofs.setdefault(aggregated_attestation.data, set())
-
-            store = store.model_copy(update={"latest_known_aggregated_payloads": block_proofs})
+                store.latest_known_aggregated_payloads.setdefault(
+                    aggregated_attestation.data, set()
+                )
 
             # Update forkchoice head based on new block and attestations.
             store = self.update_head(store)
@@ -1687,17 +1649,12 @@ class LstarSpec(ForkProtocol):
         # Starts from the justified root and greedily descends to the heaviest
         # leaf. The result is always a descendant of the justified root by
         # construction: the walk only follows child edges within the subtree.
-        new_head = self._compute_lmd_ghost_head(
+        store.head = self._compute_lmd_ghost_head(
             store,
             start_root=store.latest_justified.root,
             attestations=attestations,
         )
-
-        return store.model_copy(
-            update={
-                "head": new_head,
-            }
-        )
+        return store
 
     def accept_new_attestations(self, store: LstarStore) -> LstarStore:
         """Process pending aggregated payloads and update forkchoice head.
@@ -1719,20 +1676,15 @@ class LstarSpec(ForkProtocol):
         influence on fork choice decisions.
         """
         # Merge new aggregated payloads into known aggregated payloads
-        merged_aggregated_payloads = {
+        store.latest_known_aggregated_payloads = {
             attestation_data: set(proofs)
             for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
         }
         for attestation_data, proofs in store.latest_new_aggregated_payloads.items():
-            merged_aggregated_payloads.setdefault(attestation_data, set()).update(proofs)
-
-        # Create store with migrated aggregated payloads
-        store = store.model_copy(
-            update={
-                "latest_known_aggregated_payloads": merged_aggregated_payloads,
-                "latest_new_aggregated_payloads": {},
-            }
-        )
+            store.latest_known_aggregated_payloads.setdefault(attestation_data, set()).update(
+                proofs
+            )
+        store.latest_new_aggregated_payloads = {}
 
         # Update head with newly accepted aggregated payloads
         return self.update_head(store)
@@ -1802,7 +1754,8 @@ class LstarSpec(ForkProtocol):
         # Return a new Store with only the safe target updated.
         #
         # The head and attestation pools remain unchanged.
-        return store.model_copy(update={"safe_target": safe_target})
+        store.safe_target = safe_target
+        return store
 
     def aggregate(self, store: LstarStore) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
         """Turn raw validator votes into compact aggregated attestations.
@@ -1915,22 +1868,18 @@ class LstarSpec(ForkProtocol):
         #
         # Record freshly produced proofs so future rounds can reuse them.
         # Remove gossip signatures that were consumed by this aggregation.
-        new_aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {}
+        store.latest_new_aggregated_payloads = {}
         for signed_att in new_aggregates:
-            new_aggregated_payloads.setdefault(signed_att.data, set()).add(signed_att.proof)
+            store.latest_new_aggregated_payloads.setdefault(signed_att.data, set()).add(
+                signed_att.proof
+            )
 
-        remaining_attestation_signatures = {
+        store.attestation_signatures = {
             data: sigs
             for data, sigs in store.attestation_signatures.items()
-            if data not in new_aggregated_payloads
+            if data not in store.latest_new_aggregated_payloads
         }
-
-        return store.model_copy(
-            update={
-                "latest_new_aggregated_payloads": new_aggregated_payloads,
-                "attestation_signatures": remaining_attestation_signatures,
-            }
-        ), new_aggregates
+        return store, new_aggregates
 
     def tick_interval(
         self,
@@ -1948,7 +1897,7 @@ class LstarSpec(ForkProtocol):
         - Interval 4: Process accumulated attestations
         """
         # Advance time by one interval
-        store = store.model_copy(update={"time": store.time + Interval(1)})
+        store.time = store.time + Interval(1)
         current_interval = Interval(int(store.time) % int(INTERVALS_PER_SLOT))
         new_aggregates: list[SignedAggregatedAttestation] = []
 
@@ -2155,18 +2104,15 @@ class LstarSpec(ForkProtocol):
         latest_justified = store.latest_justified.advance_to(final_post_state.latest_justified)
         latest_finalized = store.latest_finalized.advance_to(final_post_state.latest_finalized)
 
-        # Persist block and state immutably.
-        new_store = store.model_copy(
-            update={
-                "blocks": store.blocks | {block_hash: final_block},
-                "states": store.states | {block_hash: final_post_state},
-                "latest_justified": latest_justified,
-                "latest_finalized": latest_finalized,
-            }
-        )
+        # Persist block and state.
+        previous_finalized_slot = store.latest_finalized.slot
+        store.blocks = store.blocks | {block_hash: final_block}
+        store.states = store.states | {block_hash: final_post_state}
+        store.latest_justified = latest_justified
+        store.latest_finalized = latest_finalized
 
         # Prune stale attestation data when finalization advances
-        if new_store.latest_finalized.slot > store.latest_finalized.slot:
-            new_store = self.prune_stale_attestation_data(new_store)
+        if store.latest_finalized.slot > previous_finalized_slot:
+            store = self.prune_stale_attestation_data(store)
 
-        return new_store, final_block, signatures
+        return store, final_block, signatures

@@ -88,7 +88,7 @@ def test_finalization_on_next_justifiable_step(
             latest_justified_root_label="block_2",
             latest_finalized_slot=Slot(1),
             latest_finalized_root_label="block_1",
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -181,9 +181,7 @@ def test_pending_justification_survives_finalization_rebase(
             latest_justified_root_label="block_2",
             latest_finalized_slot=Slot(1),
             latest_finalized_root_label="block_1",
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(True), Boolean(False), Boolean(False)]}
-            ),
+            justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False), Boolean(False)]),
             justifications_roots_labels=["block_3"],
             justifications_validators=JustificationValidators(
                 data=[
@@ -277,8 +275,8 @@ def test_no_finalization_when_intermediate_justifiable_slot_exists(
             latest_justified_root_label="block_4",
             latest_finalized_slot=Slot(0),
             latest_finalized_root=anchor_root,
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(True), Boolean(False), Boolean(False), Boolean(True)]}
+            justified_slots=JustifiedSlots(
+                data=[Boolean(True), Boolean(False), Boolean(False), Boolean(True)]
             ),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
@@ -367,17 +365,15 @@ def test_mid_block_finalized_slot_visibility(
             latest_justified_root_label="block_7",
             latest_finalized_slot=Slot(1),
             latest_finalized_root_label="block_1",
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={
-                    "data": [
-                        Boolean(True),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(True),
-                    ]
-                }
+            justified_slots=JustifiedSlots(
+                data=[
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(True),
+                ]
             ),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
@@ -490,7 +486,7 @@ def test_finalization_prunes_stale_pending_votes_and_rebases_window(
             latest_justified_root_label="block_5",
             latest_finalized_slot=Slot(4),
             latest_finalized_root_label="block_4",
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -571,9 +567,7 @@ def test_non_adjacent_justification_finalizes_across_non_justifiable_gap(
             latest_justified_root_label="block_9",
             latest_finalized_slot=Slot(6),
             latest_finalized_root_label="block_6",
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(False), Boolean(False), Boolean(True)]}
-            ),
+            justified_slots=JustifiedSlots(data=[Boolean(False), Boolean(False), Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -684,23 +678,21 @@ def test_no_finalization_when_rebased_boundary_exposes_intermediate_justifiable_
             latest_justified_root_label="block_13",
             latest_finalized_slot=Slot(1),
             latest_finalized_root_label="block_1",
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={
-                    "data": [
-                        Boolean(True),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(True),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(True),
-                    ]
-                }
+            justified_slots=JustifiedSlots(
+                data=[
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(True),
+                ]
             ),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
@@ -791,19 +783,17 @@ def test_mid_block_finalized_slot_rejects_target_that_loses_justifiability(
             latest_justified_root_label="block_2",
             latest_finalized_slot=Slot(1),
             latest_finalized_root_label="block_1",
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={
-                    "data": [
-                        Boolean(True),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                    ]
-                }
+            justified_slots=JustifiedSlots(
+                data=[
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                ]
             ),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
@@ -890,7 +880,7 @@ def test_merged_attestations_for_same_target_justify_and_finalize_cleanly(
             latest_justified_root_label="block_2",
             latest_finalized_slot=Slot(1),
             latest_finalized_root_label="block_1",
-            justified_slots=JustifiedSlots(data=[]).model_copy(update={"data": [Boolean(True)]}),
+            justified_slots=JustifiedSlots(data=[Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -1027,17 +1017,15 @@ def test_rebased_finalization_prunes_stale_votes_and_preserves_future_votes(
             latest_justified_root_label="block_10",
             latest_finalized_slot=Slot(7),
             latest_finalized_root_label="block_7",
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={
-                    "data": [
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(True),
-                        Boolean(False),
-                        Boolean(False),
-                        Boolean(False),
-                    ]
-                }
+            justified_slots=JustifiedSlots(
+                data=[
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                ]
             ),
             justifications_roots_labels=["block_13"],
             justifications_validators=JustificationValidators(

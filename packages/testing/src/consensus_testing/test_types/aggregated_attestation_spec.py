@@ -203,16 +203,8 @@ class AggregatedAttestationSpec(CamelModel):
             invalid_proof = TypeOneMultiSignature(participants=aggregation_bits, proof=placeholder)
 
         # Append invalid attestation to the block body.
-        updated_block = block.model_copy(
-            update={
-                "body": block.body.model_copy(
-                    update={
-                        "attestations": AggregatedAttestations(
-                            data=[*block.body.attestations.data, invalid_aggregated]
-                        )
-                    }
-                )
-            }
+        block.body.attestations = AggregatedAttestations(
+            data=[*block.body.attestations.data, invalid_aggregated]
         )
 
-        return updated_block, invalid_proof
+        return block, invalid_proof

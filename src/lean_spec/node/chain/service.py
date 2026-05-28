@@ -169,8 +169,7 @@ class ChainService:
         intervals_per_slot = Interval(int(INTERVALS_PER_SLOT))
         gap = target_interval - store.time
         if gap > intervals_per_slot:
-            skip_to = target_interval - intervals_per_slot
-            store = store.model_copy(update={"time": skip_to})
+            store.time = target_interval - intervals_per_slot
             self.sync_service.store = store
 
         # Tick remaining intervals one at a time.

@@ -373,7 +373,7 @@ class ENR(StrictBaseModel):
         # Compute and store node_id for routing/identification.
         node_id = enr.compute_node_id()
         if node_id is not None:
-            return enr.model_copy(update={"node_id": node_id})
+            enr.node_id = node_id
 
         return enr
 

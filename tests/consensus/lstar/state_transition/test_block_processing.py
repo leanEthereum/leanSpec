@@ -189,9 +189,7 @@ def test_block_at_very_large_slot_with_many_skipped(
         post=StateExpectation(
             slot=Slot(500),
             historical_block_hashes_count=500,
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(False)] * 499}
-            ),
+            justified_slots=JustifiedSlots(data=[Boolean(False)] * 499),
         ),
     )
 

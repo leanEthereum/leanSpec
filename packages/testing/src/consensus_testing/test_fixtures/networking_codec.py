@@ -96,7 +96,8 @@ class NetworkingCodecTest(BaseConsensusFixture):
                 output = self._make_decode_failure()
             case _:
                 raise ValueError(f"Unknown codec: {self.codec_name}")
-        return self.model_copy(update={"output": output})
+        self.output = output
+        return self
 
     def _make_decode_failure(self) -> dict[str, Any]:
         """Assert that decoding `input.bytes` with `input.decoder` raises.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections import defaultdict
 
 from lean_spec.base import CamelModel
@@ -368,15 +369,10 @@ class BlockSpec(CamelModel):
         ]
 
         # Build a valid-only copy for normal attestation construction.
-        valid_only = self.model_copy(
-            update={
-                "attestations": [
-                    att_spec
-                    for att_spec in (self.attestations or [])
-                    if att_spec not in invalid_specs
-                ]
-            }
-        )
+        self.attestations = [
+            att_spec for att_spec in (self.attestations or []) if att_spec not in invalid_specs
+        ]
+        valid_only = self
 
         # Build valid attestations and their signatures.
         valid_attestations, signature_lookup, _ = valid_only.build_attestations(
@@ -479,6 +475,7 @@ class BlockSpec(CamelModel):
         # head, finalization checkpoints, time) survive the simulated pipeline.
         # Only the freshly aggregated Type-1 payloads merge back at the end.
         caller_store = store
+        store = copy.deepcopy(store)
 
         # Build attestations from this spec's attestation fields.
         parent_state = store.states[parent_root]
@@ -536,7 +533,8 @@ class BlockSpec(CamelModel):
         merged_known = {k: set(v) for k, v in caller_store.latest_known_aggregated_payloads.items()}
         for data, proofs in merged_store.latest_known_aggregated_payloads.items():
             merged_known.setdefault(data, set()).update(proofs)
-        store = caller_store.model_copy(update={"latest_known_aggregated_payloads": merged_known})
+        caller_store.latest_known_aggregated_payloads = merged_known
+        store = caller_store
 
         # Append forced attestations that bypass the builder's MAX cap.
         # Each entry is signed and aggregated so the block carries valid proofs.
@@ -545,30 +543,22 @@ class BlockSpec(CamelModel):
                 att_data = att_spec.build_attestation_data(block_registry, parent_state)
                 proof = key_manager.sign_and_aggregate(att_spec.validator_ids, att_data)
                 block_proofs.append(proof)
-                final_block = final_block.model_copy(
-                    update={
-                        "body": final_block.body.model_copy(
-                            update={
-                                "attestations": AggregatedAttestations(
-                                    data=[
-                                        *final_block.body.attestations.data,
-                                        AggregatedAttestation(
-                                            aggregation_bits=ValidatorIndices(
-                                                data=att_spec.validator_ids,
-                                            ).to_aggregation_bits(),
-                                            data=att_data,
-                                        ),
-                                    ]
-                                )
-                            }
-                        )
-                    }
+                final_block.body.attestations = AggregatedAttestations(
+                    data=[
+                        *final_block.body.attestations.data,
+                        AggregatedAttestation(
+                            aggregation_bits=ValidatorIndices(
+                                data=att_spec.validator_ids,
+                            ).to_aggregation_bits(),
+                            data=att_data,
+                        ),
+                    ]
                 )
 
             # Recompute state root with the modified body.
             post_state = spec.process_slots(parent_state, self.slot)
             post_state = spec.process_block(post_state, final_block)
-            final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
+            final_block.state_root = hash_tree_root(post_state)
 
         signed_block = self._sign_block(
             final_block, block_proofs, proposer_index, key_manager, parent_state

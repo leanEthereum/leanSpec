@@ -89,20 +89,16 @@ class TestProcessAttestationsBoundsCheck:
         # extended, but historical hashes were not fully populated.
         # This can happen with certain block arrival patterns.
         source_root = make_bytes32(1)
-        state = state.model_copy(
-            update={
-                "slot": Slot(5),
-                # History covers indices 0-4 only.
-                "historical_block_hashes": HistoricalBlockHashes(
-                    data=[source_root] + [make_bytes32(i) for i in range(2, 6)]
-                ),
-                # Extend justified_slots to avoid is_slot_justified throwing.
-                #
-                # Index calculation: slot - finalized_slot - 1 = 10 - 0 - 1 = 9
-                # Need at least 10 entries to cover slot 10.
-                "justified_slots": JustifiedSlots(data=[Boolean(False)] * 10),
-            }
+        state.slot = Slot(5)
+        # History covers indices 0-4 only.
+        state.historical_block_hashes = HistoricalBlockHashes(
+            data=[source_root] + [make_bytes32(i) for i in range(2, 6)]
         )
+        # Extend justified_slots to avoid is_slot_justified throwing.
+        #
+        # Index calculation: slot - finalized_slot - 1 = 10 - 0 - 1 = 9
+        # Need at least 10 entries to cover slot 10.
+        state.justified_slots = JustifiedSlots(data=[Boolean(False)] * 10)
 
         # Verify the history length matches our setup.
         assert len(state.historical_block_hashes) == 5
@@ -180,17 +176,13 @@ class TestProcessAttestationsBoundsCheck:
         # Build a state with very limited history.
         #
         # Only 3 entries in historical_block_hashes (indices 0-2).
-        state = state.model_copy(
-            update={
-                "slot": Slot(5),
-                # Minimal history: only 3 blocks recorded.
-                "historical_block_hashes": HistoricalBlockHashes(
-                    data=[make_bytes32(i) for i in range(3)]
-                ),
-                # Extend justified_slots to cover target slot.
-                "justified_slots": JustifiedSlots(data=[Boolean(False)] * 10),
-            }
+        state.slot = Slot(5)
+        # Minimal history: only 3 blocks recorded.
+        state.historical_block_hashes = HistoricalBlockHashes(
+            data=[make_bytes32(i) for i in range(3)]
         )
+        # Extend justified_slots to cover target slot.
+        state.justified_slots = JustifiedSlots(data=[Boolean(False)] * 10)
 
         # Create attestation with target beyond history.
         #

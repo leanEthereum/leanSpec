@@ -384,13 +384,10 @@ class GeneralizedXmssScheme(StrictBaseModel):
         )
 
         # Phase 3: rotate the right tree into the left slot, advance the index.
-        return sk.model_copy(
-            update={
-                "left_bottom_tree": sk.right_bottom_tree,
-                "right_bottom_tree": new_right_bottom_tree,
-                "left_bottom_tree_index": Uint64(left_index + 1),
-            }
-        )
+        sk.left_bottom_tree = sk.right_bottom_tree
+        sk.right_bottom_tree = new_right_bottom_tree
+        sk.left_bottom_tree_index = Uint64(left_index + 1)
+        return sk
 
 
 PROD_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=PROD_CONFIG, poseidon=PROD_POSEIDON)

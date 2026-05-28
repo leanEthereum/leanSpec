@@ -82,7 +82,7 @@ def test_aggregated_signatures_prefers_full_gossip_payload(
         }
     }
 
-    store = store.model_copy(update={"attestation_signatures": attestation_signatures})
+    store.attestation_signatures = attestation_signatures
     _, results = spec.aggregate(store)
 
     assert len(results) == 1
@@ -104,10 +104,8 @@ def test_build_block_collects_valid_available_attestations(
     spec: LstarSpec,
 ) -> None:
     state = make_keyed_genesis_state(2, container_key_manager)
-    parent_header_with_state_root = state.latest_block_header.model_copy(
-        update={"state_root": hash_tree_root(state)}
-    )
-    parent_root = hash_tree_root(parent_header_with_state_root)
+    state.latest_block_header.state_root = hash_tree_root(state)
+    parent_root = hash_tree_root(state.latest_block_header)
     source = Checkpoint(root=parent_root, slot=Slot(0))
     target = Checkpoint(root=parent_root, slot=Slot(0))
     att_data = AttestationData(
@@ -152,10 +150,8 @@ def test_build_block_skips_attestations_without_signatures(
     spec: LstarSpec,
 ) -> None:
     state = make_keyed_genesis_state(1, container_key_manager)
-    parent_header_with_state_root = state.latest_block_header.model_copy(
-        update={"state_root": hash_tree_root(state)}
-    )
-    parent_root = hash_tree_root(parent_header_with_state_root)
+    state.latest_block_header.state_root = hash_tree_root(state)
+    parent_root = hash_tree_root(state.latest_block_header)
 
     block, post_state, aggregated_atts, aggregated_proofs = spec.build_block(
         state,
@@ -220,7 +216,7 @@ def test_aggregated_signatures_with_multiple_data_groups(
         },
     }
 
-    store = store.model_copy(update={"attestation_signatures": attestation_signatures})
+    store.attestation_signatures = attestation_signatures
     _, results = spec.aggregate(store)
 
     assert len(results) == 2
@@ -267,10 +263,8 @@ def test_build_block_state_root_valid_when_signatures_split(
     num_validators = 4
     pre_state = make_keyed_genesis_state(num_validators, container_key_manager)
 
-    parent_header_with_state_root = pre_state.latest_block_header.model_copy(
-        update={"state_root": hash_tree_root(pre_state)}
-    )
-    parent_root = hash_tree_root(parent_header_with_state_root)
+    pre_state.latest_block_header.state_root = hash_tree_root(pre_state)
+    parent_root = hash_tree_root(pre_state.latest_block_header)
 
     source = Checkpoint(root=parent_root, slot=Slot(0))
     target = Checkpoint(root=parent_root, slot=Slot(0))
@@ -322,10 +316,8 @@ def test_build_block_skips_other_chain_source(
 ) -> None:
     """Only attestation data whose source matches the current chain is included."""
     state = make_keyed_genesis_state(2, container_key_manager)
-    parent_header_with_state_root = state.latest_block_header.model_copy(
-        update={"state_root": hash_tree_root(state)}
-    )
-    parent_root = hash_tree_root(parent_header_with_state_root)
+    state.latest_block_header.state_root = hash_tree_root(state)
+    parent_root = hash_tree_root(state.latest_block_header)
     correct_source = Checkpoint(root=parent_root, slot=Slot(0))
     wrong_source = Checkpoint(root=make_bytes32(99), slot=Slot(0))
 
@@ -364,10 +356,8 @@ def test_build_block_skips_unknown_head_root(
 ) -> None:
     """Attestation data with head root not in known_block_roots is excluded."""
     state = make_keyed_genesis_state(2, container_key_manager)
-    parent_header_with_state_root = state.latest_block_header.model_copy(
-        update={"state_root": hash_tree_root(state)}
-    )
-    parent_root = hash_tree_root(parent_header_with_state_root)
+    state.latest_block_header.state_root = hash_tree_root(state)
+    parent_root = hash_tree_root(state.latest_block_header)
     source = Checkpoint(root=parent_root, slot=Slot(0))
     unknown_root = make_bytes32(200)
 
@@ -450,10 +440,8 @@ def test_build_block_fixed_point_closes_justified_divergence(
     # genesis — no attestations have been processed yet.
 
     # Compute genesis root (needed as parent for block_1).
-    genesis_header_with_root = state_0.latest_block_header.model_copy(
-        update={"state_root": hash_tree_root(state_0)}
-    )
-    genesis_root = hash_tree_root(genesis_header_with_root)
+    state_0.latest_block_header.state_root = hash_tree_root(state_0)
+    genesis_root = hash_tree_root(state_0.latest_block_header)
 
     block_1 = Block(
         slot=Slot(1),
@@ -468,9 +456,8 @@ def test_build_block_fixed_point_closes_justified_divergence(
     # After block_1: justified = (genesis_root, slot=0).
     assert state_1.latest_justified == Checkpoint(root=genesis_root, slot=Slot(0))
 
-    block_1_root = hash_tree_root(
-        state_1.latest_block_header.model_copy(update={"state_root": hash_tree_root(state_1)})
-    )
+    state_1.latest_block_header.state_root = hash_tree_root(state_1)
+    block_1_root = hash_tree_root(state_1.latest_block_header)
 
     block_2 = Block(
         slot=Slot(2),
@@ -485,9 +472,8 @@ def test_build_block_fixed_point_closes_justified_divergence(
     # Still at genesis justified — no attestations processed.
     assert state_2.latest_justified == Checkpoint(root=genesis_root, slot=Slot(0))
 
-    block_2_root = hash_tree_root(
-        state_2.latest_block_header.model_copy(update={"state_root": hash_tree_root(state_2)})
-    )
+    state_2.latest_block_header.state_root = hash_tree_root(state_2)
+    block_2_root = hash_tree_root(state_2.latest_block_header)
 
     # Create attestations targeting slot 1 from V1+V2+V3.
     #

@@ -44,15 +44,6 @@ class MockStore:
         )
         return new_store, []
 
-    def model_copy(self, *, update: dict) -> MockStore:
-        """Return a copy with updated fields."""
-        return MockStore(
-            time=update.get("time", self.time),
-            tick_calls=list(self.tick_calls),
-            head=update.get("head", self.head),
-            latest_finalized=update.get("latest_finalized", self.latest_finalized),
-        )
-
 
 @dataclass
 class MockSyncService:

@@ -49,10 +49,10 @@ class SyncTest(BaseConsensusFixture):
             ValueError: If the operation name is unknown.
         """
         if self.operation == "verify_checkpoint":
-            output = self._make_verify_checkpoint()
+            self.output = self._make_verify_checkpoint()
         else:
             raise ValueError(f"Unknown sync operation: {self.operation!r}")
-        return self.model_copy(update={"output": output})
+        return self
 
     def _make_verify_checkpoint(self) -> dict[str, Any]:
         """Build a state for the given validator count and anchor slot and report the verdict.
