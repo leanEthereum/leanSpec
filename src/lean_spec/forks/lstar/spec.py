@@ -822,17 +822,17 @@ class LstarSpec(ForkProtocol):
         ):
             return False
 
-        is_genesis_self_vote = LstarSpec._is_genesis_self_vote(att_data)
-        if not is_genesis_self_vote and att_data.target.slot <= att_data.source.slot:
-            return False
-        if not is_genesis_self_vote and projected_justified_slots.is_slot_justified(
-            projected_finalized_slot, att_data.target.slot
-        ):
-            return False
-        if not is_genesis_self_vote and not att_data.target.slot.is_justifiable_after(
-            projected_finalized_slot
-        ):
-            return False
+        # Genesis self-votes are exempt from the remaining checks.
+        # The state transition drops them, but they carry fork-choice signal.
+        if not LstarSpec._is_genesis_self_vote(att_data):
+            if att_data.target.slot <= att_data.source.slot:
+                return False
+            if projected_justified_slots.is_slot_justified(
+                projected_finalized_slot, att_data.target.slot
+            ):
+                return False
+            if not att_data.target.slot.is_justifiable_after(projected_finalized_slot):
+                return False
         return True
 
     def _pick_best_candidate(
@@ -845,6 +845,7 @@ class LstarSpec(ForkProtocol):
         projected_finalized_slot: Slot,
         current_votes: dict[Bytes32, set[ValidatorIndex]],
         validator_count: int,
+        data_roots: dict[AttestationData, Bytes32],
     ) -> tuple[AttestationData, _EntryScore, set[ValidatorIndex]] | None:
         """Scan candidate entries and return the highest-scoring one.
 
@@ -878,7 +879,7 @@ class LstarSpec(ForkProtocol):
                 continue
             score, new_voters = scored
 
-            candidate_key = score.ordering_key(hash_tree_root(att_data))
+            candidate_key = score.ordering_key(data_roots[att_data])
             if best_key is None or candidate_key < best_key:
                 best = (att_data, score, new_voters)
                 best_key = candidate_key
@@ -927,6 +928,10 @@ class LstarSpec(ForkProtocol):
         current_votes = self._build_running_votes(head_state)
         processed: set[AttestationData] = set()
 
+        # Each entry's data root is its immutable tiebreaker, so hash once up front
+        # rather than re-hashing every candidate on every selection round.
+        data_roots = {att_data: hash_tree_root(att_data) for att_data in aggregated_payloads}
+
         for _round in range(int(MAX_ATTESTATIONS_DATA)):
             best = self._pick_best_candidate(
                 aggregated_payloads,
@@ -937,6 +942,7 @@ class LstarSpec(ForkProtocol):
                 finalized_slot,
                 current_votes,
                 validator_count,
+                data_roots,
             )
             if best is None:
                 break
@@ -959,7 +965,6 @@ class LstarSpec(ForkProtocol):
                 )
 
             target_root = att_data.target.root
-            current_votes.setdefault(target_root, set()).update(new_voters)
 
             # Project justification and finalization. Finalize implies justify.
             if score.tier <= _Tier.JUSTIFY:
@@ -972,6 +977,10 @@ class LstarSpec(ForkProtocol):
                 # A justified target can no longer be a candidate target, so its
                 # voter bucket is irrelevant for further scoring.
                 current_votes.pop(target_root, None)
+            else:
+                # BUILD tier: the target stays a candidate, so record its new
+                # voters to push it toward the threshold on a later round.
+                current_votes.setdefault(target_root, set()).update(new_voters)
             if score.tier == _Tier.FINALIZE:
                 new_finalized = att_data.source.slot
                 delta = int(new_finalized) - int(finalized_slot)
