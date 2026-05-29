@@ -493,6 +493,131 @@ def test_finalization_prunes_stale_pending_votes_and_rebases_window(
     )
 
 
+def test_stale_finalized_source_justifies_without_rewinding_finalization(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test the post-state when a vote uses a source behind the finalized boundary.
+
+    Scenario
+    --------
+    1. Finalize block_4 through ordinary supermajority attestations
+    2. Process block_7 with a supermajority attesting from block_1 to block_6
+
+    Expected Behavior
+    -----------------
+    1. The post-state slot is 7
+    2. latest_justified_slot advances to 6
+    3. latest_finalized_slot remains 4
+    4. justified_slots marks slots 5 and 6 as justified
+    5. There are no pending justifications
+    """
+    state_transition_test(
+        pre=generate_pre_state(),
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                label="block_2",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                    ),
+                ],
+            ),
+            BlockSpec(
+                slot=Slot(3),
+                parent_label="block_2",
+                label="block_3",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                        ],
+                        slot=Slot(3),
+                        target_slot=Slot(2),
+                        target_root_label="block_2",
+                    ),
+                ],
+            ),
+            BlockSpec(slot=Slot(4), parent_label="block_3", label="block_4"),
+            BlockSpec(
+                slot=Slot(5),
+                parent_label="block_4",
+                label="block_5",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(5),
+                        target_slot=Slot(4),
+                        target_root_label="block_4",
+                    ),
+                ],
+            ),
+            BlockSpec(
+                slot=Slot(6),
+                parent_label="block_5",
+                label="block_6",
+                attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(6),
+                        target_slot=Slot(5),
+                        target_root_label="block_5",
+                    ),
+                ],
+            ),
+            BlockSpec(
+                slot=Slot(7),
+                parent_label="block_6",
+                forced_attestations=[
+                    AggregatedAttestationSpec(
+                        validator_ids=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(7),
+                        source_slot=Slot(1),
+                        source_root_label="block_1",
+                        target_slot=Slot(6),
+                        target_root_label="block_6",
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(7),
+            latest_justified_slot=Slot(6),
+            latest_justified_root_label="block_6",
+            latest_finalized_slot=Slot(4),
+            latest_finalized_root_label="block_4",
+            justified_slots=JustifiedSlots(data=[]).model_copy(
+                update={"data": [Boolean(True), Boolean(True)]}
+            ),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
 def test_non_adjacent_justification_finalizes_across_non_justifiable_gap(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:

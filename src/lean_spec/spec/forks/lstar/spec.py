@@ -522,13 +522,14 @@ class LstarSpec(ForkProtocol):
                 # Finalization requires a continuous chain of trust from the
                 # previously finalized checkpoint up to the new justified point.
                 #
-                # If every slot in between is justifiable relative to the old
-                # finalized point, then the earlier source checkpoint becomes finalized.
+                # If the source is newer than the old finalized point and every
+                # slot in between is justifiable relative to that old finalized
+                # point, then the earlier source checkpoint becomes finalized.
                 #
                 # In short:
                 #
                 #     If there is no break in the chain, advance finalization.
-                if not any(
+                if source.slot > finalized_slot and not any(
                     Slot(slot).is_justifiable_after(finalized_slot)
                     for slot in range(source.slot + Slot(1), target.slot)
                 ):
