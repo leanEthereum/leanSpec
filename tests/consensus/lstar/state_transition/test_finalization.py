@@ -522,7 +522,7 @@ def test_stale_finalized_source_justifies_without_rewinding_finalization(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -539,7 +539,7 @@ def test_stale_finalized_source_justifies_without_rewinding_finalization(
                 label="block_3",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                         ],
@@ -556,7 +556,7 @@ def test_stale_finalized_source_justifies_without_rewinding_finalization(
                 label="block_5",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -573,7 +573,7 @@ def test_stale_finalized_source_justifies_without_rewinding_finalization(
                 label="block_6",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -589,7 +589,7 @@ def test_stale_finalized_source_justifies_without_rewinding_finalization(
                 parent_label="block_6",
                 forced_attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -609,9 +609,7 @@ def test_stale_finalized_source_justifies_without_rewinding_finalization(
             latest_justified_root_label="block_6",
             latest_finalized_slot=Slot(4),
             latest_finalized_root_label="block_4",
-            justified_slots=JustifiedSlots(data=[]).model_copy(
-                update={"data": [Boolean(True), Boolean(True)]}
-            ),
+            justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(True)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),

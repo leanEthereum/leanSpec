@@ -522,9 +522,11 @@ class LstarSpec(ForkProtocol):
                 # Finalization requires a continuous chain of trust from the
                 # previously finalized checkpoint up to the new justified point.
                 #
-                # If the source is newer than the old finalized point and every
-                # slot in between is justifiable relative to that old finalized
-                # point, then the earlier source checkpoint becomes finalized.
+                # Finalization advances only when the source lies past the old finalized point.
+                # A source at or behind that boundary is already final.
+                # Such a source may still justify a newer target, but it must not re-finalize.
+                # When the source is newer and every slot in between is justifiable
+                # relative to that old finalized point, the source checkpoint becomes finalized.
                 #
                 # In short:
                 #
