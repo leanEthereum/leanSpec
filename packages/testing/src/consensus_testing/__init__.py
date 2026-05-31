@@ -9,16 +9,20 @@ from .test_fixtures import (
     BaseConsensusFixture,
     ForkChoiceTest,
     GossipsubHandlerTest,
+    IncrementComponentSlot,
     IncrementEmittedSlot,
     JustifiabilityTest,
     NetworkingCodecTest,
     PoseidonPermutationTest,
+    RebindComponentToAlternateHeadRoot,
     RebindToAlternateHeadRoot,
     SlotClockTest,
     SSZTest,
     StateTransitionTest,
+    SwapComponentParticipantPublicKey,
     SwapParticipantPublicKey,
     SyncTest,
+    VerifyMultiMessageProofsTest,
     VerifySignaturesTest,
     VerifySingleMessageProofsTest,
 )
@@ -42,6 +46,7 @@ from .test_types import (
 StateTransitionTestFiller = Type[StateTransitionTest]
 ForkChoiceTestFiller = Type[ForkChoiceTest]
 VerifySingleMessageProofsTestFiller = Type[VerifySingleMessageProofsTest]
+VerifyMultiMessageProofsTestFiller = Type[VerifyMultiMessageProofsTest]
 VerifySignaturesTestFiller = Type[VerifySignaturesTest]
 SSZTestFiller = Type[SSZTest]
 NetworkingCodecTestFiller = Type[NetworkingCodecTest]
@@ -70,6 +75,10 @@ __all__ = [
     "RebindToAlternateHeadRoot",
     "IncrementEmittedSlot",
     "SwapParticipantPublicKey",
+    "VerifyMultiMessageProofsTest",
+    "RebindComponentToAlternateHeadRoot",
+    "IncrementComponentSlot",
+    "SwapComponentParticipantPublicKey",
     "VerifySignaturesTest",
     "SSZTest",
     "NetworkingCodecTest",
@@ -94,6 +103,7 @@ __all__ = [
     "StateTransitionTestFiller",
     "ForkChoiceTestFiller",
     "VerifySingleMessageProofsTestFiller",
+    "VerifyMultiMessageProofsTestFiller",
     "VerifySignaturesTestFiller",
     "SSZTestFiller",
     "NetworkingCodecTestFiller",
