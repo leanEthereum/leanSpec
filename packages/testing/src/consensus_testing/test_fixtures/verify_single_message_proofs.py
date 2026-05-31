@@ -55,13 +55,13 @@ Tamper = RebindToAlternateHeadRoot | IncrementEmittedSlot | SwapParticipantPubli
 """Discriminated union of post-generation mutations that produce a rejection vector."""
 
 
-class VerifyProofsTest(BaseConsensusFixture):
+class VerifySingleMessageProofsTest(BaseConsensusFixture):
     """Verify a single-message aggregate proof against precomputed bytes."""
 
-    format_name: ClassVar[str] = "verify_proofs_test"
+    format_name: ClassVar[str] = "verify_single_message_proofs_test"
 
     description: ClassVar[str] = (
-        "Tests multi-signature proof verification against precomputed proof bytes."
+        "Tests single-message aggregate proof verification against precomputed proof bytes."
     )
 
     validator_indices: list[ValidatorIndex] = Field(exclude=True)
@@ -95,7 +95,7 @@ class VerifyProofsTest(BaseConsensusFixture):
     proof: ByteList512KiB | None = None
     """Aggregated proof bytes for clients to verify."""
 
-    def make_fixture(self) -> VerifyProofsTest:
+    def make_fixture(self) -> VerifySingleMessageProofsTest:
         """Generate the proof, optionally tamper, self-verify, and return the populated copy.
 
         Raises:

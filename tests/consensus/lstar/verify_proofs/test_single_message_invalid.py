@@ -5,7 +5,7 @@ from consensus_testing import (
     IncrementEmittedSlot,
     RebindToAlternateHeadRoot,
     SwapParticipantPublicKey,
-    VerifyProofsTestFiller,
+    VerifySingleMessageProofsTestFiller,
 )
 
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
@@ -16,10 +16,10 @@ pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_single_message_wrong_message(
-    verify_proofs_test: VerifyProofsTestFiller,
+    verify_single_message_proofs_test: VerifySingleMessageProofsTestFiller,
 ) -> None:
     """Proof bound to an alternate head root must not verify against the honest message."""
-    verify_proofs_test(
+    verify_single_message_proofs_test(
         validator_indices=[ValidatorIndex(0)],
         attestation_data=AttestationData(
             slot=Slot(6),
@@ -33,10 +33,10 @@ def test_single_message_wrong_message(
 
 
 def test_single_message_wrong_slot(
-    verify_proofs_test: VerifyProofsTestFiller,
+    verify_single_message_proofs_test: VerifySingleMessageProofsTestFiller,
 ) -> None:
     """Proof bound to slot 4, emitted under slot 5, must reject on the slot binding mismatch."""
-    verify_proofs_test(
+    verify_single_message_proofs_test(
         validator_indices=[ValidatorIndex(0)],
         attestation_data=AttestationData(
             slot=Slot(4),
@@ -50,10 +50,10 @@ def test_single_message_wrong_slot(
 
 
 def test_single_message_wrong_public_keys(
-    verify_proofs_test: VerifyProofsTestFiller,
+    verify_single_message_proofs_test: VerifySingleMessageProofsTestFiller,
 ) -> None:
     """Public key at the only participant slot swapped for another validator's must reject."""
-    verify_proofs_test(
+    verify_single_message_proofs_test(
         validator_indices=[ValidatorIndex(0)],
         attestation_data=AttestationData(
             slot=Slot(7),

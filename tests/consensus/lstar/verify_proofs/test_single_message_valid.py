@@ -1,7 +1,7 @@
 """Single-message aggregate proof verification vectors — valid cases."""
 
 import pytest
-from consensus_testing import VerifyProofsTestFiller
+from consensus_testing import VerifySingleMessageProofsTestFiller
 
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import AttestationData
@@ -11,10 +11,10 @@ pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_single_message_single_validator(
-    verify_proofs_test: VerifyProofsTestFiller,
+    verify_single_message_proofs_test: VerifySingleMessageProofsTestFiller,
 ) -> None:
     """Single-validator single-message aggregate proof must verify."""
-    verify_proofs_test(
+    verify_single_message_proofs_test(
         validator_indices=[ValidatorIndex(0)],
         attestation_data=AttestationData(
             slot=Slot(1),
@@ -26,10 +26,10 @@ def test_single_message_single_validator(
 
 
 def test_single_message_four_validators(
-    verify_proofs_test: VerifyProofsTestFiller,
+    verify_single_message_proofs_test: VerifySingleMessageProofsTestFiller,
 ) -> None:
     """Four-validator single-message aggregate, all participating, must verify."""
-    verify_proofs_test(
+    verify_single_message_proofs_test(
         validator_indices=[ValidatorIndex(i) for i in range(4)],
         attestation_data=AttestationData(
             slot=Slot(2),
@@ -41,10 +41,10 @@ def test_single_message_four_validators(
 
 
 def test_single_message_four_validators_partial(
-    verify_proofs_test: VerifyProofsTestFiller,
+    verify_single_message_proofs_test: VerifySingleMessageProofsTestFiller,
 ) -> None:
     """Non-contiguous four-validator committee, aggregation bits resolve to [1, 0, 1, 1]."""
-    verify_proofs_test(
+    verify_single_message_proofs_test(
         validator_indices=[ValidatorIndex(0), ValidatorIndex(2), ValidatorIndex(3)],
         attestation_data=AttestationData(
             slot=Slot(3),

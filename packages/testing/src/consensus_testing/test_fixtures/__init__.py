@@ -11,19 +11,19 @@ from .slot_clock import SlotClockTest
 from .ssz import SSZTest
 from .state_transition import StateTransitionTest
 from .sync import SyncTest
-from .verify_proofs import (
+from .verify_signatures import VerifySignaturesTest
+from .verify_single_message_proofs import (
     IncrementEmittedSlot,
     RebindToAlternateHeadRoot,
     SwapParticipantPublicKey,
-    VerifyProofsTest,
+    VerifySingleMessageProofsTest,
 )
-from .verify_signatures import VerifySignaturesTest
 
 __all__ = [
     "BaseConsensusFixture",
     "StateTransitionTest",
     "ForkChoiceTest",
-    "VerifyProofsTest",
+    "VerifySingleMessageProofsTest",
     "RebindToAlternateHeadRoot",
     "IncrementEmittedSlot",
     "SwapParticipantPublicKey",
