@@ -7,9 +7,9 @@ pytestmark = pytest.mark.valid_until("Lstar")
 
 TOPIC_A = "/leanconsensus/0x12345678/block/ssz_snappy"
 TOPIC_B = "/leanconsensus/0x12345678/aggregation/ssz_snappy"
-MSG_ID_1 = "0x" + "aa" * 20
-MSG_ID_2 = "0x" + "bb" * 20
-MSG_ID_3 = "0x" + "cc" * 20
+MESSAGE_ID_1 = "0x" + "aa" * 20
+MESSAGE_ID_2 = "0x" + "bb" * 20
+MESSAGE_ID_3 = "0x" + "cc" * 20
 PEER_ID = "0x" + "dd" * 32
 
 
@@ -132,7 +132,7 @@ def test_ihave_single_id(networking_codec: NetworkingCodecTestFiller) -> None:
             "subscriptions": [],
             "publish": [],
             "control": {
-                "ihave": [{"topicId": TOPIC_A, "messageIds": [MSG_ID_1]}],
+                "ihave": [{"topicId": TOPIC_A, "messageIds": [MESSAGE_ID_1]}],
             },
         },
     )
@@ -146,7 +146,9 @@ def test_ihave_multiple_ids(networking_codec: NetworkingCodecTestFiller) -> None
             "subscriptions": [],
             "publish": [],
             "control": {
-                "ihave": [{"topicId": TOPIC_A, "messageIds": [MSG_ID_1, MSG_ID_2, MSG_ID_3]}],
+                "ihave": [
+                    {"topicId": TOPIC_A, "messageIds": [MESSAGE_ID_1, MESSAGE_ID_2, MESSAGE_ID_3]}
+                ],
             },
         },
     )
@@ -177,7 +179,7 @@ def test_iwant_single_id(networking_codec: NetworkingCodecTestFiller) -> None:
             "subscriptions": [],
             "publish": [],
             "control": {
-                "iwant": [{"messageIds": [MSG_ID_1]}],
+                "iwant": [{"messageIds": [MESSAGE_ID_1]}],
             },
         },
     )
@@ -191,7 +193,7 @@ def test_iwant_multiple_ids(networking_codec: NetworkingCodecTestFiller) -> None
             "subscriptions": [],
             "publish": [],
             "control": {
-                "iwant": [{"messageIds": [MSG_ID_1, MSG_ID_2]}],
+                "iwant": [{"messageIds": [MESSAGE_ID_1, MESSAGE_ID_2]}],
             },
         },
     )
@@ -261,7 +263,7 @@ def test_idontwant_single_id(networking_codec: NetworkingCodecTestFiller) -> Non
             "subscriptions": [],
             "publish": [],
             "control": {
-                "idontwant": [{"messageIds": [MSG_ID_1]}],
+                "idontwant": [{"messageIds": [MESSAGE_ID_1]}],
             },
         },
     )
@@ -275,7 +277,7 @@ def test_idontwant_multiple_ids(networking_codec: NetworkingCodecTestFiller) -> 
             "subscriptions": [],
             "publish": [],
             "control": {
-                "idontwant": [{"messageIds": [MSG_ID_1, MSG_ID_2]}],
+                "idontwant": [{"messageIds": [MESSAGE_ID_1, MESSAGE_ID_2]}],
             },
         },
     )
@@ -304,11 +306,11 @@ def test_control_all_types(networking_codec: NetworkingCodecTestFiller) -> None:
             "subscriptions": [],
             "publish": [],
             "control": {
-                "ihave": [{"topicId": TOPIC_A, "messageIds": [MSG_ID_1]}],
-                "iwant": [{"messageIds": [MSG_ID_2]}],
+                "ihave": [{"topicId": TOPIC_A, "messageIds": [MESSAGE_ID_1]}],
+                "iwant": [{"messageIds": [MESSAGE_ID_2]}],
                 "graft": [{"topicId": TOPIC_A}],
                 "prune": [{"topicId": TOPIC_B, "backoff": 60}],
-                "idontwant": [{"messageIds": [MSG_ID_3]}],
+                "idontwant": [{"messageIds": [MESSAGE_ID_3]}],
             },
         },
     )
@@ -381,7 +383,7 @@ def test_rpc_full(networking_codec: NetworkingCodecTestFiller) -> None:
             "publish": [{"topic": TOPIC_A, "data": "0xdeadbeef"}],
             "control": {
                 "graft": [{"topicId": TOPIC_B}],
-                "idontwant": [{"messageIds": [MSG_ID_1]}],
+                "idontwant": [{"messageIds": [MESSAGE_ID_1]}],
             },
         },
     )

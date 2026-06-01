@@ -63,14 +63,17 @@ Reference: https://github.com/google/snappy
 
 from __future__ import annotations
 
+from lean_spec.node.networking.varint import encode_varint
+
 from .constants import (
     BLOCK_SIZE,
     HASH_MULTIPLIER,
     INPUT_MARGIN_BYTES,
     MAX_HASH_TABLE_BITS,
     MIN_HASH_TABLE_BITS,
+    SNAPPY_VARINT_MAX_BYTES,
 )
-from .encoding import encode_copy_tag, encode_literal_tag, encode_varint32
+from .encoding import encode_copy_tag, encode_literal_tag
 
 
 def compress(data: bytes) -> bytes:
@@ -91,13 +94,13 @@ def compress(data: bytes) -> bytes:
     #
     # Even empty data needs a length prefix (varint 0).
     if not data:
-        return encode_varint32(0)
+        return encode_varint(0, max_bytes=SNAPPY_VARINT_MAX_BYTES)
 
     # Build output buffer.
     #
     # Start with the uncompressed length as a varint.
     # The decompressor reads this first to allocate the output buffer.
-    output = bytearray(encode_varint32(len(data)))
+    output = bytearray(encode_varint(len(data), max_bytes=SNAPPY_VARINT_MAX_BYTES))
 
     # Process input in blocks.
     #
@@ -191,15 +194,15 @@ def _compress_block(block: bytes) -> bytes:
     # in the inner loop. The remaining bytes are emitted as literals.
     while ip < len(block) - INPUT_MARGIN_BYTES:
         # Step 1: Hash the 4 bytes at current position.
-        hash_val = _hash_4_bytes(block, ip, table_bits)
+        hash_value = _hash_4_bytes(block, ip, table_bits)
 
         # Step 2: Look up the hash to find a potential match.
-        match_pos = table[hash_val]
+        match_pos = table[hash_value]
 
         # Step 3: Update hash table with current position.
         #
         # Must happen AFTER lookup to avoid matching ourselves.
-        table[hash_val] = ip
+        table[hash_value] = ip
 
         # Step 4: Check if we found a real match.
         #
@@ -300,7 +303,7 @@ def _hash_4_bytes(data: bytes, pos: int, table_bits: int) -> int:
                   = 1145258561
 
         Step 2: Multiply by magic constant
-            hash_val = (1145258561 * 0x1e35a7bd) & 0xFFFFFFFF
+            hash_value = (1145258561 * 0x1e35a7bd) & 0xFFFFFFFF
                      = 0x9E3779B9  (example result)
 
         Step 3: Take top 10 bits
@@ -323,7 +326,7 @@ def _hash_4_bytes(data: bytes, pos: int, table_bits: int) -> int:
     # The magic constant (0x1e35a7bd) is chosen to spread input bits
     # across the output. This reduces collisions for similar inputs.
     # We mask to 32 bits because Python integers are arbitrary precision.
-    hash_val = (value * HASH_MULTIPLIER) & 0xFFFFFFFF
+    hash_value = (value * HASH_MULTIPLIER) & 0xFFFFFFFF
 
     # Take top bits.
     #
@@ -331,7 +334,7 @@ def _hash_4_bytes(data: bytes, pos: int, table_bits: int) -> int:
     # The multiplication spreads information to the high bits.
     # Bottom bits are more affected by the low bits of the input,
     # which tend to be similar for nearby positions.
-    return hash_val >> (32 - table_bits)
+    return hash_value >> (32 - table_bits)
 
 
 def _matches_at(data: bytes, pos1: int, pos2: int) -> bool:

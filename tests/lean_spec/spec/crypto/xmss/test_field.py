@@ -47,7 +47,7 @@ def test_int_to_base_p_roundtrip_is_reversible() -> None:
     """Decomposing then recomposing recovers the original integer."""
     num_limbs = 5
     original_limbs = [secrets.randbelow(P) for _ in range(num_limbs)]
-    original_value = sum(val * (P**i) for i, val in enumerate(original_limbs))
+    original_value = sum(value * (P**i) for i, value in enumerate(original_limbs))
 
     decomposed = [int(fp) for fp in int_to_base_p(original_value, num_limbs)]
 
@@ -78,11 +78,11 @@ def test_random_parameter_has_parameter_length() -> None:
     """A sampled parameter has the configured parameter length."""
     parameter = random_parameter(TEST_CONFIG)
     assert isinstance(parameter, Parameter)
-    assert len(parameter.data) == TEST_CONFIG.PARAMETER_LEN
+    assert len(parameter.data) == TEST_CONFIG.PARAMETER_LENGTH
 
 
 def test_random_domain_has_hash_length() -> None:
     """A sampled domain vector has the configured digest length."""
     domain = random_domain(TEST_CONFIG)
     assert isinstance(domain, HashDigestVector)
-    assert len(domain.data) == TEST_CONFIG.HASH_LEN_FE
+    assert len(domain.data) == TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS

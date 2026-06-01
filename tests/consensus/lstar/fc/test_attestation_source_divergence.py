@@ -74,7 +74,7 @@ def test_justified_divergence_self_heals_in_next_block(
                     label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
+                            validator_indices=[ValidatorIndex(0)],
                             slot=Slot(2),
                             target_slot=Slot(2),
                             target_root_label="block_2",
@@ -105,7 +105,7 @@ def test_justified_divergence_self_heals_in_next_block(
                     label="fork_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
                                 ValidatorIndex(3),

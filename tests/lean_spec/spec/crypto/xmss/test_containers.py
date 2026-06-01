@@ -238,7 +238,7 @@ def test_keypair_decodes_public_and_secret_hex(keypair_a: KeyPair) -> None:
 
 def test_keypair_rejects_invalid_public_key_hex(keypair_a: KeyPair) -> None:
     """A malformed public-key hex string surfaces as a validation error."""
-    with pytest.raises(ValidationError, match="invalid public key hex"):
+    with pytest.raises(ValidationError, match="invalid PublicKey hex"):
         KeyPair.model_validate(
             {
                 "public_key": "deadbeef",
@@ -249,7 +249,7 @@ def test_keypair_rejects_invalid_public_key_hex(keypair_a: KeyPair) -> None:
 
 def test_keypair_rejects_invalid_secret_key_hex(keypair_a: KeyPair) -> None:
     """A malformed secret-key hex string surfaces as a validation error."""
-    with pytest.raises(ValidationError, match="invalid secret key hex"):
+    with pytest.raises(ValidationError, match="invalid SecretKey hex"):
         KeyPair.model_validate(
             {
                 "public_key": keypair_a.public_key.encode_bytes().hex(),
@@ -281,7 +281,7 @@ def test_public_key_ssz_roundtrip(signed_key_pair: KeyPair) -> None:
 def test_public_key_encoded_size_matches_layout(signed_key_pair: KeyPair) -> None:
     """The encoded public key is the digest plus parameter packed into field bytes."""
     encoded = signed_key_pair.public_key.encode_bytes()
-    expected = (TEST_CONFIG.HASH_LEN_FE + TEST_CONFIG.PARAMETER_LEN) * P_BYTES
+    expected = (TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS + TEST_CONFIG.PARAMETER_LENGTH) * P_BYTES
     assert len(encoded) == expected
 
 
@@ -298,7 +298,7 @@ def test_signature_is_fixed_size() -> None:
 
 def test_signature_byte_length_matches_config() -> None:
     """The signature byte length matches the configured fixed length."""
-    assert Signature.get_byte_length() == TEST_CONFIG.SIGNATURE_LEN_BYTES
+    assert Signature.get_byte_length() == TEST_CONFIG.SIGNATURE_LENGTH_BYTES
 
 
 def test_signature_ssz_roundtrip(sample_signature: Signature) -> None:
@@ -308,7 +308,7 @@ def test_signature_ssz_roundtrip(sample_signature: Signature) -> None:
 
 def test_signature_encoded_size_matches_config(sample_signature: Signature) -> None:
     """The encoded signature length matches the advertised fixed length."""
-    assert len(sample_signature.encode_bytes()) == TEST_CONFIG.SIGNATURE_LEN_BYTES
+    assert len(sample_signature.encode_bytes()) == TEST_CONFIG.SIGNATURE_LENGTH_BYTES
 
 
 def test_signature_json_is_prefixed_hex(sample_signature: Signature) -> None:

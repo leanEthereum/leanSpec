@@ -251,7 +251,7 @@ class GossipsubBehavior:
         self._short_id = Uint16(self._instance_id % 0x10000)
         self.mesh = MeshState(params=self.params)
         self.message_cache = MessageCache(
-            mcache_len=self.params.mcache_len,
+            mcache_length=self.params.mcache_length,
             mcache_gossip=self.params.mcache_gossip,
         )
         self.seen_cache = SeenCache(ttl_seconds=self.params.seen_ttl_secs)
@@ -456,7 +456,7 @@ class GossipsubBehavior:
             topic: Topic to publish to.
             data: Message payload.
         """
-        msg = Message(topic=topic, data=data)
+        message = Message(topic=topic, data=data)
         topic_bytes = topic.encode("utf-8")
 
         # Decompress once for message ID computation.
@@ -466,18 +466,18 @@ class GossipsubBehavior:
         # - decompression succeeded (VALID_SNAPPY),
         # - failed (INVALID_SNAPPY).
         decompressed, domain = _try_decompress(data)
-        msg_id = GossipsubMessage.compute_id(topic_bytes, decompressed, domain=domain)
+        message_id = GossipsubMessage.compute_id(topic_bytes, decompressed, domain=domain)
 
-        if self.seen_cache.has(msg_id):
-            logger.debug("Skipping duplicate message %s", msg_id.hex()[:8])
+        if self.seen_cache.has(message_id):
+            logger.debug("Skipping duplicate message %s", message_id.hex()[:8])
             return
 
-        self.seen_cache.add(msg_id, Timestamp(time.time()))
+        self.seen_cache.add(message_id, Timestamp(time.time()))
 
         # Cache stores compressed data for IWANT responses.
-        cache_msg = GossipsubMessage(topic=topic_bytes, raw_data=data)
-        cache_msg._cached_id = msg_id
-        self.message_cache.put(topic, cache_msg)
+        cache_message = GossipsubMessage(topic=topic_bytes, raw_data=data)
+        cache_message._cached_id = message_id
+        self.message_cache.put(topic, cache_message)
 
         if topic in self.mesh.subscriptions:
             peers = self.mesh.get_mesh_peers(topic)
@@ -502,7 +502,7 @@ class GossipsubBehavior:
                 len(outbound_peers),
             )
 
-        rpc = RPC(publish=[msg])
+        rpc = RPC(publish=[message])
         for peer_id in peers:
             await self._send_rpc(peer_id, rpc)
 
@@ -543,8 +543,8 @@ class GossipsubBehavior:
         for sub in rpc.subscriptions:
             await self._handle_subscription(peer_id, sub)
 
-        for msg in rpc.publish:
-            await self._handle_message(peer_id, msg)
+        for message in rpc.publish:
+            await self._handle_message(peer_id, message)
 
         if rpc.control:
             await self._handle_control(peer_id, rpc.control)
@@ -568,51 +568,51 @@ class GossipsubBehavior:
             GossipsubPeerEvent(peer_id=peer_id, topic=sub.topic_id, subscribed=sub.subscribe)
         )
 
-    async def _handle_message(self, peer_id: PeerId, msg: Message) -> None:
+    async def _handle_message(self, peer_id: PeerId, message: Message) -> None:
         """Handle a published message from a peer."""
-        if not msg.topic:
+        if not message.topic:
             return
 
-        topic_bytes = msg.topic.encode("utf-8")
+        topic_bytes = message.topic.encode("utf-8")
 
         # Decompress once for message ID computation and event delivery.
         #
         # Data is decompressed before the message ID function runs.
         # The decompressed data is also passed to the event consumer,
         # eliminating a second decompression there.
-        decompressed, domain = _try_decompress(msg.data)
-        msg_id = GossipsubMessage.compute_id(topic_bytes, decompressed, domain=domain)
+        decompressed, domain = _try_decompress(message.data)
+        message_id = GossipsubMessage.compute_id(topic_bytes, decompressed, domain=domain)
 
         # Deduplicate: each message is processed at most once.
-        if self.seen_cache.has(msg_id):
+        if self.seen_cache.has(message_id):
             return
-        self.seen_cache.add(msg_id, Timestamp(time.time()))
+        self.seen_cache.add(message_id, Timestamp(time.time()))
 
         # Cache stores compressed data for IWANT responses.
-        cache_msg = GossipsubMessage(topic=topic_bytes, raw_data=msg.data)
-        cache_msg._cached_id = msg_id
-        self.message_cache.put(TopicId(msg.topic), cache_msg)
+        cache_message = GossipsubMessage(topic=topic_bytes, raw_data=message.data)
+        cache_message._cached_id = message_id
+        self.message_cache.put(TopicId(message.topic), cache_message)
 
         # Only forward on topics we participate in (have a mesh for).
-        if msg.topic in self.mesh.subscriptions:
-            mesh_peers = self.mesh.get_mesh_peers(TopicId(msg.topic))
-            forward_rpc = RPC(publish=[msg])
+        if message.topic in self.mesh.subscriptions:
+            mesh_peers = self.mesh.get_mesh_peers(TopicId(message.topic))
+            forward_rpc = RPC(publish=[message])
 
             for mesh_peer in mesh_peers:
                 if mesh_peer == peer_id:
                     continue
                 # Skip peers that told us they already have this message.
                 peer_state = self._peers.get(mesh_peer)
-                if peer_state is not None and msg_id in peer_state.dont_want_ids:
+                if peer_state is not None and message_id in peer_state.dont_want_ids:
                     continue
                 await self._send_rpc(mesh_peer, forward_rpc)
 
             # Large messages warrant IDONTWANT to prevent redundant
             # forwards from other mesh peers who also received this.
-            if len(msg.data) >= IDONTWANT_SIZE_THRESHOLD:
+            if len(message.data) >= IDONTWANT_SIZE_THRESHOLD:
                 idontwant_rpc = RPC(
                     control=ControlMessage(
-                        idontwant=[ControlIDontWant(message_ids=[bytes(msg_id)])]
+                        idontwant=[ControlIDontWant(message_ids=[bytes(message_id)])]
                     )
                 )
                 for mesh_peer in mesh_peers:
@@ -622,12 +622,12 @@ class GossipsubBehavior:
         # Event carries decompressed data for the consumer.
         # This eliminates the need for a second decompression in the event handler.
         event = GossipsubMessageEvent(
-            peer_id=peer_id, topic=msg.topic, data=decompressed, message_id=msg_id
+            peer_id=peer_id, topic=message.topic, data=decompressed, message_id=message_id
         )
         await self._event_queue.put(event)
 
         logger.debug(
-            "Received message %s from %s on topic %s", msg_id.hex()[:8], peer_id, msg.topic
+            "Received message %s from %s on topic %s", message_id.hex()[:8], peer_id, message.topic
         )
 
     async def _handle_control(self, peer_id: PeerId, control: ControlMessage) -> None:
@@ -704,13 +704,15 @@ class GossipsubBehavior:
     async def _handle_ihave(self, peer_id: PeerId, ihave: ControlIHave) -> None:
         """Handle an IHAVE advertisement from a peer."""
         wanted = []
-        for msg_id in ihave.message_ids:
+        for message_id in ihave.message_ids:
             # Message IDs must be exactly 20 bytes (SHA256 truncated to 160 bits).
-            if len(msg_id) != 20:
+            if len(message_id) != 20:
                 continue
-            msg_id_typed = MessageId(msg_id)
-            if not self.seen_cache.has(msg_id_typed) and not self.message_cache.has(msg_id_typed):
-                wanted.append(msg_id)
+            message_id_typed = MessageId(message_id)
+            if not self.seen_cache.has(message_id_typed) and not self.message_cache.has(
+                message_id_typed
+            ):
+                wanted.append(message_id)
 
         if not wanted:
             return
@@ -724,11 +726,11 @@ class GossipsubBehavior:
         """Handle an IWANT request from a peer."""
         messages = []
 
-        for msg_id in iwant.message_ids:
-            if len(msg_id) != 20:
+        for message_id in iwant.message_ids:
+            if len(message_id) != 20:
                 continue
-            msg_id_typed = MessageId(msg_id)
-            cached = self.message_cache.get(msg_id_typed)
+            message_id_typed = MessageId(message_id)
+            cached = self.message_cache.get(message_id_typed)
             if cached:
                 topic_id = TopicId(cached.topic.decode("utf-8"))
                 messages.append(Message(topic=topic_id, data=cached.raw_data))
@@ -748,10 +750,10 @@ class GossipsubBehavior:
         if state is None:
             return
 
-        for msg_id in idontwant.message_ids:
-            if len(msg_id) != 20:
+        for message_id in idontwant.message_ids:
+            if len(message_id) != 20:
                 continue
-            state.dont_want_ids.add(MessageId(msg_id))
+            state.dont_want_ids.add(MessageId(message_id))
 
     async def _heartbeat_loop(self) -> None:
         """Background heartbeat for mesh maintenance."""
@@ -855,8 +857,8 @@ class GossipsubBehavior:
 
     async def _emit_gossip(self, topic: TopicId) -> None:
         """Send IHAVE gossip to non-mesh peers."""
-        msg_ids = self.message_cache.get_gossip_ids(topic)
-        if not msg_ids:
+        message_ids = self.message_cache.get_gossip_ids(topic)
+        if not message_ids:
             return
 
         # Only peers with outbound streams can receive gossip.
@@ -870,14 +872,14 @@ class GossipsubBehavior:
         if not gossip_peers:
             return
 
-        ihave = ControlIHave(topic_id=topic, message_ids=cast(list[bytes], msg_ids))
+        ihave = ControlIHave(topic_id=topic, message_ids=cast(list[bytes], message_ids))
         rpc = RPC(control=ControlMessage(ihave=[ihave]))
 
         for peer_id in gossip_peers:
             await self._send_rpc(peer_id, rpc)
 
         logger.debug(
-            "IHAVE %d messages to %d peers for topic %s", len(msg_ids), len(gossip_peers), topic
+            "IHAVE %d messages to %d peers for topic %s", len(message_ids), len(gossip_peers), topic
         )
 
     async def _send_rpc(self, peer_id: PeerId, rpc: RPC) -> None:

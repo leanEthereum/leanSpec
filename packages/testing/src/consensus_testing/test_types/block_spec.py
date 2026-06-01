@@ -8,12 +8,8 @@ from collections import defaultdict
 from lean_spec.base import CamelModel
 from lean_spec.node.chain.clock import Interval
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import (
-    TypeOneMultiSignature,
-    TypeTwoMultiSignature,
-)
 from lean_spec.spec.crypto.xmss.containers import Signature
-from lean_spec.spec.forks import Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks import AggregationBits, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
@@ -21,12 +17,14 @@ from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     Block,
     BlockBody,
+    MultiMessageAggregate,
     SignedAttestation,
     SignedBlock,
+    SingleMessageAggregate,
     State,
+    Store,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.forks.lstar.store import Store
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 
 from ..keys import XmssKeyManager, create_dummy_signature
@@ -195,7 +193,7 @@ class BlockSpec(CamelModel):
         Returns:
             Tuple of:
                 - All built attestations (one per validator per spec)
-                - Signature lookup keyed by (attestation_data, validator_id)
+                - Signature lookup keyed by (attestation_data, validator_index)
                 - Subset of attestations that have valid (non-dummy) signatures
         """
         if self.attestations is None:
@@ -212,9 +210,9 @@ class BlockSpec(CamelModel):
 
             # Create one attestation per validator.
             # Each validator signs independently; signatures aggregate later.
-            for validator_id in aggregated_spec.validator_ids:
+            for validator_index in aggregated_spec.validator_indices:
                 attestation = Attestation(
-                    validator_id=validator_id,
+                    validator_index=validator_index,
                     data=attestation_data,
                 )
                 attestations.append(attestation)
@@ -223,7 +221,7 @@ class BlockSpec(CamelModel):
                 # Invalid signatures test rejection paths.
                 if aggregated_spec.valid_signature:
                     signature = key_manager.sign_attestation_data(
-                        validator_id,
+                        validator_index,
                         attestation_data,
                     )
                     valid_attestations.add(attestation)
@@ -232,7 +230,7 @@ class BlockSpec(CamelModel):
 
                 # Index signature by attestation data and validator ID.
                 signature_lookup.setdefault(attestation_data, {}).setdefault(
-                    validator_id,
+                    validator_index,
                     signature,
                 )
 
@@ -241,45 +239,46 @@ class BlockSpec(CamelModel):
     def _sign_block(
         self,
         final_block: Block,
-        attestation_proofs: list[TypeOneMultiSignature],
+        attestation_proofs: list[SingleMessageAggregate],
         proposer_index: ValidatorIndex,
         key_manager: XmssKeyManager,
         state: State,
     ) -> SignedBlock:
         """Sign a block and assemble the final SignedBlock with the merged proof.
 
-        Builds a Type-1 wrapping the proposer's XMSS signature, then merges
-        that with the per-attestation Type-1 proofs into a single Type-2 proof
-        and SSZ-encodes it onto the envelope. Consumers of this filler feed
-        the block through spec.on_block / verify_signatures, which decodes
-        the proof and verifies it, so an honest merged proof is required.
+        Builds a single-message aggregate wrapping the proposer's XMSS
+        signature, then merges that with the per-attestation single-message
+        aggregate proofs into a single multi-message aggregate proof and
+        stores it on the envelope. Consumers of this filler feed the block
+        through spec.on_block / verify_signatures, which decodes the proof
+        and verifies it, so an honest merged proof is required.
 
         When valid_signature is False, the proposer signature is a dummy
         XMSS one and the binding-driven aggregation would reject it before
-        verify_signatures ever runs. The Type-2 envelope is then assembled
+        verify_signatures ever runs. The multi-message aggregate envelope is then assembled
         directly from the info entries with empty proof bytes — that
         decodes structurally and lets verify_signatures reach (and reject
         at) the verify_type_2 call, which is the contract the test exercises.
 
         Args:
             final_block: The unsigned block.
-            attestation_proofs: Per-attestation Type-1 proofs (parallel to
+            attestation_proofs: Per-attestation single-message aggregate proofs (parallel to
                 final_block.body.attestations).
             proposer_index: Which validator proposes this block.
             key_manager: XMSS key manager for signing.
             state: State providing the validator registry used to resolve
-                participant pubkeys for the merge.
+                participant public_keys for the merge.
 
         Returns:
             Complete signed block.
         """
         block_root = hash_tree_root(final_block)
-        proposer_pubkey = key_manager.get_public_keys(proposer_index)[1]
+        proposer_public_key = key_manager.get_public_keys(proposer_index)[1]
 
         # The binding rejects placeholder bytes; if anything in the merged
         # input is a dummy (invalid proposer sig or a build_invalid_proof
         # attestation), bypass aggregate_type_2 entirely and assemble the
-        # Type-2 envelope by hand. The result still SSZ-decodes so
+        # multi-message aggregate envelope by hand. The result still SSZ-decodes so
         # verify_signatures reaches verify_type_2 for the rejection.
         any_placeholder_attestation = any(not proof.proof.data for proof in attestation_proofs)
         use_placeholder = not self.valid_signature or any_placeholder_attestation
@@ -290,35 +289,32 @@ class BlockSpec(CamelModel):
                 self.slot,
                 block_root,
             )
-            proposer_type_1 = TypeOneMultiSignature.aggregate(
+            proposer_single_message_aggregate = SingleMessageAggregate.aggregate(
                 children=[],
-                raw_xmss=[(proposer_index, proposer_pubkey, proposer_signature)],
+                raw_xmss=[(proposer_index, proposer_public_key, proposer_signature)],
                 message=block_root,
                 slot=self.slot,
             )
 
             public_keys_per_part: list[list] = [
                 [
-                    state.validators[vid].get_attestation_pubkey()
-                    for vid in proof.participants.to_validator_indices()
+                    state.validators[validator_index].get_attestation_public_key()
+                    for validator_index in proof.participants.to_validator_indices()
                 ]
                 for proof in attestation_proofs
             ]
-            public_keys_per_part.append([proposer_pubkey])
+            public_keys_per_part.append([proposer_public_key])
 
-            merged = TypeTwoMultiSignature.aggregate(
-                [*attestation_proofs, proposer_type_1],
+            proof = MultiMessageAggregate.aggregate(
+                [*attestation_proofs, proposer_single_message_aggregate],
                 public_keys_per_part=public_keys_per_part,
             )
-            proof_bytes = merged.encode_bytes()
         else:
-            placeholder = ByteList512KiB(data=b"")
-            envelope = TypeTwoMultiSignature(proof=placeholder)
-            proof_bytes = envelope.encode_bytes()
+            proof = MultiMessageAggregate(proof=ByteList512KiB(data=b""))
 
         return SignedBlock(
             block=final_block,
-            proof=ByteList512KiB(data=proof_bytes),
+            proof=proof,
         )
 
     def build_signed_block(
@@ -362,15 +358,20 @@ class BlockSpec(CamelModel):
         # Separate valid and invalid attestation specs.
         # Valid specs go through normal aggregation; invalid specs get special proofs.
         invalid_specs = [
-            att_spec
-            for att_spec in (self.attestations or [])
-            if not att_spec.valid_signature
-            or (att_spec.signer_ids is not None and att_spec.signer_ids != att_spec.validator_ids)
+            attestation_spec
+            for attestation_spec in (self.attestations or [])
+            if not attestation_spec.valid_signature
+            or (
+                attestation_spec.signer_ids is not None
+                and attestation_spec.signer_ids != attestation_spec.validator_indices
+            )
         ]
 
         # Build a valid-only copy for normal attestation construction.
         self.attestations = [
-            att_spec for att_spec in (self.attestations or []) if att_spec not in invalid_specs
+            attestation_spec
+            for attestation_spec in (self.attestations or [])
+            if attestation_spec not in invalid_specs
         ]
         valid_only = self
 
@@ -382,26 +383,28 @@ class BlockSpec(CamelModel):
         # Group attestations that share the same AttestationData.
         # Validators seeing the same head/source/target produce identical data,
         # so they can be merged into a single aggregated attestation.
-        data_to_validator_ids: dict[AttestationData, list[ValidatorIndex]] = defaultdict(list)
+        data_to_validator_indices: dict[AttestationData, list[ValidatorIndex]] = defaultdict(list)
         for attestation in valid_attestations:
-            data_to_validator_ids[attestation.data].append(attestation.validator_id)
+            data_to_validator_indices[attestation.data].append(attestation.validator_index)
 
         # Build one AggregatedAttestation per unique data.
         # Each carries a bitfield marking which validators participated.
         aggregated_attestations = [
             AggregatedAttestation(
-                aggregation_bits=ValidatorIndices(data=validator_ids).to_aggregation_bits(),
+                aggregation_bits=AggregationBits.from_indices(validator_indices),
                 data=data,
             )
-            for data, validator_ids in data_to_validator_ids.items()
+            for data, validator_indices in data_to_validator_indices.items()
         ]
-        attestation_sigs = key_manager.build_attestation_proofs(
+        attestation_signatures = key_manager.build_attestation_proofs(
             AggregatedAttestations(data=aggregated_attestations),
             signature_lookup=signature_lookup,
         )
         aggregated_payloads = {
-            agg_att.data: {proof}
-            for agg_att, proof in zip(aggregated_attestations, attestation_sigs, strict=True)
+            aggregate_attestation.data: {proof}
+            for aggregate_attestation, proof in zip(
+                aggregated_attestations, attestation_signatures, strict=True
+            )
         }
 
         final_block, _, _, aggregated_signatures = spec.build_block(
@@ -438,11 +441,11 @@ class BlockSpec(CamelModel):
         Simulates what a real node does when proposing a block.
         Replays the gossip, aggregation, and proposal pipeline through the Store.
 
-        Returns a Store enriched with the aggregated Type-1 payloads built
+        Returns a Store enriched with the aggregated single-message aggregate payloads built
         during the simulated pipeline. The caller can persist these so future
         block builds can re-aggregate the same attestations rather than
         reconstructing them from on-chain block bodies (which would require
-        splitting the block-level Type-2 proof — a heavy and, in the test
+        splitting the block-level multi-message aggregate proof — a heavy and, in the test
         recursive-aggregation mode, unreliable operation). Other fields of
         the original Store (gossip signatures, time, head, etc.) are
         preserved so the simulated build does not consume state the caller
@@ -473,7 +476,7 @@ class BlockSpec(CamelModel):
 
         # Preserve the caller's Store so unrelated fields (gossip signatures,
         # head, finalization checkpoints, time) survive the simulated pipeline.
-        # Only the freshly aggregated Type-1 payloads merge back at the end.
+        # Only the freshly aggregated single-message aggregate payloads merge back at the end.
         caller_store = store
         store = copy.deepcopy(store)
 
@@ -495,16 +498,16 @@ class BlockSpec(CamelModel):
         # Gossip valid attestation signatures into the Store.
         # This runs signature verification through the spec's validation path.
         for attestation in valid_attestations:
-            sigs_for_data = attestation_signatures.get(attestation.data)
+            signatures_for_data = attestation_signatures.get(attestation.data)
             if (
-                sigs_for_data is None
-                or (signature := sigs_for_data.get(attestation.validator_id)) is None
+                signatures_for_data is None
+                or (signature := signatures_for_data.get(attestation.validator_index)) is None
             ):
                 continue
             store = spec.on_gossip_attestation(
                 store,
                 SignedAttestation(
-                    validator_id=attestation.validator_id,
+                    validator_index=attestation.validator_index,
                     data=attestation.data,
                     signature=signature,
                 ),
@@ -514,7 +517,7 @@ class BlockSpec(CamelModel):
         # Trigger Store aggregation to merge gossip signatures into known payloads.
         # Aggregation runs on a local clone: gossip pools mutate here, but the
         # caller's gossip-signature view must not be consumed by this simulated
-        # build. Only the freshly aggregated Type-1 payloads propagate back.
+        # build. Only the freshly aggregated single-message aggregate payloads propagate back.
         aggregation_store, _ = spec.aggregate(store)
         merged_store = spec.accept_new_attestations(aggregation_store)
 
@@ -539,18 +542,22 @@ class BlockSpec(CamelModel):
         # Append forced attestations that bypass the builder's MAX cap.
         # Each entry is signed and aggregated so the block carries valid proofs.
         if self.forced_attestations:
-            for att_spec in self.forced_attestations:
-                att_data = att_spec.build_attestation_data(block_registry, parent_state)
-                proof = key_manager.sign_and_aggregate(att_spec.validator_ids, att_data)
+            for attestation_spec in self.forced_attestations:
+                attestation_data = attestation_spec.build_attestation_data(
+                    block_registry, parent_state
+                )
+                proof = key_manager.sign_and_aggregate(
+                    attestation_spec.validator_indices, attestation_data
+                )
                 block_proofs.append(proof)
                 final_block.body.attestations = AggregatedAttestations(
                     data=[
                         *final_block.body.attestations.data,
                         AggregatedAttestation(
-                            aggregation_bits=ValidatorIndices(
-                                data=att_spec.validator_ids,
-                            ).to_aggregation_bits(),
-                            data=att_data,
+                            aggregation_bits=AggregationBits.from_indices(
+                                attestation_spec.validator_indices
+                            ),
+                            data=attestation_data,
                         ),
                     ]
                 )

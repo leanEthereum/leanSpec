@@ -53,7 +53,7 @@ def test_valid_gossip_attestation(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -90,7 +90,7 @@ def test_attestation_target_slot_mismatch_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(3),
                     target_root_label="block_2",
@@ -128,7 +128,7 @@ def test_attestation_too_far_in_future_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(4),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -169,7 +169,7 @@ def test_attestation_at_disparity_boundary_allowed(
             TickStep(interval=SLOT_3_BOUNDARY_INTERVAL),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(3),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -208,7 +208,7 @@ def test_attestation_just_beyond_disparity_boundary_rejected(
             TickStep(interval=SLOT_3_JUST_BEYOND_BOUNDARY_INTERVAL),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(3),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -251,7 +251,7 @@ def test_attestation_one_full_slot_in_future_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(3),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -302,7 +302,7 @@ def test_multiple_gossip_attestations_from_different_validators(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(0),
+                    validator_index=ValidatorIndex(0),
                     slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
@@ -310,7 +310,7 @@ def test_multiple_gossip_attestations_from_different_validators(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
@@ -318,7 +318,7 @@ def test_multiple_gossip_attestations_from_different_validators(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(2),
+                    validator_index=ValidatorIndex(2),
                     slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
@@ -355,7 +355,7 @@ def test_gossip_attestation_with_invalid_signature(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -395,7 +395,7 @@ def test_gossip_attestation_with_unknown_validator(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(999),
+                    validator_index=ValidatorIndex(999),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -438,7 +438,7 @@ def test_attestation_source_slot_exceeds_target_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(3),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -482,7 +482,7 @@ def test_attestation_head_older_than_target_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(3),
                     target_slot=Slot(3),
                     target_root_label="block_3",
@@ -521,7 +521,7 @@ def test_attestation_source_slot_override_exceeds_target_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -562,7 +562,7 @@ def test_attestation_source_slot_mismatch_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -602,7 +602,7 @@ def test_attestation_head_slot_mismatch_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -643,7 +643,7 @@ def test_gossip_attestation_chain_extended_after_gossip(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(0),
+                    validator_index=ValidatorIndex(0),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -651,7 +651,7 @@ def test_gossip_attestation_chain_extended_after_gossip(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -699,7 +699,7 @@ def test_attestation_unknown_target_block_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -739,7 +739,7 @@ def test_attestation_unknown_head_block_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -779,7 +779,7 @@ def test_attestation_unknown_source_block_rejected(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="block_2",

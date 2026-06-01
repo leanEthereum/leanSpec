@@ -6,11 +6,13 @@ from typing import Any, ClassVar
 
 from pydantic import Field
 
+from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
     AttestationData,
+    MultiMessageAggregate,
     SignedBlock,
     State,
 )
@@ -68,7 +70,7 @@ class VerifySignaturesTest(BaseConsensusFixture):
       set bit. Exercises the empty-participants check inside
       signature verification.
     - `{"operation": "corrupt_proof"}`: Replace the merged proof with
-      a short non-decodable blob. Exercises the Type-2 decode check.
+      a short non-decodable blob. Exercises the multi-message aggregate decode check.
     - `{"operation": "append_phantom_attestation"}`: Add a body
       attestation with no matching proof component. Exercises the
       component count check between the body and the merged proof.
@@ -76,6 +78,9 @@ class VerifySignaturesTest(BaseConsensusFixture):
       signing so the block root differs. Exercises the per-component
       message binding that prevents reusing an honest proof under a
       different message.
+    - `{"operation": "swap_first_two_attestations"}`: Swap the first
+      two body attestations and re-sign only the proposer. Exercises
+      body/proof ordering without relying on a block-root mismatch.
 
     Tampered blocks bypass the builder's structural invariants. The
     resulting fixture pins the exact rejection a client must raise when
@@ -177,9 +182,11 @@ class VerifySignaturesTest(BaseConsensusFixture):
             return signed_block
 
         if operation == "corrupt_proof":
-            # Replace the merged proof with a short non-decodable blob.
-            # Decoding the Type-2 envelope must fail before verification.
-            signed_block.proof = ByteList512KiB(data=b"\x00\x01\x02\x03")
+            # Replace the merged proof with a short bogus payload.
+            # The verifier rejects the malformed proof bytes.
+            signed_block.proof = MultiMessageAggregate(
+                proof=ByteList512KiB(data=b"\x00\x01\x02\x03"),
+            )
             return signed_block
 
         if operation == "append_phantom_attestation":
@@ -210,5 +217,46 @@ class VerifySignaturesTest(BaseConsensusFixture):
             # a different message.
             signed_block.block.state_root = Bytes32(b"\xff" * 32)
             return signed_block
+
+        if operation == "swap_first_two_attestations":
+            body = signed_block.block.body
+            original = body.attestations.data
+            if len(original) < 2:
+                raise ValueError("swap_first_two_attestations requires at least two attestations")
+            assert self.anchor_state is not None
+
+            key_manager = XmssKeyManager.shared()
+            original_attestation_proofs = [
+                key_manager.sign_and_aggregate(
+                    list(attestation.aggregation_bits.to_validator_indices()),
+                    attestation.data,
+                )
+                for attestation in original
+            ]
+
+            swapped_body = body.model_copy(
+                update={
+                    "attestations": AggregatedAttestations(
+                        data=[original[1], original[0], *original[2:]]
+                    )
+                }
+            )
+            swapped_block = signed_block.block.model_copy(update={"body": swapped_body})
+
+            # Keep the block root honestly signed; only the attestation
+            # proof order remains mismatched with the body order.
+            post_state = LstarSpec().process_slots(self.anchor_state, swapped_block.slot)
+            post_state = LstarSpec().process_block(post_state, swapped_block)
+            swapped_block = swapped_block.model_copy(
+                update={"state_root": hash_tree_root(post_state)}
+            )
+
+            return self.block._sign_block(
+                swapped_block,
+                original_attestation_proofs,
+                swapped_block.proposer_index,
+                key_manager,
+                self.anchor_state,
+            )
 
         raise ValueError(f"Unknown tamper operation: {operation!r}")

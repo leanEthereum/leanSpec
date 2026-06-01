@@ -37,7 +37,7 @@ Controls how many peers are in the mesh for each topic.
 
 ::
 
-    mcache_len      Total history windows kept (6)
+    mcache_length      Total history windows kept (6)
     mcache_gossip   Windows included in IHAVE gossip (3)
     seen_ttl        Duplicate detection window
 
@@ -132,11 +132,11 @@ class GossipsubParameters(StrictBaseModel):
 
     # Message Cache Parameters
 
-    mcache_len: int = 6
+    mcache_length: int = 6
     """Total number of history windows in the message cache.
 
     - Messages are stored for this many heartbeat intervals.
-    - After mcache_len heartbeats, messages are evicted.
+    - After mcache_length heartbeats, messages are evicted.
     """
 
     mcache_gossip: int = 3

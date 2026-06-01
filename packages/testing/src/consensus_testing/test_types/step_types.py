@@ -102,7 +102,7 @@ class BlockStep(BaseForkChoiceStep):
     in the private _filled_block attribute for serialization.
     """
 
-    # TODO: We should figure out a configuration to raise if a private attr is
+    # TODO: We should figure out a configuration to raise if a private attribute is
     #  attempted to be set during model initialization.
     _filled_block: Block | None = PrivateAttr(default=None)
     """The filled Block, processed through the spec."""

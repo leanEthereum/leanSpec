@@ -90,14 +90,14 @@ async def fetch_finalized_state(url: str, state_class: type[State]) -> State:
 
             return state
 
-    except httpx.RequestError as exc:
+    except httpx.RequestError as exception:
         raise CheckpointSyncError(
-            f"Network error while connecting to {exc.request.url}: {exc}"
-        ) from exc
-    except httpx.HTTPStatusError as exc:
+            f"Network error while connecting to {exception.request.url}: {exception}"
+        ) from exception
+    except httpx.HTTPStatusError as exception:
         raise CheckpointSyncError(
-            f"HTTP error {exc.response.status_code}: {exc.response.text[:200]}"
-        ) from exc
+            f"HTTP error {exception.response.status_code}: {exception.response.text[:200]}"
+        ) from exception
     except Exception as e:
         raise CheckpointSyncError(f"Failed to fetch state: {e}") from e
 

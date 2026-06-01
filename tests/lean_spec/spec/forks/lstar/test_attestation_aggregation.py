@@ -1,6 +1,12 @@
 """Tests for AggregatedAttestation structure."""
 
-from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks import (
+    AggregationBits,
+    Checkpoint,
+    Slot,
+    ValidatorIndex,
+    ValidatorIndices,
+)
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AttestationData,
@@ -13,33 +19,35 @@ class TestAggregatedAttestation:
 
     def test_aggregated_attestation_structure(self) -> None:
         """Test that aggregated attestation properly stores bits and data."""
-        att_data = AttestationData(
+        attestation_data = AttestationData(
             slot=Slot(5),
             head=Checkpoint(root=Bytes32.zero(), slot=Slot(4)),
             target=Checkpoint(root=Bytes32.zero(), slot=Slot(3)),
             source=Checkpoint(root=Bytes32.zero(), slot=Slot(2)),
         )
 
-        bits = ValidatorIndices(data=[ValidatorIndex(2), ValidatorIndex(7)]).to_aggregation_bits()
-        agg = AggregatedAttestation(aggregation_bits=bits, data=att_data)
+        bits = AggregationBits.from_indices([ValidatorIndex(2), ValidatorIndex(7)])
+        aggregate = AggregatedAttestation(aggregation_bits=bits, data=attestation_data)
 
         # Verify we can extract validator indices
-        indices = agg.aggregation_bits.to_validator_indices()
+        indices = aggregate.aggregation_bits.to_validator_indices()
         assert set(indices) == {ValidatorIndex(2), ValidatorIndex(7)}
-        assert agg.data == att_data
+        assert aggregate.data == attestation_data
 
     def test_aggregated_attestation_with_many_validators(self) -> None:
         """Test aggregated attestation with many validators."""
-        att_data = AttestationData(
+        attestation_data = AttestationData(
             slot=Slot(10),
             head=Checkpoint(root=Bytes32.zero(), slot=Slot(9)),
             target=Checkpoint(root=Bytes32.zero(), slot=Slot(8)),
             source=Checkpoint(root=Bytes32.zero(), slot=Slot(7)),
         )
 
-        validator_ids = ValidatorIndices(data=[ValidatorIndex(i) for i in [0, 5, 10, 15, 20, 25]])
-        bits = validator_ids.to_aggregation_bits()
-        agg = AggregatedAttestation(aggregation_bits=bits, data=att_data)
+        validator_indices = ValidatorIndices(
+            data=[ValidatorIndex(i) for i in [0, 5, 10, 15, 20, 25]]
+        )
+        bits = AggregationBits.from_indices(validator_indices)
+        aggregate = AggregatedAttestation(aggregation_bits=bits, data=attestation_data)
 
-        recovered = agg.aggregation_bits.to_validator_indices()
-        assert recovered == validator_ids
+        recovered = aggregate.aggregation_bits.to_validator_indices()
+        assert recovered == validator_indices

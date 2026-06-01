@@ -84,9 +84,9 @@ class TestPublish:
 
         await behavior.publish(topic, b"cacheMe")
 
-        msg_id = GossipsubMessage.compute_id(topic.encode("utf-8"), b"cacheMe")
-        assert behavior.seen_cache.has(msg_id)
-        assert behavior.message_cache.has(msg_id)
+        message_id = GossipsubMessage.compute_id(topic.encode("utf-8"), b"cacheMe")
+        assert behavior.seen_cache.has(message_id)
+        assert behavior.message_cache.has(message_id)
 
     @pytest.mark.asyncio
     async def test_publish_empty_mesh_no_crash(self) -> None:

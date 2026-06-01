@@ -2,7 +2,7 @@
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.config import LEAN_ENV
-from lean_spec.spec.forks.lstar.containers import Slot
+from lean_spec.spec.forks.lstar.slot import Slot
 from lean_spec.spec.ssz import Bytes32, Uint64
 
 from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
@@ -159,8 +159,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
         )
 
         # Pack the public root and the resident signer state into the key pair.
-        pk = PublicKey(root=top_tree.root(), parameter=parameter)
-        sk = SecretKey(
+        public_key = PublicKey(root=top_tree.root(), parameter=parameter)
+        secret_key = SecretKey(
             prf_key=prf_key,
             parameter=parameter,
             activation_slot=Slot(actual_activation_slot),
@@ -170,9 +170,9 @@ class GeneralizedXmssScheme(StrictBaseModel):
             left_bottom_tree=left_bottom_tree,
             right_bottom_tree=right_bottom_tree,
         )
-        return KeyPair(public_key=pk, secret_key=sk)
+        return KeyPair(public_key=public_key, secret_key=secret_key)
 
-    def sign(self, sk: SecretKey, slot: Slot, message: Bytes32) -> Signature:
+    def sign(self, secret_key: SecretKey, slot: Slot, message: Bytes32) -> Signature:
         """Produce a signature for a message at a specific slot.
 
         Phase 1: enforce that the slot is inside the activation and prepared windows.
@@ -180,11 +180,11 @@ class GeneralizedXmssScheme(StrictBaseModel):
         Phase 3: walk each Winternitz chain to the released hash dictated by the codeword.
         Phase 4: build the combined Merkle path through the bottom and top trees.
 
-        Signing is deterministic in (sk, slot, message).
+        Signing is deterministic in (secret_key, slot, message).
         A secret key must never sign two different messages for the same slot.
 
         Args:
-            sk: Secret key.
+            secret_key: Secret key.
             slot: Signing slot.
             message: Message to sign.
 
@@ -197,13 +197,13 @@ class GeneralizedXmssScheme(StrictBaseModel):
         """
         config = self.config
         slot_int = int(slot)
-        activation_int = int(sk.activation_slot)
+        activation_int = int(secret_key.activation_slot)
 
         # Phase 1a: the slot must lie in the key's activation range.
         #
         # This is a synchronized one-time scheme: each slot consumes a distinct one-time key.
         # The key only holds material for the contiguous range fixed at generation.
-        if not (activation_int <= slot_int < activation_int + int(sk.num_active_slots)):
+        if not (activation_int <= slot_int < activation_int + int(secret_key.num_active_slots)):
             raise ValueError("Key is not active for the specified slot.")
 
         # Phase 1b: the slot must lie in the prepared window.
@@ -211,7 +211,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # The signature opens this slot's leaf through the bottom tree that holds it.
         # Only the two adjacent resident bottom trees are available.
         # A slot outside them would force rebuilding a tree from the PRF, so we refuse.
-        prepared = self.get_prepared_interval(sk)
+        prepared = self.get_prepared_interval(secret_key)
         if slot_int not in prepared:
             raise ValueError(
                 f"Slot {slot} is outside the prepared interval "
@@ -228,8 +228,10 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # The randomness is derived from the PRF, keyed by the message and an attempt counter.
         # Signing the same message twice is therefore reproducible.
         for attempts in range(config.MAX_TRIES):
-            rho = sk.prf_key.derive_randomness(config, slot, message, Uint64(attempts))
-            codeword = target_sum_encode(self.poseidon, config, sk.parameter, message, rho, slot)
+            rho = secret_key.prf_key.derive_randomness(config, slot, message, Uint64(attempts))
+            codeword = target_sum_encode(
+                self.poseidon, config, secret_key.parameter, message, rho, slot
+            )
             if codeword is not None:
                 break
         else:
@@ -248,10 +250,10 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # The verifier later finishes the remaining steps to reach the chain end.
         ots_hashes: list[HashDigestVector] = []
         for chain_index, steps in enumerate(codeword):
-            start_digest = sk.prf_key.derive_chain_start(config, slot, Uint64(chain_index))
+            start_digest = secret_key.prf_key.derive_chain_start(config, slot, Uint64(chain_index))
             ots_digest = self.poseidon.hash_chain(
                 config=config,
-                parameter=sk.parameter,
+                parameter=secret_key.parameter,
                 epoch=slot,
                 chain_index=chain_index,
                 start_step=0,
@@ -265,14 +267,18 @@ class GeneralizedXmssScheme(StrictBaseModel):
         # The opening climbs the bottom tree that holds the slot, then the top tree.
         # The slot's side of the prepared window selects which resident bottom tree to climb.
         boundary = prepared.start + config.LEAVES_PER_BOTTOM_TREE
-        bottom_tree = sk.left_bottom_tree if slot_int < boundary else sk.right_bottom_tree
-        path = combined_path(sk.top_tree, bottom_tree, Uint64(slot))
+        bottom_tree = (
+            secret_key.left_bottom_tree if slot_int < boundary else secret_key.right_bottom_tree
+        )
+        path = combined_path(secret_key.top_tree, bottom_tree, Uint64(slot))
 
         # The signature carries the opening, the randomness, and the released chain values.
         # The randomness lets the verifier recompute the same codeword.
         return Signature(path=path, rho=rho, hashes=HashDigestList(data=ots_hashes))
 
-    def verify(self, pk: PublicKey, slot: Slot, message: Bytes32, sig: Signature) -> bool:
+    def verify(
+        self, public_key: PublicKey, slot: Slot, message: Bytes32, signature: Signature
+    ) -> bool:
         """Verify a signature against a public key, message, and slot.
 
         Phase 1: bound-check the slot.
@@ -282,10 +288,10 @@ class GeneralizedXmssScheme(StrictBaseModel):
         Phase 4: rebuild the Merkle root from the chain endpoints and the opening.
 
         Args:
-            pk: Public key.
+            public_key: Public key.
             slot: Signing slot claimed by the signature.
             message: Message claimed by the signature.
-            sig: Signature to verify.
+            signature: Signature to verify.
 
         Returns:
             True when the signature is valid against the public key, false otherwise.
@@ -300,7 +306,9 @@ class GeneralizedXmssScheme(StrictBaseModel):
 
         # Phase 2: rederive the codeword from the signature's randomness.
         # A failing aborting decode means the signature cannot be valid.
-        codeword = target_sum_encode(self.poseidon, config, pk.parameter, message, sig.rho, slot)
+        codeword = target_sum_encode(
+            self.poseidon, config, public_key.parameter, message, signature.rho, slot
+        )
         if codeword is None:
             return False
 
@@ -309,10 +317,10 @@ class GeneralizedXmssScheme(StrictBaseModel):
         for chain_index, xi in enumerate(codeword):
             # The signature provides the digest after xi steps along the chain.
             # We hash the remaining BASE - 1 - xi times to reach the endpoint.
-            start_digest = sig.hashes[chain_index]
+            start_digest = signature.hashes[chain_index]
             end_digest = self.poseidon.hash_chain(
                 config=config,
-                parameter=pk.parameter,
+                parameter=public_key.parameter,
                 epoch=slot,
                 chain_index=chain_index,
                 start_step=xi,
@@ -325,22 +333,22 @@ class GeneralizedXmssScheme(StrictBaseModel):
         return verify_path(
             poseidon=self.poseidon,
             config=config,
-            parameter=pk.parameter,
-            root=pk.root,
+            parameter=public_key.parameter,
+            root=public_key.root,
             position=slot,
             leaf_parts=chain_ends,
-            opening=sig.path,
+            opening=signature.path,
         )
 
-    def get_activation_interval(self, sk: SecretKey) -> range:
+    def get_activation_interval(self, secret_key: SecretKey) -> range:
         """Return the activation interval as a Python range.
 
         A signature is only valid for a slot inside this range.
         """
-        start = int(sk.activation_slot)
-        return range(start, start + int(sk.num_active_slots))
+        start = int(secret_key.activation_slot)
+        return range(start, start + int(secret_key.num_active_slots))
 
-    def get_prepared_interval(self, sk: SecretKey) -> range:
+    def get_prepared_interval(self, secret_key: SecretKey) -> range:
         """Return the prepared interval as a Python range.
 
         The prepared interval is the slot window covered by the two resident bottom trees.
@@ -348,10 +356,10 @@ class GeneralizedXmssScheme(StrictBaseModel):
         rebuilding a bottom tree from the PRF.
         """
         leaves_per_bottom_tree = self.config.LEAVES_PER_BOTTOM_TREE
-        start = int(sk.left_bottom_tree_index) * leaves_per_bottom_tree
+        start = int(secret_key.left_bottom_tree_index) * leaves_per_bottom_tree
         return range(start, start + 2 * leaves_per_bottom_tree)
 
-    def advance_preparation(self, sk: SecretKey) -> SecretKey:
+    def advance_preparation(self, secret_key: SecretKey) -> SecretKey:
         """Slide the prepared window one bottom tree forward.
 
         Phase 1: bail out when the next window would exceed the activation interval.
@@ -361,33 +369,33 @@ class GeneralizedXmssScheme(StrictBaseModel):
         Returning the same key when no advancement is possible keeps callers simple.
 
         Args:
-            sk: Secret key whose prepared window should advance.
+            secret_key: Secret key whose prepared window should advance.
 
         Returns:
             A secret key with the window shifted by one bottom tree.
         """
-        left_index = int(sk.left_bottom_tree_index)
+        left_index = int(secret_key.left_bottom_tree_index)
 
         # Phase 1: no advancement once the activation interval is fully consumed.
         next_prepared_end_slot = (left_index + 3) * self.config.LEAVES_PER_BOTTOM_TREE
-        activation_end = int(sk.activation_slot) + int(sk.num_active_slots)
+        activation_end = int(secret_key.activation_slot) + int(secret_key.num_active_slots)
         if next_prepared_end_slot > activation_end:
-            return sk
+            return secret_key
 
         # Phase 2: rebuild the next bottom tree from the master PRF key.
         new_right_bottom_tree = HashSubTree.from_prf_key(
             poseidon=self.poseidon,
             config=self.config,
-            prf_key=sk.prf_key,
+            prf_key=secret_key.prf_key,
             bottom_tree_index=Uint64(left_index + 2),
-            parameter=sk.parameter,
+            parameter=secret_key.parameter,
         )
 
         # Phase 3: rotate the right tree into the left slot, advance the index.
-        sk.left_bottom_tree = sk.right_bottom_tree
-        sk.right_bottom_tree = new_right_bottom_tree
-        sk.left_bottom_tree_index = Uint64(left_index + 1)
-        return sk
+        secret_key.left_bottom_tree = secret_key.right_bottom_tree
+        secret_key.right_bottom_tree = new_right_bottom_tree
+        secret_key.left_bottom_tree_index = Uint64(left_index + 1)
+        return secret_key
 
 
 PROD_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=PROD_CONFIG, poseidon=PROD_POSEIDON)

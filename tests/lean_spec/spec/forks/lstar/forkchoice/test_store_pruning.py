@@ -1,8 +1,8 @@
 """Tests for Store attestation data pruning."""
 
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.spec.forks import Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks import AggregationBits, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import AttestationSignatureEntry, Store
+from lean_spec.spec.forks.lstar.containers import SingleMessageAggregate
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 from tests.lean_spec.helpers import (
@@ -121,8 +121,8 @@ def test_prunes_related_structures_together(spec: LstarSpec, pruning_store: Stor
 
     # Create mock aggregated proof (empty proof data for testing)
     placeholder = ByteList512KiB(data=b"")
-    mock_proof = TypeOneMultiSignature(
-        participants=ValidatorIndices(data=[ValidatorIndex(1)]).to_aggregation_bits(),
+    mock_proof = SingleMessageAggregate(
+        participants=AggregationBits.from_indices([ValidatorIndex(1)]),
         proof=placeholder,
     )
 
@@ -225,25 +225,25 @@ def test_mixed_stale_and_fresh_entries(spec: LstarSpec, pruning_store: Store) ->
         for i in range(1, 11)  # Slots 1-10
     ]
 
-    gossip_sigs = {
-        att: {AttestationSignatureEntry(ValidatorIndex(i), make_mock_signature())}
-        for i, att in enumerate(attestations, start=1)
+    gossip_signatures = {
+        attestation: {AttestationSignatureEntry(ValidatorIndex(i), make_mock_signature())}
+        for i, attestation in enumerate(attestations, start=1)
     }
 
     # Finalized at slot 5 means slots 1-5 are stale, 6-10 are fresh
-    store.attestation_signatures = gossip_sigs
+    store.attestation_signatures = gossip_signatures
     store.latest_finalized = make_checkpoint(root_seed=255, slot=5)
 
     # Verify all data exists before pruning
-    for att in attestations:
-        assert att in store.attestation_signatures
+    for attestation in attestations:
+        assert attestation in store.attestation_signatures
 
     pruned_store = spec.prune_stale_attestation_data(store)
 
     # Entries with target.slot <= 5 should be pruned (slots 1-5)
-    for att in attestations[:5]:
-        assert att not in pruned_store.attestation_signatures
+    for attestation in attestations[:5]:
+        assert attestation not in pruned_store.attestation_signatures
 
     # Entries with target.slot > 5 should be kept (slots 6-10)
-    for att in attestations[5:]:
-        assert att in pruned_store.attestation_signatures
+    for attestation in attestations[5:]:
+        assert attestation in pruned_store.attestation_signatures

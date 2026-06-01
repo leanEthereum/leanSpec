@@ -322,12 +322,12 @@ class TestErrorPaths:
         root = Bytes32(b"\x20" * 32)
 
         # Write garbage bytes directly into the blocks table.
-        cursor = db._conn.cursor()
+        cursor = db._connection.cursor()
         cursor.execute(
             "INSERT INTO blocks (root, slot, data) VALUES (?, ?, ?)",
             (bytes(root), 0, b"not valid ssz"),
         )
-        db._conn.commit()
+        db._connection.commit()
 
         with pytest.raises(StorageCorruptionError, match="Corrupt block"):
             db.get_block(root)
@@ -336,24 +336,24 @@ class TestErrorPaths:
         """Reading corrupt state data raises StorageCorruptionError."""
         root = Bytes32(b"\x21" * 32)
 
-        cursor = db._conn.cursor()
+        cursor = db._connection.cursor()
         cursor.execute(
             "INSERT INTO states (root, slot, data) VALUES (?, ?, ?)",
             (bytes(root), 0, b"not valid ssz"),
         )
-        db._conn.commit()
+        db._connection.commit()
 
         with pytest.raises(StorageCorruptionError, match="Corrupt state"):
             db.get_state(root)
 
     def test_corrupt_checkpoint_data_raises_corruption_error(self, db: SQLiteDatabase) -> None:
         """Reading corrupt checkpoint data raises StorageCorruptionError."""
-        cursor = db._conn.cursor()
+        cursor = db._connection.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO checkpoints (key, data) VALUES (?, ?)",
             ("justified", b"not valid ssz"),
         )
-        db._conn.commit()
+        db._connection.commit()
 
         with pytest.raises(StorageCorruptionError, match="Corrupt justified"):
             db.get_justified_checkpoint()

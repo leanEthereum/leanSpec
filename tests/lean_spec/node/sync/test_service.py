@@ -37,7 +37,7 @@ def _signed_aggregated_attestation(key_manager: XmssKeyManager) -> SignedAggrega
     _, attestation_data = make_store_with_attestation_data(
         key_manager,
         num_validators=4,
-        validator_id=ValidatorIndex(0),
+        validator_index=ValidatorIndex(0),
     )
     proof = make_aggregated_proof(key_manager, [ValidatorIndex(1)], attestation_data)
     return SignedAggregatedAttestation(data=attestation_data, proof=proof)
@@ -303,7 +303,9 @@ class TestAttestationGossipHandling:
         )
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
-        mock_store.reject_attestation = lambda att: att.data.target.root == unknown_root
+        mock_store.reject_attestation = (
+            lambda attestation: attestation.data.target.root == unknown_root
+        )
 
         await sync_service.on_gossip_attestation(attestation)
 
@@ -559,8 +561,8 @@ class TestPublishAggregatedAttestation:
         service = create_mock_sync_service(peer_id)
         published: list[SignedAggregatedAttestation] = []
 
-        async def capture(agg: SignedAggregatedAttestation) -> None:
-            published.append(agg)
+        async def capture(aggregate: SignedAggregatedAttestation) -> None:
+            published.append(aggregate)
 
         service.publish_aggregated_attestation = capture
         signed = _signed_aggregated_attestation(key_manager)
@@ -621,12 +623,12 @@ class TestPendingAttestationLimits:
         unknown = Bytes32(b"\xcd" * 32)
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
-        mock_store.reject_attestation = lambda _att: True
+        mock_store.reject_attestation = lambda _attestation: True
 
         for i in range(MAX_PENDING_ATTESTATIONS + 50):
             target = Checkpoint(root=unknown, slot=Slot(i))
-            att = make_signed_attestation(ValidatorIndex(0), target=target)
-            await sync_service.on_gossip_attestation(att)
+            attestation = make_signed_attestation(ValidatorIndex(0), target=target)
+            await sync_service.on_gossip_attestation(attestation)
 
         assert len(sync_service._pending_attestations) == MAX_PENDING_ATTESTATIONS
         last_slot = MAX_PENDING_ATTESTATIONS + 49
@@ -641,7 +643,7 @@ class TestPendingAttestationLimits:
         sync_service.state = SyncState.SYNCING
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
-        mock_store.reject_aggregated_attestation = lambda _att: True
+        mock_store.reject_aggregated_attestation = lambda _attestation: True
 
         signed = _signed_aggregated_attestation(key_manager)
         for _ in range(MAX_PENDING_ATTESTATIONS + 10):
@@ -673,7 +675,7 @@ class TestAggregatedAttestationGossip:
         signed = _signed_aggregated_attestation(key_manager)
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
-        mock_store.reject_aggregated_attestation = lambda _att: True
+        mock_store.reject_aggregated_attestation = lambda _attestation: True
 
         await sync_service.on_gossip_aggregated_attestation(signed)
         assert list(sync_service._pending_aggregated_attestations) == [signed]
@@ -686,17 +688,17 @@ class TestAggregatedAttestationGossip:
         sync_service.state = SyncState.SYNCING
         head = sync_service.store.head
         ok_target = Checkpoint(root=head, slot=Slot(0))
-        ok_att = make_signed_attestation(ValidatorIndex(0), target=ok_target)
+        ok_attestation = make_signed_attestation(ValidatorIndex(0), target=ok_target)
         bad_signed = _signed_aggregated_attestation(key_manager)
 
         mock_store = cast(MockForkchoiceStore, sync_service.store)
-        mock_store.reject_aggregated_attestation = lambda att: att is bad_signed
+        mock_store.reject_aggregated_attestation = lambda attestation: attestation is bad_signed
 
-        sync_service._pending_attestations.append(ok_att)
+        sync_service._pending_attestations.append(ok_attestation)
         sync_service._pending_aggregated_attestations.append(bad_signed)
         sync_service._replay_pending_attestations()
 
-        assert ok_att in mock_store._attestations_received
+        assert ok_attestation in mock_store._attestations_received
         assert list(sync_service._pending_aggregated_attestations) == [bad_signed]
 
 
@@ -710,20 +712,20 @@ class TestReplayPendingAttestationsPlain:
         head = mock_store.head
         unknown = Bytes32(b"\xee" * 32)
 
-        ok_att = make_signed_attestation(
+        ok_attestation = make_signed_attestation(
             ValidatorIndex(0),
             target=Checkpoint(root=head, slot=Slot(0)),
         )
-        bad_att = make_signed_attestation(
+        bad_attestation = make_signed_attestation(
             ValidatorIndex(1),
             target=Checkpoint(root=unknown, slot=Slot(5)),
         )
 
-        mock_store.reject_attestation = lambda att: att.data.target.root == unknown
+        mock_store.reject_attestation = lambda attestation: attestation.data.target.root == unknown
 
-        sync_service._pending_attestations.append(ok_att)
-        sync_service._pending_attestations.append(bad_att)
+        sync_service._pending_attestations.append(ok_attestation)
+        sync_service._pending_attestations.append(bad_attestation)
         sync_service._replay_pending_attestations()
 
-        assert ok_att in mock_store._attestations_received
-        assert list(sync_service._pending_attestations) == [bad_att]
+        assert ok_attestation in mock_store._attestations_received
+        assert list(sync_service._pending_attestations) == [bad_attestation]

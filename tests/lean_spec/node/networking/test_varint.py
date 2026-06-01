@@ -74,7 +74,7 @@ class TestDecodeVarint:
 
     def test_too_long_raises(self) -> None:
         """More than 10 continuation bytes (>64-bit) raises."""
-        with pytest.raises(VarintError, match="too long"):
+        with pytest.raises(VarintError, match="exceeds 10 bytes"):
             decode_varint(b"\x80" * 11, 0)
 
 
@@ -120,3 +120,44 @@ class TestVarintRoundtrip:
         """Large multi-byte values roundtrip correctly."""
         encoded = encode_varint(value)
         assert decode_varint(encoded, 0) == (value, len(encoded))
+
+
+class TestMaxBytesParameter:
+    """Tests for the max_bytes cap shared by both encode and decode."""
+
+    @pytest.mark.parametrize(
+        ("value", "byte_count"),
+        [
+            (0, 1),
+            (127, 1),
+            (128, 2),
+            (16383, 2),
+            (16384, 3),
+            (2**28 - 1, 4),
+            (2**28, 5),
+            (2**35 - 1, 5),
+        ],
+    )
+    def test_five_byte_cap_accepts_values_up_to_five_bytes(
+        self, value: int, byte_count: int
+    ) -> None:
+        """A five-byte cap fits values that encode in five or fewer bytes."""
+        encoded = encode_varint(value, max_bytes=5)
+        assert len(encoded) == byte_count
+        assert decode_varint(encoded, 0, max_bytes=5) == (value, byte_count)
+
+    def test_five_byte_cap_rejects_value_needing_six_bytes(self) -> None:
+        """A value past the five-byte ceiling is rejected on encode."""
+        with pytest.raises(ValueError, match="does not fit in 5 bytes"):
+            encode_varint(2**35, max_bytes=5)
+
+    def test_five_byte_cap_rejects_six_byte_input(self) -> None:
+        """A six-byte continuation run is rejected on decode."""
+        with pytest.raises(VarintError, match="exceeds 5 bytes"):
+            decode_varint(b"\x80" * 6, 0, max_bytes=5)
+
+    def test_five_byte_cap_accepts_five_bytes_at_boundary(self) -> None:
+        """Five continuation bytes followed by a terminator decode successfully."""
+        encoded = bytes([0x80, 0x80, 0x80, 0x80, 0x01])
+        value, consumed = decode_varint(encoded, 0, max_bytes=5)
+        assert (value, consumed) == (1 << 28, 5)

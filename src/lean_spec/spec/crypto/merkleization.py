@@ -39,7 +39,7 @@ def _next_pow2(x: int) -> int:
 _ZERO_HASHES: Final[tuple[Bytes32, ...]] = tuple(
     accumulate(
         repeat(None, 64),
-        lambda prev, _: Bytes32(sha256(prev + prev).digest()),
+        lambda previous, _: Bytes32(sha256(previous + previous).digest()),
         initial=ZERO_HASH,
     )
 )
@@ -265,11 +265,11 @@ def _htr_bitlist_base(value: BaseBitlist) -> Bytes32:
 @hash_tree_root.register
 def _htr_vector(value: SSZVector) -> Bytes32:
     cls = type(value)
-    elem_t, length = cls.ELEMENT_TYPE, cls.LENGTH
-    if issubclass(elem_t, (BaseUint, Boolean, Fp)):
+    element_t, length = cls.ELEMENT_TYPE, cls.LENGTH
+    if issubclass(element_t, (BaseUint, Boolean, Fp)):
         # Basic elements pack their serialized bytes into a single byte stream before chunking.
-        elem_size = elem_t.get_byte_length()
-        limit_chunks = ceil(length * elem_size / BYTES_PER_CHUNK)
+        element_size = element_t.get_byte_length()
+        limit_chunks = ceil(length * element_size / BYTES_PER_CHUNK)
         return merkleize(
             _pack_bytes(b"".join(e.encode_bytes() for e in value)),
             limit=limit_chunks,
@@ -281,10 +281,10 @@ def _htr_vector(value: SSZVector) -> Bytes32:
 @hash_tree_root.register
 def _htr_list(value: SSZList) -> Bytes32:
     cls = type(value)
-    elem_t, limit = cls.ELEMENT_TYPE, cls.LIMIT
-    if issubclass(elem_t, (BaseUint, Boolean, Fp)):
-        elem_size = elem_t.get_byte_length()
-        limit_chunks = ceil(limit * elem_size / BYTES_PER_CHUNK)
+    element_t, limit = cls.ELEMENT_TYPE, cls.LIMIT
+    if issubclass(element_t, (BaseUint, Boolean, Fp)):
+        element_size = element_t.get_byte_length()
+        limit_chunks = ceil(limit * element_size / BYTES_PER_CHUNK)
         root = merkleize(
             _pack_bytes(b"".join(e.encode_bytes() for e in value)),
             limit=limit_chunks,

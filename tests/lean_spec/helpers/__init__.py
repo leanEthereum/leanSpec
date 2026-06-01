@@ -40,7 +40,7 @@ from .mocks import (
     RecordingSyncDatabase,
 )
 
-TEST_VALIDATOR_ID = ValidatorIndex(0)
+TEST_VALIDATOR_INDEX = ValidatorIndex(0)
 
 
 __all__ = [
@@ -78,5 +78,5 @@ __all__ = [
     "RecordedCall",
     "RecordingSyncDatabase",
     # Constants
-    "TEST_VALIDATOR_ID",
+    "TEST_VALIDATOR_INDEX",
 ]

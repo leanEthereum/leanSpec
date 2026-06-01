@@ -66,7 +66,7 @@ def test_produce_block_on_head_with_lagging_justification(
             label="block_4",
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(i) for i in range(6)],
+                    validator_indices=[ValidatorIndex(i) for i in range(6)],
                     slot=Slot(4),
                     target_slot=Slot(1),
                     target_root_label="block_1",
@@ -87,7 +87,7 @@ def test_produce_block_on_head_with_lagging_justification(
             label="block_5",
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(6), ValidatorIndex(7)],
+                    validator_indices=[ValidatorIndex(6), ValidatorIndex(7)],
                     slot=Slot(5),
                     target_slot=Slot(4),
                     target_root_label="block_4",
@@ -107,7 +107,7 @@ def test_produce_block_on_head_with_lagging_justification(
             label="block_6",
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(i) for i in range(6)],
+                    validator_indices=[ValidatorIndex(i) for i in range(6)],
                     slot=Slot(6),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -129,7 +129,9 @@ def test_produce_block_on_head_with_lagging_justification(
     # Its source is NOT block_5's latest_justified (which is block_1).
     # The filter must accept it on source-slot-justified, not full-Checkpoint equality.
     block_6_target_atts = [
-        att for att in store.latest_known_aggregated_payloads if att.target == block_2_checkpoint
+        attestation
+        for attestation in store.latest_known_aggregated_payloads
+        if attestation.target == block_2_checkpoint
     ]
     assert len(block_6_target_atts) == 1
     assert block_6_target_atts[0].source == Checkpoint(root=genesis_root, slot=Slot(0))
@@ -142,7 +144,7 @@ def test_produce_block_on_head_with_lagging_justification(
     # The produced block's post-state caught up to the store's justified checkpoint.
     # Its body carries the attestation that closed the gap.
     new_block_root = hash_tree_root(new_block)
-    body_targets = [att.data.target for att in new_block.body.attestations]
+    body_targets = [attestation.data.target for attestation in new_block.body.attestations]
     assert new_store.latest_justified == block_2_checkpoint
     assert new_block.parent_root == hash_tree_root(block_registry["block_5"])
     assert new_store.states[new_block_root].latest_justified == block_2_checkpoint

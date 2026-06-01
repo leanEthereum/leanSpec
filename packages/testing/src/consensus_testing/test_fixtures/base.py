@@ -44,3 +44,31 @@ class BaseConsensusFixture(BaseFixture):
         if value is None:
             return None
         return value.__name__
+
+    def assert_expected_outcome(self, exception_raised: Exception | None) -> None:
+        """Compare a self-verification outcome against the configured expectation.
+
+        A fixture that self-verifies its own output catches the verifier exception.
+        It then hands the caught exception here to decide pass or fail.
+
+        Args:
+            exception_raised: The exception the verifier raised, or None on success.
+
+        Raises:
+            AssertionError: When the outcome disagrees with the expectation.
+        """
+        # No expectation means the bundle is honest and must verify.
+        if self.expect_exception is None:
+            if exception_raised is not None:
+                raise AssertionError(f"Verifier rejected an honest bundle: {exception_raised}")
+        # An expectation that produced no exception means the tamper went undetected.
+        elif exception_raised is None:
+            raise AssertionError(
+                f"Expected {self.expect_exception.__name__} but verification succeeded"
+            )
+        # A wrong exception type means the rejection fired for the wrong reason.
+        elif not isinstance(exception_raised, self.expect_exception):
+            raise AssertionError(
+                f"Expected {self.expect_exception.__name__} but got "
+                f"{type(exception_raised).__name__}: {exception_raised}"
+            )

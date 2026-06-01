@@ -7,8 +7,18 @@ References:
       https://eprint.iacr.org/2026/016.pdf
 """
 
+from lean_multisig_py import setup_prover
+
+from lean_spec.config import LEAN_ENV
+
 from .containers import PublicKey, SecretKey
 from .interface import TARGET_SIGNATURE_SCHEME, GeneralizedXmssScheme
+
+# Side effect: configures the Rust prover for the lifetime of the process.
+# One call covers every aggregation, verification, split, and merge.
+# Per-call invocations then default to the mode established here.
+setup_prover(mode=LEAN_ENV)
+
 
 __all__ = [
     "GeneralizedXmssScheme",

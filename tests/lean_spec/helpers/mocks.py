@@ -168,7 +168,7 @@ class MockForkchoiceStore:
         self.head_slot: Slot = Slot(head_slot)
         self._attestations_received: list[SignedAttestation] = []
         self._aggregated_attestations_received: list[SignedAggregatedAttestation] = []
-        self.validator_id = None
+        self.validator_index = None
         self.latest_justified = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
         self.latest_finalized = Checkpoint(root=Bytes32.zero(), slot=Slot(0))
         self.states: dict[Bytes32, object] = {}

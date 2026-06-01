@@ -30,12 +30,12 @@ def _run_commit_open_verify_roundtrip(
     num_leaves: int,
     depth: int,
     start_index: int,
-    leaf_parts_len: int,
+    leaf_parts_length: int,
 ) -> None:
     """Build a tree, then open and verify every active leaf against its root."""
     parameter = random_parameter(config)
     leaves: list[list[HashDigestVector]] = [
-        [random_domain(config) for _ in range(leaf_parts_len)] for _ in range(num_leaves)
+        [random_domain(config) for _ in range(leaf_parts_length)] for _ in range(num_leaves)
     ]
 
     leaf_hashes: list[HashDigestVector] = [
@@ -74,7 +74,7 @@ def _run_commit_open_verify_roundtrip(
 
 
 @pytest.mark.parametrize(
-    "num_leaves, depth, start_index, leaf_parts_len",
+    "num_leaves, depth, start_index, leaf_parts_length",
     [
         pytest.param(16, 4, 0, 3, id="Full tree (depth 4)", marks=pytest.mark.slow),
         pytest.param(12, 5, 0, 5, id="Half tree, left-aligned (depth 5)", marks=pytest.mark.slow),
@@ -90,12 +90,12 @@ def test_commit_open_verify_roundtrip(
     num_leaves: int,
     depth: int,
     start_index: int,
-    leaf_parts_len: int,
+    leaf_parts_length: int,
 ) -> None:
     """A built tree opens and verifies every leaf for various shapes."""
     assert start_index + num_leaves <= (1 << depth)
     _run_commit_open_verify_roundtrip(
-        PROD_POSEIDON, PROD_CONFIG, num_leaves, depth, start_index, leaf_parts_len
+        PROD_POSEIDON, PROD_CONFIG, num_leaves, depth, start_index, leaf_parts_length
     )
 
 

@@ -91,81 +91,75 @@ class TestAggregationBitsToValidatorIndices:
         assert bits.to_validator_indices() == ValidatorIndices(data=[ValidatorIndex(2)])
 
 
-class TestValidatorIndicesToAggregationBits:
-    """Convert a list of validator indices to an aggregation bitlist."""
+class TestAggregationBitsFromIndices:
+    """Build an aggregation bitlist from validator indices."""
 
     def test_reject_empty_indices(self) -> None:
         """An empty index list raises with the exact empty-aggregation message."""
-        indices = ValidatorIndices(data=[])
         with pytest.raises(AssertionError) as exc_info:
-            indices.to_aggregation_bits()
+            AggregationBits.from_indices([])
         assert str(exc_info.value) == "Aggregated attestation must reference at least one validator"
 
     def test_single_index_zero(self) -> None:
         """Single index 0 produces a one-bit bitlist with the only bit set."""
-        indices = ValidatorIndices(data=[ValidatorIndex(0)])
-        assert indices.to_aggregation_bits() == AggregationBits(data=[Boolean(True)])
+        assert AggregationBits.from_indices([ValidatorIndex(0)]) == AggregationBits(
+            data=[Boolean(True)]
+        )
 
     def test_single_index_at_last_valid_position(self) -> None:
         """Single index LIMIT - 1 produces a LIMIT-length bitlist with only the final bit true."""
-        indices = ValidatorIndices(data=[ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT) - 1)])
         expected_data = [Boolean(False)] * (int(VALIDATOR_REGISTRY_LIMIT) - 1) + [Boolean(True)]
-        assert indices.to_aggregation_bits() == AggregationBits(data=expected_data)
+        assert AggregationBits.from_indices(
+            [ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT) - 1)]
+        ) == AggregationBits(data=expected_data)
 
     def test_reject_index_at_limit(self) -> None:
         """An index equal to LIMIT exceeds the bitfield range and raises exact message."""
-        indices = ValidatorIndices(data=[ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT))])
         with pytest.raises(AssertionError) as exc_info:
-            indices.to_aggregation_bits()
+            AggregationBits.from_indices([ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT))])
         assert str(exc_info.value) == "Validator index out of range for aggregation bits"
 
     def test_reject_index_just_above_limit(self) -> None:
         """An index of LIMIT + 1 raises the exact out-of-range message."""
-        indices = ValidatorIndices(data=[ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT) + 1)])
         with pytest.raises(AssertionError) as exc_info:
-            indices.to_aggregation_bits()
+            AggregationBits.from_indices([ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT) + 1)])
         assert str(exc_info.value) == "Validator index out of range for aggregation bits"
 
     def test_reject_index_far_above_limit(self) -> None:
         """An index well above LIMIT raises the exact out-of-range message."""
-        indices = ValidatorIndices(data=[ValidatorIndex(2**20)])
         with pytest.raises(AssertionError) as exc_info:
-            indices.to_aggregation_bits()
+            AggregationBits.from_indices([ValidatorIndex(2**20)])
         assert str(exc_info.value) == "Validator index out of range for aggregation bits"
 
     def test_one_bad_index_poisons_the_batch(self) -> None:
         """A mix of valid indices and one out-of-range index raises the out-of-range message."""
-        indices = ValidatorIndices(
-            data=[
-                ValidatorIndex(0),
-                ValidatorIndex(1),
-                ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT)),
-            ]
-        )
         with pytest.raises(AssertionError) as exc_info:
-            indices.to_aggregation_bits()
+            AggregationBits.from_indices(
+                [
+                    ValidatorIndex(0),
+                    ValidatorIndex(1),
+                    ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT)),
+                ]
+            )
         assert str(exc_info.value) == "Validator index out of range for aggregation bits"
 
     def test_deduplicates_repeated_indices(self) -> None:
         """Repeated indices collapse to a single set bit per position."""
-        indices = ValidatorIndices(
-            data=[ValidatorIndex(1), ValidatorIndex(3), ValidatorIndex(1), ValidatorIndex(3)]
-        )
-        assert indices.to_aggregation_bits() == AggregationBits(
-            data=[Boolean(False), Boolean(True), Boolean(False), Boolean(True)]
-        )
+        assert AggregationBits.from_indices(
+            [ValidatorIndex(1), ValidatorIndex(3), ValidatorIndex(1), ValidatorIndex(3)]
+        ) == AggregationBits(data=[Boolean(False), Boolean(True), Boolean(False), Boolean(True)])
 
     def test_all_duplicate_input(self) -> None:
         """An input of repeated index 5 yields a length-6 bitlist with only the final bit true."""
-        indices = ValidatorIndices(data=[ValidatorIndex(5)] * 4)
-        assert indices.to_aggregation_bits() == AggregationBits(
+        assert AggregationBits.from_indices([ValidatorIndex(5)] * 4) == AggregationBits(
             data=[Boolean(False)] * 5 + [Boolean(True)]
         )
 
     def test_handles_unsorted_input(self) -> None:
         """Unsorted indices produce a positionally correct bitfield."""
-        indices = ValidatorIndices(data=[ValidatorIndex(5), ValidatorIndex(1), ValidatorIndex(3)])
-        assert indices.to_aggregation_bits() == AggregationBits(
+        assert AggregationBits.from_indices(
+            [ValidatorIndex(5), ValidatorIndex(1), ValidatorIndex(3)]
+        ) == AggregationBits(
             data=[
                 Boolean(False),
                 Boolean(True),
@@ -178,16 +172,15 @@ class TestValidatorIndicesToAggregationBits:
 
     def test_unsorted_with_duplicates(self) -> None:
         """Unsorted input with duplicates yields a length-6 bitlist set at 1, 3, and 5."""
-        indices = ValidatorIndices(
-            data=[
+        assert AggregationBits.from_indices(
+            [
                 ValidatorIndex(5),
                 ValidatorIndex(1),
                 ValidatorIndex(3),
                 ValidatorIndex(5),
                 ValidatorIndex(1),
             ]
-        )
-        assert indices.to_aggregation_bits() == AggregationBits(
+        ) == AggregationBits(
             data=[
                 Boolean(False),
                 Boolean(True),
@@ -200,31 +193,26 @@ class TestValidatorIndicesToAggregationBits:
 
     def test_length_matches_max_index(self) -> None:
         """Returned bitfield has length max_index + 1 with no trailing zeros."""
-        indices = ValidatorIndices(data=[ValidatorIndex(3)])
-        assert indices.to_aggregation_bits() == AggregationBits(
+        assert AggregationBits.from_indices([ValidatorIndex(3)]) == AggregationBits(
             data=[Boolean(False), Boolean(False), Boolean(False), Boolean(True)]
         )
 
     def test_dense_full_registry(self) -> None:
         """Every index from 0 to LIMIT - 1 yields a LIMIT-length all-true bitlist."""
-        indices = ValidatorIndices(
-            data=[ValidatorIndex(i) for i in range(int(VALIDATOR_REGISTRY_LIMIT))]
-        )
-        assert indices.to_aggregation_bits() == AggregationBits(
-            data=[Boolean(True)] * int(VALIDATOR_REGISTRY_LIMIT)
-        )
+        assert AggregationBits.from_indices(
+            [ValidatorIndex(i) for i in range(int(VALIDATOR_REGISTRY_LIMIT))]
+        ) == AggregationBits(data=[Boolean(True)] * int(VALIDATOR_REGISTRY_LIMIT))
 
     def test_sparse_maximum(self) -> None:
         """Indices 0 and LIMIT - 1 yield a LIMIT-length bitlist with only those two bits set."""
-        indices = ValidatorIndices(
-            data=[ValidatorIndex(0), ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT) - 1)]
-        )
         expected_data = (
             [Boolean(True)]
             + [Boolean(False)] * (int(VALIDATOR_REGISTRY_LIMIT) - 2)
             + [Boolean(True)]
         )
-        assert indices.to_aggregation_bits() == AggregationBits(data=expected_data)
+        assert AggregationBits.from_indices(
+            [ValidatorIndex(0), ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT) - 1)]
+        ) == AggregationBits(data=expected_data)
 
 
 class TestRoundTrip:
@@ -233,7 +221,7 @@ class TestRoundTrip:
     def test_roundtrip_indices_to_bits_to_indices(self) -> None:
         """Indices to bits and back yields the original input."""
         original = ValidatorIndices(data=[ValidatorIndex(1), ValidatorIndex(5), ValidatorIndex(7)])
-        assert original.to_aggregation_bits().to_validator_indices() == original
+        assert AggregationBits.from_indices(original).to_validator_indices() == original
 
     def test_roundtrip_bits_to_indices_to_bits_preserves_last_true(self) -> None:
         """Bits to indices and back is exact when the bitlist ends with a true bit."""
@@ -249,7 +237,7 @@ class TestRoundTrip:
                 Boolean(True),
             ]
         )
-        assert original.to_validator_indices().to_aggregation_bits() == original
+        assert AggregationBits.from_indices(original.to_validator_indices()) == original
 
     def test_roundtrip_bits_to_indices_to_bits_trims_trailing_false(self) -> None:
         """Round-trip trims trailing false bits because output is sized by max index plus one."""
@@ -257,9 +245,9 @@ class TestRoundTrip:
             data=[Boolean(False), Boolean(True), Boolean(False), Boolean(False)]
         )
         trimmed = AggregationBits(data=[Boolean(False), Boolean(True)])
-        assert original.to_validator_indices().to_aggregation_bits() == trimmed
+        assert AggregationBits.from_indices(original.to_validator_indices()) == trimmed
 
     def test_roundtrip_boundary_index(self) -> None:
         """Round-trip starting from the highest valid index preserves the input exactly."""
         original = ValidatorIndices(data=[ValidatorIndex(int(VALIDATOR_REGISTRY_LIMIT) - 1)])
-        assert original.to_aggregation_bits().to_validator_indices() == original
+        assert AggregationBits.from_indices(original).to_validator_indices() == original

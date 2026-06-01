@@ -77,7 +77,7 @@ def test_finalization_prunes_stale_aggregated_payloads(
                     label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -106,7 +106,7 @@ def test_finalization_prunes_stale_aggregated_payloads(
                     label="block_5",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -139,7 +139,7 @@ def test_finalization_prunes_stale_aggregated_payloads(
             # Stale gossip: target=1 (at finalized slot), should be pruned later
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -155,7 +155,7 @@ def test_finalization_prunes_stale_aggregated_payloads(
             # V3 is unique to this attestation (not in stale)
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(1),
                         ValidatorIndex(2),
                         ValidatorIndex(3),
@@ -201,7 +201,7 @@ def test_finalization_prunes_stale_aggregated_payloads(
                     label="block_6",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -279,7 +279,7 @@ def test_finalization_prunes_stale_attestation_signatures(
                     parent_label="block_1",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(2),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -301,7 +301,7 @@ def test_finalization_prunes_stale_attestation_signatures(
                     parent_label="block_2",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(3),
                             target_slot=Slot(2),
                             target_root_label="block_2",
@@ -323,7 +323,7 @@ def test_finalization_prunes_stale_attestation_signatures(
                     parent_label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(4),
                             target_slot=Slot(3),
                             target_root_label="block_3",
@@ -360,7 +360,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             # their respective slots.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
                     slot=Slot(5),
                     target_slot=Slot(1),
                     target_root_label="block_1",
@@ -370,7 +370,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
                     slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -380,7 +380,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
                     slot=Slot(5),
                     target_slot=Slot(3),
                     target_root_label="block_3",
@@ -390,7 +390,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
                     slot=Slot(5),
                     target_slot=Slot(4),
                     target_root_label="block_4",
@@ -400,7 +400,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
                     slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
@@ -424,7 +424,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             # These land in latest_new_aggregated_payloads (first batch already migrated).
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
+                    validator_indices=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
                     slot=Slot(5),
                     target_slot=Slot(1),
                     target_root_label="block_1",
@@ -434,7 +434,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
+                    validator_indices=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
                     slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -444,7 +444,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
+                    validator_indices=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
                     slot=Slot(5),
                     target_slot=Slot(3),
                     target_root_label="block_3",
@@ -454,7 +454,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
+                    validator_indices=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
                     slot=Slot(5),
                     target_slot=Slot(4),
                     target_root_label="block_4",
@@ -464,7 +464,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
+                    validator_indices=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
                     slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
@@ -476,7 +476,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             # These populate attestation_signatures (the raw signature pool).
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(6),
+                    validator_index=ValidatorIndex(6),
                     slot=Slot(5),
                     target_slot=Slot(1),
                     target_root_label="block_1",
@@ -487,7 +487,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(6),
+                    validator_index=ValidatorIndex(6),
                     slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -498,7 +498,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(6),
+                    validator_index=ValidatorIndex(6),
                     slot=Slot(5),
                     target_slot=Slot(3),
                     target_root_label="block_3",
@@ -509,7 +509,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(6),
+                    validator_index=ValidatorIndex(6),
                     slot=Slot(5),
                     target_slot=Slot(4),
                     target_root_label="block_4",
@@ -521,7 +521,7 @@ def test_finalization_prunes_stale_attestation_signatures(
             # Pre-finalization check: all three pools contain targets 1-5
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(6),
+                    validator_index=ValidatorIndex(6),
                     slot=Slot(5),
                     target_slot=Slot(5),
                     target_root_label="block_5",
@@ -557,7 +557,7 @@ def test_finalization_prunes_stale_attestation_signatures(
                     parent_label="block_5",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(6),
                             target_slot=Slot(4),
                             target_root_label="block_4",

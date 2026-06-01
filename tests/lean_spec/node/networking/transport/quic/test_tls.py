@@ -30,9 +30,7 @@ from lean_spec.node.networking.transport.quic.tls import (
     generate_libp2p_certificate,
 )
 
-# ---------------------------------------------------------------------------
 # Shared fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -41,9 +39,7 @@ def identity_key() -> IdentityKeypair:
     return IdentityKeypair.generate()
 
 
-# ---------------------------------------------------------------------------
 # Constants — sanity checks for protocol-defined values
-# ---------------------------------------------------------------------------
 
 
 class TestConstants:
@@ -62,14 +58,12 @@ class TestConstants:
         assert KeyType.SECP256K1 == 2
 
 
-# ---------------------------------------------------------------------------
 # ASN.1 length encoding — must cover all 3 branches
 #
 # DER length encoding:
 #   - Short form:    length < 128 → single byte
 #   - Long 1-byte:   128 ≤ length < 256 → 0x81 + 1 byte
 #   - Long 2-byte:   length ≥ 256 → 0x82 + 2 bytes (big-endian)
-# ---------------------------------------------------------------------------
 
 
 class TestEncodeAsn1Length:
@@ -115,9 +109,7 @@ class TestEncodeAsn1Length:
         assert _encode_asn1_length(length) == expected
 
 
-# ---------------------------------------------------------------------------
 # ASN.1 OCTET STRING encoding
-# ---------------------------------------------------------------------------
 
 
 class TestEncodeAsn1OctetString:
@@ -142,9 +134,7 @@ class TestEncodeAsn1OctetString:
         assert result[4:] == data
 
 
-# ---------------------------------------------------------------------------
 # ASN.1 SEQUENCE encoding
-# ---------------------------------------------------------------------------
 
 
 class TestEncodeAsn1Sequence:
@@ -162,9 +152,7 @@ class TestEncodeAsn1Sequence:
         assert result == bytes([0x30, 0])
 
 
-# ---------------------------------------------------------------------------
 # ASN.1 SignedKey — SEQUENCE { OCTET STRING, OCTET STRING }
-# ---------------------------------------------------------------------------
 
 
 class TestEncodeAsn1SignedKey:
@@ -172,9 +160,9 @@ class TestEncodeAsn1SignedKey:
 
     def test_structure_is_sequence_of_two_octet_strings(self) -> None:
         """Output is a SEQUENCE containing two OCTET STRINGs."""
-        proto = b"\x08\x02\x12\x21" + bytes(33)
-        sig = bytes(64)
-        result = _encode_asn1_signed_key(proto, sig)
+        protobuf = b"\x08\x02\x12\x21" + bytes(33)
+        signature = bytes(64)
+        result = _encode_asn1_signed_key(protobuf, signature)
 
         assert result[0] == 0x30  # SEQUENCE tag
 
@@ -183,17 +171,15 @@ class TestEncodeAsn1SignedKey:
         # First OCTET STRING
         tag1, val1, rest = _parse_der_tlv_with_rest(inner)
         assert tag1 == 0x04
-        assert val1 == proto
+        assert val1 == protobuf
         # Second OCTET STRING
         tag2, val2, rest2 = _parse_der_tlv_with_rest(rest)
         assert tag2 == 0x04
-        assert val2 == sig
+        assert val2 == signature
         assert rest2 == b""
 
 
-# ---------------------------------------------------------------------------
 # Extension payload — protobuf + ASN.1 wrapping
-# ---------------------------------------------------------------------------
 
 
 class TestCreateExtensionPayload:
@@ -225,16 +211,16 @@ class TestCreateExtensionPayload:
         payload = _create_extension_payload(identity_key, tls_public_bytes)
 
         _, inner = _parse_der_tlv(payload)
-        _, public_key_proto, _ = _parse_der_tlv_with_rest(inner)
+        _, public_key_protobuf, _ = _parse_der_tlv_with_rest(inner)
 
         # Protobuf field 1 (Type): varint tag=0x08, value=2 (secp256k1)
-        assert public_key_proto[0] == 0x08
-        assert public_key_proto[1] == KeyType.SECP256K1
+        assert public_key_protobuf[0] == 0x08
+        assert public_key_protobuf[1] == KeyType.SECP256K1
         # Protobuf field 2 (Data): length-delimited tag=0x12
-        assert public_key_proto[2] == 0x12
-        key_len = public_key_proto[3]
-        assert key_len == 33  # compressed secp256k1
-        key_data = public_key_proto[4 : 4 + key_len]
+        assert public_key_protobuf[2] == 0x12
+        key_length = public_key_protobuf[3]
+        assert key_length == 33  # compressed secp256k1
+        key_data = public_key_protobuf[4 : 4 + key_length]
         assert key_data == bytes(identity_key.public_key.to_bytes())
 
     def test_signature_verifies(self, identity_key: IdentityKeypair) -> None:
@@ -254,9 +240,7 @@ class TestCreateExtensionPayload:
         assert identity_key.public_key.verify(expected_message, signature)
 
 
-# ---------------------------------------------------------------------------
 # Full certificate generation
-# ---------------------------------------------------------------------------
 
 
 class TestGenerateLibp2pCertificate:
@@ -264,13 +248,13 @@ class TestGenerateLibp2pCertificate:
 
     def test_returns_parseable_pem(self, identity_key: IdentityKeypair) -> None:
         """Both PEM outputs are parseable by the cryptography library."""
-        private_pem, cert_pem, cert = generate_libp2p_certificate(identity_key)
+        private_pem, certificate_pem, certificate = generate_libp2p_certificate(identity_key)
 
         loaded_key = serialization.load_pem_private_key(private_pem, password=None)
         assert isinstance(loaded_key, ec.EllipticCurvePrivateKey)
 
-        loaded_cert = x509.load_pem_x509_certificate(cert_pem)
-        assert loaded_cert.serial_number == cert.serial_number
+        loaded_certificate = x509.load_pem_x509_certificate(certificate_pem)
+        assert loaded_certificate.serial_number == certificate.serial_number
 
     def test_tls_key_is_p256(self, identity_key: IdentityKeypair) -> None:
         """The ephemeral TLS key uses P-256 (SECP256R1), not secp256k1."""
@@ -281,25 +265,25 @@ class TestGenerateLibp2pCertificate:
 
     def test_empty_subject_and_issuer(self, identity_key: IdentityKeypair) -> None:
         """Subject and issuer are empty to match rust-libp2p's format."""
-        _, _, cert = generate_libp2p_certificate(identity_key)
-        assert cert.subject == x509.Name([])
-        assert cert.issuer == x509.Name([])
+        _, _, certificate = generate_libp2p_certificate(identity_key)
+        assert certificate.subject == x509.Name([])
+        assert certificate.issuer == x509.Name([])
 
     def test_certificate_signed_with_sha256(self, identity_key: IdentityKeypair) -> None:
         """Certificate uses SHA-256 for the outer TLS signature."""
-        _, _, cert = generate_libp2p_certificate(identity_key)
-        assert cert.signature_hash_algorithm is not None
-        assert cert.signature_hash_algorithm.name == "sha256"
+        _, _, certificate = generate_libp2p_certificate(identity_key)
+        assert certificate.signature_hash_algorithm is not None
+        assert certificate.signature_hash_algorithm.name == "sha256"
 
     def test_validity_window(self, identity_key: IdentityKeypair) -> None:
         """not_valid_before is ~1 day before now, not_valid_after is ~365 days after now."""
         from datetime import datetime, timedelta, timezone
 
         now = datetime.now(timezone.utc)
-        _, _, cert = generate_libp2p_certificate(identity_key)
+        _, _, certificate = generate_libp2p_certificate(identity_key)
 
-        not_before_delta = now - cert.not_valid_before_utc
-        not_after_delta = cert.not_valid_after_utc - now
+        not_before_delta = now - certificate.not_valid_before_utc
+        not_after_delta = certificate.not_valid_after_utc - now
 
         tolerance = timedelta(minutes=5)
         assert abs(not_before_delta - timedelta(days=1)) < tolerance
@@ -307,12 +291,12 @@ class TestGenerateLibp2pCertificate:
 
     def test_subject_key_identifier(self, identity_key: IdentityKeypair) -> None:
         """SKI extension is sha256(tls_public_key_der)[:20]."""
-        _, _, cert = generate_libp2p_certificate(identity_key)
+        _, _, certificate = generate_libp2p_certificate(identity_key)
 
-        ski_ext = cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier)
+        ski_ext = certificate.extensions.get_extension_for_class(x509.SubjectKeyIdentifier)
         assert ski_ext.critical is False
 
-        tls_public_bytes = cert.public_key().public_bytes(
+        tls_public_bytes = certificate.public_key().public_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
@@ -321,17 +305,17 @@ class TestGenerateLibp2pCertificate:
 
     def test_libp2p_extension_present_and_non_critical(self, identity_key: IdentityKeypair) -> None:
         """The libp2p extension is present with the correct OID and is non-critical."""
-        _, _, cert = generate_libp2p_certificate(identity_key)
+        _, _, certificate = generate_libp2p_certificate(identity_key)
 
-        ext = cert.extensions.get_extension_for_oid(LIBP2P_EXTENSION_OID)
+        ext = certificate.extensions.get_extension_for_oid(LIBP2P_EXTENSION_OID)
         assert ext.critical is False
         assert isinstance(ext.value, x509.UnrecognizedExtension)
 
     def test_libp2p_extension_signature_verifies(self, identity_key: IdentityKeypair) -> None:
         """The identity proof signature in the extension verifies end-to-end."""
-        _, _, cert = generate_libp2p_certificate(identity_key)
+        _, _, certificate = generate_libp2p_certificate(identity_key)
 
-        ext = cert.extensions.get_extension_for_oid(LIBP2P_EXTENSION_OID)
+        ext = certificate.extensions.get_extension_for_oid(LIBP2P_EXTENSION_OID)
         assert isinstance(ext.value, x509.UnrecognizedExtension)
         payload = ext.value.value
 
@@ -340,7 +324,7 @@ class TestGenerateLibp2pCertificate:
         _, _, rest = _parse_der_tlv_with_rest(inner)
         _, signature, _ = _parse_der_tlv_with_rest(rest)
 
-        tls_public_bytes = cert.public_key().public_bytes(
+        tls_public_bytes = certificate.public_key().public_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
@@ -349,8 +333,8 @@ class TestGenerateLibp2pCertificate:
 
     def test_self_signed(self, identity_key: IdentityKeypair) -> None:
         """The certificate is self-signed: its TLS public key verifies the outer signature."""
-        _, _, cert = generate_libp2p_certificate(identity_key)
-        cert.verify_directly_issued_by(cert)
+        _, _, certificate = generate_libp2p_certificate(identity_key)
+        certificate.verify_directly_issued_by(certificate)
 
     def test_ephemeral_key_uniqueness(self, identity_key: IdentityKeypair) -> None:
         """Two calls with the same identity key produce different TLS keys."""
@@ -360,18 +344,16 @@ class TestGenerateLibp2pCertificate:
         assert pem1 != pem2
         assert cert1.serial_number != cert2.serial_number
 
-    def test_returned_cert_matches_pem(self, identity_key: IdentityKeypair) -> None:
+    def test_returned_certificate_matches_pem(self, identity_key: IdentityKeypair) -> None:
         """The returned certificate object matches the PEM encoding."""
-        _, cert_pem, cert = generate_libp2p_certificate(identity_key)
-        reparsed = x509.load_pem_x509_certificate(cert_pem)
-        assert reparsed == cert
+        _, certificate_pem, certificate = generate_libp2p_certificate(identity_key)
+        reparsed = x509.load_pem_x509_certificate(certificate_pem)
+        assert reparsed == certificate
 
 
-# ---------------------------------------------------------------------------
 # DER parsing helpers (test-only)
 #
 # Minimal DER TLV parser for verifying hand-encoded ASN.1 output.
-# ---------------------------------------------------------------------------
 
 
 def _parse_der_length(data: bytes, offset: int) -> tuple[int, int]:

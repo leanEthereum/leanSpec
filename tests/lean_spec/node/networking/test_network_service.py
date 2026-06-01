@@ -165,7 +165,7 @@ class TestAttestationRoutingToForkchoice:
         sync_service.state = SyncState.SYNCING
 
         attestation = SignedAttestation(
-            validator_id=ValidatorIndex(42),
+            validator_index=ValidatorIndex(42),
             data=AttestationData(
                 slot=Slot(1),
                 head=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),
@@ -197,7 +197,7 @@ class TestAttestationRoutingToForkchoice:
         # Verify attestation was passed to store
         updated_store = cast(MockForkchoiceStore, sync_service.store)
         assert len(updated_store._attestations_received) == initial_count + 1
-        assert updated_store._attestations_received[-1].validator_id == ValidatorIndex(42)
+        assert updated_store._attestations_received[-1].validator_index == ValidatorIndex(42)
 
     async def test_attestation_ignored_in_idle_state(
         self,
@@ -212,7 +212,7 @@ class TestAttestationRoutingToForkchoice:
         initial_count = len(mock_store._attestations_received)
 
         attestation = SignedAttestation(
-            validator_id=ValidatorIndex(99),
+            validator_index=ValidatorIndex(99),
             data=AttestationData(
                 slot=Slot(1),
                 head=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),

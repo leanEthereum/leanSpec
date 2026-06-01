@@ -62,7 +62,7 @@ def encode_message(config: XmssConfig, message: Bytes32) -> list[Fp]:
     The bytes are read little-endian as a single integer.
     """
     acc = int.from_bytes(message, "little")
-    return int_to_base_p(acc, config.MSG_LEN_FE)
+    return int_to_base_p(acc, config.MESSAGE_LENGTH_FIELD_ELEMENTS)
 
 
 def encode_epoch(config: XmssConfig, epoch: Uint64) -> list[Fp]:
@@ -74,7 +74,7 @@ def encode_epoch(config: XmssConfig, epoch: Uint64) -> list[Fp]:
     #
     #     (epoch << 8) | MESSAGE_PREFIX
     acc = (int(epoch) << 8) | TWEAK_PREFIX_MESSAGE
-    return int_to_base_p(acc, config.TWEAK_LEN_FE)
+    return int_to_base_p(acc, config.TWEAK_LENGTH_FIELD_ELEMENTS)
 
 
 def aborting_decode(config: XmssConfig, field_elements: list[Fp]) -> list[int] | None:
@@ -130,12 +130,12 @@ def message_hash(
         Codeword of DIMENSION digits in [0, BASE-1], or None on rejection.
     """
     # Encode the message and epoch as field elements before hashing.
-    message_fe = encode_message(config, message)
-    epoch_fe = encode_epoch(config, epoch)
+    message_field_elements = encode_message(config, message)
+    epoch_field_elements = encode_epoch(config, epoch)
 
     # One Poseidon call produces enough output for the aborting decode.
-    base_input = message_fe + parameter.elements + epoch_fe + rho.elements
-    poseidon_output = poseidon.compress(base_input, 24, config.MH_HASH_LEN_FE)
+    base_input = message_field_elements + parameter.elements + epoch_field_elements + rho.elements
+    poseidon_output = poseidon.compress(base_input, 24, config.MH_HASH_LENGTH_FIELD_ELEMENTS)
 
     return aborting_decode(config, poseidon_output)
 

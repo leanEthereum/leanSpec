@@ -4,11 +4,12 @@ Encoding utilities for the Snappy compression format.
 This module provides the low-level encoding and decoding primitives used by
 both the compressor and decompressor:
 
-1. **Varint encoding**: Variable-length integer encoding for the uncompressed
-   length prefix. Small values use fewer bytes, saving space.
-
-2. **Tag byte encoding**: Compact representation of literal and copy operations.
+1. **Tag byte encoding**: Compact representation of literal and copy operations.
    The tag byte format packs operation type and length into minimal space.
+
+The uncompressed length prefix uses the shared LEB128 varint codec from the
+networking layer with a five-byte cap, matching the 32-bit range used by the
+Snappy format specification.
 
 Reference: https://github.com/google/snappy/blob/main/format_description.txt
 """
@@ -31,160 +32,10 @@ from .constants import (
     MAX_COPY_2_OFFSET,
     MAX_INLINE_LITERAL_LENGTH,
     MIN_COPY_1_LENGTH,
-    VARINT_CONTINUATION_BIT,
-    VARINT_DATA_MASK,
 )
 
 type TagType = Literal["literal", "copy"]
 """Snappy tag type: either a literal (raw bytes) or a copy (back-reference)."""
-
-# Varint Encoding
-#
-# Varints encode integers using as few bytes as possible.
-#   - Small values use fewer bytes.
-#   - Large values use more.
-#
-# Each byte has 8 bits:
-#   - Bit 7 (high): continuation flag.
-#       - 1 = more bytes follow,
-#       - 0 = this is the last byte.
-#   - Bits 0-6 (low): 7 bits of the integer value.
-#
-# Bytes are emitted least-significant chunk first.
-#
-# Byte count by value:
-#   0 .. 127                  -> 1 byte
-#   128 .. 16,383             -> 2 bytes
-#   16,384 .. 2,097,151       -> 3 bytes
-#   2,097,152 .. 268,435,455  -> 4 bytes
-#   268,435,456 .. 2^32 - 1   -> 5 bytes
-#
-# Example: encoding 300
-#
-#   300 in binary: 100101100 (9 bits, needs 2 chunks of 7 bits)
-#
-#   Chunk 1 (bits 0-6): 0101100 = 44. More bits remain, so continuation = 1.
-#       Byte 1 = 0x80 | 44 = 0xAC
-#
-#   Chunk 2 (bits 7+): 0000010 = 2. No more bits, so continuation = 0.
-#       Byte 2 = 0x00 | 2 = 0x02
-#
-#   Encoded: [0xAC, 0x02]
-#
-# Example: decoding [0xAC, 0x02]
-#
-#   For each byte: check bit 7 for continuation, mask with 0x7F to get data.
-#
-#   Byte 1 = 0xAC = 10101100:
-#       bit 7 = 1 -> more bytes coming
-#       data  = 0xAC & 0x7F = 0101100 = 44
-#       result = 44
-#
-#   Byte 2 = 0x02 = 00000010:
-#       bit 7 = 0 -> done
-#       data  = 0x02 & 0x7F = 0000010 = 2 (mask has no effect here)
-#       result = 44 | (2 << 7) = 44 + 256 = 300
-
-
-def encode_varint32(value: int) -> bytes:
-    """Encode a 32-bit integer as a variable-length byte sequence.
-
-    The varint format uses 7 bits per byte for data, with the high bit
-    indicating whether more bytes follow. This efficiently encodes small
-    values in fewer bytes.
-
-    Algorithm:
-    1. Take the lowest 7 bits of the value.
-    2. If more bits remain, set the continuation bit (0x80).
-    3. Repeat until all bits are encoded.
-
-    Args:
-        value: Non-negative integer to encode (must fit in 32 bits).
-
-    Returns:
-        Variable-length bytes encoding the integer (1-5 bytes).
-
-    Raises:
-        ValueError: If value is negative or exceeds 32 bits.
-    """
-    # Validate input range.
-    # Varints in Snappy are unsigned 32-bit integers.
-    if value < 0:
-        raise ValueError(f"Varint value must be non-negative, got {value}")
-    if value > 0xFFFFFFFF:
-        raise ValueError(f"Varint value exceeds 32 bits: {value}")
-
-    # Build the encoding byte by byte.
-    # We accumulate bytes in a list for efficiency.
-    result: list[int] = []
-
-    while True:
-        # Extract the lowest 7 bits.
-        byte = value & VARINT_DATA_MASK
-
-        # Shift out the bits we just encoded.
-        value >>= 7
-
-        if value != 0:
-            # More bits remain: set continuation bit.
-            byte |= VARINT_CONTINUATION_BIT
-
-        result.append(byte)
-
-        if value == 0:
-            # All bits encoded.
-            break
-
-    return bytes(result)
-
-
-def decode_varint32(data: bytes, offset: int = 0) -> tuple[int, int]:
-    """Decode a varint from a byte sequence at the given offset.
-
-    Reads bytes starting at offset, accumulating 7 bits per byte into
-    the result. Stops when a byte without the continuation bit is found.
-
-    Args:
-        data: Byte sequence containing the varint.
-        offset: Position in data where the varint starts.
-
-    Returns:
-        Tuple of (decoded_value, bytes_consumed).
-
-    Raises:
-        ValueError: If the varint is malformed (too long or truncated).
-    """
-    result = 0
-    shift = 0
-    bytes_read = 0
-
-    while True:
-        # Check bounds.
-        if offset + bytes_read >= len(data):
-            raise ValueError("Truncated varint: unexpected end of data")
-
-        # Read next byte.
-        byte = data[offset + bytes_read]
-        bytes_read += 1
-
-        # Accumulate the 7 data bits at the current shift position.
-        result |= (byte & VARINT_DATA_MASK) << shift
-        shift += 7
-
-        # Check if this is the last byte (no continuation bit).
-        if (byte & VARINT_CONTINUATION_BIT) == 0:
-            break
-
-        # Safety check: varints should not exceed 5 bytes for 32-bit values.
-        # (5 bytes * 7 bits = 35 bits, which covers 32-bit range)
-        if bytes_read >= 5:
-            raise ValueError("Varint too long: exceeds 5 bytes")
-
-    # Verify the result fits in 32 bits.
-    if result > 0xFFFFFFFF:
-        raise ValueError(f"Varint overflow: {result} exceeds 32 bits")
-
-    return result, bytes_read
 
 
 # Tag Byte Encoding - Literals
@@ -261,20 +112,20 @@ def encode_literal_tag(length: int) -> bytes:
         # Large literal: tag indicates 2-byte length follows.
         # Format: [61 (6 bits)][LITERAL (2 bits)] + [length-1 (16 bits LE)]
         tag = (LITERAL_LENGTH_2_BYTES << 2) | LITERAL
-        len_minus_1 = length - 1
-        return bytes([tag, len_minus_1 & 0xFF, (len_minus_1 >> 8) & 0xFF])
+        length_minus_1 = length - 1
+        return bytes([tag, length_minus_1 & 0xFF, (length_minus_1 >> 8) & 0xFF])
 
     elif length <= 16777216:
         # Very large literal: tag indicates 3-byte length follows.
         # Format: [62 (6 bits)][LITERAL (2 bits)] + [length-1 (24 bits LE)]
         tag = (LITERAL_LENGTH_3_BYTES << 2) | LITERAL
-        len_minus_1 = length - 1
+        length_minus_1 = length - 1
         return bytes(
             [
                 tag,
-                len_minus_1 & 0xFF,
-                (len_minus_1 >> 8) & 0xFF,
-                (len_minus_1 >> 16) & 0xFF,
+                length_minus_1 & 0xFF,
+                (length_minus_1 >> 8) & 0xFF,
+                (length_minus_1 >> 16) & 0xFF,
             ]
         )
 
@@ -282,14 +133,14 @@ def encode_literal_tag(length: int) -> bytes:
         # Maximum literal: tag indicates 4-byte length follows.
         # Format: [63 (6 bits)][LITERAL (2 bits)] + [length-1 (32 bits LE)]
         tag = (LITERAL_LENGTH_4_BYTES << 2) | LITERAL
-        len_minus_1 = length - 1
+        length_minus_1 = length - 1
         return bytes(
             [
                 tag,
-                len_minus_1 & 0xFF,
-                (len_minus_1 >> 8) & 0xFF,
-                (len_minus_1 >> 16) & 0xFF,
-                (len_minus_1 >> 24) & 0xFF,
+                length_minus_1 & 0xFF,
+                (length_minus_1 >> 8) & 0xFF,
+                (length_minus_1 >> 16) & 0xFF,
+                (length_minus_1 >> 24) & 0xFF,
             ]
         )
 

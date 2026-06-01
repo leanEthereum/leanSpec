@@ -22,12 +22,12 @@ from lean_spec.spec.ssz.exceptions import SSZValueError
 
 
 def registry_state(registry: ValidatorRegistry) -> dict[ValidatorIndex, tuple[object, object]]:
-    """Extract full registry state as index → (att_sk, prop_sk) mapping."""
+    """Map each registry index to its (attestation_secret_key, proposal_secret_key) pair."""
     result: dict[ValidatorIndex, tuple[object, object]] = {}
-    for idx in registry.indices():
-        entry = registry.get(idx)
-        assert entry is not None, f"Registry contains index {idx} but get() returned None"
-        result[idx] = (entry.attestation_secret_key, entry.proposal_secret_key)
+    for index in registry.indices():
+        entry = registry.get(index)
+        assert entry is not None, f"Registry contains index {index} but get() returned None"
+        result[index] = (entry.attestation_secret_key, entry.proposal_secret_key)
     return result
 
 
@@ -59,10 +59,10 @@ def _manifest_entry_dict(index: int, suffix: str = "") -> dict[str, object]:
     """Return a manifest entry dict for a validator at the given index."""
     return {
         "index": index,
-        "attestation_pubkey_hex": "0x" + f"{index:02d}" * 52,
-        "proposal_pubkey_hex": "0x" + f"{index:02d}" * 52,
-        "attestation_privkey_file": f"att_key_{index}{suffix}.ssz",
-        "proposal_privkey_file": f"prop_key_{index}{suffix}.ssz",
+        "attestation_public_key_hex": "0x" + f"{index:02d}" * 52,
+        "proposal_public_key_hex": "0x" + f"{index:02d}" * 52,
+        "attestation_private_key_file": f"att_key_{index}{suffix}.ssz",
+        "proposal_private_key_file": f"prop_key_{index}{suffix}.ssz",
     }
 
 
@@ -92,40 +92,40 @@ class TestValidatorManifestEntry:
         """All fields are stored and accessible after construction."""
         entry = ValidatorManifestEntry(
             index=ValidatorIndex(3),
-            attestation_pubkey_hex=Bytes52("0x" + "aa" * 52),
-            proposal_pubkey_hex=Bytes52("0x" + "bb" * 52),
-            attestation_privkey_file="att.ssz",
-            proposal_privkey_file="prop.ssz",
+            attestation_public_key_hex=Bytes52("0x" + "aa" * 52),
+            proposal_public_key_hex=Bytes52("0x" + "bb" * 52),
+            attestation_private_key_file="att.ssz",
+            proposal_private_key_file="prop.ssz",
         )
 
         assert entry == ValidatorManifestEntry(
             index=ValidatorIndex(3),
-            attestation_pubkey_hex=Bytes52("0x" + "aa" * 52),
-            proposal_pubkey_hex=Bytes52("0x" + "bb" * 52),
-            attestation_privkey_file="att.ssz",
-            proposal_privkey_file="prop.ssz",
+            attestation_public_key_hex=Bytes52("0x" + "aa" * 52),
+            proposal_public_key_hex=Bytes52("0x" + "bb" * 52),
+            attestation_private_key_file="att.ssz",
+            proposal_private_key_file="prop.ssz",
         )
 
-    def test_integer_pubkey_rejected(self) -> None:
-        """Integer pubkeys are rejected — only valid 52-byte hex strings accepted."""
+    def test_integer_public_key_rejected(self) -> None:
+        """Integer public_keys are rejected — only valid 52-byte hex strings accepted."""
         with pytest.raises((TypeError, ValidationError)):
             ValidatorManifestEntry(
                 index=ValidatorIndex(0),
-                attestation_pubkey_hex=0x123,  # type: ignore[arg-type]
-                proposal_pubkey_hex=Bytes52("0x" + "aa" * 52),
-                attestation_privkey_file="att.ssz",
-                proposal_privkey_file="prop.ssz",
+                attestation_public_key_hex=0x123,  # type: ignore[arg-type]
+                proposal_public_key_hex=Bytes52("0x" + "aa" * 52),
+                attestation_private_key_file="att.ssz",
+                proposal_private_key_file="prop.ssz",
             )
 
-    def test_wrong_length_pubkey_rejected(self) -> None:
+    def test_wrong_length_public_key_rejected(self) -> None:
         """Hex strings that don't decode to exactly 52 bytes are rejected."""
         with pytest.raises((SSZValueError, ValidationError)):
             ValidatorManifestEntry(
                 index=ValidatorIndex(0),
-                attestation_pubkey_hex=Bytes52("0x" + "aa" * 10),
-                proposal_pubkey_hex=Bytes52("0x" + "bb" * 52),
-                attestation_privkey_file="att.ssz",
-                proposal_privkey_file="prop.ssz",
+                attestation_public_key_hex=Bytes52("0x" + "aa" * 10),
+                proposal_public_key_hex=Bytes52("0x" + "bb" * 52),
+                attestation_private_key_file="att.ssz",
+                proposal_private_key_file="prop.ssz",
             )
 
 
@@ -163,17 +163,17 @@ class TestValidatorManifest:
         assert manifest.validators == [
             ValidatorManifestEntry(
                 index=ValidatorIndex(0),
-                attestation_pubkey_hex=Bytes52("0x" + "00" * 52),
-                proposal_pubkey_hex=Bytes52("0x" + "00" * 52),
-                attestation_privkey_file="att_key_0.ssz",
-                proposal_privkey_file="prop_key_0.ssz",
+                attestation_public_key_hex=Bytes52("0x" + "00" * 52),
+                proposal_public_key_hex=Bytes52("0x" + "00" * 52),
+                attestation_private_key_file="att_key_0.ssz",
+                proposal_private_key_file="prop_key_0.ssz",
             ),
             ValidatorManifestEntry(
                 index=ValidatorIndex(1),
-                attestation_pubkey_hex=Bytes52("0x" + "01" * 52),
-                proposal_pubkey_hex=Bytes52("0x" + "01" * 52),
-                attestation_privkey_file="att_key_1.ssz",
-                proposal_privkey_file="prop_key_1.ssz",
+                attestation_public_key_hex=Bytes52("0x" + "01" * 52),
+                proposal_public_key_hex=Bytes52("0x" + "01" * 52),
+                attestation_private_key_file="att_key_1.ssz",
+                proposal_private_key_file="prop_key_1.ssz",
             ),
         ]
 
@@ -203,12 +203,12 @@ class TestLoadNodeValidatorMapping:
 class TestValidatorRegistry:
     """Tests for ValidatorRegistry dataclass."""
 
-    def _entry(self, km: XmssKeyManager, idx: int) -> ValidatorEntry:
+    def _entry(self, km: XmssKeyManager, index: int) -> ValidatorEntry:
         """Create a ValidatorEntry with real keys for the given index."""
-        vid = ValidatorIndex(idx)
-        kp = km[vid]
+        validator_index = ValidatorIndex(index)
+        kp = km[validator_index]
         return ValidatorEntry(
-            index=vid,
+            index=validator_index,
             attestation_secret_key=kp.attestation_keypair.secret_key,
             proposal_secret_key=kp.proposal_keypair.secret_key,
         )
@@ -238,7 +238,7 @@ class TestValidatorRegistry:
     def test_add_multiple_entries(self, km: XmssKeyManager) -> None:
         """Multiple entries are stored with correct index-to-key mapping."""
         registry = ValidatorRegistry()
-        entries = {idx: self._entry(km, idx) for idx in [3, 1, 4]}
+        entries = {index: self._entry(km, index) for index in [3, 1, 4]}
         for entry in entries.values():
             registry.add(entry)
 
@@ -270,7 +270,7 @@ class TestValidatorRegistry:
 
         assert ValidatorIndex(99) not in registry
 
-    def test_len_after_adds(self, km: XmssKeyManager) -> None:
+    def test_length_after_adds(self, km: XmssKeyManager) -> None:
         """__len__ reflects the number of entries added."""
         registry = ValidatorRegistry()
         assert len(registry) == 0
@@ -314,12 +314,12 @@ class TestValidatorRegistry:
         registry = ValidatorRegistry()
         old_entry = self._entry(km, 5)
         # Create a different entry for the same index using different key pairs.
-        kp_att = km[ValidatorIndex(6)]
-        kp_prop = km[ValidatorIndex(7)]
+        kp_attestation = km[ValidatorIndex(6)]
+        kp_proposal = km[ValidatorIndex(7)]
         new_entry = ValidatorEntry(
             index=ValidatorIndex(5),
-            attestation_secret_key=kp_att.attestation_keypair.secret_key,
-            proposal_secret_key=kp_prop.proposal_keypair.secret_key,
+            attestation_secret_key=kp_attestation.attestation_keypair.secret_key,
+            proposal_secret_key=kp_proposal.proposal_keypair.secret_key,
         )
 
         registry.add(old_entry)
@@ -328,8 +328,8 @@ class TestValidatorRegistry:
         assert len(registry) == 1
         assert registry_state(registry) == {
             ValidatorIndex(5): (
-                kp_att.attestation_keypair.secret_key,
-                kp_prop.proposal_keypair.secret_key,
+                kp_attestation.attestation_keypair.secret_key,
+                kp_proposal.proposal_keypair.secret_key,
             )
         }
 
@@ -356,8 +356,8 @@ class TestValidatorRegistryFromYaml:
     ) -> None:
         """Write real SSZ-encoded XMSS key files for the given validator indices."""
         for i in indices:
-            vid = ValidatorIndex(i)
-            kp = km[vid]
+            validator_index = ValidatorIndex(i)
+            kp = km[validator_index]
             (directory / f"att_key_{i}.ssz").write_bytes(
                 kp.attestation_keypair.secret_key.encode_bytes()
             )
@@ -388,13 +388,13 @@ class TestValidatorRegistryFromYaml:
 
         # Loaded keys should match the originals from the key manager.
         for i in [0, 1]:
-            vid = ValidatorIndex(i)
-            entry = registry.get(vid)
+            validator_index = ValidatorIndex(i)
+            entry = registry.get(validator_index)
             assert entry is not None
-            expected_att = km[vid].attestation_keypair.secret_key.encode_bytes()
-            expected_prop = km[vid].proposal_keypair.secret_key.encode_bytes()
-            assert entry.attestation_secret_key.encode_bytes() == expected_att
-            assert entry.proposal_secret_key.encode_bytes() == expected_prop
+            expected_attestation = km[validator_index].attestation_keypair.secret_key.encode_bytes()
+            expected_proposal = km[validator_index].proposal_keypair.secret_key.encode_bytes()
+            assert entry.attestation_secret_key.encode_bytes() == expected_attestation
+            assert entry.proposal_secret_key.encode_bytes() == expected_proposal
 
     def test_unknown_node_returns_empty_registry(self, tmp_path: Path) -> None:
         """An unrecognised node ID produces an empty registry without error."""
@@ -548,4 +548,4 @@ class TestValidatorRegistryFromKeysDirectory:
     def test_missing_manifest_raises(self, tmp_path: Path) -> None:
         """The loader raises when the manifest file is absent."""
         with pytest.raises(FileNotFoundError, match="Validator keys manifest not found"):
-            ValidatorRegistry.from_keys_directory(node_id="lean_spec_0", base_dir=tmp_path)
+            ValidatorRegistry.from_keys_directory(node_id="lean_spec_0", base_directory=tmp_path)

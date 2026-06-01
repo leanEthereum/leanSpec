@@ -4,7 +4,6 @@ import pytest
 from consensus_testing import SSZTestFiller
 from consensus_testing.keys import create_dummy_signature
 
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import State
 from lean_spec.spec.forks.lstar.containers import (
@@ -20,9 +19,11 @@ from lean_spec.spec.forks.lstar.containers import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    MultiMessageAggregate,
     SignedAggregatedAttestation,
     SignedAttestation,
     SignedBlock,
+    SingleMessageAggregate,
     Validator,
     Validators,
 )
@@ -89,7 +90,7 @@ def test_attestation_zero(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for Attestation with zero values."""
     ssz(
         type_name="Attestation",
-        value=Attestation(validator_id=ValidatorIndex(0), data=_zero_attestation_data()),
+        value=Attestation(validator_index=ValidatorIndex(0), data=_zero_attestation_data()),
     )
 
 
@@ -97,7 +98,7 @@ def test_attestation_typical(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for Attestation with typical values."""
     ssz(
         type_name="Attestation",
-        value=Attestation(validator_id=ValidatorIndex(42), data=_typical_attestation_data()),
+        value=Attestation(validator_index=ValidatorIndex(42), data=_typical_attestation_data()),
     )
 
 
@@ -109,7 +110,7 @@ def test_signed_attestation_minimal(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="SignedAttestation",
         value=SignedAttestation(
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             data=_zero_attestation_data(),
             signature=create_dummy_signature(),
         ),
@@ -256,7 +257,10 @@ def test_signed_block_minimal(ssz: SSZTestFiller) -> None:
     )
     ssz(
         type_name="SignedBlock",
-        value=SignedBlock(block=block, proof=ByteList512KiB(data=b"")),
+        value=SignedBlock(
+            block=block,
+            proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+        ),
     )
 
 
@@ -271,7 +275,10 @@ def test_signed_block_with_proof_bytes(ssz: SSZTestFiller) -> None:
     )
     ssz(
         type_name="SignedBlock",
-        value=SignedBlock(block=block, proof=ByteList512KiB(data=b"\xde\xad\xbe\xef")),
+        value=SignedBlock(
+            block=block,
+            proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"\xde\xad\xbe\xef")),
+        ),
     )
 
 
@@ -296,8 +303,8 @@ def test_validator_zero(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="Validator",
         value=Validator(
-            attestation_pubkey=Bytes52.zero(),
-            proposal_pubkey=Bytes52.zero(),
+            attestation_public_key=Bytes52.zero(),
+            proposal_public_key=Bytes52.zero(),
             index=ValidatorIndex(0),
         ),
     )
@@ -308,8 +315,8 @@ def test_validator_typical(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="Validator",
         value=Validator(
-            attestation_pubkey=Bytes52(b"\xab" * 52),
-            proposal_pubkey=Bytes52(b"\xab" * 52),
+            attestation_public_key=Bytes52(b"\xab" * 52),
+            proposal_public_key=Bytes52(b"\xab" * 52),
             index=ValidatorIndex(42),
         ),
     )
@@ -341,8 +348,8 @@ def test_state_minimal(ssz: SSZTestFiller) -> None:
             validators=Validators(
                 data=[
                     Validator(
-                        attestation_pubkey=Bytes52.zero(),
-                        proposal_pubkey=Bytes52.zero(),
+                        attestation_public_key=Bytes52.zero(),
+                        proposal_public_key=Bytes52.zero(),
                         index=ValidatorIndex(0),
                     )
                 ]
@@ -376,23 +383,23 @@ def test_state_with_validators(ssz: SSZTestFiller) -> None:
             validators=Validators(
                 data=[
                     Validator(
-                        attestation_pubkey=Bytes52(b"\x01" * 52),
-                        proposal_pubkey=Bytes52(b"\x01" * 52),
+                        attestation_public_key=Bytes52(b"\x01" * 52),
+                        proposal_public_key=Bytes52(b"\x01" * 52),
                         index=ValidatorIndex(0),
                     ),
                     Validator(
-                        attestation_pubkey=Bytes52(b"\x02" * 52),
-                        proposal_pubkey=Bytes52(b"\x02" * 52),
+                        attestation_public_key=Bytes52(b"\x02" * 52),
+                        proposal_public_key=Bytes52(b"\x02" * 52),
                         index=ValidatorIndex(1),
                     ),
                     Validator(
-                        attestation_pubkey=Bytes52(b"\x03" * 52),
-                        proposal_pubkey=Bytes52(b"\x03" * 52),
+                        attestation_public_key=Bytes52(b"\x03" * 52),
+                        proposal_public_key=Bytes52(b"\x03" * 52),
                         index=ValidatorIndex(2),
                     ),
                     Validator(
-                        attestation_pubkey=Bytes52(b"\x04" * 52),
-                        proposal_pubkey=Bytes52(b"\x04" * 52),
+                        attestation_public_key=Bytes52(b"\x04" * 52),
+                        proposal_public_key=Bytes52(b"\x04" * 52),
                         index=ValidatorIndex(3),
                     ),
                 ]
@@ -415,7 +422,7 @@ def test_signed_aggregated_attestation_minimal(ssz: SSZTestFiller) -> None:
         type_name="SignedAggregatedAttestation",
         value=SignedAggregatedAttestation(
             data=data,
-            proof=TypeOneMultiSignature(
+            proof=SingleMessageAggregate(
                 participants=AggregationBits(data=[Boolean(True)]),
                 proof=ByteList512KiB(data=b""),
             ),
@@ -431,7 +438,7 @@ def test_signed_aggregated_attestation_typical(ssz: SSZTestFiller) -> None:
         type_name="SignedAggregatedAttestation",
         value=SignedAggregatedAttestation(
             data=data,
-            proof=TypeOneMultiSignature(
+            proof=SingleMessageAggregate(
                 participants=AggregationBits(
                     data=[Boolean(True), Boolean(False), Boolean(True), Boolean(True)]
                 ),
@@ -495,8 +502,8 @@ def test_validator_max_index(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="Validator",
         value=Validator(
-            attestation_pubkey=Bytes52(b"\xff" * 52),
-            proposal_pubkey=Bytes52(b"\xff" * 52),
+            attestation_public_key=Bytes52(b"\xff" * 52),
+            proposal_public_key=Bytes52(b"\xff" * 52),
             index=ValidatorIndex(2**64 - 1),
         ),
     )
@@ -542,13 +549,13 @@ def test_state_with_full_history(ssz: SSZTestFiller) -> None:
             validators=Validators(
                 data=[
                     Validator(
-                        attestation_pubkey=Bytes52(b"\x01" * 52),
-                        proposal_pubkey=Bytes52(b"\x01" * 52),
+                        attestation_public_key=Bytes52(b"\x01" * 52),
+                        proposal_public_key=Bytes52(b"\x01" * 52),
                         index=ValidatorIndex(0),
                     ),
                     Validator(
-                        attestation_pubkey=Bytes52(b"\x02" * 52),
-                        proposal_pubkey=Bytes52(b"\x02" * 52),
+                        attestation_public_key=Bytes52(b"\x02" * 52),
+                        proposal_public_key=Bytes52(b"\x02" * 52),
                         index=ValidatorIndex(1),
                     ),
                 ]

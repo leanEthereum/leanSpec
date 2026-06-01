@@ -360,8 +360,8 @@ class TestInteroperability:
         chunk_type = compressed[pos]
         assert chunk_type in (0x00, 0x01)  # Compressed or uncompressed
 
-        chunk_len = int.from_bytes(compressed[pos + 1 : pos + 4], "little")
-        assert chunk_len >= 4  # At least CRC
+        chunk_length = int.from_bytes(compressed[pos + 1 : pos + 4], "little")
+        assert chunk_length >= 4  # At least CRC
 
         # CRC is first 4 bytes of chunk data
         crc_bytes = compressed[pos + 4 : pos + 8]

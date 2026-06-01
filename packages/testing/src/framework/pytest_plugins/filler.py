@@ -15,16 +15,16 @@ import pytest
 class FixtureCollector:
     """Collects generated fixtures and writes them to disk."""
 
-    def __init__(self, output_dir: Path, fork: str, layer: str):
+    def __init__(self, output_directory: Path, fork: str, layer: str):
         """
         Initialize the fixture collector.
 
         Args:
-            output_dir: Root directory for generated fixtures.
+            output_directory: Root directory for generated fixtures.
             fork: The fork name (e.g., "Lstar").
             layer: The Ethereum layer (e.g., "consensus", "execution").
         """
-        self.output_dir = output_dir
+        self.output_directory = output_directory
         self.fork = fork
         self.layer = layer
         self.fixtures: list[tuple[str, str, Any, str]] = []
@@ -69,13 +69,13 @@ class FixtureCollector:
             test_path = relative_path.with_suffix("")
 
             # Build output path: fixtures/{layer}/{format}/{test_path}
-            format_dir = fixture_format.replace("_test", "")
-            fixture_dir = self.output_dir / layer / format_dir / test_path
-            fixture_path = fixture_dir / f"{base_func_name}.json"
+            format_directory = fixture_format.replace("_test", "")
+            fixture_directory = self.output_directory / layer / format_directory / test_path
+            fixture_path = fixture_directory / f"{base_func_name}.json"
 
-            config.fixture_path_absolute = str(fixture_path.absolute())  # type: ignore[attr-defined]
-            config.fixture_path_relative = str(fixture_path.relative_to(self.output_dir))  # type: ignore[attr-defined]
-            config.fixture_format = fixture_format  # type: ignore[attr-defined]
+            config.fixture_path_absolute = str(fixture_path.absolute())  # type: ignore[attribute-defined]
+            config.fixture_path_relative = str(fixture_path.relative_to(self.output_directory))  # type: ignore[attribute-defined]
+            config.fixture_format = fixture_format  # type: ignore[attribute-defined]
 
     def write_fixtures(self) -> None:
         """Write all collected fixtures to disk, grouped by test function."""
@@ -104,11 +104,11 @@ class FixtureCollector:
             test_path = relative_path.with_suffix("")
 
             # Build output path: fixtures/{layer}/{format}/{test_path}
-            format_dir = fixture_format.replace("_test", "")
-            fixture_dir = self.output_dir / self.layer / format_dir / test_path
-            fixture_dir.mkdir(parents=True, exist_ok=True)
+            format_directory = fixture_format.replace("_test", "")
+            fixture_directory = self.output_directory / self.layer / format_directory / test_path
+            fixture_directory.mkdir(parents=True, exist_ok=True)
 
-            output_file = fixture_dir / f"{base_func_name}.json"
+            output_file = fixture_directory / f"{base_func_name}.json"
 
             all_tests = {}
             for _, fixture, test_nodeid in fixtures_list:
@@ -198,12 +198,12 @@ def pytest_configure(config: pytest.Config) -> None:
         )
 
     # Store layer for later use (needed by pytest_ignore_collect hook)
-    config.test_layer = layer  # type: ignore[attr-defined]
+    config.test_layer = layer  # type: ignore[attribute-defined]
 
     # Dynamically import layer-specific package
     try:
         layer_module = importlib.import_module(f"{layer}_testing")
-        config.layer_module = layer_module  # type: ignore[attr-defined]
+        config.layer_module = layer_module  # type: ignore[attribute-defined]
     except ImportError as e:
         pytest.exit(
             f"Failed to import {layer}_testing module: {e}",
@@ -228,7 +228,7 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
     # Get options
-    output_dir = Path(config.getoption("--output"))
+    output_directory = Path(config.getoption("--output"))
     fork_name = config.getoption("--fork")
     clean = config.getoption("--clean")
 
@@ -258,25 +258,25 @@ def pytest_configure(config: pytest.Config) -> None:
         pytest.exit("Invalid fork specified.", returncode=pytest.ExitCode.USAGE_ERROR)
 
     # Check output directory
-    if output_dir.exists() and any(output_dir.iterdir()):
+    if output_directory.exists() and any(output_directory.iterdir()):
         if not clean:
-            contents = list(output_dir.iterdir())
+            contents = list(output_directory.iterdir())
             summary = ", ".join(item.name for item in contents[:5])
             if len(contents) > 5:
                 summary += ", ..."
             pytest.exit(
-                f"Output directory '{output_dir}' is not empty. "
+                f"Output directory '{output_directory}' is not empty. "
                 f"Contains: {summary}. Use --clean to remove all existing files "
                 "or specify a different output directory.",
                 returncode=pytest.ExitCode.USAGE_ERROR,
             )
-        shutil.rmtree(output_dir)
+        shutil.rmtree(output_directory)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_directory.mkdir(parents=True, exist_ok=True)
 
     # Create collector with layer info
-    config.fixture_collector = FixtureCollector(output_dir, fork_name, layer)  # type: ignore[attr-defined]
-    config.test_fork_class = fork_class  # type: ignore[attr-defined]
+    config.fixture_collector = FixtureCollector(output_directory, fork_name, layer)  # type: ignore[attribute-defined]
+    config.test_fork_class = fork_class  # type: ignore[attribute-defined]
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -285,7 +285,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         return
 
     fork_class = config.test_fork_class
-    layer_module = config.layer_module  # type: ignore[attr-defined]
+    layer_module = config.layer_module  # type: ignore[attribute-defined]
     registry = layer_module.forks.registry
     verbose = config.getoption("verbose")
     deselected = []
@@ -429,7 +429,7 @@ def pre(request: pytest.FixtureRequest, fork: Any) -> Any:
     Tests can request this fixture to customize the initial state,
     or omit it to use the default (auto-injected by framework).
     """
-    layer = request.config.test_layer  # type: ignore[attr-defined]
+    layer = request.config.test_layer  # type: ignore[attribute-defined]
 
     if layer == "execution":
         pytest.exit(
@@ -437,7 +437,7 @@ def pre(request: pytest.FixtureRequest, fork: Any) -> Any:
             returncode=pytest.ExitCode.USAGE_ERROR,
         )
 
-    layer_module = request.config.layer_module  # type: ignore[attr-defined]
+    layer_module = request.config.layer_module  # type: ignore[attribute-defined]
     spec = fork.spec_class()()
 
     if hasattr(request, "param"):
@@ -510,8 +510,8 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "fork" not in metafunc.fixturenames:
         return
 
-    fork_class = metafunc.config.test_fork_class  # type: ignore[attr-defined]
-    layer_module = metafunc.config.layer_module  # type: ignore[attr-defined]
+    fork_class = metafunc.config.test_fork_class  # type: ignore[attribute-defined]
+    layer_module = metafunc.config.layer_module  # type: ignore[attribute-defined]
     registry = layer_module.forks.registry
 
     if not _is_test_valid_for_fork(metafunc, fork_class, registry.get_fork_by_name):

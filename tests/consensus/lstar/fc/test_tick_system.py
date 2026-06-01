@@ -88,7 +88,7 @@ def test_tick_interval_progression_through_full_slot(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -249,7 +249,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             # Start with a pending aggregated attestation for slot 3.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -304,7 +304,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             # is within the allowed +1 future-slot margin.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -357,7 +357,7 @@ def test_tick_interval_0_skips_acceptance_when_not_proposer(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(1),
                         ValidatorIndex(2),
                         ValidatorIndex(3),

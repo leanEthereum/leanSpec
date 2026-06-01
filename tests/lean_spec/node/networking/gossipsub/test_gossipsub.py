@@ -46,13 +46,13 @@ class TestGossipsubParameters:
         assert params.d_lazy == 6
         assert params.heartbeat_interval_secs == 0.7
         assert params.fanout_ttl_secs == 60
-        assert params.mcache_len == 6
+        assert params.mcache_length == 6
         assert params.mcache_gossip == 3
 
         # Test relationships
         assert params.d_low < params.d < params.d_high
         assert params.d_lazy <= params.d
-        assert params.mcache_gossip <= params.mcache_len
+        assert params.mcache_gossip <= params.mcache_length
 
 
 class TestControlMessages:
@@ -380,7 +380,7 @@ class TestRPCProtobufEncoding:
 
     def test_message_encode_decode(self) -> None:
         """Test Message encoding/decoding."""
-        msg = Message(
+        message = Message(
             from_peer=b"peer123",
             data=b"hello world",
             seqno=b"\x00\x01\x02\x03\x04\x05\x06\x07",
@@ -388,12 +388,12 @@ class TestRPCProtobufEncoding:
             signature=b"sig" * 16,
             key=b"pubkey",
         )
-        assert Message.decode(msg.encode()) == msg
+        assert Message.decode(message.encode()) == message
 
     def test_message_minimal(self) -> None:
         """Test Message with only required fields."""
-        msg = Message(topic=TopicId("/test/topic"), data=b"payload")
-        assert Message.decode(msg.encode()) == msg
+        message = Message(topic=TopicId("/test/topic"), data=b"payload")
+        assert Message.decode(message.encode()) == message
 
     def test_control_graft_encode_decode(self) -> None:
         """Test ControlGraft encoding/decoding."""

@@ -70,10 +70,10 @@ def _validate_offsets(offsets: list[int], scope: int, type_name: str) -> None:
         return
 
     # Pairwise comparison catches any decreasing step in the table.
-    for prev, curr in pairwise(offsets):
-        if curr < prev:
+    for previous, current in pairwise(offsets):
+        if current < previous:
             raise SSZSerializationError(
-                f"{type_name}: offsets not monotonically increasing: {prev} -> {curr}"
+                f"{type_name}: offsets not monotonically increasing: {previous} -> {current}"
             )
 
     # The final boundary is the scope appended by the decoder.
@@ -377,14 +377,14 @@ class SSZVector[T: SSZType](_SSZSequence[T]):
         # Fixed-size case: elements pack back-to-back at a known stride.
         # The byte budget must match LENGTH times the element width exactly.
         if cls.is_fixed_size():
-            elem_byte_length = cls.ELEMENT_TYPE.get_byte_length()
-            expected_total = elem_byte_length * cls.LENGTH
+            element_byte_length = cls.ELEMENT_TYPE.get_byte_length()
+            expected_total = element_byte_length * cls.LENGTH
             if scope != expected_total:
                 raise SSZSerializationError(
                     f"{cls.__name__}: expected {expected_total} bytes, got {scope}"
                 )
             elements = [
-                cls.ELEMENT_TYPE.deserialize(stream, elem_byte_length) for _ in range(cls.LENGTH)
+                cls.ELEMENT_TYPE.deserialize(stream, element_byte_length) for _ in range(cls.LENGTH)
             ]
             return cls(data=elements)
 

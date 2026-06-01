@@ -159,30 +159,41 @@ class BaseBytes(bytes, SSZType):
 
         - Already-typed instances pass through.
         - Plain bytes inputs go through length-checked validation, then get wrapped.
+        - Hex string inputs (with an optional 0x prefix) go through the constructor.
         - JSON serialization converts the bytes to a 0x-prefixed hex string.
         """
-        # Validator that wraps a verified bytes object into a typed instance.
-        from_bytes_validator = core_schema.no_info_plain_validator_function(cls)
+        # Shared validator that runs the constructor on a verified input.
+        # The constructor handles bytes, bytearray, hex strings, or iterables of ints.
+        # It also enforces the declared length.
+        from_input_validator = core_schema.no_info_plain_validator_function(cls)
 
-        # Two-step input validation:
-        #
-        #   - bytes_schema enforces the exact declared length.
-        #   - wrapping validator turns the validated bytes into a typed instance.
-        python_schema = core_schema.chain_schema(
+        # Bytes path enforces the exact declared length, then wraps into a typed instance.
+        bytes_path = core_schema.chain_schema(
             [
                 core_schema.bytes_schema(min_length=cls.LENGTH, max_length=cls.LENGTH),
-                from_bytes_validator,
+                from_input_validator,
             ]
         )
 
-        # Final union accepts either branch and serializes back to a 0x-prefixed hex string:
+        # Hex string path routes any string through the constructor.
+        # The constructor strips an optional 0x prefix, decodes hex, and length-checks.
+        str_path = core_schema.chain_schema(
+            [
+                core_schema.str_schema(),
+                from_input_validator,
+            ]
+        )
+
+        # Final union accepts any branch and serializes back to a 0x-prefixed hex string:
         #
         #   - Branch 1: input is already a typed instance, pass through.
         #   - Branch 2: input is bytes that need length-checking and wrapping.
+        #   - Branch 3: input is a hex string that goes through the constructor.
         return core_schema.union_schema(
             [
                 core_schema.is_instance_schema(cls),
-                python_schema,
+                bytes_path,
+                str_path,
             ],
             serialization=core_schema.plain_serializer_function_ser_schema(
                 lambda x: "0x" + x.hex()

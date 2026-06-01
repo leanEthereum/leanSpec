@@ -47,14 +47,14 @@ REORG_DEPTH_BUCKETS = (1, 2, 3, 5, 7, 10, 20, 30, 50, 100)
 
 # Section labels for attestation aggregate coverage gauges. These match the
 # names printed in slot/report logs: timely, late, block, combined,
-# agg_start_new, proposal_payloads, proposal_gossip, and proposal_combined.
+# aggregate_start_new, proposal_payloads, proposal_gossip, and proposal_combined.
 # Slot is the X-axis (time series progression), not a label dimension.
 ATTESTATION_AGGREGATE_COVERAGE_SECTIONS = (
     "timely",
     "late",
     "block",
     "combined",
-    "agg_start_new",
+    "aggregate_start_new",
     "proposal_payloads",
     "proposal_gossip",
     "proposal_combined",

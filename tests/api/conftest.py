@@ -66,7 +66,7 @@ class _ServerThread(threading.Thread):
     def _create_server(self) -> ApiServer:
         """Create the API server with a test store and aggregator controller."""
         genesis = make_genesis_data(
-            num_validators=3, validator_id=None, genesis_time=int(time.time())
+            num_validators=3, validator_index=None, genesis_time=int(time.time())
         )
         store = genesis.store
 

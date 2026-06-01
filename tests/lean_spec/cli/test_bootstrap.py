@@ -27,11 +27,11 @@ MULTIADDR_IPV4 = "/ip4/127.0.0.1/udp/9000/quic-v1"
 def enr_keypair() -> tuple[ec.EllipticCurvePrivateKey, bytes]:
     """One secp256k1 keypair shared across the whole session."""
     private_key = ec.generate_private_key(ec.SECP256K1())
-    compressed_pubkey = private_key.public_key().public_bytes(
+    compressed_public_key = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.X962,
         format=serialization.PublicFormat.CompressedPoint,
     )
-    return private_key, compressed_pubkey
+    return private_key, compressed_public_key
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +39,7 @@ def make_enr(
     enr_keypair: tuple[ec.EllipticCurvePrivateKey, bytes],
 ) -> Callable[..., str]:
     """Build a signed ENR string for the given IP and optional UDP port."""
-    private_key, compressed_pubkey = enr_keypair
+    private_key, compressed_public_key = enr_keypair
 
     def _sign(content_items: list[RLPItem]) -> bytes:
         # Hash the RLP-encoded content with keccak-256 and sign the digest.
@@ -60,7 +60,7 @@ def make_enr(
             b"ip",
             ip_bytes,
             b"secp256k1",
-            compressed_pubkey,
+            compressed_public_key,
         ]
 
         # UDP port is optional; absent means the record has no dialable endpoint.
@@ -97,24 +97,28 @@ def genesis_yaml(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def validator_keys_dir(tmp_path: Path) -> Path:
+def validator_keys_directory(tmp_path: Path) -> Path:
     """Materialise a one-validator key directory the registry loader accepts."""
     # The registry loader expects the ream/zeam two-file layout.
     keys_root = tmp_path / "keys"
-    hash_sig_dir = keys_root / "hash-sig-keys"
-    hash_sig_dir.mkdir(parents=True)
+    hash_signature_directory = keys_root / "hash-sig-keys"
+    hash_signature_directory.mkdir(parents=True)
 
     # Borrow a real precomputed XMSS keypair from the shared manager.
     km = XmssKeyManager.shared(max_slot=Slot(10))
     kp = km[ValidatorIndex(0)]
 
     # Drop both secret keys to disk under the names the manifest references.
-    (hash_sig_dir / "att_key_0.ssz").write_bytes(kp.attestation_keypair.secret_key.encode_bytes())
-    (hash_sig_dir / "prop_key_0.ssz").write_bytes(kp.proposal_keypair.secret_key.encode_bytes())
+    (hash_signature_directory / "att_key_0.ssz").write_bytes(
+        kp.attestation_keypair.secret_key.encode_bytes()
+    )
+    (hash_signature_directory / "prop_key_0.ssz").write_bytes(
+        kp.proposal_keypair.secret_key.encode_bytes()
+    )
 
     # Manifest carries one validator with placeholder public keys.
-    # The loader does not verify the pubkeys against the secret keys here.
-    manifest = hash_sig_dir / "validator-keys-manifest.yaml"
+    # The loader does not verify the public_keys against the secret keys here.
+    manifest = hash_signature_directory / "validator-keys-manifest.yaml"
     manifest.write_text(
         "key_scheme: SIGTopLevelTargetSumLifetime32Dim64Base8\n"
         "hash_function: Poseidon2\n"
@@ -125,10 +129,10 @@ def validator_keys_dir(tmp_path: Path) -> Path:
         "num_validators: 1\n"
         "validators:\n"
         "  - index: 0\n"
-        f"    attestation_pubkey_hex: '0x{'00' * 52}'\n"
-        f"    proposal_pubkey_hex: '0x{'00' * 52}'\n"
-        "    attestation_privkey_file: att_key_0.ssz\n"
-        "    proposal_privkey_file: prop_key_0.ssz\n"
+        f"    attestation_public_key_hex: '0x{'00' * 52}'\n"
+        f"    proposal_public_key_hex: '0x{'00' * 52}'\n"
+        "    attestation_private_key_file: att_key_0.ssz\n"
+        "    proposal_private_key_file: prop_key_0.ssz\n"
     )
 
     # Node-to-validator mapping assigns the only validator to the default node id.
@@ -220,12 +224,12 @@ class TestAggregateSubnetIds:
         assert boot.aggregate_subnet_ids == ()
 
     def test_valid_extras_parse_into_tuple(
-        self, make_boot: Callable[..., NodeBootstrap], validator_keys_dir: Path
+        self, make_boot: Callable[..., NodeBootstrap], validator_keys_directory: Path
     ) -> None:
         """A comma list with aggregator mode and a populated registry resolves in order."""
         boot = make_boot(
             "--validator-keys",
-            str(validator_keys_dir),
+            str(validator_keys_directory),
             "--is-aggregator",
             "--aggregate-subnet-ids",
             "1,2,3",
@@ -277,7 +281,7 @@ class TestListenAddressResolution:
     ) -> None:
         """An empty listen string resolves to no listener."""
         boot = make_boot("--listen", "")
-        assert boot.listen_addr is None
+        assert boot.listen_address is None
 
 
 class TestBuildAnchor:
@@ -318,5 +322,5 @@ class TestBuildAnchor:
             "url": "http://localhost:5052",
             "genesis": boot.genesis,
             "fork": boot.fork,
-            "validator_id": boot.registry.primary_index(),
+            "validator_index": boot.registry.primary_index(),
         }

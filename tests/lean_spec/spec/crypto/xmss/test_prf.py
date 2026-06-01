@@ -53,7 +53,7 @@ def test_apply_is_sensitive_to_inputs() -> None:
     epoch1 = Uint64(10)
     chain_index1 = Uint64(20)
     baseline_output = key1.derive_chain_start(config, epoch1, chain_index1)
-    assert len(baseline_output) == config.HASH_LEN_FE
+    assert len(baseline_output) == config.HASH_LENGTH_FIELD_ELEMENTS
 
     # Test sensitivity to the key.
     key2 = PRFKey(b"\x22" * PRF_KEY_LENGTH)

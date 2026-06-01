@@ -39,7 +39,7 @@ ignoring malformed ones.
 
 from __future__ import annotations
 
-from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AttestationData,
@@ -110,7 +110,7 @@ class TestProcessAttestationsBoundsCheck:
         target_slot = Slot(10)
         target_root = make_bytes32(99)
 
-        att_data = AttestationData(
+        attestation_data = AttestationData(
             slot=target_slot,
             head=Checkpoint(root=target_root, slot=target_slot),
             target=Checkpoint(root=target_root, slot=target_slot),
@@ -120,10 +120,8 @@ class TestProcessAttestationsBoundsCheck:
 
         attestation = AggregatedAttestation(
             # Two validators participate in this attestation.
-            aggregation_bits=ValidatorIndices(
-                data=[ValidatorIndex(0), ValidatorIndex(1)]
-            ).to_aggregation_bits(),
-            data=att_data,
+            aggregation_bits=AggregationBits.from_indices([ValidatorIndex(0), ValidatorIndex(1)]),
+            data=attestation_data,
         )
 
         # Process the attestation.
@@ -192,7 +190,7 @@ class TestProcessAttestationsBoundsCheck:
         target_slot = Slot(10)
         some_root = make_bytes32(42)
 
-        att_data = AttestationData(
+        attestation_data = AttestationData(
             slot=target_slot,
             head=Checkpoint(root=some_root, slot=target_slot),
             target=Checkpoint(root=some_root, slot=target_slot),
@@ -200,10 +198,8 @@ class TestProcessAttestationsBoundsCheck:
         )
 
         attestation = AggregatedAttestation(
-            aggregation_bits=ValidatorIndices(
-                data=[ValidatorIndex(0), ValidatorIndex(1)]
-            ).to_aggregation_bits(),
-            data=att_data,
+            aggregation_bits=AggregationBits.from_indices([ValidatorIndex(0), ValidatorIndex(1)]),
+            data=attestation_data,
         )
 
         # Process the attestation.

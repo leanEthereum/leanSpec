@@ -344,12 +344,12 @@ def _decode_length(data: bytes, offset: int, base: int) -> tuple[int, int]:
     #
     #   prefix          =  0xb9
     #   short_length    =  0xb9 - 0x80  =  57
-    #   len_of_len      =  57 - 55      =  2
+    #   length_of_length      =  57 - 55      =  2
     #   length          =  int(04 00, big)  =  1024
     #   payload range   =  [3, 1027)
-    len_of_len = short_length - SHORT_FORM_MAX
+    length_of_length = short_length - SHORT_FORM_MAX
     length_start = offset + 1
-    length_end = length_start + len_of_len
+    length_end = length_start + length_of_length
     if length_end > len(data):
         raise RLPDecodingError(f"Data too short: need {length_end}, have {len(data)}")
 
@@ -360,7 +360,7 @@ def _decode_length(data: bytes, offset: int, base: int) -> tuple[int, int]:
     #
     # Example: input b9 00 38 [56 bytes] is rejected.
     # The shorter equivalent b8 38 [56 bytes] is the canonical form.
-    if len_of_len > 1 and data[length_start] == 0:
+    if length_of_length > 1 and data[length_start] == 0:
         raise RLPDecodingError("Non-canonical: leading zeros in length encoding")
 
     length = int.from_bytes(data[length_start:length_end], "big")

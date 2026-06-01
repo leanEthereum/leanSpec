@@ -22,7 +22,6 @@ from lean_spec.node.sync.peer_manager import PeerManager
 from lean_spec.node.sync.service import SyncService
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
 from lean_spec.spec.crypto.xmss.containers import Signature
 from lean_spec.spec.crypto.xmss.types import (
@@ -31,7 +30,7 @@ from lean_spec.spec.crypto.xmss.types import (
     HashTreeOpening,
     Randomness,
 )
-from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import AttestationSignatureEntry, State, Store
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
@@ -39,9 +38,11 @@ from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     Block,
     BlockBody,
+    MultiMessageAggregate,
     SignedAggregatedAttestation,
     SignedAttestation,
     SignedBlock,
+    SingleMessageAggregate,
     Validator,
     Validators,
 )
@@ -58,7 +59,7 @@ def make_bytes32(seed: int) -> Bytes32:
 
 def _zero_digest() -> HashDigestVector:
     """Create a zero-filled hash digest vector."""
-    return HashDigestVector(data=[Fp(0)] * TARGET_CONFIG.HASH_LEN_FE)
+    return HashDigestVector(data=[Fp(0)] * TARGET_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)
 
 
 def make_mock_signature() -> Signature:
@@ -67,7 +68,7 @@ def make_mock_signature() -> Signature:
 
     Fills path, rho, and hashes with zeros at the exact dimensions
     required by the active scheme. This ensures the signature serializes
-    to exactly SIGNATURE_LEN_BYTES, matching the fixed-size SSZ encoding.
+    to exactly SIGNATURE_LENGTH_BYTES, matching the fixed-size SSZ encoding.
     """
     return Signature(
         path=HashTreeOpening(
@@ -75,7 +76,7 @@ def make_mock_signature() -> Signature:
                 data=[_zero_digest() for _ in range(TARGET_CONFIG.LOG_LIFETIME)]
             )
         ),
-        rho=Randomness(data=[Fp(0)] * TARGET_CONFIG.RAND_LEN_FE),
+        rho=Randomness(data=[Fp(0)] * TARGET_CONFIG.RAND_LENGTH_FIELD_ELEMENTS),
         hashes=HashDigestList(data=[_zero_digest() for _ in range(TARGET_CONFIG.DIMENSION)]),
     )
 
@@ -88,8 +89,8 @@ def make_validators(count: int) -> Validators:
     """
     validators = [
         Validator(
-            attestation_pubkey=Bytes52(b"\x00" * 52),
-            proposal_pubkey=Bytes52(b"\x00" * 52),
+            attestation_public_key=Bytes52(b"\x00" * 52),
+            proposal_public_key=Bytes52(b"\x00" * 52),
             index=ValidatorIndex(i),
         )
         for i in range(count)
@@ -101,13 +102,13 @@ def make_validators_from_key_manager(key_manager: XmssKeyManager, count: int) ->
     """Build a validator registry with real XMSS keys from a key manager."""
     validators = []
     for i in range(count):
-        idx = ValidatorIndex(i)
-        att_pk, prop_pk = key_manager.get_public_keys(idx)
+        index = ValidatorIndex(i)
+        attestation_public_key, proposal_public_key = key_manager.get_public_keys(index)
         validators.append(
             Validator(
-                attestation_pubkey=Bytes52(att_pk.encode_bytes()),
-                proposal_pubkey=Bytes52(prop_pk.encode_bytes()),
-                index=idx,
+                attestation_public_key=Bytes52(attestation_public_key.encode_bytes()),
+                proposal_public_key=Bytes52(proposal_public_key.encode_bytes()),
+                index=index,
             )
         )
     return Validators(data=validators)
@@ -209,7 +210,7 @@ def make_signed_block(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
 
-    return SignedBlock(block=block, proof=ByteList512KiB(data=b""))
+    return SignedBlock(block=block, proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")))
 
 
 def make_aggregated_attestation(
@@ -231,7 +232,7 @@ def make_aggregated_attestation(
     )
 
     return AggregatedAttestation(
-        aggregation_bits=ValidatorIndices(data=participant_ids).to_aggregation_bits(),
+        aggregation_bits=AggregationBits.from_indices(participant_ids),
         data=data,
     )
 
@@ -254,7 +255,7 @@ def make_signed_attestation(
         source=source_checkpoint,
     )
     return SignedAttestation(
-        validator_id=validator,
+        validator_index=validator,
         data=attestation_data,
         signature=make_mock_signature(),
     )
@@ -278,7 +279,7 @@ def make_test_block(slot: int = 1, seed: int = 0) -> SignedBlock:
     )
 
 
-_DEFAULT_VALIDATOR_ID = ValidatorIndex(0)
+_DEFAULT_VALIDATOR_INDEX = ValidatorIndex(0)
 _DEFAULT_ATTESTATION_SLOT = Slot(1)
 
 
@@ -294,7 +295,7 @@ def make_genesis_data(
     num_validators: int = 3,
     genesis_time: int = 0,
     key_manager: XmssKeyManager | None = None,
-    validator_id: ValidatorIndex | None = _DEFAULT_VALIDATOR_ID,
+    validator_index: ValidatorIndex | None = _DEFAULT_VALIDATOR_INDEX,
 ) -> GenesisData:
     """Create a forkchoice store with genesis state and block, returning all three."""
     if key_manager is not None:
@@ -303,13 +304,13 @@ def make_genesis_data(
         validators = make_validators(num_validators)
     genesis_state = make_genesis_state(validators=validators, genesis_time=genesis_time)
     genesis_block = make_genesis_block(genesis_state)
-    store = LstarSpec().create_store(genesis_state, genesis_block, validator_id=validator_id)
+    store = LstarSpec().create_store(genesis_state, genesis_block, validator_index=validator_index)
     return GenesisData(store, genesis_state, genesis_block)
 
 
 def make_store(
     num_validators: int = 3,
-    validator_id: ValidatorIndex | None = _DEFAULT_VALIDATOR_ID,
+    validator_index: ValidatorIndex | None = _DEFAULT_VALIDATOR_INDEX,
     genesis_time: int = 0,
     key_manager: XmssKeyManager | None = None,
 ) -> Store:
@@ -318,20 +319,20 @@ def make_store(
         num_validators=num_validators,
         genesis_time=genesis_time,
         key_manager=key_manager,
-        validator_id=validator_id,
+        validator_index=validator_index,
     ).store
 
 
 def make_store_with_attestation_data(
     key_manager: XmssKeyManager,
     num_validators: int,
-    validator_id: ValidatorIndex,
+    validator_index: ValidatorIndex,
     attestation_slot: Slot = _DEFAULT_ATTESTATION_SLOT,
 ) -> tuple[Store, AttestationData]:
     """Create a store with validators and produce attestation data for testing."""
     store = make_store(
         num_validators=num_validators,
-        validator_id=validator_id,
+        validator_index=validator_index,
         key_manager=key_manager,
     )
     store.time = Interval.from_slot(attestation_slot)
@@ -342,7 +343,7 @@ def make_store_with_attestation_data(
 def make_store_with_attestation_signatures(
     key_manager: XmssKeyManager,
     num_validators: int,
-    validator_id: ValidatorIndex,
+    validator_index: ValidatorIndex,
     attesting_validators: list[ValidatorIndex],
     attestation_slot: Slot = _DEFAULT_ATTESTATION_SLOT,
 ) -> tuple[Store, AttestationData]:
@@ -350,13 +351,16 @@ def make_store_with_attestation_signatures(
     store, attestation_data = make_store_with_attestation_data(
         key_manager,
         num_validators,
-        validator_id,
+        validator_index,
         attestation_slot,
     )
     store.attestation_signatures = {
         attestation_data: {
-            AttestationSignatureEntry(vid, key_manager.sign_attestation_data(vid, attestation_data))
-            for vid in attesting_validators
+            AttestationSignatureEntry(
+                validator_index,
+                key_manager.sign_attestation_data(validator_index, attestation_data),
+            )
+            for validator_index in attesting_validators
         },
     }
     return store, attestation_data
@@ -392,18 +396,18 @@ def make_aggregated_proof(
     key_manager: XmssKeyManager,
     participants: list[ValidatorIndex],
     attestation_data: AttestationData,
-) -> TypeOneMultiSignature:
-    """Create a valid Type-1 aggregated proof for the given participants."""
+) -> SingleMessageAggregate:
+    """Create a valid single-message aggregate aggregated proof for the given participants."""
     data_root = hash_tree_root(attestation_data)
     raw_xmss = [
         (
-            vid,
-            key_manager.get_public_keys(vid)[0],
-            key_manager.sign_attestation_data(vid, attestation_data),
+            validator_index,
+            key_manager.get_public_keys(validator_index)[0],
+            key_manager.sign_attestation_data(validator_index, attestation_data),
         )
-        for vid in participants
+        for validator_index in participants
     ]
-    return TypeOneMultiSignature.aggregate(
+    return SingleMessageAggregate.aggregate(
         children=[],
         raw_xmss=raw_xmss,
         message=data_root,
@@ -441,7 +445,7 @@ def make_signed_block_from_store(
     """Produce a signed block and advance the consumer store to accept it.
 
     Returns the updated store (with time advanced) and the signed block.
-    The merged Type-2 proof is built honestly because callers usually
+    The merged multi-message aggregate proof is built honestly because callers usually
     feed the result through spec.on_block, which decodes and verifies
     the proof.
     """
@@ -453,30 +457,30 @@ def make_signed_block_from_store(
     head_state = new_store.states[new_store.head]
     public_keys_per_part: list[list] = [
         [
-            head_state.validators[vid].get_attestation_pubkey()
-            for vid in proof.participants.to_validator_indices()
+            head_state.validators[validator_index].get_attestation_public_key()
+            for validator_index in proof.participants.to_validator_indices()
         ]
         for proof in attestation_proofs
     ]
-    proposer_pubkey = head_state.validators[proposer_index].get_proposal_pubkey()
-    public_keys_per_part.append([proposer_pubkey])
+    proposer_public_key = head_state.validators[proposer_index].get_proposal_public_key()
+    public_keys_per_part.append([proposer_public_key])
 
     proposer_signature = key_manager.sign_block_root(proposer_index, slot, block_root)
-    proposer_type_1 = TypeOneMultiSignature.aggregate(
+    proposer_single_message_aggregate = SingleMessageAggregate.aggregate(
         children=[],
-        raw_xmss=[(proposer_index, proposer_pubkey, proposer_signature)],
+        raw_xmss=[(proposer_index, proposer_public_key, proposer_signature)],
         message=block_root,
         slot=slot,
     )
 
-    merged = TypeTwoMultiSignature.aggregate(
-        [*attestation_proofs, proposer_type_1],
+    merged = MultiMessageAggregate.aggregate(
+        [*attestation_proofs, proposer_single_message_aggregate],
         public_keys_per_part=public_keys_per_part,
     )
 
     signed_block = SignedBlock(
         block=block,
-        proof=ByteList512KiB(data=merged.encode_bytes()),
+        proof=merged,
     )
 
     target_interval = Interval.from_slot(block.slot)

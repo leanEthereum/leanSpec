@@ -167,7 +167,7 @@ class TestBaseBytesOperations:
         """The hex method returns the lowercase hex string."""
         assert Bytes4(b"\x00\x01\x02\x03").hex() == "00010203"
 
-    def test_len_iter_getitem(self) -> None:
+    def test_length_iter_getitem(self) -> None:
         """The instance supports len, iteration, and integer indexing."""
         v = Bytes4(b"\x00\x01\x02\x03")
         assert len(v) == 4
@@ -228,31 +228,31 @@ class TestBaseBytesSSZ:
         assert v.encode_bytes() == payload
         assert cls.decode_bytes(payload) == v
 
-        buf = io.BytesIO()
-        n = v.serialize(buf)
+        buffer = io.BytesIO()
+        n = v.serialize(buffer)
         assert n == len(payload)
 
-        buf.seek(0)
-        v2 = cls.deserialize(buf, len(payload))
+        buffer.seek(0)
+        v2 = cls.deserialize(buffer, len(payload))
         assert v == v2
 
     def test_deserialize_scope_mismatch_raises(self) -> None:
         """deserialize rejects a scope that doesn't match LENGTH."""
-        buf = io.BytesIO(b"\x00\x01\x02\x03")
+        buffer = io.BytesIO(b"\x00\x01\x02\x03")
         with pytest.raises(
             SSZSerializationError,
             match=re.escape("Bytes4: expected 4 bytes, got 3"),
         ):
-            Bytes4.deserialize(buf, 3)
+            Bytes4.deserialize(buffer, 3)
 
     def test_deserialize_stream_truncation_raises(self) -> None:
         """deserialize detects when the stream ends before delivering scope bytes."""
-        buf = io.BytesIO(b"\x00\x01")
+        buffer = io.BytesIO(b"\x00\x01")
         with pytest.raises(
             SSZSerializationError,
             match=re.escape("Bytes4: expected 4 bytes, got 2"),
         ):
-            Bytes4.deserialize(buf, 4)
+            Bytes4.deserialize(buffer, 4)
 
 
 class TestBaseBytesPydantic:
@@ -432,40 +432,40 @@ class TestBaseByteListSSZ:
         assert x.encode_bytes() == data
         assert TestByteList.decode_bytes(data) == x
 
-        buf = io.BytesIO()
-        n = x.serialize(buf)
+        buffer = io.BytesIO()
+        n = x.serialize(buffer)
         assert n == len(data)
 
-        buf.seek(0)
-        y = TestByteList.deserialize(buf, len(data))
+        buffer.seek(0)
+        y = TestByteList.deserialize(buffer, len(data))
         assert y == x
 
     def test_deserialize_negative_scope_raises(self) -> None:
         """deserialize rejects a negative scope."""
-        buf = io.BytesIO(b"")
+        buffer = io.BytesIO(b"")
         with pytest.raises(
             SSZSerializationError,
             match=re.escape("ByteList16: negative scope"),
         ):
-            ByteList16.deserialize(buf, -1)
+            ByteList16.deserialize(buffer, -1)
 
     def test_deserialize_over_limit_raises(self) -> None:
         """deserialize rejects a scope exceeding LIMIT."""
-        buf = io.BytesIO(b"\x00" * 6)
+        buffer = io.BytesIO(b"\x00" * 6)
         with pytest.raises(
             SSZValueError,
             match=re.escape("ByteList5 exceeds limit of 5, got 6"),
         ):
-            ByteList5.deserialize(buf, 6)
+            ByteList5.deserialize(buffer, 6)
 
     def test_deserialize_stream_truncation_raises(self) -> None:
         """deserialize detects when the stream ends before delivering scope bytes."""
-        buf = io.BytesIO(b"\x00\x01")
+        buffer = io.BytesIO(b"\x00\x01")
         with pytest.raises(
             SSZSerializationError,
             match=re.escape("ByteList16: expected 3 bytes, got 2"),
         ):
-            ByteList16.deserialize(buf, 3)
+            ByteList16.deserialize(buffer, 3)
 
 
 class TestBaseByteListPydantic:

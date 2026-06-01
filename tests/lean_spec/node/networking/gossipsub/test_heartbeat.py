@@ -176,8 +176,8 @@ class TestEmitGossip:
         behavior.subscribe(topic)
 
         # Add message to cache
-        msg = GossipsubMessage(topic=topic.encode("utf-8"), raw_data=b"data")
-        behavior.message_cache.put(topic, msg)
+        message = GossipsubMessage(topic=topic.encode("utf-8"), raw_data=b"data")
+        behavior.message_cache.put(topic, message)
 
         # Add mesh peer and non-mesh peer
         mesh_pid = add_peer(behavior, "meshPx", {topic})
@@ -191,7 +191,7 @@ class TestEmitGossip:
                 non_mesh_pid,
                 RPC(
                     control=ControlMessage(
-                        ihave=[ControlIHave(topic_id=topic, message_ids=[msg.id])]
+                        ihave=[ControlIHave(topic_id=topic, message_ids=[message.id])]
                     )
                 ),
             )
@@ -217,8 +217,8 @@ class TestEmitGossip:
         topic = TopicId("test_topic")
         behavior.subscribe(topic)
 
-        msg = GossipsubMessage(topic=topic.encode("utf-8"), raw_data=b"data")
-        behavior.message_cache.put(topic, msg)
+        message = GossipsubMessage(topic=topic.encode("utf-8"), raw_data=b"data")
+        behavior.message_cache.put(topic, message)
 
         # Only add peer without stream (no mesh peers either)
         add_peer(behavior, "noStrm", {topic}, with_stream=False)
@@ -236,17 +236,17 @@ class TestHeartbeatIntegration:
         """Heartbeat shifts the message cache window."""
         behavior, _ = make_behavior()
 
-        msg = GossipsubMessage(topic=b"topic", raw_data=b"data")
-        behavior.message_cache.put(TopicId("topic"), msg)
+        message = GossipsubMessage(topic=b"topic", raw_data=b"data")
+        behavior.message_cache.put(TopicId("topic"), message)
 
-        assert behavior.message_cache.has(msg.id)
+        assert behavior.message_cache.has(message.id)
 
         # Run heartbeat several times to shift through all windows
         for _ in range(7):
             await behavior._heartbeat()
 
         # After enough shifts, old messages should be evicted
-        assert not behavior.message_cache.has(msg.id)
+        assert not behavior.message_cache.has(message.id)
 
     @pytest.mark.asyncio
     async def test_cleans_seen_cache(self) -> None:
@@ -254,12 +254,12 @@ class TestHeartbeatIntegration:
         behavior, _ = make_behavior()
         behavior.seen_cache = SeenCache(ttl_seconds=1)
 
-        msg_id = MessageId(b"12345678901234567890")
-        behavior.seen_cache.add(msg_id, Timestamp(time.time() - 10))  # Already expired
+        message_id = MessageId(b"12345678901234567890")
+        behavior.seen_cache.add(message_id, Timestamp(time.time() - 10))  # Already expired
 
         await behavior._heartbeat()
 
-        assert not behavior.seen_cache.has(msg_id)
+        assert not behavior.seen_cache.has(message_id)
 
     @pytest.mark.asyncio
     async def test_iterates_all_subscribed_topics(self) -> None:
@@ -332,8 +332,8 @@ class TestHeartbeatIntegration:
         behavior.mesh.update_fanout(fan_topic, {fan_peer})
 
         # Add a message to cache for the fanout topic
-        msg = GossipsubMessage(topic=fan_topic.encode("utf-8"), raw_data=b"data")
-        behavior.message_cache.put(fan_topic, msg)
+        message = GossipsubMessage(topic=fan_topic.encode("utf-8"), raw_data=b"data")
+        behavior.message_cache.put(fan_topic, message)
 
         await behavior._heartbeat()
 
@@ -349,7 +349,7 @@ class TestHeartbeatIntegration:
                 fan_peer,
                 RPC(
                     control=ControlMessage(
-                        ihave=[ControlIHave(topic_id=fan_topic, message_ids=[msg.id])]
+                        ihave=[ControlIHave(topic_id=fan_topic, message_ids=[message.id])]
                     )
                 ),
             )

@@ -22,7 +22,7 @@ from lean_spec.node.networking.reqresp.codec import (
     decode_request,
     encode_request,
 )
-from lean_spec.node.networking.transport.peer_id import KeyType, PeerId, PublicKeyProto
+from lean_spec.node.networking.transport.peer_id import KeyType, PeerId, PublicKeyProtobuf
 from lean_spec.node.networking.varint import decode_varint, encode_varint
 from lean_spec.node.snappy import compress, decompress, frame_compress, frame_decompress
 from lean_spec.spec.forks import SubnetId
@@ -103,7 +103,7 @@ class NetworkingCodecTest(BaseConsensusFixture):
         """Assert that decoding `input.bytes` with `input.decoder` raises.
 
         Dispatches to one of the wire-format decoders and confirms that the
-        expected exception (on :attr:`expect_exception`) is raised. Used to
+        expected exception (on :attribute:`expect_exception`) is raised. Used to
         generate negative-path test vectors for client decoders.
 
         The input record carries two fields:
@@ -144,8 +144,8 @@ class NetworkingCodecTest(BaseConsensusFixture):
         exception_raised: Exception | None = None
         try:
             decoder(raw)
-        except Exception as exc:
-            exception_raised = exc
+        except Exception as exception:
+            exception_raised = exception
 
         if exception_raised is None:
             raise AssertionError(
@@ -370,9 +370,9 @@ class NetworkingCodecTest(BaseConsensusFixture):
         key_type = key_type_map[self.input["keyType"]]
         key_data = _from_hex(self.input["publicKey"])
 
-        proto = PublicKeyProto(key_type=key_type, key_data=key_data)
-        encoded_proto = proto.encode()
-        peer_id = PeerId.from_public_key(proto)
+        protobuf = PublicKeyProtobuf(key_type=key_type, key_data=key_data)
+        encoded_protobuf = protobuf.encode()
+        peer_id = PeerId.from_public_key(protobuf)
         peer_id_str = str(peer_id)
 
         # Roundtrip: Base58 decode → re-encode must match.
@@ -380,7 +380,7 @@ class NetworkingCodecTest(BaseConsensusFixture):
         assert roundtrip == peer_id, "PeerId Base58 roundtrip failed"
 
         return {
-            "protobufEncoded": _to_hex(encoded_proto),
+            "protobufEncoded": _to_hex(encoded_protobuf),
             "peerId": peer_id_str,
         }
 
@@ -388,9 +388,9 @@ class NetworkingCodecTest(BaseConsensusFixture):
 def _build_rpc(d: dict[str, Any]) -> RPC:
     """Build an RPC from a JSON-friendly dict."""
     subs = [_build_sub_opts(s) for s in d.get("subscriptions", [])]
-    msgs = [_build_message(m) for m in d.get("publish", [])]
+    messages = [_build_message(m) for m in d.get("publish", [])]
     ctrl = _build_control(d["control"]) if d.get("control") else None
-    return RPC(subscriptions=subs, publish=msgs, control=ctrl)
+    return RPC(subscriptions=subs, publish=messages, control=ctrl)
 
 
 def _build_sub_opts(d: dict[str, Any]) -> SubOpts:

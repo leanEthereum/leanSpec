@@ -340,10 +340,10 @@ class HashSubTree(Container):
         # The real root is the node at this tree's index, not always position zero.
         # An odd index leaves a random pad at position zero, so select by absolute index.
         top = subtree.layers[-1]
-        root_idx = int(bottom_tree_index - top.start_index)
+        root_index = int(bottom_tree_index - top.start_index)
         root_layer = HashTreeLayer(
             start_index=bottom_tree_index,
-            nodes=HashDigestList(data=[top.nodes[root_idx]]),
+            nodes=HashDigestList(data=[top.nodes[root_index]]),
         )
         return cls(
             depth=Uint64(depth),
@@ -479,10 +479,10 @@ class HashSubTree(Container):
         for layer in self.layers[:-1]:
             # The sibling sits at the position with the last bit flipped, then we
             # rebase by the layer's start_index because the layer is sparse.
-            sibling_idx = (pos ^ 1) - int(layer.start_index)
-            if not (0 <= sibling_idx < len(layer.nodes)):
-                raise ValueError(f"Sibling index {sibling_idx} out of bounds.")
-            siblings.append(layer.nodes[sibling_idx])
+            sibling_index = (pos ^ 1) - int(layer.start_index)
+            if not (0 <= sibling_index < len(layer.nodes)):
+                raise ValueError(f"Sibling index {sibling_index} out of bounds.")
+            siblings.append(layer.nodes[sibling_index])
             pos //= 2
 
         return HashTreeOpening(siblings=HashDigestList(data=siblings))

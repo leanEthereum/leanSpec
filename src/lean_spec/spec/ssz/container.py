@@ -2,15 +2,34 @@
 
 import io
 from itertools import pairwise
-from typing import IO, Self, override
+from typing import IO, Any, Self, override
 
-from .exceptions import SSZSerializationError, SSZTypeError
+from pydantic import model_validator
+from pydantic.functional_validators import ModelWrapValidatorHandler
+
+from .exceptions import SSZError, SSZSerializationError, SSZTypeError
 from .ssz_base import BYTES_PER_LENGTH_OFFSET, SSZModel, SSZType
 from .uint import Uint32
 
 
 class Container(SSZModel):
     """Ordered struct of named heterogeneous SSZ fields."""
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _accept_hex_string(cls, value: Any, handler: ModelWrapValidatorHandler[Self]) -> Self:
+        """
+        Reconstruct the container from a hex-encoded SSZ payload.
+
+        - Other input shapes pass through to field-by-field validation.
+        - Hex strings accept an optional 0x prefix.
+        """
+        if isinstance(value, str):
+            try:
+                return cls.from_hex(value)
+            except SSZError as err:
+                raise ValueError(f"invalid {cls.__name__} hex: {err}") from err
+        return handler(value)
 
     @classmethod
     @override

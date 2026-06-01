@@ -203,13 +203,13 @@ class TestHandleIHave:
         """IHAVE for unseen messages triggers IWANT."""
         behavior, capture = make_behavior()
         peer_id = add_peer(behavior, "peer1")
-        msg_id = b"12345678901234567890"
+        message_id = b"12345678901234567890"
 
-        ihave = ControlIHave(topic_id=TopicId("topic"), message_ids=[msg_id])
+        ihave = ControlIHave(topic_id=TopicId("topic"), message_ids=[message_id])
         await behavior._handle_ihave(peer_id, ihave)
 
         assert capture.sent == [
-            (peer_id, RPC(control=ControlMessage(iwant=[ControlIWant(message_ids=[msg_id])])))
+            (peer_id, RPC(control=ControlMessage(iwant=[ControlIWant(message_ids=[message_id])])))
         ]
 
     @pytest.mark.asyncio
@@ -217,12 +217,12 @@ class TestHandleIHave:
         """IHAVE for already-seen messages does not trigger IWANT."""
         behavior, capture = make_behavior()
         peer_id = add_peer(behavior, "peer1")
-        msg_id = MessageId(b"12345678901234567890")
+        message_id = MessageId(b"12345678901234567890")
 
         # Mark as seen
-        behavior.seen_cache.add(msg_id, Timestamp(time.time()))
+        behavior.seen_cache.add(message_id, Timestamp(time.time()))
 
-        ihave = ControlIHave(topic_id=TopicId("topic"), message_ids=[bytes(msg_id)])
+        ihave = ControlIHave(topic_id=TopicId("topic"), message_ids=[bytes(message_id)])
         await behavior._handle_ihave(peer_id, ihave)
 
         assert capture.sent == []
@@ -272,10 +272,10 @@ class TestHandleIWant:
         peer_id = add_peer(behavior, "peer1")
 
         # Put a message in cache
-        msg = GossipsubMessage(topic=b"topic", raw_data=b"payload")
-        behavior.message_cache.put(TopicId("topic"), msg)
+        message = GossipsubMessage(topic=b"topic", raw_data=b"payload")
+        behavior.message_cache.put(TopicId("topic"), message)
 
-        iwant = ControlIWant(message_ids=[bytes(msg.id)])
+        iwant = ControlIWant(message_ids=[bytes(message.id)])
         await behavior._handle_iwant(peer_id, iwant)
 
         assert capture.sent == [
@@ -364,10 +364,10 @@ class TestHandleMessage:
         behavior.mesh.add_to_mesh(topic, sender)
         behavior.mesh.add_to_mesh(topic, mesh_rx)
 
-        msg = Message(topic=topic, data=b"hello")
-        await behavior._handle_message(sender, msg)
+        message = Message(topic=topic, data=b"hello")
+        await behavior._handle_message(sender, message)
 
-        assert capture.sent == [(mesh_rx, RPC(publish=[msg]))]
+        assert capture.sent == [(mesh_rx, RPC(publish=[message]))]
 
     @pytest.mark.asyncio
     async def test_duplicate_message_ignored(self) -> None:
@@ -377,13 +377,13 @@ class TestHandleMessage:
         behavior.subscribe(topic)
 
         peer_id = add_peer(behavior, "peer1", {topic})
-        msg = Message(topic=topic, data=b"hello")
+        message = Message(topic=topic, data=b"hello")
 
-        await behavior._handle_message(peer_id, msg)
+        await behavior._handle_message(peer_id, message)
         assert capture.sent == []
 
         # Second time should be ignored
-        await behavior._handle_message(peer_id, msg)
+        await behavior._handle_message(peer_id, message)
         assert capture.sent == []
 
     @pytest.mark.asyncio
@@ -392,8 +392,8 @@ class TestHandleMessage:
         behavior, _ = make_behavior()
         peer_id = add_peer(behavior, "peer1")
 
-        msg = Message(topic=TopicId("topic"), data=b"payload")
-        await behavior._handle_message(peer_id, msg)
+        message = Message(topic=TopicId("topic"), data=b"payload")
+        await behavior._handle_message(peer_id, message)
 
         assert behavior._event_queue.get_nowait() == GossipsubMessageEvent(
             peer_id=peer_id,
@@ -408,8 +408,8 @@ class TestHandleMessage:
         behavior, capture = make_behavior()
         peer_id = add_peer(behavior, "peer1")
 
-        msg = Message(topic=TopicId(""), data=b"data")
-        await behavior._handle_message(peer_id, msg)
+        message = Message(topic=TopicId(""), data=b"data")
+        await behavior._handle_message(peer_id, message)
 
         assert capture.sent == []
         assert behavior._event_queue.empty()
@@ -421,8 +421,8 @@ class TestHandleMessage:
         peer_id = add_peer(behavior, "peer1")
 
         # Not subscribed to "topic"
-        msg = Message(topic=TopicId("topic"), data=b"data")
-        await behavior._handle_message(peer_id, msg)
+        message = Message(topic=TopicId("topic"), data=b"data")
+        await behavior._handle_message(peer_id, message)
 
         assert capture.sent == []
         assert behavior._event_queue.get_nowait() == GossipsubMessageEvent(
@@ -445,17 +445,17 @@ class TestHandleMessage:
         behavior.mesh.add_to_mesh(topic, other)
 
         large_data = b"x" * IDONTWANT_SIZE_THRESHOLD
-        msg = Message(topic=topic, data=large_data)
-        msg_id = GossipsubMessage.compute_id(topic.encode("utf-8"), large_data)
-        await behavior._handle_message(sender, msg)
+        message = Message(topic=topic, data=large_data)
+        message_id = GossipsubMessage.compute_id(topic.encode("utf-8"), large_data)
+        await behavior._handle_message(sender, message)
 
         assert capture.sent == [
-            (other, RPC(publish=[msg])),
+            (other, RPC(publish=[message])),
             (
                 other,
                 RPC(
                     control=ControlMessage(
-                        idontwant=[ControlIDontWant(message_ids=[bytes(msg_id)])]
+                        idontwant=[ControlIDontWant(message_ids=[bytes(message_id)])]
                     )
                 ),
             ),
@@ -474,10 +474,10 @@ class TestHandleMessage:
         behavior.mesh.add_to_mesh(topic, other)
 
         small_data = b"x" * (IDONTWANT_SIZE_THRESHOLD - 1)
-        msg = Message(topic=topic, data=small_data)
-        await behavior._handle_message(sender, msg)
+        message = Message(topic=topic, data=small_data)
+        await behavior._handle_message(sender, message)
 
-        assert capture.sent == [(other, RPC(publish=[msg]))]
+        assert capture.sent == [(other, RPC(publish=[message]))]
 
     @pytest.mark.asyncio
     async def test_message_not_forwarded_to_idontwant_peer(self) -> None:
@@ -491,13 +491,13 @@ class TestHandleMessage:
         behavior.mesh.add_to_mesh(topic, sender)
         behavior.mesh.add_to_mesh(topic, peer_ax)
 
-        msg_id = GossipsubMessage.compute_id(topic.encode("utf-8"), b"hello")
+        message_id = GossipsubMessage.compute_id(topic.encode("utf-8"), b"hello")
 
         # peer_ax says it doesn't want this message
-        behavior._peers[peer_ax].dont_want_ids.add(msg_id)
+        behavior._peers[peer_ax].dont_want_ids.add(message_id)
 
-        msg = Message(topic=topic, data=b"hello")
-        await behavior._handle_message(sender, msg)
+        message = Message(topic=topic, data=b"hello")
+        await behavior._handle_message(sender, message)
 
         assert capture.sent == []
 
@@ -510,12 +510,12 @@ class TestHandleIDontWant:
         behavior, _ = make_behavior()
         peer_id = add_peer(behavior, "peer1")
 
-        msg_ids = [b"12345678901234567890", b"abcdefghijklmnopqrst"]
-        idontwant = ControlIDontWant(message_ids=msg_ids)
+        message_ids = [b"12345678901234567890", b"abcdefghijklmnopqrst"]
+        idontwant = ControlIDontWant(message_ids=message_ids)
         behavior._handle_idontwant(peer_id, idontwant)
 
         state = behavior._peers[peer_id]
-        for mid in msg_ids:
+        for mid in message_ids:
             assert MessageId(mid) in state.dont_want_ids
 
     def test_idontwant_unknown_peer(self) -> None:

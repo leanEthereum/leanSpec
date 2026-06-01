@@ -27,7 +27,7 @@ def test_proposer_signature(
     Expected Behavior
     -----------------
     1. Proposer's signature in SignedBlock can be verified against
-       the validator's pubkey in the state
+       the validator's public_key in the state
 
     Why This Matters
     ----------------
@@ -60,9 +60,9 @@ def test_proposer_and_attester_signatures(
     Expected Behavior
     -----------------
     1. Proposer's signature in SignedBlock can be verified against
-       the validator's pubkey in the state
+       the validator's public_key in the state
     2. Aggregated attestation signatures can be verified against the validators'
-       pubkeys in the state
+       public_keys in the state
 
     Why This Matters
     ----------------
@@ -77,7 +77,7 @@ def test_proposer_and_attester_signatures(
             slot=Slot(1),
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(2)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",
@@ -114,7 +114,7 @@ def test_all_four_validators_attesting(
             slot=Slot(1),
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(2), ValidatorIndex(3)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(2), ValidatorIndex(3)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",
@@ -151,7 +151,7 @@ def test_single_validator_attestation(
             slot=Slot(1),
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0)],
+                    validator_indices=[ValidatorIndex(0)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",
@@ -190,13 +190,13 @@ def test_multiple_attestation_groups_same_data(
             slot=Slot(1),
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0), ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(2)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",
                 ),
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(3)],
+                    validator_indices=[ValidatorIndex(3)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",

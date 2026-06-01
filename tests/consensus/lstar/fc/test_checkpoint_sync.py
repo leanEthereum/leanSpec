@@ -258,7 +258,7 @@ def test_fork_off_non_genesis_anchor(
                     label="fork_b_12",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),

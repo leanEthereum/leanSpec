@@ -7,16 +7,26 @@ from .genesis import build_anchor, generate_pre_state
 from .test_fixtures import (
     ApiEndpointTest,
     BaseConsensusFixture,
+    DropComponentMessageBinding,
     ForkChoiceTest,
     GossipsubHandlerTest,
+    IncrementComponentSlot,
+    IncrementEmittedSlot,
     JustifiabilityTest,
     NetworkingCodecTest,
     PoseidonPermutationTest,
+    RebindComponentToAlternateHeadRoot,
+    RebindToAlternateHeadRoot,
     SlotClockTest,
     SSZTest,
     StateTransitionTest,
+    SwapComponentMessageBindings,
+    SwapComponentParticipantPublicKey,
+    SwapParticipantPublicKey,
     SyncTest,
+    VerifyMultiMessageProofsTest,
     VerifySignaturesTest,
+    VerifySingleMessageProofsTest,
 )
 from .test_types import (
     AggregatedAttestationCheck,
@@ -37,6 +47,8 @@ from .test_types import (
 
 StateTransitionTestFiller = Type[StateTransitionTest]
 ForkChoiceTestFiller = Type[ForkChoiceTest]
+VerifySingleMessageProofsTestFiller = Type[VerifySingleMessageProofsTest]
+VerifyMultiMessageProofsTestFiller = Type[VerifyMultiMessageProofsTest]
 VerifySignaturesTestFiller = Type[VerifySignaturesTest]
 SSZTestFiller = Type[SSZTest]
 NetworkingCodecTestFiller = Type[NetworkingCodecTest]
@@ -61,6 +73,16 @@ __all__ = [
     "BaseConsensusFixture",
     "StateTransitionTest",
     "ForkChoiceTest",
+    "VerifySingleMessageProofsTest",
+    "RebindToAlternateHeadRoot",
+    "IncrementEmittedSlot",
+    "SwapParticipantPublicKey",
+    "VerifyMultiMessageProofsTest",
+    "RebindComponentToAlternateHeadRoot",
+    "IncrementComponentSlot",
+    "SwapComponentParticipantPublicKey",
+    "SwapComponentMessageBindings",
+    "DropComponentMessageBinding",
     "VerifySignaturesTest",
     "SSZTest",
     "NetworkingCodecTest",
@@ -84,6 +106,8 @@ __all__ = [
     # Type aliases for test function signatures
     "StateTransitionTestFiller",
     "ForkChoiceTestFiller",
+    "VerifySingleMessageProofsTestFiller",
+    "VerifyMultiMessageProofsTestFiller",
     "VerifySignaturesTestFiller",
     "SSZTestFiller",
     "NetworkingCodecTestFiller",

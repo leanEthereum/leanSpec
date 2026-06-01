@@ -8,27 +8,27 @@ from typing import Iterator
 
 import pytest
 
+from lean_spec.node.networking.varint import VarintError, decode_varint, encode_varint
 from lean_spec.node.snappy import (
     SnappyDecompressionError,
     compress,
     decompress,
     max_compressed_length,
 )
+from lean_spec.node.snappy.constants import SNAPPY_VARINT_MAX_BYTES
 from lean_spec.node.snappy.encoding import (
     decode_tag,
-    decode_varint32,
     encode_copy_tag,
     encode_literal_tag,
-    encode_varint32,
 )
 
 # Path to test data files
-TESTDATA_DIR = Path(__file__).parent / "testdata"
+TESTDATA_DIRECTORY = Path(__file__).parent / "testdata"
 
 
 def load_test_file(filename: str, size_limit: int = 0) -> bytes:
     """Load a test data file, optionally truncated to size_limit."""
-    path = TESTDATA_DIR / filename
+    path = TESTDATA_DIRECTORY / filename
     data = path.read_bytes()
     if size_limit > 0:
         data = data[:size_limit]
@@ -58,60 +58,70 @@ def iter_test_files() -> Iterator[tuple[str, bytes]]:
         yield label, load_test_file(filename, size_limit)
 
 
-class TestVarintEncoding:
-    """Tests for varint encoding/decoding."""
+class TestSnappyLengthPrefix:
+    """Tests for the LEB128 length prefix used by the snappy block format."""
 
     def test_encode_zero(self) -> None:
         """Zero encodes to a single null byte."""
-        assert encode_varint32(0) == b"\x00"
+        assert encode_varint(0, max_bytes=SNAPPY_VARINT_MAX_BYTES) == b"\x00"
 
     def test_encode_small_values(self) -> None:
         """Values 0-127 encode to a single byte."""
-        assert encode_varint32(1) == b"\x01"
-        assert encode_varint32(127) == b"\x7f"
+        assert encode_varint(1, max_bytes=SNAPPY_VARINT_MAX_BYTES) == b"\x01"
+        assert encode_varint(127, max_bytes=SNAPPY_VARINT_MAX_BYTES) == b"\x7f"
 
     def test_encode_two_byte_values(self) -> None:
         """Values 128-16383 encode to two bytes."""
-        assert encode_varint32(128) == b"\x80\x01"
-        assert encode_varint32(300) == b"\xac\x02"
+        assert encode_varint(128, max_bytes=SNAPPY_VARINT_MAX_BYTES) == b"\x80\x01"
+        assert encode_varint(300, max_bytes=SNAPPY_VARINT_MAX_BYTES) == b"\xac\x02"
 
     def test_encode_large_values(self) -> None:
         """Large values encode correctly."""
         for value in [65536, 2**20, 2**24, 2**32 - 1]:
-            encoded = encode_varint32(value)
-            decoded, _ = decode_varint32(encoded)
+            encoded = encode_varint(value, max_bytes=SNAPPY_VARINT_MAX_BYTES)
+            decoded, _ = decode_varint(encoded, max_bytes=SNAPPY_VARINT_MAX_BYTES)
             assert decoded == value
 
     def test_decode_roundtrip(self) -> None:
         """Encoding then decoding returns the original value."""
         test_values = [0, 1, 127, 128, 255, 256, 16383, 16384, 65535, 65536, 2**20, 2**32 - 1]
         for value in test_values:
-            encoded = encode_varint32(value)
-            decoded, bytes_consumed = decode_varint32(encoded)
+            encoded = encode_varint(value, max_bytes=SNAPPY_VARINT_MAX_BYTES)
+            decoded, bytes_consumed = decode_varint(encoded, max_bytes=SNAPPY_VARINT_MAX_BYTES)
             assert decoded == value
             assert bytes_consumed == len(encoded)
 
     def test_encode_negative_raises(self) -> None:
         """Negative values raise ValueError."""
         with pytest.raises(ValueError, match="non-negative"):
-            encode_varint32(-1)
+            encode_varint(-1, max_bytes=SNAPPY_VARINT_MAX_BYTES)
 
     def test_encode_overflow_raises(self) -> None:
-        """Values exceeding 32 bits raise ValueError."""
-        with pytest.raises(ValueError, match="32 bits"):
-            encode_varint32(2**32)
+        """Values past the five-byte cap raise ValueError."""
+        with pytest.raises(ValueError, match="does not fit in 5 bytes"):
+            encode_varint(2**35, max_bytes=SNAPPY_VARINT_MAX_BYTES)
 
     def test_decode_truncated_raises(self) -> None:
-        """Truncated varints raise ValueError."""
-        with pytest.raises(ValueError, match="Truncated"):
-            decode_varint32(b"\x80")
+        """Truncated varints raise a varint error."""
+        with pytest.raises(VarintError, match="Truncated"):
+            decode_varint(b"\x80", max_bytes=SNAPPY_VARINT_MAX_BYTES)
+
+    def test_decode_too_long_raises(self) -> None:
+        """A six-byte continuation run exceeds the snappy cap."""
+        with pytest.raises(VarintError, match="exceeds 5 bytes"):
+            decode_varint(b"\x80" * 6, max_bytes=SNAPPY_VARINT_MAX_BYTES)
 
     def test_decode_with_offset(self) -> None:
         """Decoding at an offset works correctly."""
         data = b"prefix\xac\x02suffix"
-        value, consumed = decode_varint32(data, offset=6)
+        value, consumed = decode_varint(data, offset=6, max_bytes=SNAPPY_VARINT_MAX_BYTES)
         assert value == 300
         assert consumed == 2
+
+    def test_decompress_wraps_oversize_prefix(self) -> None:
+        """A length prefix that overruns the cap surfaces as a decompression error."""
+        with pytest.raises(SnappyDecompressionError, match="Invalid length varint"):
+            decompress(b"\x80" * 6)
 
 
 class TestTagEncoding:
@@ -196,9 +206,9 @@ class TestSimpleCompression:
 
     def test_single_byte(self) -> None:
         """Single byte roundtrips correctly."""
-        for char in [b"a", b"X", b"\x00", b"\xff"]:
-            compressed = compress(char)
-            assert decompress(compressed) == char
+        for character in [b"a", b"X", b"\x00", b"\xff"]:
+            compressed = compress(character)
+            assert decompress(compressed) == character
 
     def test_short_strings(self) -> None:
         """Short strings roundtrip correctly."""
@@ -420,11 +430,11 @@ class TestUtilities:
     def test_max_compressed_length(self) -> None:
         """max_compressed_length returns a valid upper bound."""
         for size in [0, 100, 1000, 65536, 100000]:
-            max_len = max_compressed_length(size)
+            max_length = max_compressed_length(size)
             data = bytes(range(256)) * (size // 256 + 1)
             data = data[:size]
             compressed = compress(data)
-            assert len(compressed) <= max_len
+            assert len(compressed) <= max_length
 
 
 class TestSpecificPatterns:

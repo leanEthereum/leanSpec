@@ -89,7 +89,7 @@ class SQLiteDatabase:
         #
         # The check_same_thread=False flag allows multiple threads to share
         # this connection. SQLite serializes writes internally.
-        self._conn = sqlite3.connect(
+        self._connection = sqlite3.connect(
             str(self._path),
             check_same_thread=False,
         )
@@ -97,13 +97,13 @@ class SQLiteDatabase:
         # Row factory enables dict-like access: row["column_name"].
         #
         # This makes the code more readable than tuple indexing.
-        self._conn.row_factory = sqlite3.Row
+        self._connection.row_factory = sqlite3.Row
 
         self._init_schema()
 
     def _init_schema(self) -> None:
         """Create tables if they don't exist."""
-        cursor = self._conn.cursor()
+        cursor = self._connection.cursor()
 
         # Block and state tables use root hash as primary key.
         #
@@ -129,14 +129,14 @@ class SQLiteDatabase:
         # Needed for checkpoint sync and API endpoints that query by state root.
         cursor.execute(STATE_ROOT_INDEX_CREATE_TABLE)
 
-        self._conn.commit()
+        self._connection.commit()
 
     # Block Operations
 
     def get_block(self, root: Bytes32) -> SpecBlockType | None:
         """Retrieve a block by its root hash."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # Query by root hash, the canonical identifier in consensus.
             #
@@ -161,7 +161,7 @@ class SQLiteDatabase:
     def put_block(self, block: SpecBlockType, root: Bytes32) -> None:
         """Store a block with its root hash."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # INSERT OR REPLACE handles both new blocks and updates.
             #
@@ -188,7 +188,7 @@ class SQLiteDatabase:
     def get_state(self, root: Bytes32) -> SpecStateType | None:
         """Retrieve a state by its associated block root."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"SELECT data FROM {STATES_TABLE_NAME} WHERE root = ?",
                 (bytes(root),),
@@ -210,7 +210,7 @@ class SQLiteDatabase:
     def put_state(self, state: SpecStateType, root: Bytes32) -> None:
         """Store a state indexed by its associated block root."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # States should be stored at epoch boundaries for efficient access.
             #
@@ -236,7 +236,7 @@ class SQLiteDatabase:
     def get_justified_checkpoint(self) -> Checkpoint | None:
         """Retrieve the latest justified checkpoint."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # Justified checkpoint: has received 2/3 attestation weight.
             #
@@ -261,7 +261,7 @@ class SQLiteDatabase:
     def put_justified_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Store the latest justified checkpoint."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
@@ -275,7 +275,7 @@ class SQLiteDatabase:
     def get_finalized_checkpoint(self) -> Checkpoint | None:
         """Retrieve the latest finalized checkpoint."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # Finalized checkpoint: irreversible under normal operation.
             #
@@ -300,7 +300,7 @@ class SQLiteDatabase:
     def put_finalized_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Store the latest finalized checkpoint."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
@@ -320,7 +320,7 @@ class SQLiteDatabase:
     def get_head_root(self) -> Bytes32 | None:
         """Retrieve the current head block root."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # The head root identifies the current best block.
             #
@@ -343,7 +343,7 @@ class SQLiteDatabase:
     def put_head_root(self, root: Bytes32) -> None:
         """Store the current head block root."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
@@ -364,7 +364,7 @@ class SQLiteDatabase:
     def get_block_root_by_slot(self, slot: Slot) -> Bytes32 | None:
         """Retrieve block root for a specific slot."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # Returns the canonical block at this slot.
             #
@@ -385,7 +385,7 @@ class SQLiteDatabase:
     def put_block_root_by_slot(self, slot: Slot, root: Bytes32) -> None:
         """Index a block root by its slot."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
 
             # Updates as the canonical chain changes.
             #
@@ -411,7 +411,7 @@ class SQLiteDatabase:
     def get_block_root_by_state_root(self, state_root: Bytes32) -> Bytes32 | None:
         """Look up the block root associated with a state root."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"SELECT block_root FROM {STATE_ROOT_INDEX_TABLE_NAME} WHERE state_root = ?",
                 (bytes(state_root),),
@@ -429,7 +429,7 @@ class SQLiteDatabase:
     def put_block_root_by_state_root(self, state_root: Bytes32, block_root: Bytes32) -> None:
         """Index a block root by the state root it produced."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {STATE_ROOT_INDEX_TABLE_NAME} (state_root, block_root)
@@ -451,7 +451,7 @@ class SQLiteDatabase:
     def get_genesis_time(self) -> Uint64 | None:
         """Retrieve the stored genesis time."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
                 (CHECKPOINTS_KEY_GENESIS_TIME,),
@@ -469,7 +469,7 @@ class SQLiteDatabase:
     def put_genesis_time(self, genesis_time: Uint64) -> None:
         """Store genesis time for future restarts."""
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {CHECKPOINTS_TABLE_NAME} (key, data)
@@ -492,15 +492,15 @@ class SQLiteDatabase:
         """
         try:
             yield
-            self._conn.commit()
+            self._connection.commit()
         except (StorageWriteError, StorageCorruptionError):
-            self._conn.rollback()
+            self._connection.rollback()
             raise
         except sqlite3.Error as e:
-            self._conn.rollback()
+            self._connection.rollback()
             raise StorageWriteError(f"Batch write failed: {e}") from e
         except BaseException:
-            self._conn.rollback()
+            self._connection.rollback()
             raise
 
     # Pruning
@@ -524,7 +524,7 @@ class SQLiteDatabase:
             Total number of entries pruned across all tables.
         """
         try:
-            cursor = self._conn.cursor()
+            cursor = self._connection.cursor()
             total_pruned = 0
 
             # Build the exclusion set for parameterized queries.
@@ -578,7 +578,7 @@ class SQLiteDatabase:
 
     def close(self) -> None:
         """Close database connection."""
-        self._conn.close()
+        self._connection.close()
 
     def __enter__(self) -> SQLiteDatabase:
         """Context manager entry."""

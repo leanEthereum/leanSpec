@@ -60,12 +60,12 @@ async def test_publish_delivers_to_subscriber(
     await asyncio.sleep(0.1)
 
     data = b"hello"
-    msg_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
+    message_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
     await a.publish(TOPIC, data)
-    msg = await b.wait_for_message(TOPIC, timeout=3.0)
+    message = await b.wait_for_message(TOPIC, timeout=3.0)
 
-    assert msg == GossipsubMessageEvent(
-        peer_id=msg.peer_id, topic=TOPIC, data=data, message_id=msg_id
+    assert message == GossipsubMessageEvent(
+        peer_id=message.peer_id, topic=TOPIC, data=data, message_id=message_id
     )
 
 
@@ -109,20 +109,20 @@ async def test_bidirectional_message_exchange(
 
     data_a = b"from-a"
     data_b = b"from-b"
-    msg_id_a = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data_a)
-    msg_id_b = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data_b)
+    message_id_a = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data_a)
+    message_id_b = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data_b)
 
     await a.publish(TOPIC, data_a)
     await b.publish(TOPIC, data_b)
 
-    msg_b = await b.wait_for_message(TOPIC, timeout=3.0)
-    msg_a = await a.wait_for_message(TOPIC, timeout=3.0)
+    message_b = await b.wait_for_message(TOPIC, timeout=3.0)
+    message_a = await a.wait_for_message(TOPIC, timeout=3.0)
 
-    assert msg_b == GossipsubMessageEvent(
-        peer_id=msg_b.peer_id, topic=TOPIC, data=data_a, message_id=msg_id_a
+    assert message_b == GossipsubMessageEvent(
+        peer_id=message_b.peer_id, topic=TOPIC, data=data_a, message_id=message_id_a
     )
-    assert msg_a == GossipsubMessageEvent(
-        peer_id=msg_a.peer_id, topic=TOPIC, data=data_b, message_id=msg_id_b
+    assert message_a == GossipsubMessageEvent(
+        peer_id=message_a.peer_id, topic=TOPIC, data=data_b, message_id=message_id_b
     )
 
 

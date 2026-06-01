@@ -85,7 +85,7 @@ def test_block_with_maximum_attestations(
                 parent_label=f"b_{targets[-1]}",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[ValidatorIndex(i % 4)],
+                        validator_indices=[ValidatorIndex(i % 4)],
                         slot=proposal_slot,
                         target_slot=s,
                         target_root_label=f"b_{s}",
@@ -149,7 +149,7 @@ def test_block_exceeding_maximum_attestations_is_rejected(
                 parent_label=f"b_{targets[-1]}",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[ValidatorIndex(i % 4)],
+                        validator_indices=[ValidatorIndex(i % 4)],
                         slot=proposal_slot,
                         target_slot=s,
                         target_root_label=f"b_{s}",
@@ -158,7 +158,7 @@ def test_block_exceeding_maximum_attestations_is_rejected(
                 ],
                 forced_attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[ValidatorIndex(0)],
+                        validator_indices=[ValidatorIndex(0)],
                         slot=proposal_slot,
                         target_slot=forced_target,
                         target_root_label=f"b_{forced_target}",

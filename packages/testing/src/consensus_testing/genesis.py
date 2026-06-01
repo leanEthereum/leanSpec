@@ -30,13 +30,13 @@ def _build_validators(num_validators: int) -> Validators:
 
     validators = []
     for i in range(num_validators):
-        idx = ValidatorIndex(i)
-        attestation_pubkey, proposal_pubkey = key_manager.get_public_keys(idx)
+        index = ValidatorIndex(i)
+        attestation_public_key, proposal_public_key = key_manager.get_public_keys(index)
         validators.append(
             Validator(
-                attestation_pubkey=Bytes52(attestation_pubkey.encode_bytes()),
-                proposal_pubkey=Bytes52(proposal_pubkey.encode_bytes()),
-                index=idx,
+                attestation_public_key=Bytes52(attestation_public_key.encode_bytes()),
+                proposal_public_key=Bytes52(proposal_public_key.encode_bytes()),
+                index=index,
             )
         )
 

@@ -6,9 +6,8 @@ from lean_spec.base import CamelModel
 from lean_spec.node.chain.clock import Interval
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Slot, ValidatorIndex
-from lean_spec.spec.forks.lstar.containers import AttestationData, Block
+from lean_spec.spec.forks.lstar.containers import AttestationData, Block, Store
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.forks.lstar.store import Store
 from lean_spec.spec.ssz import ZERO_HASH, Bytes32
 
 from .utils import resolve_block_root
@@ -435,14 +434,15 @@ class StoreChecks(CamelModel):
                 )
             actual_count = len(filled_block.body.attestations.data)
             if actual_count != self.block_attestation_count:
-                att_info = [
-                    f"  - participants={list(att.aggregation_bits.to_validator_indices())}"
-                    for att in filled_block.body.attestations.data
+                attestation_info = [
+                    f"  - participants={list(attestation.aggregation_bits.to_validator_indices())}"
+                    for attestation in filled_block.body.attestations.data
                 ]
                 raise AssertionError(
                     f"Step {step_index}: block body has {actual_count} aggregated "
                     f"attestations, expected {self.block_attestation_count}\n"
-                    f"Attestations in block:\n" + ("\n".join(att_info) if att_info else "  (empty)")
+                    f"Attestations in block:\n"
+                    + ("\n".join(attestation_info) if attestation_info else "  (empty)")
                 )
 
         # Detailed block body attestation structure
@@ -499,21 +499,23 @@ class StoreChecks(CamelModel):
         """Validate detailed attestation structure in the block body."""
         actual_attestations = filled_block.body.attestations.data
         actual_participants_list = [
-            {int(v) for v in att.aggregation_bits.to_validator_indices()}
-            for att in actual_attestations
+            {int(v) for v in attestation.aggregation_bits.to_validator_indices()}
+            for attestation in actual_attestations
         ]
 
         for check in expected_checks:
-            matching_att = None
-            matching_idx = None
-            for idx, att in enumerate(actual_attestations):
-                actual_participants = {int(v) for v in att.aggregation_bits.to_validator_indices()}
+            matching_attestation = None
+            matching_index = None
+            for index, attestation in enumerate(actual_attestations):
+                actual_participants = {
+                    int(v) for v in attestation.aggregation_bits.to_validator_indices()
+                }
                 if actual_participants == check.participants:
-                    matching_att = att
-                    matching_idx = idx
+                    matching_attestation = attestation
+                    matching_index = index
                     break
 
-            if matching_att is None:
+            if matching_attestation is None:
                 raise AssertionError(
                     f"Step {step_index}: no aggregated attestation found with "
                     f"participants={check.participants}\n"
@@ -521,19 +523,19 @@ class StoreChecks(CamelModel):
                 )
 
             if check.attestation_slot is not None:
-                if matching_att.data.slot != check.attestation_slot:
+                if matching_attestation.data.slot != check.attestation_slot:
                     raise AssertionError(
-                        f"Step {step_index}: attestation[{matching_idx}] with "
+                        f"Step {step_index}: attestation[{matching_index}] with "
                         f"participants={check.participants} has "
-                        f"slot={matching_att.data.slot}, expected {check.attestation_slot}"
+                        f"slot={matching_attestation.data.slot}, expected {check.attestation_slot}"
                     )
 
             if check.target_slot is not None:
-                if matching_att.data.target.slot != check.target_slot:
+                if matching_attestation.data.target.slot != check.target_slot:
                     raise AssertionError(
-                        f"Step {step_index}: attestation[{matching_idx}] with "
+                        f"Step {step_index}: attestation[{matching_index}] with "
                         f"participants={check.participants} has "
-                        f"target_slot={matching_att.data.target.slot}, "
+                        f"target_slot={matching_attestation.data.target.slot}, "
                         f"expected {check.target_slot}"
                     )
 
@@ -570,11 +572,11 @@ class StoreChecks(CamelModel):
             )
             weight = 0
             for attestation in known_attestations.values():
-                att_head_root = attestation.head.root
-                if att_head_root == root:
+                attestation_head_root = attestation.head.root
+                if attestation_head_root == root:
                     weight += 1
-                elif att_head_root in store.blocks:
-                    current = att_head_root
+                elif attestation_head_root in store.blocks:
+                    current = attestation_head_root
                     while current in store.blocks and store.blocks[current].slot > slot:
                         parent = store.blocks[current].parent_root
                         if parent == root:

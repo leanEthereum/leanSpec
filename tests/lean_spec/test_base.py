@@ -40,32 +40,19 @@ class TestCamelModelToJson:
 
         assert result == {"firstName": "Alice", "currentSlot": 42}
 
-    def test_to_json_strips_mode_kwarg(self) -> None:
-        """Passing mode= does not override the JSON serialization mode.
-
-        The method always uses mode='json'. If a caller accidentally
-        passes mode='python', the pop() silently discards it.
-        """
+    def test_to_json_rejects_mode_kwarg(self) -> None:
+        """Overriding serialization mode raises an error instead of being silently accepted."""
         model = SampleCamelModel(first_name="Bob", current_slot=7)
 
-        # Passing mode= should be silently ignored.
-        result = model.to_json(mode="python")
+        with pytest.raises(TypeError, match="does not accept 'mode' or 'by_alias'"):
+            model.to_json(mode="python")
 
-        assert result == {"firstName": "Bob", "currentSlot": 7}
-
-    def test_to_json_strips_by_alias_kwarg(self) -> None:
-        """Passing by_alias= does not override the alias behavior.
-
-        The method always uses by_alias=True (camelCase). If a caller
-        passes by_alias=False, the pop() silently discards it.
-        """
+    def test_to_json_rejects_by_alias_kwarg(self) -> None:
+        """Overriding alias style raises an error instead of being silently accepted."""
         model = SampleCamelModel(first_name="Carol", current_slot=0)
 
-        # Passing by_alias=False should be silently ignored.
-        result = model.to_json(by_alias=False)
-
-        # Keys are still camelCase despite the caller's request.
-        assert result == {"firstName": "Carol", "currentSlot": 0}
+        with pytest.raises(TypeError, match="does not accept 'mode' or 'by_alias'"):
+            model.to_json(by_alias=False)
 
     def test_to_json_forwards_extra_kwargs(self) -> None:
         """Other kwargs (e.g., exclude_defaults) pass through to model_dump.

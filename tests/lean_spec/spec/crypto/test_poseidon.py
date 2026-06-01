@@ -190,7 +190,7 @@ class TestPoseidonParamsValidation:
 
     def test_rounds_f_must_be_even(self) -> None:
         """Rejects odd full-round counts that would leave constants unused."""
-        with pytest.raises(ValidationError, match=r"Full-round count must be even\."):
+        with pytest.raises(ValidationError, match=r"Input should be a multiple of 2"):
             PoseidonParams(
                 width=3,
                 rounds_f=7,

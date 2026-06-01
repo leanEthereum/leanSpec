@@ -8,18 +8,18 @@ from consensus_testing.keys import XmssKeyManager
 from lean_spec.node.chain.clock import Interval
 from lean_spec.node.chain.config import INTERVALS_PER_SLOT
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import AttestationSignatureEntry
 from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     SignedAggregatedAttestation,
     SignedAttestation,
+    SingleMessageAggregate,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 from tests.lean_spec.helpers import (
-    TEST_VALIDATOR_ID,
+    TEST_VALIDATOR_INDEX,
     make_aggregated_proof,
     make_signed_block_from_store,
     make_store,
@@ -70,23 +70,24 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
 ) -> None:
     """Verify that Store.on_block doesn't mutate previous store's latest_new_aggregated_payloads."""
     base_store = make_store(
-        num_validators=3, key_manager=key_manager, validator_id=TEST_VALIDATOR_ID
+        num_validators=3, key_manager=key_manager, validator_index=TEST_VALIDATOR_INDEX
     )
 
     # First block with attestations from validators 1 and 2
     attestation_slot_1 = Slot(1)
     attestation_data_1 = spec.produce_attestation_data(base_store, attestation_slot_1)
 
-    gossip_sigs_1 = {
+    gossip_signatures_1 = {
         attestation_data_1: {
             AttestationSignatureEntry(
-                validator_id, key_manager.sign_attestation_data(validator_id, attestation_data_1)
+                validator_index,
+                key_manager.sign_attestation_data(validator_index, attestation_data_1),
             )
-            for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
+            for validator_index in (ValidatorIndex(1), ValidatorIndex(2))
         },
     }
 
-    base_store.attestation_signatures = gossip_sigs_1
+    base_store.attestation_signatures = gossip_signatures_1
     producer_store_1 = base_store
 
     consumer_store_1, signed_block_1 = make_signed_block_from_store(
@@ -98,16 +99,17 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
     attestation_slot_2 = Slot(2)
     attestation_data_2 = spec.produce_attestation_data(store_after_block_1, attestation_slot_2)
 
-    gossip_sigs_2 = {
+    gossip_signatures_2 = {
         attestation_data_2: {
             AttestationSignatureEntry(
-                validator_id, key_manager.sign_attestation_data(validator_id, attestation_data_2)
+                validator_index,
+                key_manager.sign_attestation_data(validator_index, attestation_data_2),
             )
-            for validator_id in (ValidatorIndex(1), ValidatorIndex(2))
+            for validator_index in (ValidatorIndex(1), ValidatorIndex(2))
         },
     }
 
-    store_after_block_1.attestation_signatures = gossip_sigs_2
+    store_after_block_1.attestation_signatures = gossip_signatures_2
     producer_store_2 = store_after_block_1
 
     store_before_block_2, signed_block_2 = make_signed_block_from_store(
@@ -115,7 +117,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
     )
 
     # Capture the original list lengths for keys that already exist
-    original_sig_lengths = {
+    original_signature_lengths = {
         k: len(v) for k, v in store_before_block_2.latest_new_aggregated_payloads.items()
     }
 
@@ -123,7 +125,7 @@ def test_on_block_preserves_immutability_of_aggregated_payloads(
     store_after_block_2 = spec.on_block(store_before_block_2, signed_block_2)
 
     # Verify immutability: the list lengths in store_before_block_2 should not have changed
-    for key, original_length in original_sig_lengths.items():
+    for key, original_length in original_signature_lengths.items():
         current_length = len(store_before_block_2.latest_new_aggregated_payloads[key])
         assert current_length == original_length, (
             f"Immutability violated: list for key {key} grew from {original_length} to "
@@ -155,11 +157,11 @@ class TestOnGossipAttestationImportGating:
         attester_validator = ValidatorIndex(1)
 
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=8, validator_id=current_validator
+            key_manager, num_validators=8, validator_index=current_validator
         )
 
         signed_attestation = SignedAttestation(
-            validator_id=attester_validator,
+            validator_index=attester_validator,
             data=attestation_data,
             signature=key_manager.sign_attestation_data(attester_validator, attestation_data),
         )
@@ -170,8 +172,8 @@ class TestOnGossipAttestationImportGating:
 
         updated_store = spec.on_gossip_attestation(store, signed_attestation, is_aggregator=True)
 
-        sigs = updated_store.attestation_signatures.get(attestation_data, set())
-        assert attester_validator in {entry.validator_id for entry in sigs}, (
+        signatures = updated_store.attestation_signatures.get(attestation_data, set())
+        assert attester_validator in {entry.validator_index for entry in signatures}, (
             "Aggregator should store any attestation it receives"
         )
 
@@ -183,12 +185,12 @@ class TestOnGossipAttestationImportGating:
         attesters = [ValidatorIndex(1), ValidatorIndex(2), ValidatorIndex(3)]
 
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=8, validator_id=current_validator
+            key_manager, num_validators=8, validator_index=current_validator
         )
 
         def make_signed(v: ValidatorIndex) -> SignedAttestation:
             return SignedAttestation(
-                validator_id=v,
+                validator_index=v,
                 data=attestation_data,
                 signature=key_manager.sign_attestation_data(v, attestation_data),
             )
@@ -198,7 +200,7 @@ class TestOnGossipAttestationImportGating:
             updated = spec.on_gossip_attestation(updated, make_signed(v), is_aggregator=True)
 
         stored_ids = {
-            entry.validator_id
+            entry.validator_index
             for entry in updated.attestation_signatures.get(attestation_data, set())
         }
         assert stored_ids == set(attesters), (
@@ -213,19 +215,19 @@ class TestOnGossipAttestationImportGating:
         attester_validator = ValidatorIndex(1)
 
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=8, validator_id=current_validator
+            key_manager, num_validators=8, validator_index=current_validator
         )
 
         signed_attestation = SignedAttestation(
-            validator_id=attester_validator,
+            validator_index=attester_validator,
             data=attestation_data,
             signature=key_manager.sign_attestation_data(attester_validator, attestation_data),
         )
 
         updated_store = spec.on_gossip_attestation(store, signed_attestation, is_aggregator=False)
 
-        sigs = updated_store.attestation_signatures.get(attestation_data, set())
-        assert attester_validator not in {entry.validator_id for entry in sigs}, (
+        signatures = updated_store.attestation_signatures.get(attestation_data, set())
+        assert attester_validator not in {entry.validator_index for entry in signatures}, (
             "Non-aggregator should never store gossip signatures"
         )
 
@@ -237,11 +239,11 @@ class TestOnGossipAttestationImportGating:
         attester_validator = ValidatorIndex(1)
 
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=8, validator_id=current_validator
+            key_manager, num_validators=8, validator_index=current_validator
         )
 
         signed_attestation = SignedAttestation(
-            validator_id=attester_validator,
+            validator_index=attester_validator,
             data=attestation_data,
             signature=key_manager.sign_attestation_data(attester_validator, attestation_data),
         )
@@ -272,7 +274,7 @@ class TestOnGossipAggregatedAttestation:
         participants = [ValidatorIndex(1), ValidatorIndex(2)]
 
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=4, validator_id=ValidatorIndex(0)
+            key_manager, num_validators=4, validator_index=ValidatorIndex(0)
         )
 
         data_root = hash_tree_root(attestation_data)
@@ -280,13 +282,13 @@ class TestOnGossipAggregatedAttestation:
         # Create valid aggregated proof
         raw_xmss = [
             (
-                vid,
-                key_manager[vid].attestation_keypair.public_key,
-                key_manager.sign_attestation_data(vid, attestation_data),
+                validator_index,
+                key_manager[validator_index].attestation_keypair.public_key,
+                key_manager.sign_attestation_data(validator_index, attestation_data),
             )
-            for vid in participants
+            for validator_index in participants
         ]
-        proof = TypeOneMultiSignature.aggregate(
+        proof = SingleMessageAggregate.aggregate(
             children=[],
             raw_xmss=raw_xmss,
             message=data_root,
@@ -319,20 +321,20 @@ class TestOnGossipAggregatedAttestation:
         participants = [ValidatorIndex(1)]
 
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=4, validator_id=ValidatorIndex(0)
+            key_manager, num_validators=4, validator_index=ValidatorIndex(0)
         )
 
         data_root = hash_tree_root(attestation_data)
 
         raw_xmss = [
             (
-                vid,
-                key_manager[vid].attestation_keypair.public_key,
-                key_manager.sign_attestation_data(vid, attestation_data),
+                validator_index,
+                key_manager[validator_index].attestation_keypair.public_key,
+                key_manager.sign_attestation_data(validator_index, attestation_data),
             )
-            for vid in participants
+            for validator_index in participants
         ]
-        proof = TypeOneMultiSignature.aggregate(
+        proof = SingleMessageAggregate.aggregate(
             children=[],
             raw_xmss=raw_xmss,
             message=data_root,
@@ -358,20 +360,20 @@ class TestOnGossipAggregatedAttestation:
         signers = [ValidatorIndex(1), ValidatorIndex(2)]
 
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=4, validator_id=ValidatorIndex(0)
+            key_manager, num_validators=4, validator_index=ValidatorIndex(0)
         )
 
         data_root = hash_tree_root(attestation_data)
 
         raw_xmss = [
             (
-                vid,
-                key_manager[vid].attestation_keypair.public_key,
-                key_manager.sign_attestation_data(vid, attestation_data),
+                validator_index,
+                key_manager[validator_index].attestation_keypair.public_key,
+                key_manager.sign_attestation_data(validator_index, attestation_data),
             )
-            for vid in signers
+            for validator_index in signers
         ]
-        proof = TypeOneMultiSignature.aggregate(
+        proof = SingleMessageAggregate.aggregate(
             children=[],
             raw_xmss=raw_xmss,
             message=data_root,
@@ -382,7 +384,7 @@ class TestOnGossipAggregatedAttestation:
         corrupted_data = bytearray(proof.proof.data)
         corrupted_data[10] ^= 0xFF
         corrupted_data[20] ^= 0xFF
-        corrupted_proof = TypeOneMultiSignature(
+        corrupted_proof = SingleMessageAggregate(
             participants=proof.participants,
             proof=ByteList512KiB(data=bytes(corrupted_data)),
         )
@@ -403,7 +405,7 @@ class TestOnGossipAggregatedAttestation:
         all proofs should be stored in the list.
         """
         store, attestation_data = make_store_with_attestation_data(
-            key_manager, num_validators=4, validator_id=ValidatorIndex(0)
+            key_manager, num_validators=4, validator_index=ValidatorIndex(0)
         )
 
         data_root = hash_tree_root(attestation_data)
@@ -412,13 +414,13 @@ class TestOnGossipAggregatedAttestation:
         participants_1 = [ValidatorIndex(1), ValidatorIndex(2)]
         raw_xmss_1 = [
             (
-                vid,
-                key_manager[vid].attestation_keypair.public_key,
-                key_manager.sign_attestation_data(vid, attestation_data),
+                validator_index,
+                key_manager[validator_index].attestation_keypair.public_key,
+                key_manager.sign_attestation_data(validator_index, attestation_data),
             )
-            for vid in participants_1
+            for validator_index in participants_1
         ]
-        proof_1 = TypeOneMultiSignature.aggregate(
+        proof_1 = SingleMessageAggregate.aggregate(
             children=[],
             raw_xmss=raw_xmss_1,
             message=data_root,
@@ -429,13 +431,13 @@ class TestOnGossipAggregatedAttestation:
         participants_2 = [ValidatorIndex(1), ValidatorIndex(3)]
         raw_xmss_2 = [
             (
-                vid,
-                key_manager[vid].attestation_keypair.public_key,
-                key_manager.sign_attestation_data(vid, attestation_data),
+                validator_index,
+                key_manager[validator_index].attestation_keypair.public_key,
+                key_manager.sign_attestation_data(validator_index, attestation_data),
             )
-            for vid in participants_2
+            for validator_index in participants_2
         ]
-        proof_2 = TypeOneMultiSignature.aggregate(
+        proof_2 = SingleMessageAggregate.aggregate(
             children=[],
             raw_xmss=raw_xmss_2,
             message=data_root,
@@ -480,7 +482,7 @@ class TestAggregateCommitteeSignatures:
         store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             attesting_validators=attesting_validators,
         )
 
@@ -506,7 +508,7 @@ class TestAggregateCommitteeSignatures:
         store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             attesting_validators=attesting_validators,
         )
 
@@ -517,7 +519,10 @@ class TestAggregateCommitteeSignatures:
 
         # Extract participants from the proof
         participants = proof.participants.to_validator_indices()
-        public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+        public_keys = [
+            key_manager[validator_index].attestation_keypair.public_key
+            for validator_index in participants
+        ]
 
         # Verify proof is valid
         proof.verify(
@@ -537,7 +542,7 @@ class TestAggregateCommitteeSignatures:
         store, _ = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             attesting_validators=[],  # No attesters
         )
 
@@ -555,25 +560,25 @@ class TestAggregateCommitteeSignatures:
         Each unique AttestationData should produce its own aggregated proof.
         """
         base_store = make_store(
-            num_validators=4, key_manager=key_manager, validator_id=ValidatorIndex(0)
+            num_validators=4, key_manager=key_manager, validator_index=ValidatorIndex(0)
         )
 
         # Create two different attestation data (different slots)
-        att_data_1 = spec.produce_attestation_data(base_store, Slot(1))
+        attestation_data_1 = spec.produce_attestation_data(base_store, Slot(1))
         # Create a second attestation data with different head
-        att_data_2 = AttestationData(
+        attestation_data_2 = AttestationData(
             slot=Slot(1),
             head=Checkpoint(root=Bytes32(b"\x01" * 32), slot=Slot(1)),
-            target=att_data_1.target,
-            source=att_data_1.source,
+            target=attestation_data_1.target,
+            source=attestation_data_1.source,
         )
 
         # Validators 1 attests to data_1, validator 2 attests to data_2
-        sig_1 = key_manager.sign_attestation_data(ValidatorIndex(1), att_data_1)
-        sig_2 = key_manager.sign_attestation_data(ValidatorIndex(2), att_data_2)
+        signature_1 = key_manager.sign_attestation_data(ValidatorIndex(1), attestation_data_1)
+        signature_2 = key_manager.sign_attestation_data(ValidatorIndex(2), attestation_data_2)
         attestation_signatures = {
-            att_data_1: {AttestationSignatureEntry(ValidatorIndex(1), sig_1)},
-            att_data_2: {AttestationSignatureEntry(ValidatorIndex(2), sig_2)},
+            attestation_data_1: {AttestationSignatureEntry(ValidatorIndex(1), signature_1)},
+            attestation_data_2: {AttestationSignatureEntry(ValidatorIndex(2), signature_2)},
         }
 
         base_store.attestation_signatures = attestation_signatures
@@ -582,8 +587,8 @@ class TestAggregateCommitteeSignatures:
         updated_store, _ = spec.aggregate(store)
 
         # Verify both attestation data have separate proofs
-        assert att_data_1 in updated_store.latest_new_aggregated_payloads
-        assert att_data_2 in updated_store.latest_new_aggregated_payloads
+        assert attestation_data_1 in updated_store.latest_new_aggregated_payloads
+        assert attestation_data_2 in updated_store.latest_new_aggregated_payloads
 
 
 class TestTickIntervalAggregation:
@@ -608,7 +613,7 @@ class TestTickIntervalAggregation:
         store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             attesting_validators=attesting_validators,
         )
 
@@ -638,7 +643,7 @@ class TestTickIntervalAggregation:
         store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             attesting_validators=attesting_validators,
         )
 
@@ -666,7 +671,7 @@ class TestTickIntervalAggregation:
         store, attestation_data = make_store_with_attestation_signatures(
             key_manager,
             num_validators=4,
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             attesting_validators=attesting_validators,
         )
 
@@ -700,7 +705,7 @@ class TestTickIntervalAggregation:
         rather than aggregation.
         """
         store = make_store(
-            num_validators=4, key_manager=key_manager, validator_id=ValidatorIndex(0)
+            num_validators=4, key_manager=key_manager, validator_index=ValidatorIndex(0)
         )
 
         # Set time to interval 4 (so next tick wraps to interval 0)
@@ -739,7 +744,7 @@ class TestEndToEndAggregationFlow:
         aggregator_id = ValidatorIndex(0)
 
         store = make_store(
-            num_validators=num_validators, key_manager=key_manager, validator_id=aggregator_id
+            num_validators=num_validators, key_manager=key_manager, validator_index=aggregator_id
         )
         # Advance the clock to slot 1 so the attestation's slot has begun.
         store.time = Interval.from_slot(Slot(1))
@@ -750,11 +755,11 @@ class TestEndToEndAggregationFlow:
         # (all in same subnet since ATTESTATION_COMMITTEE_COUNT=1 by default)
         attesting_validators = [ValidatorIndex(1), ValidatorIndex(2)]
 
-        for vid in attesting_validators:
+        for validator_index in attesting_validators:
             signed_attestation = SignedAttestation(
-                validator_id=vid,
+                validator_index=validator_index,
                 data=attestation_data,
-                signature=key_manager.sign_attestation_data(vid, attestation_data),
+                signature=key_manager.sign_attestation_data(validator_index, attestation_data),
             )
             store = spec.on_gossip_attestation(
                 store,
@@ -763,10 +768,12 @@ class TestEndToEndAggregationFlow:
             )
 
         # Verify signatures were stored
-        sigs = store.attestation_signatures.get(attestation_data, set())
-        stored_validators = {entry.validator_id for entry in sigs}
-        for vid in attesting_validators:
-            assert vid in stored_validators, f"Signature for {vid} should be stored"
+        signatures = store.attestation_signatures.get(attestation_data, set())
+        stored_validators = {entry.validator_index for entry in signatures}
+        for validator_index in attesting_validators:
+            assert validator_index in stored_validators, (
+                f"Signature for {validator_index} should be stored"
+            )
 
         # Step 2: Advance to interval 2 (aggregation interval)
         store.time = Interval(1)
@@ -780,7 +787,10 @@ class TestEndToEndAggregationFlow:
         # Step 4: Verify the proof is valid
         proof = next(iter(store.latest_new_aggregated_payloads[attestation_data]))
         participants = proof.participants.to_validator_indices()
-        public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+        public_keys = [
+            key_manager[validator_index].attestation_keypair.public_key
+            for validator_index in participants
+        ]
 
         proof.verify(
             public_keys=public_keys,

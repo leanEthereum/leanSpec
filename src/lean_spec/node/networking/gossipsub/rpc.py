@@ -35,7 +35,7 @@ We implement protobuf encoding manually rather than using a library because:
 References:
 -----------
 - Protobuf encoding: https://protobuf.dev/programming-guides/encoding/
-- go-libp2p-pubsub rpc.proto: https://github.com/libp2p/go-libp2p-pubsub/blob/master/pb/rpc.proto
+- go-libp2p-pubsub rpc.protobuf: https://github.com/libp2p/go-libp2p-pubsub/blob/master/pb/rpc.protobuf
 """
 
 from __future__ import annotations
@@ -205,7 +205,7 @@ class Message:
     @classmethod
     def decode(cls, data: bytes) -> Message:
         """Decode from protobuf."""
-        msg = cls()
+        message = cls()
         pos = 0
 
         while pos < len(data):
@@ -217,21 +217,21 @@ class Message:
                 pos += length
 
                 if field_num == 1:
-                    msg.from_peer = field_data
+                    message.from_peer = field_data
                 elif field_num == 2:
-                    msg.data = field_data
+                    message.data = field_data
                 elif field_num == 3:
-                    msg.seqno = field_data
+                    message.seqno = field_data
                 elif field_num == 4:
-                    msg.topic = TopicId(field_data.decode("utf-8"))
+                    message.topic = TopicId(field_data.decode("utf-8"))
                 elif field_num == 5:
-                    msg.signature = field_data
+                    message.signature = field_data
                 elif field_num == 6:
-                    msg.key = field_data
+                    message.key = field_data
             else:
                 pos = _skip_field(data, pos, wire_type)
 
-        return msg
+        return message
 
 
 @dataclass(slots=True)
@@ -249,8 +249,8 @@ class ControlIHave:
         result = bytearray()
         if self.topic_id:
             result.extend(encode_string(1, self.topic_id))
-        for msg_id in self.message_ids:
-            result.extend(encode_bytes(2, msg_id))
+        for message_id in self.message_ids:
+            result.extend(encode_bytes(2, message_id))
         return bytes(result)
 
     @classmethod
@@ -288,8 +288,8 @@ class ControlIWant:
     def encode(self) -> bytes:
         """Encode as protobuf."""
         result = bytearray()
-        for msg_id in self.message_ids:
-            result.extend(encode_bytes(1, msg_id))
+        for message_id in self.message_ids:
+            result.extend(encode_bytes(1, message_id))
         return bytes(result)
 
     @classmethod
@@ -396,8 +396,8 @@ class ControlIDontWant:
     def encode(self) -> bytes:
         """Encode as protobuf."""
         result = bytearray()
-        for msg_id in self.message_ids:
-            result.extend(encode_bytes(1, msg_id))
+        for message_id in self.message_ids:
+            result.extend(encode_bytes(1, message_id))
         return bytes(result)
 
     @classmethod
@@ -520,8 +520,8 @@ class RPC:
         for sub in self.subscriptions:
             result.extend(encode_length_delimited(1, sub.encode()))
 
-        for msg in self.publish:
-            result.extend(encode_length_delimited(2, msg.encode()))
+        for message in self.publish:
+            result.extend(encode_length_delimited(2, message.encode()))
 
         if self.control and not self.control.is_empty():
             result.extend(encode_length_delimited(3, self.control.encode()))

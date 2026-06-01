@@ -8,6 +8,7 @@ from .lstar.containers import (
     AggregationBits,
     Attestation,
     AttestationData,
+    AttestationSignatureEntry,
     Block,
     BlockBody,
     BlockHeader,
@@ -25,7 +26,6 @@ from .lstar.containers import (
     Validators,
 )
 from .lstar.spec import LstarSpec, LstarStore
-from .lstar.store import AttestationSignatureEntry
 from .protocol import ForkProtocol, SpecStateType, SpecStoreType
 from .registry import ForkRegistry
 

@@ -54,7 +54,7 @@ class NodeBootstrap:
 
     Any ENR inputs are already resolved to plain multiaddrs."""
 
-    listen_addr: str | None
+    listen_address: str | None
     """Inbound listen address.
 
     A value of None means a dial-only configuration."""
@@ -118,11 +118,11 @@ class NodeBootstrap:
                     for s in args.aggregate_subnet_ids_raw.split(",")
                     if s.strip()
                 )
-            except ValueError as exc:
+            except ValueError as exception:
                 raise CliValidationError(
                     "--aggregate-subnet-ids expects comma-separated integers, "
                     f"got {args.aggregate_subnet_ids_raw!r}"
-                ) from exc
+                ) from exception
 
         # Genesis load.
         logger.info("Loading genesis from %s", args.genesis_path)
@@ -142,7 +142,7 @@ class NodeBootstrap:
             ValidatorRegistry()
             if args.validator_keys_path is None
             else ValidatorRegistry.from_keys_directory(
-                node_id=args.node_id, base_dir=args.validator_keys_path
+                node_id=args.node_id, base_directory=args.validator_keys_path
             )
         )
         if len(registry) > 0:
@@ -196,7 +196,7 @@ class NodeBootstrap:
             registry=registry,
             fork=DEFAULT_REGISTRY.current,
             bootnode_multiaddrs=tuple(bootnode_multiaddrs),
-            listen_addr=args.listen_addr or None,
+            listen_address=args.listen_address or None,
             checkpoint_sync_url=args.checkpoint_sync_url,
             node_id=args.node_id,
             is_aggregator=args.is_aggregator,
@@ -220,5 +220,5 @@ class NodeBootstrap:
             url=self.checkpoint_sync_url,
             genesis=self.genesis,
             fork=self.fork,
-            validator_id=self.registry.primary_index(),
+            validator_index=self.registry.primary_index(),
         )

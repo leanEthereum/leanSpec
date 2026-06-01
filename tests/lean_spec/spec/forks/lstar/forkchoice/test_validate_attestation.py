@@ -56,7 +56,7 @@ class TestValidateAttestationHeadChecks:
         # The block actually lives at slot 1.
         # This violates the consistency check: checkpoint slot must match block slot.
         attestation = Attestation(
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             data=AttestationData(
                 slot=slot_1,
                 head=Checkpoint(root=block_root, slot=Slot(999)),
@@ -93,7 +93,7 @@ class TestValidateAttestationHeadChecks:
         # Since source <= target is enforced first, head < source also means head < target.
         # The topology check catches this via the head >= target assertion.
         attestation = Attestation(
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             data=AttestationData(
                 slot=slot_2,
                 head=Checkpoint(root=genesis_root, slot=Slot(0)),
@@ -130,7 +130,7 @@ class TestValidateAttestationHeadChecks:
         # It must be at least as recent as the target checkpoint.
         # Slot 1 < slot 2 violates this ordering.
         attestation = Attestation(
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             data=AttestationData(
                 slot=slot_2,
                 head=Checkpoint(root=block_1_root, slot=slot_1),
@@ -167,7 +167,7 @@ class TestValidateAttestationHeadChecks:
         # Source <= target <= head, and all slots match their blocks.
         # This should pass every validation stage.
         attestation = Attestation(
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             data=AttestationData(
                 slot=slot_1,
                 head=Checkpoint(root=block_root, slot=slot_1),
@@ -194,7 +194,7 @@ class TestValidateAttestationHeadChecks:
         genesis_checkpoint = Checkpoint(root=genesis_root, slot=Slot(0))
 
         attestation = Attestation(
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             data=AttestationData(
                 slot=Slot(0),
                 head=genesis_checkpoint,

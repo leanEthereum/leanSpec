@@ -2,13 +2,12 @@
 
 from typing import override
 
-from pydantic import field_serializer, field_validator, model_serializer
+from pydantic import field_serializer, model_serializer
 
 from lean_spec.base import StrictBaseModel
-from lean_spec.spec.forks.lstar.containers import Slot
+from lean_spec.spec.forks.lstar.slot import Slot
 from lean_spec.spec.ssz import Uint64
 from lean_spec.spec.ssz.container import Container
-from lean_spec.spec.ssz.exceptions import SSZError
 
 from .constants import TARGET_CONFIG
 from .merkle import HashSubTree
@@ -56,7 +55,7 @@ class Signature(Container):
     @override
     def get_byte_length(cls) -> int:
         """Fixed byte length of an SSZ-encoded signature."""
-        return TARGET_CONFIG.SIGNATURE_LEN_BYTES
+        return TARGET_CONFIG.SIGNATURE_LENGTH_BYTES
 
     @model_serializer(mode="plain", when_used="json")
     def _serialize_as_bytes(self) -> str:
@@ -142,34 +141,6 @@ class KeyPair(StrictBaseModel):
 
     secret_key: SecretKey
     """Secret key."""
-
-    @field_validator("public_key", mode="before")
-    @classmethod
-    def _decode_public_key(cls, value: object) -> object:
-        """Decode hex strings to a public key.
-
-        Other input shapes pass through unchanged.
-        """
-        if not isinstance(value, str):
-            return value
-        try:
-            return PublicKey.from_hex(value)
-        except SSZError as err:
-            raise ValueError(f"invalid public key hex: {err}") from err
-
-    @field_validator("secret_key", mode="before")
-    @classmethod
-    def _decode_secret_key(cls, value: object) -> object:
-        """Decode hex strings to a secret key.
-
-        Other input shapes pass through unchanged.
-        """
-        if not isinstance(value, str):
-            return value
-        try:
-            return SecretKey.from_hex(value)
-        except SSZError as err:
-            raise ValueError(f"invalid secret key hex: {err}") from err
 
     @field_serializer("public_key", "secret_key", when_used="json")
     def _encode_hex(self, value: PublicKey | SecretKey) -> str:

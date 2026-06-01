@@ -924,10 +924,10 @@ class TestSSZListSerialization:
 
     def test_variable_size_list_single_element_decodes(self) -> None:
         """A single-element list reads no further offsets after the first."""
-        val = VariableContainer(a=Uint8(1), b=Uint16List4(data=[Uint16(10)]))
-        encoded = VariableContainerList2(data=[val]).encode_bytes()
+        value = VariableContainer(a=Uint8(1), b=Uint16List4(data=[Uint16(10)]))
+        encoded = VariableContainerList2(data=[value]).encode_bytes()
 
-        assert VariableContainerList2.decode_bytes(encoded) == VariableContainerList2(data=[val])
+        assert VariableContainerList2.decode_bytes(encoded) == VariableContainerList2(data=[value])
 
 
 class TestJsonSerialization:

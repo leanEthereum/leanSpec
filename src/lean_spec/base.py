@@ -21,14 +21,22 @@ class CamelModel(BaseModel):
     )
 
     def to_json(self, **kwargs: Any) -> dict[str, Any]:
-        """Serialize to a JSON-encodable dict with camelCase keys.
-
-        Always uses JSON mode and camelCase aliases regardless of kwargs.
-        Callers cannot override mode or by_alias — these are stripped
-        silently to guarantee correct test vector output.
         """
-        kwargs.pop("mode", None)
-        kwargs.pop("by_alias", None)
+        Serialize to a JSON-encodable dict with camelCase keys.
+
+        Serialization mode is pinned to JSON.
+        Alias style is pinned to camelCase.
+        A caller that overrides either almost certainly expects the override to apply.
+        The override is rejected to avoid silently surprising the caller.
+
+        Raises:
+            TypeError: If mode or by_alias is passed as a keyword argument.
+        """
+        if "mode" in kwargs or "by_alias" in kwargs:
+            raise TypeError(
+                "to_json() does not accept 'mode' or 'by_alias'; "
+                "mode is pinned to 'json' and by_alias to True"
+            )
 
         return self.model_dump(
             mode="json",

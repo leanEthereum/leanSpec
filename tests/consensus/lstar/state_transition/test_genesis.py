@@ -36,19 +36,19 @@ pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def _generate_max_registry_pre_state() -> State:
-    """Build genesis with the registry filled to capacity using placeholder pubkeys.
+    """Build genesis with the registry filled to capacity using placeholder public_keys.
 
     XMSS key generation is intentionally skipped: every validator carries a
-    zero pubkey. This is sound because the state-transition path used here
+    zero public_key. This is sound because the state-transition path used here
     counts attestation votes without verifying signatures, so the keys are
     never read.
     """
-    zero_pubkey = Bytes52.zero()
+    zero_public_key = Bytes52.zero()
     validators = Validators(
         data=[
             Validator(
-                attestation_pubkey=zero_pubkey,
-                proposal_pubkey=zero_pubkey,
+                attestation_public_key=zero_public_key,
+                proposal_public_key=zero_public_key,
                 index=ValidatorIndex(i),
             )
             for i in range(int(VALIDATOR_REGISTRY_LIMIT))
@@ -67,7 +67,7 @@ def test_genesis_default_configuration(
     --------
     Generate a genesis state with default parameters:
     - genesis_time = 0
-    - 4 validators with zero pubkeys
+    - 4 validators with zero public_keys
     """
     state_transition_test(
         pre=generate_pre_state(),
@@ -150,7 +150,7 @@ def test_genesis_custom_validator_set(
     --------
     Generate a genesis state with:
     - 8 validators instead of default 4
-    - Custom validator pubkeys
+    - Custom validator public_keys
 
     Expected Behavior
     -----------------
@@ -232,7 +232,9 @@ def test_genesis_maximum_validators_with_forced_threshold_attestation(
                 slot=Slot(2),
                 forced_attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[ValidatorIndex(i) for i in range(supermajority_threshold)],
+                        validator_indices=[
+                            ValidatorIndex(i) for i in range(supermajority_threshold)
+                        ],
                         slot=Slot(2),
                         target_slot=Slot(1),
                         target_root_label="block_1",
@@ -288,7 +290,7 @@ def test_genesis_single_validator(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[ValidatorIndex(0)],
+                        validator_indices=[ValidatorIndex(0)],
                         slot=Slot(2),
                         target_slot=Slot(1),
                         target_root_label="block_1",
@@ -303,7 +305,7 @@ def test_genesis_single_validator(
                 slot=Slot(3),
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[ValidatorIndex(0)],
+                        validator_indices=[ValidatorIndex(0)],
                         slot=Slot(3),
                         target_slot=Slot(2),
                         target_root_label="block_2",

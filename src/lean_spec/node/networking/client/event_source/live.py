@@ -388,7 +388,7 @@ class LiveNetworkEventSource:
         *,
         status: Status,
         current_slot_lookup: CurrentSlotLookup,
-        listen_addr: str | None,
+        listen_address: str | None,
         bootnode_multiaddrs: Sequence[str],
     ) -> None:
         """
@@ -405,7 +405,7 @@ class LiveNetworkEventSource:
         Args:
             status: Initial finalized and head checkpoints the responder serves.
             current_slot_lookup: Wall-clock-to-slot callback for range bounds.
-            listen_addr: Multiaddr to bind for inbound connections, or None for dial-only.
+            listen_address: Multiaddr to bind for inbound connections, or None for dial-only.
             bootnode_multiaddrs: Pre-resolved outbound peers.
 
         Raises:
@@ -424,17 +424,17 @@ class LiveNetworkEventSource:
             logger.info("Connecting to bootnode %s", multiaddr)
             try:
                 peer_id = await self.dial(multiaddr)
-            except Exception as exc:
-                logger.warning("Failed to connect to bootnode %s: %s", multiaddr, exc)
+            except Exception as exception:
+                logger.warning("Failed to connect to bootnode %s: %s", multiaddr, exception)
                 continue
             if peer_id is not None:
                 logger.info("Connected to bootnode, peer_id=%s", peer_id)
             else:
                 logger.warning("Failed to connect to bootnode %s", multiaddr)
 
-        if listen_addr:
-            logger.info("Starting listener on %s", listen_addr)
-            listener_task = asyncio.create_task(self.listen(listen_addr))
+        if listen_address:
+            logger.info("Starting listener on %s", listen_address)
+            listener_task = asyncio.create_task(self.listen(listen_address))
 
             # Surface bind failures synchronously instead of as silent crashes.
             await asyncio.sleep(0.1)
@@ -488,11 +488,11 @@ class LiveNetworkEventSource:
                         block = SignedBlock.decode_bytes(event.data)
                         await self._emit_gossip_block(block, event.peer_id)
                     case TopicKind.ATTESTATION_SUBNET:
-                        att = SignedAttestation.decode_bytes(event.data)
-                        await self._emit_gossip_attestation(att, event.peer_id)
+                        attestation = SignedAttestation.decode_bytes(event.data)
+                        await self._emit_gossip_attestation(attestation, event.peer_id)
                     case TopicKind.AGGREGATED_ATTESTATION:
-                        agg = SignedAggregatedAttestation.decode_bytes(event.data)
-                        await self._emit_gossip_aggregated_attestation(agg, event.peer_id)
+                        aggregate = SignedAggregatedAttestation.decode_bytes(event.data)
+                        await self._emit_gossip_aggregated_attestation(aggregate, event.peer_id)
             except SSZSerializationError as e:
                 raise GossipMessageError(f"SSZ decode failed: {e}") from e
 
@@ -557,15 +557,15 @@ class LiveNetworkEventSource:
         try:
             # Detect transport type and connect accordingly.
             if is_quic_multiaddr(multiaddr):
-                conn = await self._dial_quic(multiaddr)
+                connection = await self._dial_quic(multiaddr)
             else:
-                conn = await self.connection_manager.connect(multiaddr)
+                connection = await self.connection_manager.connect(multiaddr)
 
-            peer_id = conn.peer_id
+            peer_id = connection.peer_id
 
             # Register connection.
-            self._connections[peer_id] = conn
-            self.reqresp_client.register_connection(peer_id, conn)
+            self._connections[peer_id] = connection
+            self.reqresp_client.register_connection(peer_id, connection)
 
             # Emit connected event.
             await self._events.put(PeerConnectedEvent(peer_id=peer_id))
@@ -575,15 +575,15 @@ class LiveNetworkEventSource:
             # The peer (listener) will try to open an outbound gossipsub stream to us.
             # If we don't start accepting streams before our own operations, there's
             # a deadlock: we wait for them to accept our stream, they wait for us.
-            task = asyncio.create_task(self._accept_streams(peer_id, conn))
+            task = asyncio.create_task(self._accept_streams(peer_id, connection))
             self._gossip_tasks.add(task)
             task.add_done_callback(self._gossip_tasks.discard)
 
             # Exchange status.
-            await self._exchange_status(peer_id, conn)
+            await self._exchange_status(peer_id, connection)
 
             # Set up gossipsub stream for full protocol support.
-            await self._setup_gossipsub_stream(peer_id, conn)
+            await self._setup_gossipsub_stream(peer_id, connection)
 
             logger.info("Connected to peer %s at %s", peer_id, multiaddr)
             return peer_id
@@ -660,7 +660,7 @@ class LiveNetworkEventSource:
             on_connection=self._handle_inbound_connection,
         )
 
-    async def _handle_inbound_connection(self, conn: QuicConnection) -> None:
+    async def _handle_inbound_connection(self, connection: QuicConnection) -> None:
         """
         Handle a new inbound connection.
 
@@ -669,19 +669,19 @@ class LiveNetworkEventSource:
         gossipsub setup are deferred to avoid race conditions.
 
         Args:
-            conn: Established connection.
+            connection: Established connection.
         """
-        peer_id = conn.peer_id
+        peer_id = connection.peer_id
 
         # Register connection.
-        self._connections[peer_id] = conn
-        self.reqresp_client.register_connection(peer_id, conn)
+        self._connections[peer_id] = connection
+        self.reqresp_client.register_connection(peer_id, connection)
 
         # Emit connected event.
         await self._events.put(PeerConnectedEvent(peer_id=peer_id))
 
         # Start accepting streams to handle peer's requests.
-        task = asyncio.create_task(self._accept_streams(peer_id, conn))
+        task = asyncio.create_task(self._accept_streams(peer_id, connection))
         self._gossip_tasks.add(task)
         task.add_done_callback(self._gossip_tasks.discard)
 
@@ -699,14 +699,14 @@ class LiveNetworkEventSource:
     async def _exchange_status(
         self,
         peer_id: PeerId,
-        conn: QuicConnection,
+        connection: QuicConnection,
     ) -> None:
         """
         Exchange Status messages with a peer.
 
         Args:
             peer_id: Peer identifier.
-            conn: QuicConnection to use.
+            connection: QuicConnection to use.
         """
         if self._our_status is None:
             logger.debug("No status set, skipping status exchange")
@@ -729,7 +729,7 @@ class LiveNetworkEventSource:
     async def _setup_gossipsub_stream(
         self,
         peer_id: PeerId,
-        conn: QuicConnection,
+        connection: QuicConnection,
     ) -> None:
         """
         Set up the GossipSub stream for a peer.
@@ -742,7 +742,7 @@ class LiveNetworkEventSource:
 
         Args:
             peer_id: Peer identifier.
-            conn: QuicConnection to use.
+            connection: QuicConnection to use.
         """
         # Why:
         # The dialing path and the inbound-stream handler can both reach this
@@ -758,7 +758,7 @@ class LiveNetworkEventSource:
                 return
             try:
                 # Open the gossipsub stream.
-                stream = await conn.open_stream(GOSSIPSUB_DEFAULT_PROTOCOL_ID)
+                stream = await connection.open_stream(GOSSIPSUB_DEFAULT_PROTOCOL_ID)
                 logger.info(
                     "Opened outbound gossipsub stream_id=%d to %s (expect odd=server-initiated)",
                     stream.stream_id,
@@ -787,11 +787,11 @@ class LiveNetworkEventSource:
         Args:
             peer_id: Peer to disconnect.
         """
-        conn = self._connections.pop(peer_id, None)
+        connection = self._connections.pop(peer_id, None)
         self._outbound_setup_locks.pop(peer_id, None)
-        if conn is not None:
+        if connection is not None:
             self.reqresp_client.unregister_connection(peer_id)
-            await conn.close()
+            await connection.close()
             await self._events.put(PeerDisconnectedEvent(peer_id=peer_id))
             logger.info("Disconnected from peer %s", peer_id)
 
@@ -870,7 +870,7 @@ class LiveNetworkEventSource:
             )
         )
 
-    async def _accept_streams(self, peer_id: PeerId, conn: QuicConnection) -> None:
+    async def _accept_streams(self, peer_id: PeerId, connection: QuicConnection) -> None:
         """
         Accept incoming streams from a connection.
 
@@ -879,7 +879,7 @@ class LiveNetworkEventSource:
 
         Args:
             peer_id: Peer that owns the connection.
-            conn: QUIC connection to accept streams from.
+            connection: QUIC connection to accept streams from.
 
 
         WHY BACKGROUND STREAM ACCEPTANCE?
@@ -921,7 +921,7 @@ class LiveNetworkEventSource:
                     #
                     # This blocks until a peer opens a stream or the connection closes.
                     # QUIC handles the low-level multiplexing.
-                    stream = await conn.accept_stream()
+                    stream = await connection.accept_stream()
                 except Exception as e:
                     # Connection closed or other transport error.
                     #
@@ -937,7 +937,9 @@ class LiveNetworkEventSource:
                 protocol_id, wrapper = negotiated
 
                 if protocol_id in (GOSSIPSUB_DEFAULT_PROTOCOL_ID, GOSSIPSUB_PROTOCOL_ID_V12):
-                    await self._handle_gossipsub_inbound_stream(peer_id, conn, protocol_id, wrapper)
+                    await self._handle_gossipsub_inbound_stream(
+                        peer_id, connection, protocol_id, wrapper
+                    )
                 elif protocol_id in REQRESP_PROTOCOL_IDS:
                     self._handle_reqresp_inbound_stream(peer_id, protocol_id, wrapper)
                 else:
@@ -980,7 +982,7 @@ class LiveNetworkEventSource:
 
         Args:
             peer_id: Peer that owns the connection (for log context).
-            stream: Raw stream returned by ``conn.accept_stream``.
+            stream: Raw stream returned by ``connection.accept_stream``.
 
         Returns:
             Tuple of (protocol_id, wrapper) on success, None on failure.
@@ -1050,7 +1052,7 @@ class LiveNetworkEventSource:
     async def _handle_gossipsub_inbound_stream(
         self,
         peer_id: PeerId,
-        conn: QuicConnection,
+        connection: QuicConnection,
         protocol_id: ProtocolId,
         wrapper: QuicStreamAdapter,
     ) -> None:
@@ -1059,7 +1061,7 @@ class LiveNetworkEventSource:
 
         Args:
             peer_id: Peer that opened the stream.
-            conn: Connection the stream belongs to (used to open our
+            connection: Connection the stream belongs to (used to open our
                 outbound stream when needed).
             protocol_id: Negotiated gossipsub protocol id (v1.2).
             wrapper: Adapter holding any bytes already buffered during
@@ -1096,7 +1098,7 @@ class LiveNetworkEventSource:
         #
         # Idempotent and serialised internally: a concurrent dialing-path
         # setup for the same peer will not race with this one.
-        gossip_task = asyncio.create_task(self._setup_gossipsub_stream(peer_id, conn))
+        gossip_task = asyncio.create_task(self._setup_gossipsub_stream(peer_id, connection))
         self._gossip_tasks.add(gossip_task)
         gossip_task.add_done_callback(self._gossip_tasks.discard)
 

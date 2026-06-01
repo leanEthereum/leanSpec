@@ -17,7 +17,7 @@ from lean_spec.spec.ssz import Uint64
 
 def _parameter() -> Parameter:
     """Return a fixed public parameter for hashing tests."""
-    return Parameter(data=[Fp(value=1)] * TEST_CONFIG.PARAMETER_LEN)
+    return Parameter(data=[Fp(value=1)] * TEST_CONFIG.PARAMETER_LENGTH)
 
 
 @pytest.mark.parametrize("width", [16, 24])
@@ -99,7 +99,7 @@ def test_tweak_hash_chain_uses_width_sixteen_compression() -> None:
         [random_domain(TEST_CONFIG)],
     )
     assert isinstance(result, HashDigestVector)
-    assert len(result.data) == TEST_CONFIG.HASH_LEN_FE
+    assert len(result.data) == TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS
 
 
 def test_tweak_hash_node_uses_width_twenty_four_compression() -> None:
@@ -110,7 +110,7 @@ def test_tweak_hash_node_uses_width_twenty_four_compression() -> None:
         TreeTweak(level=1, index=Uint64(0)),
         [random_domain(TEST_CONFIG), random_domain(TEST_CONFIG)],
     )
-    assert len(result.data) == TEST_CONFIG.HASH_LEN_FE
+    assert len(result.data) == TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS
 
 
 def test_tweak_hash_leaf_uses_sponge_mode() -> None:
@@ -119,7 +119,7 @@ def test_tweak_hash_leaf_uses_sponge_mode() -> None:
     result = TEST_POSEIDON.tweak_hash(
         TEST_CONFIG, _parameter(), TreeTweak(level=0, index=Uint64(0)), parts
     )
-    assert len(result.data) == TEST_CONFIG.HASH_LEN_FE
+    assert len(result.data) == TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS
 
 
 def test_tweak_hash_chain_and_tree_tweaks_are_domain_separated() -> None:

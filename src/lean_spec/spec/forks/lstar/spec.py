@@ -21,18 +21,15 @@ from lean_spec.node.observability import (
     observe_state_transition,
 )
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import (
-    AggregationError,
-    TypeOneMultiSignature,
-    TypeTwoMultiSignature,
-)
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.crypto.xmss.interface import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.forks.lstar.aggregation_select import select_greedily
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
+    AggregationError,
     AttestationData,
+    AttestationSignatureEntry,
     Block,
     BlockBody,
     BlockHeader,
@@ -45,15 +42,16 @@ from lean_spec.spec.forks.lstar.containers import (
     SignedAggregatedAttestation,
     SignedAttestation,
     SignedBlock,
+    SingleMessageAggregate,
     Slot,
     State,
+    Store,
     ValidatorIndex,
     Validators,
 )
 from lean_spec.spec.ssz import ZERO_HASH, Boolean, Bytes32, SSZList, Uint64
 
 from ..protocol import ForkProtocol, SpecBlockType, SpecStateType
-from .store import AttestationSignatureEntry, Store
 
 LstarStore = Store[State, Block]
 """Concrete Store specialization owned by the lstar fork."""
@@ -182,28 +180,11 @@ class LstarSpec(ForkProtocol):
 
         # Step through each missing slot.
         while state.slot < target_slot:
-            # Per-Slot Housekeeping & Slot Increment
+            # Cache the pre-block state root into the latest header, then bump the slot.
             #
-            # This single statement performs two tasks for each empty slot
-            # in a single, immutable update:
-            #
-            # 1. State Root Caching (Conditional):
-            #    It checks if the latest block header has an empty state root.
-            #    This is true only for the *first* empty slot immediately
-            #    following a block.
-            #
-            #    - If it is empty, we must cache the pre-block state root
-            #    (the hash of the state *before* this slot increment) into that
-            #    header. We do this by:
-            #    a) Computing the root of the current (pre-block) state.
-            #    b) Creating a *new* header object with this computed state root
-            #       to be included in the update.
-            #
-            #    - If the state root is *not* empty, it means we are in a
-            #    sequence of empty slots, and we simply use the existing header.
-            #
-            # 2. Slot Increment:
-            #    It always increments the slot number by one.
+            # Invariant: the header's state root is empty only for the first empty
+            # slot after a block, so this caching happens at most once per block.
+            # Later empty slots in a run find a populated root and reuse it.
             needs_state_root = state.latest_block_header.state_root == Bytes32.zero()
             cached_state_root = (
                 hash_tree_root(state) if needs_state_root else state.latest_block_header.state_root
@@ -286,8 +267,8 @@ class LstarSpec(ForkProtocol):
         #   updates rely entirely on validator attestations which are processed
         #   later in the block body.
         if is_genesis_parent:
-            state.latest_justified = Checkpoint(slot=state.latest_justified.slot, root=parent_root)
-            state.latest_finalized = Checkpoint(slot=state.latest_finalized.slot, root=parent_root)
+            state.latest_justified = Checkpoint(slot=Slot(0), root=parent_root)
+            state.latest_finalized = Checkpoint(slot=Slot(0), root=parent_root)
 
         # Historical Data Management
 
@@ -430,16 +411,12 @@ class LstarSpec(ForkProtocol):
         assert not any(root == ZERO_HASH for root in state.justifications_roots), (
             "zero hash is not allowed in justifications roots"
         )
-        justifications = (
-            {
-                root: state.justifications_validators[
-                    i * len(state.validators) : (i + 1) * len(state.validators)
-                ]
-                for i, root in enumerate(state.justifications_roots)
-            }
-            if state.justifications_roots
-            else {}
-        )
+        justifications = {
+            root: state.justifications_validators[
+                i * len(state.validators) : (i + 1) * len(state.validators)
+            ]
+            for i, root in enumerate(state.justifications_roots)
+        }
 
         # Track state changes to be applied at the end
         latest_justified = state.latest_justified
@@ -452,9 +429,10 @@ class LstarSpec(ForkProtocol):
         # Votes for zero hash are ignored, so we only need the most recent slot
         # where a root appears to decide whether it is still unfinalized.
         start_slot = int(finalized_slot) + 1
-        root_to_slot: dict[Bytes32, Slot] = {}
-        for i, root in enumerate(state.historical_block_hashes[start_slot:], start=start_slot):
-            root_to_slot[root] = Slot(i)
+        root_to_slot: dict[Bytes32, Slot] = {
+            root: Slot(i)
+            for i, root in enumerate(state.historical_block_hashes[start_slot:], start=start_slot)
+        }
 
         # Process each attestation independently.
         #
@@ -527,9 +505,9 @@ class LstarSpec(ForkProtocol):
             #
             # A vote is represented as a boolean flag.
             # If it was previously absent, flip it to True.
-            for validator_id in attestation.aggregation_bits.to_validator_indices():
-                if not justifications[target.root][validator_id]:
-                    justifications[target.root][validator_id] = Boolean(True)
+            for validator_index in attestation.aggregation_bits.to_validator_indices():
+                if not justifications[target.root][validator_index]:
+                    justifications[target.root][validator_index] = Boolean(True)
 
             # Check whether the vote count crosses the supermajority threshold.
             #
@@ -565,13 +543,16 @@ class LstarSpec(ForkProtocol):
                 # Finalization requires a continuous chain of trust from the
                 # previously finalized checkpoint up to the new justified point.
                 #
-                # If every slot in between is justifiable relative to the old
-                # finalized point, then the earlier source checkpoint becomes finalized.
+                # Finalization advances only when the source lies past the old finalized point.
+                # A source at or behind that boundary is already final.
+                # Such a source may still justify a newer target, but it must not re-finalize.
+                # When the source is newer and every slot in between is justifiable
+                # relative to that old finalized point, the source checkpoint becomes finalized.
                 #
                 # In short:
                 #
                 #     If there is no break in the chain, advance finalization.
-                if not any(
+                if source.slot > finalized_slot and not any(
                     Slot(slot).is_justifiable_after(finalized_slot)
                     for slot in range(source.slot + Slot(1), target.slot)
                 ):
@@ -626,24 +607,20 @@ class LstarSpec(ForkProtocol):
         self,
         state: State,
         block: Block,
-        valid_signatures: bool = True,
     ) -> State:
         """
         Apply the complete state transition function for a block.
 
         This method represents the full state transition function:
-        1. Validate signatures if required
-        2. Process slots up to the block's slot
-        3. Process the block header and body
-        4. Validate the computed state root
+        1. Process slots up to the block's slot
+        2. Process the block header and body
+        3. Validate the computed state root
+
+        Signatures are verified outside this function, before it is called.
 
         Raises:
-            AssertionError: If signature validation fails or state root is invalid.
+            AssertionError: If the computed state root is invalid.
         """
-        # Validate signatures if required
-        if not valid_signatures:
-            raise AssertionError("Block signatures must be valid")
-
         with observe_state_transition():
             # First, process any intermediate slots.
             advanced = self.process_slots(state, block.slot)
@@ -690,7 +667,7 @@ class LstarSpec(ForkProtocol):
     @staticmethod
     def _score_entry(
         att_data: AttestationData,
-        proofs: AbstractSet[TypeOneMultiSignature],
+        proofs: AbstractSet[SingleMessageAggregate],
         current_votes: dict[Bytes32, set[ValidatorIndex]],
         projected_finalized_slot: Slot,
         validator_count: int,
@@ -803,7 +780,7 @@ class LstarSpec(ForkProtocol):
 
     def _pick_best_candidate(
         self,
-        aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]],
+        aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
         known_block_roots: AbstractSet[Bytes32],
         extended_historical_block_hashes: Sequence[Bytes32],
         processed: AbstractSet[AttestationData],
@@ -857,8 +834,8 @@ class LstarSpec(ForkProtocol):
         slot: Slot,
         parent_root: Bytes32,
         known_block_roots: AbstractSet[Bytes32],
-        aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]],
-    ) -> list[tuple[AggregatedAttestation, TypeOneMultiSignature]]:
+        aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
+    ) -> list[tuple[AggregatedAttestation, SingleMessageAggregate]]:
         """Tiered greedy attestation selection for block proposal.
 
         Each round scores remaining candidates against a projected post-state and
@@ -868,7 +845,7 @@ class LstarSpec(ForkProtocol):
         state transition.
         Stops at the data-entry cap or when no remaining candidate scores.
         """
-        selected: list[tuple[AggregatedAttestation, TypeOneMultiSignature]] = []
+        selected: list[tuple[AggregatedAttestation, SingleMessageAggregate]] = []
         if not aggregated_payloads:
             return selected
 
@@ -954,8 +931,8 @@ class LstarSpec(ForkProtocol):
         proposer_index: ValidatorIndex,
         parent_root: Bytes32,
         known_block_roots: AbstractSet[Bytes32],
-        aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] | None = None,
-    ) -> tuple[Block, State, list[AggregatedAttestation], list[TypeOneMultiSignature]]:
+        aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]] | None = None,
+    ) -> tuple[Block, State, list[AggregatedAttestation], list[SingleMessageAggregate]]:
         """
         Build a valid block on top of the given pre-state.
 
@@ -968,7 +945,7 @@ class LstarSpec(ForkProtocol):
         end to seal the state root.
         """
         aggregated_attestations: list[AggregatedAttestation] = []
-        aggregated_signatures: list[TypeOneMultiSignature] = []
+        aggregated_signatures: list[SingleMessageAggregate] = []
 
         if aggregated_payloads:
             selected = self._select_attestations(
@@ -988,15 +965,17 @@ class LstarSpec(ForkProtocol):
             # During selection above, multiple proofs may have been selected for
             # the same AttestationData. Group them and merge each group into a
             # single recursive proof.
-            proof_groups: dict[AttestationData, list[TypeOneMultiSignature]] = {}
-            for att, sig in zip(aggregated_attestations, aggregated_signatures, strict=True):
-                proof_groups.setdefault(att.data, []).append(sig)
+            proof_groups: dict[AttestationData, list[SingleMessageAggregate]] = {}
+            for attestation, signature in zip(
+                aggregated_attestations, aggregated_signatures, strict=True
+            ):
+                proof_groups.setdefault(attestation.data, []).append(signature)
 
             aggregated_attestations = []
             aggregated_signatures = []
-            for att_data, proofs in proof_groups.items():
+            for attestation_data, proofs in proof_groups.items():
                 if len(proofs) == 1:
-                    sig = proofs[0]
+                    signature = proofs[0]
                 else:
                     # Multiple proofs for the same data were aggregated separately.
                     # Merge them into one recursive proof using children-only
@@ -1005,22 +984,22 @@ class LstarSpec(ForkProtocol):
                         (
                             proof,
                             [
-                                state.validators[vid].get_attestation_pubkey()
-                                for vid in proof.participants.to_validator_indices()
+                                state.validators[validator_index].get_attestation_public_key()
+                                for validator_index in proof.participants.to_validator_indices()
                             ],
                         )
                         for proof in proofs
                     ]
-                    sig = TypeOneMultiSignature.aggregate(
+                    signature = SingleMessageAggregate.aggregate(
                         children=children,
                         raw_xmss=[],
-                        message=hash_tree_root(att_data),
-                        slot=att_data.slot,
+                        message=hash_tree_root(attestation_data),
+                        slot=attestation_data.slot,
                     )
-                aggregated_signatures.append(sig)
+                aggregated_signatures.append(signature)
                 aggregated_attestations.append(
                     self.aggregated_attestation_class(
-                        aggregation_bits=sig.participants, data=att_data
+                        aggregation_bits=signature.participants, data=attestation_data
                     )
                 )
 
@@ -1047,9 +1026,9 @@ class LstarSpec(ForkProtocol):
         validators: Validators,
     ) -> bool:
         """
-        Verify the merged Type-2 proof carried by a signed block.
+        Verify the merged multi-message aggregate proof carried by a signed block.
 
-        The block envelope holds one SSZ-encoded Type-2 proof binding
+        The block envelope holds one multi-message aggregate proof binding
         every body attestation plus the proposer's signature over the
         block root.
 
@@ -1066,11 +1045,6 @@ class LstarSpec(ForkProtocol):
         block = signed_block.block
         aggregated_attestations = block.body.attestations
 
-        try:
-            type_two = TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
-        except Exception as exc:
-            raise AssertionError(f"Block proof decoding failed: {exc}") from exc
-
         num_validators = Uint64(len(validators))
         public_keys_per_message: list[list[PublicKey]] = []
 
@@ -1078,21 +1052,24 @@ class LstarSpec(ForkProtocol):
         #
         # Without this binding a proposer could pair honest signatures
         # with attacker-chosen attestation data that resolves to the same
-        # pubkeys, crediting validators for votes they never cast.
+        # public_keys, crediting validators for votes they never cast.
         message_bindings: list[tuple[Bytes32, Slot]] = []
 
-        # One pubkey set per attestation, in body order.
+        # One public_key set per attestation, in body order.
         #
         # The attestation list and the proof component list are parallel.
         # Each attestation names the validators that voted for its data.
         # Its matching proof component proves those validators signed.
         for aggregated_attestation in aggregated_attestations:
-            validator_ids = aggregated_attestation.aggregation_bits.to_validator_indices()
-            for validator_id in validator_ids:
-                assert validator_id.is_valid(num_validators), "Validator index out of range"
+            validator_indices = aggregated_attestation.aggregation_bits.to_validator_indices()
+            for validator_index in validator_indices:
+                assert validator_index.is_valid(num_validators), "Validator index out of range"
 
             public_keys_per_message.append(
-                [validators[vid].get_attestation_pubkey() for vid in validator_ids]
+                [
+                    validators[validator_index].get_attestation_public_key()
+                    for validator_index in validator_indices
+                ]
             )
             message_bindings.append(
                 (
@@ -1109,16 +1086,16 @@ class LstarSpec(ForkProtocol):
         proposer_index = block.proposer_index
         assert proposer_index.is_valid(num_validators), "Proposer index out of range"
 
-        public_keys_per_message.append([validators[proposer_index].get_proposal_pubkey()])
+        public_keys_per_message.append([validators[proposer_index].get_proposal_public_key()])
         message_bindings.append((hash_tree_root(block), block.slot))
 
         try:
-            type_two.verify(
+            signed_block.proof.verify(
                 public_keys_per_message=public_keys_per_message,
                 messages=message_bindings,
             )
-        except AggregationError as exc:
-            raise AssertionError(f"Block proof verification failed: {exc}") from exc
+        except AggregationError as exception:
+            raise AssertionError(f"Block proof verification failed: {exception}") from exception
 
         return True
 
@@ -1128,7 +1105,7 @@ class LstarSpec(ForkProtocol):
         self,
         state: SpecStateType,
         anchor_block: SpecBlockType,
-        validator_id: ValidatorIndex | None,
+        validator_index: ValidatorIndex | None,
     ) -> LstarStore:
         """Initialize a forkchoice store from an anchor state and block.
 
@@ -1183,7 +1160,7 @@ class LstarSpec(ForkProtocol):
             latest_finalized=anchor_checkpoint,
             blocks={anchor_root: anchor_block},
             states={anchor_root: state},
-            validator_id=validator_id,
+            validator_index=validator_index,
         )
 
     def prune_stale_attestation_data(self, store: LstarStore) -> LstarStore:
@@ -1204,8 +1181,8 @@ class LstarSpec(ForkProtocol):
         # Each mapping is keyed by attestation data, so we check membership by slot
         # against the finalized slot.
         store.attestation_signatures = {
-            attestation_data: sigs
-            for attestation_data, sigs in store.attestation_signatures.items()
+            attestation_data: signatures
+            for attestation_data, signatures in store.attestation_signatures.items()
             if attestation_data.target.slot > store.latest_finalized.slot
         }
         store.latest_new_aggregated_payloads = {
@@ -1304,7 +1281,7 @@ class LstarSpec(ForkProtocol):
             AssertionError: If signature verification fails.
         """
         with observe_on_attestation():
-            validator_id = signed_attestation.validator_id
+            validator_index = signed_attestation.validator_index
             attestation_data = signed_attestation.data
             signature = signed_attestation.signature
 
@@ -1317,20 +1294,15 @@ class LstarSpec(ForkProtocol):
                 f"No state available to verify attestation signature for target block "
                 f"{attestation_data.target.root.hex()}"
             )
-            assert validator_id.is_valid(Uint64(len(key_state.validators))), (
-                f"Validator {validator_id} not found in state {attestation_data.target.root.hex()}"
+            assert validator_index.is_valid(Uint64(len(key_state.validators))), (
+                f"Validator {validator_index} not found in state "
+                f"{attestation_data.target.root.hex()}"
             )
-            public_key = key_state.validators[validator_id].get_attestation_pubkey()
+            public_key = key_state.validators[validator_index].get_attestation_public_key()
 
             assert TARGET_SIGNATURE_SCHEME.verify(
                 public_key, attestation_data.slot, hash_tree_root(attestation_data), signature
             ), "Signature verification failed"
-
-            # Store signature and attestation data for later aggregation.
-            # Copy the inner sets so we can add to them without mutating the previous store.
-            store.attestation_signatures = {
-                k: set(v) for k, v in store.attestation_signatures.items()
-            }
 
             # Aggregators store all received gossip signatures.
             # The p2p layer only delivers attestations from subscribed subnets,
@@ -1338,7 +1310,7 @@ class LstarSpec(ForkProtocol):
             # Non-aggregator nodes validate and drop — they never store gossip signatures.
             if is_aggregator:
                 store.attestation_signatures.setdefault(attestation_data, set()).add(
-                    AttestationSignatureEntry(validator_id, signature)
+                    AttestationSignatureEntry(validator_index, signature)
                 )
 
             return store
@@ -1364,7 +1336,7 @@ class LstarSpec(ForkProtocol):
         self.validate_attestation(store, data)
 
         # Get validator IDs who participated in this aggregation
-        validator_ids = proof.participants.to_validator_indices()
+        validator_indices = proof.participants.to_validator_indices()
 
         # Retrieve the relevant state to look up public keys for verification.
         key_state = store.states.get(data.target.root)
@@ -1375,30 +1347,29 @@ class LstarSpec(ForkProtocol):
 
         # Ensure all participants exist in the active set
         validators = key_state.validators
-        for validator_id in validator_ids:
-            assert validator_id.is_valid(Uint64(len(validators))), (
-                f"Validator {validator_id} not found in state {data.target.root.hex()}"
+        for validator_index in validator_indices:
+            assert validator_index.is_valid(Uint64(len(validators))), (
+                f"Validator {validator_index} not found in state {data.target.root.hex()}"
             )
 
         # Prepare public keys for verification
-        public_keys = [validators[vid].get_attestation_pubkey() for vid in validator_ids]
+        public_keys = [
+            validators[validator_index].get_attestation_public_key()
+            for validator_index in validator_indices
+        ]
 
-        # Verify the Type-1 single-message aggregated proof.
+        # Verify the single-message aggregate single-message aggregated proof.
         try:
             proof.verify(
                 public_keys=public_keys,
                 message=hash_tree_root(data),
                 slot=data.slot,
             )
-        except AggregationError as exc:
+        except AggregationError as exception:
             raise AssertionError(
-                f"Committee aggregation signature verification failed: {exc}"
-            ) from exc
+                f"Committee aggregation signature verification failed: {exception}"
+            ) from exception
 
-        # Shallow-copy the dict and its inner sets to preserve immutability.
-        store.latest_new_aggregated_payloads = {
-            k: set(v) for k, v in store.latest_new_aggregated_payloads.items()
-        }
         store.latest_new_aggregated_payloads.setdefault(data, set()).add(proof)
 
         return store
@@ -1445,21 +1416,23 @@ class LstarSpec(ForkProtocol):
             # The block body constrains how many distinct AttestationData
             # entries it may carry.
             aggregated_attestations = block.body.attestations
-            att_data_set = {att.data for att in aggregated_attestations}
-            assert len(att_data_set) == len(aggregated_attestations), (
+            attestation_data_set = {attestation.data for attestation in aggregated_attestations}
+            assert len(attestation_data_set) == len(aggregated_attestations), (
                 "Block contains duplicate AttestationData entries; "
                 "each AttestationData must appear at most once"
             )
-            assert len(att_data_set) <= int(MAX_ATTESTATIONS_DATA), (
-                f"Block contains {len(att_data_set)} distinct AttestationData entries; "
+            assert len(attestation_data_set) <= int(MAX_ATTESTATIONS_DATA), (
+                f"Block contains {len(attestation_data_set)} distinct AttestationData entries; "
                 f"maximum is {MAX_ATTESTATIONS_DATA}"
             )
 
-            # Validate cryptographic signatures
-            valid_signatures = self.verify_signatures(signed_block, parent_state.validators)
+            # Validate cryptographic signatures.
+            #
+            # This raises on any invalid signature, aborting the import.
+            self.verify_signatures(signed_block, parent_state.validators)
 
             # Execute state transition function to compute post-block state
-            post_state = self.state_transition(parent_state, block, valid_signatures)
+            post_state = self.state_transition(parent_state, block)
 
             # Propagate checkpoint advances from the post-state.
             #
@@ -1487,15 +1460,10 @@ class LstarSpec(ForkProtocol):
             #
             # Consequence: a block's own attestations contribute zero weight
             # to the head computation triggered by this import.
-            # Recovered Type-1 proofs land in the new pool and migrate to
+            # Recovered single-message aggregate proofs land in the new pool and migrate to
             # the known pool at the next acceptance tick.
             # Head weight from block-imported votes is therefore deferred
             # by up to one slot.
-            # Shallow-copy the dict and its inner sets to preserve immutability.
-            store.latest_known_aggregated_payloads = {
-                k: set(v) for k, v in store.latest_known_aggregated_payloads.items()
-            }
-
             for aggregated_attestation in aggregated_attestations:
                 store.latest_known_aggregated_payloads.setdefault(
                     aggregated_attestation.data, set()
@@ -1513,7 +1481,7 @@ class LstarSpec(ForkProtocol):
     def extract_attestations_from_aggregated_payloads(
         self,
         store: LstarStore,
-        aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]],
+        aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
     ) -> dict[ValidatorIndex, AttestationData]:
         """Extract attestations from aggregated payloads.
 
@@ -1524,11 +1492,37 @@ class LstarSpec(ForkProtocol):
 
         for attestation_data, proofs in aggregated_payloads.items():
             for proof in proofs:
-                for validator_id in proof.participants.to_validator_indices():
-                    existing = attestations.get(validator_id)
+                for validator_index in proof.participants.to_validator_indices():
+                    existing = attestations.get(validator_index)
                     if existing is None or existing.slot < attestation_data.slot:
-                        attestations[validator_id] = attestation_data
+                        attestations[validator_index] = attestation_data
         return attestations
+
+    def _accumulate_ancestor_weights(
+        self,
+        store: LstarStore,
+        attestations: dict[ValidatorIndex, AttestationData],
+        start_slot: Slot,
+    ) -> dict[Bytes32, int]:
+        """Accumulate one unit of voting weight per ancestor of each head vote.
+
+        For every vote, follow the chosen head upward through its ancestors.
+        Each visited block above the start slot accumulates one unit of weight
+        from that validator.
+
+        Climbing stops at the start slot or as soon as the chain leaves the
+        known tree, so partial views and ongoing sync are handled naturally.
+        """
+        weights: dict[Bytes32, int] = defaultdict(int)
+
+        for attestation_data in attestations.values():
+            current_root = attestation_data.head.root
+
+            while current_root in store.blocks and store.blocks[current_root].slot > start_slot:
+                weights[current_root] += 1
+                current_root = store.blocks[current_root].parent_root
+
+        return weights
 
     def compute_block_weights(self, store: LstarStore) -> dict[Bytes32, int]:
         """Compute attestation-based weight for each block above the finalized slot.
@@ -1540,16 +1534,9 @@ class LstarSpec(ForkProtocol):
             store, store.latest_known_aggregated_payloads
         )
 
-        start_slot = store.latest_finalized.slot
-
-        weights: dict[Bytes32, int] = defaultdict(int)
-
-        for attestation_data in attestations.values():
-            current_root = attestation_data.head.root
-
-            while current_root in store.blocks and store.blocks[current_root].slot > start_slot:
-                weights[current_root] += 1
-                current_root = store.blocks[current_root].parent_root
+        weights = self._accumulate_ancestor_weights(
+            store, attestations, store.latest_finalized.slot
+        )
 
         return dict(weights)
 
@@ -1587,23 +1574,8 @@ class LstarSpec(ForkProtocol):
         # This avoids repeated lookups inside the inner loop.
         start_slot = store.blocks[start_root].slot
 
-        # Prepare a table that will collect voting weight for each block.
-        #
-        # Each entry starts conceptually at zero and then accumulates contributions.
-        weights: dict[Bytes32, int] = defaultdict(int)
-
-        # For every vote, follow the chosen head upward through its ancestors.
-        #
-        # Each visited block accumulates one unit of weight from that validator.
-        for attestation_data in attestations.values():
-            current_root = attestation_data.head.root
-
-            # Climb towards the anchor while staying inside the known tree.
-            #
-            # This naturally handles partial views and ongoing sync.
-            while current_root in store.blocks and store.blocks[current_root].slot > start_slot:
-                weights[current_root] += 1
-                current_root = store.blocks[current_root].parent_root
+        # Collect voting weight for every block above the anchor slot.
+        weights = self._accumulate_ancestor_weights(store, attestations, start_slot)
 
         # Build the parent -> children adjacency.
         #
@@ -1676,10 +1648,6 @@ class LstarSpec(ForkProtocol):
         influence on fork choice decisions.
         """
         # Merge new aggregated payloads into known aggregated payloads
-        store.latest_known_aggregated_payloads = {
-            attestation_data: set(proofs)
-            for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-        }
         for attestation_data, proofs in store.latest_new_aggregated_payloads.items():
             store.latest_known_aggregated_payloads.setdefault(attestation_data, set()).update(
                 proofs
@@ -1787,7 +1755,7 @@ class LstarSpec(ForkProtocol):
         - Newly produced proofs are recorded for future reuse.
         """
         validators = store.states[store.head].validators
-        gossip_sigs = store.attestation_signatures
+        gossip_signatures = store.attestation_signatures
         new = store.latest_new_aggregated_payloads
         known = store.latest_known_aggregated_payloads
 
@@ -1796,7 +1764,7 @@ class LstarSpec(ForkProtocol):
         # Only attestation data with a new payload or a raw gossip signature
         # can trigger aggregation. Known payloads alone cannot — they exist
         # only to help extend coverage when combined with fresh evidence.
-        for data in new.keys() | gossip_sigs.keys():
+        for data in new.keys() | gossip_signatures.keys():
             # Phase 1: Select
             #
             # Start with the cheapest option: reuse proofs that already
@@ -1820,12 +1788,12 @@ class LstarSpec(ForkProtocol):
             # construction regardless of network arrival order.
             raw_entries = [
                 (
-                    e.validator_id,
-                    validators[e.validator_id].get_attestation_pubkey(),
+                    e.validator_index,
+                    validators[e.validator_index].get_attestation_public_key(),
                     e.signature,
                 )
-                for e in sorted(gossip_sigs.get(data, set()), key=lambda e: e.validator_id)
-                if e.validator_id not in covered
+                for e in sorted(gossip_signatures.get(data, set()), key=lambda e: e.validator_index)
+                if e.validator_index not in covered
             ]
 
             # The aggregation layer enforces a minimum: either at least one
@@ -1846,8 +1814,8 @@ class LstarSpec(ForkProtocol):
                 (
                     child,
                     [
-                        validators[vid].get_attestation_pubkey()
-                        for vid in child.participants.to_validator_indices()
+                        validators[validator_index].get_attestation_public_key()
+                        for validator_index in child.participants.to_validator_indices()
                     ],
                 )
                 for child in child_proofs
@@ -1856,7 +1824,7 @@ class LstarSpec(ForkProtocol):
             # Hand everything to the XMSS subspec.
             # Each fresh entry already carries its validator index alongside its key and signature.
             # Out comes a single proof covering all selected validators.
-            proof = TypeOneMultiSignature.aggregate(
+            proof = SingleMessageAggregate.aggregate(
                 children=children,
                 raw_xmss=raw_entries,
                 message=hash_tree_root(data),
@@ -1869,16 +1837,13 @@ class LstarSpec(ForkProtocol):
         # Record freshly produced proofs so future rounds can reuse them.
         # Remove gossip signatures that were consumed by this aggregation.
         store.latest_new_aggregated_payloads = {}
-        for signed_att in new_aggregates:
-            store.latest_new_aggregated_payloads.setdefault(signed_att.data, set()).add(
-                signed_att.proof
+        for signed_attestation in new_aggregates:
+            store.latest_new_aggregated_payloads.setdefault(signed_attestation.data, set()).add(
+                signed_attestation.proof
             )
 
-        store.attestation_signatures = {
-            data: sigs
-            for data, sigs in store.attestation_signatures.items()
-            if data not in store.latest_new_aggregated_payloads
-        }
+        for data in store.latest_new_aggregated_payloads:
+            store.attestation_signatures.pop(data, None)
         return store, new_aggregates
 
     def tick_interval(
@@ -1973,7 +1938,7 @@ class LstarSpec(ForkProtocol):
         #
         # This ensures the target doesn't advance too far ahead of safe target,
         # providing a balance between liveness and safety.
-        for _ in range(JUSTIFICATION_LOOKBACK_SLOTS):
+        for _ in range(int(JUSTIFICATION_LOOKBACK_SLOTS)):
             if store.blocks[target_block_root].slot > store.blocks[store.safe_target].slot:
                 target_block_root = store.blocks[target_block_root].parent_root
             else:
@@ -2022,8 +1987,11 @@ class LstarSpec(ForkProtocol):
         store: LstarStore,
         slot: Slot,
         validator_index: ValidatorIndex,
-    ) -> tuple[LstarStore, Block, list[TypeOneMultiSignature]]:
-        """Produce a block and its per-attestation Type-1 proofs for the target slot.
+    ) -> tuple[LstarStore, Block, list[SingleMessageAggregate]]:
+        """Produce a block for the target slot.
+
+        Returns the block alongside its per-attestation single-message
+        aggregate proofs.
 
         Block production proceeds in four stages:
         1. Retrieve the current chain head as the parent block
@@ -2034,10 +2002,10 @@ class LstarSpec(ForkProtocol):
         The block builder uses a tiered greedy scorer to collect attestations.
         Each round projects justification forward, unlocking dependent entries.
 
-        Returns the per-attestation Type-1 proofs unmerged. The validator
+        Returns the per-attestation single-message aggregate proofs unmerged. The validator
         service signs the block root with the proposal key, wraps that into
-        a singleton Type-1, and merges all of them into the block-level
-        Type-2 proof carried by SignedBlock.proof.
+        a singleton single-message aggregate, and merges all of them into the block-level
+        multi-message aggregate proof carried by SignedBlock.proof.
 
         Raises:
             AssertionError: If validator is not the proposer for this slot,

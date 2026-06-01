@@ -47,7 +47,7 @@ def test_block_with_duplicate_aggregated_attestation_data_rejected(
       validator set just by repeating the entry.
     """
     duplicated_spec = AggregatedAttestationSpec(
-        validator_ids=[ValidatorIndex(0)],
+        validator_indices=[ValidatorIndex(0)],
         slot=Slot(1),
         target_slot=Slot(1),
         target_root_label="block_1",

@@ -146,11 +146,13 @@ MAX_COPY_2_OFFSET: Final = 65535
 
 #
 # The uncompressed length is encoded as a varint at the start of the
-# compressed data. Varints use 7 bits per byte, with the high bit
-# indicating continuation.
+# compressed data. The shared LEB128 codec from the networking layer
+# handles encoding and decoding. The cap below bounds the prefix length
+# to the 32-bit range defined by the Snappy format.
 
-VARINT_CONTINUATION_BIT: Final = 0x80
-"""High bit set in varint bytes to indicate more bytes follow."""
+SNAPPY_VARINT_MAX_BYTES: Final = 5
+"""Maximum byte count for the uncompressed length prefix.
 
-VARINT_DATA_MASK: Final = 0x7F
-"""Mask to extract the 7 data bits from a varint byte."""
+Five bytes carry thirty-five data bits.
+This is the smallest LEB128 length that covers the full 32-bit range
+used by the Snappy format for the uncompressed payload size."""

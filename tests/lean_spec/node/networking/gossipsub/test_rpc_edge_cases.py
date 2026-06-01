@@ -103,13 +103,13 @@ class TestForwardCompatibility:
 
     def test_message_with_unknown_field(self) -> None:
         """Message ignores unknown length-delimited fields."""
-        msg = Message(topic=TopicId("t"), data=b"d")
-        data = bytearray(msg.encode())
+        message = Message(topic=TopicId("t"), data=b"d")
+        data = bytearray(message.encode())
 
         # Append unknown field 99.
         data.extend(encode_bytes(99, b"unknown_data"))
 
-        assert Message.decode(bytes(data)) == msg
+        assert Message.decode(bytes(data)) == message
 
 
 class TestLengthValidation:

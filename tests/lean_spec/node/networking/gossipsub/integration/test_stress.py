@@ -63,21 +63,24 @@ async def test_concurrent_publish(
     # All 5 nodes publish at the same time.
     # This tests concurrent access to shared mesh state and message caches.
     payloads = [f"concurrent-{i}".encode() for i in range(5)]
-    all_msg_ids = {p: GossipsubMessage.compute_id(TOPIC.encode("utf-8"), p) for p in payloads}
+    all_message_ids = {p: GossipsubMessage.compute_id(TOPIC.encode("utf-8"), p) for p in payloads}
 
     await asyncio.gather(*(node.publish(TOPIC, payloads[i]) for i, node in enumerate(nodes)))
 
     # Each node publishes one message but does not deliver its own.
     # So each expects exactly the 4 messages from the other publishers.
     for i, node in enumerate(nodes):
-        msgs = await node.wait_for_messages(4, TOPIC, timeout=10.0)
+        messages = await node.wait_for_messages(4, TOPIC, timeout=10.0)
         expected_data = {payloads[j] for j in range(5) if j != i}
-        assert {msg.data for msg in msgs} == expected_data, (
-            f"{node.peer_id}: expected {expected_data}, got {[m.data for m in msgs]}"
+        assert {message.data for message in messages} == expected_data, (
+            f"{node.peer_id}: expected {expected_data}, got {[m.data for m in messages]}"
         )
-        for msg in msgs:
-            assert msg == GossipsubMessageEvent(
-                peer_id=msg.peer_id, topic=TOPIC, data=msg.data, message_id=all_msg_ids[msg.data]
+        for message in messages:
+            assert message == GossipsubMessageEvent(
+                peer_id=message.peer_id,
+                topic=TOPIC,
+                data=message.data,
+                message_id=all_message_ids[message.data],
             )
 
 
@@ -99,12 +102,12 @@ async def test_large_network_ring(
     await network.stabilize_mesh(TOPIC, rounds=5)
 
     data = b"ring-message"
-    msg_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
+    message_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
     await network.nodes[0].publish(TOPIC, data)
 
     # All other nodes should receive the message.
     for node in network.nodes[1:]:
-        msg = await node.wait_for_message(TOPIC, timeout=10.0)
-        assert msg == GossipsubMessageEvent(
-            peer_id=msg.peer_id, topic=TOPIC, data=data, message_id=msg_id
+        message = await node.wait_for_message(TOPIC, timeout=10.0)
+        assert message == GossipsubMessageEvent(
+            peer_id=message.peer_id, topic=TOPIC, data=data, message_id=message_id
         )

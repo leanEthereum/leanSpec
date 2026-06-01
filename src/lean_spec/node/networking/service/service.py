@@ -149,12 +149,12 @@ class NetworkService:
                 # Logs attestation source and validation result.
                 await self.sync_service.on_gossip_attestation(attestation, peer_id)
 
-            case GossipAggregatedAttestationEvent(signed_attestation=att, peer_id=peer_id):
+            case GossipAggregatedAttestationEvent(signed_attestation=attestation, peer_id=peer_id):
                 # Route aggregated attestations to sync service.
                 #
                 # Aggregates contain multiple validator votes and are used
                 # to advance justification and finalization.
-                await self.sync_service.on_gossip_aggregated_attestation(att, peer_id)
+                await self.sync_service.on_gossip_aggregated_attestation(attestation, peer_id)
 
             case PeerStatusEvent(peer_id=peer_id, status=status):
                 # Route peer status updates to sync service.

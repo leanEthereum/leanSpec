@@ -101,7 +101,7 @@ def generate_libp2p_certificate(
     # This matches webpki's expected format for self-signed certificates.
     ski_digest = hashlib.sha256(tls_public_bytes).digest()[:20]
 
-    cert = (
+    certificate = (
         x509.CertificateBuilder()
         .subject_name(subject)
         .issuer_name(issuer)
@@ -131,9 +131,9 @@ def generate_libp2p_certificate(
         format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+    certificate_pem = certificate.public_bytes(serialization.Encoding.PEM)
 
-    return private_pem, cert_pem, cert
+    return private_pem, certificate_pem, certificate
 
 
 def _create_extension_payload(
@@ -170,7 +170,7 @@ def _create_extension_payload(
     # Encode PublicKey as protobuf.
     #   Field 1 (Type): tag=0x08, value=2 (secp256k1)
     #   Field 2 (Data): tag=0x12, length, bytes
-    public_key_proto = (
+    public_key_protobuf = (
         bytes([0x08, KeyType.SECP256K1, 0x12, len(public_key_compressed)]) + public_key_compressed
     )
 
@@ -180,21 +180,21 @@ def _create_extension_payload(
     #     publicKey OCTET STRING,
     #     signature OCTET STRING
     # }
-    return _encode_asn1_signed_key(public_key_proto, signature)
+    return _encode_asn1_signed_key(public_key_protobuf, signature)
 
 
-def _encode_asn1_signed_key(public_key_proto: bytes, signature: bytes) -> bytes:
+def _encode_asn1_signed_key(public_key_protobuf: bytes, signature: bytes) -> bytes:
     """
     Encode SignedKey as ASN.1 DER.
 
     ASN.1 structure:
         SEQUENCE {
-            OCTET STRING (public_key_proto),
+            OCTET STRING (public_key_protobuf),
             OCTET STRING (signature)
         }
     """
     # Encode the two OCTET STRINGs.
-    octet1 = _encode_asn1_octet_string(public_key_proto)
+    octet1 = _encode_asn1_octet_string(public_key_protobuf)
     octet2 = _encode_asn1_octet_string(signature)
 
     # Encode the SEQUENCE.

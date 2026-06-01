@@ -248,10 +248,10 @@ async def test_consensus_lifecycle(node_cluster: NodeCluster) -> None:
         if slot <= 1:
             continue
         checked_blocks += 1
-        att_count = len(block.body.attestations)
-        if att_count > 0:
+        attestation_count = len(block.body.attestations)
+        if attestation_count > 0:
             blocks_with_attestations += 1
-        logger.info("Slot %d: %d attestations in block body", slot, att_count)
+        logger.info("Slot %d: %d attestations in block body", slot, attestation_count)
 
     # At least one block after slot 1 must exist and contain attestations.
     assert checked_blocks >= 1, "No blocks after slot 1 found in store"

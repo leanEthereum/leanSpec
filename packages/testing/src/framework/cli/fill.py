@@ -78,12 +78,12 @@ def fill(
     # Check and download keys if needed (only for consensus layer)
     if layer.lower() == "consensus":
         # Import here to avoid loading leanSpec modules before LEAN_ENV is set
-        from consensus_testing.keys import download_keys, get_keys_dir
+        from consensus_testing.keys import download_keys, get_keys_directory
 
-        keys_dir = get_keys_dir(scheme.lower())
+        keys_directory = get_keys_directory(scheme.lower())
 
         # Check if keys already exist, if not, download them
-        if not (keys_dir.exists() and any(keys_dir.glob("*.json"))):
+        if not (keys_directory.exists() and any(keys_directory.glob("*.json"))):
             click.echo(f"Test keys for '{scheme}' scheme not found. Downloading...")
             download_keys(scheme.lower())
 

@@ -57,7 +57,7 @@ class HashDigestVector(SSZVector[Fp]):
     The fixed size lets SSZ pack these back-to-back without per-element offsets.
     """
 
-    LENGTH = TARGET_CONFIG.HASH_LEN_FE
+    LENGTH = TARGET_CONFIG.HASH_LENGTH_FIELD_ELEMENTS
     """One Poseidon digest, measured in field elements."""
 
 
@@ -75,7 +75,7 @@ class Parameter(SSZVector[Fp]):
     - Public knowledge.
     """
 
-    LENGTH = TARGET_CONFIG.PARAMETER_LEN
+    LENGTH = TARGET_CONFIG.PARAMETER_LENGTH
 
 
 class Randomness(SSZVector[Fp]):
@@ -87,7 +87,7 @@ class Randomness(SSZVector[Fp]):
     - The chosen randomness travels in the signature so the verifier recomputes the same codeword.
     """
 
-    LENGTH = TARGET_CONFIG.RAND_LEN_FE
+    LENGTH = TARGET_CONFIG.RAND_LENGTH_FIELD_ELEMENTS
 
 
 class HashTreeOpening(Container):

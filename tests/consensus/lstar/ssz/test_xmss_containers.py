@@ -6,10 +6,6 @@ from consensus_testing.keys import XmssKeyManager, create_dummy_signature
 
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.xmss import PublicKey
-from lean_spec.spec.crypto.xmss.aggregation import (
-    TypeOneMultiSignature,
-    TypeTwoMultiSignature,
-)
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
 from lean_spec.spec.crypto.xmss.merkle import HashTreeLayer
 from lean_spec.spec.crypto.xmss.types import (
@@ -19,6 +15,10 @@ from lean_spec.spec.crypto.xmss.types import (
     Parameter,
 )
 from lean_spec.spec.forks import AggregationBits, Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar.containers import (
+    MultiMessageAggregate,
+    SingleMessageAggregate,
+)
 from lean_spec.spec.ssz import Boolean, ByteList512KiB, Bytes32, Uint64
 
 pytestmark = pytest.mark.valid_until("Lstar")
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.valid_until("Lstar")
 
 def _zero_hash_digest_vector() -> HashDigestVector:
     """Build a hash digest vector with all field elements set to zero."""
-    return HashDigestVector(data=[Fp(0) for _ in range(TARGET_CONFIG.HASH_LEN_FE)])
+    return HashDigestVector(data=[Fp(0) for _ in range(TARGET_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)])
 
 
 def _zero_parameter() -> Parameter:
@@ -60,12 +60,12 @@ def test_signature_actual(ssz: SSZTestFiller) -> None:
     """SSZ roundtrip for a real Signature produced by the XMSS signing algorithm."""
     key_manager = XmssKeyManager.shared()
     scheme = key_manager.scheme
-    sk = key_manager[ValidatorIndex(0)].attestation_keypair.secret_key
-    signature = scheme.sign(sk, Slot(0), Bytes32(b"\x42" * 32))
+    secret_key = key_manager[ValidatorIndex(0)].attestation_keypair.secret_key
+    signature = scheme.sign(secret_key, Slot(0), Bytes32(b"\x42" * 32))
     ssz(type_name="Signature", value=signature)
 
 
-# --- TypeOneMultiSignature / TypeTwoMultiSignature ---
+# --- SingleMessageAggregate / MultiMessageAggregate ---
 
 
 def _bits(participants: list[bool]) -> AggregationBits:
@@ -73,35 +73,35 @@ def _bits(participants: list[bool]) -> AggregationBits:
     return AggregationBits(data=[Boolean(b) for b in participants])
 
 
-def test_type_one_multi_signature_empty(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for a Type-1 proof with empty proof bytes."""
+def test_single_message_aggregate_empty(ssz: SSZTestFiller) -> None:
+    """SSZ roundtrip for a single-message aggregate proof with empty proof bytes."""
     ssz(
-        type_name="TypeOneMultiSignature",
-        value=TypeOneMultiSignature(
+        type_name="SingleMessageAggregate",
+        value=SingleMessageAggregate(
             participants=_bits([True]),
             proof=ByteList512KiB(data=b""),
         ),
     )
 
 
-def test_type_one_multi_signature_with_proof(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for a Type-1 proof with non-empty proof bytes."""
+def test_single_message_aggregate_with_proof(ssz: SSZTestFiller) -> None:
+    """SSZ roundtrip for a single-message aggregate proof with non-empty proof bytes."""
     wire = b"\xde\xad\xbe\xef"
     ssz(
-        type_name="TypeOneMultiSignature",
-        value=TypeOneMultiSignature(
+        type_name="SingleMessageAggregate",
+        value=SingleMessageAggregate(
             participants=_bits([True, False, True]),
             proof=ByteList512KiB(data=wire),
         ),
     )
 
 
-def test_type_two_multi_signature_roundtrip(ssz: SSZTestFiller) -> None:
-    """SSZ roundtrip for a Type-2 proof envelope."""
+def test_multi_message_aggregate_roundtrip(ssz: SSZTestFiller) -> None:
+    """SSZ roundtrip for a multi-message aggregate proof envelope."""
     wire = b"\x01\x02\x03"
     ssz(
-        type_name="TypeTwoMultiSignature",
-        value=TypeTwoMultiSignature(proof=ByteList512KiB(data=wire)),
+        type_name="MultiMessageAggregate",
+        value=MultiMessageAggregate(proof=ByteList512KiB(data=wire)),
     )
 
 
@@ -113,7 +113,9 @@ def test_public_key_typical(ssz: SSZTestFiller) -> None:
     ssz(
         type_name="PublicKey",
         value=PublicKey(
-            root=HashDigestVector(data=[Fp(i + 1) for i in range(TARGET_CONFIG.HASH_LEN_FE)]),
+            root=HashDigestVector(
+                data=[Fp(i + 1) for i in range(TARGET_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)]
+            ),
             parameter=Parameter(data=[Fp(100 + i) for i in range(Parameter.LENGTH)]),
         ),
     )
@@ -138,7 +140,9 @@ def test_hash_tree_opening_typical(ssz: SSZTestFiller) -> None:
             siblings=HashDigestList(
                 data=[
                     HashDigestVector(
-                        data=[Fp(i + j * 10) for i in range(TARGET_CONFIG.HASH_LEN_FE)]
+                        data=[
+                            Fp(i + j * 10) for i in range(TARGET_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)
+                        ]
                     )
                     for j in range(3)
                 ]
@@ -169,7 +173,11 @@ def test_hash_tree_layer_typical(ssz: SSZTestFiller) -> None:
             start_index=Uint64(42),
             nodes=HashDigestList(
                 data=[
-                    HashDigestVector(data=[Fp(i + j * 7) for i in range(TARGET_CONFIG.HASH_LEN_FE)])
+                    HashDigestVector(
+                        data=[
+                            Fp(i + j * 7) for i in range(TARGET_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)
+                        ]
+                    )
                     for j in range(2)
                 ]
             ),

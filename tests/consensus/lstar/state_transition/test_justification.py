@@ -49,7 +49,7 @@ def test_supermajority_attestations_justify_block(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -97,7 +97,7 @@ def test_even_validator_threshold_boundary(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -146,7 +146,7 @@ def test_below_threshold_support_does_not_justify(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -198,7 +198,7 @@ def test_votes_accumulate_across_blocks(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -214,7 +214,7 @@ def test_votes_accumulate_across_blocks(
                 parent_label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(3),
                         ],
                         slot=Slot(3),
@@ -265,7 +265,7 @@ def test_repeated_validators_do_not_double_count_across_blocks(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                         ],
@@ -281,7 +281,7 @@ def test_repeated_validators_do_not_double_count_across_blocks(
                 label="block_3",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                         ],
@@ -328,7 +328,7 @@ def test_repeated_validator_does_not_double_count_within_same_block(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -338,7 +338,7 @@ def test_repeated_validator_does_not_double_count_within_same_block(
                         target_root_label="block_1",
                     ),
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                         ],
                         slot=Slot(2),
@@ -401,7 +401,7 @@ def test_pronic_boundary_acceptance(
                 parent_label="block_6",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -456,7 +456,7 @@ def test_non_justifiable_boundary_rejection(
                 parent_label="block_7",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -513,7 +513,7 @@ def test_square_boundary_acceptance(
                 parent_label="block_9",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -563,7 +563,7 @@ def test_split_supermajority_aggregations_in_same_block_justify(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                         ],
@@ -572,7 +572,7 @@ def test_split_supermajority_aggregations_in_same_block_justify(
                         target_root_label="block_1",
                     ),
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(2),
                             ValidatorIndex(3),
                         ],
@@ -622,7 +622,7 @@ def test_odd_validator_threshold_boundary_justifies(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -674,7 +674,7 @@ def test_odd_validator_threshold_boundary_does_not_justify(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -733,7 +733,7 @@ def test_supermajority_with_mismatched_target_root_is_ignored(
                 parent_label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -784,7 +784,7 @@ def test_attestation_with_target_root_not_in_historical_hashes_is_skipped(
                 parent_label="block_1",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -838,7 +838,7 @@ def test_justification_clears_only_the_resolved_target_votes(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -855,7 +855,7 @@ def test_justification_clears_only_the_resolved_target_votes(
                 label="block_3",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                         ],
@@ -870,7 +870,7 @@ def test_justification_clears_only_the_resolved_target_votes(
                 parent_label="block_3",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(3),
                         ],
                         slot=Slot(4),
@@ -930,7 +930,7 @@ def test_target_at_or_before_source_is_ignored(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -947,7 +947,7 @@ def test_target_at_or_before_source_is_ignored(
                 label="block_3",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                         ],
@@ -968,7 +968,7 @@ def test_target_at_or_before_source_is_ignored(
                 label="block_5",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -984,7 +984,7 @@ def test_target_at_or_before_source_is_ignored(
                 parent_label="block_5",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(2),
                         ],
                         slot=Slot(6),
@@ -1052,7 +1052,7 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1071,7 +1071,7 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
                 parent_label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(3),
                         ],
                         slot=Slot(3),
@@ -1138,7 +1138,7 @@ def test_attestation_with_zero_hash_source_root_is_skipped(
                     # Malformed: source root = ZERO_HASH.
                     # A real source root would be the genesis block hash.
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1151,7 +1151,7 @@ def test_attestation_with_zero_hash_source_root_is_skipped(
                     # Valid: correct source derived from genesis justified.
                     # Threshold: 3*3=9 >= 2*4=8 -> justifies slot 1.
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1216,7 +1216,7 @@ def test_attestation_with_zero_hash_target_root_is_skipped(
                     # Malformed: target root = ZERO_HASH.
                     # A real target root would be block_1's hash.
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1228,7 +1228,7 @@ def test_attestation_with_zero_hash_target_root_is_skipped(
                     # Valid: correct target resolved from block_1 label.
                     # Threshold: 3*3=9 >= 2*4=8 -> justifies slot 1.
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1299,7 +1299,7 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
                 label="block_2",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1330,7 +1330,7 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
                 parent_label="block_3",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                         ],
@@ -1341,7 +1341,7 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
                 ],
                 forced_attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(2),
                             ValidatorIndex(3),
                         ],
@@ -1429,7 +1429,7 @@ def test_same_block_multi_target_attestations_advance_to_highest_slot(
                 parent_label="block_9",
                 attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1439,7 +1439,7 @@ def test_same_block_multi_target_attestations_advance_to_highest_slot(
                         target_root_label="block_4",
                     ),
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),
@@ -1451,7 +1451,7 @@ def test_same_block_multi_target_attestations_advance_to_highest_slot(
                 ],
                 forced_attestations=[
                     AggregatedAttestationSpec(
-                        validator_ids=[
+                        validator_indices=[
                             ValidatorIndex(0),
                             ValidatorIndex(1),
                             ValidatorIndex(2),

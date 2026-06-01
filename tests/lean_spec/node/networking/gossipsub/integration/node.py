@@ -115,9 +115,9 @@ class GossipsubTestNode:
 
         while True:
             # Check already-collected messages before waiting.
-            for msg in self.received_messages:
-                if topic is None or msg.topic == topic:
-                    return msg
+            for message in self.received_messages:
+                if topic is None or message.topic == topic:
+                    return message
 
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:

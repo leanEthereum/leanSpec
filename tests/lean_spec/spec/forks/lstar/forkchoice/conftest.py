@@ -10,13 +10,13 @@ import pytest
 
 from lean_spec.node.chain.clock import Interval
 from lean_spec.spec.forks.lstar import Store
-from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_store
+from tests.lean_spec.helpers import TEST_VALIDATOR_INDEX, make_store
 
 
 @pytest.fixture
 def pruning_store() -> Store:
     """Store with 3 validators for pruning tests."""
-    return make_store(num_validators=3, validator_id=TEST_VALIDATOR_ID)
+    return make_store(num_validators=3, validator_index=TEST_VALIDATOR_INDEX)
 
 
 @pytest.fixture

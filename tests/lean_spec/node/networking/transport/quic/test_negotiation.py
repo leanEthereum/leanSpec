@@ -209,8 +209,8 @@ class TestMessageFormat:
 
         raw = await stream.read(100)
         expected_payload = STATUS_ID.encode("utf-8") + b"\n"
-        expected_len = len(expected_payload)
-        assert raw[0] == expected_len
+        expected_length = len(expected_payload)
+        assert raw[0] == expected_length
         assert raw[1:] == expected_payload
 
     async def test_message_roundtrip(self) -> None:
@@ -363,8 +363,8 @@ class TestMessageFormat:
     async def test_read_negotiation_message_message_too_long(self) -> None:
         """Message too long"""
         stream, peer = _create_stream_pair()
-        too_big_len = MAX_MESSAGE_SIZE + 1
-        payload = b"A" * too_big_len
+        too_big_length = MAX_MESSAGE_SIZE + 1
+        payload = b"A" * too_big_length
         length_prefix = encode_varint(len(payload))
         peer.write(length_prefix)
         await peer.drain()
@@ -431,7 +431,7 @@ class TestBufferedIO:
     async def test_read_n_none_empty_buffer(self) -> None:
         """read(n=None) with empty buffer reads from stream."""
         stream, peer = _create_stream_pair()
-        stream._stream._read_queue.put_nowait(b"from stream")  # type: ignore[attr-defined]
+        stream._stream._read_queue.put_nowait(b"from stream")  # type: ignore[attribute-defined]
         result = await stream.read()
         assert result == b"from stream"
 
@@ -455,15 +455,15 @@ class TestBufferedIO:
         """read(n) returns empty bytes when stream is closed."""
         stream, _ = _create_stream_pair()
         stream._buffer = b""
-        stream._stream._read_queue.put_nowait(b"")  # type: ignore[attr-defined]
+        stream._stream._read_queue.put_nowait(b"")  # type: ignore[attribute-defined]
         result = await stream.read(10)
         assert result == b""
 
     async def test_readexactly_accumulates_chunks(self) -> None:
         """readexactly accumulates chunks until n bytes."""
         stream, peer = _create_stream_pair()
-        stream._stream._read_queue.put_nowait(b"ab")  # type: ignore[attr-defined]
-        stream._stream._read_queue.put_nowait(b"cd")  # type: ignore[attr-defined]
+        stream._stream._read_queue.put_nowait(b"ab")  # type: ignore[attribute-defined]
+        stream._stream._read_queue.put_nowait(b"cd")  # type: ignore[attribute-defined]
         result = await stream.readexactly(4)
         assert result == b"abcd"
         assert stream._buffer == b""
@@ -471,8 +471,8 @@ class TestBufferedIO:
     async def test_readexactly_eof_error(self) -> None:
         """readexactly raises EOFError when stream closes early."""
         stream, peer = _create_stream_pair()
-        stream._stream._read_queue.put_nowait(b"partial")  # type: ignore[attr-defined]
-        stream._stream._read_queue.put_nowait(b"")  # type: ignore[attr-defined]
+        stream._stream._read_queue.put_nowait(b"partial")  # type: ignore[attribute-defined]
+        stream._stream._read_queue.put_nowait(b"")  # type: ignore[attribute-defined]
         with pytest.raises(EOFError, match="Stream closed"):
             await stream.readexactly(100)
 
@@ -527,14 +527,14 @@ class TestReadNegotiationMessage:
     async def test_message_connection_closed(self) -> None:
         """Raises error when connection closes while reading length."""
         stream, peer = _create_stream_pair()
-        stream._stream._read_queue.put_nowait(b"")  # type: ignore[attr-defined]
+        stream._stream._read_queue.put_nowait(b"")  # type: ignore[attribute-defined]
         with pytest.raises(NegotiationError, match="Connection closed"):
             await stream._read_negotiation_message()
 
     async def test_message_varint_too_long(self) -> None:
         """Raises error when varint has more than 5 continuation bytes."""
         stream, peer = _create_stream_pair()
-        stream._stream._read_queue.put_nowait(bytes([0x80, 0x80, 0x80, 0x80, 0x80, 0x80]))  # type: ignore[attr-defined]
+        stream._stream._read_queue.put_nowait(bytes([0x80, 0x80, 0x80, 0x80, 0x80, 0x80]))  # type: ignore[attribute-defined]
         with pytest.raises(NegotiationError, match="Varint too long"):
             await stream._read_negotiation_message()
 

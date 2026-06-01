@@ -114,7 +114,7 @@ class VarintError(Exception):
     """Raised when varint encoding or decoding fails."""
 
 
-def encode_varint(value: int) -> bytes:
+def encode_varint(value: int, max_bytes: int = 10) -> bytes:
     """
     Encode an unsigned integer as LEB128 varint.
 
@@ -122,7 +122,10 @@ def encode_varint(value: int) -> bytes:
     All bytes except the last have the continuation bit (0x80) set.
 
     Args:
-        value: Non-negative integer to encode. Maximum: 2^64 - 1.
+        value: Non-negative integer to encode.
+        max_bytes: Upper bound on the encoded byte count.
+            Defaults to 10, which is the cap for a 64-bit value.
+            Pass 5 for a 32-bit cap, matching the snappy length prefix.
 
     Returns:
         Varint-encoded bytes. Length depends on value:
@@ -130,13 +133,20 @@ def encode_varint(value: int) -> bytes:
         - 0-127: 1 byte
         - 128-16383: 2 bytes
         - 16384-2097151: 3 bytes
-        - Up to 10 bytes for 64-bit values
+        - Up to max_bytes for the largest representable value
 
     Raises:
-        ValueError: If value is negative.
+        ValueError: If value is negative or does not fit in max_bytes.
     """
     if value < 0:
         raise ValueError("Varint must be non-negative")
+
+    # Reject values that would need more than max_bytes to encode.
+    #
+    # Each output byte carries 7 data bits.
+    # Anything that does not fit in max_bytes * 7 bits is rejected here.
+    if value >> (7 * max_bytes):
+        raise ValueError(f"Varint value does not fit in {max_bytes} bytes")
 
     result = bytearray()
 
@@ -160,7 +170,7 @@ def encode_varint(value: int) -> bytes:
     return bytes(result)
 
 
-def decode_varint(data: bytes, offset: int = 0) -> tuple[int, int]:
+def decode_varint(data: bytes, offset: int = 0, max_bytes: int = 10) -> tuple[int, int]:
     """
     Decode a varint from bytes at the given offset.
 
@@ -170,6 +180,9 @@ def decode_varint(data: bytes, offset: int = 0) -> tuple[int, int]:
     Args:
         data: Input bytes containing the varint.
         offset: Starting position in data. Defaults to 0.
+        max_bytes: Upper bound on the encoded byte count.
+            Defaults to 10, which is the cap for a 64-bit value.
+            Pass 5 for a 32-bit cap, matching the snappy length prefix.
 
     Returns:
         Tuple of (decoded_value, bytes_consumed).
@@ -179,8 +192,8 @@ def decode_varint(data: bytes, offset: int = 0) -> tuple[int, int]:
 
     Raises:
         VarintError: If the input is truncated (runs out of bytes
-            before finding the final byte) or exceeds 10 bytes
-            (would overflow 64 bits).
+            before finding the final byte) or exceeds max_bytes
+            (would overflow the declared range).
     """
     result = 0
     shift = 0
@@ -212,10 +225,10 @@ def decode_varint(data: bytes, offset: int = 0) -> tuple[int, int]:
 
         # Guard against malformed input that never terminates.
         #
-        # A 64-bit value needs at most 10 bytes (70 bits, with 6 unused).
-        # If we've shifted 70+ bits and still see continuation, the input
-        # is invalid or represents a value larger than we can handle.
-        if shift >= 70:
-            raise VarintError("Varint too long")
+        # A varint capped at max_bytes carries at most max_bytes * 7 bits.
+        # Once we have already consumed that many bytes and still see
+        # a continuation bit, the input is invalid or out of range.
+        if pos - offset >= max_bytes:
+            raise VarintError(f"Varint exceeds {max_bytes} bytes")
 
     return result, pos - offset

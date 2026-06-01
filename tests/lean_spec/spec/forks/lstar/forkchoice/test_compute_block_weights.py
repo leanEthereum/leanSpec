@@ -5,20 +5,19 @@ from __future__ import annotations
 import pytest
 
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
-from lean_spec.spec.forks.lstar.containers import AttestationData
+from lean_spec.spec.forks.lstar.containers import AttestationData, SingleMessageAggregate
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz.byte_arrays import ByteList512KiB, Bytes32
 from tests.lean_spec.helpers import make_bytes32, make_signed_block
 
 
-def _make_empty_proof(participants: list[ValidatorIndex]) -> TypeOneMultiSignature:
-    """Create a placeholder Type-1 proof carrying a participant bitfield."""
+def _make_empty_proof(participants: list[ValidatorIndex]) -> SingleMessageAggregate:
+    """Create a placeholder single-message aggregate proof carrying a participant bitfield."""
     placeholder = ByteList512KiB(data=b"")
-    return TypeOneMultiSignature(
-        participants=ValidatorIndices(data=participants).to_aggregation_bits(),
+    return SingleMessageAggregate(
+        participants=AggregationBits.from_indices(participants),
         proof=placeholder,
     )
 
@@ -57,7 +56,7 @@ def test_linear_chain_weight_accumulates_upward(spec: LstarSpec, base_store: Sto
     new_states[block1_root] = genesis_state
     new_states[block2_root] = genesis_state
 
-    att_data = AttestationData(
+    attestation_data = AttestationData(
         slot=Slot(2),
         head=Checkpoint(root=block2_root, slot=Slot(2)),
         target=Checkpoint(root=block2_root, slot=Slot(2)),
@@ -65,7 +64,7 @@ def test_linear_chain_weight_accumulates_upward(spec: LstarSpec, base_store: Sto
     )
     proof = _make_empty_proof([ValidatorIndex(0)])
     aggregated_payloads = {
-        att_data: {proof},
+        attestation_data: {proof},
     }
 
     base_store.blocks = new_blocks
@@ -100,7 +99,7 @@ def test_multiple_attestations_accumulate(spec: LstarSpec, base_store: Store) ->
     new_states = dict(base_store.states)
     new_states[block1_root] = base_store.states[genesis_root]
 
-    att_data = AttestationData(
+    attestation_data = AttestationData(
         slot=Slot(1),
         head=Checkpoint(root=block1_root, slot=Slot(1)),
         target=Checkpoint(root=block1_root, slot=Slot(1)),
@@ -109,7 +108,7 @@ def test_multiple_attestations_accumulate(spec: LstarSpec, base_store: Store) ->
 
     proof = _make_empty_proof([ValidatorIndex(0), ValidatorIndex(1)])
     aggregated_payloads = {
-        att_data: {proof},
+        attestation_data: {proof},
     }
 
     base_store.blocks = new_blocks

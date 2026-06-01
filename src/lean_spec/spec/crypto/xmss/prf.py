@@ -25,7 +25,7 @@ PRF_DOMAIN_SEP_DOMAIN_ELEMENT: Final[bytes] = b"\x00"
 PRF_DOMAIN_SEP_RANDOMNESS: Final[bytes] = b"\x01"
 """Subdomain tag for signing-randomness derivation."""
 
-PRF_BYTES_PER_FE: Final[int] = 16
+PRF_BYTES_PER_FIELD_ELEMENT: Final[int] = 16
 """
 SHAKE128 bytes consumed per output field element.
 
@@ -84,12 +84,12 @@ class PRFKey(BaseBytes):
         )
 
         # Pull enough SHAKE128 bytes to fill one digest of field elements.
-        num_bytes_to_read = PRF_BYTES_PER_FE * config.HASH_LEN_FE
+        num_bytes_to_read = PRF_BYTES_PER_FIELD_ELEMENT * config.HASH_LENGTH_FIELD_ELEMENTS
         prf_output_bytes = hashlib.shake_128(input_data).digest(num_bytes_to_read)
         return HashDigestVector(
             data=[
                 Fp(value=int.from_bytes(bytes(chunk), "big"))
-                for chunk in batched(prf_output_bytes, PRF_BYTES_PER_FE)
+                for chunk in batched(prf_output_bytes, PRF_BYTES_PER_FIELD_ELEMENT)
             ]
         )
 
@@ -138,11 +138,11 @@ class PRFKey(BaseBytes):
             + counter.to_bytes(8, "big")
         )
 
-        num_bytes_to_read = PRF_BYTES_PER_FE * config.RAND_LEN_FE
+        num_bytes_to_read = PRF_BYTES_PER_FIELD_ELEMENT * config.RAND_LENGTH_FIELD_ELEMENTS
         prf_output_bytes = hashlib.shake_128(input_data).digest(num_bytes_to_read)
         return Randomness(
             data=[
                 Fp(value=int.from_bytes(bytes(chunk), "big"))
-                for chunk in batched(prf_output_bytes, PRF_BYTES_PER_FE)
+                for chunk in batched(prf_output_bytes, PRF_BYTES_PER_FIELD_ELEMENT)
             ]
         )

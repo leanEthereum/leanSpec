@@ -17,7 +17,6 @@ from lean_spec.node.validator.constants import SYNC_LAG_THRESHOLD
 from lean_spec.node.validator.registry import ValidatorEntry
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature, TypeTwoMultiSignature
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.containers import (
@@ -25,11 +24,12 @@ from lean_spec.spec.forks.lstar.containers import (
     Block,
     SignedAttestation,
     SignedBlock,
+    SingleMessageAggregate,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import Bytes32, Uint64
 from tests.lean_spec.helpers import (
-    TEST_VALIDATOR_ID,
+    TEST_VALIDATOR_INDEX,
     MockNetworkRequester,
     make_aggregated_proof,
     make_signed_block,
@@ -52,11 +52,11 @@ def _make_registry(key_manager: XmssKeyManager, *indices: int) -> ValidatorRegis
     """Build a ValidatorRegistry with real XMSS keys for the given indices."""
     registry = ValidatorRegistry()
     for i in indices:
-        vid = ValidatorIndex(i)
-        kp = key_manager[vid]
+        validator_index = ValidatorIndex(i)
+        kp = key_manager[validator_index]
         registry.add(
             ValidatorEntry(
-                index=vid,
+                index=validator_index,
                 attestation_secret_key=kp.attestation_keypair.secret_key,
                 proposal_secret_key=kp.proposal_keypair.secret_key,
             )
@@ -66,10 +66,10 @@ def _make_registry(key_manager: XmssKeyManager, *indices: int) -> ValidatorRegis
 
 def _make_entry(key_manager: XmssKeyManager, index: int = 0) -> ValidatorEntry:
     """Return a ValidatorEntry with real XMSS keys."""
-    vid = ValidatorIndex(index)
-    kp = key_manager[vid]
+    validator_index = ValidatorIndex(index)
+    kp = key_manager[validator_index]
     return ValidatorEntry(
-        index=vid,
+        index=validator_index,
         attestation_secret_key=kp.attestation_keypair.secret_key,
         proposal_secret_key=kp.proposal_keypair.secret_key,
     )
@@ -134,11 +134,10 @@ class TestSignBlock:
         """Aggregated attestation proofs are merged into the block envelope."""
         service, block = self._setup(sync_service, key_manager)
         attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
-        agg_proof = make_aggregated_proof(key_manager, [ValidatorIndex(0)], attestation_data)
+        aggregate_proof = make_aggregated_proof(key_manager, [ValidatorIndex(0)], attestation_data)
 
-        result = service._sign_block(block, ValidatorIndex(0), [agg_proof])
+        result = service._sign_block(block, ValidatorIndex(0), [aggregate_proof])
 
-        TypeTwoMultiSignature.decode_bytes(result.proof.data)
         assert result.block.proposer_index == ValidatorIndex(0)
 
     def test_missing_validator_raises_value_error(
@@ -178,42 +177,42 @@ class TestSignAttestation:
             clock=SlotClock(genesis_time=Uint64(0)),
             registry=registry,
         )
-        att_data = spec.produce_attestation_data(sync_service.store, Slot(1))
-        return service, att_data
+        attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
+        return service, attestation_data
 
     def test_fields_populated_correctly(
         self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
     ) -> None:
         """The signed attestation contains the correct validator ID, data, and a valid signature."""
-        service, att_data = self._setup(sync_service, key_manager, spec, index=3)
+        service, attestation_data = self._setup(sync_service, key_manager, spec, index=3)
 
-        result = service._sign_attestation(att_data, ValidatorIndex(3))
+        result = service._sign_attestation(attestation_data, ValidatorIndex(3))
 
-        assert result.validator_id == ValidatorIndex(3)
-        assert result.data is att_data
+        assert result.validator_index == ValidatorIndex(3)
+        assert result.data is attestation_data
 
         public_key = key_manager[ValidatorIndex(3)].attestation_keypair.public_key
         assert TARGET_SIGNATURE_SCHEME.verify(
-            pk=public_key,
-            slot=att_data.slot,
-            message=hash_tree_root(att_data),
-            sig=result.signature,
+            public_key=public_key,
+            slot=attestation_data.slot,
+            message=hash_tree_root(attestation_data),
+            signature=result.signature,
         )
 
     def test_uses_attestation_key_not_proposal_key(
         self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
     ) -> None:
         """Attestation signature verifies with the attestation public key, not the proposal key."""
-        service, att_data = self._setup(sync_service, key_manager, spec)
+        service, attestation_data = self._setup(sync_service, key_manager, spec)
 
-        result = service._sign_attestation(att_data, ValidatorIndex(0))
+        result = service._sign_attestation(attestation_data, ValidatorIndex(0))
 
-        attestation_pk = key_manager[ValidatorIndex(0)].attestation_keypair.public_key
+        attestation_public_key = key_manager[ValidatorIndex(0)].attestation_keypair.public_key
         assert TARGET_SIGNATURE_SCHEME.verify(
-            pk=attestation_pk,
-            slot=att_data.slot,
-            message=hash_tree_root(att_data),
-            sig=result.signature,
+            public_key=attestation_public_key,
+            slot=attestation_data.slot,
+            message=hash_tree_root(attestation_data),
+            signature=result.signature,
         )
 
     def test_missing_validator_raises_value_error(
@@ -225,10 +224,10 @@ class TestSignAttestation:
             clock=SlotClock(genesis_time=Uint64(0)),
             registry=ValidatorRegistry(),
         )
-        att_data = spec.produce_attestation_data(sync_service.store, Slot(1))
+        attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
 
         with pytest.raises(ValueError, match="No secret key for validator 99"):
-            service._sign_attestation(att_data, ValidatorIndex(99))
+            service._sign_attestation(attestation_data, ValidatorIndex(99))
 
 
 class TestSignWithKey:
@@ -246,8 +245,8 @@ class TestSignWithKey:
         index: int = 0,
     ) -> tuple[ValidatorService, ValidatorRegistry, ValidatorEntry, object, object]:
         entry = _make_entry(key_manager, index)
-        att_key = entry.attestation_secret_key
-        prop_key = entry.proposal_secret_key
+        attestation_key = entry.attestation_secret_key
+        proposal_key = entry.proposal_secret_key
         registry = ValidatorRegistry()
         registry.add(entry)
         service = ValidatorService(
@@ -255,56 +254,58 @@ class TestSignWithKey:
             clock=SlotClock(genesis_time=Uint64(0)),
             registry=registry,
         )
-        return service, registry, entry, att_key, prop_key
+        return service, registry, entry, attestation_key, proposal_key
 
     def test_no_advancement_when_slot_already_prepared(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """No key advancement when the slot is already within the prepared interval."""
-        service, _, entry, att_key, _ = self._setup(sync_service, key_manager)
-        mock_sig = MagicMock(name="sig")
+        service, _, entry, attestation_key, _ = self._setup(sync_service, key_manager)
+        mock_signature = MagicMock(name="sig")
 
         with patch(_SCHEME) as scheme:
             scheme.get_prepared_interval.return_value = [3]
-            scheme.sign.return_value = mock_sig
+            scheme.sign.return_value = mock_signature
 
             service._sign_with_key(entry, Slot(3), MagicMock(), "attestation_secret_key")
 
         scheme.advance_preparation.assert_not_called()
-        scheme.sign.assert_called_once_with(att_key, Slot(3), scheme.sign.call_args[0][2])
+        scheme.sign.assert_called_once_with(attestation_key, Slot(3), scheme.sign.call_args[0][2])
 
     def test_key_advanced_once_until_slot_in_interval(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """Key advances exactly once when one step covers the target slot."""
-        service, _, entry, att_key, _ = self._setup(sync_service, key_manager)
+        service, _, entry, attestation_key, _ = self._setup(sync_service, key_manager)
         advanced = MagicMock(name="advanced_key")
-        mock_sig = MagicMock(name="sig")
+        mock_signature = MagicMock(name="sig")
 
         with patch(_SCHEME) as scheme:
-            scheme.get_prepared_interval.side_effect = lambda key: [] if key is att_key else [5]
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [5]
+            )
             scheme.advance_preparation.return_value = advanced
-            scheme.sign.return_value = mock_sig
+            scheme.sign.return_value = mock_signature
 
             service._sign_with_key(entry, Slot(5), MagicMock(), "attestation_secret_key")
 
-        scheme.advance_preparation.assert_called_once_with(att_key)
+        scheme.advance_preparation.assert_called_once_with(attestation_key)
         scheme.sign.assert_called_once_with(advanced, Slot(5), scheme.sign.call_args[0][2])
 
     def test_key_advanced_multiple_times_until_prepared(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """Key advancement loops until the target slot falls within the interval."""
-        service, _, entry, att_key, _ = self._setup(sync_service, key_manager)
+        service, _, entry, attestation_key, _ = self._setup(sync_service, key_manager)
         key_v1 = MagicMock(name="key_v1")
         key_v2 = MagicMock(name="key_v2")
         key_v3 = MagicMock(name="key_v3")
-        mock_sig = MagicMock(name="sig")
+        mock_signature = MagicMock(name="sig")
 
         with patch(_SCHEME) as scheme:
             scheme.get_prepared_interval.side_effect = lambda key: [7] if key is key_v3 else []
             scheme.advance_preparation.side_effect = [key_v1, key_v2, key_v3]
-            scheme.sign.return_value = mock_sig
+            scheme.sign.return_value = mock_signature
 
             service._sign_with_key(entry, Slot(7), MagicMock(), "attestation_secret_key")
 
@@ -315,11 +316,13 @@ class TestSignWithKey:
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """After signing, the registry holds an entry with the advanced key."""
-        service, registry, entry, att_key, _ = self._setup(sync_service, key_manager)
+        service, registry, entry, attestation_key, _ = self._setup(sync_service, key_manager)
         advanced = MagicMock(name="advanced_att")
 
         with patch(_SCHEME) as scheme:
-            scheme.get_prepared_interval.side_effect = lambda key: [] if key is att_key else [4]
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [4]
+            )
             scheme.advance_preparation.return_value = advanced
             scheme.sign.return_value = MagicMock()
 
@@ -333,59 +336,69 @@ class TestSignWithKey:
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """Signing with the attestation key updates only that key; proposal key is untouched."""
-        service, registry, entry, att_key, prop_key = self._setup(sync_service, key_manager)
-        advanced_att = MagicMock(name="new_att")
+        service, registry, entry, attestation_key, proposal_key = self._setup(
+            sync_service, key_manager
+        )
+        advanced_attestation = MagicMock(name="new_att")
 
         with patch(_SCHEME) as scheme:
-            scheme.get_prepared_interval.side_effect = lambda key: [] if key is att_key else [1]
-            scheme.advance_preparation.return_value = advanced_att
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [1]
+            )
+            scheme.advance_preparation.return_value = advanced_attestation
             scheme.sign.return_value = MagicMock()
 
             service._sign_with_key(entry, Slot(1), MagicMock(), "attestation_secret_key")
 
         stored = registry.get(ValidatorIndex(0))
         assert stored is not None
-        assert stored.attestation_secret_key is advanced_att
-        assert stored.proposal_secret_key is prop_key
+        assert stored.attestation_secret_key is advanced_attestation
+        assert stored.proposal_secret_key is proposal_key
 
     def test_proposal_key_updated_attestation_key_unchanged(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """Signing with the proposal key updates only that key; attestation key is untouched."""
-        service, registry, entry, att_key, prop_key = self._setup(sync_service, key_manager)
-        advanced_prop = MagicMock(name="new_prop")
+        service, registry, entry, attestation_key, proposal_key = self._setup(
+            sync_service, key_manager
+        )
+        advanced_proposal = MagicMock(name="new_prop")
 
         with patch(_SCHEME) as scheme:
-            scheme.get_prepared_interval.side_effect = lambda key: [] if key is prop_key else [1]
-            scheme.advance_preparation.return_value = advanced_prop
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is proposal_key else [1]
+            )
+            scheme.advance_preparation.return_value = advanced_proposal
             scheme.sign.return_value = MagicMock()
 
             service._sign_with_key(entry, Slot(1), MagicMock(), "proposal_secret_key")
 
         stored = registry.get(ValidatorIndex(0))
         assert stored is not None
-        assert stored.proposal_secret_key is advanced_prop
-        assert stored.attestation_secret_key is att_key
+        assert stored.proposal_secret_key is advanced_proposal
+        assert stored.attestation_secret_key is attestation_key
 
     def test_returns_updated_entry_and_signature(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """Return value is (updated ValidatorEntry, Signature) — both fields correct."""
-        service, _, entry, att_key, _ = self._setup(sync_service, key_manager)
+        service, _, entry, attestation_key, _ = self._setup(sync_service, key_manager)
         advanced = MagicMock(name="adv")
-        mock_sig = MagicMock(name="ret_sig")
+        mock_signature = MagicMock(name="ret_sig")
 
         with patch(_SCHEME) as scheme:
-            scheme.get_prepared_interval.side_effect = lambda key: [] if key is att_key else [2]
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [2]
+            )
             scheme.advance_preparation.return_value = advanced
-            scheme.sign.return_value = mock_sig
+            scheme.sign.return_value = mock_signature
 
-            ret_entry, ret_sig = service._sign_with_key(
+            returned_entry, returned_signature = service._sign_with_key(
                 entry, Slot(2), MagicMock(), "attestation_secret_key"
             )
 
-        assert ret_sig is mock_sig
-        assert ret_entry.attestation_secret_key is advanced
+        assert returned_signature is mock_signature
+        assert returned_entry.attestation_secret_key is advanced
 
 
 class TestValidatorServiceBasic:
@@ -599,22 +612,22 @@ class TestProduceAttestationsAdvanced:
         target_slot = Slot(1)
         published: list[SignedAttestation] = []
 
-        async def capture_att(att: SignedAttestation) -> None:
-            published.append(att)
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            published.append(attestation)
 
         registry = _make_registry(key_manager, 0)
         service = ValidatorService(
             sync_service=sync_service,
             clock=SlotClock(genesis_time=Uint64(0)),
             registry=registry,
-            on_attestation=capture_att,
+            on_attestation=capture_attestation,
         )
 
         await service._produce_attestations(target_slot)
 
         # Attestation was published.
         assert len(published) == 1
-        assert published[0].validator_id == ValidatorIndex(0)
+        assert published[0].validator_index == ValidatorIndex(0)
 
     async def test_gossip_handler_exception_logged_and_attestation_still_published(
         self,
@@ -629,15 +642,15 @@ class TestProduceAttestationsAdvanced:
         target_slot = Slot(1)
         published: list[SignedAttestation] = []
 
-        async def capture_att(att: SignedAttestation) -> None:
-            published.append(att)
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            published.append(attestation)
 
         registry = _make_registry(key_manager, 0)
         service = ValidatorService(
             sync_service=sync_service,
             clock=SlotClock(genesis_time=Uint64(0)),
             registry=registry,
-            on_attestation=capture_att,
+            on_attestation=capture_attestation,
         )
 
         with (
@@ -842,10 +855,10 @@ class TestProposerGossipAttestation:
         key and gossips a separate attestation with the attestation key.
         """
         registry = _make_registry(key_manager, *range(num_validators))
-        attestation_validator_ids: list[ValidatorIndex] = []
+        attestation_validator_indices: list[ValidatorIndex] = []
 
-        async def capture_attestation(att: SignedAttestation) -> None:
-            attestation_validator_ids.append(att.validator_id)
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestation_validator_indices.append(attestation.validator_index)
 
         service = ValidatorService(
             sync_service=sync_service,
@@ -857,7 +870,7 @@ class TestProposerGossipAttestation:
         await service._produce_attestations(slot)
 
         expected = {ValidatorIndex(i) for i in range(num_validators)}
-        assert set(attestation_validator_ids) == expected
+        assert set(attestation_validator_indices) == expected
         assert service.attestations_produced == num_validators
 
 
@@ -877,7 +890,9 @@ class TestValidatorServiceIntegration:
     @pytest.fixture
     def real_store(self, key_manager: XmssKeyManager) -> Store:
         """Forkchoice store with validators using real public keys."""
-        return make_store(num_validators=6, key_manager=key_manager, validator_id=TEST_VALIDATOR_ID)
+        return make_store(
+            num_validators=6, key_manager=key_manager, validator_index=TEST_VALIDATOR_INDEX
+        )
 
     @pytest.fixture
     def real_sync_service(self, real_store: Store) -> SyncService:
@@ -938,9 +953,6 @@ class TestValidatorServiceIntegration:
         assert signed_block.block.slot == Slot(1)
         assert signed_block.block.proposer_index == ValidatorIndex(1)
 
-        # The merged proof must decode and the block carries the proposer index.
-        TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
-
     async def test_produce_real_attestation_with_valid_signature(
         self,
         key_manager: XmssKeyManager,
@@ -968,18 +980,18 @@ class TestValidatorServiceIntegration:
 
         assert len(attestations_produced) == 6
 
-        for signed_att in attestations_produced:
-            validator_id = signed_att.validator_id
-            public_key = key_manager[validator_id].attestation_keypair.public_key
-            message_bytes = hash_tree_root(signed_att.data)
+        for signed_attestation in attestations_produced:
+            validator_index = signed_attestation.validator_index
+            public_key = key_manager[validator_index].attestation_keypair.public_key
+            message_bytes = hash_tree_root(signed_attestation.data)
 
             is_valid = TARGET_SIGNATURE_SCHEME.verify(
-                pk=public_key,
-                slot=signed_att.data.slot,
+                public_key=public_key,
+                slot=signed_attestation.data.slot,
                 message=message_bytes,
-                sig=signed_att.signature,
+                signature=signed_attestation.signature,
             )
-            assert is_valid, f"Attestation signature for validator {validator_id} failed"
+            assert is_valid, f"Attestation signature for validator {validator_index} failed"
 
     async def test_attestation_data_references_correct_checkpoints(
         self,
@@ -1012,8 +1024,8 @@ class TestValidatorServiceIntegration:
         expected_head_root = store.head
         expected_source = store.latest_justified
 
-        for signed_att in attestations_produced:
-            data = signed_att.data
+        for signed_attestation in attestations_produced:
+            data = signed_attestation.data
             assert data.head.root == expected_head_root
             assert data.source == expected_source
             assert data.slot == Slot(1)
@@ -1040,11 +1052,6 @@ class TestValidatorServiceIntegration:
         await service._maybe_produce_block(Slot(2))
 
         assert len(blocks_produced) == 1
-        signed_block = blocks_produced[0]
-
-        # The merged proof decodes cleanly; the proposer identity now lives
-        # on the block, not inside the proof envelope.
-        TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
 
     async def test_block_includes_pending_attestations(
         self,
@@ -1067,12 +1074,12 @@ class TestValidatorServiceIntegration:
         public_keys = []
         signatures = []
 
-        for vid in participants:
-            sig = key_manager.sign_attestation_data(vid, attestation_data)
-            signatures.append(sig)
-            public_keys.append(key_manager[vid].attestation_keypair.public_key)
+        for validator_index in participants:
+            signature = key_manager.sign_attestation_data(validator_index, attestation_data)
+            signatures.append(signature)
+            public_keys.append(key_manager[validator_index].attestation_keypair.public_key)
 
-        proof = TypeOneMultiSignature.aggregate(
+        proof = SingleMessageAggregate.aggregate(
             children=[],
             raw_xmss=list(zip(participants, public_keys, signatures, strict=True)),
             message=data_root,
@@ -1103,10 +1110,6 @@ class TestValidatorServiceIntegration:
         body_attestations = signed_block.block.body.attestations
         assert len(body_attestations) > 0
 
-        # The merged proof decodes; its component count is rederived from
-        # the block body (one Type-1 per attestation plus the proposer).
-        TypeTwoMultiSignature.decode_bytes(signed_block.proof.data)
-
     async def test_multiple_slots_produce_different_attestations(
         self,
         real_sync_service: SyncService,
@@ -1134,10 +1137,10 @@ class TestValidatorServiceIntegration:
         assert len(attestations_by_slot[Slot(1)]) > 0
         assert len(attestations_by_slot[Slot(2)]) > 0
 
-        for att in attestations_by_slot[Slot(1)]:
-            assert att.data.slot == Slot(1)
-        for att in attestations_by_slot[Slot(2)]:
-            assert att.data.slot == Slot(2)
+        for attestation in attestations_by_slot[Slot(1)]:
+            assert attestation.data.slot == Slot(1)
+        for attestation in attestations_by_slot[Slot(2)]:
+            assert attestation.data.slot == Slot(2)
 
     async def test_proposer_also_gossips_attestation(
         self,
@@ -1175,9 +1178,11 @@ class TestValidatorServiceIntegration:
         assert len(blocks_produced) == 1
         assert blocks_produced[0].block.proposer_index == proposer_index
 
-        attestation_validator_ids = {att.validator_id for att in attestations_produced}
+        attestation_validator_indices = {
+            attestation.validator_index for attestation in attestations_produced
+        }
         expected_attesters = {ValidatorIndex(i) for i in range(6)}
-        assert attestation_validator_ids == expected_attesters
+        assert attestation_validator_indices == expected_attesters
 
     async def test_block_state_root_is_valid(
         self,
@@ -1238,25 +1243,25 @@ class TestValidatorServiceIntegration:
 
         await service._produce_attestations(test_slot)
 
-        for signed_att in attestations_produced:
-            validator_id = signed_att.validator_id
-            public_key = key_manager[validator_id].attestation_keypair.public_key
-            message_bytes = hash_tree_root(signed_att.data)
+        for signed_attestation in attestations_produced:
+            validator_index = signed_attestation.validator_index
+            public_key = key_manager[validator_index].attestation_keypair.public_key
+            message_bytes = hash_tree_root(signed_attestation.data)
 
             is_valid = TARGET_SIGNATURE_SCHEME.verify(
-                pk=public_key,
+                public_key=public_key,
                 slot=test_slot,
                 message=message_bytes,
-                sig=signed_att.signature,
+                signature=signed_attestation.signature,
             )
-            assert is_valid, f"Slot {test_slot} signature failed for validator {validator_id}"
+            assert is_valid, f"Slot {test_slot} signature failed for validator {validator_index}"
 
             wrong_slot = test_slot + Slot(1)
             is_invalid = TARGET_SIGNATURE_SCHEME.verify(
-                pk=public_key,
+                public_key=public_key,
                 slot=wrong_slot,
                 message=message_bytes,
-                sig=signed_att.signature,
+                signature=signed_attestation.signature,
             )
             assert not is_invalid, "Signature should not verify with the wrong slot"
 

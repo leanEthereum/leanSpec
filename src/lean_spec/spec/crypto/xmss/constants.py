@@ -40,21 +40,21 @@ class XmssConfig(StrictBaseModel):
     MAX_TRIES: int
     """How often one should try at most to resample a random value."""
 
-    PARAMETER_LEN: int
+    PARAMETER_LENGTH: int
     """The length of the public parameter P.
 
     It is used to specialize the hash function."""
 
-    TWEAK_LEN_FE: int
+    TWEAK_LENGTH_FIELD_ELEMENTS: int
     """The length of a domain-separating tweak."""
 
-    MSG_LEN_FE: int
+    MESSAGE_LENGTH_FIELD_ELEMENTS: int
     """The length of a message after being encoded into field elements."""
 
-    RAND_LEN_FE: int
+    RAND_LENGTH_FIELD_ELEMENTS: int
     """The length of the randomness rho used during message encoding."""
 
-    HASH_LEN_FE: int
+    HASH_LENGTH_FIELD_ELEMENTS: int
     """The output length of the main tweakable hash function."""
 
     CAPACITY: int
@@ -81,12 +81,12 @@ class XmssConfig(StrictBaseModel):
         return 1 << (self.LOG_LIFETIME // 2)
 
     @property
-    def MH_HASH_LEN_FE(self) -> int:
+    def MH_HASH_LENGTH_FIELD_ELEMENTS(self) -> int:
         """Number of Poseidon output field elements needed for the aborting decode."""
         return math.ceil(self.DIMENSION / self.Z)
 
     @property
-    def SIGNATURE_LEN_BYTES(self) -> int:
+    def SIGNATURE_LENGTH_BYTES(self) -> int:
         """The SSZ-encoded size of a signature in bytes.
 
         # Layout
@@ -96,10 +96,10 @@ class XmssConfig(StrictBaseModel):
             released chain ends : one digest per hash chain           (variable)
         """
         # One sibling digest per level climbed from leaf to root.
-        path_siblings_size = self.LOG_LIFETIME * self.HASH_LEN_FE * P_BYTES
-        rho_size = self.RAND_LEN_FE * P_BYTES
+        path_siblings_size = self.LOG_LIFETIME * self.HASH_LENGTH_FIELD_ELEMENTS * P_BYTES
+        rho_size = self.RAND_LENGTH_FIELD_ELEMENTS * P_BYTES
         # One released chain end per chain, so the count is the scheme dimension.
-        hashes_size = self.DIMENSION * self.HASH_LEN_FE * P_BYTES
+        hashes_size = self.DIMENSION * self.HASH_LENGTH_FIELD_ELEMENTS * P_BYTES
 
         # SSZ writes a four-byte offset ahead of each variable-length field.
         #
@@ -122,11 +122,11 @@ PROD_CONFIG: Final = XmssConfig(
     Q=127,
     TARGET_SUM=200,
     MAX_TRIES=100_000,
-    PARAMETER_LEN=5,
-    TWEAK_LEN_FE=2,
-    MSG_LEN_FE=9,
-    RAND_LEN_FE=7,
-    HASH_LEN_FE=8,
+    PARAMETER_LENGTH=5,
+    TWEAK_LENGTH_FIELD_ELEMENTS=2,
+    MESSAGE_LENGTH_FIELD_ELEMENTS=9,
+    RAND_LENGTH_FIELD_ELEMENTS=7,
+    HASH_LENGTH_FIELD_ELEMENTS=8,
     CAPACITY=9,
 )
 """Production XMSS configuration matching the canonical Rust instantiation."""
@@ -141,11 +141,11 @@ TEST_CONFIG: Final = XmssConfig(
     Q=127,
     TARGET_SUM=6,
     MAX_TRIES=100_000,
-    PARAMETER_LEN=5,
-    TWEAK_LEN_FE=2,
-    MSG_LEN_FE=9,
-    RAND_LEN_FE=7,
-    HASH_LEN_FE=8,
+    PARAMETER_LENGTH=5,
+    TWEAK_LENGTH_FIELD_ELEMENTS=2,
+    MESSAGE_LENGTH_FIELD_ELEMENTS=9,
+    RAND_LENGTH_FIELD_ELEMENTS=7,
+    HASH_LENGTH_FIELD_ELEMENTS=8,
     CAPACITY=9,
 )
 """Lightweight XMSS configuration for fast test execution."""

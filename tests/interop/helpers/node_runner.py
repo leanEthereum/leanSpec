@@ -49,7 +49,7 @@ class TestNode:
     event_source: LiveNetworkEventSource
     """Network event source for connection management."""
 
-    listen_addr: str
+    listen_address: str
     """P2P listen address (e.g., '/ip4/127.0.0.1/udp/20600/quic-v1')."""
 
     index: int
@@ -152,22 +152,22 @@ class TestNode:
             except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
                 pass
 
-    async def dial(self, addr: str, timeout: float = 10.0) -> bool:
+    async def dial(self, address: str, timeout: float = 10.0) -> bool:
         """
         Connect to a peer.
 
         Args:
-            addr: Multiaddr of the peer.
+            address: Multiaddr of the peer.
             timeout: Dial timeout in seconds.
 
         Returns:
             True if connection succeeded.
         """
         try:
-            peer_id = await asyncio.wait_for(self.event_source.dial(addr), timeout=timeout)
+            peer_id = await asyncio.wait_for(self.event_source.dial(address), timeout=timeout)
             return peer_id is not None
         except asyncio.TimeoutError:
-            logger.warning("Dial to %s timed out after %.1fs", addr, timeout)
+            logger.warning("Dial to %s timed out after %.1fs", address, timeout)
             return False
 
 
@@ -221,20 +221,23 @@ class NodeCluster:
         num_active_slots = int(scheme.config.LIFETIME)
 
         for i in range(self.num_validators):
-            att_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
-            prop_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
-            self._secret_keys[ValidatorIndex(i)] = (att_keypair.secret_key, prop_keypair.secret_key)
+            attestation_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
+            proposal_keypair = scheme.key_gen(Slot(0), Uint64(num_active_slots))
+            self._secret_keys[ValidatorIndex(i)] = (
+                attestation_keypair.secret_key,
+                proposal_keypair.secret_key,
+            )
 
-            att_pubkey_bytes = att_keypair.public_key.encode_bytes()[:52]
-            att_pubkey = Bytes52(att_pubkey_bytes.ljust(52, b"\x00"))
+            attestation_public_key_bytes = attestation_keypair.public_key.encode_bytes()[:52]
+            attestation_public_key = Bytes52(attestation_public_key_bytes.ljust(52, b"\x00"))
 
-            prop_pubkey_bytes = prop_keypair.public_key.encode_bytes()[:52]
-            prop_pubkey = Bytes52(prop_pubkey_bytes.ljust(52, b"\x00"))
+            proposal_public_key_bytes = proposal_keypair.public_key.encode_bytes()[:52]
+            proposal_public_key = Bytes52(proposal_public_key_bytes.ljust(52, b"\x00"))
 
             validators.append(
                 Validator(
-                    attestation_pubkey=att_pubkey,
-                    proposal_pubkey=prop_pubkey,
+                    attestation_public_key=attestation_public_key,
+                    proposal_public_key=proposal_public_key,
                     index=ValidatorIndex(i),
                 )
             )
@@ -267,7 +270,7 @@ class NodeCluster:
         p2p_port = self.port_allocator.allocate_port()
         # QUIC over UDP is the only supported transport.
         # QUIC provides native multiplexing, flow control, and TLS 1.3 encryption.
-        listen_addr = f"/ip4/127.0.0.1/udp/{p2p_port}/quic-v1"
+        listen_address = f"/ip4/127.0.0.1/udp/{p2p_port}/quic-v1"
 
         event_source = await LiveNetworkEventSource.create()
         event_source.set_network_name(self.network_name)
@@ -275,14 +278,14 @@ class NodeCluster:
         validator_registry: ValidatorRegistry | None = None
         if validator_indices:
             registry = ValidatorRegistry()
-            for idx in validator_indices:
-                if idx in self._secret_keys:
-                    att_sk, prop_sk = self._secret_keys[idx]
+            for index in validator_indices:
+                if index in self._secret_keys:
+                    attestation_secret_key, proposal_secret_key = self._secret_keys[index]
                     registry.add(
                         ValidatorEntry(
-                            index=ValidatorIndex(idx),
-                            attestation_secret_key=att_sk,
-                            proposal_secret_key=prop_sk,
+                            index=ValidatorIndex(index),
+                            attestation_secret_key=attestation_secret_key,
+                            proposal_secret_key=proposal_secret_key,
                         )
                     )
             if len(registry) > 0:
@@ -335,7 +338,7 @@ class NodeCluster:
         test_node = TestNode(
             node=node,
             event_source=event_source,
-            listen_addr=listen_addr,
+            listen_address=listen_address,
             index=node_index,
         )
 
@@ -347,7 +350,7 @@ class NodeCluster:
         event_source._stop_event.clear()
 
         listener_task = asyncio.create_task(
-            event_source.listen(listen_addr),
+            event_source.listen(listen_address),
             name=f"listener-{node_index}",
         )
 
@@ -359,7 +362,7 @@ class NodeCluster:
             try:
                 listener_task.result()
             except OSError as e:
-                raise RuntimeError(f"Failed to start listener on {listen_addr}: {e}") from e
+                raise RuntimeError(f"Failed to start listener on {listen_address}: {e}") from e
 
         test_node._listener_task = listener_task
 
@@ -375,8 +378,8 @@ class NodeCluster:
         # Validators only subscribe to the subnets they are assigned to.
         # This matches the Ethereum gossip specification.
         if validator_indices:
-            for idx in validator_indices:
-                subnet_id = int(idx) % int(ATTESTATION_COMMITTEE_COUNT)
+            for index in validator_indices:
+                subnet_id = int(index) % int(ATTESTATION_COMMITTEE_COUNT)
                 topic = TopicId(
                     f"/leanconsensus/{self.network_name}/attestation_{subnet_id}/ssz_snappy"
                 )
@@ -391,8 +394,8 @@ class NodeCluster:
             await test_node.start()
 
         if bootnodes:
-            for addr in bootnodes:
-                await test_node.dial(addr)
+            for address in bootnodes:
+                await test_node.dial(address)
 
         self.nodes.append(test_node)
         # Log node startup with gossipsub instance ID for debugging.
@@ -400,7 +403,7 @@ class NodeCluster:
         logger.info(
             "Started node %d on %s (validators: %s, services=%s, GS=%x)",
             node_index,
-            listen_addr,
+            listen_address,
             validator_indices,
             "running" if start_services else "pending",
             gs_id,
@@ -449,7 +452,9 @@ class NodeCluster:
 
             # A node is an aggregator if it controls any of the first
             # ATTESTATION_COMMITTEE_COUNT validators.
-            is_node_aggregator = any(vid in aggregator_indices for vid in validator_indices)
+            is_node_aggregator = any(
+                validator_index in aggregator_indices for validator_index in validator_indices
+            )
 
             await self.start_node(
                 i,
@@ -469,14 +474,14 @@ class NodeCluster:
         await asyncio.sleep(0.5)
 
         # Phase 2: Establish peer connections.
-        for dialer_idx, listener_idx in topology:
-            dialer = self.nodes[dialer_idx]
-            listener = self.nodes[listener_idx]
-            success = await dialer.dial(listener.listen_addr)
+        for dialer_index, listener_index in topology:
+            dialer = self.nodes[dialer_index]
+            listener = self.nodes[listener_index]
+            success = await dialer.dial(listener.listen_address)
             if success:
-                logger.info("Connected node %d -> node %d", dialer_idx, listener_idx)
+                logger.info("Connected node %d -> node %d", dialer_index, listener_index)
             else:
-                logger.warning("Failed to connect node %d -> node %d", dialer_idx, listener_idx)
+                logger.warning("Failed to connect node %d -> node %d", dialer_index, listener_index)
 
         # Phase 3: Wait for gossipsub mesh to stabilize.
         #

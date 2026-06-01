@@ -98,7 +98,7 @@ def test_safe_target_does_not_advance_below_supermajority(
             # computation at interval 3 can read them.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(i) for i in range(num_attesters)],
+                    validator_indices=[ValidatorIndex(i) for i in range(num_attesters)],
                     slot=Slot(3),
                     target_slot=Slot(2),
                     target_root_label="block_2",
@@ -183,7 +183,7 @@ def test_safe_target_advances_incrementally_along_the_chain(
             TickStep(time=14),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -207,7 +207,7 @@ def test_safe_target_advances_incrementally_along_the_chain(
             TickStep(time=18),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -231,7 +231,7 @@ def test_safe_target_advances_incrementally_along_the_chain(
             TickStep(time=22),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -291,7 +291,7 @@ def test_safe_target_follows_heavier_fork_on_split(
             # Supermajority (4/6) attests to block_b.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -305,7 +305,7 @@ def test_safe_target_follows_heavier_fork_on_split(
             # Minority (2/6) attests to block_a.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(4),
                         ValidatorIndex(5),
                     ],
@@ -375,7 +375,7 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
             # 6/8 vote for block_2. Weight: block_1 += 6, block_2 += 6.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -391,7 +391,7 @@ def test_safe_target_is_conservative_relative_to_lmd_ghost_head(
             # 2/8 vote for block_3. Weight: block_1 += 2, block_2 += 2, block_3 += 2.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(6),
                         ValidatorIndex(7),
                     ],
@@ -459,7 +459,7 @@ def test_safe_target_ignores_known_pool_at_interval_3(
                     label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                             ],
@@ -493,7 +493,7 @@ def test_safe_target_ignores_known_pool_at_interval_3(
             # Combined with "known": total weight = 4 = threshold.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(2),
                         ValidatorIndex(3),
                     ],

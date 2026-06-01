@@ -71,22 +71,22 @@ def test_leaves_per_bottom_tree_is_square_root_of_lifetime() -> None:
         pytest.param(16, 8, 2, id="two full field elements exactly cover sixteen digits"),
     ],
 )
-def test_mh_hash_len_rounds_up(dimension: int, z: int, expected: int) -> None:
+def test_mh_hash_length_rounds_up(dimension: int, z: int, expected: int) -> None:
     """The aborting-decode output length is the dimension divided by digits, rounded up."""
     kwargs = _valid_config_kwargs()
     kwargs["DIMENSION"] = dimension
     kwargs["Z"] = z
-    assert XmssConfig(**kwargs).MH_HASH_LEN_FE == expected
+    assert XmssConfig(**kwargs).MH_HASH_LENGTH_FIELD_ELEMENTS == expected
 
 
-def test_signature_len_bytes_matches_layout() -> None:
+def test_signature_length_bytes_matches_layout() -> None:
     """The advertised signature length equals the sum of its SSZ-encoded fields."""
     config = TEST_CONFIG
-    path = config.LOG_LIFETIME * config.HASH_LEN_FE * P_BYTES
-    rho = config.RAND_LEN_FE * P_BYTES
-    hashes = config.DIMENSION * config.HASH_LEN_FE * P_BYTES
+    path = config.LOG_LIFETIME * config.HASH_LENGTH_FIELD_ELEMENTS * P_BYTES
+    rho = config.RAND_LENGTH_FIELD_ELEMENTS * P_BYTES
+    hashes = config.DIMENSION * config.HASH_LENGTH_FIELD_ELEMENTS * P_BYTES
     expected = path + rho + hashes + 3 * BYTES_PER_LENGTH_OFFSET
-    assert config.SIGNATURE_LEN_BYTES == expected
+    assert config.SIGNATURE_LENGTH_BYTES == expected
 
 
 @pytest.mark.parametrize(
@@ -98,11 +98,11 @@ def test_signature_len_bytes_matches_layout() -> None:
         ("Q", 127),
         ("TARGET_SUM", 200),
         ("LOG_LIFETIME", 32),
-        ("PARAMETER_LEN", 5),
-        ("TWEAK_LEN_FE", 2),
-        ("MSG_LEN_FE", 9),
-        ("RAND_LEN_FE", 7),
-        ("HASH_LEN_FE", 8),
+        ("PARAMETER_LENGTH", 5),
+        ("TWEAK_LENGTH_FIELD_ELEMENTS", 2),
+        ("MESSAGE_LENGTH_FIELD_ELEMENTS", 9),
+        ("RAND_LENGTH_FIELD_ELEMENTS", 7),
+        ("HASH_LENGTH_FIELD_ELEMENTS", 8),
         ("CAPACITY", 9),
     ],
 )
@@ -139,13 +139,13 @@ def _compute_security_levels(config: XmssConfig) -> dict[str, float]:
     base = config.BASE
 
     # Each field element contributes floor(log2(P)) = 31 bits.
-    fe_bits = 31
-    bits_digest = config.HASH_LEN_FE * fe_bits
-    bits_param = config.PARAMETER_LEN * fe_bits
-    bits_rand = config.RAND_LEN_FE * fe_bits
+    field_element_bits = 31
+    bits_digest = config.HASH_LENGTH_FIELD_ELEMENTS * field_element_bits
+    bits_param = config.PARAMETER_LENGTH * field_element_bits
+    bits_rand = config.RAND_LENGTH_FIELD_ELEMENTS * field_element_bits
 
     # Raw message hash output is v chunks of w bits each.
-    bits_msg = v * w_bits
+    bits_message = v * w_bits
 
     # Abort correction from [HKKTW26] Corollary 1, Remark 14.
     #
@@ -159,7 +159,7 @@ def _compute_security_levels(config: XmssConfig) -> dict[str, float]:
     non_abort_total = ((q * wz) / P) ** ell
     abort_correction_bits = -math.log2(non_abort_total)
 
-    bits_msg_eff = bits_msg + abort_correction_bits
+    bits_message_eff = bits_message + abort_correction_bits
 
     log5 = math.log2(5)
     log12 = math.log2(12)
@@ -173,7 +173,7 @@ def _compute_security_levels(config: XmssConfig) -> dict[str, float]:
     k_classical = min(
         bits_digest - log5 - 2 * w_bits - log_lifetime - logv,
         bits_param - log5 - 3,
-        bits_msg_eff - log5 - 1,
+        bits_message_eff - log5 - 1,
         bits_rand - log5 - logqs - log_max_tries - 1,
     )
 
@@ -181,7 +181,7 @@ def _compute_security_levels(config: XmssConfig) -> dict[str, float]:
     k_quantum = min(
         bits_digest / 2 - log5 - 2 * w_bits - log_lifetime - logv - log12,
         (bits_param - 5) / 2 - log5 - 2,
-        (bits_msg_eff - 3) / 2 - log5 - 1,
+        (bits_message_eff - 3) / 2 - log5 - 1,
         (bits_rand - logqs) / 2 - log5 - log3 - log_max_tries,
     )
 
@@ -230,8 +230,8 @@ def test_prod_abort_probability_is_negligible() -> None:
     """The aborting decode rejection probability is below two to the minus 28."""
     config = PROD_CONFIG
     ell = math.ceil(config.DIMENSION / config.Z)
-    non_abort_per_fe = (config.Q * config.BASE**config.Z) / P
-    total_non_abort = non_abort_per_fe**ell
+    non_abort_per_field_element = (config.Q * config.BASE**config.Z) / P
+    total_non_abort = non_abort_per_field_element**ell
     assert 1 - total_non_abort < 2**-28
 
 
@@ -253,10 +253,10 @@ def test_prod_z_equals_twenty_four_over_digit_width() -> None:
     assert PROD_CONFIG.Z == 24 // w_bits
 
 
-def test_prod_mh_hash_len_covers_dimension() -> None:
+def test_prod_mh_hash_length_covers_dimension() -> None:
     """The aborting-decode output produces at least one digit per hash chain."""
     config = PROD_CONFIG
-    assert config.MH_HASH_LEN_FE * config.Z >= config.DIMENSION
+    assert config.MH_HASH_LENGTH_FIELD_ELEMENTS * config.Z >= config.DIMENSION
 
 
 def test_prod_binding_constraint_is_message_hash() -> None:
@@ -264,12 +264,12 @@ def test_prod_binding_constraint_is_message_hash() -> None:
     config = PROD_CONFIG
     v = config.DIMENSION
     w_bits = int(math.log2(config.BASE))
-    fe_bits = 31
+    field_element_bits = 31
 
-    bits_digest = config.HASH_LEN_FE * fe_bits
-    bits_param = config.PARAMETER_LEN * fe_bits
-    bits_rand = config.RAND_LEN_FE * fe_bits
-    bits_msg = v * w_bits
+    bits_digest = config.HASH_LENGTH_FIELD_ELEMENTS * field_element_bits
+    bits_param = config.PARAMETER_LENGTH * field_element_bits
+    bits_rand = config.RAND_LENGTH_FIELD_ELEMENTS * field_element_bits
+    bits_message = v * w_bits
 
     log5 = math.log2(5)
     log_lifetime = math.log2(config.LIFETIME)
@@ -279,7 +279,7 @@ def test_prod_binding_constraint_is_message_hash() -> None:
     classical_bounds = [
         bits_digest - log5 - 2 * w_bits - log_lifetime - logv,
         bits_param - log5 - 3,
-        bits_msg - log5 - 1,
+        bits_message - log5 - 1,
         bits_rand - log5 - log_lifetime - log_max_tries - 1,
     ]
     assert classical_bounds.index(min(classical_bounds)) == 2

@@ -24,9 +24,9 @@ def random_field_elements(length: int) -> list[Fp]:
 
 def random_parameter(config: XmssConfig) -> Parameter:
     """Sample a fresh public parameter for one XMSS key pair."""
-    return Parameter(data=random_field_elements(config.PARAMETER_LEN))
+    return Parameter(data=random_field_elements(config.PARAMETER_LENGTH))
 
 
 def random_domain(config: XmssConfig) -> HashDigestVector:
     """Sample a fresh hash-digest-sized vector of field elements."""
-    return HashDigestVector(data=random_field_elements(config.HASH_LEN_FE))
+    return HashDigestVector(data=random_field_elements(config.HASH_LENGTH_FIELD_ELEMENTS))

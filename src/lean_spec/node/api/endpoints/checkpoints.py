@@ -15,7 +15,7 @@ async def handle_justified(request: web.Request) -> web.Response:
 
     Response: JSON object with fields:
         - slot (integer): The slot number of the justified checkpoint.
-        - root (string): The block root as 0x-prefixed hex string (66 chars total).
+        - root (string): The block root as 0x-prefixed hex string (66 characters total).
 
     Status Codes:
         200 OK: Checkpoint returned successfully.

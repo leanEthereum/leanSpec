@@ -123,20 +123,20 @@ class TestReqRespClientConnectionManagement:
         """Connections can be registered for a peer."""
         client = make_client()
         peer_id = PeerId.from_base58("16Uiu2HAmTestPeer123")
-        conn = MockConnection()
+        connection = MockConnection()
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         assert peer_id in client._connections
-        assert client._connections[peer_id] is conn
+        assert client._connections[peer_id] is connection
 
     def test_unregister_connection(self) -> None:
         """Connections can be unregistered."""
         client = make_client()
         peer_id = PeerId.from_base58("16Uiu2HAmTestPeer123")
-        conn = MockConnection()
+        connection = MockConnection()
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
         client.unregister_connection(peer_id)
 
         assert peer_id not in client._connections
@@ -178,9 +178,9 @@ class TestReqRespClientStatusExchange:
         response_bytes = ResponseCode.SUCCESS.encode(peer_status.encode_bytes())
 
         stream = MockStream(response_chunks=[response_bytes])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         our_status = make_test_status()
         result = await client.send_status(peer_id, our_status)
@@ -207,9 +207,9 @@ class TestReqRespClientStatusExchange:
 
         response_bytes = ResponseCode.SERVER_ERROR.encode(b"Internal error")
         stream = MockStream(response_chunks=[response_bytes])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         result = await client.send_status(peer_id, make_test_status())
 
@@ -222,9 +222,9 @@ class TestReqRespClientStatusExchange:
 
         # Empty response simulates closed stream
         stream = MockStream(response_chunks=[])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         result = await client.send_status(peer_id, make_test_status())
 
@@ -239,9 +239,9 @@ class TestReqRespClientStatusExchange:
         response_bytes = ResponseCode.SUCCESS.encode(peer_status.encode_bytes())
 
         stream = MockStream(response_chunks=[response_bytes])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         our_status = make_test_status()
         await client.send_status(peer_id, our_status)
@@ -260,9 +260,9 @@ class TestReqRespClientStatusExchange:
         response_bytes = ResponseCode.SUCCESS.encode(peer_status.encode_bytes())
 
         stream = MockStream(response_chunks=[response_bytes])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         await client.send_status(peer_id, make_test_status())
 
@@ -282,9 +282,9 @@ class TestReqRespClientBlocksByRoot:
         response_bytes = ResponseCode.SUCCESS.encode(block.encode_bytes())
 
         stream = MockStream(response_chunks=[response_bytes])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         roots = [Bytes32(b"\x11" * 32)]
         blocks = await client.request_blocks_by_root(peer_id, roots)
@@ -303,9 +303,9 @@ class TestReqRespClientBlocksByRoot:
         response2 = ResponseCode.SUCCESS.encode(block2.encode_bytes())
 
         stream = MockStream(response_chunks=[response1, response2])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         roots = [Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)]
         blocks = await client.request_blocks_by_root(peer_id, roots)
@@ -325,9 +325,9 @@ class TestReqRespClientBlocksByRoot:
         unavailable_response = ResponseCode.RESOURCE_UNAVAILABLE.encode(b"Not found")
 
         stream = MockStream(response_chunks=[success_response, unavailable_response])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         roots = [Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)]
         blocks = await client.request_blocks_by_root(peer_id, roots)
@@ -341,14 +341,14 @@ class TestReqRespClientBlocksByRoot:
         client = make_client()
         peer_id = PeerId.from_base58("16Uiu2HAmTestPeer123")
 
-        conn = MockConnection()
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockConnection()
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_root(peer_id, [])
 
         assert len(blocks) == 0
         # No stream should be opened for empty request
-        assert len(conn.opened_protocols) == 0
+        assert len(connection.opened_protocols) == 0
 
     async def test_request_blocks_no_connection(self) -> None:
         """Request to unconnected peer returns empty."""
@@ -371,9 +371,9 @@ class TestReqRespClientBlocksByRoot:
 
         # Only one response, but we request two blocks
         stream = MockStream(response_chunks=[response])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         roots = [Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)]
         blocks = await client.request_blocks_by_root(peer_id, roots)
@@ -392,9 +392,9 @@ class TestReqRespClientBlocksByRoot:
 
         # Error response should stop reading (not continue like RESOURCE_UNAVAILABLE)
         stream = MockStream(response_chunks=[success_response, error_response])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         roots = [Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32), Bytes32(b"\x33" * 32)]
         blocks = await client.request_blocks_by_root(peer_id, roots)
@@ -418,9 +418,9 @@ class TestReqRespClientTimeouts:
 
         stream = MockStream()
         stream.read = slow_read  # type: ignore[method-assign]
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         result = await client.send_status(peer_id, make_test_status())
 
@@ -438,9 +438,9 @@ class TestReqRespClientTimeouts:
 
         stream = MockStream()
         stream.read = slow_read  # type: ignore[method-assign]
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         roots = [Bytes32(b"\x11" * 32)]
         blocks = await client.request_blocks_by_root(peer_id, roots)
@@ -464,9 +464,9 @@ class TestReqRespClientErrorHandling:
         peer_id = PeerId.from_base58("16Uiu2HAmTestPeer123")
 
         stream = MockStream(_fail_on_write=True)
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         result = await client.send_status(peer_id, make_test_status())
 
@@ -478,9 +478,9 @@ class TestReqRespClientErrorHandling:
         peer_id = PeerId.from_base58("16Uiu2HAmTestPeer123")
 
         stream = MockStream(_fail_on_read=True)
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         result = await client.send_status(peer_id, make_test_status())
 
@@ -491,8 +491,8 @@ class TestReqRespClientErrorHandling:
         client = make_client()
         peer_id = PeerId.from_base58("16Uiu2HAmTestPeer123")
 
-        conn = MockConnection(_fail_on_open=True)
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockConnection(_fail_on_open=True)
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         result = await client.send_status(peer_id, make_test_status())
 
@@ -506,9 +506,9 @@ class TestReqRespClientErrorHandling:
         # Invalid response: wrong response code format
         malformed = b"\xff\xff\xff\xff"
         stream = MockStream(response_chunks=[malformed])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         result = await client.send_status(peer_id, make_test_status())
 
@@ -525,9 +525,9 @@ class TestReqRespClientErrorHandling:
         malformed = b"\x00\xff\xff\xff"
 
         stream = MockStream(response_chunks=[valid_response, malformed])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         roots = [Bytes32(b"\x11" * 32), Bytes32(b"\x22" * 32)]
         blocks = await client.request_blocks_by_root(peer_id, roots)
@@ -629,9 +629,9 @@ class TestReqRespClientStreamLifecycle:
         response = ResponseCode.SUCCESS.encode(peer_status.encode_bytes())
 
         stream = MockStream(response_chunks=[response])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         await client.send_status(peer_id, make_test_status())
 
@@ -645,9 +645,9 @@ class TestReqRespClientStreamLifecycle:
         # Error response
         response = ResponseCode.SERVER_ERROR.encode(b"Error")
         stream = MockStream(response_chunks=[response])
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         await client.send_status(peer_id, make_test_status())
 
@@ -671,9 +671,9 @@ class TestReqRespClientStreamLifecycle:
         stream = MockStream()
         stream.read = slow_read  # type: ignore[method-assign]
         stream.close = track_close  # type: ignore[method-assign]
-        conn = MockConnection(streams=[stream])
+        connection = MockConnection(streams=[stream])
 
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         await client.send_status(peer_id, make_test_status())
 
@@ -694,14 +694,14 @@ class TestReqRespClientStreamLifecycle:
         status_stream = MockStream(response_chunks=[status_response])
         block_stream = MockStream(response_chunks=[block_response])
 
-        status_conn = MockConnection(streams=[status_stream])
-        block_conn = MockConnection(streams=[block_stream])
+        status_connection = MockConnection(streams=[status_stream])
+        block_connection = MockConnection(streams=[block_stream])
 
-        client.register_connection(peer1, status_conn)  # type: ignore[arg-type]
-        client.register_connection(peer2, block_conn)  # type: ignore[arg-type]
+        client.register_connection(peer1, status_connection)  # type: ignore[arg-type]
+        client.register_connection(peer2, block_connection)  # type: ignore[arg-type]
 
         await client.send_status(peer1, make_test_status())
         await client.request_blocks_by_root(peer2, [Bytes32(b"\x11" * 32)])
 
-        assert status_conn.opened_protocols == [STATUS_PROTOCOL_V1]
-        assert block_conn.opened_protocols == [BLOCKS_BY_ROOT_PROTOCOL_V1]
+        assert status_connection.opened_protocols == [STATUS_PROTOCOL_V1]
+        assert block_connection.opened_protocols == [BLOCKS_BY_ROOT_PROTOCOL_V1]

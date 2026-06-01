@@ -71,7 +71,10 @@ Reference: https://github.com/google/snappy/blob/main/format_description.txt
 
 from __future__ import annotations
 
-from .encoding import decode_tag, decode_varint32
+from lean_spec.node.networking.varint import VarintError, decode_varint
+
+from .constants import SNAPPY_VARINT_MAX_BYTES
+from .encoding import decode_tag
 
 
 class SnappyDecompressionError(Exception):
@@ -100,8 +103,10 @@ def decompress(data: bytes) -> bytes:
     #
     # Example: data = [0x08, ...] -> length = 8
     try:
-        uncompressed_length, varint_bytes = decode_varint32(data, 0)
-    except ValueError as e:
+        uncompressed_length, varint_bytes = decode_varint(
+            data, 0, max_bytes=SNAPPY_VARINT_MAX_BYTES
+        )
+    except VarintError as e:
         raise SnappyDecompressionError(f"Invalid length varint: {e}") from e
 
     # Length = 0 is valid: the original data was empty.

@@ -249,7 +249,7 @@ class ENR(StrictBaseModel):
         """
         Compute the node ID from the public key.
 
-        Per EIP-778 "v4" identity scheme: keccak256(uncompressed_pubkey).
+        Per EIP-778 "v4" identity scheme: keccak256(uncompressed_public_key).
         The hash is computed over the 64-byte x||y coordinates.
         """
         if self.public_key is None:
@@ -352,17 +352,17 @@ class ENR(StrictBaseModel):
         # Keys are strings, values are arbitrary bytes.
         # EIP-778 requires keys to be lexicographically sorted.
         pairs: dict[EnrKey, bytes] = {}
-        prev_key: EnrKey | None = None
+        previous_key: EnrKey | None = None
         for i in range(2, len(items), 2):
             key = EnrKey(items[i].decode("utf-8"))
-            if prev_key is not None and key <= prev_key:
+            if previous_key is not None and key <= previous_key:
                 raise ValueError(
                     f"ENR keys must be lexicographically sorted per EIP-778: "
-                    f"'{key}' follows '{prev_key}'"
+                    f"'{key}' follows '{previous_key}'"
                 )
             value = items[i + 1]
             pairs[key] = value
-            prev_key = key
+            previous_key = key
 
         enr = cls(
             signature=signature,

@@ -34,27 +34,27 @@ class SmallBitlist(BaseBitlist):
     LIMIT = 8
 
 
-class TestSSZModelLen:
+class TestSSZModelLength:
     """Tests for SSZModel.__len__() on both collection and container models.
 
     Uses BaseBitlist (not SSZList) for the data-path because SSZList overrides
     __len__ with its own implementation. BaseBitlist inherits SSZModel's version.
     """
 
-    def test_len_data_path_via_bitlist(self) -> None:
+    def test_length_data_path_via_bitlist(self) -> None:
         """BaseBitlist delegates to SSZModel.__len__ which returns len(data)."""
         bl = SmallBitlist(data=(Boolean(True), Boolean(False), Boolean(True)))
         assert len(bl) == 3
 
-    def test_len_empty_data_path_via_bitlist(self) -> None:
+    def test_length_empty_data_path_via_bitlist(self) -> None:
         bl = SmallBitlist(data=())
         assert len(bl) == 0
 
-    def test_len_container_returns_field_count(self) -> None:
+    def test_length_container_returns_field_count(self) -> None:
         container = TwoFieldContainer(x=Uint8(1), y=Uint16(2))
         assert len(container) == 2
 
-    def test_len_three_field_container(self) -> None:
+    def test_length_three_field_container(self) -> None:
         container = ThreeFieldContainer(a=Uint8(5), b=Uint64(42), c=Uint16List4(data=[Uint16(1)]))
         assert len(container) == 3
 

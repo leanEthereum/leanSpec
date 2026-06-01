@@ -82,8 +82,8 @@ class TestIsProposerFor:
         for slot_num in slot_window:
             slot = Slot(slot_num)
             chosen = ValidatorIndex.proposer_for_slot(slot, registry_size)
-            for validator_idx in range(num_validators):
-                candidate = ValidatorIndex(validator_idx)
+            for validator_index in range(num_validators):
+                candidate = ValidatorIndex(validator_index)
                 assert candidate.is_proposer_for(slot, registry_size) == (candidate == chosen)
 
 

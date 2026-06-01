@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from lean_spec.base import CamelModel
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex, ValidatorIndices
+from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
     AttestationData,
     Block,
+    SingleMessageAggregate,
     State,
 )
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32
@@ -27,7 +27,7 @@ class AggregatedAttestationSpec(CamelModel):
     Source defaults to the latest justified checkpoint unless overridden.
     """
 
-    validator_ids: list[ValidatorIndex]
+    validator_indices: list[ValidatorIndex]
     """The indices of validators making the attestation (required)."""
 
     slot: Slot
@@ -79,14 +79,14 @@ class AggregatedAttestationSpec(CamelModel):
     """
     Override which validators actually sign the attestation.
 
-    When None (default), signatures are generated using the validators in validator_ids.
+    When None (default), signatures are generated using the validators in validator_indices.
     When specified, signatures are generated using these validator indices instead.
 
     This creates a mismatch between claimed participants and actual signers.
     Useful for testing that verification rejects attestations where valid signatures
     don't correspond to the claimed validators.
 
-    Must have same length as validator_ids when specified.
+    Must have same length as validator_indices when specified.
     """
 
     def build_attestation_data(
@@ -161,7 +161,7 @@ class AggregatedAttestationSpec(CamelModel):
         state: State,
         key_manager: XmssKeyManager,
         block: Block,
-    ) -> tuple[Block, TypeOneMultiSignature]:
+    ) -> tuple[Block, SingleMessageAggregate]:
         """
         Build an invalid attestation proof and append it to the block body.
 
@@ -181,26 +181,26 @@ class AggregatedAttestationSpec(CamelModel):
         """
         attestation_data = self.build_attestation_data(block_registry, state)
 
-        aggregation_bits = ValidatorIndices(data=self.validator_ids).to_aggregation_bits()
+        aggregation_bits = AggregationBits.from_indices(self.validator_indices)
         invalid_aggregated = AggregatedAttestation(
             aggregation_bits=aggregation_bits,
             data=attestation_data,
         )
 
-        # Empty proof bytes flag "no real Type-1 here" — the caller treats
+        # Empty proof bytes flag "no real single-message aggregate here" — the caller treats
         # any such entry as a placeholder and bypasses real binding merges.
         placeholder = ByteList512KiB(data=b"")
 
         if not self.valid_signature:
-            invalid_proof = TypeOneMultiSignature(participants=aggregation_bits, proof=placeholder)
+            invalid_proof = SingleMessageAggregate(participants=aggregation_bits, proof=placeholder)
         elif self.signer_ids is not None:
             # Valid proof from wrong validators (participant mismatch).
             valid_proof = key_manager.sign_and_aggregate(self.signer_ids, attestation_data)
-            invalid_proof = TypeOneMultiSignature(
+            invalid_proof = SingleMessageAggregate(
                 participants=aggregation_bits, proof=valid_proof.proof
             )
         else:
-            invalid_proof = TypeOneMultiSignature(participants=aggregation_bits, proof=placeholder)
+            invalid_proof = SingleMessageAggregate(participants=aggregation_bits, proof=placeholder)
 
         # Append invalid attestation to the block body.
         block.body.attestations = AggregatedAttestations(

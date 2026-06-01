@@ -83,12 +83,12 @@ def _build_gossip_wire(topic: str, ssz_data: bytes) -> bytes:
     """
     topic_bytes = topic.encode("utf-8")
     compressed = compress(ssz_data)
-    buf = bytearray()
-    buf.extend(encode_varint(len(topic_bytes)))
-    buf.extend(topic_bytes)
-    buf.extend(encode_varint(len(compressed)))
-    buf.extend(compressed)
-    return bytes(buf)
+    buffer = bytearray()
+    buffer.extend(encode_varint(len(topic_bytes)))
+    buffer.extend(topic_bytes)
+    buffer.extend(encode_varint(len(compressed)))
+    buffer.extend(compressed)
+    return bytes(buffer)
 
 
 class MockStream:
@@ -273,10 +273,10 @@ class TestReadGossipMessageChunked:
         topic_str = _block_topic()
         wire = _build_gossip_wire(topic_str, block.encode_bytes())
 
-        # Find the boundary: after topic_len varint + topic bytes
+        # Find the boundary: after topic_length varint + topic bytes
         topic_bytes = topic_str.encode("utf-8")
-        varint_len = len(encode_varint(len(topic_bytes)))
-        boundary = varint_len + len(topic_bytes)
+        varint_length = len(encode_varint(len(topic_bytes)))
+        boundary = varint_length + len(topic_bytes)
 
         chunks = [wire[:boundary], wire[boundary:]]
         stream = MockStream(chunks)
@@ -287,8 +287,8 @@ class TestReadGossipMessageChunked:
 
     async def test_three_chunk_delivery(self) -> None:
         """Handles message delivered in three arbitrary pieces."""
-        att = _make_attestation()
-        wire = _build_gossip_wire(_attestation_topic(), att.encode_bytes())
+        attestation = _make_attestation()
+        wire = _build_gossip_wire(_attestation_topic(), attestation.encode_bytes())
 
         third = len(wire) // 3
         chunks = [wire[:third], wire[third : 2 * third], wire[2 * third :]]
@@ -467,13 +467,13 @@ class TestLiveNetworkEventSourceDisconnect:
         es = _make_event_source()
         peer_id = PeerId.from_base58("peerA")
 
-        mock_conn = AsyncMock(spec=QuicConnection)
-        es._connections[peer_id] = mock_conn
+        mock_connection = AsyncMock(spec=QuicConnection)
+        es._connections[peer_id] = mock_connection
 
         await es.disconnect(peer_id)
 
         assert peer_id not in es._connections
-        mock_conn.close.assert_awaited_once()
+        mock_connection.close.assert_awaited_once()
 
         from lean_spec.node.networking.service.events import PeerDisconnectedEvent
 
@@ -658,8 +658,8 @@ class TestGossipHandlerDecodeRoundtrip:
     def test_attestation_roundtrip_preserves_ssz(self) -> None:
         """Attestation SSZ bytes are identical after decode."""
         handler = GossipHandler(network_name=FORK_DIGEST)
-        att = _make_attestation()
-        original_bytes = att.encode_bytes()
+        attestation = _make_attestation()
+        original_bytes = attestation.encode_bytes()
 
         result = handler.decode_message(
             _attestation_topic(),

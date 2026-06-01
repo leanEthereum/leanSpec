@@ -7,10 +7,10 @@ pytestmark = pytest.mark.valid_until("Lstar")
 
 TOPIC = "test_topic"
 PARAMS = {"d": 4, "dLow": 3, "dHigh": 6, "dLazy": 3}
-MSG_ID = "0x8dc6bba09a9550cdccb1b1b432bb04919901ce1e"
+MESSAGE_ID = "0x8dc6bba09a9550cdccb1b1b432bb04919901ce1e"
 """Message ID for topic=b'test_topic', data=0xdeadbeef, invalid-snappy domain."""
 
-MSG_ID_2 = "0xb51451075fcc3e8f0baa9041d8256c647ceaeaac"
+MESSAGE_ID_2 = "0xb51451075fcc3e8f0baa9041d8256c647ceaeaac"
 """Message ID for topic=b'test_topic', data=0xcafebabe, invalid-snappy domain."""
 
 
@@ -156,7 +156,7 @@ def test_ihave_unseen_triggers_iwant(gossipsub_handler: GossipsubHandlerTestFill
         },
         event={
             "fromPeer": "peerAx",
-            "ihave": [{"topicId": TOPIC, "messageIds": [MSG_ID]}],
+            "ihave": [{"topicId": TOPIC, "messageIds": [MESSAGE_ID]}],
         },
     )
 
@@ -170,12 +170,12 @@ def test_ihave_seen_no_iwant(gossipsub_handler: GossipsubHandlerTestFiller) -> N
             "subscriptions": [TOPIC],
             "meshes": {},
             "peers": {"peerAx": {"subscriptions": [TOPIC]}},
-            "seenMessageIds": [MSG_ID],
+            "seenMessageIds": [MESSAGE_ID],
             "cachedMessages": [],
         },
         event={
             "fromPeer": "peerAx",
-            "ihave": [{"topicId": TOPIC, "messageIds": [MSG_ID]}],
+            "ihave": [{"topicId": TOPIC, "messageIds": [MESSAGE_ID]}],
         },
     )
 
@@ -189,12 +189,12 @@ def test_ihave_mixed(gossipsub_handler: GossipsubHandlerTestFiller) -> None:
             "subscriptions": [TOPIC],
             "meshes": {},
             "peers": {"peerAx": {"subscriptions": [TOPIC]}},
-            "seenMessageIds": [MSG_ID],
+            "seenMessageIds": [MESSAGE_ID],
             "cachedMessages": [],
         },
         event={
             "fromPeer": "peerAx",
-            "ihave": [{"topicId": TOPIC, "messageIds": [MSG_ID, MSG_ID_2]}],
+            "ihave": [{"topicId": TOPIC, "messageIds": [MESSAGE_ID, MESSAGE_ID_2]}],
         },
     )
 
@@ -213,12 +213,12 @@ def test_iwant_cached_responds(gossipsub_handler: GossipsubHandlerTestFiller) ->
             "peers": {"peerAx": {"subscriptions": [TOPIC]}},
             "seenMessageIds": [],
             "cachedMessages": [
-                {"topic": TOPIC, "data": "0xdeadbeef", "messageId": MSG_ID},
+                {"topic": TOPIC, "data": "0xdeadbeef", "messageId": MESSAGE_ID},
             ],
         },
         event={
             "fromPeer": "peerAx",
-            "iwant": [{"messageIds": [MSG_ID]}],
+            "iwant": [{"messageIds": [MESSAGE_ID]}],
         },
     )
 
@@ -261,7 +261,7 @@ def test_message_duplicate_not_forwarded(
                 "senderX": {"subscriptions": [TOPIC]},
                 "peerAx": {"subscriptions": [TOPIC]},
             },
-            "seenMessageIds": [MSG_ID],
+            "seenMessageIds": [MESSAGE_ID],
         },
         event={
             "fromPeer": "senderX",
@@ -282,7 +282,7 @@ def test_message_idontwant_skips_peer(
             "meshes": {TOPIC: ["senderX", "peerAx", "peerBx"]},
             "peers": {
                 "senderX": {"subscriptions": [TOPIC]},
-                "peerAx": {"subscriptions": [TOPIC], "dontWantIds": [MSG_ID]},
+                "peerAx": {"subscriptions": [TOPIC], "dontWantIds": [MESSAGE_ID]},
                 "peerBx": {"subscriptions": [TOPIC]},
             },
         },

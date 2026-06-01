@@ -91,21 +91,6 @@ class SpecAggregatedAttestationsType(SpecSSZType, Protocol):
     """
 
 
-class SpecSignedBlockType(SpecSSZType, Protocol):
-    """Structural contract: any fork's SignedBlock container class.
-
-    A SignedBlock wraps a Block with a single aggregated proof covering
-    every attestation in the body plus the proposer's signature over
-    the block root. Subspecs treat instances as opaque SSZ-encodable
-    payloads passed between sync, gossip, and storage.
-    """
-
-    @property
-    def block(self) -> SpecBlockType:
-        """The wrapped Block payload."""
-        ...
-
-
 class SpecAttestationDataType(SpecSSZType, Protocol):
     """Structural contract: any fork's AttestationData container class.
 
@@ -134,41 +119,11 @@ class SpecAttestationDataType(SpecSSZType, Protocol):
         ...
 
 
-class SpecSignedAttestationType(SpecSSZType, Protocol):
-    """Structural contract: any fork's SignedAttestation container class.
-
-    A single validator's attestation bundled with its signature.
-    """
-
-    @property
-    def data(self) -> SpecAttestationDataType:
-        """The unsigned attestation payload."""
-        ...
-
-    @property
-    def validator_id(self) -> ValidatorIndex:
-        """Index of the validator that produced this attestation."""
-        ...
-
-
 class SpecAggregatedAttestationType(SpecSSZType, Protocol):
     """Structural contract: any fork's AggregatedAttestation container class.
 
     An attestation aggregated over multiple validators via a participation
     bitfield.
-    """
-
-    @property
-    def data(self) -> SpecAttestationDataType:
-        """The unsigned attestation payload."""
-        ...
-
-
-class SpecSignedAggregatedAttestationType(SpecSSZType, Protocol):
-    """Structural contract: any fork's SignedAggregatedAttestation container class.
-
-    The aggregator's broadcast payload — combined attestation data plus the
-    aggregated signature proof.
     """
 
     @property
@@ -205,7 +160,7 @@ class SpecStoreType(Protocol):
         ...
 
     @property
-    def validator_id(self) -> ValidatorIndex | None:
+    def validator_index(self) -> ValidatorIndex | None:
         """Index of the local validator owning this store, if any."""
         ...
 
@@ -217,35 +172,6 @@ class SpecStoreType(Protocol):
     @property
     def states(self) -> Mapping[Bytes32, SpecStateType]:
         """Mapping from block root to post-state of that block."""
-        ...
-
-    @classmethod
-    def from_anchor(
-        cls,
-        state: SpecStateType,
-        anchor_block: SpecBlockType,
-        validator_id: ValidatorIndex | None,
-    ) -> Self:
-        """Construct a forkchoice store anchored at the given state/block."""
-        ...
-
-    def on_block(self, signed_block: "SpecSignedBlockType") -> Self:
-        """Apply a signed block to the store and return the updated store."""
-        ...
-
-    def on_gossip_attestation(
-        self,
-        signed_attestation: "SpecSignedAttestationType",
-        is_aggregator: bool,
-    ) -> Self:
-        """Apply a single-validator attestation and return the updated store."""
-        ...
-
-    def on_gossip_aggregated_attestation(
-        self,
-        signed_attestation: "SpecSignedAggregatedAttestationType",
-    ) -> Self:
-        """Apply an aggregated attestation and return the updated store."""
         ...
 
 
@@ -310,7 +236,7 @@ class ForkProtocol(ABC):
         self,
         state: SpecStateType,
         anchor_block: SpecBlockType,
-        validator_id: ValidatorIndex | None,
+        validator_index: ValidatorIndex | None,
     ) -> SpecStoreType:
         """Construct a forkchoice store anchored at the given state and block."""
 

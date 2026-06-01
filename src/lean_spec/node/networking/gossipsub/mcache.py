@@ -42,7 +42,7 @@ Each heartbeat:
 Key Parameters
 --------------
 
-- **mcache_len** (6): Total windows retained
+- **mcache_length** (6): Total windows retained
 - **mcache_gossip** (3): Recent windows included in IHAVE
 
 Only the first `mcache_gossip` windows are advertised via IHAVE.
@@ -98,7 +98,7 @@ class MessageCache:
     - **IHAVE gossip**: Get message IDs for advertisement
     """
 
-    mcache_len: int = 6
+    mcache_length: int = 6
     """Number of history windows to retain.
 
     Messages are evicted after this many heartbeat intervals.
@@ -111,7 +111,7 @@ class MessageCache:
     """Number of recent windows to include in IHAVE gossip.
 
     Only messages from the most recent windows are advertised.
-    Should be less than or equal to mcache_len.
+    Should be less than or equal to mcache_length.
     """
 
     _windows: deque[set[MessageId]] = field(init=False, repr=False)
@@ -129,7 +129,7 @@ class MessageCache:
 
     def __post_init__(self) -> None:
         """Initialize the sliding window structure."""
-        self._windows = deque(maxlen=self.mcache_len)
+        self._windows = deque(maxlen=self.mcache_length)
         self._windows.append(set())
 
     def put(self, topic: TopicId, message: GossipsubMessage) -> bool:
@@ -145,39 +145,39 @@ class MessageCache:
         Returns:
             True if added (not a duplicate).
         """
-        msg_id = message.id
+        message_id = message.id
 
-        if msg_id in self._by_id:
+        if message_id in self._by_id:
             return False
 
-        self._windows[0].add(msg_id)
-        self._by_id[msg_id] = CacheEntry(message=message, topic=topic)
+        self._windows[0].add(message_id)
+        self._by_id[message_id] = CacheEntry(message=message, topic=topic)
         return True
 
-    def get(self, msg_id: MessageId) -> GossipsubMessage | None:
+    def get(self, message_id: MessageId) -> GossipsubMessage | None:
         """Retrieve a message by ID.
 
         Used to respond to IWANT requests from peers.
 
         Args:
-            msg_id: Message ID to look up.
+            message_id: Message ID to look up.
 
         Returns:
             The cached message, or None if not found/evicted.
         """
-        entry = self._by_id.get(msg_id)
+        entry = self._by_id.get(message_id)
         return entry.message if entry else None
 
-    def has(self, msg_id: MessageId) -> bool:
+    def has(self, message_id: MessageId) -> bool:
         """Check if a message is cached.
 
         Args:
-            msg_id: Message ID to check.
+            message_id: Message ID to check.
 
         Returns:
             True if the message is in the cache.
         """
-        return msg_id in self._by_id
+        return message_id in self._by_id
 
     def get_gossip_ids(self, topic: TopicId) -> list[MessageId]:
         """Get message IDs for IHAVE gossip.
@@ -196,10 +196,10 @@ class MessageCache:
         windows_to_check = min(self.mcache_gossip, len(self._windows))
 
         for window in islice(self._windows, windows_to_check):
-            for msg_id in window:
-                entry = self._by_id.get(msg_id)
+            for message_id in window:
+                entry = self._by_id.get(message_id)
                 if entry and entry.topic == topic:
-                    result.append(msg_id)
+                    result.append(message_id)
 
         return result
 
@@ -216,11 +216,11 @@ class MessageCache:
         """
         evicted = 0
 
-        if len(self._windows) >= self.mcache_len:
+        if len(self._windows) >= self.mcache_length:
             oldest = self._windows.pop()
-            for msg_id in oldest:
-                if msg_id in self._by_id:
-                    del self._by_id[msg_id]
+            for message_id in oldest:
+                if message_id in self._by_id:
+                    del self._by_id[message_id]
                     evicted += 1
 
         self._windows.appendleft(set())
@@ -261,32 +261,32 @@ class SeenCache:
     expiry during cleanup.
     """
 
-    def add(self, msg_id: MessageId, timestamp: Timestamp) -> bool:
+    def add(self, message_id: MessageId, timestamp: Timestamp) -> bool:
         """Mark a message as seen.
 
         Args:
-            msg_id: Message ID to mark as seen.
+            message_id: Message ID to mark as seen.
             timestamp: Current Unix timestamp.
 
         Returns:
             True if newly seen (not a duplicate).
         """
-        if msg_id in self._timestamps:
+        if message_id in self._timestamps:
             return False
 
-        self._timestamps[msg_id] = timestamp
+        self._timestamps[message_id] = timestamp
         return True
 
-    def has(self, msg_id: MessageId) -> bool:
+    def has(self, message_id: MessageId) -> bool:
         """Check if a message has been seen.
 
         Args:
-            msg_id: Message ID to check.
+            message_id: Message ID to check.
 
         Returns:
             True if the message has been seen.
         """
-        return msg_id in self._timestamps
+        return message_id in self._timestamps
 
     def cleanup(self, current_time: float) -> int:
         """Remove expired entries.
@@ -301,9 +301,9 @@ class SeenCache:
             Number of entries removed.
         """
         cutoff = current_time - self.ttl_seconds
-        expired = [msg_id for msg_id, ts in self._timestamps.items() if ts < cutoff]
+        expired = [message_id for message_id, ts in self._timestamps.items() if ts < cutoff]
 
-        for msg_id in expired:
-            del self._timestamps[msg_id]
+        for message_id in expired:
+            del self._timestamps[message_id]
 
         return len(expired)

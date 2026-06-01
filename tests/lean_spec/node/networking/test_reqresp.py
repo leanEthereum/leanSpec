@@ -91,11 +91,11 @@ class TestResponseCodec:
 
     def test_error_response(self) -> None:
         """Error response encodes and decodes correctly."""
-        error_msg = b"Block not found"
-        encoded = ResponseCode.RESOURCE_UNAVAILABLE.encode(error_msg)
+        error_message = b"Block not found"
+        encoded = ResponseCode.RESOURCE_UNAVAILABLE.encode(error_message)
         code, decoded = ResponseCode.decode(encoded)
         assert code == ResponseCode.RESOURCE_UNAVAILABLE
-        assert decoded == error_msg
+        assert decoded == error_message
 
     def test_all_response_codes(self) -> None:
         """All standard response codes work correctly."""
@@ -146,7 +146,7 @@ class TestInteroperability:
         assert encode_varint(16384) == b"\x80\x80\x01"
 
     def test_request_wire_format(self) -> None:
-        """Request wire format matches spec: [varint_len][snappy_payload]."""
+        """Request wire format matches spec: [varint_length][snappy_payload]."""
         ssz_data = b"test"
         encoded = encode_request(ssz_data)
 
@@ -159,7 +159,7 @@ class TestInteroperability:
         assert snappy_data.startswith(b"\xff\x06\x00\x00sNaPpY")
 
     def test_response_wire_format(self) -> None:
-        """Response wire format matches spec: [code][varint_len][snappy_payload]."""
+        """Response wire format matches spec: [code][varint_length][snappy_payload]."""
         ssz_data = b"test"
         encoded = ResponseCode.SUCCESS.encode(ssz_data)
 
@@ -204,7 +204,7 @@ class TestBoundaryConditions:
         malformed = bytes([0x80] * 10 + [0x01])
         assert len(malformed) == 11
 
-        with pytest.raises(VarintError, match="too long"):
+        with pytest.raises(VarintError, match="exceeds 10 bytes"):
             decode_varint(malformed)
 
     def test_payload_at_max_size(self) -> None:
@@ -421,8 +421,8 @@ class TestSnappyFramingEdgeCases:
 
     def test_single_byte_payload(self) -> None:
         """Single-byte payload roundtrips correctly."""
-        for byte_val in [0x00, 0x7F, 0x80, 0xFF]:
-            ssz_data = bytes([byte_val])
+        for byte_value in [0x00, 0x7F, 0x80, 0xFF]:
+            ssz_data = bytes([byte_value])
             encoded = encode_request(ssz_data)
             decoded = decode_request(encoded)
             assert decoded == ssz_data

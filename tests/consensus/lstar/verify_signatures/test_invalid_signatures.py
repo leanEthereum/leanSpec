@@ -79,7 +79,7 @@ def test_invalid_aggregated_attestation_signature(
             attestations=[
                 # Valid aggregated attestation
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0)],
+                    validator_indices=[ValidatorIndex(0)],
                     slot=Slot(2),
                     target_slot=Slot(1),
                     target_root_label="genesis",
@@ -87,7 +87,7 @@ def test_invalid_aggregated_attestation_signature(
                 ),
                 # Invalid aggregated attestation (different target to force separate aggregation)
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(2)],
+                    validator_indices=[ValidatorIndex(2)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",

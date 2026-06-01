@@ -24,7 +24,7 @@ class CliArgs(StrictBaseModel):
     bootnodes: tuple[str, ...]
     """Raw bootnode strings, each either a multiaddr or an ENR."""
 
-    listen_addr: str
+    listen_address: str
     """Multiaddr the node binds for inbound QUIC connections."""
 
     checkpoint_sync_url: str | None
@@ -86,7 +86,7 @@ def parse_args(argv: list[str] | None = None) -> CliArgs:
     parser.add_argument(
         "--listen",
         default="/ip4/0.0.0.0/udp/9001/quic-v1",
-        dest="listen_addr",
+        dest="listen_address",
         help="Address to listen on (default: /ip4/0.0.0.0/udp/9001/quic-v1)",
     )
     parser.add_argument(
@@ -151,7 +151,7 @@ def parse_args(argv: list[str] | None = None) -> CliArgs:
     return CliArgs(
         genesis_path=namespace.genesis_path,
         bootnodes=tuple(namespace.bootnodes),
-        listen_addr=namespace.listen_addr,
+        listen_address=namespace.listen_address,
         checkpoint_sync_url=namespace.checkpoint_sync_url,
         validator_keys_path=namespace.validator_keys_path,
         node_id=namespace.node_id,

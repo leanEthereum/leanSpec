@@ -54,7 +54,7 @@ class TestAnchorFromCheckpoint:
                 url="http://localhost:5052",
                 genesis=local_genesis,
                 fork=LstarSpec(),
-                validator_id=None,
+                validator_index=None,
             )
 
     async def test_verification_failure_raises(self) -> None:
@@ -80,7 +80,7 @@ class TestAnchorFromCheckpoint:
                 url="http://localhost:5052",
                 genesis=local_genesis,
                 fork=LstarSpec(),
-                validator_id=None,
+                validator_index=None,
             )
 
     async def test_network_error_propagates(self) -> None:
@@ -101,7 +101,7 @@ class TestAnchorFromCheckpoint:
                 url="http://localhost:5052",
                 genesis=local_genesis,
                 fork=LstarSpec(),
-                validator_id=None,
+                validator_index=None,
             )
 
     async def test_success_builds_store_and_status(self) -> None:
@@ -121,7 +121,7 @@ class TestAnchorFromCheckpoint:
                 url="http://localhost:5052",
                 genesis=local_genesis,
                 fork=LstarSpec(),
-                validator_id=None,
+                validator_index=None,
             )
 
         assert anchor.store is not None

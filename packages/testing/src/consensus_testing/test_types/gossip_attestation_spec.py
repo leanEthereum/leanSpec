@@ -5,9 +5,8 @@ from __future__ import annotations
 from lean_spec.base import CamelModel
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
-from lean_spec.spec.forks.lstar.containers import AttestationData, Block, SignedAttestation
+from lean_spec.spec.forks.lstar.containers import AttestationData, Block, SignedAttestation, Store
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.forks.lstar.store import Store
 from lean_spec.spec.ssz import Bytes32
 
 from ..keys import XmssKeyManager, create_dummy_signature
@@ -22,7 +21,7 @@ class GossipAttestationSpec(CamelModel):
     Similar to AggregatedAttestationSpec but for individual gossip attestations.
     """
 
-    validator_id: ValidatorIndex
+    validator_index: ValidatorIndex
     """The index of the validator making the attestation (required)."""
 
     slot: Slot
@@ -205,13 +204,13 @@ class GossipAttestationSpec(CamelModel):
             attestation_data = LstarSpec().produce_attestation_data(store, self.slot)
 
         signature = (
-            key_manager.sign_attestation_data(self.validator_id, attestation_data)
+            key_manager.sign_attestation_data(self.validator_index, attestation_data)
             if self.valid_signature
             else create_dummy_signature()
         )
 
         return SignedAttestation(
-            validator_id=self.validator_id,
+            validator_index=self.validator_index,
             data=attestation_data,
             signature=signature,
         )

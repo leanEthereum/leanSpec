@@ -51,7 +51,7 @@ def test_pydantic_validation_accepts_valid_int(uint_class: Type[BaseUint]) -> No
     """Tests that Pydantic validation correctly accepts a valid integer."""
     model = UINT_MODELS[uint_class]
     instance = model(value=10)
-    value = instance.value  # type: ignore[attr-defined]
+    value = instance.value  # type: ignore[attribute-defined]
     assert isinstance(value, uint_class)
     assert value == uint_class(10)
 
@@ -125,41 +125,41 @@ def test_max_method_returns_correct_value(uint_class: Type[BaseUint]) -> None:
 def test_arithmetic_operators(uint_class: Type[BaseUint]) -> None:
     """Tests all standard arithmetic operators."""
     # Use smaller values for high-bit integers to avoid massive numbers
-    a_val, b_val = (100, 3) if uint_class.BITS > 8 else (20, 3)
-    a = uint_class(a_val)
-    b = uint_class(b_val)
+    a_value, b_value = (100, 3) if uint_class.BITS > 8 else (20, 3)
+    a = uint_class(a_value)
+    b = uint_class(b_value)
     max_int = (2**uint_class.BITS) - 1
-    max_val = uint_class(max_int)
+    max_value = uint_class(max_int)
     name = uint_class.__name__
 
     # Addition
-    assert a + b == uint_class(a_val + b_val)
-    expected = f"{max_int + b_val} out of range for {name} [0, {max_int}]"
+    assert a + b == uint_class(a_value + b_value)
+    expected = f"{max_int + b_value} out of range for {name} [0, {max_int}]"
     with pytest.raises(SSZValueError, match=rf"^{re.escape(expected)}$"):
-        _ = max_val + b
+        _ = max_value + b
 
     # Subtraction
-    assert a - b == uint_class(a_val - b_val)
-    expected = f"{b_val - a_val} out of range for {name} [0, {max_int}]"
+    assert a - b == uint_class(a_value - b_value)
+    expected = f"{b_value - a_value} out of range for {name} [0, {max_int}]"
     with pytest.raises(SSZValueError, match=rf"^{re.escape(expected)}$"):
         _ = b - a
 
     # Multiplication
-    assert a * b == uint_class(a_val * b_val)
-    expected = f"{max_int * b_val} out of range for {name} [0, {max_int}]"
+    assert a * b == uint_class(a_value * b_value)
+    expected = f"{max_int * b_value} out of range for {name} [0, {max_int}]"
     with pytest.raises(SSZValueError, match=rf"^{re.escape(expected)}$"):
-        _ = max_val * b
+        _ = max_value * b
 
     # Floor Division
-    assert a // b == uint_class(a_val // b_val)
+    assert a // b == uint_class(a_value // b_value)
 
     # Modulo
-    assert a % b == uint_class(a_val % b_val)
+    assert a % b == uint_class(a_value % b_value)
 
     # Exponentiation
-    assert uint_class(b_val) ** uint_class(4) == uint_class(b_val**4)
+    assert uint_class(b_value) ** uint_class(4) == uint_class(b_value**4)
     if uint_class.BITS <= 16:  # Pow gets too big quickly
-        expected = f"{a_val**b_val} out of range for {name} [0, {max_int}]"
+        expected = f"{a_value**b_value} out of range for {name} [0, {max_int}]"
         with pytest.raises(SSZValueError, match=rf"^{re.escape(expected)}$"):
             _ = a**b
 
@@ -316,8 +316,8 @@ def test_hash(uint_class: Type[BaseUint]) -> None:
 def test_index_list_access(uint_class: Type[BaseUint]) -> None:
     """Tests that Uint types can be used directly for list indexing."""
     data = ["a", "b", "c", "d", "e"]
-    idx = uint_class(2)
-    assert data[idx] == "c"
+    index = uint_class(2)
+    assert data[index] == "c"
     assert data[uint_class(0)] == "a"
     assert data[uint_class(4)] == "e"
 
@@ -353,18 +353,18 @@ def test_index_range(uint_class: Type[BaseUint]) -> None:
 @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
 def test_index_hex_bin_oct(uint_class: Type[BaseUint]) -> None:
     """Tests that Uint types work with hex(), bin(), oct()."""
-    val = uint_class(42)
-    assert hex(val) == "0x2a"
-    assert bin(val) == "0b101010"
-    assert oct(val) == "0o52"
+    value = uint_class(42)
+    assert hex(value) == "0x2a"
+    assert bin(value) == "0b101010"
+    assert oct(value) == "0o52"
 
 
 @pytest.mark.parametrize("uint_class", ALL_UINT_TYPES)
 def test_index_operator_index(uint_class: Type[BaseUint]) -> None:
     """Tests that operator.index() works with Uint types."""
-    val = uint_class(42)
-    assert operator.index(val) == 42
-    assert isinstance(operator.index(val), int)
+    value = uint_class(42)
+    assert operator.index(value) == 42
+    assert isinstance(operator.index(value), int)
 
 
 class TestUintSSZ:

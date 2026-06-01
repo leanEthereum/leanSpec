@@ -17,7 +17,7 @@ class TestParseArgsDefaults:
         assert parse_args(["--genesis", "config.yaml"]) == CliArgs(
             genesis_path=Path("config.yaml"),
             bootnodes=(),
-            listen_addr="/ip4/0.0.0.0/udp/9001/quic-v1",
+            listen_address="/ip4/0.0.0.0/udp/9001/quic-v1",
             checkpoint_sync_url=None,
             validator_keys_path=None,
             node_id="lean_spec_0",
@@ -34,7 +34,7 @@ class TestParseArgsFullFlagSet:
 
     def test_full_flag_set_round_trip(self, tmp_path: Path) -> None:
         """Every flag set on the command line shows up in the parsed value."""
-        keys_dir = tmp_path / "keys"
+        keys_directory = tmp_path / "keys"
         assert parse_args(
             [
                 "--genesis",
@@ -46,7 +46,7 @@ class TestParseArgsFullFlagSet:
                 "--checkpoint-sync-url",
                 "http://localhost:5052",
                 "--validator-keys",
-                str(keys_dir),
+                str(keys_directory),
                 "--node-id",
                 "node_7",
                 "--verbose",
@@ -60,9 +60,9 @@ class TestParseArgsFullFlagSet:
         ) == CliArgs(
             genesis_path=Path("g.yaml"),
             bootnodes=("/ip4/1.1.1.1/udp/9000/quic-v1",),
-            listen_addr="/ip4/0.0.0.0/udp/9100/quic-v1",
+            listen_address="/ip4/0.0.0.0/udp/9100/quic-v1",
             checkpoint_sync_url="http://localhost:5052",
-            validator_keys_path=keys_dir,
+            validator_keys_path=keys_directory,
             node_id="node_7",
             verbose=True,
             no_color=True,

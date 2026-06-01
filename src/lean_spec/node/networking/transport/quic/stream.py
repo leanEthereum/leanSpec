@@ -121,8 +121,8 @@ class QuicStream:
         except Exception as e:
             # If aioquic raises an exception, mark our stream as write-closed
             # to prevent further attempts.
-            error_msg = str(e)
-            if "FIN" in error_msg or "closed" in error_msg.lower():
+            error_message = str(e)
+            if "FIN" in error_message or "closed" in error_message.lower():
                 self._write_closed = True
             raise QuicTransportError(f"Write failed on stream {self._stream_id}: {e}") from e
 

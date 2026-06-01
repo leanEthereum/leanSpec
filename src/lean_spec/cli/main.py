@@ -27,8 +27,8 @@ def main() -> None:
     # Validate cross-field rules and load referenced files.
     try:
         boot = NodeBootstrap.from_cli_args(args)
-    except (CliValidationError, FileNotFoundError) as exc:
-        logger.error("%s", exc)
+    except (CliValidationError, FileNotFoundError) as exception:
+        logger.error("%s", exception)
         sys.exit(1)
 
     # Run the node under an event loop until shutdown or a fatal error.

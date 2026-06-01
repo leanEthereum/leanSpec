@@ -37,7 +37,7 @@ def key_manager() -> XmssKeyManager:
     return XmssKeyManager.shared(max_slot=Slot(20))
 
 
-_DEFAULT_VALIDATOR_ID = ValidatorIndex(0)
+_DEFAULT_VALIDATOR_INDEX = ValidatorIndex(0)
 
 
 @pytest.fixture
@@ -46,12 +46,12 @@ def store_factory(key_manager: XmssKeyManager) -> Callable[..., Store]:
 
     def _create(
         num_validators: int = 12,
-        validator_id: ValidatorIndex | None = _DEFAULT_VALIDATOR_ID,
+        validator_index: ValidatorIndex | None = _DEFAULT_VALIDATOR_INDEX,
         genesis_time: int = 0,
     ) -> Store:
         return make_store(
             num_validators=num_validators,
-            validator_id=validator_id,
+            validator_index=validator_index,
             genesis_time=genesis_time,
             key_manager=key_manager,
         )
@@ -80,7 +80,7 @@ def base_store(spec: LstarSpec, genesis_state: State, genesis_block: Block) -> S
     return spec.create_store(
         genesis_state,
         genesis_block,
-        validator_id=ValidatorIndex(0),
+        validator_index=ValidatorIndex(0),
     )
 
 
@@ -107,7 +107,7 @@ def keyed_genesis_block(keyed_genesis: GenesisData) -> Block:
 
 @pytest.fixture
 def keyed_store(keyed_genesis: GenesisData) -> Store:
-    """Fork choice store with real XMSS keys, validator_id=0."""
+    """Fork choice store with real XMSS keys, validator_index=0."""
     return keyed_genesis.store
 
 
@@ -115,5 +115,5 @@ def keyed_store(keyed_genesis: GenesisData) -> Store:
 def observer_store(
     spec: LstarSpec, keyed_genesis_state: State, keyed_genesis_block: Block
 ) -> Store:
-    """Fork choice store with validator_id=None (non-validator observer)."""
-    return spec.create_store(keyed_genesis_state, keyed_genesis_block, validator_id=None)
+    """Fork choice store with validator_index=None (non-validator observer)."""
+    return spec.create_store(keyed_genesis_state, keyed_genesis_block, validator_index=None)

@@ -49,12 +49,12 @@ async def test_multiple_heartbeats_stabilize(
 async def test_cache_aging_evicts_messages(
     network: GossipsubTestNetwork,
 ) -> None:
-    """After mcache_len heartbeat shifts, cached messages are evicted."""
+    """After mcache_length heartbeat shifts, cached messages are evicted."""
 
-    # The message cache is a sliding window of mcache_len slots.
+    # The message cache is a sliding window of mcache_length slots.
     # Each heartbeat shifts the window forward by one slot.
-    # After mcache_len shifts, the oldest slot falls off the window.
-    params = fast_params(mcache_len=3)
+    # After mcache_length shifts, the oldest slot falls off the window.
+    params = fast_params(mcache_length=3)
     nodes = await network.create_nodes(2, params)
     await network.start_all()
     await nodes[0].connect_to(nodes[1])
@@ -65,15 +65,15 @@ async def test_cache_aging_evicts_messages(
     await publisher.publish(TOPIC, b"will-be-evicted")
 
     # Compute the message ID for lookup.
-    msg_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), b"will-be-evicted")
-    assert publisher.behavior.message_cache.has(msg_id)
+    message_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), b"will-be-evicted")
+    assert publisher.behavior.message_cache.has(message_id)
 
-    # Shift the cache mcache_len times. The message was in slot 0.
+    # Shift the cache mcache_length times. The message was in slot 0.
     # After 3 shifts, slot 0 falls off the window and the message is gone.
-    for _ in range(params.mcache_len):
+    for _ in range(params.mcache_length):
         publisher.behavior.message_cache.shift()
 
-    assert not publisher.behavior.message_cache.has(msg_id)
+    assert not publisher.behavior.message_cache.has(message_id)
 
 
 @pytest.mark.asyncio

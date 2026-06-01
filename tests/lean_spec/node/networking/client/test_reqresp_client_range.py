@@ -23,6 +23,7 @@ from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestations,
     Block,
     BlockBody,
+    MultiMessageAggregate,
     SignedBlock,
 )
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Uint64
@@ -115,7 +116,7 @@ def empty_signed_block(slot: Slot, parent_root: Bytes32, state_seed: int) -> Sig
         state_root=Bytes32(bytes([state_seed]) * 32),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
-    return SignedBlock(block=block, proof=ByteList512KiB(data=b""))
+    return SignedBlock(block=block, proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")))
 
 
 def build_chain(start_slot: int, count: int, root_seed: int = 0xAA) -> list[SignedBlock]:
@@ -148,42 +149,42 @@ class TestReqRespClientBlocksByRange:
     async def test_zero_count_returns_empty_without_opening_stream(self, peer_id: PeerId) -> None:
         """A count of zero short-circuits without opening a stream."""
         client = make_client()
-        conn = MockRangeConnection(peer_id=peer_id)
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id)
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(peer_id, Slot(0), Uint64(0))
 
         assert blocks == []
-        assert conn.opened_protocols == []
+        assert connection.opened_protocols == []
 
     async def test_count_above_max_returns_empty_without_opening_stream(
         self, peer_id: PeerId
     ) -> None:
         """A count strictly larger than MAX_REQUEST_BLOCKS is rejected locally."""
         client = make_client()
-        conn = MockRangeConnection(peer_id=peer_id)
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id)
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(
             peer_id, Slot(0), Uint64(MAX_REQUEST_BLOCKS + 1)
         )
 
         assert blocks == []
-        assert conn.opened_protocols == []
+        assert connection.opened_protocols == []
 
     async def test_overflow_range_returns_empty_without_opening_stream(
         self, peer_id: PeerId
     ) -> None:
         """A start_slot+count overflow above 2**64-1 is rejected locally."""
         client = make_client()
-        conn = MockRangeConnection(peer_id=peer_id)
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id)
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         max_slot = int(Uint64.max_value())
         blocks = await client.request_blocks_by_range(peer_id, Slot(max_slot - 4), Uint64(10))
 
         assert blocks == []
-        assert conn.opened_protocols == []
+        assert connection.opened_protocols == []
 
     async def test_no_connection_returns_empty(self, peer_id: PeerId) -> None:
         """A request with no registered connection returns an empty list."""
@@ -199,13 +200,13 @@ class TestReqRespClientBlocksByRange:
         chain = build_chain(start_slot=10, count=4)
 
         stream = MockRangeStream(response_chunks=[encode_success(b) for b in chain])
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(peer_id, Slot(10), Uint64(4))
 
         assert blocks == chain
-        assert conn.opened_protocols == [BLOCKS_BY_RANGE_PROTOCOL_V1]
+        assert connection.opened_protocols == [BLOCKS_BY_RANGE_PROTOCOL_V1]
         assert stream.closed is True
         assert stream.finish_write_called is True
 
@@ -215,8 +216,8 @@ class TestReqRespClientBlocksByRange:
         chain = build_chain(start_slot=20, count=2)
 
         stream = MockRangeStream(response_chunks=[encode_success(b) for b in chain])
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(peer_id, Slot(20), Uint64(5))
 
@@ -236,8 +237,8 @@ class TestReqRespClientBlocksByRange:
                 encode_success(chain[1]),
             ],
         )
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(peer_id, Slot(30), Uint64(4))
 
@@ -252,8 +253,8 @@ class TestReqRespClientBlocksByRange:
         duplicate = empty_signed_block(Slot(40), hash_tree_root(first.block), state_seed=2)
 
         stream = MockRangeStream(response_chunks=[encode_success(first), encode_success(duplicate)])
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         with pytest.raises(CodecError, match=r"Non-monotonic slot"):
             await client.request_blocks_by_range(peer_id, Slot(40), Uint64(2))
@@ -265,8 +266,8 @@ class TestReqRespClientBlocksByRange:
         out_of_range = empty_signed_block(Slot(60), Bytes32(b"\xaa" * 32), state_seed=1)
 
         stream = MockRangeStream(response_chunks=[encode_success(out_of_range)])
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         with pytest.raises(CodecError, match=r"outside requested range"):
             await client.request_blocks_by_range(peer_id, Slot(50), Uint64(3))
@@ -288,8 +289,8 @@ class TestReqRespClientBlocksByRange:
         bad = empty_signed_block(Slot(73), Bytes32.zero(), state_seed=2)
 
         stream = MockRangeStream(response_chunks=[encode_success(first), encode_success(bad)])
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         with pytest.raises(CodecError, match=r"Parent root mismatch"):
             await client.request_blocks_by_range(peer_id, Slot(70), Uint64(5))
@@ -303,8 +304,8 @@ class TestReqRespClientBlocksByRange:
         second = empty_signed_block(Slot(85), parent_root=hash_tree_root(first.block), state_seed=2)
 
         stream = MockRangeStream(response_chunks=[encode_success(first), encode_success(second)])
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(peer_id, Slot(80), Uint64(10))
 
@@ -326,8 +327,8 @@ class TestReqRespClientBlocksByRange:
                 encode_success(extra),
             ],
         )
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         with pytest.raises(CodecError, match=r"more than count"):
             await client.request_blocks_by_range(peer_id, Slot(100), Uint64(2))
@@ -336,14 +337,14 @@ class TestReqRespClientBlocksByRange:
         """A request that times out returns an empty list rather than raising."""
         client = make_client()
         client.timeout = 0.01
-        conn = MockRangeConnection(peer_id=peer_id, streams=[MockRangeStream()])
+        connection = MockRangeConnection(peer_id=peer_id, streams=[MockRangeStream()])
 
         async def slow_read() -> bytes:
             await asyncio.sleep(1.0)
             return b""
 
-        conn.streams[0].read = slow_read  # type: ignore[method-assign]
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection.streams[0].read = slow_read  # type: ignore[method-assign]
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(peer_id, Slot(0), Uint64(3))
 
@@ -356,8 +357,8 @@ class TestReqRespClientBlocksByRange:
         error_chunk = ResponseCode.SERVER_ERROR.encode(b"db boom")
 
         stream = MockRangeStream(response_chunks=[encode_success(chain[0]), error_chunk])
-        conn = MockRangeConnection(peer_id=peer_id, streams=[stream])
-        client.register_connection(peer_id, conn)  # type: ignore[arg-type]
+        connection = MockRangeConnection(peer_id=peer_id, streams=[stream])
+        client.register_connection(peer_id, connection)  # type: ignore[arg-type]
 
         blocks = await client.request_blocks_by_range(peer_id, Slot(200), Uint64(3))
 

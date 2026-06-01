@@ -33,14 +33,14 @@ async def test_chain_propagation(
     await network.stabilize_mesh(TOPIC, rounds=5)
 
     data = b"chain-msg"
-    msg_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
+    message_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
     await network.nodes[0].publish(TOPIC, data)
 
     # All other nodes should receive the message.
     for node in network.nodes[1:]:
-        msg = await node.wait_for_message(TOPIC, timeout=5.0)
-        assert msg == GossipsubMessageEvent(
-            peer_id=msg.peer_id, topic=TOPIC, data=data, message_id=msg_id
+        message = await node.wait_for_message(TOPIC, timeout=5.0)
+        assert message == GossipsubMessageEvent(
+            peer_id=message.peer_id, topic=TOPIC, data=data, message_id=message_id
         )
 
 
@@ -58,13 +58,13 @@ async def test_full_mesh_all_receive(
 
     publisher = network.nodes[0]
     data = b"broadcast"
-    msg_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
+    message_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), data)
     await publisher.publish(TOPIC, data)
 
     for node in network.nodes[1:]:
-        msg = await node.wait_for_message(TOPIC, timeout=5.0)
-        assert msg == GossipsubMessageEvent(
-            peer_id=msg.peer_id, topic=TOPIC, data=data, message_id=msg_id
+        message = await node.wait_for_message(TOPIC, timeout=5.0)
+        assert message == GossipsubMessageEvent(
+            peer_id=message.peer_id, topic=TOPIC, data=data, message_id=message_id
         )
 
     # In a full mesh, multiple paths exist to each node.
@@ -118,10 +118,10 @@ async def test_many_messages_all_delivered(
     await network.stabilize_mesh(TOPIC, rounds=3)
 
     publisher = network.nodes[0]
-    msg_count = 20
+    message_count = 20
 
-    payloads = [f"msg-{i}".encode() for i in range(msg_count)]
-    msg_ids = [GossipsubMessage.compute_id(TOPIC.encode("utf-8"), p) for p in payloads]
+    payloads = [f"msg-{i}".encode() for i in range(message_count)]
+    message_ids = [GossipsubMessage.compute_id(TOPIC.encode("utf-8"), p) for p in payloads]
 
     for payload in payloads:
         await publisher.publish(TOPIC, payload)
@@ -131,10 +131,13 @@ async def test_many_messages_all_delivered(
         await asyncio.sleep(0.01)
 
     for node in network.nodes[1:]:
-        msgs = await node.wait_for_messages(msg_count, TOPIC, timeout=10.0)
-        assert msgs == [
+        messages = await node.wait_for_messages(message_count, TOPIC, timeout=10.0)
+        assert messages == [
             GossipsubMessageEvent(
-                peer_id=msgs[i].peer_id, topic=TOPIC, data=payloads[i], message_id=msg_ids[i]
+                peer_id=messages[i].peer_id,
+                topic=TOPIC,
+                data=payloads[i],
+                message_id=message_ids[i],
             )
-            for i in range(msg_count)
+            for i in range(message_count)
         ]

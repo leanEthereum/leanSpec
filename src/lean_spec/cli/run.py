@@ -46,7 +46,7 @@ async def _build_event_source(boot: NodeBootstrap) -> LiveNetworkEventSource:
     # Validator-owned subnets carry the attestations the mesh must propagate.
     # Missing one of them breaks the attestation flow for that validator.
     subnets: set[SubnetId] = {
-        idx.compute_subnet_id(ATTESTATION_COMMITTEE_COUNT) for idx in boot.registry.indices()
+        index.compute_subnet_id(ATTESTATION_COMMITTEE_COUNT) for index in boot.registry.indices()
     }
 
     # Aggregator extras are advisory subnets the operator wants this node to see.
@@ -110,7 +110,7 @@ async def run_node(boot: NodeBootstrap) -> None:
     await event_source.start_serving(
         status=anchor.initial_status,
         current_slot_lookup=node.clock.current_slot,
-        listen_addr=boot.listen_addr,
+        listen_address=boot.listen_address,
         bootnode_multiaddrs=boot.bootnode_multiaddrs,
     )
 

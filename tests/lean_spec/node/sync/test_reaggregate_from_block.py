@@ -1,8 +1,8 @@
-"""Tests for post-block Type-1 deconstruction in SyncService.
+"""Tests for post-block single-message aggregate deconstruction in SyncService.
 
 Exercises `SyncService._deconstruct_block_into_store`: for every processed
-block (gossip, head-sync, or backfilled), the merged Type-2 proof is split
-into per-attestation Type-1 proofs, merged with locally held partials, and
+block (gossip, head-sync, or backfilled), the merged multi-message aggregate proof is split
+into per-attestation single-message aggregate proofs, merged with locally held partials, and
 written into the pending pool, replacing the partials it subsumes.
 
 Deconstruction only runs for an attestation when:
@@ -54,12 +54,12 @@ def _setup(
     The chain block sits at slot 1. The returned signed block sits at slot
     2 and carries one attestation whose target is the slot-1 block, ahead
     of the still-genesis justified checkpoint. The returned store holds the
-    slot-1 block and its state (the parent state the Type-2 pubkey layout
+    slot-1 block and its state (the parent state the multi-message aggregate public_key layout
     is resolved against) with the justified checkpoint still at genesis.
     """
     spec = LstarSpec()
     base_store = make_store(
-        num_validators=NUM_VALIDATORS, validator_id=ValidatorIndex(0), key_manager=key_manager
+        num_validators=NUM_VALIDATORS, validator_index=ValidatorIndex(0), key_manager=key_manager
     )
 
     consumer_store, chain_block = make_signed_block_from_store(
@@ -142,7 +142,7 @@ def test_skips_when_block_adds_no_new_validators(
 
 
 def test_noop_when_parent_state_missing(peer_id: PeerId, key_manager: XmssKeyManager) -> None:
-    """Without the parent state the pubkey layout cannot be resolved -> no-op."""
+    """Without the parent state the public_key layout cannot be resolved -> no-op."""
     chain_store, signed_block, _ = _setup(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
     )

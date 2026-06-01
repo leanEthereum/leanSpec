@@ -208,7 +208,7 @@ async def read_gossip_message(stream: InboundStreamProtocol) -> tuple[str, bytes
 
     Gossip message wire format::
 
-        [topic_len: varint][topic: UTF-8][data_len: varint][data: bytes]
+        [topic_length: varint][topic: UTF-8][data_length: varint][data: bytes]
 
     Args:
         stream: QUIC stream to read from.
@@ -282,24 +282,24 @@ async def read_gossip_message(stream: InboundStreamProtocol) -> tuple[str, bytes
             #
             # The varint tells us how many bytes the topic string occupies.
             # Most topics are ~50 bytes, so this is typically a 1-byte varint.
-            topic_len, topic_len_bytes = decode_varint(bytes(buffer), 0)
-            topic_end = topic_len_bytes + topic_len
+            topic_length, topic_length_bytes = decode_varint(bytes(buffer), 0)
+            topic_end = topic_length_bytes + topic_length
 
             if len(buffer) >= topic_end:
                 # We have the complete topic string.
                 #
                 # Topics are UTF-8 encoded. Invalid encoding indicates
                 # a protocol violation or corrupted data.
-                topic_str = buffer[topic_len_bytes:topic_end].decode("utf-8")
+                topic_str = buffer[topic_length_bytes:topic_end].decode("utf-8")
 
                 if len(buffer) > topic_end:
                     # Parse data length varint.
                     #
                     # This tells us how many bytes of compressed data follow.
                     # Block messages can be several hundred KB compressed.
-                    data_len, data_len_bytes = decode_varint(bytes(buffer), topic_end)
-                    data_start = topic_end + data_len_bytes
-                    data_end = data_start + data_len
+                    data_length, data_length_bytes = decode_varint(bytes(buffer), topic_end)
+                    data_start = topic_end + data_length_bytes
+                    data_end = data_start + data_length
 
                     if len(buffer) >= data_end:
                         # We have the complete message.

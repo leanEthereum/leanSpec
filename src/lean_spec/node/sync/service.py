@@ -17,11 +17,6 @@ from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.storage import Database
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import (
-    AggregationError,
-    TypeOneMultiSignature,
-    TypeTwoMultiSignature,
-)
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks import (
     AttestationData,
@@ -33,8 +28,11 @@ from lean_spec.spec.forks import (
     Slot,
     Store,
 )
+from lean_spec.spec.forks.lstar.containers import (
+    AggregationError,
+    SingleMessageAggregate,
+)
 from lean_spec.spec.ssz import Bytes32
-from lean_spec.spec.ssz.exceptions import SSZError
 
 from .backfill_sync import BackfillSync, NetworkRequester
 from .block_cache import BlockCache
@@ -44,10 +42,6 @@ from .peer_manager import PeerManager
 from .states import SyncState
 
 logger = logging.getLogger(__name__)
-
-
-async def _noop_publish_agg(signed_attestation: SignedAggregatedAttestation) -> None:
-    """No-op default for aggregated attestation publishing."""
 
 
 @dataclass(slots=True)
@@ -78,12 +72,12 @@ class SyncService:
     is_aggregator: bool = field(default=False)
     """Whether this node functions as an aggregator."""
 
-    publish_aggregated_attestation: Callable[
-        [SignedAggregatedAttestation], Coroutine[None, None, None]
-    ] = field(default=_noop_publish_agg)
+    publish_aggregated_attestation: (
+        Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]] | None
+    ) = field(default=None)
     """Async callback for publishing aggregated attestations to the network.
 
-    Defaults to a no-op so tests and offline runs do not need a publisher wired.
+    Defaults to None so tests and offline runs do not need a publisher wired.
     Assign after construction once NetworkService is built.
     """
 
@@ -391,17 +385,17 @@ class SyncService:
             return
 
         slot = attestation.data.slot
-        validator_id = attestation.validator_id
+        validator_index = attestation.validator_index
         peer_str = str(peer_id) if peer_id is not None else "local"
         logger.info(
             "Attestation received from peer %s slot=%s validator=%s",
             peer_str,
             slot,
-            validator_id,
+            validator_index,
         )
 
         # Aggregator role requires both an active validator and operator opt-in.
-        is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
+        is_aggregator_role = self.store.validator_index is not None and self.is_aggregator
 
         # The store validates the signature and updates branch weights.
         #
@@ -417,7 +411,7 @@ class SyncService:
                 "Attestation from peer %s slot=%s validator=%s: validation and signature ok",
                 peer_str,
                 slot,
-                validator_id,
+                validator_index,
             )
         except (AssertionError, KeyError) as e:
             metrics.lean_attestations_invalid_total.labels(source="gossip").inc()
@@ -425,7 +419,7 @@ class SyncService:
                 "Attestation from peer %s slot=%s validator=%s: validation or signature failed: %s",
                 peer_str,
                 slot,
-                validator_id,
+                validator_index,
                 e,
             )
             # Target block has not arrived yet; buffer for post-block replay.
@@ -478,7 +472,7 @@ class SyncService:
     def _replay_pending_attestations(self) -> None:
         """Retry buffered attestations after a block is processed."""
         # Aggregator role for this replay matches the live gossip path.
-        is_aggregator_role = self.store.validator_id is not None and self.is_aggregator
+        is_aggregator_role = self.store.validator_index is not None and self.is_aggregator
 
         # Drain the queue into a local and iterate it.
         # Successful retries disappear into the store.
@@ -502,9 +496,9 @@ class SyncService:
                 self._pending_attestations.append(attestation)
 
         # Same mechanism for aggregated attestations.
-        pending_agg = self._pending_aggregated_attestations
+        pending_aggregate = self._pending_aggregated_attestations
         self._pending_aggregated_attestations = deque(maxlen=MAX_PENDING_ATTESTATIONS)
-        for signed_attestation in pending_agg:
+        for signed_attestation in pending_aggregate:
             try:
                 self.store = self.spec.on_gossip_aggregated_attestation(
                     self.store, signed_attestation
@@ -521,17 +515,18 @@ class SyncService:
 
         On block import we already trust the block-attestation participant
         bitfields via spec on_block signature verification. The block carries
-        one merged Type-2 proof binding every attestation in its body.
+        one merged multi-message aggregate proof binding every attestation in its body.
 
         For each block attestation that covers validators not already held
         in the given store:
 
-        1. Extract that data's Type-1 proof out of the block's Type-2 proof.
-        2. Merge it with all local partial Type-1 proofs for the same data
-           into one Type-1 proof whose participant bits are the union.
+        1. Extract that data's single-message aggregate proof
+           out of the block's multi-message aggregate proof.
+        2. Merge it with all local partial single-message aggregate proofs for the same data
+           into one single-message aggregate proof whose participant bits are the union.
         3. Write the combined proof into the pending pool.
 
-        If the data was never seen locally, the extracted Type-1 is used
+        If the data was never seen locally, the extracted single-message aggregate is used
         as-is.
 
         Runs for every node, including non-validators, so the per-attestation
@@ -547,42 +542,33 @@ class SyncService:
         if not block_attestations:
             return store, []
 
-        # The Type-2 proof was built against the parent state's validator set.
-        # Without it we cannot resolve the pubkey layout the proof was bound to.
+        # The multi-message aggregate proof was built against the parent state's validator set.
+        # Without it we cannot resolve the public_key layout the proof was bound to.
         parent_state = store.states.get(block.block.parent_root)
         if parent_state is None:
             return store, []
         validators = parent_state.validators
 
-        # The wrapper must not raise on a malformed proof.
-        # The block already passed signature verification upstream, so this
-        # catches the realistic SSZ deserialization failure modes only.
-        try:
-            type_two = TypeTwoMultiSignature.decode_bytes(block.proof.data)
-        except (SSZError, ValueError, IndexError) as exc:
-            logger.debug("Post-block Type-2 decode failed: %s", exc)
-            return store, []
-
-        # Build the per-message pubkey layout once.
+        # Build the per-message public_key layout once.
         # The layout is invariant per block: one entry per body attestation
         # in order, then the proposer entry. Hoisted out of the per-att loop
         # to avoid quadratic work when many block attestations need splitting.
         public_keys_per_message: list[list[PublicKey]] = []
-        for att in block_attestations:
+        for attestation in block_attestations:
             public_keys_per_message.append(
                 [
-                    validators[vid].get_attestation_pubkey()
-                    for vid in att.aggregation_bits.to_validator_indices()
+                    validators[validator_index].get_attestation_public_key()
+                    for validator_index in attestation.aggregation_bits.to_validator_indices()
                 ]
             )
         public_keys_per_message.append(
-            [validators[block.block.proposer_index].get_proposal_pubkey()]
+            [validators[block.block.proposer_index].get_proposal_public_key()]
         )
 
-        # Index local partial Type-1 proofs by AttestationData root. Equivalent
+        # Index local partial single-message aggregate proofs by AttestationData root. Equivalent
         # AttestationData instances from different code paths may not share a
         # dict key, so match on the hash tree root instead.
-        local_proofs_by_root: dict[Bytes32, list[TypeOneMultiSignature]] = {}
+        local_proofs_by_root: dict[Bytes32, list[SingleMessageAggregate]] = {}
         for data, proofs in store.latest_new_aggregated_payloads.items():
             local_proofs_by_root.setdefault(hash_tree_root(data), []).extend(proofs)
 
@@ -590,13 +576,13 @@ class SyncService:
         # The combined proof is retained locally so the block-sourced
         # aggregate survives without depending on gossip loopback. Shallow
         # copy the dict and its inner sets to preserve store immutability.
-        new_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {
+        new_payloads: dict[AttestationData, set[SingleMessageAggregate]] = {
             k: set(v) for k, v in store.latest_new_aggregated_payloads.items()
         }
         aggregates: list[SignedAggregatedAttestation] = []
 
-        for att in block_attestations:
-            data = att.data
+        for attestation in block_attestations:
+            data = attestation.data
 
             # Only spend a split on attestations that can still move
             # justification forward. A target at or behind the store's
@@ -605,7 +591,7 @@ class SyncService:
                 continue
 
             data_root = hash_tree_root(data)
-            block_participants = set(att.aggregation_bits.to_validator_indices())
+            block_participants = set(attestation.aggregation_bits.to_validator_indices())
 
             local_proofs = local_proofs_by_root.get(data_root, [])
             local_union: set = set()
@@ -620,23 +606,23 @@ class SyncService:
             try:
                 # The split takes the bits from the block attestation this
                 # component binds, since the Rust binding does not return them.
-                block_t1 = type_two.split_by_msg(
+                block_single_message_aggregate = block.proof.split_by_message(
                     message=data_root,
                     public_keys_per_message=public_keys_per_message,
-                    participants=att.aggregation_bits,
+                    participants=attestation.aggregation_bits,
                 )
 
                 if local_proofs:
-                    combined = TypeOneMultiSignature.aggregate(
+                    combined = SingleMessageAggregate.aggregate(
                         children=[
                             (
                                 child,
                                 [
-                                    validators[vid].get_attestation_pubkey()
-                                    for vid in child.participants.to_validator_indices()
+                                    validators[validator_index].get_attestation_public_key()
+                                    for validator_index in child.participants.to_validator_indices()
                                 ],
                             )
-                            for child in (block_t1, *local_proofs)
+                            for child in (block_single_message_aggregate, *local_proofs)
                         ],
                         raw_xmss=[],
                         message=data_root,
@@ -644,9 +630,9 @@ class SyncService:
                     )
                 else:
                     # Data unseen locally: nothing to merge, use as-is.
-                    combined = block_t1
-            except (AggregationError, AssertionError, KeyError, ValueError) as exc:
-                logger.debug("Post-block re-aggregation failed for %s: %s", data_root, exc)
+                    combined = block_single_message_aggregate
+            except (AggregationError, AssertionError, KeyError, ValueError) as exception:
+                logger.debug("Post-block re-aggregation failed for %s: %s", data_root, exception)
                 continue
 
             # The combined proof is a superset of every local partial that
@@ -684,6 +670,9 @@ class SyncService:
             return
         pending = self._pending_block_aggregates
         self._pending_block_aggregates = []
+        # No publisher wired (tests, offline runs): drop the drained aggregates.
+        if self.publish_aggregated_attestation is None:
+            return
         for signed_attestation in pending:
             await self.publish_aggregated_attestation(signed_attestation)
 

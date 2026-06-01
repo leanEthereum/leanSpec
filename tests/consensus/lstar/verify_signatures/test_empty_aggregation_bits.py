@@ -44,7 +44,7 @@ def test_empty_aggregation_bits_rejected(
             slot=Slot(1),
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(0)],
+                    validator_indices=[ValidatorIndex(0)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",

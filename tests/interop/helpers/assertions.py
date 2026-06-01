@@ -119,18 +119,18 @@ def assert_checkpoint_monotonicity(
 
     num_nodes = len(checkpoint_history[0])
 
-    for node_idx in range(num_nodes):
-        prev_justified = 0
-        prev_finalized = 0
-        for phase_idx, phase_diags in enumerate(checkpoint_history):
-            d = phase_diags[node_idx]
-            assert d.justified_slot >= prev_justified, (
-                f"Node {node_idx} justified_slot regressed: "
-                f"{prev_justified} -> {d.justified_slot} at phase {phase_idx}"
+    for node_index in range(num_nodes):
+        previous_justified = 0
+        previous_finalized = 0
+        for phase_index, phase_diags in enumerate(checkpoint_history):
+            d = phase_diags[node_index]
+            assert d.justified_slot >= previous_justified, (
+                f"Node {node_index} justified_slot regressed: "
+                f"{previous_justified} -> {d.justified_slot} at phase {phase_index}"
             )
-            assert d.finalized_slot >= prev_finalized, (
-                f"Node {node_idx} finalized_slot regressed: "
-                f"{prev_finalized} -> {d.finalized_slot} at phase {phase_idx}"
+            assert d.finalized_slot >= previous_finalized, (
+                f"Node {node_index} finalized_slot regressed: "
+                f"{previous_finalized} -> {d.finalized_slot} at phase {phase_index}"
             )
-            prev_justified = d.justified_slot
-            prev_finalized = d.finalized_slot
+            previous_justified = d.justified_slot
+            previous_finalized = d.finalized_slot

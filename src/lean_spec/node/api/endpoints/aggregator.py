@@ -58,8 +58,8 @@ async def handle_toggle(request: web.Request) -> web.Response:
 
     try:
         payload = await request.json()
-    except json.JSONDecodeError as exc:
-        raise web.HTTPBadRequest(reason="Invalid JSON body") from exc
+    except json.JSONDecodeError as exception:
+        raise web.HTTPBadRequest(reason="Invalid JSON body") from exception
 
     if not isinstance(payload, dict) or "enabled" not in payload:
         raise web.HTTPBadRequest(reason="Missing 'enabled' field in body")

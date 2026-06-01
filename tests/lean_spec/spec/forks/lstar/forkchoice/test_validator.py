@@ -5,7 +5,6 @@ from consensus_testing.keys import XmssKeyManager
 
 from lean_spec.node.chain.clock import Interval
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import AttestationSignatureEntry, Store
 from lean_spec.spec.forks.lstar.containers import (
@@ -15,10 +14,11 @@ from lean_spec.spec.forks.lstar.containers import (
     BlockBody,
     Config,
     SignedAttestation,
+    SingleMessageAggregate,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import Bytes32, Uint64
-from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_aggregated_proof, make_store
+from tests.lean_spec.helpers import TEST_VALIDATOR_INDEX, make_aggregated_proof, make_store
 
 
 class TestBlockProduction:
@@ -27,14 +27,14 @@ class TestBlockProduction:
     def test_produce_block_basic(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test basic block production by authorized proposer."""
         slot = Slot(1)
-        validator_idx = ValidatorIndex(1)  # Proposer for slot 1
+        validator_index = ValidatorIndex(1)  # Proposer for slot 1
 
         store, block, _signatures = spec.produce_block_with_signatures(
-            sample_store, slot, validator_idx
+            sample_store, slot, validator_index
         )
         # Verify block structure
         assert block.slot == slot
-        assert block.proposer_index == validator_idx
+        assert block.proposer_index == validator_index
         assert block.parent_root == sample_store.head
         assert isinstance(block.body, BlockBody)
         assert block.state_root != Bytes32.zero()  # Should have computed state root
@@ -69,7 +69,7 @@ class TestBlockProduction:
             source=sample_store.latest_justified,
         )
         signed_5 = SignedAttestation(
-            validator_id=ValidatorIndex(5),
+            validator_index=ValidatorIndex(5),
             data=data_5,
             signature=key_manager.sign_attestation_data(ValidatorIndex(5), data_5),
         )
@@ -80,7 +80,7 @@ class TestBlockProduction:
             source=sample_store.latest_justified,
         )
         signed_6 = SignedAttestation(
-            validator_id=ValidatorIndex(6),
+            validator_index=ValidatorIndex(6),
             data=data_6,
             signature=key_manager.sign_attestation_data(ValidatorIndex(6), data_6),
         )
@@ -90,28 +90,28 @@ class TestBlockProduction:
 
         # Build payloads keyed by attestation data.
         # If data_5 == data_6 (same slot/head/target/source), they share a key.
-        known_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {}
+        known_payloads: dict[AttestationData, set[SingleMessageAggregate]] = {}
         known_payloads.setdefault(signed_5.data, set()).add(proof_5)
         known_payloads.setdefault(signed_6.data, set()).add(proof_6)
 
-        gossip_sigs = {}
-        gossip_sigs.setdefault(signed_5.data, set()).add(
+        gossip_signatures = {}
+        gossip_signatures.setdefault(signed_5.data, set()).add(
             AttestationSignatureEntry(ValidatorIndex(5), signed_5.signature)
         )
-        gossip_sigs.setdefault(signed_6.data, set()).add(
+        gossip_signatures.setdefault(signed_6.data, set()).add(
             AttestationSignatureEntry(ValidatorIndex(6), signed_6.signature)
         )
 
         sample_store.latest_known_aggregated_payloads = known_payloads
-        sample_store.attestation_signatures = gossip_sigs
+        sample_store.attestation_signatures = gossip_signatures
 
         slot = Slot(2)
-        validator_idx = ValidatorIndex(2)  # Proposer for slot 2
+        validator_index = ValidatorIndex(2)  # Proposer for slot 2
 
         store, block, signatures = spec.produce_block_with_signatures(
             sample_store,
             slot,
-            validator_idx,
+            validator_index,
         )
 
         # Block should include the attestations we added.
@@ -120,17 +120,22 @@ class TestBlockProduction:
 
         # Verify block structure is correct
         assert block.slot == slot
-        assert block.proposer_index == validator_idx
+        assert block.proposer_index == validator_index
         assert block.state_root != Bytes32.zero()
 
         # Verify each aggregated signature proof
-        for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
+        for aggregate_attestation, proof in zip(
+            block.body.attestations.data, signatures, strict=True
+        ):
             participants = proof.participants.to_validator_indices()
-            public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+            public_keys = [
+                key_manager[validator_index].attestation_keypair.public_key
+                for validator_index in participants
+            ]
             proof.verify(
                 public_keys=public_keys,
-                message=hash_tree_root(agg_att.data),
-                slot=agg_att.data.slot,
+                message=hash_tree_root(aggregate_attestation.data),
+                slot=aggregate_attestation.data.slot,
             )
 
     def test_produce_block_sequential_slots(self, sample_store: Store, spec: LstarSpec) -> None:
@@ -177,7 +182,7 @@ class TestBlockProduction:
     def test_produce_block_empty_attestations(self, sample_store: Store, spec: LstarSpec) -> None:
         """Test block production with no available attestations."""
         slot = Slot(3)
-        validator_idx = ValidatorIndex(3)
+        validator_index = ValidatorIndex(3)
 
         # Ensure no attestations in store (clear aggregated payloads)
         sample_store.latest_known_aggregated_payloads = {}
@@ -185,13 +190,13 @@ class TestBlockProduction:
         store, block, _signatures = spec.produce_block_with_signatures(
             sample_store,
             slot,
-            validator_idx,
+            validator_index,
         )
 
         # Should produce valid block with empty attestations
         assert len(block.body.attestations) == 0
         assert block.slot == slot
-        assert block.proposer_index == validator_idx
+        assert block.proposer_index == validator_index
         assert block.state_root != Bytes32.zero()
 
     def test_produce_block_state_consistency(
@@ -199,7 +204,7 @@ class TestBlockProduction:
     ) -> None:
         """Test that produced block's state is consistent with block content."""
         slot = Slot(4)
-        validator_idx = ValidatorIndex(4)
+        validator_index = ValidatorIndex(4)
 
         # Add some attestations to test state computation
         head_block = sample_store.blocks[sample_store.head]
@@ -211,7 +216,7 @@ class TestBlockProduction:
             source=sample_store.latest_justified,
         )
         signed_7 = SignedAttestation(
-            validator_id=ValidatorIndex(7),
+            validator_index=ValidatorIndex(7),
             data=data_7,
             signature=key_manager.sign_attestation_data(ValidatorIndex(7), data_7),
         )
@@ -226,7 +231,7 @@ class TestBlockProduction:
         store, block, signatures = spec.produce_block_with_signatures(
             sample_store,
             slot,
-            validator_idx,
+            validator_index,
         )
         block_hash = hash_tree_root(block)
 
@@ -235,13 +240,18 @@ class TestBlockProduction:
         assert hash_tree_root(stored_state) == block.state_root
 
         # Verify each aggregated proof binds to its attestation in the block.
-        for agg_att, proof in zip(block.body.attestations.data, signatures, strict=True):
+        for aggregate_attestation, proof in zip(
+            block.body.attestations.data, signatures, strict=True
+        ):
             participants = proof.participants.to_validator_indices()
-            public_keys = [key_manager[vid].attestation_keypair.public_key for vid in participants]
+            public_keys = [
+                key_manager[validator_index].attestation_keypair.public_key
+                for validator_index in participants
+            ]
             proof.verify(
                 public_keys=public_keys,
-                message=hash_tree_root(agg_att.data),
-                slot=agg_att.data.slot,
+                message=hash_tree_root(aggregate_attestation.data),
+                slot=aggregate_attestation.data.slot,
             )
 
 
@@ -252,20 +262,20 @@ class TestValidatorIntegration:
         """Test producing a block then creating attestation for it."""
         # Proposer produces block for slot 1
         proposer_slot = Slot(1)
-        proposer_idx = ValidatorIndex(1)
-        spec.produce_block_with_signatures(sample_store, proposer_slot, proposer_idx)
+        proposer_index = ValidatorIndex(1)
+        spec.produce_block_with_signatures(sample_store, proposer_slot, proposer_index)
 
         # Update store state after block production
         sample_store = spec.update_head(sample_store)
 
         # Other validator creates attestation for slot 2
         attestor_slot = Slot(2)
-        attestor_idx = ValidatorIndex(7)
+        attestor_index = ValidatorIndex(7)
         attestation_data = spec.produce_attestation_data(sample_store, attestor_slot)
-        attestation = Attestation(validator_id=attestor_idx, data=attestation_data)
+        attestation = Attestation(validator_index=attestor_index, data=attestation_data)
 
         # Attestation should reference the new block as head (if it became head)
-        assert attestation.validator_id == attestor_idx
+        assert attestation.validator_index == attestor_index
         assert attestation.data.slot == attestor_slot
 
         # The attestation should be consistent with current forkchoice state
@@ -286,7 +296,7 @@ class TestValidatorIntegration:
         attestations = []
         for i in range(2, 6):
             attestation_data = spec.produce_attestation_data(sample_store, Slot(2))
-            attestation = Attestation(validator_id=ValidatorIndex(i), data=attestation_data)
+            attestation = Attestation(validator_index=ValidatorIndex(i), data=attestation_data)
             attestations.append(attestation)
 
         # All attestations should be consistent
@@ -343,8 +353,8 @@ class TestValidatorIntegration:
 
         # Should be able to produce attestation
         attestation_data = spec.produce_attestation_data(sample_store, Slot(10))
-        attestation = Attestation(validator_id=max_validator, data=attestation_data)
-        assert attestation.validator_id == max_validator
+        attestation = Attestation(validator_index=max_validator, data=attestation_data)
+        assert attestation.validator_index == max_validator
 
     def test_validator_operations_empty_store(self, spec: LstarSpec) -> None:
         """Test validator operations with minimal store state."""
@@ -357,7 +367,7 @@ class TestValidatorIntegration:
             ValidatorIndex(1),
         )
         attestation_data = spec.produce_attestation_data(store, Slot(1))
-        attestation = Attestation(validator_id=ValidatorIndex(2), data=attestation_data)
+        attestation = Attestation(validator_index=ValidatorIndex(2), data=attestation_data)
 
         assert isinstance(block, Block)
         assert isinstance(attestation, Attestation)
@@ -391,7 +401,7 @@ class TestValidatorErrorHandling:
             latest_finalized=checkpoint,
             blocks={},  # No blocks
             states={},  # No states
-            validator_id=TEST_VALIDATOR_ID,
+            validator_index=TEST_VALIDATOR_INDEX,
         )
 
         # The forkchoice head walk asserts that the justified root is known.
@@ -419,5 +429,5 @@ class TestValidatorErrorHandling:
 
         # Attestation can be created for any validator
         attestation_data = spec.produce_attestation_data(sample_store, Slot(1))
-        attestation = Attestation(validator_id=large_validator, data=attestation_data)
-        assert attestation.validator_id == large_validator
+        attestation = Attestation(validator_index=large_validator, data=attestation_data)
+        assert attestation.validator_index == large_validator

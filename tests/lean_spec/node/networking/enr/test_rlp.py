@@ -27,7 +27,7 @@ SHORT_STRING_PREFIX = 0x80
 A short string's prefix is this base plus its length, so the range runs 0x80 through 0xB7.
 """
 
-SHORT_STRING_MAX_LEN = 55
+SHORT_STRING_MAX_LENGTH = 55
 """Largest payload length that fits the short string range.
 
 Anything larger switches to the long form, where the length itself follows the prefix.
@@ -45,7 +45,7 @@ SHORT_LIST_PREFIX = 0xC0
 A short list's prefix is this base plus its payload length, so the range runs 0xC0 through 0xF7.
 """
 
-SHORT_LIST_MAX_LEN = 55
+SHORT_LIST_MAX_LENGTH = 55
 """Largest payload length that fits the short list range.
 
 Anything larger switches to the long form, where the length itself follows the prefix.
@@ -85,10 +85,10 @@ class TestEncodeSingleByte:
         result = encode_rlp(b"\x7f")
         assert result == bytes.fromhex("7f")
 
-    @pytest.mark.parametrize("byte_val", range(0x00, SINGLE_BYTE_MAX + 1))
-    def test_encode_all_single_byte_values(self, byte_val: int) -> None:
+    @pytest.mark.parametrize("byte_value", range(0x00, SINGLE_BYTE_MAX + 1))
+    def test_encode_all_single_byte_values(self, byte_value: int) -> None:
         """All single-byte values 0x00-0x7f encode as themselves."""
-        data = bytes([byte_val])
+        data = bytes([byte_value])
         result = encode_rlp(data)
         assert result == data
 
@@ -104,7 +104,7 @@ class TestEncodeShortString:
     def test_encode_short_string_55_bytes(self) -> None:
         """55-byte string uses short string encoding (max for this category)."""
         data = b"Lorem ipsum dolor sit amet, consectetur adipisicing eli"
-        assert len(data) == SHORT_STRING_MAX_LEN
+        assert len(data) == SHORT_STRING_MAX_LENGTH
         result = encode_rlp(data)
         expected = bytes.fromhex(
             "b74c6f72656d20697073756d20646f6c6f722073697420616d65742c20"
@@ -117,7 +117,7 @@ class TestEncodeShortString:
         result = encode_rlp(b"\x80")
         assert result == bytes([SHORT_STRING_PREFIX + 1, 0x80])
 
-    @pytest.mark.parametrize("length", [1, 10, 20, 30, 40, 50, SHORT_STRING_MAX_LEN])
+    @pytest.mark.parametrize("length", [1, 10, 20, 30, 40, 50, SHORT_STRING_MAX_LENGTH])
     def test_encode_short_string_various_lengths(self, length: int) -> None:
         """Short strings of various lengths are prefixed with 0x80 + length."""
         # Use bytes above 0x7f to ensure short string encoding is used
@@ -133,7 +133,7 @@ class TestEncodeLongString:
     def test_encode_long_string_56_bytes(self) -> None:
         """56-byte string uses long string encoding."""
         data = b"Lorem ipsum dolor sit amet, consectetur adipisicing elit"
-        assert len(data) == SHORT_STRING_MAX_LEN + 1
+        assert len(data) == SHORT_STRING_MAX_LENGTH + 1
         result = encode_rlp(data)
         expected = bytes.fromhex(
             "b8384c6f72656d20697073756d20646f6c6f722073697420616d65742c20"
@@ -155,7 +155,7 @@ class TestEncodeLongString:
 
     def test_encode_long_string_boundary(self) -> None:
         """String at exact boundary (56 bytes) uses long encoding."""
-        data = b"a" * (SHORT_STRING_MAX_LEN + 1)
+        data = b"a" * (SHORT_STRING_MAX_LENGTH + 1)
         result = encode_rlp(data)
         # Prefix 0xb8 = 0xb7 + 1 (1 byte for length)
         assert result[0] == LONG_STRING_PREFIX
@@ -191,9 +191,9 @@ class TestEncodeShortList:
         """Short list with 55 bytes of payload uses short list encoding."""
         # Create a list that has exactly 55 bytes of payload
         # Each "a" encodes as 0x61 (single byte), so 55 "a"s = 55 bytes payload
-        items: list[RLPItem] = [b"a" for _ in range(SHORT_LIST_MAX_LEN)]
+        items: list[RLPItem] = [b"a" for _ in range(SHORT_LIST_MAX_LENGTH)]
         result = encode_rlp(items)
-        assert result[0] == SHORT_LIST_PREFIX + SHORT_LIST_MAX_LEN  # 0xf7
+        assert result[0] == SHORT_LIST_PREFIX + SHORT_LIST_MAX_LENGTH  # 0xf7
 
 
 class TestEncodeLongList:
@@ -342,10 +342,10 @@ class TestDecodeSingleByte:
         result = decode_rlp(bytes.fromhex("7f"))
         assert result == b"\x7f"
 
-    @pytest.mark.parametrize("byte_val", range(0x00, SINGLE_BYTE_MAX + 1))
-    def test_decode_all_single_byte_values(self, byte_val: int) -> None:
+    @pytest.mark.parametrize("byte_value", range(0x00, SINGLE_BYTE_MAX + 1))
+    def test_decode_all_single_byte_values(self, byte_value: int) -> None:
         """All single-byte values 0x00-0x7f decode correctly."""
-        data = bytes([byte_val])
+        data = bytes([byte_value])
         result = decode_rlp(data)
         assert result == data
 
@@ -558,8 +558,8 @@ class TestEncodeDecodeRoundtrip:
             b"\x7f",
             b"\x80",
             b"dog",
-            b"a" * SHORT_STRING_MAX_LEN,
-            b"a" * (SHORT_STRING_MAX_LEN + 1),
+            b"a" * SHORT_STRING_MAX_LENGTH,
+            b"a" * (SHORT_STRING_MAX_LENGTH + 1),
             b"a" * 256,
             [],
             [b""],
@@ -710,24 +710,24 @@ class TestBoundaryConditions:
     def test_short_string_max_boundary(self) -> None:
         """Verify short-string boundary (55 vs 56 bytes)."""
         # 55 bytes = short string encoding (prefix 0xb7)
-        data_55 = b"a" * SHORT_STRING_MAX_LEN
+        data_55 = b"a" * SHORT_STRING_MAX_LENGTH
         encoded_55 = encode_rlp(data_55)
-        assert encoded_55[0] == SHORT_STRING_PREFIX + SHORT_STRING_MAX_LEN  # 0xb7
+        assert encoded_55[0] == SHORT_STRING_PREFIX + SHORT_STRING_MAX_LENGTH  # 0xb7
 
         # 56 bytes = long string encoding (prefix 0xb8)
-        data_56 = b"a" * (SHORT_STRING_MAX_LEN + 1)
+        data_56 = b"a" * (SHORT_STRING_MAX_LENGTH + 1)
         encoded_56 = encode_rlp(data_56)
         assert encoded_56[0] == LONG_STRING_PREFIX  # 0xb8
 
     def test_short_list_max_boundary(self) -> None:
         """Verify short-list boundary (55 vs 56 bytes payload)."""
         # 55 bytes payload = short list encoding (prefix 0xf7)
-        items_55: list[RLPItem] = [b"a" for _ in range(SHORT_LIST_MAX_LEN)]
+        items_55: list[RLPItem] = [b"a" for _ in range(SHORT_LIST_MAX_LENGTH)]
         encoded_55 = encode_rlp(items_55)
-        assert encoded_55[0] == SHORT_LIST_PREFIX + SHORT_LIST_MAX_LEN  # 0xf7
+        assert encoded_55[0] == SHORT_LIST_PREFIX + SHORT_LIST_MAX_LENGTH  # 0xf7
 
         # 56 bytes payload = long list encoding (prefix 0xf8)
-        items_56: list[RLPItem] = [b"a" for _ in range(SHORT_LIST_MAX_LEN + 1)]
+        items_56: list[RLPItem] = [b"a" for _ in range(SHORT_LIST_MAX_LENGTH + 1)]
         encoded_56 = encode_rlp(items_56)
         assert encoded_56[0] == LONG_LIST_PREFIX  # 0xf8
 
@@ -740,7 +740,7 @@ class TestBoundaryConditions:
         assert LONG_LIST_PREFIX == 0xF8
 
         # Short string prefix range: 0x80-0xb7 (length 0-55)
-        assert SHORT_STRING_PREFIX + SHORT_STRING_MAX_LEN == 0xB7
+        assert SHORT_STRING_PREFIX + SHORT_STRING_MAX_LENGTH == 0xB7
 
         # Short list prefix range: 0xc0-0xf7 (length 0-55)
-        assert SHORT_LIST_PREFIX + SHORT_LIST_MAX_LEN == 0xF7
+        assert SHORT_LIST_PREFIX + SHORT_LIST_MAX_LENGTH == 0xF7

@@ -47,7 +47,7 @@ def test_attestation_validator_index_out_of_range_rejected(
             slot=Slot(2),
             attestations=[
                 AggregatedAttestationSpec(
-                    validator_ids=[ValidatorIndex(99)],
+                    validator_indices=[ValidatorIndex(99)],
                     slot=Slot(1),
                     target_slot=Slot(0),
                     target_root_label="genesis",

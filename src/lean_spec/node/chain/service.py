@@ -126,9 +126,12 @@ class ChainService:
             new_aggregated_attestations = await self._tick_to(total_interval)
 
             # Publish any new aggregated attestations produced this tick.
-            if new_aggregated_attestations:
-                for agg in new_aggregated_attestations:
-                    await self.sync_service.publish_aggregated_attestation(agg)
+            #
+            # No publisher is wired in tests and offline runs.
+            publish = self.sync_service.publish_aggregated_attestation
+            if new_aggregated_attestations and publish is not None:
+                for aggregate in new_aggregated_attestations:
+                    await publish(aggregate)
 
             logger.info(
                 "Tick: slot=%d interval=%d head=%s finalized=slot%d",

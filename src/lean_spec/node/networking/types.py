@@ -19,7 +19,7 @@ class DomainType(Bytes4):
 
 
 class NodeId(Bytes32):
-    """32-byte ENR node identifier, derived from `keccak256(pubkey)`."""
+    """32-byte ENR node identifier, derived from `keccak256(public_key)`."""
 
 
 class ForkDigest(Bytes4):

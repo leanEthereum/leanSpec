@@ -233,12 +233,12 @@ class GossipsubHandlerTest(BaseConsensusFixture):
         # When a peer requests a message via IWANT, the handler looks it up
         # here and sends the payload back.
         for entry in self.initial_state.get("cachedMessages", []):
-            msg = GossipsubMessage(
+            message = GossipsubMessage(
                 topic=entry["topic"].encode("utf-8"),
                 raw_data=_unhex(entry["data"]),
             )
-            msg._cached_id = MessageId(_unhex(entry["messageId"]))
-            behavior.message_cache.put(TopicId(entry["topic"]), msg)
+            message._cached_id = MessageId(_unhex(entry["messageId"]))
+            behavior.message_cache.put(TopicId(entry["topic"]), message)
 
         # Build the incoming RPC from the event.
         from_peer = _peer_id(self.event["fromPeer"])

@@ -36,29 +36,29 @@ def test_node_list_limit_is_twice_the_leaf_row() -> None:
 
 def test_hash_digest_vector_length_is_digest_length() -> None:
     """A digest vector holds exactly one Poseidon output worth of elements."""
-    assert HashDigestVector.LENGTH == TEST_CONFIG.HASH_LEN_FE
+    assert HashDigestVector.LENGTH == TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS
 
 
 def test_hash_digest_vector_accepts_exact_length() -> None:
     """A digest vector of the configured length validates."""
-    data = [Fp(value=i) for i in range(TEST_CONFIG.HASH_LEN_FE)]
+    data = [Fp(value=i) for i in range(TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)]
     assert HashDigestVector(data=data).data == tuple(data)
 
 
 def test_hash_digest_vector_rejects_wrong_length() -> None:
     """A digest vector of the wrong length fails validation."""
     with pytest.raises(SSZValueError):
-        HashDigestVector(data=[Fp(value=0)] * (TEST_CONFIG.HASH_LEN_FE + 1))
+        HashDigestVector(data=[Fp(value=0)] * (TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS + 1))
 
 
 def test_parameter_length_is_parameter_length() -> None:
     """A parameter holds the configured number of personalization elements."""
-    assert Parameter.LENGTH == TEST_CONFIG.PARAMETER_LEN
+    assert Parameter.LENGTH == TEST_CONFIG.PARAMETER_LENGTH
 
 
 def test_randomness_length_is_randomness_length() -> None:
     """The signing randomness holds the configured number of elements."""
-    assert Randomness.LENGTH == TEST_CONFIG.RAND_LEN_FE
+    assert Randomness.LENGTH == TEST_CONFIG.RAND_LENGTH_FIELD_ELEMENTS
 
 
 def test_hash_digest_list_limit_is_node_list_limit() -> None:

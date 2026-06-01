@@ -46,7 +46,7 @@ def make_boot() -> Callable[..., NodeBootstrap]:
             "registry": ValidatorRegistry(),
             "fork": DEFAULT_REGISTRY.current,
             "bootnode_multiaddrs": (),
-            "listen_addr": None,
+            "listen_address": None,
             "checkpoint_sync_url": None,
             "node_id": "lean_spec_0",
             "is_aggregator": False,

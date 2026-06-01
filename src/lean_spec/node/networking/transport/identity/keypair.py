@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from lean_spec.spec.ssz import Bytes33
 
-from ..peer_id import KeyType, PeerId, PublicKeyProto
+from ..peer_id import KeyType, PeerId, PublicKeyProtobuf
 
 __all__ = [
     "IdentityKeypair",
@@ -117,8 +117,8 @@ class IdentityKeypair:
         Returns:
             PeerId derived from this keypair.
         """
-        proto = PublicKeyProto(
+        protobuf = PublicKeyProtobuf(
             key_type=KeyType.SECP256K1,
             key_data=self.public_key.to_bytes(),
         )
-        return PeerId.from_public_key(proto)
+        return PeerId.from_public_key(protobuf)

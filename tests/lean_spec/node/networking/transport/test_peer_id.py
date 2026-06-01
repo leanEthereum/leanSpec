@@ -21,7 +21,7 @@ from lean_spec.node.networking.transport.peer_id import (
     Multihash,
     MultihashCode,
     PeerId,
-    PublicKeyProto,
+    PublicKeyProtobuf,
 )
 
 # Protobuf tag constants for test assertions
@@ -78,7 +78,7 @@ class TestBase58:
             decoded = Base58.decode(encoded)
             assert decoded == data, f"Roundtrip failed for {data.hex()}"
 
-    def test_base58_decode_invalid_char(self) -> None:
+    def test_base58_decode_invalid_character(self) -> None:
         """Decoding invalid characters raises ValueError."""
         with pytest.raises(ValueError, match="Invalid Base58 character"):
             Base58.decode("0")  # '0' not in Base58
@@ -142,8 +142,8 @@ class TestEncodePublicKey:
         key_type = KeyType.SECP256K1
         key_data = bytes([0x02] + [0] * 32)  # 33 bytes compressed secp256k1
 
-        proto = PublicKeyProto(key_type=key_type, key_data=key_data)
-        encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=key_type, key_data=key_data)
+        encoded = protobuf.encode()
 
         # Field 1 tag (0x08 = field 1, varint)
         assert encoded[0] == _PROTOBUF_TAG_TYPE
@@ -160,8 +160,8 @@ class TestEncodePublicKey:
         """Different key types produce different encodings."""
         key_data = bytes(33)  # secp256k1 compressed is 33 bytes
 
-        ed25519 = PublicKeyProto(key_type=KeyType.ED25519, key_data=key_data).encode()
-        secp256k1 = PublicKeyProto(key_type=KeyType.SECP256K1, key_data=key_data).encode()
+        ed25519 = PublicKeyProtobuf(key_type=KeyType.ED25519, key_data=key_data).encode()
+        secp256k1 = PublicKeyProtobuf(key_type=KeyType.SECP256K1, key_data=key_data).encode()
 
         assert ed25519 != secp256k1
         # Both start with 0x08 (type field tag)
@@ -184,8 +184,8 @@ class TestEncodePublicKey:
         )
         key_data = full_encoded[4:]  # Skip 08 01 12 20
 
-        proto = PublicKeyProto(key_type=KeyType.ED25519, key_data=key_data)
-        encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.ED25519, key_data=key_data)
+        encoded = protobuf.encode()
 
         assert encoded == full_encoded
 
@@ -201,8 +201,8 @@ class TestEncodePublicKey:
         )
         key_data = full_encoded[4:]  # Skip 08 02 12 21
 
-        proto = PublicKeyProto(key_type=KeyType.SECP256K1, key_data=key_data)
-        encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.SECP256K1, key_data=key_data)
+        encoded = protobuf.encode()
 
         assert encoded == full_encoded
 
@@ -221,8 +221,8 @@ class TestEncodePublicKey:
         )
         key_data = full_encoded[4:]  # Skip 08 03 12 5b
 
-        proto = PublicKeyProto(key_type=KeyType.ECDSA, key_data=key_data)
-        encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.ECDSA, key_data=key_data)
+        encoded = protobuf.encode()
 
         assert encoded == full_encoded
 
@@ -282,7 +282,9 @@ class TestPeerIdFormat:
         # Create a key type that produces > 42 bytes encoded
         # A 128-byte key should exceed the limit
         large_key = bytes(128)
-        peer_id = PeerId.from_public_key(PublicKeyProto(key_type=KeyType.RSA, key_data=large_key))
+        peer_id = PeerId.from_public_key(
+            PublicKeyProtobuf(key_type=KeyType.RSA, key_data=large_key)
+        )
 
         decoded = Base58.decode(str(peer_id))
 
@@ -332,8 +334,8 @@ class TestKnownVectors:
 
         # Extract key data and verify re-encoding matches
         key_data = spec_encoded[4:]
-        proto = PublicKeyProto(key_type=KeyType.ED25519, key_data=key_data)
-        our_encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.ED25519, key_data=key_data)
+        our_encoded = protobuf.encode()
         assert our_encoded == spec_encoded, "Our encoding must match spec"
 
         # Compute PeerId (36 bytes <= 42, uses identity multihash)
@@ -370,8 +372,8 @@ class TestKnownVectors:
 
         # Extract key data and verify re-encoding matches
         key_data = spec_encoded[4:]
-        proto = PublicKeyProto(key_type=KeyType.SECP256K1, key_data=key_data)
-        our_encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.SECP256K1, key_data=key_data)
+        our_encoded = protobuf.encode()
         assert our_encoded == spec_encoded, "Our encoding must match spec"
 
         # Compute PeerId (37 bytes <= 42, uses identity multihash)
@@ -414,8 +416,8 @@ class TestKnownVectors:
 
         # Extract key data and verify re-encoding matches
         key_data = spec_encoded[4:]
-        proto = PublicKeyProto(key_type=KeyType.ECDSA, key_data=key_data)
-        our_encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.ECDSA, key_data=key_data)
+        our_encoded = protobuf.encode()
         assert our_encoded == spec_encoded, "Our encoding must match spec"
 
         # Compute PeerId (95 bytes > 42, uses SHA256 multihash)
@@ -435,8 +437,8 @@ class TestKnownVectors:
         # Any 32-byte Ed25519 key should produce a PeerId starting with 12D3KooW
         # because the first bytes are: 00 24 08 01 (identity, 36, tag, Ed25519)
         key_data = bytes(32)  # All zeros
-        proto = PublicKeyProto(key_type=KeyType.ED25519, key_data=key_data)
-        encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.ED25519, key_data=key_data)
+        encoded = protobuf.encode()
         multihash = Multihash.from_data(encoded).encode()
         peer_id = Base58.encode(multihash)
 
@@ -448,8 +450,8 @@ class TestKnownVectors:
         # because the first bytes are: 00 25 08 02 (identity, 37, tag, secp256k1)
         # The exact prefix after "16Uiu2" varies based on key data
         key_data = bytes([0x02] + [0] * 32)  # Compressed format
-        proto = PublicKeyProto(key_type=KeyType.SECP256K1, key_data=key_data)
-        encoded = proto.encode()
+        protobuf = PublicKeyProtobuf(key_type=KeyType.SECP256K1, key_data=key_data)
+        encoded = protobuf.encode()
         multihash = Multihash.from_data(encoded).encode()
         peer_id = Base58.encode(multihash)
 
@@ -465,8 +467,8 @@ class TestKnownVectors:
         key_data = bytes.fromhex(
             "037777e994e452c21604f91de093ce415f5432f701dd8cd1a7a6fea0e630bfca99"
         )
-        proto = PublicKeyProto(key_type=KeyType.SECP256K1, key_data=key_data)
-        peer_id = PeerId.from_public_key(proto)
+        protobuf = PublicKeyProtobuf(key_type=KeyType.SECP256K1, key_data=key_data)
+        peer_id = PeerId.from_public_key(protobuf)
 
         # Expected PeerId from spec test vector
         expected = "16Uiu2HAmLhLvBoYaoZfaMUKuibM6ac163GwKY74c5kiSLg5KvLpY"

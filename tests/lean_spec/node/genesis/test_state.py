@@ -16,12 +16,16 @@ from lean_spec.spec.ssz import Bytes32, Bytes52, Uint64
 def test_genesis_block_hash_comparison(spec: LstarSpec) -> None:
     """Test that genesis block hashes are deterministic and differ with different inputs."""
     # Create first genesis state with 3 validators
-    # Fill pubkeys with different values (1, 2, 3)
+    # Fill public_keys with different values (1, 2, 3)
     pubkeys1 = [Bytes52(bytes([i + 1] * 52)) for i in range(3)]
     validators1 = Validators(
         data=[
-            Validator(attestation_pubkey=pubkey, proposal_pubkey=pubkey, index=ValidatorIndex(i))
-            for i, pubkey in enumerate(pubkeys1)
+            Validator(
+                attestation_public_key=public_key,
+                proposal_public_key=public_key,
+                index=ValidatorIndex(i),
+            )
+            for i, public_key in enumerate(pubkeys1)
         ]
     )
 
@@ -62,12 +66,16 @@ def test_genesis_block_hash_comparison(spec: LstarSpec) -> None:
     assert genesis_block_hash1 == genesis_block_hash1_copy
 
     # Create second genesis state with different validators
-    # Fill pubkeys with different values (10, 11, 12)
+    # Fill public_keys with different values (10, 11, 12)
     pubkeys2 = [Bytes52(bytes([i + 10] * 52)) for i in range(3)]
     validators2 = Validators(
         data=[
-            Validator(attestation_pubkey=pubkey, proposal_pubkey=pubkey, index=ValidatorIndex(i))
-            for i, pubkey in enumerate(pubkeys2)
+            Validator(
+                attestation_public_key=public_key,
+                proposal_public_key=public_key,
+                index=ValidatorIndex(i),
+            )
+            for i, public_key in enumerate(pubkeys2)
         ]
     )
 
@@ -94,8 +102,12 @@ def test_genesis_block_hash_comparison(spec: LstarSpec) -> None:
     pubkeys3 = [Bytes52(bytes([i + 1] * 52)) for i in range(3)]
     validators3 = Validators(
         data=[
-            Validator(attestation_pubkey=pubkey, proposal_pubkey=pubkey, index=ValidatorIndex(i))
-            for i, pubkey in enumerate(pubkeys3)
+            Validator(
+                attestation_public_key=public_key,
+                proposal_public_key=public_key,
+                index=ValidatorIndex(i),
+            )
+            for i, public_key in enumerate(pubkeys3)
         ]
     )
 

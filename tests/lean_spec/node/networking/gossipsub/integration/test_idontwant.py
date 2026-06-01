@@ -50,13 +50,13 @@ async def test_large_message_triggers_idontwant(
 
     # Exceed the threshold so the receiver triggers IDONTWANT.
     large_data = b"x" * (IDONTWANT_SIZE_THRESHOLD + 1024)
-    msg_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), large_data)
+    message_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), large_data)
     await nodes[0].publish(TOPIC, large_data)
 
     for node in nodes[1:]:
-        msg = await node.wait_for_message(TOPIC, timeout=5.0)
-        assert msg == GossipsubMessageEvent(
-            peer_id=msg.peer_id, topic=TOPIC, data=large_data, message_id=msg_id
+        message = await node.wait_for_message(TOPIC, timeout=5.0)
+        assert message == GossipsubMessageEvent(
+            peer_id=message.peer_id, topic=TOPIC, data=large_data, message_id=message_id
         )
 
     # Brief pause for IDONTWANT RPCs to propagate.
@@ -127,13 +127,13 @@ async def test_idontwant_prevents_redundant_forward(
     await network.stabilize_mesh(TOPIC, rounds=5)
 
     large_data = b"y" * (IDONTWANT_SIZE_THRESHOLD + 512)
-    msg_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), large_data)
+    message_id = GossipsubMessage.compute_id(TOPIC.encode("utf-8"), large_data)
     await nodes[0].publish(TOPIC, large_data)
 
     for node in nodes[1:]:
-        msg = await node.wait_for_message(TOPIC, timeout=5.0)
-        assert msg == GossipsubMessageEvent(
-            peer_id=msg.peer_id, topic=TOPIC, data=large_data, message_id=msg_id
+        message = await node.wait_for_message(TOPIC, timeout=5.0)
+        assert message == GossipsubMessageEvent(
+            peer_id=message.peer_id, topic=TOPIC, data=large_data, message_id=message_id
         )
 
     # Verify each node received exactly once, not duplicated by redundant forwards.

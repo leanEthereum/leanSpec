@@ -46,7 +46,7 @@ OFFICIAL_SEQ = 1
 OFFICIAL_IPV4 = "127.0.0.1"
 OFFICIAL_UDP_PORT = Port(30303)
 OFFICIAL_IDENTITY_SCHEME = "v4"
-OFFICIAL_SECP256K1_PUBKEY = bytes.fromhex(
+OFFICIAL_SECP256K1_PUBLIC_KEY = bytes.fromhex(
     "03ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd3138"
 )
 OFFICIAL_SIGNATURE = bytes.fromhex(
@@ -88,7 +88,7 @@ class TestOfficialEIP778Vector:
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
         assert enr.public_key is not None
         assert len(enr.public_key) == 33
-        assert bytes(enr.public_key) == OFFICIAL_SECP256K1_PUBKEY
+        assert bytes(enr.public_key) == OFFICIAL_SECP256K1_PUBLIC_KEY
 
     def test_official_enr_signature_length(self) -> None:
         """Official ENR has 64-byte signature."""
@@ -113,7 +113,7 @@ class TestOfficialEIP778Vector:
         assert multiaddr == f"/ip4/{OFFICIAL_IPV4}/udp/{OFFICIAL_UDP_PORT}/quic-v1"
 
     def test_official_enr_node_id(self) -> None:
-        """Official ENR node ID matches keccak256(uncompressed_pubkey).
+        """Official ENR node ID matches keccak256(uncompressed_public_key).
 
         Per EIP-778 "v4" identity scheme:
             "To derive a node address, take the keccak256 hash of the
@@ -125,12 +125,14 @@ class TestOfficialEIP778Vector:
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
 
         # Get the compressed 33-byte secp256k1 public key
-        compressed_pubkey = enr.public_key
-        assert compressed_pubkey is not None
-        assert bytes(compressed_pubkey) == OFFICIAL_SECP256K1_PUBKEY
+        compressed_public_key = enr.public_key
+        assert compressed_public_key is not None
+        assert bytes(compressed_public_key) == OFFICIAL_SECP256K1_PUBLIC_KEY
 
         # Uncompress to 65 bytes (0x04 || x || y)
-        public_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), compressed_pubkey)
+        public_key = ec.EllipticCurvePublicKey.from_encoded_point(
+            ec.SECP256K1(), compressed_public_key
+        )
         uncompressed = public_key.public_bytes(
             encoding=serialization.Encoding.X962,
             format=serialization.PublicFormat.UncompressedPoint,
@@ -231,7 +233,7 @@ class TestRLPStructureValidation:
 
     def test_valid_minimal_enr(self) -> None:
         """Minimal valid ENR with only required fields parses."""
-        # [signature(64), seq(1), "id", "v4", "secp256k1", pubkey(33)]
+        # [signature(64), seq(1), "id", "v4", "secp256k1", public_key(33)]
         rlp_data = encode_rlp(
             [
                 b"\x00" * 64,  # signature
@@ -239,7 +241,7 @@ class TestRLPStructureValidation:
                 b"id",
                 b"v4",
                 b"secp256k1",
-                b"\x02" + b"\x00" * 32,  # compressed pubkey
+                b"\x02" + b"\x00" * 32,  # compressed public_key
             ]
         )
         b64_content = base64.urlsafe_b64encode(rlp_data).decode("utf-8").rstrip("=")
@@ -413,7 +415,7 @@ class TestValidationMethods:
         )
         assert not enr.is_valid()
 
-    def test_is_valid_returns_false_for_wrong_pubkey_length(self) -> None:
+    def test_is_valid_returns_false_for_wrong_public_key_length(self) -> None:
         """is_valid() returns False for public key != 33 bytes."""
         # 32 bytes (uncompressed prefix missing)
         enr = ENR(
@@ -704,7 +706,7 @@ class TestMaxSizeEnforcement:
         # The key "z" + value needs to fit in remaining space
         # Account for RLP overhead (key length byte + value length bytes)
         if padding_needed > 3:
-            value_len = padding_needed - 3  # Approximate, may need adjustment
+            value_length = padding_needed - 3  # Approximate, may need adjustment
             padded = encode_rlp(
                 [
                     signature,
@@ -714,12 +716,12 @@ class TestMaxSizeEnforcement:
                     b"secp256k1",
                     b"\x02" + b"\x00" * 32,
                     b"zz",
-                    b"\x00" * value_len,
+                    b"\x00" * value_length,
                 ]
             )
             # Adjust if needed
             while len(padded) < 300:
-                value_len += 1
+                value_length += 1
                 padded = encode_rlp(
                     [
                         signature,
@@ -729,11 +731,11 @@ class TestMaxSizeEnforcement:
                         b"secp256k1",
                         b"\x02" + b"\x00" * 32,
                         b"zz",
-                        b"\x00" * value_len,
+                        b"\x00" * value_length,
                     ]
                 )
             while len(padded) > 300:
-                value_len -= 1
+                value_length -= 1
                 padded = encode_rlp(
                     [
                         signature,
@@ -743,7 +745,7 @@ class TestMaxSizeEnforcement:
                         b"secp256k1",
                         b"\x02" + b"\x00" * 32,
                         b"zz",
-                        b"\x00" * value_len,
+                        b"\x00" * value_length,
                     ]
                 )
 
@@ -762,7 +764,7 @@ class TestMaxSizeEnforcement:
         padding_needed = 301 - len(basic)
 
         if padding_needed > 3:
-            value_len = padding_needed - 3
+            value_length = padding_needed - 3
             padded = encode_rlp(
                 [
                     signature,
@@ -772,11 +774,11 @@ class TestMaxSizeEnforcement:
                     b"secp256k1",
                     b"\x02" + b"\x00" * 32,
                     b"zz",
-                    b"\x00" * value_len,
+                    b"\x00" * value_length,
                 ]
             )
             while len(padded) < 301:
-                value_len += 1
+                value_length += 1
                 padded = encode_rlp(
                     [
                         signature,
@@ -786,11 +788,11 @@ class TestMaxSizeEnforcement:
                         b"secp256k1",
                         b"\x02" + b"\x00" * 32,
                         b"zz",
-                        b"\x00" * value_len,
+                        b"\x00" * value_length,
                     ]
                 )
             while len(padded) > 301:
-                value_len -= 1
+                value_length -= 1
                 padded = encode_rlp(
                     [
                         signature,
@@ -800,7 +802,7 @@ class TestMaxSizeEnforcement:
                         b"secp256k1",
                         b"\x02" + b"\x00" * 32,
                         b"zz",
-                        b"\x00" * value_len,
+                        b"\x00" * value_length,
                     ]
                 )
 
@@ -938,7 +940,7 @@ class TestSignatureVerification:
         # Generate a test keypair using cryptography library.
         private_key = ec.generate_private_key(ec.SECP256K1())
         public_key = private_key.public_key()
-        compressed_pubkey = public_key.public_bytes(
+        compressed_public_key = public_key.public_bytes(
             encoding=serialization.Encoding.X962,
             format=serialization.PublicFormat.CompressedPoint,
         )
@@ -949,7 +951,7 @@ class TestSignatureVerification:
             b"id",
             b"v4",
             b"secp256k1",
-            compressed_pubkey,
+            compressed_public_key,
         ]
         content_rlp = encode_rlp(content_items)
 
@@ -963,13 +965,13 @@ class TestSignatureVerification:
 
         # Convert DER signature to r || s format.
         r, s = decode_dss_signature(signature_der)
-        sig_64 = r.to_bytes(32, "big") + s.to_bytes(32, "big")
+        signature_64 = r.to_bytes(32, "big") + s.to_bytes(32, "big")
 
         # Create ENR.
         enr = ENR(
-            signature=Bytes64(sig_64),
+            signature=Bytes64(signature_64),
             seq=SeqNumber(1),
-            pairs={keys.ID: b"v4", keys.SECP256K1: compressed_pubkey},
+            pairs={keys.ID: b"v4", keys.SECP256K1: compressed_public_key},
         )
 
         assert enr.verify_signature()
@@ -979,9 +981,9 @@ class TestSignatureVerification:
         enr = ENR.from_string(OFFICIAL_ENR_STRING)
 
         # Tamper with signature
-        tampered_sig = bytes([enr.signature[0] ^ 0xFF]) + bytes(enr.signature[1:])
+        tampered_signature = bytes([enr.signature[0] ^ 0xFF]) + bytes(enr.signature[1:])
         tampered_enr = ENR(
-            signature=Bytes64(tampered_sig),
+            signature=Bytes64(tampered_signature),
             seq=enr.seq,
             pairs=enr.pairs,
         )

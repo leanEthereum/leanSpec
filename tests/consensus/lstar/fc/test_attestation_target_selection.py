@@ -98,7 +98,7 @@ def test_attestation_target_advances_with_attestations(
                     label="block_2",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1)],
+                            validator_indices=[ValidatorIndex(1)],
                             slot=Slot(1),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -116,7 +116,7 @@ def test_attestation_target_advances_with_attestations(
                     label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(2)],
+                            validator_indices=[ValidatorIndex(2)],
                             slot=Slot(2),
                             target_slot=Slot(2),
                             target_root_label="block_2",
@@ -134,7 +134,7 @@ def test_attestation_target_advances_with_attestations(
                     label="block_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(3)],
+                            validator_indices=[ValidatorIndex(3)],
                             slot=Slot(3),
                             target_slot=Slot(3),
                             target_root_label="block_3",
@@ -151,7 +151,7 @@ def test_attestation_target_advances_with_attestations(
                     slot=Slot(5),
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
+                            validator_indices=[ValidatorIndex(0)],
                             slot=Slot(4),
                             target_slot=Slot(4),
                             target_root_label="block_4",
@@ -255,7 +255,7 @@ def test_attestation_target_with_extended_chain(
                     label="block_2",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1)],
+                            validator_indices=[ValidatorIndex(1)],
                             slot=Slot(1),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -273,7 +273,7 @@ def test_attestation_target_with_extended_chain(
                     label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(2)],
+                            validator_indices=[ValidatorIndex(2)],
                             slot=Slot(2),
                             target_slot=Slot(2),
                             target_root_label="block_2",
@@ -291,7 +291,7 @@ def test_attestation_target_with_extended_chain(
                     label="block_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(3)],
+                            validator_indices=[ValidatorIndex(3)],
                             slot=Slot(3),
                             target_slot=Slot(3),
                             target_root_label="block_3",
@@ -309,7 +309,7 @@ def test_attestation_target_with_extended_chain(
                     label="block_5",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
+                            validator_indices=[ValidatorIndex(0)],
                             slot=Slot(4),
                             target_slot=Slot(4),
                             target_root_label="block_4",
@@ -327,7 +327,7 @@ def test_attestation_target_with_extended_chain(
                     label="block_6",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1)],
+                            validator_indices=[ValidatorIndex(1)],
                             slot=Slot(5),
                             target_slot=Slot(5),
                             target_root_label="block_5",
@@ -345,7 +345,7 @@ def test_attestation_target_with_extended_chain(
                     label="block_7",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(2)],
+                            validator_indices=[ValidatorIndex(2)],
                             slot=Slot(6),
                             target_slot=Slot(6),
                             target_root_label="block_6",
@@ -362,7 +362,7 @@ def test_attestation_target_with_extended_chain(
                     slot=Slot(8),
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(3)],
+                            validator_indices=[ValidatorIndex(3)],
                             slot=Slot(7),
                             target_slot=Slot(7),
                             target_root_label="block_7",
@@ -438,7 +438,7 @@ def test_attestation_target_justifiable_constraint(
                     attestations=(
                         [
                             AggregatedAttestationSpec(
-                                validator_ids=[ValidatorIndex((i - 1) % num_validators)],
+                                validator_indices=[ValidatorIndex((i - 1) % num_validators)],
                                 slot=Slot(i - 1),
                                 target_slot=Slot(i - 1),
                                 target_root_label=f"block_{i - 1}",
@@ -548,7 +548,7 @@ def test_attestation_target_selection_after_finality_has_moved(
                     label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -588,7 +588,7 @@ def test_attestation_target_selection_after_finality_has_moved(
                     label="block_8",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -598,7 +598,7 @@ def test_attestation_target_selection_after_finality_has_moved(
                             target_root_label="block_2",
                         ),
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),

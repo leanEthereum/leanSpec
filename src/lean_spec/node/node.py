@@ -214,7 +214,7 @@ class Node:
         #
         # If database contains valid state, resume from there.
         # Otherwise, fall through to genesis initialization.
-        validator_id = (
+        validator_index = (
             config.validator_registry.primary_index() if config.validator_registry else None
         )
         # The composition root narrows the protocol to its concrete fork.
@@ -226,7 +226,7 @@ class Node:
         )
         fork = config.fork
         store = cls._try_load_store_from_database(
-            database, validator_id, config.genesis_time, config.time_fn, fork
+            database, validator_index, config.genesis_time, config.time_fn, fork
         )
 
         # An explicit anchor wins over genesis synthesis but loses to the database.
@@ -255,7 +255,7 @@ class Node:
             # Initialize forkchoice store.
             #
             # Genesis block is both justified and finalized.
-            store = fork.create_store(state, block, validator_id)
+            store = fork.create_store(state, block, validator_index)
 
             # Persist genesis to database if available.
             #
@@ -341,7 +341,9 @@ class Node:
             # Without local processing, the node would not see its own produced
             # blocks/attestations in forkchoice until they arrived back via gossip.
             async def publish_attestation_wrapper(attestation: SignedAttestation) -> None:
-                subnet_id = attestation.validator_id.compute_subnet_id(ATTESTATION_COMMITTEE_COUNT)
+                subnet_id = attestation.validator_index.compute_subnet_id(
+                    ATTESTATION_COMMITTEE_COUNT
+                )
                 await network_service.publish_attestation(attestation, subnet_id)
                 await sync_service.on_gossip_attestation(attestation)
 
@@ -372,7 +374,7 @@ class Node:
     @staticmethod
     def _try_load_store_from_database(
         database: Database | None,
-        validator_id: ValidatorIndex | None,
+        validator_index: ValidatorIndex | None,
         genesis_time: Uint64 | None = None,
         time_fn: Callable[[], float] = time.time,
         fork: ForkProtocol | None = None,
@@ -390,7 +392,7 @@ class Node:
 
         Args:
             database: Database to load from.
-            validator_id: Validator index for the store instance.
+            validator_index: Validator index for the store instance.
             genesis_time: Unix timestamp of genesis (slot 0).
             time_fn: Wall-clock time source.
             fork: Fork specification for store construction.
@@ -451,7 +453,7 @@ class Node:
             latest_finalized=finalized,
             blocks={head_root: head_block},
             states={head_root: head_state},
-            validator_id=validator_id,
+            validator_index=validator_index,
         )
 
     async def run(self, *, install_signal_handlers: bool = True) -> None:
@@ -502,8 +504,8 @@ class Node:
         """
         try:
             loop = asyncio.get_running_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                loop.add_signal_handler(sig, self._shutdown.set)
+            for signature in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(signature, self._shutdown.set)
         except (ValueError, RuntimeError):
             # Cannot add handlers outside main thread.
             pass

@@ -1,14 +1,13 @@
 """Greedy proof selection for lstar block production."""
 
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.spec.forks.lstar.containers import ValidatorIndex
+from lean_spec.spec.forks.lstar.containers import SingleMessageAggregate, ValidatorIndex
 
 
 def select_greedily(
-    *proof_sets: set[TypeOneMultiSignature] | None,
-) -> tuple[list[TypeOneMultiSignature], set[ValidatorIndex]]:
+    *proof_sets: set[SingleMessageAggregate] | None,
+) -> tuple[list[SingleMessageAggregate], set[ValidatorIndex]]:
     """
-    Greedy set-cover over Type-1 proofs maximizing validator coverage.
+    Greedy set-cover over single-message aggregate proofs maximizing validator coverage.
 
     Iterates the proof sets in order, repeatedly picking the proof with the
     most uncovered validators until no further coverage is possible.
@@ -19,13 +18,13 @@ def select_greedily(
     inner max key, so the loop runs in O(P * V) instead of O(P^2 * V).
 
     Args:
-        *proof_sets: One or more sets of Type-1 proofs, ordered by priority.
+        *proof_sets: One or more sets of single-message aggregate proofs, ordered by priority.
             None entries are skipped.
 
     Returns:
         The chosen proofs and the union of validator indices they cover.
     """
-    selected: list[TypeOneMultiSignature] = []
+    selected: list[SingleMessageAggregate] = []
     covered: set[ValidatorIndex] = set()
 
     for proofs in proof_sets:
@@ -34,7 +33,7 @@ def select_greedily(
 
         # Materialize each proof's validator index set once.
         # The greedy loop below would otherwise recompute it on every comparison.
-        coverage_of: dict[TypeOneMultiSignature, set[ValidatorIndex]] = {
+        coverage_of: dict[SingleMessageAggregate, set[ValidatorIndex]] = {
             p: set(p.participants.to_validator_indices()) for p in proofs
         }
         remaining = list(proofs)

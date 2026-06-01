@@ -35,9 +35,7 @@ from tests.lean_spec.helpers import (
 
 FORK_DIGEST = "0x12345678"
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_network_service(
@@ -74,9 +72,7 @@ class _StopAfterFirstEvent(MockEventSource):
         return event
 
 
-# ---------------------------------------------------------------------------
 # run() lifecycle
-# ---------------------------------------------------------------------------
 
 
 class TestRunLifecycle:
@@ -155,9 +151,7 @@ class TestRunLifecycle:
         assert not svc.is_running
 
 
-# ---------------------------------------------------------------------------
 # Event dispatch — aggregated attestation
-# ---------------------------------------------------------------------------
 
 
 class TestAggregatedAttestationDispatch:
@@ -169,11 +163,11 @@ class TestAggregatedAttestationDispatch:
 
         sync_service = create_mock_sync_service(peer_id)
 
-        signed_agg = make_signed_aggregated_attestation()
+        signed_aggregate = make_signed_aggregated_attestation()
         topic = GossipTopic.committee_aggregation(FORK_DIGEST)
         events: list[NetworkEvent] = [
             GossipAggregatedAttestationEvent(
-                signed_attestation=signed_agg,
+                signed_attestation=signed_aggregate,
                 peer_id=peer_id,
                 topic=topic,
             ),
@@ -185,12 +179,10 @@ class TestAggregatedAttestationDispatch:
             svc, _ = _make_network_service(events, sync_service=sync_service)
             await svc.run()
 
-            mock_handler.assert_awaited_once_with(signed_agg, peer_id)
+            mock_handler.assert_awaited_once_with(signed_aggregate, peer_id)
 
 
-# ---------------------------------------------------------------------------
 # Event dispatch — secondary events
-# ---------------------------------------------------------------------------
 
 
 class TestSecondaryEventDispatch:
@@ -223,7 +215,7 @@ class TestSecondaryEventDispatch:
 
         sync_service = create_mock_sync_service(peer_id)
         attestation = SignedAttestation(
-            validator_id=ValidatorIndex(1),
+            validator_index=ValidatorIndex(1),
             data=AttestationData(
                 slot=Slot(1),
                 head=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),
@@ -304,9 +296,7 @@ class TestPeerConnectionEvents:
         assert peer_id_2 not in sync_service.peer_manager
 
 
-# ---------------------------------------------------------------------------
 # Publish methods
-# ---------------------------------------------------------------------------
 
 
 class TestPublishBlock:
@@ -350,7 +340,7 @@ class TestPublishAttestation:
         """Attestation is SSZ-encoded, compressed, and published to subnet topic."""
         svc, source = _make_network_service([], peer_id=peer_id)
         attestation = SignedAttestation(
-            validator_id=ValidatorIndex(7),
+            validator_index=ValidatorIndex(7),
             data=AttestationData(
                 slot=Slot(3),
                 head=Checkpoint(root=Bytes32.zero(), slot=Slot(3)),
@@ -374,7 +364,7 @@ class TestPublishAttestation:
         """Different SubnetId values produce different topic strings."""
         svc, source = _make_network_service([], peer_id=peer_id)
         attestation = SignedAttestation(
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
             data=AttestationData(
                 slot=Slot(1),
                 head=Checkpoint(root=Bytes32.zero(), slot=Slot(1)),
@@ -400,21 +390,19 @@ class TestPublishAggregatedAttestation:
         """Aggregated attestation is encoded, compressed, and published."""
         svc, source = _make_network_service([], peer_id=peer_id)
 
-        signed_agg = make_signed_aggregated_attestation()
+        signed_aggregate = make_signed_aggregated_attestation()
 
-        await svc.publish_aggregated_attestation(signed_agg)
+        await svc.publish_aggregated_attestation(signed_aggregate)
 
         assert len(source._published) == 1
         topic_id, data = source._published[0]
 
         expected_topic = GossipTopic.committee_aggregation(FORK_DIGEST).to_topic_id()
         assert topic_id == expected_topic
-        assert data == compress(signed_agg.encode_bytes())
+        assert data == compress(signed_aggregate.encode_bytes())
 
 
-# ---------------------------------------------------------------------------
 # Edge cases for _handle_event match exhaustiveness
-# ---------------------------------------------------------------------------
 
 
 class TestHandleEventEdgeCases:
@@ -450,9 +438,7 @@ class TestHandleEventEdgeCases:
         assert peer_id_2 not in sync_service.peer_manager
 
 
-# ---------------------------------------------------------------------------
 # Constructor / init field defaults
-# ---------------------------------------------------------------------------
 
 
 class TestNetworkServiceInit:

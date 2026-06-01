@@ -53,9 +53,9 @@ class MockSyncService:
     is_aggregator: bool = False
     published_aggregations: list = field(default_factory=list)
 
-    async def publish_aggregated_attestation(self, agg: SignedAggregatedAttestation) -> None:
+    async def publish_aggregated_attestation(self, aggregate: SignedAggregatedAttestation) -> None:
         """Record published aggregations."""
-        self.published_aggregations.append(agg)
+        self.published_aggregations.append(aggregate)
 
 
 class TestChainServiceLifecycle:

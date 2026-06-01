@@ -23,7 +23,7 @@ References:
 """
 
 from .identity import IdentityKeypair, Secp256k1PublicKey
-from .peer_id import Base58, KeyType, Multihash, MultihashCode, PeerId, PublicKeyProto
+from .peer_id import Base58, KeyType, Multihash, MultihashCode, PeerId, PublicKeyProtobuf
 from .quic import (
     NegotiationError,
     QuicConnection,
@@ -44,7 +44,7 @@ __all__ = [
     "Secp256k1PublicKey",
     # PeerId (peer_id module)
     "PeerId",
-    "PublicKeyProto",
+    "PublicKeyProtobuf",
     "Multihash",
     "KeyType",
     "MultihashCode",

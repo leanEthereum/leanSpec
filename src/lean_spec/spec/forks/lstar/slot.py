@@ -1,0 +1,79 @@
+"""Slot primitive shared by the consensus and crypto layers.
+
+The crypto signing scheme binds each signature to a specific slot.
+Hosting the type here lets the crypto layer name the slot without
+importing the rest of the consensus container module.
+"""
+
+import math
+from typing import Final
+
+from lean_spec.spec.ssz import Uint64
+
+IMMEDIATE_JUSTIFICATION_WINDOW: Final = 5
+"""First N slots after finalization are always justifiable."""
+
+
+class Slot(Uint64):
+    """Represents a slot number as a 64-bit unsigned integer."""
+
+    def justified_index_after(self, finalized_slot: "Slot") -> int | None:
+        """
+        Return the relative bitfield index for justification tracking.
+
+        Slots at or before the finalized boundary are treated as justified.
+        Those slots do not have an index in the tracked bitfield.
+        """
+        if self <= finalized_slot:
+            return None
+
+        # Slot (finalized_slot + 1) maps to index 0.
+        return int(self - finalized_slot) - 1
+
+    def is_justifiable_after(self, finalized_slot: "Slot") -> bool:
+        """
+        Checks if this slot is a valid candidate for justification after a given finalized slot.
+
+        According to the 3SF-mini specification, a slot is justifiable if its
+        distance (`delta`) from the last finalized slot is:
+          1. Less than or equal to 5.
+          2. A perfect square (e.g., 9, 16, 25...).
+          3. A pronic number (of the form x^2 + x, e.g., 6, 12, 20...).
+
+        Args:
+            finalized_slot: The last slot that was finalized.
+
+        Returns:
+            True if the slot is justifiable, False otherwise.
+
+        Raises:
+            AssertionError: If this slot is earlier than the finalized slot.
+        """
+        # Ensure the candidate slot is not before the finalized slot.
+        assert self >= finalized_slot, "Candidate slot must not be before finalized slot"
+
+        # Calculate the distance in slots from the last finalized slot.
+        # Convert to int for pure arithmetic operations below.
+        delta = int(self - finalized_slot)
+
+        return (
+            # Rule 1: The first N slots after finalization are always justifiable.
+            #
+            # Examples: delta = 0, 1, 2, 3, 4, 5
+            delta <= IMMEDIATE_JUSTIFICATION_WINDOW
+            # Rule 2: Slots at perfect square distances are justifiable.
+            #
+            # Examples: delta = 1, 4, 9, 16, 25, 36, 49, 64, ...
+            # Check: integer square root squared equals delta
+            or math.isqrt(delta) ** 2 == delta
+            # Rule 3: Slots at pronic number distances are justifiable.
+            #
+            # Pronic numbers have the form n(n+1): 2, 6, 12, 20, 30, 42, 56, ...
+            # Mathematical insight: For pronic delta = n(n+1), we have:
+            #   4*delta + 1 = 4n(n+1) + 1 = (2n+1)^2
+            # Check: 4*delta+1 is an odd perfect square
+            or (
+                math.isqrt(4 * delta + 1) ** 2 == 4 * delta + 1
+                and math.isqrt(4 * delta + 1) % 2 == 1
+            )
+        )

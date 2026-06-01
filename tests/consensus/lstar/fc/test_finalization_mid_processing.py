@@ -71,7 +71,7 @@ def test_finalization_advances_mid_attestation_processing(
                     label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -116,7 +116,7 @@ def test_finalization_advances_mid_attestation_processing(
                         # Finalization: range(1+1, 2) = empty -> finalizes slot 1
                         # Need 3/4 validators for supermajority
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -133,7 +133,7 @@ def test_finalization_advances_mid_attestation_processing(
                         # If skipped, latest_justified stays at 2
                         # This is how we detect the bug!
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),

@@ -28,7 +28,7 @@ def fast_params(**overrides: int | float | str) -> GossipsubParameters:
         "d_lazy": 2,
         "heartbeat_interval_secs": 0.05,
         "fanout_ttl_secs": 5,
-        "mcache_len": 6,
+        "mcache_length": 6,
         "mcache_gossip": 3,
         "seen_ttl_secs": 120,
     }

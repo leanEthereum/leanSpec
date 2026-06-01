@@ -5,14 +5,14 @@ from typing import Any, ClassVar
 from pydantic import ConfigDict, PrivateAttr, field_serializer
 
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
-from lean_spec.spec.forks import ValidatorIndices
+from lean_spec.spec.forks import AggregationBits
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
     AttestationData,
     Block,
     BlockBody,
+    SingleMessageAggregate,
     State,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
@@ -63,7 +63,7 @@ class StateTransitionTest(BaseConsensusFixture):
     make_fixture() and stores them in the private _filled_blocks attribute.
     """
 
-    # TODO: We should figure out a configuration to raise if a private attr is
+    # TODO: We should figure out a configuration to raise if a private attribute is
     #  attempted to be set during model initialization.
     _filled_blocks: list[Block] = PrivateAttr(default_factory=list)
     """
@@ -145,11 +145,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 elif getattr(block_spec, "skip_slot_processing", False):
                     state = spec.process_block(state, block)
                 else:
-                    state = spec.state_transition(
-                        state,
-                        block=block,
-                        valid_signatures=True,
-                    )
+                    state = spec.state_transition(state, block=block)
 
             actual_post_state = state
         except (AssertionError, ValueError) as e:
@@ -255,7 +251,7 @@ class StateTransitionTest(BaseConsensusFixture):
 
         # Path 3: normal block construction via the spec's builder.
         else:
-            aggregated_payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {}
+            aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]] = {}
             if spec.attestations:
                 aggregated_payloads = StateTransitionTest._build_aggregated_payloads_from_spec(
                     spec.attestations, state, block_registry
@@ -278,7 +274,7 @@ class StateTransitionTest(BaseConsensusFixture):
         if spec.forced_attestations:
             forced = [
                 AggregatedAttestation(
-                    aggregation_bits=ValidatorIndices(data=fa.validator_ids).to_aggregation_bits(),
+                    aggregation_bits=AggregationBits.from_indices(fa.validator_indices),
                     data=fa.build_attestation_data(block_registry, state),
                 )
                 for fa in spec.forced_attestations
@@ -301,7 +297,7 @@ class StateTransitionTest(BaseConsensusFixture):
         attestation_specs: list[AggregatedAttestationSpec],
         state: State,
         block_registry: dict[str, Block],
-    ) -> dict[AttestationData, set[TypeOneMultiSignature]]:
+    ) -> dict[AttestationData, set[SingleMessageAggregate]]:
         """
         Build aggregated signature payloads from attestation specifications.
 
@@ -317,7 +313,7 @@ class StateTransitionTest(BaseConsensusFixture):
         # XMSS keys require precomputation up to the highest slot used.
         max_slot = max(spec.slot for spec in attestation_specs)
         key_manager = XmssKeyManager.shared(max_slot=max_slot)
-        payloads: dict[AttestationData, set[TypeOneMultiSignature]] = {}
+        payloads: dict[AttestationData, set[SingleMessageAggregate]] = {}
 
         for spec in attestation_specs:
             if not spec.valid_signature:
@@ -328,7 +324,7 @@ class StateTransitionTest(BaseConsensusFixture):
                 raise NotImplementedError("signer_ids not yet supported in StateTransitionTest")
 
             attestation_data = spec.build_attestation_data(block_registry, state)
-            proof = key_manager.sign_and_aggregate(spec.validator_ids, attestation_data)
+            proof = key_manager.sign_and_aggregate(spec.validator_indices, attestation_data)
             payloads.setdefault(attestation_data, set()).add(proof)
 
         return payloads

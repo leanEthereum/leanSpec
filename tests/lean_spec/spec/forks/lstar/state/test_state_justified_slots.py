@@ -55,14 +55,14 @@ def test_justified_slots_rebases_when_finalization_advances(spec: LstarSpec) -> 
 
     source_0 = Checkpoint(root=block_1.parent_root, slot=Slot(0))
     target_1 = Checkpoint(root=block_2.parent_root, slot=Slot(1))
-    att_0_to_1 = make_aggregated_attestation(
+    attestation_0_to_1 = make_aggregated_attestation(
         participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
         attestation_slot=Slot(2),
         source=source_0,
         target=target_1,
     )
 
-    block_2 = make_block(state, Slot(2), attestations=[att_0_to_1])
+    block_2 = make_block(state, Slot(2), attestations=[attestation_0_to_1])
     state = spec.process_block(state, block_2)
 
     # Block 3 (slot 3): justify slot 2 with source=1 -> target=2, which finalizes slot 1.
@@ -71,14 +71,14 @@ def test_justified_slots_rebases_when_finalization_advances(spec: LstarSpec) -> 
 
     source_1 = Checkpoint(root=block_2.parent_root, slot=Slot(1))
     target_2 = Checkpoint(root=block_3.parent_root, slot=Slot(2))
-    att_1_to_2 = make_aggregated_attestation(
+    attestation_1_to_2 = make_aggregated_attestation(
         participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
         attestation_slot=Slot(3),
         source=source_1,
         target=target_2,
     )
 
-    block_3 = make_block(state, Slot(3), attestations=[att_1_to_2])
+    block_3 = make_block(state, Slot(3), attestations=[attestation_1_to_2])
     state = spec.process_block(state, block_3)
 
     assert state.latest_finalized.slot == Slot(1)
@@ -126,13 +126,13 @@ def test_pruning_keeps_pending_justifications(spec: LstarSpec) -> None:
     block_2 = make_block(state, Slot(2), attestations=[])
     source_0 = Checkpoint(root=block_1.parent_root, slot=Slot(0))
     target_1 = Checkpoint(root=block_2.parent_root, slot=Slot(1))
-    att_0_to_1 = make_aggregated_attestation(
+    attestation_0_to_1 = make_aggregated_attestation(
         participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
         attestation_slot=Slot(2),
         source=source_0,
         target=target_1,
     )
-    block_2 = make_block(state, Slot(2), attestations=[att_0_to_1])
+    block_2 = make_block(state, Slot(2), attestations=[attestation_0_to_1])
     state = spec.process_block(state, block_2)
 
     assert state.latest_finalized.slot == Slot(0)
@@ -173,7 +173,7 @@ def test_pruning_keeps_pending_justifications(spec: LstarSpec) -> None:
 
     source_1 = Checkpoint(root=state.historical_block_hashes[1], slot=Slot(1))
     target_2 = Checkpoint(root=state.historical_block_hashes[2], slot=Slot(2))
-    att_1_to_2 = make_aggregated_attestation(
+    attestation_1_to_2 = make_aggregated_attestation(
         participant_ids=[ValidatorIndex(0), ValidatorIndex(1)],
         attestation_slot=Slot(5),
         source=source_1,
@@ -184,7 +184,7 @@ def test_pruning_keeps_pending_justifications(spec: LstarSpec) -> None:
     #
     # Pruning iterates over all slots for each root in history.
     # Duplicate roots must map to multiple slots, not just one.
-    state = spec.process_attestations(state, [att_1_to_2])
+    state = spec.process_attestations(state, [attestation_1_to_2])
 
     # Verify finalization succeeded.
     assert state.latest_finalized.slot == Slot(1)

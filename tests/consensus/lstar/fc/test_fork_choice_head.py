@@ -214,7 +214,7 @@ def test_duplicate_block_processed_idempotently(
                     label="block_2",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -249,7 +249,7 @@ def test_duplicate_block_processed_idempotently(
                     label="block_2_dup",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(0),
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
@@ -397,7 +397,7 @@ def test_head_switches_to_heavier_fork(
                     label="fork_b_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(2)],
+                            validator_indices=[ValidatorIndex(2)],
                             slot=Slot(3),
                             target_slot=Slot(3),
                             target_root_label="fork_b",
@@ -457,7 +457,7 @@ def test_head_with_deep_fork_split(
                     label="fork_a_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(2)],
+                            validator_indices=[ValidatorIndex(2)],
                             slot=Slot(2),
                             target_slot=Slot(2),
                             target_root_label="fork_a_2",
@@ -473,7 +473,7 @@ def test_head_with_deep_fork_split(
                     label="fork_a_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(3)],
+                            validator_indices=[ValidatorIndex(3)],
                             slot=Slot(3),
                             target_slot=Slot(3),
                             target_root_label="fork_a_3",
@@ -494,7 +494,7 @@ def test_head_with_deep_fork_split(
                     label="fork_b_6",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1)],
+                            validator_indices=[ValidatorIndex(1)],
                             slot=Slot(5),
                             target_slot=Slot(5),
                             target_root_label="fork_b_5",
@@ -510,7 +510,7 @@ def test_head_with_deep_fork_split(
                     label="fork_b_7",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
+                            validator_indices=[ValidatorIndex(0)],
                             slot=Slot(6),
                             target_slot=Slot(6),
                             target_root_label="fork_b_6",
@@ -525,7 +525,7 @@ def test_head_with_deep_fork_split(
                     label="fork_b_8",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(2)],
+                            validator_indices=[ValidatorIndex(2)],
                             slot=Slot(7),
                             target_slot=Slot(7),
                             target_root_label="fork_b_7",
@@ -571,7 +571,6 @@ def test_head_selection_by_weight_not_depth(
                 checks=StoreChecks(head_slot=Slot(1)),
             ),
             # Fork A: 5 blocks deep, minimal attestation weight
-            # ===================================================
             #
             #   common(1) -> a_2 -> a_3 -> a_4 -> a_5 -> a_6
             #
@@ -586,7 +585,7 @@ def test_head_selection_by_weight_not_depth(
                     label="a_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
+                            validator_indices=[ValidatorIndex(0)],
                             slot=Slot(2),
                             target_slot=Slot(2),
                             target_root_label="a_2",
@@ -602,7 +601,6 @@ def test_head_selection_by_weight_not_depth(
                 checks=StoreChecks(head_slot=Slot(6), head_root_label="a_6"),
             ),
             # Fork B: 2 blocks deep, heavy attestation weight
-            # =================================================
             #
             #   common(1) -> b_9 -> b_12
             #
@@ -630,7 +628,7 @@ def test_head_selection_by_weight_not_depth(
                     label="b_12",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[
+                            validator_indices=[
                                 ValidatorIndex(1),
                                 ValidatorIndex(2),
                                 ValidatorIndex(3),
@@ -694,7 +692,6 @@ def test_fork_from_before_finalization_not_considered(
         anchor_state=generate_pre_state(num_validators=8),
         steps=[
             # Canonical justification / finalization chain
-            # =============================================
             #
             #   genesis -> 1 -> 2 -> 3 -> 4 -> 5
             #
@@ -717,7 +714,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_1",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(2),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -739,7 +736,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_2",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(3),
                             target_slot=Slot(2),
                             target_root_label="block_2",
@@ -760,7 +757,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_3",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(4),
                             target_slot=Slot(3),
                             target_root_label="block_3",
@@ -781,7 +778,7 @@ def test_fork_from_before_finalization_not_considered(
                     parent_label="block_4",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(6)],
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
                             slot=Slot(5),
                             target_slot=Slot(4),
                             target_root_label="block_4",
@@ -796,7 +793,6 @@ def test_fork_from_before_finalization_not_considered(
                 ),
             ),
             # Dead fork with majority weight
-            # ================================
             #
             #   block_2(2) -> dead_6(6) -> dead_7(7)
             #
@@ -851,7 +847,7 @@ def test_fork_from_before_finalization_not_considered(
                     label="dead_7",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(i) for i in range(3, 8)],
+                            validator_indices=[ValidatorIndex(i) for i in range(3, 8)],
                             slot=Slot(7),
                             target_slot=Slot(6),
                             target_root_label="dead_6",

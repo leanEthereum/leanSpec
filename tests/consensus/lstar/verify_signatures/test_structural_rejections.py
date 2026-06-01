@@ -10,12 +10,15 @@ builder upholds by construction:
 
 import pytest
 from consensus_testing import (
+    AggregatedAttestationSpec,
     BlockSpec,
     VerifySignaturesTestFiller,
+    build_anchor,
     generate_pre_state,
 )
 
-from lean_spec.spec.forks import Slot
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -33,7 +36,7 @@ def test_corrupt_proof_rejected(
 
     Expected Behavior
     -----------------
-    Verification fails with AssertionError because the Type-2 envelope
+    Verification fails with AssertionError because the multi-message aggregate envelope
     cannot be decoded.
 
     Why This Matters
@@ -113,5 +116,41 @@ def test_proof_reused_under_different_message_rejected(
         anchor_state=generate_pre_state(num_validators=1),
         block=BlockSpec(slot=Slot(1), attestations=[]),
         tamper={"operation": "mutate_state_root"},
+        expect_exception=AssertionError,
+    )
+
+
+def test_attestation_proof_order_mismatch_rejected(
+    verify_signatures_test: VerifySignaturesTestFiller,
+) -> None:
+    """A block whose body order no longer matches proof order is rejected."""
+    anchor_state, anchor_block = build_anchor(num_validators=4, anchor_slot=Slot(2))
+    parent_root = hash_tree_root(anchor_block)
+
+    verify_signatures_test(
+        anchor_state=anchor_state,
+        block=BlockSpec(
+            slot=Slot(3),
+            parent_root=parent_root,
+            attestations=[
+                AggregatedAttestationSpec(
+                    validator_indices=[ValidatorIndex(0)],
+                    slot=Slot(3),
+                    target_slot=Slot(1),
+                    target_root=anchor_state.historical_block_hashes[1],
+                    head_root=parent_root,
+                    head_slot=Slot(2),
+                ),
+                AggregatedAttestationSpec(
+                    validator_indices=[ValidatorIndex(2)],
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root=parent_root,
+                    head_root=parent_root,
+                    head_slot=Slot(2),
+                ),
+            ],
+        ),
+        tamper={"operation": "swap_first_two_attestations"},
         expect_exception=AssertionError,
     )

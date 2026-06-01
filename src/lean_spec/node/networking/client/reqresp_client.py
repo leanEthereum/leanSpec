@@ -85,15 +85,15 @@ class ReqRespClient:
     timeout: float = REQUEST_TIMEOUT_SECONDS
     """Request timeout in seconds."""
 
-    def register_connection(self, peer_id: PeerId, conn: QuicConnection) -> None:
+    def register_connection(self, peer_id: PeerId, connection: QuicConnection) -> None:
         """
         Register a connection for req/resp use.
 
         Args:
             peer_id: Peer identifier.
-            conn: Established QUIC connection.
+            connection: Established QUIC connection.
         """
-        self._connections[peer_id] = conn
+        self._connections[peer_id] = connection
 
     def unregister_connection(self, peer_id: PeerId) -> None:
         """
@@ -125,14 +125,14 @@ class ReqRespClient:
         if not roots:
             return []
 
-        conn = self._connections.get(peer_id)
-        if conn is None:
+        connection = self._connections.get(peer_id)
+        if connection is None:
             logger.debug("No connection to peer %s for blocks_by_root", peer_id)
             return []
 
         try:
             return await asyncio.wait_for(
-                self._do_blocks_by_root_request(conn, roots),
+                self._do_blocks_by_root_request(connection, roots),
                 timeout=self.timeout,
             )
         except asyncio.TimeoutError:
@@ -144,7 +144,7 @@ class ReqRespClient:
 
     async def _do_blocks_by_root_request(
         self,
-        conn: QuicConnection,
+        connection: QuicConnection,
         roots: list[Bytes32],
     ) -> list[SignedBlock]:
         """
@@ -154,14 +154,14 @@ class ReqRespClient:
         and reads all response chunks.
 
         Args:
-            conn: QuicConnection to use.
+            connection: QuicConnection to use.
             roots: Block roots to request.
 
         Returns:
             List of blocks received.
         """
         # Open a new stream and negotiate the protocol.
-        stream = await conn.open_stream(BLOCKS_BY_ROOT_PROTOCOL_V1)
+        stream = await connection.open_stream(BLOCKS_BY_ROOT_PROTOCOL_V1)
 
         try:
             # Build and send the request.
@@ -244,14 +244,14 @@ class ReqRespClient:
             # Range would overflow Uint64; cannot be satisfied.
             return []
 
-        conn = self._connections.get(peer_id)
-        if conn is None:
+        connection = self._connections.get(peer_id)
+        if connection is None:
             logger.debug("No connection to peer %s for blocks_by_range", peer_id)
             return []
 
         try:
             return await asyncio.wait_for(
-                self._do_blocks_by_range_request(conn, start_slot, count),
+                self._do_blocks_by_range_request(connection, start_slot, count),
                 timeout=self.timeout,
             )
         except CodecError:
@@ -266,7 +266,7 @@ class ReqRespClient:
 
     async def _do_blocks_by_range_request(
         self,
-        conn: QuicConnection,
+        connection: QuicConnection,
         start_slot: Slot,
         count: Uint64,
     ) -> list[SignedBlock]:
@@ -277,7 +277,7 @@ class ReqRespClient:
         and reads all response chunks.
 
         Args:
-            conn: QuicConnection to use.
+            connection: QuicConnection to use.
             start_slot: Start slot of the range.
             count: Number of blocks to request.
 
@@ -285,7 +285,7 @@ class ReqRespClient:
             List of blocks received.
         """
         # Open a new stream and negotiate the protocol.
-        stream = await conn.open_stream(BLOCKS_BY_RANGE_PROTOCOL_V1)
+        stream = await connection.open_stream(BLOCKS_BY_RANGE_PROTOCOL_V1)
         end_slot_exclusive = int(start_slot) + int(count)
 
         try:
@@ -302,8 +302,8 @@ class ReqRespClient:
             # Each block is sent as a separate response chunk.
             # We read until the stream closes or we get all blocks.
             blocks: list[SignedBlock] = []
-            prev_slot: Slot | None = None
-            prev_root: Bytes32 | None = None
+            previous_slot: Slot | None = None
+            previous_root: Bytes32 | None = None
             stream_ended = False
 
             for _ in range(int(count)):
@@ -321,8 +321,8 @@ class ReqRespClient:
                         block_slot = inner.slot
 
                         # Slots MUST be strictly increasing across the stream.
-                        if prev_slot is not None and block_slot <= prev_slot:
-                            raise CodecError(f"Non-monotonic slot: {block_slot} <= {prev_slot}")
+                        if previous_slot is not None and block_slot <= previous_slot:
+                            raise CodecError(f"Non-monotonic slot: {block_slot} <= {previous_slot}")
 
                         # Block MUST fall inside the requested half-open range.
                         # Use int math so an end_slot near 2**64 cannot wrap.
@@ -337,16 +337,16 @@ class ReqRespClient:
                         # empty slots. The next non-empty block's parent_root
                         # therefore equals the last received block's root,
                         # regardless of how many empty slots lie between.
-                        if prev_root is not None and inner.parent_root != prev_root:
+                        if previous_root is not None and inner.parent_root != previous_root:
                             raise CodecError(
                                 f"Parent root mismatch at slot {block_slot}: "
-                                f"expected {prev_root.hex()}, "
+                                f"expected {previous_root.hex()}, "
                                 f"got {inner.parent_root.hex()}"
                             )
 
                         blocks.append(SignedBlock.decode_bytes(ssz_bytes))
-                        prev_slot = block_slot
-                        prev_root = hash_tree_root(inner)
+                        previous_slot = block_slot
+                        previous_root = hash_tree_root(inner)
 
                     elif code == ResponseCode.RESOURCE_UNAVAILABLE:
                         # Peer doesn't have this block, continue.
@@ -359,7 +359,7 @@ class ReqRespClient:
 
                 except CodecError as e:
                     # Protocol violation: log with peer id and re-raise.
-                    logger.warning("Protocol violation from %s: %s", conn.peer_id, e)
+                    logger.warning("Protocol violation from %s: %s", connection.peer_id, e)
                     raise
 
             # No-more-than-count enforcement.
@@ -373,9 +373,9 @@ class ReqRespClient:
                 except Exception:
                     extra = b""
                 if extra:
-                    msg = "Peer sent more than count BlocksByRange chunks"
-                    logger.warning("Protocol violation from %s: %s", conn.peer_id, msg)
-                    raise CodecError(msg)
+                    message = "Peer sent more than count BlocksByRange chunks"
+                    logger.warning("Protocol violation from %s: %s", connection.peer_id, message)
+                    raise CodecError(message)
 
             return blocks
 
@@ -401,14 +401,14 @@ class ReqRespClient:
         Returns:
             Peer's status, or None on error.
         """
-        conn = self._connections.get(peer_id)
-        if conn is None:
+        connection = self._connections.get(peer_id)
+        if connection is None:
             logger.debug("No connection to peer %s for status", peer_id)
             return None
 
         try:
             return await asyncio.wait_for(
-                self._do_status_request(conn, status),
+                self._do_status_request(connection, status),
                 timeout=self.timeout,
             )
         except asyncio.TimeoutError:
@@ -420,7 +420,7 @@ class ReqRespClient:
 
     async def _do_status_request(
         self,
-        conn: QuicConnection,
+        connection: QuicConnection,
         status: Status,
         retry_count: int = 0,
     ) -> Status | None:
@@ -428,7 +428,7 @@ class ReqRespClient:
         Execute a Status request.
 
         Args:
-            conn: QuicConnection to use.
+            connection: QuicConnection to use.
             status: Our status to send.
             retry_count: Number of retries attempted (internal).
 
@@ -442,7 +442,7 @@ class ReqRespClient:
             # This may fail if the QUIC stream is in a bad state right after
             # the handshake. The error "cannot call write() after FIN" can
             # happen during multistream negotiation writes.
-            stream = await conn.open_stream(STATUS_PROTOCOL_V1)
+            stream = await connection.open_stream(STATUS_PROTOCOL_V1)
 
             # Yield to allow aioquic to complete any pending state transitions.
             #
@@ -489,7 +489,7 @@ class ReqRespClient:
                     except Exception:
                         pass
                 await asyncio.sleep(0.01)  # Small delay before retry
-                return await self._do_status_request(conn, status, retry_count + 1)
+                return await self._do_status_request(connection, status, retry_count + 1)
             raise
 
         finally:

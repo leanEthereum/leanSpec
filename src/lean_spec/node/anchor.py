@@ -78,7 +78,7 @@ class Anchor(StrictBaseModel):
         url: str,
         genesis: GenesisConfig,
         fork: ForkProtocol,
-        validator_id: ValidatorIndex | None,
+        validator_index: ValidatorIndex | None,
     ) -> Anchor:
         """
         Build an anchor by fetching a finalized state from a peer.
@@ -90,7 +90,7 @@ class Anchor(StrictBaseModel):
             url: HTTP endpoint of the node serving the checkpoint state.
             genesis: Local genesis used as a chain-identity guard via genesis time.
             fork: Fork specification driving state and store construction.
-            validator_id: Local validator index used as a forkchoice tiebreaker hint.
+            validator_index: Local validator index used as a forkchoice tiebreaker hint.
 
         Raises:
             CheckpointSyncError: For every failure mode covering transport,
@@ -127,7 +127,7 @@ class Anchor(StrictBaseModel):
         )
 
         # The protocol return type is structural, but only one concrete store ships.
-        store = cast(Store, fork.create_store(state, anchor_block, validator_id))
+        store = cast(Store, fork.create_store(state, anchor_block, validator_index))
         head_slot = store.blocks[store.head].slot
 
         return cls(

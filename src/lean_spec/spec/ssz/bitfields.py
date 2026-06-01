@@ -123,28 +123,9 @@ class BaseBitvector(SSZModel):
         Returns:
             ceil(N / 8) bytes containing the packed bits.
         """
-        # Zero-filled buffer sized for every bit — only the 1 bits need writing.
-        byte_array = bytearray(math.ceil(self.LENGTH / 8))
-
-        # Walk every input bit and set its position in the output.
-        #
-        # For bit index i:
-        #
-        #   - i // 8        identifies the target byte.
-        #   - i % 8         is the position within that byte (0 = LSB).
-        #   - 1 << (i % 8)  builds a one-hot mask for that position.
-        #   - |=            sets the bit while preserving everything already there.
-        #
-        # Example: bits = [1, 0, 1, 0, 0, 0, 0, 0, 1]  (9 bits, crosses a byte boundary)
-        #
-        #   i=0, bit=1:  byte_array[0] |= 1 << 0  ->  [0b00000001]
-        #   i=2, bit=1:  byte_array[0] |= 1 << 2  ->  [0b00000101]
-        #   i=8, bit=1:  byte_array[1] |= 1 << 0  ->  [0b00000101, 0b00000001]
-        for i, bit in enumerate(self.data):
-            if bit:
-                byte_array[i // 8] |= 1 << (i % 8)
-
-        return bytes(byte_array)
+        # Build the packed bits as one integer, then split into little-endian bytes.
+        value = sum(1 << i for i, bit in enumerate(self.data) if bit)
+        return value.to_bytes(math.ceil(self.LENGTH / 8), "little")
 
     @classmethod
     @override
@@ -334,52 +315,18 @@ class BaseBitlist(SSZModel):
         Returns:
             SSZ bytes containing the data bits followed by the delimiter.
         """
-        # Phase 1: handle the empty case.
-        #
-        # No data bits means the encoding is just the delimiter byte.
+        # Empty bitlist still needs the delimiter byte.
         num_bits = len(self.data)
         if num_bits == 0:
             return b"\x01"
 
-        # Phase 2: pack data bits little-endian into a byte array.
-        #
-        # For bit index i:
-        #
-        #   - i // 8        identifies the target byte.
-        #   - i % 8         is the position within that byte (0 = LSB).
-        #   - 1 << (i % 8)  builds a one-hot mask for that position.
-        #   - |=            sets the bit, preserving anything already there.
-        #
-        # Example: bits = [1, 0, 1, 0, 0, 0, 0, 0, 1]  (9 bits, crosses a byte boundary)
-        #
-        #   i=0, bit=1:  byte_array[0] |= 1 << 0  ->  [0b00000001]
-        #   i=2, bit=1:  byte_array[0] |= 1 << 2  ->  [0b00000101]
-        #   i=8, bit=1:  byte_array[1] |= 1 << 0  ->  [0b00000101, 0b00000001]
-        byte_array = bytearray(math.ceil(num_bits / 8))
-        for i, bit in enumerate(self.data):
-            if bit:
-                byte_array[i // 8] |= 1 << (i % 8)
-
-        # Phase 3: place the delimiter immediately after the last data bit.
-        #
-        # Two cases, by where the last data bit fell:
-        #
-        #   - num_bits % 8 == 0   data fills its bytes; delimiter spills into a new trailing byte.
-        #   - otherwise           delimiter lands at bit (num_bits % 8) of the last byte.
-        #
-        # Example A: data bits = [1, 0, 1]  (num_bits = 3, fits in same byte)
-        #
-        #   byte_array after Phase 2:   [0b00000101]
-        #   byte_array[0] |= 1 << 3  -> [0b00001101]   (delimiter at bit 3)
-        #
-        # Example B: data bits = [1, 1, 1, 1, 1, 1, 1, 1]  (num_bits = 8, spills)
-        #
-        #   byte_array after Phase 2:   [0b11111111]
-        #   bytes(byte_array) + 0x01 -> [0b11111111, 0b00000001]
-        if num_bits % 8 == 0:
-            return bytes(byte_array) + b"\x01"
-        byte_array[num_bits // 8] |= 1 << (num_bits % 8)
-        return bytes(byte_array)
+        # Pack data bits and the delimiter into one integer.
+        # The trailing 1 sentinel sits at the bit just past the data.
+        # It is what lets the decoder recover the original bit count.
+        # Converting an integer to bytes runs the bit-to-byte split in C.
+        # That avoids a Python loop over every bit.
+        value = sum(1 << i for i, bit in enumerate(self.data) if bit) | (1 << num_bits)
+        return value.to_bytes(math.ceil((num_bits + 1) / 8), "little")
 
     @classmethod
     @override

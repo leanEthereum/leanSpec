@@ -120,7 +120,7 @@ def build_gossip_message(topic: str, ssz_data: bytes) -> bytes:
     """
     Build a complete gossip message from topic and SSZ data.
 
-    Format: [topic_len varint][topic][data_len varint][compressed_data]
+    Format: [topic_length varint][topic][data_length varint][compressed_data]
 
     Uses raw Snappy compression as required by Ethereum gossip protocol.
     """
@@ -145,9 +145,9 @@ class TestGossipMessageError:
 
     def test_message_preserved(self) -> None:
         """Error message is preserved."""
-        msg = "Test error message"
-        error = GossipMessageError(msg)
-        assert str(error) == msg
+        message = "Test error message"
+        error = GossipMessageError(message)
+        assert str(error) == message
 
     def test_can_be_raised_and_caught(self) -> None:
         """Can be raised and caught properly."""

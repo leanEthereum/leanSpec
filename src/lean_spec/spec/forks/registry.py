@@ -58,6 +58,6 @@ class ForkRegistry:
         """
         try:
             return self._by_name[name]
-        except KeyError as exc:
+        except KeyError as exception:
             known = sorted(self._by_name)
-            raise KeyError(f"Unknown fork: {name!r}. Known: {known}") from exc
+            raise KeyError(f"Unknown fork: {name!r}. Known: {known}") from exception

@@ -121,8 +121,8 @@ class SSZTest(BaseConsensusFixture):
         exception_raised: Exception | None = None
         try:
             decoder.decode_bytes(raw)
-        except Exception as exc:
-            exception_raised = exc
+        except Exception as exception:
+            exception_raised = exception
 
         if exception_raised is None:
             raise AssertionError(

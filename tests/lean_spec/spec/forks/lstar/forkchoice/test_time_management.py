@@ -15,7 +15,7 @@ from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.containers import Block, Validators
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import Bytes32, Uint64
-from tests.lean_spec.helpers import TEST_VALIDATOR_ID, make_empty_block_body
+from tests.lean_spec.helpers import TEST_VALIDATOR_INDEX, make_empty_block_body
 
 
 class TestGetForkchoiceStore:
@@ -45,7 +45,7 @@ class TestGetForkchoiceStore:
         store = spec.create_store(
             state,
             anchor_block,
-            validator_id=TEST_VALIDATOR_ID,
+            validator_index=TEST_VALIDATOR_INDEX,
         )
 
         assert store.time == Interval(int(INTERVALS_PER_SLOT) * anchor_slot)

@@ -43,7 +43,6 @@ from typing import ClassVar, Literal
 from lean_spec.config import LEAN_ENV
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.crypto.xmss.aggregation import TypeOneMultiSignature
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
 from lean_spec.spec.crypto.xmss.containers import (
     PublicKey,
@@ -63,7 +62,11 @@ from lean_spec.spec.crypto.xmss.types import (
     Randomness,
 )
 from lean_spec.spec.forks import Slot, ValidatorIndex
-from lean_spec.spec.forks.lstar.containers import AggregatedAttestations, AttestationData
+from lean_spec.spec.forks.lstar.containers import (
+    AggregatedAttestations,
+    AttestationData,
+    SingleMessageAggregate,
+)
 from lean_spec.spec.ssz import Bytes32, Uint64
 
 KeyRole = Literal["attestation", "proposal"]
@@ -107,7 +110,7 @@ def create_dummy_signature() -> Signature:
         A zero-valued signature with correct field sizes.
     """
     # Build a single zero-filled hash digest with the scheme's hash length.
-    zero_digest = HashDigestVector(data=[Fp(0)] * TARGET_CONFIG.HASH_LEN_FE)
+    zero_digest = HashDigestVector(data=[Fp(0)] * TARGET_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)
 
     # The Merkle authentication path needs one sibling per tree level.
     #
@@ -120,7 +123,7 @@ def create_dummy_signature() -> Signature:
     # Assemble a complete signature with all components zeroed out.
     return Signature(
         path=HashTreeOpening(siblings=siblings),
-        rho=Randomness(data=[Fp(0)] * TARGET_CONFIG.RAND_LEN_FE),
+        rho=Randomness(data=[Fp(0)] * TARGET_CONFIG.RAND_LENGTH_FIELD_ELEMENTS),
         hashes=hashes,
     )
 
@@ -148,7 +151,7 @@ One hundred slots provides ample signing headroom for typical test scenarios.
 """
 
 
-def get_keys_dir(scheme_name: str) -> Path:
+def get_keys_directory(scheme_name: str) -> Path:
     """
     Resolve the on-disk directory that holds key files for a scheme.
 
@@ -181,7 +184,7 @@ class XmssKeyManager:
         "max_slot",
         "scheme_name",
         "scheme",
-        "_keys_dir",
+        "_keys_directory",
         "_json_cache",
         "_public_cache",
         "_available_indices",
@@ -250,7 +253,7 @@ class XmssKeyManager:
         self.max_slot = max_slot
         self.scheme_name = scheme_name
         self.scheme = LEAN_ENV_TO_SCHEMES[scheme_name]
-        self._keys_dir = get_keys_dir(scheme_name)
+        self._keys_directory = get_keys_directory(scheme_name)
 
         # Raw JSON cache: nested dict of hex-encoded SSZ strings, very lightweight.
         self._json_cache: dict[ValidatorIndex, dict[str, dict[str, str]]] = {}
@@ -278,26 +281,26 @@ class XmssKeyManager:
         """
         if self._available_indices is None:
             # Verify the key directory exists before scanning.
-            if not self._keys_dir.exists():
+            if not self._keys_directory.exists():
                 raise FileNotFoundError(
-                    f"Keys directory not found: {self._keys_dir} - "
+                    f"Keys directory not found: {self._keys_directory} - "
                     f"Run: python -m consensus_testing.keys --scheme {self.scheme_name}"
                 )
 
             # Each JSON file is named by its validator index (e.g. "0.json").
             self._available_indices = {
-                ValidatorIndex(int(f.stem)) for f in self._keys_dir.glob("*.json")
+                ValidatorIndex(int(f.stem)) for f in self._keys_directory.glob("*.json")
             }
 
             # An empty directory is as bad as a missing one.
             if not self._available_indices:
                 raise FileNotFoundError(
-                    f"No key files found in: {self._keys_dir} - "
+                    f"No key files found in: {self._keys_directory} - "
                     f"Run: python -m consensus_testing.keys --scheme {self.scheme_name}"
                 )
         return self._available_indices
 
-    def _load_json(self, idx: ValidatorIndex) -> dict[str, dict[str, str]]:
+    def _load_json(self, index: ValidatorIndex) -> dict[str, dict[str, str]]:
         """
         Load raw JSON for a single validator, caching the result.
 
@@ -305,7 +308,7 @@ class XmssKeyManager:
         Keeping them as strings avoids the cost of deserializing secret keys.
 
         Args:
-            idx: Validator index to load.
+            index: Validator index to load.
 
         Returns:
             Nested dictionary of hex-encoded SSZ strings keyed by role then field.
@@ -313,17 +316,17 @@ class XmssKeyManager:
         Raises:
             KeyError: If no key file exists for the index.
         """
-        if idx not in self._json_cache:
+        if index not in self._json_cache:
             # Resolve the per-validator JSON file path.
-            key_file = self._keys_dir / f"{idx}.json"
+            key_file = self._keys_directory / f"{index}.json"
             try:
                 with key_file.open() as f:
-                    self._json_cache[idx] = json.load(f)
+                    self._json_cache[index] = json.load(f)
             except FileNotFoundError:
                 raise KeyError(f"Key file not found: {key_file}") from None
-        return self._json_cache[idx]
+        return self._json_cache[index]
 
-    def _get_secret_key(self, idx: ValidatorIndex, role: KeyRole) -> SecretKey:
+    def _get_secret_key(self, index: ValidatorIndex, role: KeyRole) -> SecretKey:
         """
         Deserialize a single secret key from disk.
 
@@ -331,17 +334,17 @@ class XmssKeyManager:
         The other three fields remain as lightweight hex strings in the cache.
 
         Args:
-            idx: Validator index to look up.
+            index: Validator index to look up.
             role: Which signing role's secret to decode (attestation or proposal).
 
         Returns:
             The deserialized secret key.
         """
         # Load the raw JSON (cached), then decode only the requested field.
-        data = self._load_json(idx)
+        data = self._load_json(index)
         return SecretKey.decode_bytes(bytes.fromhex(data[f"{role}_keypair"]["secret_key"]))
 
-    def __getitem__(self, idx: ValidatorIndex) -> ValidatorKeyPair:
+    def __getitem__(self, index: ValidatorIndex) -> ValidatorKeyPair:
         """
         Fully deserialize a key pair including secrets.
 
@@ -349,15 +352,15 @@ class XmssKeyManager:
         heavy secret key objects unnecessarily.
         """
         try:
-            return ValidatorKeyPair.model_validate(self._load_json(idx))
+            return ValidatorKeyPair.model_validate(self._load_json(index))
         except KeyError:
-            raise KeyError(f"Validator {idx} not found (available: {len(self)})") from None
+            raise KeyError(f"Validator {index} not found (available: {len(self)})") from None
 
-    def __contains__(self, idx: object) -> bool:
+    def __contains__(self, index: object) -> bool:
         """Check whether a validator index has keys on disk."""
-        if not isinstance(idx, ValidatorIndex):
+        if not isinstance(index, ValidatorIndex):
             return False
-        return idx in self._scan_indices()
+        return index in self._scan_indices()
 
     def __len__(self) -> int:
         """Return the number of available validator key pairs."""
@@ -367,7 +370,7 @@ class XmssKeyManager:
         """Iterate over validator indices in ascending order."""
         return iter(sorted(self._scan_indices()))
 
-    def get_public_keys(self, idx: ValidatorIndex) -> tuple[PublicKey, PublicKey]:
+    def get_public_keys(self, index: ValidatorIndex) -> tuple[PublicKey, PublicKey]:
         """
         Return attestation and proposal public keys without touching secrets.
 
@@ -375,23 +378,23 @@ class XmssKeyManager:
         Secret keys (~2.7 KB raw, ~370 MB as Python objects) are not touched.
 
         Args:
-            idx: Validator index to look up.
+            index: Validator index to look up.
 
         Returns:
             Tuple of (attestation public key, proposal public key).
         """
-        if idx not in self._public_cache:
+        if index not in self._public_cache:
             # Decode only the two public key fields from the raw JSON.
-            data = self._load_json(idx)
-            self._public_cache[idx] = (
+            data = self._load_json(index)
+            self._public_cache[index] = (
                 PublicKey.decode_bytes(bytes.fromhex(data["attestation_keypair"]["public_key"])),
                 PublicKey.decode_bytes(bytes.fromhex(data["proposal_keypair"]["public_key"])),
             )
-        return self._public_cache[idx]
+        return self._public_cache[index]
 
     def _sign_with_secret(
         self,
-        validator_id: ValidatorIndex,
+        validator_index: ValidatorIndex,
         slot: Slot,
         message: Bytes32,
         role: KeyRole,
@@ -410,7 +413,7 @@ class XmssKeyManager:
         3. Keep the advanced object for the next sign
 
         Args:
-            validator_id: Which validator's key to use.
+            validator_index: Which validator's key to use.
             slot: Target slot to sign for.
             message: The 32-byte message digest to sign.
             role: Which signing role's key (attestation or proposal) to advance.
@@ -418,42 +421,42 @@ class XmssKeyManager:
         Raises:
             ValueError: If the slot exceeds the key's total lifetime.
         """
-        cache_key = (validator_id, role)
+        cache_key = (validator_index, role)
 
         # Reuse the cached object directly when present, else decode from disk.
         # Holding the object avoids the bytes-to-object round-trip on every sign.
         # That round-trip dominated prod-scheme runtime under the compact-bytes cache.
         if cache_key in self._secret_state:
-            sk = self._secret_state[cache_key]
+            secret_key = self._secret_state[cache_key]
         else:
-            sk = self._get_secret_key(validator_id, role)
+            secret_key = self._get_secret_key(validator_index, role)
 
         # Advance the key state until the target slot falls within the prepared interval.
         #
         # Each advancement step extends the interval by consuming the next one-time signing leaf.
-        prepared = self.scheme.get_prepared_interval(sk)
+        prepared = self.scheme.get_prepared_interval(secret_key)
         while int(slot) not in prepared:
-            activation = self.scheme.get_activation_interval(sk)
+            activation = self.scheme.get_activation_interval(secret_key)
 
             # If the prepared interval already reaches the activation boundary,
             # no further advancement is possible, the key is exhausted.
             if prepared.stop >= activation.stop:
                 raise ValueError(f"Slot {slot} exceeds key lifetime {activation.stop}")
 
-            sk = self.scheme.advance_preparation(sk)
-            prepared = self.scheme.get_prepared_interval(sk)
+            secret_key = self.scheme.advance_preparation(secret_key)
+            prepared = self.scheme.get_prepared_interval(secret_key)
 
         # Produce the signature for the target slot.
-        signature = self.scheme.sign(sk, slot, message)
+        signature = self.scheme.sign(secret_key, slot, message)
 
         # Park the advanced object back in the cache for the next sign.
-        self._secret_state[cache_key] = sk
+        self._secret_state[cache_key] = secret_key
 
         return signature
 
     def sign_attestation_data(
         self,
-        validator_id: ValidatorIndex,
+        validator_index: ValidatorIndex,
         attestation_data: AttestationData,
     ) -> Signature:
         """
@@ -463,7 +466,7 @@ class XmssKeyManager:
         The proposal key remains untouched.
 
         Args:
-            validator_id: Which validator signs.
+            validator_index: Which validator signs.
             attestation_data: The attestation to sign.
 
         Returns:
@@ -475,7 +478,7 @@ class XmssKeyManager:
         # Derive the message digest from the attestation data and delegate
         # to the shared signing logic with the attestation secret.
         return self._sign_with_secret(
-            validator_id,
+            validator_index,
             attestation_data.slot,
             hash_tree_root(attestation_data),
             "attestation",
@@ -483,7 +486,7 @@ class XmssKeyManager:
 
     def sign_block_root(
         self,
-        validator_id: ValidatorIndex,
+        validator_index: ValidatorIndex,
         slot: Slot,
         block_root: Bytes32,
     ) -> Signature:
@@ -494,7 +497,7 @@ class XmssKeyManager:
         The attestation key remains untouched.
 
         Args:
-            validator_id: Which validator signs.
+            validator_index: Which validator signs.
             slot: Slot of the block being proposed.
             block_root: The hash tree root of the block.
 
@@ -504,37 +507,40 @@ class XmssKeyManager:
         Raises:
             ValueError: If the slot exceeds key lifetime.
         """
-        return self._sign_with_secret(validator_id, slot, block_root, "proposal")
+        return self._sign_with_secret(validator_index, slot, block_root, "proposal")
 
     def sign_and_aggregate(
         self,
-        validator_ids: list[ValidatorIndex],
+        validator_indices: list[ValidatorIndex],
         attestation_data: AttestationData,
-    ) -> TypeOneMultiSignature:
+    ) -> SingleMessageAggregate:
         """
-        Sign attestation data with each validator and aggregate into a Type-1 proof.
+        Sign attestation data with each validator and aggregate the result.
+
+        Returns a single-message aggregate proof binding all participants
+        to the (data, slot) pair.
 
         Each validator's XMSS attestation key signs the attestation data
         root. The signatures are then handed to the multi-signature
-        binding to produce a single cryptographically valid Type-1 proof
+        binding to produce a single cryptographically valid single-message aggregate proof
         binding all participants to (data, slot).
 
         Args:
-            validator_ids: Validators to sign with.
+            validator_indices: Validators to sign with.
             attestation_data: The attestation data to sign.
 
         Returns:
-            Cryptographically valid Type-1 proof covering validator_ids.
+            Cryptographically valid single-message aggregate proof covering validator_indices.
         """
         raw_xmss = [
             (
-                vid,
-                self.get_public_keys(vid)[0],
-                self.sign_attestation_data(vid, attestation_data),
+                validator_index,
+                self.get_public_keys(validator_index)[0],
+                self.sign_attestation_data(validator_index, attestation_data),
             )
-            for vid in validator_ids
+            for validator_index in validator_indices
         ]
-        return TypeOneMultiSignature.aggregate(
+        return SingleMessageAggregate.aggregate(
             children=[],
             raw_xmss=raw_xmss,
             message=hash_tree_root(attestation_data),
@@ -546,15 +552,15 @@ class XmssKeyManager:
         aggregated_attestations: AggregatedAttestations,
         signature_lookup: Mapping[AttestationData, Mapping[ValidatorIndex, Signature]]
         | None = None,
-    ) -> list[TypeOneMultiSignature]:
+    ) -> list[SingleMessageAggregate]:
         """
-        Produce Type-1 proofs aligned with the given attestations.
+        Produce single-message aggregate proofs aligned with the given attestations.
 
         For each aggregated attestation:
 
         1. Identify participating validators from the aggregation bitfield.
         2. Collect each participant's attestation public key and signature.
-        3. Combine them into a single Type-1 single-message proof via the
+        3. Combine them into a single single-message aggregate single-message proof via the
            multi-signature binding.
 
         Pre-computed signatures can be supplied via the lookup to avoid
@@ -566,36 +572,39 @@ class XmssKeyManager:
                 attestation data then validator index.
 
         Returns:
-            One Type-1 single-message proof per attestation, parallel to the input.
+            One single-message aggregate proof per attestation, parallel to the input.
         """
         lookup = signature_lookup or {}
 
-        proofs: list[TypeOneMultiSignature] = []
-        for agg in aggregated_attestations:
+        proofs: list[SingleMessageAggregate] = []
+        for aggregate in aggregated_attestations:
             # Decode which validators participated from the bitfield.
-            validator_ids = agg.aggregation_bits.to_validator_indices()
+            validator_indices = aggregate.aggregation_bits.to_validator_indices()
 
             # Try the lookup first for pre-computed signatures.
             # Fall back to signing on the fly for any missing entries.
-            sigs_for_data = lookup.get(agg.data, {})
+            signatures_for_data = lookup.get(aggregate.data, {})
 
             # Collect the attestation public keys for each participant.
-            public_keys = [self.get_public_keys(vid)[0] for vid in validator_ids]
+            public_keys = [
+                self.get_public_keys(validator_index)[0] for validator_index in validator_indices
+            ]
 
             # Gather individual signatures, computing any that are missing.
             signatures = [
-                sigs_for_data.get(vid) or self.sign_attestation_data(vid, agg.data)
-                for vid in validator_ids
+                signatures_for_data.get(validator_index)
+                or self.sign_attestation_data(validator_index, aggregate.data)
+                for validator_index in validator_indices
             ]
 
             # Produce a single aggregated proof that the leanVM can verify
             # in one pass over all participants.
             proofs.append(
-                TypeOneMultiSignature.aggregate(
+                SingleMessageAggregate.aggregate(
                     children=[],
-                    raw_xmss=list(zip(validator_ids, public_keys, signatures, strict=True)),
-                    message=hash_tree_root(agg.data),
-                    slot=agg.data.slot,
+                    raw_xmss=list(zip(validator_indices, public_keys, signatures, strict=True)),
+                    message=hash_tree_root(aggregate.data),
+                    slot=aggregate.data.slot,
                 )
             )
 
@@ -657,7 +666,7 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
         max_slot: Maximum signable slot (key lifetime = max_slot + 1 slots).
     """
     scheme = LEAN_ENV_TO_SCHEMES[lean_env]
-    keys_dir = get_keys_dir(lean_env)
+    keys_directory = get_keys_directory(lean_env)
     num_slots = max_slot + 1
     num_workers = os.cpu_count() or 1
 
@@ -667,11 +676,11 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
     )
 
     # Ensure the output directory exists.
-    keys_dir.mkdir(parents=True, exist_ok=True)
+    keys_directory.mkdir(parents=True, exist_ok=True)
 
     # Remove stale key files from previous runs that may have generated
     # a different number of keys.
-    for old_file in keys_dir.glob("*.json"):
+    for old_file in keys_directory.glob("*.json"):
         old_file.unlink()
 
     # Generate key pairs in parallel across all CPU cores.
@@ -681,15 +690,15 @@ def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
     gen_start = time.monotonic()
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         worker_func = partial(_generate_single_keypair, scheme, num_slots)
-        for idx, key_pair in enumerate(executor.map(worker_func, range(count))):
+        for index, key_pair in enumerate(executor.map(worker_func, range(count))):
             elapsed = time.monotonic() - gen_start
-            print(f"[{idx + 1}/{count}] saved key #{idx} ({elapsed:.0f}s elapsed)")
+            print(f"[{index + 1}/{count}] saved key #{index} ({elapsed:.0f}s elapsed)")
 
-            key_file = keys_dir / f"{idx}.json"
+            key_file = keys_directory / f"{index}.json"
             key_file.write_text(key_pair.model_dump_json(indent=2))
 
     total = time.monotonic() - gen_start
-    print(f"Saved {count} key pairs to {keys_dir}/ ({total:.0f}s total)")
+    print(f"Saved {count} key pairs to {keys_directory}/ ({total:.0f}s total)")
 
 
 def download_keys(scheme: str) -> None:
@@ -702,16 +711,16 @@ def download_keys(scheme: str) -> None:
     Args:
         scheme: Scheme name ("test" or "prod").
     """
-    base_dir = Path(__file__).parent / "test_keys"
+    base_directory = Path(__file__).parent / "test_keys"
     url = KEY_DOWNLOAD_URLS[scheme]
 
     print(f"Downloading {scheme} keys from {url}...")
 
     # Reserve a temp path; we open it explicitly below so the writer can close
     # before the reader opens.
-    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".tar.gz")
-    os.close(tmp_fd)
-    tmp_path = Path(tmp_name)
+    temporary_fd, temporary_name = tempfile.mkstemp(suffix=".tar.gz")
+    os.close(temporary_fd)
+    tmp_path = Path(temporary_name)
 
     try:
         # Close the writer before opening the reader.
@@ -721,17 +730,17 @@ def download_keys(scheme: str) -> None:
             shutil.copyfileobj(response, out)
 
         # Remove any existing keys for this scheme before extracting.
-        target_dir = base_dir / f"{scheme}_scheme"
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
-        base_dir.mkdir(parents=True, exist_ok=True)
+        target_directory = base_directory / f"{scheme}_scheme"
+        if target_directory.exists():
+            shutil.rmtree(target_directory)
+        base_directory.mkdir(parents=True, exist_ok=True)
 
         # Extract the archive into the base directory.
         # The archive root is the scheme directory itself.
         with tarfile.open(tmp_path, "r:gz") as tar:
-            tar.extractall(path=base_dir, filter="data")
+            tar.extractall(path=base_directory, filter="data")
 
-        print(f"Extracted {scheme} keys to {target_dir}/")
+        print(f"Extracted {scheme} keys to {target_directory}/")
     finally:
         # Always clean up the temporary download file.
         tmp_path.unlink(missing_ok=True)

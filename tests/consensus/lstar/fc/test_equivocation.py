@@ -63,7 +63,7 @@ def test_equivocating_proposer_two_blocks_at_same_slot(
                     label="equivocation_a",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
+                            validator_indices=[ValidatorIndex(0)],
                             slot=Slot(1),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -84,7 +84,7 @@ def test_equivocating_proposer_two_blocks_at_same_slot(
                     label="equivocation_b",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1)],
+                            validator_indices=[ValidatorIndex(1)],
                             slot=Slot(1),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -154,7 +154,7 @@ def test_equivocating_proposer_with_split_attestations(
                     label="fork_a",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(0)],
+                            validator_indices=[ValidatorIndex(0)],
                             slot=Slot(1),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -176,7 +176,7 @@ def test_equivocating_proposer_with_split_attestations(
                     label="fork_b",
                     attestations=[
                         AggregatedAttestationSpec(
-                            validator_ids=[ValidatorIndex(1)],
+                            validator_indices=[ValidatorIndex(1)],
                             slot=Slot(1),
                             target_slot=Slot(1),
                             target_root_label="block_1",
@@ -192,7 +192,7 @@ def test_equivocating_proposer_with_split_attestations(
             # Phase 1: V0, V1 gossip-attest to fork_a (2 votes)
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(0),
+                    validator_index=ValidatorIndex(0),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="fork_a",
@@ -200,7 +200,7 @@ def test_equivocating_proposer_with_split_attestations(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(1),
+                    validator_index=ValidatorIndex(1),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="fork_a",
@@ -209,7 +209,7 @@ def test_equivocating_proposer_with_split_attestations(
             # Phase 1: V2, V3 gossip-attest to fork_b (2 votes)
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(2),
+                    validator_index=ValidatorIndex(2),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="fork_b",
@@ -217,7 +217,7 @@ def test_equivocating_proposer_with_split_attestations(
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(3),
+                    validator_index=ValidatorIndex(3),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="fork_b",
@@ -235,7 +235,7 @@ def test_equivocating_proposer_with_split_attestations(
             # Phase 2: V4 gossip-attests to fork_b (now 3 vs 2)
             AttestationStep(
                 attestation=GossipAttestationSpec(
-                    validator_id=ValidatorIndex(4),
+                    validator_index=ValidatorIndex(4),
                     slot=Slot(2),
                     target_slot=Slot(2),
                     target_root_label="fork_b",
@@ -301,7 +301,7 @@ def test_same_slot_equivocating_attesters_count_once(
             # V0 and V1's first votes stick on fork_a.
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(2),
@@ -313,7 +313,7 @@ def test_same_slot_equivocating_attesters_count_once(
             ),
             GossipAggregatedAttestationStep(
                 attestation=GossipAggregatedAttestationSpec(
-                    validator_ids=[
+                    validator_indices=[
                         ValidatorIndex(0),
                         ValidatorIndex(1),
                         ValidatorIndex(3),

@@ -3,6 +3,7 @@
 import io
 
 import pytest
+from pydantic import ValidationError
 
 from lean_spec.spec.ssz.collections import SSZList
 from lean_spec.spec.ssz.container import Container
@@ -380,3 +381,50 @@ class TestFromHex:
         """Non-hex characters surface a ValueError from the underlying parser."""
         with pytest.raises(ValueError, match="non-hexadecimal number"):
             OneByte.from_hex("zz")
+
+
+class TestHexStringValidator:
+    """Pydantic validation accepts hex strings via the wrap validator."""
+
+    @pytest.mark.parametrize(
+        "hex_input",
+        [
+            pytest.param("0xab", id="with_prefix"),
+            pytest.param("ab", id="without_prefix"),
+            pytest.param("0xAB", id="uppercase_with_prefix"),
+        ],
+    )
+    def test_validates_hex_string(self, hex_input: str) -> None:
+        """Pydantic validation tolerates the 0x prefix and mixed case alike."""
+        assert OneByte.model_validate(hex_input) == OneByte(a=Uint8(0xAB))
+
+    def test_validates_empty_string_as_empty_container(self) -> None:
+        """An empty hex string validates to a zero-field container."""
+        assert EmptyContainer.model_validate("") == EmptyContainer()
+
+    def test_dict_input_routes_to_field_validation(self) -> None:
+        """A dict input goes through field-by-field validation, not hex decoding."""
+        assert OneByte.model_validate({"a": Uint8(0xAB)}) == OneByte(a=Uint8(0xAB))
+
+    def test_instance_input_passes_through(self) -> None:
+        """An existing instance input is returned unchanged."""
+        instance = OneByte(a=Uint8(0xAB))
+        assert OneByte.model_validate(instance) == instance
+
+    def test_wrong_length_hex_raises_with_class_name(self) -> None:
+        """Hex with too many bytes raises a validation error tagged by the class name."""
+        # 2 hex bytes ("abcd") cannot fit a 1-byte container; trailing bytes trigger the error.
+        with pytest.raises(ValidationError, match="invalid OneByte hex"):
+            OneByte.model_validate("abcd")
+
+    def test_nested_container_field_accepts_hex_string(self) -> None:
+        """A nested container field accepts a hex string for its own SSZ encoding."""
+        # Fixture state:
+        #   inner.x (Uint64) = 1, inner.y (Uint64) = 2 -> 16 little-endian bytes
+        outer = OuterFixedNested.model_validate(
+            {
+                "z": Uint64(7),
+                "inner": "01000000000000000200000000000000",
+            }
+        )
+        assert outer == OuterFixedNested(z=Uint64(7), inner=InnerFixed(x=Uint64(1), y=Uint64(2)))

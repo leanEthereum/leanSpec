@@ -6,7 +6,7 @@ libp2p PeerIds are derived from the public key using multihash:
     2. If encoded <= 42 bytes: PeerId = multihash(identity, encoded)
     3. If encoded > 42 bytes: PeerId = multihash(sha256, sha256(encoded))
 
-Protobuf wire format (from crypto.proto):
+Protobuf wire format (from crypto.protobuf):
     message PublicKey {
         required KeyType Type = 1;  // Field 1, varint
         required bytes Data = 2;    // Field 2, length-delimited
@@ -26,7 +26,7 @@ and the standard Ethereum libp2p network.
 
 References:
     - https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md
-    - https://github.com/libp2p/go-libp2p/blob/master/core/crypto/pb/crypto.proto
+    - https://github.com/libp2p/go-libp2p/blob/master/core/crypto/pb/crypto.protobuf
     - https://github.com/multiformats/multihash
 """
 
@@ -42,7 +42,7 @@ from lean_spec.node.networking import varint
 __all__ = [
     # Main types
     "PeerId",
-    "PublicKeyProto",
+    "PublicKeyProtobuf",
     "Multihash",
     # Enums
     "KeyType",
@@ -54,7 +54,7 @@ __all__ = [
 
 class KeyType(IntEnum):
     """
-    libp2p-crypto key type codes (from crypto.proto KeyType enum).
+    libp2p-crypto key type codes (from crypto.protobuf KeyType enum).
 
     These identify the cryptographic algorithm used for the public key.
     """
@@ -167,10 +167,10 @@ class Base58:
 
         # Convert from base58 to integer
         num = 0
-        for char in s:
-            index = cls.ALPHABET.find(char)
+        for character in s:
+            index = cls.ALPHABET.find(character)
             if index < 0:
-                raise ValueError(f"Invalid Base58 character: {char!r}")
+                raise ValueError(f"Invalid Base58 character: {character!r}")
             num = num * 58 + index
 
         # Convert to bytes
@@ -249,7 +249,7 @@ class Multihash:
 
 
 @dataclass(frozen=True, slots=True)
-class PublicKeyProto:
+class PublicKeyProtobuf:
     """
     A public key in libp2p-crypto protobuf format.
 
@@ -349,7 +349,7 @@ class PeerId:
         return cls(multihash=Base58.decode(s))
 
     @classmethod
-    def from_public_key(cls, public_key: PublicKeyProto) -> PeerId:
+    def from_public_key(cls, public_key: PublicKeyProtobuf) -> PeerId:
         """
         Derive PeerId from a public key.
 

@@ -62,7 +62,7 @@ class QuicConnection:
 
     _protocol: QuicConnectionProtocol
     _peer_id: PeerId
-    _remote_addr: str
+    _remote_address: str
     _streams: dict[int, QuicStream] = field(default_factory=dict)
     _incoming_streams: asyncio.Queue[QuicStream] = field(default_factory=lambda: asyncio.Queue())
     _closed: bool = False
@@ -73,9 +73,9 @@ class QuicConnection:
         return self._peer_id
 
     @property
-    def remote_addr(self) -> str:
+    def remote_address(self) -> str:
         """Remote address in multiaddr format."""
-        return self._remote_addr
+        return self._remote_address
 
     async def open_stream(self, protocol: ProtocolId) -> QuicStream:
         """
@@ -224,7 +224,7 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
                 # aioquic may not expose this directly, need to check.
                 # For now, mark handshake complete.
                 # TODO: Extract and verify peer certificate
-                self.peer_identity = None  # Will be set if we can extract cert
+                self.peer_identity = None  # Will be set if we can extract certificate
             except Exception:
                 self.peer_identity = None
 
@@ -324,15 +324,15 @@ class QuicConnectionManager:
 
     Usage:
         manager = await QuicConnectionManager.create(identity_key)
-        conn = await manager.connect("/ip4/127.0.0.1/udp/9000/quic-v1")
-        stream = await conn.open_stream("/leanconsensus/req/status/1/ssz_snappy")
+        connection = await manager.connect("/ip4/127.0.0.1/udp/9000/quic-v1")
+        stream = await connection.open_stream("/leanconsensus/req/status/1/ssz_snappy")
     """
 
     _identity_key: IdentityKeypair
     _peer_id: PeerId
     _config: QuicConfiguration
     _connections: dict[PeerId, QuicConnection] = field(default_factory=dict)
-    _temp_dir: Path | None = None
+    _temp_directory: Path | None = None
     _context_managers: list[contextlib.AbstractAsyncContextManager[object]] = field(
         default_factory=list
     )
@@ -354,13 +354,13 @@ class QuicConnectionManager:
         peer_id = identity_key.to_peer_id()
 
         # Generate libp2p certificate.
-        private_pem, cert_pem, _ = generate_libp2p_certificate(identity_key)
+        private_pem, certificate_pem, _ = generate_libp2p_certificate(identity_key)
 
-        # Write cert/key to temp files (aioquic requires file paths).
-        temp_dir = Path(tempfile.mkdtemp())
-        cert_path = temp_dir / "cert.pem"
-        key_path = temp_dir / "key.pem"
-        cert_path.write_bytes(cert_pem)
+        # Write certificate/key to temp files (aioquic requires file paths).
+        temp_directory = Path(tempfile.mkdtemp())
+        certificate_path = temp_directory / "cert.pem"
+        key_path = temp_directory / "key.pem"
+        certificate_path.write_bytes(certificate_pem)
         key_path.write_bytes(private_pem)
 
         # Configure QUIC.
@@ -369,13 +369,13 @@ class QuicConnectionManager:
             is_client=True,
             verify_mode=ssl.CERT_NONE,  # We verify via libp2p extension, not CA
         )
-        config.load_cert_chain(str(cert_path), str(key_path))
+        config.load_cert_chain(str(certificate_path), str(key_path))
 
         return cls(
             _identity_key=identity_key,
             _peer_id=peer_id,
             _config=config,
-            _temp_dir=temp_dir,
+            _temp_directory=temp_directory,
         )
 
     @property
@@ -441,16 +441,16 @@ class QuicConnectionManager:
                 temp_key = IdentityKeypair.generate()
                 peer_id = temp_key.to_peer_id()
 
-            conn = QuicConnection(
+            connection = QuicConnection(
                 _protocol=protocol,
                 _peer_id=peer_id,
-                _remote_addr=multiaddr,
+                _remote_address=multiaddr,
             )
-            protocol.connection = conn
+            protocol.connection = connection
             protocol._replay_buffered_events()
 
-            self._connections[peer_id] = conn
-            return conn
+            self._connections[peer_id] = connection
+            return connection
 
         except Exception as e:
             raise QuicTransportError(f"Failed to connect: {e}") from e
@@ -491,10 +491,10 @@ class QuicConnectionManager:
         )
 
         # Reuse the same certificate as client config.
-        if self._temp_dir:
-            cert_path = self._temp_dir / "cert.pem"
-            key_path = self._temp_dir / "key.pem"
-            server_config.load_cert_chain(str(cert_path), str(key_path))
+        if self._temp_directory:
+            certificate_path = self._temp_directory / "cert.pem"
+            key_path = self._temp_directory / "key.pem"
+            server_config.load_cert_chain(str(certificate_path), str(key_path))
 
         # Callback to set up connection when handshake completes.
         # Captures this manager's state (self, on_connection, host, port).
@@ -502,18 +502,18 @@ class QuicConnectionManager:
             temp_key = IdentityKeypair.generate()
             remote_peer_id = temp_key.to_peer_id()
 
-            remote_addr = f"/ip4/{host}/udp/{port}/quic-v1/p2p/{remote_peer_id}"
-            conn = QuicConnection(
+            remote_address = f"/ip4/{host}/udp/{port}/quic-v1/p2p/{remote_peer_id}"
+            connection = QuicConnection(
                 _protocol=protocol_instance,
                 _peer_id=remote_peer_id,
-                _remote_addr=remote_addr,
+                _remote_address=remote_address,
             )
-            protocol_instance.connection = conn
+            protocol_instance.connection = connection
             protocol_instance._replay_buffered_events()
-            self._connections[remote_peer_id] = conn
+            self._connections[remote_peer_id] = connection
 
             # Invoke callback asynchronously so it doesn't block event processing.
-            asyncio.ensure_future(on_connection(conn))
+            asyncio.ensure_future(on_connection(connection))
 
         # Protocol factory that attaches our callback to each new instance.
         def create_protocol(*args, **kwargs) -> LibP2PQuicProtocol:

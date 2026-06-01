@@ -190,7 +190,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Expected anchor-init failure path.
         #
         # When anchor_valid is False, the test asserts that Store.from_anchor
-        # rejects the given (state, block) pair. The pubkey sync that normally
+        # rejects the given (state, block) pair. The public_key sync that normally
         # fixes up the anchor block's state root is skipped, since that would
         # mask the very inconsistency under test.
         if not self.anchor_valid:
@@ -202,7 +202,7 @@ class ForkChoiceTest(BaseConsensusFixture):
                 spec.create_store(
                     self.anchor_state,
                     self.anchor_block,
-                    validator_id=ValidatorIndex(0),
+                    validator_index=ValidatorIndex(0),
                 )
             except AssertionError as e:
                 if self.expected_anchor_error is not None and self.expected_anchor_error not in str(
@@ -224,17 +224,17 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Tests requiring higher max slot trigger key expansion.
         key_manager = XmssKeyManager.shared(max_slot=self.max_slot)
 
-        # Validator pubkey synchronization
+        # Validator public_key synchronization
         #
-        # Test states use placeholder pubkeys.
+        # Test states use placeholder public_keys.
         # We must replace them with the key manager's actual keys.
         # Otherwise signature verification will fail.
         updated_validators = []
         for i, validator in enumerate(self.anchor_state.validators):
-            idx = ValidatorIndex(i)
-            attestation_pubkey, proposal_pubkey = key_manager.get_public_keys(idx)
-            validator.attestation_pubkey = attestation_pubkey.encode_bytes()
-            validator.proposal_pubkey = proposal_pubkey.encode_bytes()
+            index = ValidatorIndex(i)
+            attestation_public_key, proposal_public_key = key_manager.get_public_keys(index)
+            validator.attestation_public_key = attestation_public_key.encode_bytes()
+            validator.proposal_public_key = proposal_public_key.encode_bytes()
             updated_validators.append(validator)
 
         # Updating validators changes the state root.
@@ -249,7 +249,7 @@ class ForkChoiceTest(BaseConsensusFixture):
         store = spec.create_store(
             self.anchor_state,
             self.anchor_block,
-            validator_id=ValidatorIndex(0),
+            validator_index=ValidatorIndex(0),
         )
 
         # Block registry for fork creation
