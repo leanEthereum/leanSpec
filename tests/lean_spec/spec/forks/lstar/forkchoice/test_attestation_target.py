@@ -98,6 +98,31 @@ class TestGetAttestationTarget:
         # The target slot must be justifiable after the finalized slot
         assert target.slot.is_justifiable_after(finalized_slot)
 
+    def test_attestation_target_ignores_stale_safe_target_below_finalized(
+        self,
+        observer_store: Store,
+        spec: LstarSpec,
+    ) -> None:
+        """A stale safe target behind finalization must not pull target selection below it."""
+        store = observer_store
+        roots: dict[Slot, Bytes32] = {}
+
+        for slot_num in range(1, 7):
+            slot = Slot(slot_num)
+            proposer = ValidatorIndex(slot_num % len(store.states[store.head].validators))
+            store, block, _ = spec.produce_block_with_signatures(store, slot, proposer)
+            roots[slot] = hash_tree_root(block)
+
+        finalized = Checkpoint(root=roots[Slot(4)], slot=Slot(4))
+        store.latest_justified = finalized
+        store.latest_finalized = finalized
+        assert store.blocks[store.safe_target].slot == Slot(0)
+
+        target = spec.get_attestation_target(store)
+
+        assert target.root == finalized.root
+        assert target.slot == finalized.slot
+
     def test_attestation_target_consistency_with_head(
         self, observer_store: Store, spec: LstarSpec
     ) -> None:

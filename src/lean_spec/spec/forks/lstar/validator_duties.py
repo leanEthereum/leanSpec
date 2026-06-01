@@ -51,12 +51,19 @@ class ValidatorDutiesMixin(LstarSpecContract):
         # Start from current head
         target_block_root = store.head
 
-        # Walk back toward safe target (up to `JUSTIFICATION_LOOKBACK_SLOTS` steps)
+        # Walk back toward safe target (up to `JUSTIFICATION_LOOKBACK_SLOTS` steps).
         #
+        # If safe target is stale behind the finalized checkpoint, the finalized
+        # slot becomes the lower bound. Target selection must never inspect
+        # candidate slots before the finalized boundary.
+        safe_target_slot = store.blocks[store.safe_target].slot
+        finalized_slot = store.latest_finalized.slot
+        lower_bound_slot = safe_target_slot if safe_target_slot > finalized_slot else finalized_slot
+
         # This ensures the target doesn't advance too far ahead of safe target,
         # providing a balance between liveness and safety.
         for _ in range(int(JUSTIFICATION_LOOKBACK_SLOTS)):
-            if store.blocks[target_block_root].slot > store.blocks[store.safe_target].slot:
+            if store.blocks[target_block_root].slot > lower_bound_slot:
                 target_block_root = store.blocks[target_block_root].parent_root
             else:
                 break
@@ -65,9 +72,10 @@ class ValidatorDutiesMixin(LstarSpecContract):
         #
         # Walk back until we find a slot that satisfies justifiability rules
         # relative to the latest finalized checkpoint.
-        while not store.blocks[target_block_root].slot.is_justifiable_after(
-            store.latest_finalized.slot
-        ):
+        while store.blocks[target_block_root].slot > finalized_slot:
+            target_slot = store.blocks[target_block_root].slot
+            if target_slot.is_justifiable_after(finalized_slot):
+                break
             target_block_root = store.blocks[target_block_root].parent_root
 
         # Create checkpoint from selected target block
