@@ -700,14 +700,16 @@ class LstarSpec(ForkProtocol):
         # to still be justifiable, so source and target are consecutive justified
         # checkpoints in the projected post-state.
         #
-        # Finalization is monotonic in 3SF-mini, so a candidate whose source is
-        # behind the projected finalized boundary cannot advance it.
-        # Restricting FINALIZE tier to sources at or beyond the boundary also keeps
-        # every scanned slot strictly above the boundary, where is_justifiable_after
-        # is defined.
+        # The source must lie strictly past the projected finalized boundary.
+        # A source at or behind the boundary is already final.
+        # It may still justify a newer target, but it must not re-finalize.
+        # This mirrors the state transition, which advances finalization only when
+        # the source slot is strictly greater than the finalized slot.
+        # Scanning from one past the source also keeps every queried slot strictly
+        # above the boundary, where is_justifiable_after is defined.
         finalizes = (
             crosses_two_thirds
-            and att_data.source.slot >= projected_finalized_slot
+            and att_data.source.slot > projected_finalized_slot
             and all(
                 not Slot(s).is_justifiable_after(projected_finalized_slot)
                 for s in range(int(att_data.source.slot) + 1, int(att_data.target.slot))

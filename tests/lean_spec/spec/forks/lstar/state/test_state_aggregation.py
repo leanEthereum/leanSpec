@@ -667,6 +667,36 @@ def test_score_entry_older_source_with_short_gap_is_not_finalize(
     assert score.tier == _Tier.JUSTIFY
 
 
+def test_score_entry_source_at_finalized_boundary_is_not_finalize(
+    container_key_manager: XmssKeyManager,
+) -> None:
+    # Source sits exactly on the projected finalized boundary at slot 6.
+    # Target at slot 7 is the next justifiable slot, so the gap range (7, 7) is
+    # empty and a supermajority would otherwise look like a finalizing entry.
+    # A source at the boundary is already final, so it justifies the newer target
+    # but must not re-finalize.
+    # This mirrors the state transition, which advances finalization only when the
+    # source slot is strictly greater than the finalized slot.
+    source = Checkpoint(root=make_bytes32(1), slot=Slot(6))
+    target = Checkpoint(root=make_bytes32(2), slot=Slot(7))
+    head = Checkpoint(root=make_bytes32(3), slot=Slot(8))
+    att_data = AttestationData(slot=Slot(8), head=head, target=target, source=source)
+    proof = make_aggregated_proof(
+        container_key_manager, [ValidatorIndex(i) for i in range(4)], att_data
+    )
+
+    scored = LstarSpec._score_entry(
+        att_data,
+        {proof},
+        current_votes={},
+        projected_finalized_slot=Slot(6),
+        validator_count=4,
+    )
+    assert scored is not None
+    score, _ = scored
+    assert score.tier == _Tier.JUSTIFY
+
+
 def test_entry_passes_filters_rejects_unknown_head() -> None:
     chain = [make_bytes32(10), make_bytes32(11)]  # slots 0, 1
     source = Checkpoint(root=chain[0], slot=Slot(0))
