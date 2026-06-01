@@ -12,8 +12,10 @@ from .ssz import SSZTest
 from .state_transition import StateTransitionTest
 from .sync import SyncTest
 from .verify_multi_message_proofs import (
+    DropComponentMessageBinding,
     IncrementComponentSlot,
     RebindComponentToAlternateHeadRoot,
+    SwapComponentMessageBindings,
     SwapComponentParticipantPublicKey,
     VerifyMultiMessageProofsTest,
 )
@@ -37,6 +39,8 @@ __all__ = [
     "RebindComponentToAlternateHeadRoot",
     "IncrementComponentSlot",
     "SwapComponentParticipantPublicKey",
+    "SwapComponentMessageBindings",
+    "DropComponentMessageBinding",
     "VerifySignaturesTest",
     "SSZTest",
     "NetworkingCodecTest",

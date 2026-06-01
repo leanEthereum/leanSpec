@@ -157,19 +157,7 @@ class VerifySingleMessageProofsTest(BaseConsensusFixture):
             candidate.verify(public_keys, message, slot)
         except Exception as exception:
             exception_raised = exception
-
-        if self.expect_exception is None:
-            if exception_raised is not None:
-                raise AssertionError(f"Verifier rejected an honest bundle: {exception_raised}")
-        elif exception_raised is None:
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} but verification succeeded"
-            )
-        elif not isinstance(exception_raised, self.expect_exception):
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} but got "
-                f"{type(exception_raised).__name__}: {exception_raised}"
-            )
+        self.assert_expected_outcome(exception_raised)
 
         # Phase 4: publish the client-visible outputs and return self.
         self.message = message

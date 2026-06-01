@@ -57,17 +57,47 @@ class SwapComponentParticipantPublicKey(BaseModel):
     component_index: int
     """Index of the component whose participant list is edited."""
 
-    index: int
+    participant_index: int
     """Position in that component's participant list whose key is replaced."""
 
     with_validator_index: ValidatorIndex
     """Validator whose attestation key replaces the original."""
 
 
+class SwapComponentMessageBindings(BaseModel):
+    """Swap the emitted message-slot bindings of two components.
+
+    The merged proof and the per-component key layout stay honest.
+    Each component's proof is then checked against the other component's binding.
+    A conforming verifier rejects this transposition.
+    """
+
+    first_component_index: int
+    """Index of one component whose emitted message-slot binding is swapped."""
+
+    second_component_index: int
+    """Index of the other component whose emitted message-slot binding is swapped."""
+
+
+class DropComponentMessageBinding(BaseModel):
+    """Drop one component's emitted message-slot binding while keeping its keys.
+
+    The emitted binding list ends up shorter than the per-component key list.
+    A conforming verifier rejects the length mismatch.
+    """
+
+    component_index: int
+    """Index of the component whose emitted message-slot binding is removed."""
+
+
 Tamper = (
-    RebindComponentToAlternateHeadRoot | IncrementComponentSlot | SwapComponentParticipantPublicKey
+    RebindComponentToAlternateHeadRoot
+    | IncrementComponentSlot
+    | SwapComponentParticipantPublicKey
+    | SwapComponentMessageBindings
+    | DropComponentMessageBinding
 )
-"""Discriminated union of post-generation mutations that produce a rejection vector."""
+"""Union of post-generation mutations that each produce a rejection vector."""
 
 
 class VerifyMultiMessageProofsTest(BaseConsensusFixture):
@@ -155,14 +185,10 @@ class VerifyMultiMessageProofsTest(BaseConsensusFixture):
             public_keys_per_part=public_keys_per_message,
         )
 
-        # Phase 3: optionally mutate exactly one component's binding.
+        # Phase 3: optionally mutate exactly one binding of the bundle.
         match self.tamper:
             case RebindComponentToAlternateHeadRoot(component_index=component_index):
-                if not 0 <= component_index < component_count:
-                    raise ValueError(
-                        f"component_index {component_index} out of range "
-                        f"for {component_count} components"
-                    )
+                self._check_component_index(component_index, component_count)
                 # Regenerate the targeted component against an alternate head root and re-merge.
                 # The emitted attestation data, message, slot, keys, and bits stay honest.
                 # Only the merged proof bytes carry the alternate binding for this component.
@@ -185,27 +211,30 @@ class VerifyMultiMessageProofsTest(BaseConsensusFixture):
                 )
 
             case IncrementComponentSlot(component_index=component_index):
-                if not 0 <= component_index < component_count:
+                self._check_component_index(component_index, component_count)
+                bumped = slots[component_index] + Slot(1)
+                # A bumped slot landing on another component's slot would make the rejection
+                # ambiguous, since the verifier could then fail on the wrong binding.
+                if any(
+                    other_index != component_index and other_slot == bumped
+                    for other_index, other_slot in enumerate(slots)
+                ):
                     raise ValueError(
-                        f"component_index {component_index} out of range "
-                        f"for {component_count} components"
+                        f"incremented slot {bumped} collides with another component's slot; "
+                        f"pick component slots that stay distinct after the bump"
                     )
-                slots[component_index] = slots[component_index] + Slot(1)
+                slots[component_index] = bumped
 
             case SwapComponentParticipantPublicKey(
                 component_index=component_index,
-                index=position,
+                participant_index=position,
                 with_validator_index=replacement_index,
             ):
-                if not 0 <= component_index < component_count:
-                    raise ValueError(
-                        f"component_index {component_index} out of range "
-                        f"for {component_count} components"
-                    )
+                self._check_component_index(component_index, component_count)
                 public_keys = public_keys_per_message[component_index]
                 if not 0 <= position < len(public_keys):
                     raise ValueError(
-                        f"swap_public_key index {position} out of range "
+                        f"participant_index {position} out of range "
                         f"for component {component_index} with {len(public_keys)} keys"
                     )
                 replacement = key_manager.get_public_keys(replacement_index)[0]
@@ -213,11 +242,39 @@ class VerifyMultiMessageProofsTest(BaseConsensusFixture):
                 # The verifier would then accept and the rejection would be a false positive.
                 if replacement == public_keys[position]:
                     raise ValueError(
-                        f"swap_public_key replacement at component {component_index} "
-                        f"index {position} matches the original; "
+                        f"participant key replacement at component {component_index} "
+                        f"position {position} matches the original; "
                         f"pick a with_validator_index distinct from the participant there"
                     )
+                # The honest merge already bound the proof to the honest keys.
+                # Editing the emitted key here without re-merging is what breaks verification.
                 public_keys[position] = replacement
+
+            case SwapComponentMessageBindings(
+                first_component_index=first_index,
+                second_component_index=second_index,
+            ):
+                self._check_component_index(first_index, component_count)
+                self._check_component_index(second_index, component_count)
+                if first_index == second_index:
+                    raise ValueError("swap message bindings requires two distinct components")
+                # Swap each component's emitted message and slot so its proof faces the other's
+                # binding, while the merged proof and key layout stay honest.
+                messages[first_index], messages[second_index] = (
+                    messages[second_index],
+                    messages[first_index],
+                )
+                slots[first_index], slots[second_index] = (
+                    slots[second_index],
+                    slots[first_index],
+                )
+
+            case DropComponentMessageBinding(component_index=component_index):
+                self._check_component_index(component_index, component_count)
+                # Remove one component's emitted message and slot but keep its keys.
+                # The binding list is now shorter than the per-component key list.
+                del messages[component_index]
+                del slots[component_index]
 
         # Phase 4: self-verify and assert the outcome against the configured expectation.
         exception_raised: Exception | None = None
@@ -230,19 +287,7 @@ class VerifyMultiMessageProofsTest(BaseConsensusFixture):
             )
         except Exception as exception:
             exception_raised = exception
-
-        if self.expect_exception is None:
-            if exception_raised is not None:
-                raise AssertionError(f"Verifier rejected an honest bundle: {exception_raised}")
-        elif exception_raised is None:
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} but verification succeeded"
-            )
-        elif not isinstance(exception_raised, self.expect_exception):
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} but got "
-                f"{type(exception_raised).__name__}: {exception_raised}"
-            )
+        self.assert_expected_outcome(exception_raised)
 
         # Phase 5: publish the client-visible outputs and return self.
         self.messages = messages
@@ -251,6 +296,14 @@ class VerifyMultiMessageProofsTest(BaseConsensusFixture):
         self.aggregation_bits_per_message = aggregation_bits_per_message
         self.proof = merged.proof
         return self
+
+    @staticmethod
+    def _check_component_index(component_index: int, component_count: int) -> None:
+        """Reject a tamper that targets a component outside the bundle."""
+        if not 0 <= component_index < component_count:
+            raise ValueError(
+                f"component_index {component_index} out of range for {component_count} components"
+            )
 
     def _single_message_aggregate(
         self,
