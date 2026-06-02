@@ -866,8 +866,8 @@ requires-dist = [
 
 [[package]]
 name = "lean-multisig-py"
-version = "0.0.5"
-source = { git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.5#c1fee09c22ba0cc12a5fe915e9e5e677039ff310" }
+version = "0.0.6"
+source = { git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.6#b2bb37193595fe010edfe9e2e743b1a96fb3461e" }
 
 [[package]]
 name = "lean-spec"
@@ -940,7 +940,7 @@ requires-dist = [
     { name = "aioquic", specifier = ">=1.2.0,<2" },
     { name = "cryptography", specifier = ">=46.0.0" },
     { name = "httpx", specifier = ">=0.28.0,<1" },
-    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.5" },
+    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.6" },
     { name = "numba", specifier = ">=0.61.0,<1" },
     { name = "numpy", specifier = ">=2.0.0,<3" },
     { name = "prometheus-client", specifier = ">=0.21.0,<1" },
@@ -957,7 +957,7 @@ dev = [
     { name = "ipdb", specifier = ">=0.13" },
     { name = "ipython", specifier = ">=8.31.0,<9" },
     { name = "lean-ethereum-testing", editable = "packages/testing" },
-    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.5" },
+    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.6" },
     { name = "mdformat", specifier = "==0.7.22" },
     { name = "mkdocs", specifier = ">=1.6.1,<2" },
     { name = "mkdocs-material", specifier = ">=9.5.45,<10" },
@@ -987,7 +987,7 @@ lint = [
 test = [
     { name = "hypothesis", specifier = ">=6.138.14" },
     { name = "lean-ethereum-testing", editable = "packages/testing" },
-    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.5" },
+    { name = "lean-multisig-py", git = "https://github.com/anshalshukla/leanMultisig-py?tag=v0.0.6" },
     { name = "pycryptodome", specifier = ">=3.20.0,<4" },
     { name = "pytest", specifier = ">=8.3.3,<9" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
