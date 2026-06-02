@@ -434,6 +434,17 @@ class ForkChoiceMixin(LstarSpecContract):
                         attestations[validator_index] = attestation_data
         return attestations
 
+    def _fork_choice_payloads(
+        self,
+        store: LstarStore,
+        aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
+    ) -> dict[AttestationData, set[SingleMessageAggregate]]:
+        return {
+            attestation_data: proofs
+            for attestation_data, proofs in aggregated_payloads.items()
+            if attestation_data.target.slot > store.latest_finalized.slot
+        }
+
     def _accumulate_ancestor_weights(
         self,
         store: LstarStore,
@@ -467,7 +478,7 @@ class ForkChoiceMixin(LstarSpecContract):
         for every ancestor above the finalized slot.
         """
         attestations = self.extract_attestations_from_aggregated_payloads(
-            store, store.latest_known_aggregated_payloads
+            store, self._fork_choice_payloads(store, store.latest_known_aggregated_payloads)
         )
 
         weights = self._accumulate_ancestor_weights(
@@ -549,7 +560,7 @@ class ForkChoiceMixin(LstarSpecContract):
         """
         # Extract attestations from known aggregated payloads
         attestations = self.extract_attestations_from_aggregated_payloads(
-            store, store.latest_known_aggregated_payloads
+            store, self._fork_choice_payloads(store, store.latest_known_aggregated_payloads)
         )
 
         # Run LMD-GHOST fork choice algorithm.
@@ -636,7 +647,7 @@ class ForkChoiceMixin(LstarSpecContract):
         # "Known" is excluded by design.
         attestations = self.extract_attestations_from_aggregated_payloads(
             store,
-            store.latest_new_aggregated_payloads,
+            self._fork_choice_payloads(store, store.latest_new_aggregated_payloads),
         )
 
         # Run LMD GHOST with the supermajority threshold.

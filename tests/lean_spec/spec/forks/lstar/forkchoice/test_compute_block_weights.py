@@ -81,6 +81,65 @@ def test_linear_chain_weight_accumulates_upward(spec: LstarSpec, base_store: Sto
     assert weights == {block2_root: 1, block1_root: 1}
 
 
+def test_stale_latest_message_does_not_mask_fresh_weight(
+    spec: LstarSpec, base_store: Store
+) -> None:
+    """A stale post-finalization message must not hide a validator's fresh vote."""
+    genesis_root = base_store.head
+
+    block1 = make_signed_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(0),
+        parent_root=genesis_root,
+        state_root=make_bytes32(10),
+    )
+    block1_root = hash_tree_root(block1.block)
+
+    block2 = make_signed_block(
+        slot=Slot(2),
+        proposer_index=ValidatorIndex(1),
+        parent_root=block1_root,
+        state_root=make_bytes32(20),
+    )
+    block2_root = hash_tree_root(block2.block)
+
+    base_store.blocks = {
+        **base_store.blocks,
+        block1_root: block1.block,
+        block2_root: block2.block,
+    }
+    genesis_state = base_store.states[genesis_root]
+    base_store.states = {
+        **base_store.states,
+        block1_root: genesis_state,
+        block2_root: genesis_state,
+    }
+    base_store.head = block2_root
+    base_store.latest_finalized = Checkpoint(root=block1_root, slot=Slot(1))
+
+    fresh_vote = AttestationData(
+        slot=Slot(2),
+        head=Checkpoint(root=block2_root, slot=Slot(2)),
+        target=Checkpoint(root=block2_root, slot=Slot(2)),
+        source=Checkpoint(root=block1_root, slot=Slot(1)),
+    )
+    stale_vote = AttestationData(
+        slot=Slot(3),
+        head=Checkpoint(root=block1_root, slot=Slot(1)),
+        target=Checkpoint(root=block1_root, slot=Slot(1)),
+        source=Checkpoint(root=genesis_root, slot=Slot(0)),
+    )
+
+    base_store.latest_known_aggregated_payloads = {
+        fresh_vote: {_make_empty_proof([ValidatorIndex(0)])},
+        stale_vote: {_make_empty_proof([ValidatorIndex(0)])},
+    }
+
+    weights = spec.compute_block_weights(base_store)
+
+    assert weights == {block2_root: 1}
+
+
 def test_multiple_attestations_accumulate(spec: LstarSpec, base_store: Store) -> None:
     """Multiple validators attesting to the same head accumulate weight."""
     genesis_root = base_store.head
