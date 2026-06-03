@@ -120,8 +120,60 @@ class TestGetAttestationTarget:
 
         target = spec.get_attestation_target(store)
 
-        assert target.root == finalized.root
-        assert target.slot == finalized.slot
+        assert target == finalized
+
+    def test_attestation_target_walks_back_to_nearest_justifiable_slot(
+        self,
+        observer_store: Store,
+        spec: LstarSpec,
+    ) -> None:
+        """A non-justifiable candidate slot must step back to the nearest justifiable one."""
+        store = observer_store
+        roots: dict[Slot, Bytes32] = {}
+
+        for slot_num in range(1, 12):
+            slot = Slot(slot_num)
+            proposer = ValidatorIndex(slot_num % len(store.states[store.head].validators))
+            store, block, _ = spec.produce_block_with_signatures(store, slot, proposer)
+            roots[slot] = hash_tree_root(block)
+
+        # Fixture state: finalized and safe target at slot 0, head at slot 10.
+        # The lookback walk takes 3 steps from slot 10 and lands on slot 7.
+        # Distance 7 from finalization is neither <= 5, a perfect square, nor pronic.
+        # Distance 6 is pronic (2 * 3), so slot 6 is the nearest justifiable slot below.
+        assert store.blocks[store.head].slot == Slot(10)
+        assert not Slot(7).is_justifiable_after(Slot(0))
+        assert Slot(6).is_justifiable_after(Slot(0))
+
+        target = spec.get_attestation_target(store)
+
+        assert target == Checkpoint(root=roots[Slot(6)], slot=Slot(6))
+
+    def test_attestation_target_uses_safe_target_when_ahead_of_finalized(
+        self,
+        observer_store: Store,
+        spec: LstarSpec,
+    ) -> None:
+        """When the safe target leads finalization, it is the walk's lower bound."""
+        store = observer_store
+        roots: dict[Slot, Bytes32] = {}
+
+        for slot_num in range(1, 5):
+            slot = Slot(slot_num)
+            proposer = ValidatorIndex(slot_num % len(store.states[store.head].validators))
+            store, block, _ = spec.produce_block_with_signatures(store, slot, proposer)
+            roots[slot] = hash_tree_root(block)
+
+        # Fixture state: finalized at slot 1, safe target at slot 3, head at slot 4.
+        # The safe target leads finalization, so it sets the lower bound at slot 3.
+        store.safe_target = roots[Slot(3)]
+        finalized = Checkpoint(root=roots[Slot(1)], slot=Slot(1))
+        store.latest_justified = finalized
+        store.latest_finalized = finalized
+
+        target = spec.get_attestation_target(store)
+
+        assert target == Checkpoint(root=roots[Slot(3)], slot=Slot(3))
 
     def test_attestation_target_consistency_with_head(
         self, observer_store: Store, spec: LstarSpec

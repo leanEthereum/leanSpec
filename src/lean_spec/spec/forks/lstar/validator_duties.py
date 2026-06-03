@@ -40,28 +40,31 @@ class ValidatorDutiesMixin(LstarSpecContract):
     def get_attestation_target(self, store: LstarStore) -> Checkpoint:
         """Calculate target checkpoint for validator attestations.
 
-        Determines appropriate attestation target based on head, safe target,
-        and finalization constraints. The algorithm balances between advancing
-        the chain head and maintaining safety guarantees.
+        Determines the attestation target from the head, the safe target,
+        and the finalization constraints.
+        The algorithm balances advancing the chain head against safety.
 
-        The walk starts at the head and goes backward (up to
-        ``JUSTIFICATION_LOOKBACK_SLOTS`` steps) until both the safe-target
-        bound and the justifiability rules of the slot are satisfied.
+        The walk starts at the head and goes backward.
+        It takes up to JUSTIFICATION_LOOKBACK_SLOTS steps.
+        It stops once both the lower-bound slot and the justifiability rules are satisfied.
+
+        The walk never crosses the finalized boundary.
+        If the safe target lags behind finalization, the finalized slot is the lower bound.
         """
         # Start from current head
         target_block_root = store.head
 
-        # Walk back toward safe target (up to `JUSTIFICATION_LOOKBACK_SLOTS` steps).
+        # Walk back toward the safe target, up to JUSTIFICATION_LOOKBACK_SLOTS steps.
         #
-        # If safe target is stale behind the finalized checkpoint, the finalized
-        # slot becomes the lower bound. Target selection must never inspect
-        # candidate slots before the finalized boundary.
+        # If the safe target is stale behind the finalized checkpoint, the finalized slot
+        # becomes the lower bound.
+        # Target selection must never inspect candidate slots before the finalized boundary.
         safe_target_slot = store.blocks[store.safe_target].slot
         finalized_slot = store.latest_finalized.slot
-        lower_bound_slot = safe_target_slot if safe_target_slot > finalized_slot else finalized_slot
+        lower_bound_slot = max(safe_target_slot, finalized_slot)
 
-        # This ensures the target doesn't advance too far ahead of safe target,
-        # providing a balance between liveness and safety.
+        # This keeps the target from advancing too far ahead of the safe target.
+        # It balances liveness against safety.
         for _ in range(int(JUSTIFICATION_LOOKBACK_SLOTS)):
             if store.blocks[target_block_root].slot > lower_bound_slot:
                 target_block_root = store.blocks[target_block_root].parent_root
@@ -73,10 +76,10 @@ class ValidatorDutiesMixin(LstarSpecContract):
         # Walk back until we find a slot that satisfies justifiability rules
         # relative to the latest finalized checkpoint.
         while store.blocks[target_block_root].slot > finalized_slot:
-            target_slot = store.blocks[target_block_root].slot
-            if target_slot.is_justifiable_after(finalized_slot):
+            target_block = store.blocks[target_block_root]
+            if target_block.slot.is_justifiable_after(finalized_slot):
                 break
-            target_block_root = store.blocks[target_block_root].parent_root
+            target_block_root = target_block.parent_root
 
         # Create checkpoint from selected target block
         target_block = store.blocks[target_block_root]
