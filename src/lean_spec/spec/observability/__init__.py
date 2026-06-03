@@ -11,7 +11,7 @@ implementation that clients wire in; other clients are free to supply
 their own.
 """
 
-from lean_spec.node.observability.observer import (
+from lean_spec.spec.observability.observer import (
     SpecObserver,
     observe_on_attestation,
     observe_on_block,

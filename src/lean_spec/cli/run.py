@@ -22,9 +22,9 @@ from lean_spec.node.metrics import PrometheusObserver, registry as metrics
 from lean_spec.node.networking.client import LiveNetworkEventSource
 from lean_spec.node.networking.gossipsub import GossipTopic
 from lean_spec.node.node import Node, NodeConfig
-from lean_spec.node.observability import set_observer
 from lean_spec.spec.forks import SubnetId
 from lean_spec.spec.forks.lstar.config import ATTESTATION_COMMITTEE_COUNT
+from lean_spec.spec.observability import set_observer
 
 logger = logging.getLogger(__name__)
 

@@ -3,10 +3,6 @@
 import math
 from collections import defaultdict
 
-from lean_spec.node.observability import (
-    observe_on_attestation,
-    observe_on_block,
-)
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.interface import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.forks.lstar._base import LstarSpecBase, LstarStore
@@ -30,6 +26,10 @@ from lean_spec.spec.forks.lstar.containers import (
     ValidatorIndex,
 )
 from lean_spec.spec.forks.protocol import SpecBlockType, SpecStateType
+from lean_spec.spec.observability import (
+    observe_on_attestation,
+    observe_on_block,
+)
 from lean_spec.spec.ssz import Bytes32, Uint64
 
 

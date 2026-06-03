@@ -10,14 +10,14 @@ import pytest
 from prometheus_client import CollectorRegistry, Histogram
 
 from lean_spec.node.metrics import PrometheusObserver, registry as metrics
-from lean_spec.node.observability import (
+from lean_spec.spec.observability import (
     observe_on_attestation,
     observe_on_block,
     observe_state_transition,
     observer as observer_module,
     set_observer,
 )
-from lean_spec.node.observability.observer import _NullObserver
+from lean_spec.spec.observability.observer import _NullObserver
 
 
 @pytest.fixture

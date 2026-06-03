@@ -4,9 +4,6 @@ import copy
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from lean_spec.node.observability import (
-    observe_state_transition,
-)
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks.lstar._base import LstarSpecBase
 from lean_spec.spec.forks.lstar.containers import (
@@ -24,6 +21,9 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.protocol import SpecStateType
+from lean_spec.spec.observability import (
+    observe_state_transition,
+)
 from lean_spec.spec.ssz import ZERO_HASH, Boolean, Bytes32, SSZList, Uint64
 
 
