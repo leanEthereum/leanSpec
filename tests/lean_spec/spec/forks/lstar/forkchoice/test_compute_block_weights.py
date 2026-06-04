@@ -22,6 +22,89 @@ def _make_empty_proof(participants: list[ValidatorIndex]) -> SingleMessageAggreg
     )
 
 
+def _add_two_block_chain(base_store: Store) -> tuple[Bytes32, Bytes32, Bytes32]:
+    genesis_root = base_store.head
+
+    block1 = make_signed_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(0),
+        parent_root=genesis_root,
+        state_root=make_bytes32(10),
+    )
+    block1_root = hash_tree_root(block1.block)
+
+    block2 = make_signed_block(
+        slot=Slot(2),
+        proposer_index=ValidatorIndex(1),
+        parent_root=block1_root,
+        state_root=make_bytes32(20),
+    )
+    block2_root = hash_tree_root(block2.block)
+
+    base_store.blocks = {
+        **base_store.blocks,
+        block1_root: block1.block,
+        block2_root: block2.block,
+    }
+    genesis_state = base_store.states[genesis_root]
+    base_store.states = {
+        **base_store.states,
+        block1_root: genesis_state,
+        block2_root: genesis_state,
+    }
+    base_store.head = block2_root
+
+    return genesis_root, block1_root, block2_root
+
+
+def _add_finalized_fork(base_store: Store) -> tuple[Bytes32, Bytes32, Bytes32, Bytes32]:
+    genesis_root = base_store.head
+
+    block1 = make_signed_block(
+        slot=Slot(1),
+        proposer_index=ValidatorIndex(0),
+        parent_root=genesis_root,
+        state_root=make_bytes32(10),
+    )
+    block1_root = hash_tree_root(block1.block)
+
+    child_a = make_signed_block(
+        slot=Slot(2),
+        proposer_index=ValidatorIndex(1),
+        parent_root=block1_root,
+        state_root=make_bytes32(20),
+    )
+    child_a_root = hash_tree_root(child_a.block)
+
+    child_b = make_signed_block(
+        slot=Slot(2),
+        proposer_index=ValidatorIndex(2),
+        parent_root=block1_root,
+        state_root=make_bytes32(30),
+    )
+    child_b_root = hash_tree_root(child_b.block)
+
+    voted_root, tie_break_root = sorted([child_a_root, child_b_root])
+
+    genesis_state = base_store.states[genesis_root]
+    base_store.blocks = {
+        **base_store.blocks,
+        block1_root: block1.block,
+        child_a_root: child_a.block,
+        child_b_root: child_b.block,
+    }
+    base_store.states = {
+        **base_store.states,
+        block1_root: genesis_state,
+        child_a_root: genesis_state,
+        child_b_root: genesis_state,
+    }
+    base_store.head = tie_break_root
+    assert tie_break_root > voted_root
+
+    return genesis_root, block1_root, voted_root, tie_break_root
+
+
 def test_genesis_only_store_returns_empty_weights(spec: LstarSpec, base_store: Store) -> None:
     """A genesis-only store with no attestations has no block weights."""
     assert spec.compute_block_weights(base_store) == {}
@@ -138,6 +221,72 @@ def test_stale_latest_message_does_not_mask_fresh_weight(
     weights = spec.compute_block_weights(base_store)
 
     assert weights == {block2_root: 1}
+
+
+def test_fresh_head_with_finalized_target_still_counts(spec: LstarSpec, base_store: Store) -> None:
+    """A vote with head above finalization still counts when its target is finalized."""
+    genesis_root, block1_root, block2_root = _add_two_block_chain(base_store)
+    base_store.latest_finalized = Checkpoint(root=block1_root, slot=Slot(1))
+
+    fresh_vote_with_finalized_target = AttestationData(
+        slot=Slot(2),
+        head=Checkpoint(root=block2_root, slot=Slot(2)),
+        target=Checkpoint(root=block1_root, slot=Slot(1)),
+        source=Checkpoint(root=genesis_root, slot=Slot(0)),
+    )
+    base_store.latest_known_aggregated_payloads = {
+        fresh_vote_with_finalized_target: {_make_empty_proof([ValidatorIndex(0)])},
+    }
+
+    weights = spec.compute_block_weights(base_store)
+
+    assert weights == {block2_root: 1}
+
+
+def test_finalized_target_vote_can_drive_head_selection(spec: LstarSpec, base_store: Store) -> None:
+    """A weighted head above finalization wins over the zero-weight tie break branch."""
+    genesis_root, block1_root, voted_root, tie_break_root = _add_finalized_fork(base_store)
+    finalized = Checkpoint(root=block1_root, slot=Slot(1))
+    base_store.latest_justified = finalized
+    base_store.latest_finalized = finalized
+
+    vote = AttestationData(
+        slot=Slot(2),
+        head=Checkpoint(root=voted_root, slot=Slot(2)),
+        target=finalized,
+        source=Checkpoint(root=genesis_root, slot=Slot(0)),
+    )
+    base_store.latest_known_aggregated_payloads = {
+        vote: {_make_empty_proof([ValidatorIndex(0)])},
+    }
+
+    store = spec.update_head(base_store)
+
+    assert tie_break_root != voted_root
+    assert store.head == voted_root
+
+
+def test_finalized_target_vote_can_advance_safe_target(spec: LstarSpec, base_store: Store) -> None:
+    """Safe target counts new-pool votes whose head is above finalization."""
+    genesis_root, block1_root, block2_root = _add_two_block_chain(base_store)
+    finalized = Checkpoint(root=block1_root, slot=Slot(1))
+    base_store.latest_justified = finalized
+    base_store.latest_finalized = finalized
+    base_store.safe_target = block1_root
+
+    vote = AttestationData(
+        slot=Slot(2),
+        head=Checkpoint(root=block2_root, slot=Slot(2)),
+        target=finalized,
+        source=Checkpoint(root=genesis_root, slot=Slot(0)),
+    )
+    base_store.latest_new_aggregated_payloads = {
+        vote: {_make_empty_proof([ValidatorIndex(0), ValidatorIndex(1)])},
+    }
+
+    store = spec.update_safe_target(base_store)
+
+    assert store.safe_target == block2_root
 
 
 def test_multiple_attestations_accumulate(spec: LstarSpec, base_store: Store) -> None:

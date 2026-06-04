@@ -102,9 +102,9 @@ class ForkChoiceMixin(LstarSpecContract):
     def prune_stale_attestation_data(self, store: LstarStore) -> LstarStore:
         """Remove attestation data that can no longer influence fork choice.
 
-        An attestation becomes stale when its target checkpoint falls at or before
+        An attestation becomes stale when its head checkpoint falls at or before
         the finalized slot. Such attestations cannot affect chain selection since
-        the target is already finalized.
+        the head is already finalized.
 
         Pruning removes all attestation-related data:
 
@@ -114,22 +114,22 @@ class ForkChoiceMixin(LstarSpecContract):
         """
         # Filter out stale entries from all attestation-related mappings.
         #
-        # Each mapping is keyed by attestation data, so we check membership by slot
-        # against the finalized slot.
+        # Each mapping is keyed by attestation data, so we check the attested
+        # head slot against the finalized slot.
         store.attestation_signatures = {
             attestation_data: signatures
             for attestation_data, signatures in store.attestation_signatures.items()
-            if attestation_data.target.slot > store.latest_finalized.slot
+            if attestation_data.head.slot > store.latest_finalized.slot
         }
         store.latest_new_aggregated_payloads = {
             attestation_data: proofs
             for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
-            if attestation_data.target.slot > store.latest_finalized.slot
+            if attestation_data.head.slot > store.latest_finalized.slot
         }
         store.latest_known_aggregated_payloads = {
             attestation_data: proofs
             for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-            if attestation_data.target.slot > store.latest_finalized.slot
+            if attestation_data.head.slot > store.latest_finalized.slot
         }
         return store
 
@@ -471,7 +471,7 @@ class ForkChoiceMixin(LstarSpecContract):
             {
                 attestation_data: proofs
                 for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                if attestation_data.target.slot > store.latest_finalized.slot
+                if attestation_data.head.slot > store.latest_finalized.slot
             },
         )
 
@@ -552,13 +552,15 @@ class ForkChoiceMixin(LstarSpecContract):
         1. Latest justified checkpoint as the starting root
         2. LMD-GHOST fork choice rule (heaviest subtree by attestation weight)
         """
-        # Extract attestations from known aggregated payloads
+        # Extract fork-choice relevant attestations from known aggregated payloads.
+        # A vote whose head is at or below finalization has no weight above the
+        # finalized boundary.
         attestations = self.extract_attestations_from_aggregated_payloads(
             store,
             {
                 attestation_data: proofs
                 for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                if attestation_data.target.slot > store.latest_finalized.slot
+                if attestation_data.head.slot > store.latest_finalized.slot
             },
         )
 
@@ -649,7 +651,7 @@ class ForkChoiceMixin(LstarSpecContract):
             {
                 attestation_data: proofs
                 for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
-                if attestation_data.target.slot > store.latest_finalized.slot
+                if attestation_data.head.slot > store.latest_finalized.slot
             },
         )
 

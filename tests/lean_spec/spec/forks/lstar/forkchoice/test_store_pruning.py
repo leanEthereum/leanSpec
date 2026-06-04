@@ -2,7 +2,7 @@
 
 from lean_spec.spec.forks import AggregationBits, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import AttestationSignatureEntry, Store
-from lean_spec.spec.forks.lstar.containers import SingleMessageAggregate
+from lean_spec.spec.forks.lstar.containers import AttestationData, SingleMessageAggregate
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 from tests.lean_spec.helpers import (
@@ -13,11 +13,11 @@ from tests.lean_spec.helpers import (
 )
 
 
-def test_prunes_entries_with_target_at_finalized(spec: LstarSpec, pruning_store: Store) -> None:
-    """Verify entries with target.slot == finalized slot are pruned."""
+def test_prunes_entries_with_head_at_finalized(spec: LstarSpec, pruning_store: Store) -> None:
+    """Verify entries with head.slot == finalized slot are pruned."""
     store = pruning_store
 
-    # Create attestation data with target.slot == 5
+    # Create attestation data with head.slot == 5
     attestation_data = make_attestation_data(
         slot=Slot(5),
         target_slot=Slot(5),
@@ -35,17 +35,17 @@ def test_prunes_entries_with_target_at_finalized(spec: LstarSpec, pruning_store:
     # Verify data exists before pruning
     assert attestation_data in store.attestation_signatures
 
-    # Prune should remove entries where target.slot <= finalized.slot
+    # Prune should remove entries where head.slot <= finalized.slot
     pruned_store = spec.prune_stale_attestation_data(store)
 
     assert attestation_data not in pruned_store.attestation_signatures
 
 
-def test_prunes_entries_with_target_before_finalized(spec: LstarSpec, pruning_store: Store) -> None:
-    """Verify entries with target.slot < finalized slot are pruned."""
+def test_prunes_entries_with_head_before_finalized(spec: LstarSpec, pruning_store: Store) -> None:
+    """Verify entries with head.slot < finalized slot are pruned."""
     store = pruning_store
 
-    # Create attestation data with target.slot == 3
+    # Create attestation data with head.slot == 3
     attestation_data = make_attestation_data(
         slot=Slot(3),
         target_slot=Slot(3),
@@ -54,7 +54,7 @@ def test_prunes_entries_with_target_before_finalized(spec: LstarSpec, pruning_st
         source_root=Bytes32.zero(),
     )
 
-    # Set up store with finalized slot at 5 (greater than target.slot)
+    # Set up store with finalized slot at 5 (greater than head.slot)
     store.attestation_signatures = {
         attestation_data: {AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())},
     }
@@ -63,17 +63,17 @@ def test_prunes_entries_with_target_before_finalized(spec: LstarSpec, pruning_st
     # Verify data exists before pruning
     assert attestation_data in store.attestation_signatures
 
-    # Prune should remove entries where target.slot <= finalized.slot
+    # Prune should remove entries where head.slot <= finalized.slot
     pruned_store = spec.prune_stale_attestation_data(store)
 
     assert attestation_data not in pruned_store.attestation_signatures
 
 
-def test_keeps_entries_with_target_after_finalized(spec: LstarSpec, pruning_store: Store) -> None:
-    """Verify entries with target.slot > finalized slot are kept."""
+def test_keeps_entries_with_head_after_finalized(spec: LstarSpec, pruning_store: Store) -> None:
+    """Verify entries with head.slot > finalized slot are kept."""
     store = pruning_store
 
-    # Create attestation data with target.slot == 10
+    # Create attestation data with head.slot == 10
     attestation_data = make_attestation_data(
         slot=Slot(10),
         target_slot=Slot(10),
@@ -82,7 +82,7 @@ def test_keeps_entries_with_target_after_finalized(spec: LstarSpec, pruning_stor
         source_root=make_bytes32(2),
     )
 
-    # Set up store with finalized slot at 5 (less than target.slot)
+    # Set up store with finalized slot at 5 (less than head.slot)
     store.attestation_signatures = {
         attestation_data: {AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())},
     }
@@ -91,10 +91,43 @@ def test_keeps_entries_with_target_after_finalized(spec: LstarSpec, pruning_stor
     # Verify data exists before pruning
     assert attestation_data in store.attestation_signatures
 
-    # Prune should keep entries where target.slot > finalized.slot
+    # Prune should keep entries where head.slot > finalized.slot
     pruned_store = spec.prune_stale_attestation_data(store)
 
     assert attestation_data in pruned_store.attestation_signatures
+
+
+def test_keeps_finalized_target_when_head_after_finalized(
+    spec: LstarSpec, pruning_store: Store
+) -> None:
+    """A finalized target is still useful while the attested head is unfinalized."""
+    store = pruning_store
+    finalized = make_checkpoint(root_seed=1, slot=5)
+    head = make_checkpoint(root_seed=2, slot=6)
+    attestation_data = AttestationData(
+        slot=Slot(6),
+        head=head,
+        target=finalized,
+        source=make_checkpoint(root_seed=0, slot=0),
+    )
+
+    placeholder = ByteList512KiB(data=b"")
+    mock_proof = SingleMessageAggregate(
+        participants=AggregationBits.from_indices([ValidatorIndex(1)]),
+        proof=placeholder,
+    )
+    signature = AttestationSignatureEntry(ValidatorIndex(1), make_mock_signature())
+
+    store.attestation_signatures = {attestation_data: {signature}}
+    store.latest_new_aggregated_payloads = {attestation_data: {mock_proof}}
+    store.latest_known_aggregated_payloads = {attestation_data: {mock_proof}}
+    store.latest_finalized = finalized
+
+    pruned_store = spec.prune_stale_attestation_data(store)
+
+    assert attestation_data in pruned_store.attestation_signatures
+    assert attestation_data in pruned_store.latest_new_aggregated_payloads
+    assert attestation_data in pruned_store.latest_known_aggregated_payloads
 
 
 def test_prunes_related_structures_together(spec: LstarSpec, pruning_store: Store) -> None:
@@ -240,10 +273,10 @@ def test_mixed_stale_and_fresh_entries(spec: LstarSpec, pruning_store: Store) ->
 
     pruned_store = spec.prune_stale_attestation_data(store)
 
-    # Entries with target.slot <= 5 should be pruned (slots 1-5)
+    # Entries with head.slot <= 5 should be pruned (slots 1-5)
     for attestation in attestations[:5]:
         assert attestation not in pruned_store.attestation_signatures
 
-    # Entries with target.slot > 5 should be kept (slots 6-10)
+    # Entries with head.slot > 5 should be kept (slots 6-10)
     for attestation in attestations[5:]:
         assert attestation in pruned_store.attestation_signatures
