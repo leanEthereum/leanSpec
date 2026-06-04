@@ -36,6 +36,32 @@ from lean_spec.spec.ssz import Bytes32, Uint64
 class ForkChoiceMixin(LstarSpecBase):
     """Fork choice and store maintenance for the lstar fork."""
 
+    def _checkpoint_is_ancestor(
+        self,
+        store: LstarStore,
+        ancestor: Checkpoint,
+        descendant: Checkpoint,
+    ) -> bool:
+        """
+        Return whether the ancestor checkpoint lies on the descendant's parent chain.
+
+        Walks parent links from the descendant down to the ancestor's slot.
+        Conservative: a skipped slot or a block missing from the store yields False.
+        """
+        if ancestor.slot > descendant.slot:
+            return False
+
+        current_root = descendant.root
+        while current_root in store.blocks:
+            current_block = store.blocks[current_root]
+            if current_block.slot == ancestor.slot:
+                return current_root == ancestor.root
+            if current_block.slot < ancestor.slot:
+                return False
+            current_root = current_block.parent_root
+
+        return False
+
     def create_store(
         self,
         state: SpecStateType,
@@ -143,7 +169,8 @@ class ForkChoiceMixin(LstarSpecBase):
             2. A vote cannot span backwards in time (source > target).
             3. The head must be at least as recent as source and target.
             4. Checkpoint slots must match the actual block slots.
-            5. The vote's slot must have started locally (a small disparity margin is allowed).
+            5. Source, target, and head must lie on one parent chain.
+            6. The vote's slot must have started locally (a small disparity margin is allowed).
 
         Raises:
             AssertionError: If attestation fails validation.
@@ -185,6 +212,17 @@ class ForkChoiceMixin(LstarSpecBase):
         assert source_block.slot == source_checkpoint.slot, "Source checkpoint slot mismatch"
         assert target_block.slot == target_checkpoint.slot, "Target checkpoint slot mismatch"
         assert head_block.slot == head_checkpoint.slot, "Head checkpoint slot mismatch"
+
+        # Ancestry Check
+        #
+        # Why: fork-choice weight accrues to every ancestor of the attested head.
+        # A sibling head would steer that weight onto a non-canonical branch.
+        assert self._checkpoint_is_ancestor(store, source_checkpoint, target_checkpoint), (
+            "Source checkpoint must be ancestor of target"
+        )
+        assert self._checkpoint_is_ancestor(store, target_checkpoint, head_checkpoint), (
+            "Target checkpoint must be ancestor of head"
+        )
 
         # Time Check
         #

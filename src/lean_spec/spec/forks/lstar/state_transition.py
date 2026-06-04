@@ -32,7 +32,7 @@ def attestation_data_matches_chain(
     historical_block_hashes: Sequence[Bytes32],
 ) -> bool:
     """
-    Check that source and target checkpoints point to blocks on a chain.
+    Check that attestation checkpoints point to blocks on a chain.
 
     Args:
         attestation_data: The attestation being validated.
@@ -40,15 +40,19 @@ def attestation_data_matches_chain(
             Empty slots carry the zero hash.
 
     Returns:
-        True when both checkpoint roots match the chain at their slot.
-        False when either root is the zero hash.
-        False when either checkpoint slot is past the end of the chain view.
+        True when all checkpoint roots match the chain at their slot.
+        False when any root is the zero hash.
+        False when any checkpoint slot is past the end of the chain view.
     """
     # Reject zero-hash checkpoints up front.
     #
     # Empty slots carry the zero hash on the chain.
     # A vote whose recorded root equals the zero hash is meaningless.
-    if attestation_data.source.root == ZERO_HASH or attestation_data.target.root == ZERO_HASH:
+    if (
+        attestation_data.source.root == ZERO_HASH
+        or attestation_data.target.root == ZERO_HASH
+        or attestation_data.head.root == ZERO_HASH
+    ):
         return False
 
     # Reject checkpoints whose slot is beyond the chain view.
@@ -56,15 +60,19 @@ def attestation_data_matches_chain(
     # Without this guard, indexed access raises IndexError.
     source_slot = int(attestation_data.source.slot)
     target_slot = int(attestation_data.target.slot)
+    head_slot = int(attestation_data.head.slot)
     if source_slot >= len(historical_block_hashes):
         return False
     if target_slot >= len(historical_block_hashes):
         return False
+    if head_slot >= len(historical_block_hashes):
+        return False
 
-    # Both checkpoint roots must match the chain at their slot.
+    # All checkpoint roots must match the chain at their slot.
     return (
         attestation_data.source.root == historical_block_hashes[source_slot]
         and attestation_data.target.root == historical_block_hashes[target_slot]
+        and attestation_data.head.root == historical_block_hashes[head_slot]
     )
 
 

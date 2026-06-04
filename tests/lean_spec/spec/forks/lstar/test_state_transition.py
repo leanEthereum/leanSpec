@@ -12,7 +12,7 @@ from lean_spec.spec.forks.lstar.containers import (
     JustifiedSlots,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Boolean
+from lean_spec.spec.ssz import ZERO_HASH, Boolean
 from tests.lean_spec.helpers import (
     make_aggregated_attestation,
     make_block,
@@ -186,6 +186,127 @@ class TestProcessAttestationsBoundsCheck:
         #
         # Either check would reject this attestation.
         # The bounds check prevents the crash before root comparison.
+        assert len(result_state.justifications_roots) == 0
+        assert len(result_state.justifications_validators) == 0
+
+
+class TestProcessAttestationsHeadChecks:
+    """Verify attestations whose head checkpoint is off the canonical chain are rejected."""
+
+    def test_attestation_with_head_root_mismatch_is_silently_rejected(
+        self, spec: LstarSpec
+    ) -> None:
+        """
+        Reject attestations whose head checkpoint is not on the canonical history.
+
+        Source and target match the local chain, but the head root names a
+        different block at the head slot. The vote must not justify the target.
+        """
+        state = make_genesis_state(num_validators=3)
+
+        source_root = make_bytes32(1)
+        target_root = make_bytes32(2)
+        canonical_head_root = make_bytes32(3)
+        sibling_head_root = make_bytes32(4)
+
+        state.slot = Slot(3)
+        state.historical_block_hashes = HistoricalBlockHashes(
+            data=[source_root, target_root, canonical_head_root]
+        )
+        state.justified_slots = JustifiedSlots(data=[Boolean(False), Boolean(False)])
+
+        attestation_data = AttestationData(
+            slot=Slot(2),
+            source=Checkpoint(root=source_root, slot=Slot(0)),
+            target=Checkpoint(root=target_root, slot=Slot(1)),
+            head=Checkpoint(root=sibling_head_root, slot=Slot(2)),
+        )
+        attestation = AggregatedAttestation(
+            aggregation_bits=AggregationBits.from_indices([ValidatorIndex(0), ValidatorIndex(1)]),
+            data=attestation_data,
+        )
+
+        result_state = spec.process_attestations(state, [attestation])
+
+        assert result_state.latest_justified == state.latest_justified
+        assert result_state.latest_finalized == state.latest_finalized
+        assert len(result_state.justifications_roots) == 0
+        assert len(result_state.justifications_validators) == 0
+
+    def test_attestation_with_zero_hash_head_is_silently_rejected(
+        self, spec: LstarSpec
+    ) -> None:
+        """
+        Reject attestations whose head checkpoint carries the zero hash.
+
+        A zero-hash head names an empty slot, not a block.
+        Source and target match the local chain, so only the head guard fires.
+        """
+        state = make_genesis_state(num_validators=3)
+
+        source_root = make_bytes32(1)
+        target_root = make_bytes32(2)
+        canonical_head_root = make_bytes32(3)
+
+        state.slot = Slot(3)
+        state.historical_block_hashes = HistoricalBlockHashes(
+            data=[source_root, target_root, canonical_head_root]
+        )
+        state.justified_slots = JustifiedSlots(data=[Boolean(False), Boolean(False)])
+
+        attestation_data = AttestationData(
+            slot=Slot(2),
+            source=Checkpoint(root=source_root, slot=Slot(0)),
+            target=Checkpoint(root=target_root, slot=Slot(1)),
+            head=Checkpoint(root=ZERO_HASH, slot=Slot(2)),
+        )
+        attestation = AggregatedAttestation(
+            aggregation_bits=AggregationBits.from_indices([ValidatorIndex(0), ValidatorIndex(1)]),
+            data=attestation_data,
+        )
+
+        result_state = spec.process_attestations(state, [attestation])
+
+        assert result_state.latest_justified == state.latest_justified
+        assert result_state.latest_finalized == state.latest_finalized
+        assert len(result_state.justifications_roots) == 0
+        assert len(result_state.justifications_validators) == 0
+
+    def test_attestation_with_head_beyond_history_is_silently_rejected(
+        self, spec: LstarSpec
+    ) -> None:
+        """
+        Reject attestations whose head slot exceeds history bounds.
+
+        Source and target sit inside the chain view, only the head does not.
+        The bounds guard must reject the vote instead of raising IndexError.
+        """
+        state = make_genesis_state(num_validators=3)
+
+        source_root = make_bytes32(1)
+        target_root = make_bytes32(2)
+
+        state.slot = Slot(3)
+        state.historical_block_hashes = HistoricalBlockHashes(
+            data=[source_root, target_root, make_bytes32(3)]
+        )
+        state.justified_slots = JustifiedSlots(data=[Boolean(False)] * 10)
+
+        attestation_data = AttestationData(
+            slot=Slot(2),
+            source=Checkpoint(root=source_root, slot=Slot(0)),
+            target=Checkpoint(root=target_root, slot=Slot(1)),
+            head=Checkpoint(root=make_bytes32(10), slot=Slot(10)),
+        )
+        attestation = AggregatedAttestation(
+            aggregation_bits=AggregationBits.from_indices([ValidatorIndex(0), ValidatorIndex(1)]),
+            data=attestation_data,
+        )
+
+        result_state = spec.process_attestations(state, [attestation])
+
+        assert result_state.latest_justified == state.latest_justified
+        assert result_state.latest_finalized == state.latest_finalized
         assert len(result_state.justifications_roots) == 0
         assert len(result_state.justifications_validators) == 0
 
