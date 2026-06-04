@@ -14,12 +14,16 @@ class GenesisConfig(Container):
     in the absence of more complex mechanisms like RANDAO or deposits.
     """
 
+    model_config = Container.model_config | {"frozen": True}
+
     genesis_time: Uint64
     """The timestamp of the genesis block."""
 
 
 class Validator(Container):
     """Represents a validator's static metadata and operational interface."""
+
+    model_config = Container.model_config | {"frozen": True}
 
     attestation_public_key: Bytes52
     """XMSS public key for signing attestations."""

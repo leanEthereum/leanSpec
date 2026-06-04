@@ -229,9 +229,14 @@ class ForkChoiceTest(BaseConsensusFixture):
         for i, validator in enumerate(self.anchor_state.validators):
             index = ValidatorIndex(i)
             attestation_public_key, proposal_public_key = key_manager.get_public_keys(index)
-            validator.attestation_public_key = attestation_public_key.encode_bytes()
-            validator.proposal_public_key = proposal_public_key.encode_bytes()
-            updated_validators.append(validator)
+            updated_validators.append(
+                validator.model_copy(
+                    update={
+                        "attestation_public_key": attestation_public_key.encode_bytes(),
+                        "proposal_public_key": proposal_public_key.encode_bytes(),
+                    }
+                )
+            )
 
         # Updating validators changes the state root.
         # We must also update the anchor block to match.

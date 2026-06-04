@@ -31,6 +31,8 @@ class SignedAttestation(Attestation):
 class AggregatedAttestation(Container):
     """Aggregated attestation consisting of participation bits and message."""
 
+    model_config = Container.model_config | {"frozen": True}
+
     aggregation_bits: AggregationBits
     """Bitfield indicating which validators participated in the aggregation."""
 
@@ -48,6 +50,8 @@ class SignedAggregatedAttestation(Container):
 
     Contains the attestation data and the aggregated signature proof.
     """
+
+    model_config = Container.model_config | {"frozen": True}
 
     data: AttestationData
     """Combined attestation data similar to the beacon chain format."""
