@@ -182,7 +182,6 @@ class HeadSync:
             logger.debug("on_gossip_block: parent found, processing")
             return await self._process_block_with_descendants(
                 block=block,
-                peer_id=peer_id,
                 store=store,
             )
 
@@ -200,7 +199,6 @@ class HeadSync:
     async def _process_block_with_descendants(
         self,
         block: SignedBlock,
-        peer_id: PeerId | None,
         store: Store,
     ) -> tuple[HeadSyncResult, Store]:
         """
@@ -211,7 +209,6 @@ class HeadSync:
 
         Args:
             block: Block to process.
-            peer_id: Peer that sent the block.
             store: Current store.
 
         Returns:

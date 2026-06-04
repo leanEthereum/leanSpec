@@ -81,7 +81,6 @@ from lean_spec.node.networking.gossipsub.topic import GossipTopic, TopicKind
 from lean_spec.node.networking.gossipsub.types import TopicId
 from lean_spec.node.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
-    AsyncBlockBySlotLookup,
     AsyncBlockLookup,
     CurrentSlotLookup,
     ReqRespServer,
@@ -329,20 +328,6 @@ class LiveNetworkEventSource:
         """
         self._reqresp_handler.block_lookup = lookup
 
-    def set_block_by_slot_lookup(self, lookup: AsyncBlockBySlotLookup) -> None:
-        """
-        Set the callback for looking up canonical blocks by slot.
-
-        Used by the inbound ReqResp handler to serve BlocksByRange requests.
-
-        The callback MUST consult fork choice.
-        It returns the canonical block at that slot, or None for empty slots.
-
-        Args:
-            lookup: Async function from Slot to SignedBlock or None.
-        """
-        self._reqresp_handler.block_by_slot_lookup = lookup
-
     def set_current_slot_lookup(self, lookup: CurrentSlotLookup) -> None:
         """
         Set the callback returning the node's current slot.
@@ -582,7 +567,7 @@ class LiveNetworkEventSource:
             task.add_done_callback(self._gossip_tasks.discard)
 
             # Exchange status.
-            await self._exchange_status(peer_id, connection)
+            await self._exchange_status(peer_id)
 
             # Set up gossipsub stream for full protocol support.
             await self._setup_gossipsub_stream(peer_id, connection)
@@ -698,17 +683,12 @@ class LiveNetworkEventSource:
 
         logger.info("Accepted connection from peer %s", peer_id)
 
-    async def _exchange_status(
-        self,
-        peer_id: PeerId,
-        connection: QuicConnection,
-    ) -> None:
+    async def _exchange_status(self, peer_id: PeerId) -> None:
         """
         Exchange Status messages with a peer.
 
         Args:
             peer_id: Peer identifier.
-            connection: QuicConnection to use.
         """
         if self._our_status is None:
             logger.debug("No status set, skipping status exchange")
