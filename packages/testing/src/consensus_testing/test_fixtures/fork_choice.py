@@ -241,7 +241,9 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Updating validators changes the state root.
         # We must also update the anchor block to match.
         self.anchor_state.validators = Validators(data=updated_validators)
-        self.anchor_block.state_root = hash_tree_root(self.anchor_state)
+        self.anchor_block = self.anchor_block.model_copy(
+            update={"state_root": hash_tree_root(self.anchor_state)}
+        )
 
         # Store initialization
         #

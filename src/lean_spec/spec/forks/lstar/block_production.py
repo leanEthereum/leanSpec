@@ -282,6 +282,6 @@ class BlockProductionMixin(LstarSpecBase):
         # Merging proofs keeps the same voters, so the post-state is unchanged.
         # Only the body's shape differs, so just the root is needed.
         post_state = self.process_block(self.process_slots(state, slot), final_block)
-        final_block.state_root = hash_tree_root(post_state)
+        final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
         return final_block, post_state, aggregated_attestations, aggregated_signatures

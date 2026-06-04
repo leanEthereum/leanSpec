@@ -23,7 +23,9 @@ def _seal_header(state: State) -> Bytes32:
     """Write the post-state root into the header and return that header root."""
     # A child block references its parent by the parent header root.
     # That root is only final once the parent post-state root is filled in.
-    state.latest_block_header.state_root = hash_tree_root(state)
+    state.latest_block_header = state.latest_block_header.model_copy(
+        update={"state_root": hash_tree_root(state)}
+    )
     return hash_tree_root(state.latest_block_header)
 
 
@@ -127,7 +129,9 @@ def test_build_block_with_empty_pool_produces_empty_body(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
     expected_post_state = spec.process_block(spec.process_slots(state, Slot(1)), expected_block)
-    expected_block.state_root = hash_tree_root(expected_post_state)
+    expected_block = expected_block.model_copy(
+        update={"state_root": hash_tree_root(expected_post_state)}
+    )
 
     assert block == expected_block
     assert post_state == expected_post_state
@@ -182,7 +186,9 @@ def test_build_block_keeps_genesis_self_vote(
         body=BlockBody(attestations=AggregatedAttestations(data=[expected_attestation])),
     )
     expected_post_state = spec.process_block(spec.process_slots(state, Slot(1)), expected_block)
-    expected_block.state_root = hash_tree_root(expected_post_state)
+    expected_block = expected_block.model_copy(
+        update={"state_root": hash_tree_root(expected_post_state)}
+    )
 
     assert block == expected_block
     assert post_state == expected_post_state
@@ -293,7 +299,9 @@ def test_build_block_skips_vote_with_unknown_head(
         body=BlockBody(attestations=AggregatedAttestations(data=[expected_attestation])),
     )
     expected_post_state = spec.process_block(spec.process_slots(state, Slot(1)), expected_block)
-    expected_block.state_root = hash_tree_root(expected_post_state)
+    expected_block = expected_block.model_copy(
+        update={"state_root": hash_tree_root(expected_post_state)}
+    )
 
     assert block == expected_block
     assert post_state == expected_post_state
@@ -340,7 +348,9 @@ def test_build_block_skips_vote_with_source_off_chain(
         body=BlockBody(attestations=AggregatedAttestations(data=[expected_attestation])),
     )
     expected_post_state = spec.process_block(spec.process_slots(state, Slot(1)), expected_block)
-    expected_block.state_root = hash_tree_root(expected_post_state)
+    expected_block = expected_block.model_copy(
+        update={"state_root": hash_tree_root(expected_post_state)}
+    )
 
     assert block == expected_block
     assert post_state == expected_post_state
@@ -399,7 +409,9 @@ def test_build_block_skips_vote_with_unjustified_source(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
     expected_post_state = spec.process_block(spec.process_slots(state, Slot(3)), expected_block)
-    expected_block.state_root = hash_tree_root(expected_post_state)
+    expected_block = expected_block.model_copy(
+        update={"state_root": hash_tree_root(expected_post_state)}
+    )
 
     assert block == expected_block
     assert post_state == expected_post_state
@@ -457,7 +469,9 @@ def test_build_block_skips_vote_for_already_justified_target(
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
     expected_post_state = spec.process_block(spec.process_slots(state, Slot(3)), expected_block)
-    expected_block.state_root = hash_tree_root(expected_post_state)
+    expected_block = expected_block.model_copy(
+        update={"state_root": hash_tree_root(expected_post_state)}
+    )
 
     assert block == expected_block
     assert post_state == expected_post_state
@@ -526,7 +540,9 @@ def test_build_block_fixed_point_unlocks_chained_source(
         body=BlockBody(attestations=AggregatedAttestations(data=[expected_first, expected_second])),
     )
     expected_post_state = spec.process_block(spec.process_slots(state, Slot(3)), expected_block)
-    expected_block.state_root = hash_tree_root(expected_post_state)
+    expected_block = expected_block.model_copy(
+        update={"state_root": hash_tree_root(expected_post_state)}
+    )
 
     assert block == expected_block
     assert post_state == expected_post_state

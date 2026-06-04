@@ -165,8 +165,13 @@ class VerifySignaturesTest(BaseConsensusFixture):
             value = self.tamper.get("value")
             if value is None:
                 raise ValueError("set_proposer_index requires a value")
-            signed_block.block.proposer_index = ValidatorIndex(int(value))
-            return signed_block
+            return signed_block.model_copy(
+                update={
+                    "block": signed_block.block.model_copy(
+                        update={"proposer_index": ValidatorIndex(int(value))}
+                    )
+                }
+            )
 
         if operation == "clear_first_attestation_bits":
             original = signed_block.block.body.attestations.data
@@ -175,18 +180,32 @@ class VerifySignaturesTest(BaseConsensusFixture):
             first = original[0]
             empty_bits = AggregationBits(data=[Boolean(False)] * len(first.aggregation_bits.data))
             cleared = AggregatedAttestation(aggregation_bits=empty_bits, data=first.data)
-            signed_block.block.body.attestations = AggregatedAttestations(
-                data=[cleared, *original[1:]]
+            return signed_block.model_copy(
+                update={
+                    "block": signed_block.block.model_copy(
+                        update={
+                            "body": signed_block.block.body.model_copy(
+                                update={
+                                    "attestations": AggregatedAttestations(
+                                        data=[cleared, *original[1:]]
+                                    )
+                                }
+                            )
+                        }
+                    )
+                }
             )
-            return signed_block
 
         if operation == "corrupt_proof":
             # Replace the merged proof with a short bogus payload.
             # The verifier rejects the malformed proof bytes.
-            signed_block.proof = MultiMessageAggregate(
-                proof=ByteList512KiB(data=b"\x00\x01\x02\x03"),
+            return signed_block.model_copy(
+                update={
+                    "proof": MultiMessageAggregate(
+                        proof=ByteList512KiB(data=b"\x00\x01\x02\x03"),
+                    )
+                }
             )
-            return signed_block
 
         if operation == "append_phantom_attestation":
             # Add a body attestation with no matching proof component.
@@ -203,10 +222,21 @@ class VerifySignaturesTest(BaseConsensusFixture):
                 aggregation_bits=AggregationBits(data=[Boolean(True)]),
                 data=phantom_data,
             )
-            signed_block.block.body.attestations = AggregatedAttestations(
-                data=[*signed_block.block.body.attestations.data, phantom]
+            return signed_block.model_copy(
+                update={
+                    "block": signed_block.block.model_copy(
+                        update={
+                            "body": signed_block.block.body.model_copy(
+                                update={
+                                    "attestations": AggregatedAttestations(
+                                        data=[*signed_block.block.body.attestations.data, phantom]
+                                    )
+                                }
+                            )
+                        }
+                    )
+                }
             )
-            return signed_block
 
         if operation == "mutate_state_root":
             # Change a block field after signing so the block root differs.
@@ -214,8 +244,13 @@ class VerifySignaturesTest(BaseConsensusFixture):
             # recomputed block root, even though the signature is honest.
             # This is the repackaging vector: an honest proof reused under
             # a different message.
-            signed_block.block.state_root = Bytes32(b"\xff" * 32)
-            return signed_block
+            return signed_block.model_copy(
+                update={
+                    "block": signed_block.block.model_copy(
+                        update={"state_root": Bytes32(b"\xff" * 32)}
+                    )
+                }
+            )
 
         if operation == "swap_first_two_attestations":
             body = signed_block.block.body

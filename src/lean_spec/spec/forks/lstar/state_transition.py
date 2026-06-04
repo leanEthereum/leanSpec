@@ -144,7 +144,9 @@ class StateTransitionMixin(LstarSpecBase):
             )
 
             if needs_state_root:
-                state.latest_block_header.state_root = cached_state_root
+                state.latest_block_header = state.latest_block_header.model_copy(
+                    update={"state_root": cached_state_root}
+                )
             state.slot = Slot(state.slot + Slot(1))
 
         # Reached the target slot. Return the advanced state.

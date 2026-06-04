@@ -361,8 +361,7 @@ def test_store_from_anchor_rejects_mismatched_state_root(
     # mismatch below the only difference between this test and the happy path.
     assert anchor_block.state_root == hash_tree_root(anchor_state)
 
-    anchor_block.state_root = Bytes32(b"\xff" * 32)
-    bad_anchor_block = anchor_block
+    bad_anchor_block = anchor_block.model_copy(update={"state_root": Bytes32(b"\xff" * 32)})
 
     fork_choice_test(
         anchor_state=anchor_state,

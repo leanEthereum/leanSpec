@@ -548,22 +548,30 @@ class BlockSpec(CamelModel):
                     attestation_spec.validator_indices, attestation_data
                 )
                 block_proofs.append(proof)
-                final_block.body.attestations = AggregatedAttestations(
-                    data=[
-                        *final_block.body.attestations.data,
-                        AggregatedAttestation(
-                            aggregation_bits=AggregationBits.from_indices(
-                                attestation_spec.validator_indices
-                            ),
-                            data=attestation_data,
-                        ),
-                    ]
+                final_block = final_block.model_copy(
+                    update={
+                        "body": final_block.body.model_copy(
+                            update={
+                                "attestations": AggregatedAttestations(
+                                    data=[
+                                        *final_block.body.attestations.data,
+                                        AggregatedAttestation(
+                                            aggregation_bits=AggregationBits.from_indices(
+                                                attestation_spec.validator_indices
+                                            ),
+                                            data=attestation_data,
+                                        ),
+                                    ]
+                                )
+                            }
+                        )
+                    }
                 )
 
             # Recompute state root with the modified body.
             post_state = spec.process_slots(parent_state, self.slot)
             post_state = spec.process_block(post_state, final_block)
-            final_block.state_root = hash_tree_root(post_state)
+            final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
         signed_block = self._sign_block(
             final_block, block_proofs, proposer_index, key_manager, parent_state
