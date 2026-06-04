@@ -239,12 +239,6 @@ class Bytes4(BaseBytes):
     LENGTH = 4
 
 
-class Bytes12(BaseBytes):
-    """Fixed-size byte array of exactly 12 bytes (AES-GCM nonce)."""
-
-    LENGTH = 12
-
-
 class Bytes16(BaseBytes):
     """Fixed-size byte array of exactly 16 bytes (Poly1305 authentication tag)."""
 
@@ -279,12 +273,6 @@ class Bytes64(BaseBytes):
     """Fixed-size byte array of exactly 64 bytes (secp256k1 signature)."""
 
     LENGTH = 64
-
-
-class Bytes65(BaseBytes):
-    """Fixed-size byte array of exactly 65 bytes (uncompressed secp256k1 public key)."""
-
-    LENGTH = 65
 
 
 ZERO_HASH: Bytes32 = Bytes32.zero()
