@@ -11,7 +11,7 @@ from lean_spec.spec.crypto.xmss.merkle import (
     combined_path,
     verify_path,
 )
-from lean_spec.spec.crypto.xmss.poseidon import PROD_POSEIDON, TEST_POSEIDON, PoseidonXmss
+from lean_spec.spec.crypto.xmss.poseidon import POSEIDON, PoseidonXmss
 from lean_spec.spec.crypto.xmss.prf import PRFKey
 from lean_spec.spec.crypto.xmss.types import (
     HashDigestList,
@@ -95,7 +95,7 @@ def test_commit_open_verify_roundtrip(
     """A built tree opens and verifies every leaf for various shapes."""
     assert start_index + num_leaves <= (1 << depth)
     _run_commit_open_verify_roundtrip(
-        PROD_POSEIDON, PROD_CONFIG, num_leaves, depth, start_index, leaf_parts_length
+        POSEIDON, PROD_CONFIG, num_leaves, depth, start_index, leaf_parts_length
     )
 
 
@@ -103,7 +103,7 @@ def test_new_rejects_nodes_overflowing_their_level() -> None:
     """A node run that does not fit its level raises with the level and bounds named."""
     with pytest.raises(ValueError, match=r"Overflow at layer 0: start=3, count=2, max=4"):
         HashSubTree.new(
-            poseidon=TEST_POSEIDON,
+            poseidon=POSEIDON,
             config=TEST_CONFIG,
             lowest_layer=Uint64(0),
             depth=Uint64(2),
@@ -117,7 +117,7 @@ def test_new_top_tree_rejects_odd_depth() -> None:
     """The top tree requires an even depth for the top-bottom split."""
     with pytest.raises(ValueError, match=r"Depth must be even for top-bottom split, got 7."):
         HashSubTree.new_top_tree(
-            TEST_POSEIDON, TEST_CONFIG, 7, Uint64(0), random_parameter(TEST_CONFIG), []
+            POSEIDON, TEST_CONFIG, 7, Uint64(0), random_parameter(TEST_CONFIG), []
         )
 
 
@@ -125,7 +125,7 @@ def test_new_bottom_tree_rejects_odd_depth() -> None:
     """The bottom tree requires an even depth for the top-bottom split."""
     with pytest.raises(ValueError, match=r"Depth must be even for top-bottom split, got 7."):
         HashSubTree.new_bottom_tree(
-            TEST_POSEIDON, TEST_CONFIG, 7, Uint64(0), random_parameter(TEST_CONFIG), []
+            POSEIDON, TEST_CONFIG, 7, Uint64(0), random_parameter(TEST_CONFIG), []
         )
 
 
@@ -133,7 +133,7 @@ def test_new_bottom_tree_rejects_wrong_leaf_count() -> None:
     """The bottom tree requires exactly the square-root-of-lifetime leaves."""
     with pytest.raises(ValueError, match=r"Expected 16 leaves for depth=8, got 0."):
         HashSubTree.new_bottom_tree(
-            TEST_POSEIDON, TEST_CONFIG, 8, Uint64(0), random_parameter(TEST_CONFIG), []
+            POSEIDON, TEST_CONFIG, 8, Uint64(0), random_parameter(TEST_CONFIG), []
         )
 
 
@@ -215,21 +215,21 @@ def prf_trees() -> tuple[Parameter, HashSubTree, HashSubTree, HashSubTree]:
     prf_key = PRFKey.generate()
     parameter = random_parameter(config)
     bottom_zero = HashSubTree.from_prf_key(
-        poseidon=TEST_POSEIDON,
+        poseidon=POSEIDON,
         config=config,
         prf_key=prf_key,
         bottom_tree_index=Uint64(0),
         parameter=parameter,
     )
     bottom_one = HashSubTree.from_prf_key(
-        poseidon=TEST_POSEIDON,
+        poseidon=POSEIDON,
         config=config,
         prf_key=prf_key,
         bottom_tree_index=Uint64(1),
         parameter=parameter,
     )
     top = HashSubTree.new_top_tree(
-        TEST_POSEIDON,
+        POSEIDON,
         config,
         config.LOG_LIFETIME,
         Uint64(0),
@@ -289,7 +289,7 @@ def test_from_prf_key_builds_a_bottom_tree() -> None:
     """A prf-derived bottom tree has the expected depth, layers, and leaf count."""
     config = TEST_CONFIG
     bottom_tree = HashSubTree.from_prf_key(
-        poseidon=TEST_POSEIDON,
+        poseidon=POSEIDON,
         config=config,
         prf_key=PRFKey.generate(),
         bottom_tree_index=Uint64(0),
@@ -307,14 +307,14 @@ def test_from_prf_key_is_deterministic() -> None:
     prf_key = PRFKey.generate()
     parameter = random_parameter(config)
     first = HashSubTree.from_prf_key(
-        poseidon=TEST_POSEIDON,
+        poseidon=POSEIDON,
         config=config,
         prf_key=prf_key,
         bottom_tree_index=Uint64(0),
         parameter=parameter,
     )
     second = HashSubTree.from_prf_key(
-        poseidon=TEST_POSEIDON,
+        poseidon=POSEIDON,
         config=config,
         prf_key=prf_key,
         bottom_tree_index=Uint64(0),
@@ -329,14 +329,14 @@ def test_from_prf_key_distinct_indices_give_distinct_roots() -> None:
     prf_key = PRFKey.generate()
     parameter = random_parameter(config)
     tree_zero = HashSubTree.from_prf_key(
-        poseidon=TEST_POSEIDON,
+        poseidon=POSEIDON,
         config=config,
         prf_key=prf_key,
         bottom_tree_index=Uint64(0),
         parameter=parameter,
     )
     tree_one = HashSubTree.from_prf_key(
-        poseidon=TEST_POSEIDON,
+        poseidon=POSEIDON,
         config=config,
         prf_key=prf_key,
         bottom_tree_index=Uint64(1),
@@ -363,7 +363,7 @@ def test_verify_path_rejects_position_exceeding_capacity(position: int) -> None:
     opening = HashTreeOpening(siblings=HashDigestList(data=siblings))
     assert (
         verify_path(
-            poseidon=PROD_POSEIDON,
+            poseidon=POSEIDON,
             config=PROD_CONFIG,
             parameter=random_parameter(PROD_CONFIG),
             root=random_domain(PROD_CONFIG),
@@ -380,7 +380,7 @@ def test_verify_path_accepts_boundary_position_without_raising() -> None:
     siblings = [random_domain(PROD_CONFIG) for _ in range(4)]
     opening = HashTreeOpening(siblings=HashDigestList(data=siblings))
     result = verify_path(
-        poseidon=PROD_POSEIDON,
+        poseidon=POSEIDON,
         config=PROD_CONFIG,
         parameter=random_parameter(PROD_CONFIG),
         root=random_domain(PROD_CONFIG),

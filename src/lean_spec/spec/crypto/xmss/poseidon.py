@@ -253,8 +253,5 @@ class PoseidonXmss(StrictBaseModel):
         return current_digest
 
 
-PROD_POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
-"""Poseidon engine with production parameters."""
-
-TEST_POSEIDON = PROD_POSEIDON
-"""Test environment reuses the production Poseidon parameters."""
+POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
+"""Poseidon engine."""

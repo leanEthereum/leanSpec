@@ -7,7 +7,7 @@ from lean_spec.spec.crypto.xmss.containers import KeyPair, PublicKey, SecretKey,
 from lean_spec.spec.crypto.xmss.encoding import target_sum_encode
 from lean_spec.spec.crypto.xmss.field import random_parameter
 from lean_spec.spec.crypto.xmss.merkle import HashSubTree, combined_path, verify_path
-from lean_spec.spec.crypto.xmss.poseidon import PROD_POSEIDON, TEST_POSEIDON, PoseidonXmss
+from lean_spec.spec.crypto.xmss.poseidon import POSEIDON, PoseidonXmss
 from lean_spec.spec.crypto.xmss.prf import PRFKey
 from lean_spec.spec.crypto.xmss.types import HashDigestList, HashDigestVector
 from lean_spec.spec.forks.lstar.slot import Slot
@@ -397,10 +397,10 @@ class GeneralizedXmssScheme(StrictBaseModel):
         return secret_key
 
 
-PROD_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=PROD_CONFIG, poseidon=PROD_POSEIDON)
+PROD_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=PROD_CONFIG, poseidon=POSEIDON)
 """Signature scheme instance with production parameters."""
 
-TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=TEST_CONFIG, poseidon=TEST_POSEIDON)
+TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=TEST_CONFIG, poseidon=POSEIDON)
 """Signature scheme instance with test parameters."""
 
 TARGET_SIGNATURE_SCHEME = TEST_SIGNATURE_SCHEME if LEAN_ENV == "test" else PROD_SIGNATURE_SCHEME

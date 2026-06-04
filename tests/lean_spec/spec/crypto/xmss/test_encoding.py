@@ -13,7 +13,7 @@ from lean_spec.spec.crypto.xmss.encoding import (
     target_sum_encode,
 )
 from lean_spec.spec.crypto.xmss.field import int_to_base_p, random_field_elements
-from lean_spec.spec.crypto.xmss.poseidon import TEST_POSEIDON
+from lean_spec.spec.crypto.xmss.poseidon import POSEIDON
 from lean_spec.spec.crypto.xmss.types import Parameter, Randomness
 from lean_spec.spec.ssz import Bytes32, Uint64
 
@@ -91,7 +91,7 @@ def test_message_hash_yields_valid_codeword() -> None:
     randomness = Randomness(data=random_field_elements(config.RAND_LENGTH_FIELD_ELEMENTS))
 
     result = message_hash(
-        TEST_POSEIDON, config, parameter, Uint64(313), randomness, Bytes32(b"\xaa" * 32)
+        POSEIDON, config, parameter, Uint64(313), randomness, Bytes32(b"\xaa" * 32)
     )
 
     assert result is not None
@@ -106,9 +106,7 @@ def test_target_sum_encode_accepts_codeword_on_target_layer() -> None:
     # Attempt counter three lands the all-zero message on the target-sum layer.
     rho = Randomness(data=int_to_base_p(3, config.RAND_LENGTH_FIELD_ELEMENTS))
 
-    codeword = target_sum_encode(
-        TEST_POSEIDON, config, parameter, Bytes32(b"\x00" * 32), rho, Uint64(0)
-    )
+    codeword = target_sum_encode(POSEIDON, config, parameter, Bytes32(b"\x00" * 32), rho, Uint64(0))
 
     # The digits sum to the target of six, landing on the accepted layer.
     assert codeword == [3, 0, 3, 0]
@@ -122,7 +120,7 @@ def test_target_sum_encode_rejects_codeword_off_target_layer() -> None:
     rho = Randomness(data=int_to_base_p(0, config.RAND_LENGTH_FIELD_ELEMENTS))
 
     assert (
-        target_sum_encode(TEST_POSEIDON, config, parameter, Bytes32(b"\x00" * 32), rho, Uint64(0))
+        target_sum_encode(POSEIDON, config, parameter, Bytes32(b"\x00" * 32), rho, Uint64(0))
         is None
     )
 
@@ -140,7 +138,7 @@ def test_target_sum_encode_propagates_aborting_decode_failure(
 
     assert (
         target_sum_encode(
-            TEST_POSEIDON,
+            POSEIDON,
             TEST_CONFIG,
             _parameter(),
             Bytes32(b"\x00" * 32),
