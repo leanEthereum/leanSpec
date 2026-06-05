@@ -24,13 +24,13 @@ paths:
 Bad:
 ```python
 def process(data):
-    from lean_spec.subspecs.ssz import hash_tree_root
+    from lean_spec.spec.crypto.merkleization import hash_tree_root
     return hash_tree_root(data)
 ```
 
 Good:
 ```python
-from lean_spec.subspecs.ssz import hash_tree_root
+from lean_spec.spec.crypto.merkleization import hash_tree_root
 
 def process(data):
     return hash_tree_root(data)
@@ -78,14 +78,14 @@ Bad:
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from lean_spec.subspecs.forkchoice import Store
+    from lean_spec.spec.forks.lstar.containers.store import Store
 
 def process(store: "Store") -> None: ...
 ```
 
 Good:
 ```python
-from lean_spec.subspecs.forkchoice import Store
+from lean_spec.spec.forks.lstar.containers.store import Store
 
 def process(store: Store) -> None: ...
 ```

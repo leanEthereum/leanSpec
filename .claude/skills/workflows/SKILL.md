@@ -11,7 +11,7 @@ Common developer workflows and commands for working in leanSpec.
 
 ```bash
 # Single test file
-just test tests/lean_spec/subspecs/networking/discovery/test_transport.py -v
+just test tests/lean_spec/node/networking/transport/test_peer_id.py -v
 
 # Single test class or method
 just test -k "TestDiscoveryTransport::test_start" -v

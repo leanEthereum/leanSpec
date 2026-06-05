@@ -9,7 +9,6 @@ subspecifications that the Lean Ethereum protocol relies on.
 ## Key Directories
 
 - `src/lean_spec/` - Main specifications for the Lean Ethereum protocol
-- `src/lean_spec/subspecs/` - Supporting subspecifications for cryptographic primitives
 - `tests/` - Specification tests
 - `docs/` - MkDocs documentation source
 
