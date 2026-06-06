@@ -105,14 +105,74 @@ jobs:
 
       - name: Create reproducible fixture archive
         run: |
-          tar \
-            --sort=name \
-            --owner=0 \
-            --group=0 \
-            --numeric-owner \
-            --mtime='UTC 2020-01-01' \
-            -cf - fixtures | gzip --no-name > fixtures-prod-scheme.tar.gz
-          sha256sum fixtures-prod-scheme.tar.gz > fixtures-prod-scheme.tar.gz.sha256
+          python - <<'PY'
+          from __future__ import annotations
+
+          import gzip
+          import hashlib
+          import tarfile
+          from pathlib import Path
+
+          archive_path = Path("fixtures-prod-scheme.tar.gz")
+          checksum_path = Path("fixtures-prod-scheme.tar.gz.sha256")
+          source_directory = Path("fixtures")
+          fixed_modification_time = 1_577_836_800
+
+          if not source_directory.is_dir():
+              raise SystemExit("Expected fixtures/ to exist before archiving.")
+
+          consensus_fixture_paths = sorted(source_directory.glob("consensus/**/*.json"))
+          if not consensus_fixture_paths:
+              raise SystemExit("No consensus fixture JSON files were generated.")
+
+          source_paths = [source_directory, *sorted(source_directory.rglob("*"))]
+
+          with archive_path.open("wb") as archive_file_handle:
+              with gzip.GzipFile(
+                  filename="",
+                  mode="wb",
+                  fileobj=archive_file_handle,
+                  mtime=0,
+              ) as gzip_file_handle:
+                  with tarfile.open(
+                      fileobj=gzip_file_handle,
+                      mode="w",
+                      format=tarfile.PAX_FORMAT,
+                  ) as tar_file_handle:
+                      for source_path in source_paths:
+                          tar_file_information = tar_file_handle.gettarinfo(
+                              source_path,
+                              arcname=source_path.as_posix(),
+                          )
+                          tar_file_information.uid = 0
+                          tar_file_information.gid = 0
+                          tar_file_information.uname = ""
+                          tar_file_information.gname = ""
+                          tar_file_information.mtime = fixed_modification_time
+
+                          if tar_file_information.isfile():
+                              with source_path.open("rb") as source_file_handle:
+                                  tar_file_handle.addfile(
+                                      tar_file_information,
+                                      source_file_handle,
+                                  )
+                          else:
+                              tar_file_handle.addfile(tar_file_information)
+
+          archive_digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+          checksum_path.write_text(f"{archive_digest}  {archive_path.name}\n")
+
+          with tarfile.open(archive_path, "r:gz") as archive_file_handle:
+              archived_consensus_fixtures = [
+                  archived_member.name
+                  for archived_member in archive_file_handle.getmembers()
+                  if archived_member.name.startswith("fixtures/consensus/")
+                  and archived_member.name.endswith(".json")
+              ]
+
+          if not archived_consensus_fixtures:
+              raise SystemExit("Archive does not contain generated consensus fixtures.")
+          PY
 
       - name: Upload fixture archive
         uses: actions/upload-artifact@v4
