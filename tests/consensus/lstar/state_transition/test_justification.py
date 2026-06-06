@@ -800,6 +800,64 @@ def test_attestation_with_target_root_not_in_historical_hashes_is_skipped(
     )
 
 
+def test_attestation_with_off_canonical_head_does_not_justify_target(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Test that a vote with an off-canonical head cannot justify its target.
+
+    Scenario
+    --------
+    1. Start from genesis with 4 validators
+    2. Process block_1 at slot 1 and block_2 at slot 2 on the canonical chain
+    3. Force a supermajority attestation into block_2 whose source and target
+       match the canonical chain but whose head points to a sibling root at a
+       slot that already holds a canonical block
+
+    Expected Behavior
+    -----------------
+    1. The source and target roots match the canonical chain at their slots
+    2. The head root does not match the canonical block at its slot
+    3. The whole vote is skipped before any tally is recorded
+    4. latest_justified_slot stays at genesis with no pending votes
+    """
+    state_transition_test(
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                forced_attestations=[
+                    # Source genesis and target block_1 both sit on the
+                    # canonical chain.
+                    # The head root is a sibling at slot 1, where the canonical
+                    # block is block_1.
+                    # Threshold: 3 of 4 would justify slot 1 if the head matched.
+                    AggregatedAttestationSpec(
+                        validator_indices=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        head_root=Bytes32(b"\x99" * 32),
+                        head_slot=Slot(1),
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            latest_justified_slot=Slot(0),
+            latest_finalized_slot=Slot(0),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
 def test_justification_clears_only_the_resolved_target_votes(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:

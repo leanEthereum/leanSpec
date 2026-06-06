@@ -790,3 +790,105 @@ def test_attestation_unknown_source_block_rejected(
             ),
         ],
     )
+
+
+def test_attestation_head_on_sibling_fork_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Attestation whose head sits on a sibling fork of the target is rejected.
+
+    Scenario
+    --------
+    Build a common base at slot 1.
+    Create two competing blocks from that same base at slots 2 and 3.
+    Distinct slots give the siblings distinct roots so they never collide.
+    Vote with source on the base, target on the slot-2 block, and head on the
+    slot-3 block.
+    Every slot and availability check passes, yet target and head diverge.
+
+    Expected:
+        - Validation fails with "Target checkpoint must be ancestor of head"
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="base"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_left"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), parent_label="base", label="fork_right"),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_index=ValidatorIndex(1),
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="fork_left",
+                    head_slot=Slot(3),
+                    head_root_label="fork_right",
+                    source_root_label="base",
+                    valid_signature=False,
+                ),
+                valid=False,
+                expected_error="Target checkpoint must be ancestor of head",
+            ),
+        ],
+    )
+
+
+def test_attestation_source_on_sibling_fork_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Attestation whose source sits on a sibling fork of the target is rejected.
+
+    Scenario
+    --------
+    Build a common base at slot 1.
+    Create a slot-2 block on one branch from that base.
+    Create a slot-3 block on a competing branch from that same base.
+    Distinct slots give the branches distinct roots so they never collide.
+    Extend the competing branch with a slot-4 block.
+    Vote with source on the abandoned slot-2 block, target on the slot-4 block,
+    and head on that same slot-4 block.
+    Source slot precedes the target slot, yet source lies off the target chain.
+
+    Expected:
+        - Validation fails with "Source checkpoint must be ancestor of target"
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="base"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="base", label="fork_left"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), parent_label="base", label="fork_right"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(4), parent_label="fork_right", label="fork_right_head"),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_index=ValidatorIndex(1),
+                    slot=Slot(4),
+                    target_slot=Slot(4),
+                    target_root_label="fork_right_head",
+                    head_root_label="fork_right_head",
+                    source_root_label="fork_left",
+                    valid_signature=False,
+                ),
+                valid=False,
+                expected_error="Source checkpoint must be ancestor of target",
+            ),
+        ],
+    )

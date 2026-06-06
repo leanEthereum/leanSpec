@@ -233,9 +233,7 @@ class TestProcessAttestationsHeadChecks:
         assert len(result_state.justifications_roots) == 0
         assert len(result_state.justifications_validators) == 0
 
-    def test_attestation_with_zero_hash_head_is_silently_rejected(
-        self, spec: LstarSpec
-    ) -> None:
+    def test_attestation_with_zero_hash_head_is_silently_rejected(self, spec: LstarSpec) -> None:
         """
         Reject attestations whose head checkpoint carries the zero hash.
 

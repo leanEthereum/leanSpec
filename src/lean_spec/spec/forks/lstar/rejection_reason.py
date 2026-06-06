@@ -70,6 +70,12 @@ class RejectionReason(StrEnum):
     HEAD_SLOT_MISMATCH = "HEAD_SLOT_MISMATCH"
     """The head checkpoint slot disagrees with the referenced block."""
 
+    SOURCE_NOT_ANCESTOR_OF_TARGET = "SOURCE_NOT_ANCESTOR_OF_TARGET"
+    """The attestation source checkpoint is not an ancestor of its target."""
+
+    TARGET_NOT_ANCESTOR_OF_HEAD = "TARGET_NOT_ANCESTOR_OF_HEAD"
+    """The attestation target checkpoint is not an ancestor of its head."""
+
     ATTESTATION_TOO_FAR_IN_FUTURE = "ATTESTATION_TOO_FAR_IN_FUTURE"
     """The attestation slot is beyond the store's acceptance horizon."""
 

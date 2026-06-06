@@ -28,6 +28,14 @@ _REASON_BY_MESSAGE_FRAGMENT: list[tuple[str, RejectionReason]] = [
     ("Source checkpoint slot mismatch", RejectionReason.SOURCE_SLOT_MISMATCH),
     ("Target checkpoint slot mismatch", RejectionReason.TARGET_SLOT_MISMATCH),
     ("Head checkpoint slot mismatch", RejectionReason.HEAD_SLOT_MISMATCH),
+    (
+        "Source checkpoint must be ancestor of target",
+        RejectionReason.SOURCE_NOT_ANCESTOR_OF_TARGET,
+    ),
+    (
+        "Target checkpoint must be ancestor of head",
+        RejectionReason.TARGET_NOT_ANCESTOR_OF_HEAD,
+    ),
     ("Attestation too far in future", RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE),
     ("not found in state", RejectionReason.VALIDATOR_NOT_IN_STATE),
     ("Validator index out of range", RejectionReason.VALIDATOR_INDEX_OUT_OF_RANGE),
