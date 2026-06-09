@@ -140,31 +140,6 @@ fail_under = 90
 number = true
 wrap = 80
 
-[tool.tox]
-# Tox must install with uv, not pip: `lean-multisig-py` is a git dependency
-# declared in `[tool.uv.sources]`, which only uv understands. Plain pip would
-# try to resolve it from PyPI (where it does not exist) and fail. Listing
-# `tox-uv` in `requires` lets tox auto-provision the plugin so `uvx tox` works
-# out of the box.
-requires = ["tox-uv>=1.13"]
-env_list = ["py312", "py313"]
-
-[tool.tox.env_run_base]
-runner = "uv-venv-lock-runner"
-description = "run unit tests under {env_name}"
-dependency_groups = ["test"]
-# `lean-multisig-py` links plonky3, whose `p3-util` crate uses library features
-# (e.g. `maybe_uninit_slice`) that only stabilized in Rust 1.93. Building from
-# source with an older default toolchain fails with E0658. Pin the up-to-date
-# `stable` rustup channel so the build works regardless of the machine's default
-# toolchain. tox scrubs the ambient environment, so this must be set here for the
-# `uv sync` build step to see it.
-set_env.RUSTUP_TOOLCHAIN = "stable"
-# `extend = true` splices each extra CLI argument (everything after `tox --`)
-# in as its own argv token; the bare `{posargs}` string form would join them
-# into a single argument instead.
-commands = [["uv", "run", "pytest", { replace = "posargs", extend = true, default = [] }]]
-
 [tool.uv]
 required-version = ">=0.7.0"
 
