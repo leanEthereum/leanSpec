@@ -297,15 +297,15 @@ def test_single_message_aggregate_verify_rejects_public_key_count_mismatch(
     )
 
 
-def test_multi_message_aggregate_split_by_message_rejected_under_test_prover(
+def test_multi_message_aggregate_split_by_message_round_trip(
     key_manager: XmssKeyManager,
 ) -> None:
     """
-    Splitting a merged proof aborts under the reduced test-config prover.
+    Splitting a merged proof recovers the single-message component for one message.
 
-    The split branch is functional only under the production prover.
-    The test-config build aborts it with an in-circuit assertion.
-    Exercising it here drives the serialization and error-translation path.
+    The reduced test-config prover supports the split branch.
+    The recovered single-message proof carries the original component's
+    participants and verifies against that component's keys, message, and slot.
     """
     source = Checkpoint(root=make_bytes32(600), slot=Slot(0))
     attestation_args_a = (Slot(11), 601, 602, source)
@@ -336,15 +336,21 @@ def test_multi_message_aggregate_split_by_message_rejected_under_test_prover(
         public_keys_per_aggregate=[public_keys_a, public_keys_b],
     )
 
-    with pytest.raises(
-        AggregationError,
-        match=r"(?s)^multi-message aggregate split failed: .*\Z",
-    ):
-        merged.split_by_message(
-            message=hash_tree_root(attestation_data_a),
-            public_keys_per_message=[public_keys_a, public_keys_b],
-            participants=aggregate_a.participants,
-        )
+    recovered_aggregate_a = merged.split_by_message(
+        message=hash_tree_root(attestation_data_a),
+        public_keys_per_message=[public_keys_a, public_keys_b],
+        participants=aggregate_a.participants,
+    )
+
+    # The recovered component names the same validators as the original.
+    assert recovered_aggregate_a.participants == aggregate_a.participants
+
+    # And the recovered single-message proof stands on its own under verify.
+    recovered_aggregate_a.verify(
+        public_keys=public_keys_a,
+        message=hash_tree_root(attestation_data_a),
+        slot=attestation_data_a.slot,
+    )
 
 
 def test_aggregate_wrong_message_fails_verification(key_manager: XmssKeyManager) -> None:
@@ -506,10 +512,7 @@ def test_multi_message_aggregate_propagates_prover_error(key_manager: XmssKeyMan
         proof=ByteList512KiB(data=bytes(corrupted_bytes)),
     )
 
-    with pytest.raises(
-        AggregationError,
-        match=r"(?s)^.*merge_many_type_1 failed.*\Z",
-    ):
+    with pytest.raises(AggregationError, match="merge_many_single_message_proof failed"):
         MultiMessageAggregate.aggregate(
             single_message_aggregates=[corrupted_aggregate], public_keys_per_aggregate=[public_keys]
         )

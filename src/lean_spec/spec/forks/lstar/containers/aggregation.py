@@ -6,11 +6,11 @@ Post-quantum signature aggregation proofs wrapping the Rust prover.
 """
 
 from lean_multisig_py import (
-    aggregate_type_1,
-    merge_many_type_1,
-    split_type_2_by_msg,
-    verify_type_1,
-    verify_type_2_with_messages,
+    aggregate_single_message,
+    merge_many_single_message_proof,
+    split_multi_message_proof_by_message,
+    verify_multi_message_proof_with_messages,
+    verify_single_message_proof,
 )
 
 from lean_spec.config import LEAN_ENV
@@ -108,7 +108,7 @@ class SingleMessageAggregate(Container):
         # Phase 3: hand off to the Rust prover.
         # The mode argument routes the call to the matching backend bytecode.
         try:
-            _, single_message_aggregate_wire = aggregate_type_1(
+            _, single_message_aggregate_wire = aggregate_single_message(
                 raw_public_keys_ssz,
                 raw_signatures_ssz,
                 bytes(message),
@@ -156,7 +156,7 @@ class SingleMessageAggregate(Container):
         # Hand the resolved keys, message, and slot to the Rust verifier.
         # The mode argument selects the matching backend bytecode.
         try:
-            verify_type_1(
+            verify_single_message_proof(
                 [public_key.encode_bytes() for public_key in public_keys],
                 bytes(message),
                 int(slot),
@@ -243,7 +243,7 @@ class MultiMessageAggregate(Container):
         #
         # The mode argument selects the matching backend bytecode.
         try:
-            _, multi_message_aggregate_wire = merge_many_type_1(
+            _, multi_message_aggregate_wire = merge_many_single_message_proof(
                 single_message_aggregate_entries,
                 LOG_INV_RATE,
                 mode=LEAN_ENV,
@@ -292,7 +292,7 @@ class MultiMessageAggregate(Container):
         #
         # The mode argument selects the matching backend bytecode.
         try:
-            _, single_message_aggregate_wire = split_type_2_by_msg(
+            _, single_message_aggregate_wire = split_multi_message_proof_by_message(
                 public_keys_per_component_ssz,
                 bytes(self.proof.data),
                 bytes(message),
@@ -351,7 +351,7 @@ class MultiMessageAggregate(Container):
         #
         # The mode argument selects the matching backend bytecode.
         try:
-            verify_type_2_with_messages(
+            verify_multi_message_proof_with_messages(
                 public_keys_per_component_ssz,
                 expected_messages,
                 bytes(self.proof.data),

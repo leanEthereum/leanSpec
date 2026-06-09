@@ -750,13 +750,9 @@ class TestReplayPendingAttestationsPlain:
 #   can still help move justification, and
 # - it adds at least one participant the node does not already hold.
 #
-# Only the decision/gate paths are exercised here. The split itself
-# (split_type_2_by_msg) is implemented and works in the production prover,
-# but the upstream lean_multisig test-config build aborts it with an
-# in-circuit assertion (the reduced XMSS dimensions are inconsistent with
-# the aggregation program's split branch). It is not a leanSpec defect and
-# cannot be fixed here, so the split-extract-merge body is verified under a
-# production prover, not in this test-mode suite.
+# Only the decision/gate paths are exercised here.
+# These tests check when the split runs, not the cryptographic split itself.
+# The split-extract-merge round-trip is covered by the aggregation container tests.
 
 # Round-robin proposer is slot % num_validators with four validators.
 NUM_VALIDATORS = 4

@@ -259,7 +259,7 @@ class BlockSpec(CamelModel):
         verify_signatures ever runs. The multi-message aggregate envelope is then assembled
         directly from the info entries with empty proof bytes — that
         decodes structurally and lets verify_signatures reach (and reject
-        at) the verify_type_2 call, which is the contract the test exercises.
+        at) the multi-message proof verification, which is the contract the test exercises.
 
         Args:
             final_block: The unsigned block.
@@ -278,9 +278,9 @@ class BlockSpec(CamelModel):
 
         # The binding rejects placeholder bytes; if anything in the merged
         # input is a dummy (invalid proposer sig or a build_invalid_proof
-        # attestation), bypass aggregate_type_2 entirely and assemble the
+        # attestation), bypass the multi-message aggregation entirely and assemble the
         # multi-message aggregate envelope by hand. The result still SSZ-decodes so
-        # verify_signatures reaches verify_type_2 for the rejection.
+        # verify_signatures reaches the multi-message proof verification for the rejection.
         any_placeholder_attestation = any(not proof.proof.data for proof in attestation_proofs)
         use_placeholder = not self.valid_signature or any_placeholder_attestation
 
