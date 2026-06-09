@@ -8,19 +8,22 @@ from consensus_testing import (
     BlockSpec,
     BlockStep,
     ForkChoiceTestFiller,
+    GossipAggregatedAttestationStep,
     StoreChecks,
+    TickStep,
 )
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks import Interval, Slot, ValidatorIndex
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
 
 @pytest.mark.real_crypto(smoke=True)
-def test_multiple_specs_same_target_merge_into_one(
+def test_multiple_attestations_same_target_merge_into_one(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Two attestations sharing one target merge into a single aggregation.
+    Two attestations in the known pool sharing one target get merged
+    into a single aggregation.
 
     Given
     -----
@@ -67,6 +70,91 @@ def test_multiple_specs_same_target_merge_into_one(
                         ),
                     ],
                 ),
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    block_attestation_count=1,
+                    block_attestations=[
+                        AggregatedAttestationCheck(
+                            participants={0, 1, 2, 3},
+                            attestation_slot=Slot(1),
+                            target_slot=Slot(1),
+                        ),
+                    ],
+                ),
+            ),
+        ],
+    )
+
+
+def test_overlapping_proofs_same_target_recursively_merge_into_one(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Two overlapping proofs (enforced by 2 separate gossips) for one target
+    fold into a single in-block attestation.
+
+    Given
+    -----
+    - 4 validators.
+    - the chain:
+        genesis -> block_1(1)
+    - one proof covers V0, V1, V2 targeting block_1.
+    - one proof covers V1, V2, V3 targeting block_1.
+    - the two proofs overlap on V1, V2.
+    - both proofs carry identical attestation data.
+    - the clock ticks past slot 1's aggregate phase before they gossip.
+    - both proofs arrive by gossip.
+    - both proofs wait unmerged in the known pool.
+
+    When
+    ----
+    - block_2 is built on block_1, carrying no votes of its own.
+
+    Then
+    ----
+    - the builder takes the first proof.
+    - the builder takes the second proof for its one uncovered voter.
+    - the builder folds both proofs into one attestation.
+    - block_2 holds 1 aggregated attestation covering V0, V1, V2, V3.
+    - head is block_2 at slot 2.
+
+    Timing
+    ------
+    - the proofs are gossipped at slot 1, interval 3 (past the aggregate phase).
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            TickStep(interval=int(Interval.from_slot(Slot(1))) + 3),
+            GossipAggregatedAttestationStep(
+                attestation=AggregatedAttestationSpec(
+                    validator_indices=[
+                        ValidatorIndex(0),
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                    ],
+                    slot=Slot(1),
+                    target_slot=Slot(1),
+                    target_root_label="block_1",
+                ),
+            ),
+            GossipAggregatedAttestationStep(
+                attestation=AggregatedAttestationSpec(
+                    validator_indices=[
+                        ValidatorIndex(1),
+                        ValidatorIndex(2),
+                        ValidatorIndex(3),
+                    ],
+                    slot=Slot(1),
+                    target_slot=Slot(1),
+                    target_root_label="block_1",
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
                 checks=StoreChecks(
                     head_slot=Slot(2),
                     block_attestation_count=1,
