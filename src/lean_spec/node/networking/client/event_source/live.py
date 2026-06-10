@@ -61,6 +61,12 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from lean_spec.node.networking.client.event_source.gossip import GossipHandler
+from lean_spec.node.networking.client.event_source.protocol import (
+    SUPPORTED_PROTOCOLS,
+    GossipMessageError,
+)
+from lean_spec.node.networking.client.reqresp_client import ReqRespClient
 from lean_spec.node.networking.config import (
     GOSSIPSUB_DEFAULT_PROTOCOL_ID,
     GOSSIPSUB_PROTOCOL_ID_V12,
@@ -75,7 +81,6 @@ from lean_spec.node.networking.gossipsub.topic import GossipTopic, TopicKind
 from lean_spec.node.networking.gossipsub.types import TopicId
 from lean_spec.node.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
-    AsyncBlockBySlotLookup,
     AsyncBlockLookup,
     CurrentSlotLookup,
     ReqRespServer,
@@ -106,10 +111,6 @@ from lean_spec.node.networking.transport.quic.stream_adapter import (
 from lean_spec.node.networking.types import ProtocolId
 from lean_spec.spec.forks import SignedAggregatedAttestation, SignedAttestation, SignedBlock
 from lean_spec.spec.ssz.exceptions import SSZSerializationError
-
-from ..reqresp_client import ReqRespClient
-from .gossip import GossipHandler
-from .protocol import SUPPORTED_PROTOCOLS, GossipMessageError
 
 logger = logging.getLogger(__name__)
 
@@ -327,20 +328,6 @@ class LiveNetworkEventSource:
         """
         self._reqresp_handler.block_lookup = lookup
 
-    def set_block_by_slot_lookup(self, lookup: AsyncBlockBySlotLookup) -> None:
-        """
-        Set the callback for looking up canonical blocks by slot.
-
-        Used by the inbound ReqResp handler to serve BlocksByRange requests.
-
-        The callback MUST consult fork choice.
-        It returns the canonical block at that slot, or None for empty slots.
-
-        Args:
-            lookup: Async function from Slot to SignedBlock or None.
-        """
-        self._reqresp_handler.block_by_slot_lookup = lookup
-
     def set_current_slot_lookup(self, lookup: CurrentSlotLookup) -> None:
         """
         Set the callback returning the node's current slot.
@@ -459,8 +446,8 @@ class LiveNetworkEventSource:
                     # from killing the entire forwarding loop.
                     try:
                         await self._handle_gossipsub_message(event)
-                    except Exception as e:
-                        logger.warning("Error handling gossipsub message: %s", e)
+                    except Exception as exception:
+                        logger.warning("Error handling gossipsub message: %s", exception)
         except asyncio.CancelledError:
             pass
 
@@ -493,13 +480,13 @@ class LiveNetworkEventSource:
                     case TopicKind.AGGREGATED_ATTESTATION:
                         aggregate = SignedAggregatedAttestation.decode_bytes(event.data)
                         await self._emit_gossip_aggregated_attestation(aggregate, event.peer_id)
-            except SSZSerializationError as e:
-                raise GossipMessageError(f"SSZ decode failed: {e}") from e
+            except SSZSerializationError as exception:
+                raise GossipMessageError(f"SSZ decode failed: {exception}") from exception
 
             logger.debug("Processed gossipsub message %s from %s", topic.kind.value, event.peer_id)
 
-        except GossipMessageError as e:
-            logger.warning("Failed to process gossipsub message: %s", e)
+        except GossipMessageError as exception:
+            logger.warning("Failed to process gossipsub message: %s", exception)
 
     def __aiter__(self) -> LiveNetworkEventSource:
         """Return self as async iterator."""
@@ -580,7 +567,7 @@ class LiveNetworkEventSource:
             task.add_done_callback(self._gossip_tasks.discard)
 
             # Exchange status.
-            await self._exchange_status(peer_id, connection)
+            await self._exchange_status(peer_id)
 
             # Set up gossipsub stream for full protocol support.
             await self._setup_gossipsub_stream(peer_id, connection)
@@ -588,12 +575,13 @@ class LiveNetworkEventSource:
             logger.info("Connected to peer %s at %s", peer_id, multiaddr)
             return peer_id
 
-        except Exception as e:
-            logger.warning("Failed to connect to %s: %s", multiaddr, e)
+        except Exception as exception:
+            logger.warning("Failed to connect to %s: %s", multiaddr, exception)
             return None
 
     async def _ensure_quic_manager(self) -> None:
-        """Initialize QUIC manager lazily on first use.
+        """
+        Initialize QUIC manager lazily on first use.
 
         Reuses the identity key from the connection manager for consistency.
         This ensures the same peer ID is used across all connections.
@@ -606,7 +594,8 @@ class LiveNetworkEventSource:
             self.quic_manager = await QuicConnectionManager.create(identity_key)
 
     async def _dial_quic(self, multiaddr: str) -> QuicConnection:
-        """Connect to a peer using QUIC transport.
+        """
+        Connect to a peer using QUIC transport.
 
         Ensures the QUIC manager is initialized before connecting.
 
@@ -624,7 +613,8 @@ class LiveNetworkEventSource:
         return await self.quic_manager.connect(multiaddr)
 
     async def listen(self, multiaddr: str) -> None:
-        """Start listening for incoming connections.
+        """
+        Start listening for incoming connections.
 
         Automatically detects transport type from multiaddr:
 
@@ -645,7 +635,8 @@ class LiveNetworkEventSource:
             )
 
     async def _listen_quic(self, multiaddr: str) -> None:
-        """Listen for incoming QUIC connections.
+        """
+        Listen for incoming QUIC connections.
 
         Ensures the QUIC manager is initialized.
         Registers the connection callback for accepted connections.
@@ -696,17 +687,12 @@ class LiveNetworkEventSource:
 
         logger.info("Accepted connection from peer %s", peer_id)
 
-    async def _exchange_status(
-        self,
-        peer_id: PeerId,
-        connection: QuicConnection,
-    ) -> None:
+    async def _exchange_status(self, peer_id: PeerId) -> None:
         """
         Exchange Status messages with a peer.
 
         Args:
             peer_id: Peer identifier.
-            connection: QuicConnection to use.
         """
         if self._our_status is None:
             logger.debug("No status set, skipping status exchange")
@@ -723,8 +709,8 @@ class LiveNetworkEventSource:
                     peer_status.head.root.hex()[:8],
                 )
 
-        except Exception as e:
-            logger.warning("Status exchange failed with %s: %s", peer_id, e)
+        except Exception as exception:
+            logger.warning("Status exchange failed with %s: %s", peer_id, exception)
 
     async def _setup_gossipsub_stream(
         self,
@@ -777,8 +763,8 @@ class LiveNetworkEventSource:
                     stream.stream_id,
                 )
 
-            except Exception as e:
-                logger.warning("Failed to setup gossipsub stream with %s: %s", peer_id, e)
+            except Exception as exception:
+                logger.warning("Failed to setup gossipsub stream with %s: %s", peer_id, exception)
 
     async def disconnect(self, peer_id: PeerId) -> None:
         """
@@ -922,12 +908,12 @@ class LiveNetworkEventSource:
                     # This blocks until a peer opens a stream or the connection closes.
                     # QUIC handles the low-level multiplexing.
                     stream = await connection.accept_stream()
-                except Exception as e:
+                except Exception as exception:
                     # Connection closed or other transport error.
                     #
                     # This is expected when the peer disconnects.
                     # Exit the loop cleanly rather than propagating.
-                    logger.debug("Stream accept failed for %s: %s", peer_id, e)
+                    logger.debug("Stream accept failed for %s: %s", peer_id, exception)
                     break
 
                 negotiated = await self._negotiate_inbound_stream(peer_id, stream)
@@ -958,12 +944,12 @@ class LiveNetworkEventSource:
             # This is normal cleanup behavior. Log and exit.
             logger.debug("Stream acceptor cancelled for %s", peer_id)
 
-        except Exception as e:
+        except Exception as exception:
             # Unexpected error.
             #
             # Log as warning since this may indicate a bug.
             # The connection will be cleaned up elsewhere.
-            logger.warning("Stream acceptor error for %s: %s", peer_id, e)
+            logger.warning("Stream acceptor error for %s: %s", peer_id, exception)
 
     async def _negotiate_inbound_stream(
         self,
@@ -1020,12 +1006,12 @@ class LiveNetworkEventSource:
             )
             await stream.close()
             return None
-        except NegotiationError as e:
+        except NegotiationError as exception:
             logger.debug(
                 "Protocol negotiation failed for %s stream %d: %s",
                 peer_id,
                 stream.stream_id,
-                e,
+                exception,
             )
             await stream.close()
             return None
@@ -1037,12 +1023,12 @@ class LiveNetworkEventSource:
             )
             await stream.close()
             return None
-        except Exception as e:
+        except Exception as exception:
             logger.warning(
                 "Unexpected negotiation error for %s stream %d: %s",
                 peer_id,
                 stream.stream_id,
-                e,
+                exception,
             )
             await stream.close()
             return None
@@ -1157,5 +1143,5 @@ class LiveNetworkEventSource:
         try:
             await self._gossipsub_behavior.publish(topic, data)
             logger.debug("Published message to gossipsub topic %s", topic)
-        except Exception as e:
-            logger.warning("Failed to publish to gossipsub: %s", e)
+        except Exception as exception:
+            logger.warning("Failed to publish to gossipsub: %s", exception)

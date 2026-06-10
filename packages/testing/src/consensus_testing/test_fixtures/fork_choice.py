@@ -1,45 +1,74 @@
-"""
-Fork choice test fixture format.
-
-Tests fork choice scenarios through time-ordered events.
-Validates Store responses to blocks, attestations, and time progression.
-"""
+"""Fork choice test fixture format."""
 
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import ClassVar
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
-from lean_spec.node.chain.clock import Interval
+from consensus_testing.genesis import generate_pre_state
+from consensus_testing.keys import XmssKeyManager
+from consensus_testing.rejection import classify_rejection
+from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
+from consensus_testing.test_types import (
+    AttestationStep,
+    BlockStep,
+    FilledAttestationStep,
+    FilledBlockStep,
+    FilledForkChoiceStep,
+    FilledGossipAggregatedAttestationStep,
+    FilledTickStep,
+    ForkChoiceStep,
+    GossipAggregatedAttestationStep,
+    StoreSnapshot,
+    TickStep,
+)
+from lean_spec.config import LEAN_ENV
+from lean_spec.node.chain.clock import SlotClock
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks import (
+    Interval,
+    RejectionReason,
+    Slot,
+    SpecRejectionError,
+    ValidatorIndex,
+)
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestations,
+    AggregationError,
     Block,
     BlockBody,
+    SignedAggregatedAttestation,
+    SignedAttestation,
     State,
     Validators,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Uint64
-
-from ..keys import (
-    XmssKeyManager,
-)
-from ..test_types import (
-    AttestationStep,
-    BlockStep,
-    ForkChoiceStep,
-    GossipAggregatedAttestationStep,
-    TickStep,
-)
-from .base import BaseConsensusFixture
 
 
-class ForkChoiceTest(BaseConsensusFixture):
+class ForkChoiceFixture(BaseConsensusFixture):
     """
-    Test fixture for event-driven fork choice scenarios.
+    Emitted vector for event-driven fork choice scenarios.
+
+    JSON output: anchorState, anchorBlock, steps, maxSlot.
+    """
+
+    anchor_state: State
+    """Initial trusted consensus state."""
+
+    anchor_block: Block
+    """Initial trusted block (unsigned)."""
+
+    steps: list[FilledForkChoiceStep]
+    """Emitted fork choice events, one per authored step."""
+
+    max_slot: Slot
+    """Maximum slot for XMSS key validity."""
+
+
+class ForkChoiceTest(BaseTestSpec):
+    """
+    Spec for event-driven fork choice scenarios.
 
     Fork choice tests simulate a node processing events over time.
     The Store maintains all chain state needed to compute the head.
@@ -60,12 +89,12 @@ class ForkChoiceTest(BaseConsensusFixture):
     description: ClassVar[str] = "Tests event-driven fork choice through Store operations"
     """Human-readable summary for fixture documentation."""
 
-    anchor_state: State | None = None
+    anchor_state: State = Field(default_factory=generate_pre_state)
     """
     Initial trusted consensus state.
 
-    Most tests start from genesis.
-    The pytest fixture provides this automatically.
+    Defaults to the standard genesis state.
+    Spell it out only when the test needs a non-default anchor.
     """
 
     anchor_block: Block | None = None
@@ -84,28 +113,14 @@ class ForkChoiceTest(BaseConsensusFixture):
     Each step can validate Store state via checks.
     """
 
-    anchor_valid: bool = Field(default=True, exclude=True)
+    anchor_valid: bool = True
     """
     Whether Store.from_anchor is expected to succeed.
 
     Default True covers every normal test.
     Set False to assert that store initialization itself must fail,
     e.g. when the anchor block and state are inconsistent.
-
-    Excluded from JSON output: configures the test runner, not the test
-    vector that clients consume.
-    """
-
-    expected_anchor_error: str | None = Field(default=None, exclude=True)
-    """
-    Substring required in the raised exception when anchor_valid is False.
-
-    Ignored when anchor_valid is True.
-    Used to pin the failure to a specific precondition rather than any crash.
-    When None, any AssertionError from Store.from_anchor is accepted.
-
-    Excluded from JSON output: configures the test runner, not the test
-    vector that clients consume.
+    The base expected rejection field then refines the required failure.
     """
 
     max_slot: Slot | None = None
@@ -116,76 +131,68 @@ class ForkChoiceTest(BaseConsensusFixture):
     XMSS keys need precomputation up to this slot.
     """
 
-    @model_validator(mode="after")
-    def set_anchor_block_default(self) -> Self:
+    def _resolved_anchor_block(self) -> Block:
         """
-        Auto-generate anchor block from anchor state if not provided.
+        Return the authored anchor block, or derive one from the anchor state.
 
         Most tests start from genesis.
         Deriving the anchor block from state reduces boilerplate.
         """
-        if self.anchor_block is None and self.anchor_state is not None:
-            # Build a minimal genesis block from the state's header fields.
-            #
-            # The state already contains the block header.
-            # We extract its fields to create a matching Block.
-            self.anchor_block = Block(
-                slot=self.anchor_state.latest_block_header.slot,
-                proposer_index=self.anchor_state.latest_block_header.proposer_index,
-                parent_root=self.anchor_state.latest_block_header.parent_root,
-                state_root=hash_tree_root(self.anchor_state),
-                body=BlockBody(attestations=AggregatedAttestations(data=[])),
-            )
-        return self
+        if self.anchor_block is not None:
+            return self.anchor_block
+        # Build a minimal genesis block from the state's header fields.
+        #
+        # The state already contains the block header.
+        # We extract its fields to create a matching Block.
+        return Block(
+            slot=self.anchor_state.latest_block_header.slot,
+            proposer_index=self.anchor_state.latest_block_header.proposer_index,
+            parent_root=self.anchor_state.latest_block_header.parent_root,
+            state_root=hash_tree_root(self.anchor_state),
+            body=BlockBody(attestations=AggregatedAttestations(data=[])),
+        )
 
-    @model_validator(mode="after")
-    def set_max_slot_default(self) -> Self:
+    def _resolved_max_slot(self) -> Slot:
         """
-        Auto-calculate max slot from steps if not provided.
+        Return the authored max slot, or compute it from the steps.
 
         XMSS keys require precomputation.
         We scan steps to find the highest slot needed.
         """
-        if self.max_slot is None:
-            max_slot_value = Slot(0)
+        if self.max_slot is not None:
+            return self.max_slot
 
-            # Find the maximum slot across all block and attestation steps.
-            #
-            # XMSS signatures are slot-dependent.
-            # Keys must be generated up to this slot before signing.
-            for step in self.steps:
-                if isinstance(step, BlockStep):
-                    max_slot_value = max(max_slot_value, step.block.slot)
-                elif isinstance(step, AttestationStep):
-                    max_slot_value = max(max_slot_value, step.attestation.slot)
-                elif isinstance(step, GossipAggregatedAttestationStep):
-                    max_slot_value = max(max_slot_value, step.attestation.slot)
+        max_slot_value = Slot(0)
 
-            self.max_slot = max_slot_value
+        # Find the maximum slot across all block and attestation steps.
+        #
+        # XMSS signatures are slot-dependent.
+        # Keys must be generated up to this slot before signing.
+        for step in self.steps:
+            if isinstance(step, BlockStep):
+                max_slot_value = max(max_slot_value, step.block.slot)
+            elif isinstance(step, AttestationStep):
+                max_slot_value = max(max_slot_value, step.attestation.slot)
+            elif isinstance(step, GossipAggregatedAttestationStep):
+                max_slot_value = max(max_slot_value, step.attestation.slot)
 
-        return self
+        return max_slot_value
 
-    def make_fixture(self) -> Self:
+    def generate(self) -> ForkChoiceFixture:
         """
         Generate the fixture by running the spec's Store.
 
         Executes each step against the actual specification and validates checks.
 
         Returns:
-            The validated fixture (self, since steps contain the test).
+            The emitted vector with one filled step per authored step.
 
         Raises:
             AssertionError: If any step fails unexpectedly or checks mismatch.
         """
-        # Precondition validation
-        #
-        # Pydantic validators should have populated these fields.
-        # These assertions guard against misuse.
-        assert self.anchor_state is not None, "anchor state must be set before making fixture"
-        assert self.anchor_block is not None, "anchor block must be set before making fixture"
-        assert self.max_slot is not None, "max slot must be set before making fixture"
-
         spec = LstarSpec()
+        anchor_block = self._resolved_anchor_block()
+        max_slot = self._resolved_max_slot()
 
         # Expected anchor-init failure path.
         #
@@ -194,35 +201,14 @@ class ForkChoiceTest(BaseConsensusFixture):
         # fixes up the anchor block's state root is skipped, since that would
         # mask the very inconsistency under test.
         if not self.anchor_valid:
-            assert self.steps == [], (
-                "steps must be empty when anchor_valid is False: "
-                "Store.from_anchor is expected to fail before any step can run"
-            )
-            try:
-                spec.create_store(
-                    self.anchor_state,
-                    self.anchor_block,
-                    validator_index=ValidatorIndex(0),
-                )
-            except AssertionError as e:
-                if self.expected_anchor_error is not None and self.expected_anchor_error not in str(
-                    e
-                ):
-                    raise AssertionError(
-                        "Store.from_anchor failed with wrong error.\n"
-                        f"  Expected error containing: {self.expected_anchor_error!r}\n"
-                        f"  Actual error: {e!r}"
-                    ) from e
-                return self
-
-            raise AssertionError("Store.from_anchor was expected to fail but succeeded")
+            return self._generate_invalid_anchor(spec, anchor_block, max_slot)
 
         # Key manager setup
         #
         # XMSS keys are expensive to generate.
         # The shared key manager caches keys across tests.
         # Tests requiring higher max slot trigger key expansion.
-        key_manager = XmssKeyManager.shared(max_slot=self.max_slot)
+        key_manager = XmssKeyManager.shared(max_slot=max_slot)
 
         # Validator public_key synchronization
         #
@@ -230,25 +216,34 @@ class ForkChoiceTest(BaseConsensusFixture):
         # We must replace them with the key manager's actual keys.
         # Otherwise signature verification will fail.
         updated_validators = []
-        for i, validator in enumerate(self.anchor_state.validators):
-            index = ValidatorIndex(i)
-            attestation_public_key, proposal_public_key = key_manager.get_public_keys(index)
-            validator.attestation_public_key = attestation_public_key.encode_bytes()
-            validator.proposal_public_key = proposal_public_key.encode_bytes()
-            updated_validators.append(validator)
+        for validator_position, validator in enumerate(self.anchor_state.validators):
+            validator_index = ValidatorIndex(validator_position)
+            attestation_public_key, proposal_public_key = key_manager.get_public_keys(
+                validator_index
+            )
+            updated_validators.append(
+                validator.model_copy(
+                    update={
+                        "attestation_public_key": attestation_public_key.encode_bytes(),
+                        "proposal_public_key": proposal_public_key.encode_bytes(),
+                    }
+                )
+            )
 
         # Updating validators changes the state root.
         # We must also update the anchor block to match.
-        self.anchor_state.validators = Validators(data=updated_validators)
-        self.anchor_block.state_root = hash_tree_root(self.anchor_state)
+        anchor_state = self.anchor_state.model_copy(
+            update={"validators": Validators(data=updated_validators)}
+        )
+        anchor_block = anchor_block.model_copy(update={"state_root": hash_tree_root(anchor_state)})
 
         # Store initialization
         #
         # The Store is the node's local view of the chain.
         # It starts from a trusted anchor (usually genesis).
         store = spec.create_store(
-            self.anchor_state,
-            self.anchor_block,
+            anchor_state,
+            anchor_block,
             validator_index=ValidatorIndex(0),
         )
 
@@ -257,14 +252,20 @@ class ForkChoiceTest(BaseConsensusFixture):
         # Labels let tests reference blocks by name.
         # This enables building forks: "build block B with parent A".
         # The "genesis" label is always available.
-        self._block_registry: dict[str, Block] = {"genesis": self.anchor_block}
+        block_registry: dict[str, Block] = {"genesis": anchor_block}
 
         # Step processing loop
         #
         # Process each step against the Store.
         # Store follows immutable pattern: each method returns a new Store.
-        for i, step in enumerate(self.steps):
+        filled_steps: list[FilledForkChoiceStep] = []
+        for step_index, step in enumerate(self.steps):
             old_head = store.head
+            rejection_reason: RejectionReason | None = None
+            store_snapshot: StoreSnapshot
+            filled_block: Block | None = None
+            filled_attestation: SignedAttestation | None = None
+            filled_aggregated: SignedAggregatedAttestation | None = None
             try:
                 match step:
                     case TickStep():
@@ -278,10 +279,11 @@ class ForkChoiceTest(BaseConsensusFixture):
                         else:
                             assert step.time is not None
                             # TickStep.time is a Unix timestamp in seconds.
-                            # Convert to intervals since genesis for the store.
-                            target_interval = Interval.from_unix_time(
-                                Uint64(step.time), store.config.genesis_time
-                            )
+                            # The slot clock converts it to intervals since genesis.
+                            target_interval = SlotClock(
+                                genesis_time=store.config.genesis_time,
+                                time_fn=lambda t=step.time: float(t),
+                            ).total_intervals()
                         store, _ = spec.on_tick(
                             store,
                             target_interval,
@@ -290,34 +292,46 @@ class ForkChoiceTest(BaseConsensusFixture):
                         )
 
                     case BlockStep():
+                        # A step expecting the unknown-parent rejection may point
+                        # the block at a parent the store never imported.
+                        # The builder then skips the state transition and hands
+                        # the block straight to the spec, where that guard fires.
+                        deliver_unknown_parent = (
+                            step.expected_rejection is not None
+                            and step.expected_rejection.reason
+                            is RejectionReason.UNKNOWN_PARENT_BLOCK
+                        )
+
                         # Build a complete signed block from the lightweight spec.
                         # The spec contains minimal fields; we fill the rest.
                         signed_block, store = step.block.build_signed_block_with_store(
-                            store, self._block_registry, key_manager, self.lean_env
+                            store,
+                            block_registry,
+                            key_manager,
+                            LEAN_ENV,
+                            deliver_unknown_parent=deliver_unknown_parent,
                         )
-
-                        # Store the filled block for serialization.
-                        block = signed_block.block
-                        step._filled_block = block
+                        filled_block = signed_block.block
 
                         # Register labeled blocks for fork building.
                         # Later blocks can reference this one as their parent.
                         if step.block.label is not None:
-                            if step.block.label in self._block_registry:
+                            if step.block.label in block_registry:
                                 raise ValueError(
-                                    f"Step {i}: duplicate label '{step.block.label}' - "
+                                    f"Step {step_index}: duplicate label '{step.block.label}' - "
                                     f"labels must be unique within a test"
                                 )
-                            self._block_registry[step.block.label] = block
+                            block_registry[step.block.label] = filled_block
 
-                        # Advance time to the block's slot.
-                        # Store rejects blocks from the future.
+                        # Advance time to the block's slot unless the test
+                        # delivers the block ahead of the store clock.
                         # This tick includes a block (has proposal).
                         # Always act as aggregator to ensure gossip signatures are aggregated
-                        target_interval = Interval.from_slot(block.slot)
-                        store, _ = spec.on_tick(
-                            store, target_interval, has_proposal=True, is_aggregator=True
-                        )
+                        if step.tick_to_slot:
+                            target_interval = Interval.from_slot(filled_block.slot)
+                            store, _ = spec.on_tick(
+                                store, target_interval, has_proposal=True, is_aggregator=True
+                            )
 
                         # Process the block through Store.
                         # This validates, applies state transition, and updates the store's head.
@@ -327,67 +341,216 @@ class ForkChoiceTest(BaseConsensusFixture):
                         # Process a gossip attestation.
                         # Gossip attestations arrive outside of blocks.
                         # They influence the fork choice weight calculation.
-                        signed_attestation = step.attestation.build_signed(
-                            self._block_registry,
+                        filled_attestation = step.attestation.build_signed(
+                            block_registry,
                             key_manager,
                             store,
-                            self.anchor_block,
+                            anchor_block,
                             step.valid,
                         )
-                        step._filled_attestation = signed_attestation
                         store = spec.on_gossip_attestation(
                             store,
-                            signed_attestation,
+                            filled_attestation,
                             is_aggregator=step.is_aggregator,
                         )
 
                     case GossipAggregatedAttestationStep():
-                        signed_aggregated = step.attestation.build_signed(
-                            self._block_registry,
+                        filled_aggregated = step.attestation.build_signed(
+                            block_registry,
                             store.states[store.head],
                             key_manager,
                         )
-                        step._filled_attestation = signed_aggregated
-                        store = spec.on_gossip_aggregated_attestation(store, signed_aggregated)
+                        store = spec.on_gossip_aggregated_attestation(store, filled_aggregated)
 
                     case _:
-                        raise ValueError(f"Step {i}: unknown step type {type(step).__name__}")
+                        raise ValueError(
+                            f"Step {step_index}: unknown step type {type(step).__name__}"
+                        )
+
+                # Record the canonical store observables for this step.
+                # Clients replay the step and must reproduce every field.
+                # Authored checks below remain a human-readable overlay.
+                store_snapshot = StoreSnapshot.from_store(store)
 
                 # Validate Store state if checks are provided.
                 if step.checks is not None:
-                    filled_block = step._filled_block if isinstance(step, BlockStep) else None
                     step.checks.validate_against_store(
                         store,
-                        step_index=i,
-                        block_registry=self._block_registry,
+                        step_index=step_index,
+                        block_registry=block_registry,
                         filled_block=filled_block,
                         old_head=old_head,
                     )
 
-            except Exception as e:
+            except (SpecRejectionError, AggregationError) as exception:
                 # Handle expected failures.
-                # Steps marked valid=False should raise exceptions.
+                # Steps marked valid=False should raise spec rejections.
+                # Harness bugs raise other types and propagate unswallowed.
                 if step.valid:
                     raise AssertionError(
-                        f"Step {i} ({type(step).__name__}) failed unexpectedly: {e}"
-                    ) from e
+                        f"Step {step_index} ({type(step).__name__}) "
+                        f"failed unexpectedly: {exception}"
+                    ) from exception
 
-                # Verify the failure reason matches when specified.
-                if step.expected_error is not None and step.expected_error not in str(e):
+                rejection_reason = self._classify_step_rejection(step, step_index, exception)
+
+                # The rejected call returned nothing, so the store is unchanged.
+                # Snapshot it anyway: clients must verify the no-op.
+                store_snapshot = StoreSnapshot.from_store(store)
+
+            else:
+                # Handle unexpected success.
+                # If we expected failure but the step succeeded, that's a test bug.
+                if not step.valid:
                     raise AssertionError(
-                        f"Step {i} ({type(step).__name__}) failed with wrong error.\n"
-                        f"  Expected error containing: {step.expected_error!r}\n"
-                        f"  Actual error: {e!r}"
-                    ) from e
+                        f"Step {step_index} ({type(step).__name__}) succeeded but expected failure"
+                    )
 
-                continue
+            # Emit the filled counterpart of this step.
+            # Expected failures keep their built payload and the unchanged store.
+            match step:
+                case TickStep():
+                    filled_steps.append(
+                        FilledTickStep(
+                            valid=step.valid,
+                            rejection_reason=rejection_reason,
+                            checks=step.checks,
+                            store_snapshot=store_snapshot,
+                            time=step.time,
+                            interval=step.interval,
+                            has_proposal=step.has_proposal,
+                        )
+                    )
+                case BlockStep():
+                    assert filled_block is not None, (
+                        f"Step {step_index}: the step failed before its block was built"
+                    )
+                    filled_steps.append(
+                        FilledBlockStep(
+                            valid=step.valid,
+                            rejection_reason=rejection_reason,
+                            checks=step.checks,
+                            store_snapshot=store_snapshot,
+                            tick_to_slot=step.tick_to_slot,
+                            block=filled_block,
+                            block_root_label=step.block.label,
+                        )
+                    )
+                case AttestationStep():
+                    assert filled_attestation is not None, (
+                        f"Step {step_index}: the step failed before its attestation was built"
+                    )
+                    filled_steps.append(
+                        FilledAttestationStep(
+                            valid=step.valid,
+                            rejection_reason=rejection_reason,
+                            checks=step.checks,
+                            store_snapshot=store_snapshot,
+                            attestation=filled_attestation,
+                            is_aggregator=step.is_aggregator,
+                        )
+                    )
+                case GossipAggregatedAttestationStep():
+                    assert filled_aggregated is not None, (
+                        f"Step {step_index}: the step failed before its aggregate was built"
+                    )
+                    filled_steps.append(
+                        FilledGossipAggregatedAttestationStep(
+                            valid=step.valid,
+                            rejection_reason=rejection_reason,
+                            checks=step.checks,
+                            store_snapshot=store_snapshot,
+                            attestation=filled_aggregated,
+                        )
+                    )
 
-            # Handle unexpected success.
-            # If we expected failure but the step succeeded, that's a test bug.
-            if not step.valid:
+        return ForkChoiceFixture(
+            anchor_state=anchor_state,
+            anchor_block=anchor_block,
+            steps=filled_steps,
+            max_slot=max_slot,
+        )
+
+    def _generate_invalid_anchor(
+        self,
+        spec: LstarSpec,
+        anchor_block: Block,
+        max_slot: Slot,
+    ) -> ForkChoiceFixture:
+        """
+        Assert that store initialization rejects the anchor pair.
+
+        Returns:
+            The emitted vector carrying the rejection reason and no steps.
+
+        Raises:
+            AssertionError: If initialization succeeds or fails for the wrong reason.
+        """
+        assert self.steps == [], (
+            "steps must be empty when anchor_valid is False: "
+            "Store.from_anchor is expected to fail before any step can run"
+        )
+        # Why: a vector saying only "reject this anchor" lets a client
+        # reject for the wrong reason and still pass.
+        assert self.expected_rejection is not None, (
+            "anchor_valid=False requires expected_rejection to be set"
+        )
+        try:
+            spec.create_store(
+                self.anchor_state,
+                anchor_block,
+                validator_index=ValidatorIndex(0),
+            )
+        except SpecRejectionError as exception:
+            expected_substring = self.expected_rejection.message_substring
+            if expected_substring is not None and expected_substring not in str(exception):
                 raise AssertionError(
-                    f"Step {i} ({type(step).__name__}) succeeded but expected failure"
-                )
+                    "Store.from_anchor failed with wrong error.\n"
+                    f"  Expected error containing: {expected_substring!r}\n"
+                    f"  Actual error: {exception!r}"
+                ) from exception
+            # Emit the language-neutral reason clients assert against.
+            return ForkChoiceFixture(
+                anchor_state=self.anchor_state,
+                anchor_block=anchor_block,
+                steps=[],
+                max_slot=max_slot,
+                rejection_reason=self.resolve_rejection_reason(exception),
+            )
 
-        # Return self (fixture is already complete)
-        return self
+        raise AssertionError("Store.from_anchor was expected to fail but succeeded")
+
+    @staticmethod
+    def _classify_step_rejection(
+        step: TickStep | BlockStep | AttestationStep | GossipAggregatedAttestationStep,
+        step_index: int,
+        exception: Exception,
+    ) -> RejectionReason:
+        """
+        Classify an expected step failure and check it against the authored expectation.
+
+        Returns:
+            The reason emitted into the filled step.
+
+        Raises:
+            AssertionError: If the failure contradicts the authored expectation.
+        """
+        # Verify the failure reason matches when specified.
+        expected_rejection = step.expected_rejection
+        if expected_rejection is not None:
+            expected_substring = expected_rejection.message_substring
+            if expected_substring is not None and expected_substring not in str(exception):
+                raise AssertionError(
+                    f"Step {step_index} ({type(step).__name__}) failed with wrong error.\n"
+                    f"  Expected error containing: {expected_substring!r}\n"
+                    f"  Actual error: {exception!r}"
+                ) from exception
+
+        # Emit the language-neutral reason clients assert against.
+        rejection_reason = classify_rejection(exception)
+        if expected_rejection is not None and rejection_reason is not expected_rejection.reason:
+            raise AssertionError(
+                f"Step {step_index} ({type(step).__name__}) rejection classified as "
+                f"{rejection_reason} but the test expects {expected_rejection.reason}"
+            )
+        return rejection_reason

@@ -31,10 +31,10 @@ class TestForkChoice:
 
     def test_fork_choice_response(self, server_url: str) -> None:
         """Fork choice response matches expected genesis-only tree structure."""
-        data = get_fork_choice(server_url).json()
-        genesis_root = data["head"]
+        response_body = get_fork_choice(server_url).json()
+        genesis_root = response_body["head"]
 
-        assert data == {
+        assert response_body == {
             "nodes": [
                 {
                     "root": genesis_root,

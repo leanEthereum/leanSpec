@@ -1,7 +1,8 @@
 """Test vectors for gossipsub message ID computation."""
 
 import pytest
-from consensus_testing import NetworkingCodecTestFiller
+
+from consensus_testing import GossipMessageIdentifier, NetworkingCodecTestFiller
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -15,109 +16,197 @@ BLOCK_TOPIC = "0x" + b"/leanconsensus/12345678/block/ssz_snappy".hex()
 """Hex-encoded topic bytes for a typical block topic string."""
 
 
-# --- Valid snappy domain ---
+def test_message_id_valid_snappy(networking_codec_test: NetworkingCodecTestFiller) -> None:
+    """
+    A typical block message yields its message id under the valid-snappy domain.
 
+    Given
+    -----
+    - a block topic.
+    - a short payload.
+    - the valid-snappy domain prefix.
 
-def test_message_id_valid_snappy(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Message ID with valid-snappy domain and typical block data."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": BLOCK_TOPIC,
-            "data": "0xdeadbeef",
-            "domain": VALID_SNAPPY,
-        },
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(topic=BLOCK_TOPIC, data="0xdeadbeef", domain=VALID_SNAPPY),
     )
 
 
-def test_message_id_valid_snappy_large_payload(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Message ID with valid-snappy domain and a larger payload."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": BLOCK_TOPIC,
-            "data": "0x" + "ab" * 256,
-            "domain": VALID_SNAPPY,
-        },
+def test_message_id_valid_snappy_large_payload(
+    networking_codec_test: NetworkingCodecTestFiller,
+) -> None:
+    """
+    A larger payload yields its message id under the valid-snappy domain.
+
+    Given
+    -----
+    - a block topic.
+    - a 256-byte payload.
+    - the valid-snappy domain prefix.
+
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(
+            topic=BLOCK_TOPIC, data="0x" + "ab" * 256, domain=VALID_SNAPPY
+        ),
     )
 
 
-# --- Invalid snappy domain ---
+def test_message_id_invalid_snappy(networking_codec_test: NetworkingCodecTestFiller) -> None:
+    """
+    The invalid-snappy domain yields its own message id for the same data.
 
+    Given
+    -----
+    - a block topic.
+    - the same short payload used in the valid-snappy case.
+    - the invalid-snappy domain prefix.
 
-def test_message_id_invalid_snappy(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Message ID with invalid-snappy domain and same data as the valid test."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": BLOCK_TOPIC,
-            "data": "0xdeadbeef",
-            "domain": INVALID_SNAPPY,
-        },
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(topic=BLOCK_TOPIC, data="0xdeadbeef", domain=INVALID_SNAPPY),
     )
 
 
-# --- Empty inputs ---
+def test_message_id_empty_data(networking_codec_test: NetworkingCodecTestFiller) -> None:
+    """
+    An empty payload still yields a message id.
 
+    Given
+    -----
+    - a block topic.
+    - an empty payload.
+    - the valid-snappy domain prefix.
 
-def test_message_id_empty_data(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Message ID with empty payload."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": BLOCK_TOPIC,
-            "data": "0x",
-            "domain": VALID_SNAPPY,
-        },
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(topic=BLOCK_TOPIC, data="0x", domain=VALID_SNAPPY),
     )
 
 
-def test_message_id_empty_topic(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Message ID with empty topic string."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": "0x",
-            "data": "0xdeadbeef",
-            "domain": VALID_SNAPPY,
-        },
+def test_message_id_empty_topic(networking_codec_test: NetworkingCodecTestFiller) -> None:
+    """
+    An empty topic still yields a message id.
+
+    Given
+    -----
+    - an empty topic.
+    - a short payload.
+    - the valid-snappy domain prefix.
+
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(topic="0x", data="0xdeadbeef", domain=VALID_SNAPPY),
     )
 
 
-def test_message_id_both_empty(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Message ID with both topic and data empty."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": "0x",
-            "data": "0x",
-            "domain": VALID_SNAPPY,
-        },
+def test_message_id_both_empty(networking_codec_test: NetworkingCodecTestFiller) -> None:
+    """
+    An empty topic and empty payload still yield a message id.
+
+    Given
+    -----
+    - an empty topic.
+    - an empty payload.
+    - the valid-snappy domain prefix.
+
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(topic="0x", data="0x", domain=VALID_SNAPPY),
     )
 
 
-# --- Domain differentiation ---
+def test_message_id_domain_changes_id(networking_codec_test: NetworkingCodecTestFiller) -> None:
+    """
+    The invalid-snappy domain yields its own message id.
 
+    Given
+    -----
+    - a short topic.
+    - a short payload.
+    - the invalid-snappy domain prefix.
 
-def test_message_id_domain_changes_id(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Same topic and data with invalid-snappy domain produces a different ID."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": "0x" + b"test-topic".hex(),
-            "data": "0x" + b"hello world".hex(),
-            "domain": INVALID_SNAPPY,
-        },
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(
+            topic="0x" + b"test-topic".hex(),
+            data="0x" + b"hello world".hex(),
+            domain=INVALID_SNAPPY,
+        ),
     )
 
 
-def test_message_id_domain_valid_same_data(networking_codec: NetworkingCodecTestFiller) -> None:
-    """Same topic and data with valid-snappy domain for cross-reference."""
-    networking_codec(
-        codec_name="gossip_message_id",
-        input={
-            "topic": "0x" + b"test-topic".hex(),
-            "data": "0x" + b"hello world".hex(),
-            "domain": VALID_SNAPPY,
-        },
+def test_message_id_domain_valid_same_data(
+    networking_codec_test: NetworkingCodecTestFiller,
+) -> None:
+    """
+    The valid-snappy domain yields its own message id for the same topic and data.
+
+    Given
+    -----
+    - the same short topic as the invalid-snappy case.
+    - the same short payload as the invalid-snappy case.
+    - the valid-snappy domain prefix.
+
+    When
+    ----
+    - the message id is computed.
+
+    Then
+    ----
+    - the message id matches the expected digest.
+    """
+    networking_codec_test(
+        codec=GossipMessageIdentifier(
+            topic="0x" + b"test-topic".hex(), data="0x" + b"hello world".hex(), domain=VALID_SNAPPY
+        ),
     )

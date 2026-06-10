@@ -7,11 +7,10 @@ import logging
 import os
 import sys
 
+from lean_spec.cli.args import parse_args
+from lean_spec.cli.bootstrap import CliValidationError, NodeBootstrap
+from lean_spec.cli.run import run_node
 from lean_spec.log import setup_logging
-
-from .args import parse_args
-from .bootstrap import CliValidationError, NodeBootstrap
-from .run import run_node
 
 logger = logging.getLogger(__name__)
 

@@ -37,10 +37,15 @@ fix:
 typecheck *args:
     uv run --group lint ty check "$@"
 
+# Detect dead code with vulture (paths and ignores configured in pyproject.toml)
+[group('quality')]
+deadcode *args:
+    uv run --group lint vulture "$@"
+
 # Spell check source, tests, packages, and docs
 [group('quality')]
 spellcheck *args:
-    uv run --group lint codespell src tests packages docs README.md CLAUDE.md --skip="*.lock,*.svg,.git,__pycache__,.pytest_cache,tests/lean_spec/node/snappy/testdata" --ignore-words=.codespell-ignore-words.txt "$@"
+    uv run --group lint codespell src tests packages docs README.md CLAUDE.md --skip="*.lock,*.svg,.git,__pycache__,.pytest_cache,tests/node/snappy/testdata" --ignore-words=.codespell-ignore-words.txt "$@"
 
 # Verify markdown formatting in docs/
 [group('quality')]
@@ -78,12 +83,40 @@ test-cov-gate *args:
 # Run consensus-only unit tests (containers, forkchoice, networking)
 [group('tests')]
 test-consensus *args:
-    uv run --group test pytest -n auto --maxprocesses=10 --durations=10 --dist=worksteal tests/lean_spec/spec/forks tests/lean_spec/node/networking "$@"
+    uv run --group test pytest -n auto --maxprocesses=10 --durations=10 --dist=worksteal tests/node/networking "$@"
 
 # Canonical CI fixture run; contributors should use `uv run fill` directly.
 [group('tests'), private]
 fill-ci *args:
     uv run --group test fill --fork=Lstar --clean -n auto --dist=worksteal "$@"
+
+# Standalone determinism audit: regenerate vectors twice under different hash seeds and diff.
+# The fill command already gates the order_sensitive subset on every run.
+# This recipe runs that audit on its own, or widens it past the marked subset.
+# Pass a path to cover the whole tree (for example tests/consensus) and catch a
+# filler that should be marked order_sensitive but is not.
+# A difference means an emitted vector depends on set or dict iteration order,
+# which is hash-seeded and would break cross-client reproducibility.
+[group('tests')]
+fill-determinism *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    target="{{args}}"
+    [ -z "$target" ] && target="tests/consensus -m order_sensitive"
+    first="$(mktemp -d)"
+    second="$(mktemp -d)"
+    trap 'rm -rf "$first" "$second"' EXIT
+    # Single process: the marked subset is small, so xdist worker startup would
+    # cost more than it saves, and one process pins the hash seed cleanly.
+    # This recipe is itself the determinism check, so the per-fill gate is skipped.
+    PYTHONHASHSEED=1 uv run --group test fill --fork=Lstar --clean --no-check-determinism -n 0 -o "$first" $target -q
+    PYTHONHASHSEED=2 uv run --group test fill --fork=Lstar --clean --no-check-determinism -n 0 -o "$second" $target -q
+    if diff -rq "$first" "$second"; then
+        echo "Determinism check passed: fixtures are byte-identical across hash seeds."
+    else
+        echo "Determinism check FAILED: emitted vectors differ across PYTHONHASHSEED." >&2
+        exit 1
+    fi
 
 # Run API conformance tests against an external client
 [group('tests')]

@@ -22,15 +22,22 @@ References:
     - libp2p/specs quic, tls, multistream-select
 """
 
-from .identity import IdentityKeypair, Secp256k1PublicKey
-from .peer_id import Base58, KeyType, Multihash, MultihashCode, PeerId, PublicKeyProtobuf
-from .quic import (
+from lean_spec.node.networking.transport.identity import IdentityKeypair, Secp256k1PublicKey
+from lean_spec.node.networking.transport.peer_id import (
+    Base58,
+    KeyType,
+    Multihash,
+    MultihashCode,
+    PeerId,
+    PublicKeyProtobuf,
+)
+from lean_spec.node.networking.transport.quic import (
     NegotiationError,
     QuicConnection,
     QuicConnectionManager,
     generate_libp2p_certificate,
 )
-from .quic.stream_adapter import QuicStreamAdapter
+from lean_spec.node.networking.transport.quic.stream_adapter import QuicStreamAdapter
 
 __all__ = [
     # QUIC transport

@@ -2,23 +2,23 @@
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.config import LEAN_ENV
+from lean_spec.spec.crypto.xmss.constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
+from lean_spec.spec.crypto.xmss.containers import KeyPair, PublicKey, SecretKey, Signature
+from lean_spec.spec.crypto.xmss.encoding import target_sum_encode
+from lean_spec.spec.crypto.xmss.field import random_parameter
+from lean_spec.spec.crypto.xmss.merkle import HashSubTree, combined_path, verify_path
+from lean_spec.spec.crypto.xmss.poseidon import POSEIDON, PoseidonXmss
+from lean_spec.spec.crypto.xmss.prf import PRFKey
+from lean_spec.spec.crypto.xmss.types import HashDigestList, HashDigestVector
 from lean_spec.spec.forks.lstar.slot import Slot
 from lean_spec.spec.ssz import Bytes32, Uint64
-
-from .constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
-from .containers import KeyPair, PublicKey, SecretKey, Signature
-from .encoding import target_sum_encode
-from .field import random_parameter
-from .merkle import HashSubTree, combined_path, verify_path
-from .poseidon import PROD_POSEIDON, TEST_POSEIDON, PoseidonXmss
-from .prf import PRFKey
-from .types import HashDigestList, HashDigestVector
 
 
 def _expand_activation_time(
     log_lifetime: int, desired_activation_slot: int, desired_num_active_slots: int
 ) -> tuple[int, int]:
-    """Snap a requested slot window onto whole bottom trees.
+    """
+    Snap a requested slot window onto whole bottom trees.
 
     # Overview
 
@@ -77,7 +77,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
     """Cached Poseidon engine used by every primitive in the scheme."""
 
     def key_gen(self, activation_slot: Slot, num_active_slots: Uint64) -> KeyPair:
-        """Generate a fresh key pair active for an aligned slot range.
+        """
+        Generate a fresh key pair active for an aligned slot range.
 
         # Overview
 
@@ -173,7 +174,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
         return KeyPair(public_key=public_key, secret_key=secret_key)
 
     def sign(self, secret_key: SecretKey, slot: Slot, message: Bytes32) -> Signature:
-        """Produce a signature for a message at a specific slot.
+        """
+        Produce a signature for a message at a specific slot.
 
         Phase 1: enforce that the slot is inside the activation and prepared windows.
         Phase 2: search for randomness rho whose encoding lands on the target-sum layer.
@@ -279,7 +281,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
     def verify(
         self, public_key: PublicKey, slot: Slot, message: Bytes32, signature: Signature
     ) -> bool:
-        """Verify a signature against a public key, message, and slot.
+        """
+        Verify a signature against a public key, message, and slot.
 
         Phase 1: bound-check the slot.
         Phase 1 rejects without raising on bad input.
@@ -314,17 +317,17 @@ class GeneralizedXmssScheme(StrictBaseModel):
 
         # Phase 3: finish each chain from the released hash to its endpoint.
         chain_ends: list[HashDigestVector] = []
-        for chain_index, xi in enumerate(codeword):
-            # The signature provides the digest after xi steps along the chain.
-            # We hash the remaining BASE - 1 - xi times to reach the endpoint.
+        for chain_index, digit in enumerate(codeword):
+            # The signature provides the digest after digit steps along the chain.
+            # We hash the remaining BASE - 1 - digit times to reach the endpoint.
             start_digest = signature.hashes[chain_index]
             end_digest = self.poseidon.hash_chain(
                 config=config,
                 parameter=public_key.parameter,
                 epoch=slot,
                 chain_index=chain_index,
-                start_step=xi,
-                num_steps=config.BASE - 1 - xi,
+                start_step=digit,
+                num_steps=config.BASE - 1 - digit,
                 start_digest=start_digest,
             )
             chain_ends.append(end_digest)
@@ -341,7 +344,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
         )
 
     def get_activation_interval(self, secret_key: SecretKey) -> range:
-        """Return the activation interval as a Python range.
+        """
+        Return the activation interval as a Python range.
 
         A signature is only valid for a slot inside this range.
         """
@@ -349,7 +353,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
         return range(start, start + int(secret_key.num_active_slots))
 
     def get_prepared_interval(self, secret_key: SecretKey) -> range:
-        """Return the prepared interval as a Python range.
+        """
+        Return the prepared interval as a Python range.
 
         The prepared interval is the slot window covered by the two resident bottom trees.
         A signer can sign any slot in this range without paying the cost of
@@ -360,7 +365,8 @@ class GeneralizedXmssScheme(StrictBaseModel):
         return range(start, start + 2 * leaves_per_bottom_tree)
 
     def advance_preparation(self, secret_key: SecretKey) -> SecretKey:
-        """Slide the prepared window one bottom tree forward.
+        """
+        Slide the prepared window one bottom tree forward.
 
         Phase 1: bail out when the next window would exceed the activation interval.
         Phase 2: regenerate the new right bottom tree from the PRF key.
@@ -392,16 +398,19 @@ class GeneralizedXmssScheme(StrictBaseModel):
         )
 
         # Phase 3: rotate the right tree into the left slot, advance the index.
-        secret_key.left_bottom_tree = secret_key.right_bottom_tree
-        secret_key.right_bottom_tree = new_right_bottom_tree
-        secret_key.left_bottom_tree_index = Uint64(left_index + 1)
-        return secret_key
+        return secret_key.model_copy(
+            update={
+                "left_bottom_tree": secret_key.right_bottom_tree,
+                "right_bottom_tree": new_right_bottom_tree,
+                "left_bottom_tree_index": Uint64(left_index + 1),
+            }
+        )
 
 
-PROD_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=PROD_CONFIG, poseidon=PROD_POSEIDON)
+PROD_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=PROD_CONFIG, poseidon=POSEIDON)
 """Signature scheme instance with production parameters."""
 
-TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=TEST_CONFIG, poseidon=TEST_POSEIDON)
+TEST_SIGNATURE_SCHEME = GeneralizedXmssScheme(config=TEST_CONFIG, poseidon=POSEIDON)
 """Signature scheme instance with test parameters."""
 
 TARGET_SIGNATURE_SCHEME = TEST_SIGNATURE_SCHEME if LEAN_ENV == "test" else PROD_SIGNATURE_SCHEME

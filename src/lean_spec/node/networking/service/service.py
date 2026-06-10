@@ -28,6 +28,15 @@ from dataclasses import dataclass, field
 from lean_spec.node.networking.client.event_source import EventSource
 from lean_spec.node.networking.gossipsub.topic import GossipTopic
 from lean_spec.node.networking.peer import PeerInfo
+from lean_spec.node.networking.service.events import (
+    GossipAggregatedAttestationEvent,
+    GossipAttestationEvent,
+    GossipBlockEvent,
+    NetworkEvent,
+    PeerConnectedEvent,
+    PeerDisconnectedEvent,
+    PeerStatusEvent,
+)
 from lean_spec.node.networking.types import ConnectionState
 from lean_spec.node.snappy import compress
 from lean_spec.node.sync import SyncService
@@ -36,16 +45,6 @@ from lean_spec.spec.forks import (
     SignedAttestation,
     SignedBlock,
     SubnetId,
-)
-
-from .events import (
-    GossipAggregatedAttestationEvent,
-    GossipAttestationEvent,
-    GossipBlockEvent,
-    NetworkEvent,
-    PeerConnectedEvent,
-    PeerDisconnectedEvent,
-    PeerStatusEvent,
 )
 
 logger = logging.getLogger(__name__)

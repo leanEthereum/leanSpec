@@ -6,7 +6,14 @@ from collections.abc import Awaitable, Callable
 
 from aiohttp import web
 
-from .endpoints import aggregator, checkpoints, fork_choice, health, metrics, states
+from lean_spec.node.api.endpoints import (
+    aggregator,
+    checkpoints,
+    fork_choice,
+    health,
+    metrics,
+    states,
+)
 
 Handler = Callable[[web.Request], Awaitable[web.Response]]
 """Type alias for aiohttp request handlers."""

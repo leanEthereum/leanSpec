@@ -49,12 +49,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from lean_spec.node.networking.transport.peer_id import PeerId
+from lean_spec.node.sync.backfill_sync import BackfillSync
+from lean_spec.node.sync.block_cache import BlockCache
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SignedBlock, Slot, Store
 from lean_spec.spec.ssz import Bytes32, Uint64
-
-from .backfill_sync import BackfillSync
-from .block_cache import BlockCache
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +182,6 @@ class HeadSync:
             logger.debug("on_gossip_block: parent found, processing")
             return await self._process_block_with_descendants(
                 block=block,
-                peer_id=peer_id,
                 store=store,
             )
 
@@ -201,7 +199,6 @@ class HeadSync:
     async def _process_block_with_descendants(
         self,
         block: SignedBlock,
-        peer_id: PeerId | None,
         store: Store,
     ) -> tuple[HeadSyncResult, Store]:
         """
@@ -212,7 +209,6 @@ class HeadSync:
 
         Args:
             block: Block to process.
-            peer_id: Peer that sent the block.
             store: Current store.
 
         Returns:
@@ -232,15 +228,15 @@ class HeadSync:
                     slot,
                     len(store.blocks),
                 )
-            except Exception as e:
+            except Exception as exception:
                 logger.debug(
                     "_process_block_with_descendants: FAILED for slot %s: %s",
                     slot,
-                    e,
+                    exception,
                 )
                 return HeadSyncResult(
                     processed=False,
-                    error=str(e),
+                    error=str(exception),
                 ), store
 
             # Process cached descendants.
@@ -304,11 +300,11 @@ class HeadSync:
                     self.block_cache.remove(child_root)
 
                     # Recursively process this child's descendants.
-                    description_count, store = await self._process_cached_descendants(
+                    descendant_count, store = await self._process_cached_descendants(
                         parent_root=child_root,
                         store=store,
                     )
-                    processed_count += description_count
+                    processed_count += descendant_count
 
                 except Exception as exception:
                     # Processing failed. Leave in cache for retry or discard.

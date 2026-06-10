@@ -1,64 +1,69 @@
-"""Poseidon permutation test fixture.
+"""Poseidon permutation test fixture."""
 
-Generates JSON test vectors for the Poseidon permutation over the
-KoalaBear field at widths 16 and 24. Clients must produce identical
-output states bit-for-bit for every input state.
-"""
+from typing import ClassVar, Literal, Self
 
-from typing import Any, ClassVar
+from pydantic import model_validator
 
+from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.poseidon import PARAMS_16, PARAMS_24, Poseidon
 
-from .base import BaseConsensusFixture
+PARAMETERS_BY_WIDTH = {16: PARAMS_16, 24: PARAMS_24}
+"""Permutation parameter sets keyed by the supported state widths."""
 
 
-class PoseidonPermutationTest(BaseConsensusFixture):
-    """Fixture for Poseidon permutation conformance.
+class PoseidonPermutationFixture(BaseConsensusFixture):
+    """
+    Emitted vector for Poseidon permutation conformance.
 
-    Each vector names the permutation width and supplies an input state
-    as decimal strings. The fixture runs the spec's permutation engine
-    and emits the output state as decimal strings.
-
-    JSON output: width, input, output.
+    JSON output: width, inputState, outputState.
     """
 
-    format_name: ClassVar[str] = "poseidon_permutation"
+    width: int
+    """State width of the permutation."""
+
+    input_state: list[str]
+    """Input state as decimal element strings."""
+
+    output_state: list[str]
+    """Computed output state as decimal element strings."""
+
+
+class PoseidonPermutationTest(BaseTestSpec):
+    """
+    Spec for Poseidon permutation conformance.
+
+    Each vector names the permutation width and supplies an input state
+    as decimal strings. Generation runs the spec's permutation engine
+    and emits the output state as decimal strings.
+    """
+
+    format_name: ClassVar[str] = "poseidon_permutation_test"
     description: ClassVar[str] = "Tests Poseidon permutation at widths 16 and 24"
 
-    width: int
-    """State width. Must be 16 or 24."""
+    width: Literal[16, 24]
+    """State width. Only the two spec-defined widths exist."""
 
-    input: dict[str, Any]
-    """Input state. Key inputState holds a list of decimal element strings."""
+    input_state: list[str]
+    """Input state as decimal element strings, one per state element."""
 
-    output: dict[str, Any] = {}
-    """Computed output state. Filled by make_fixture."""
-
-    def make_fixture(self) -> "PoseidonPermutationTest":
-        """Run the Poseidon permutation and produce the output state.
-
-        Returns:
-            A copy of this fixture with output populated.
-
-        Raises:
-            ValueError: If the width is unsupported.
-        """
-        if self.width == 16:
-            engine = Poseidon(PARAMS_16)
-        elif self.width == 24:
-            engine = Poseidon(PARAMS_24)
-        else:
-            raise ValueError(f"Unsupported Poseidon width: {self.width}")
-
-        state_ints = [int(x) for x in self.input["inputState"]]
-        if len(state_ints) != self.width:
+    @model_validator(mode="after")
+    def validate_state_length(self) -> Self:
+        """Require exactly one input element per state slot."""
+        if len(self.input_state) != self.width:
             raise ValueError(
-                f"Input state length {len(state_ints)} does not match width {self.width}"
+                f"Input state length {len(self.input_state)} does not match width {self.width}"
             )
+        return self
 
-        input_state = [Fp(v) for v in state_ints]
+    def generate(self) -> PoseidonPermutationFixture:
+        """Run the Poseidon permutation and produce the output state."""
+        engine = Poseidon(PARAMETERS_BY_WIDTH[self.width])
+        input_state = [Fp(int(raw_element)) for raw_element in self.input_state]
         output_state = engine.permute(input_state)
 
-        self.output = {"outputState": [str(int(fp)) for fp in output_state]}
-        return self
+        return PoseidonPermutationFixture(
+            width=self.width,
+            input_state=self.input_state,
+            output_state=[str(int(field_element)) for field_element in output_state],
+        )

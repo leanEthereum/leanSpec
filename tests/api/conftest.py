@@ -9,8 +9,8 @@ from typing import Generator
 import httpx
 import pytest
 
+from consensus_testing import make_genesis_store
 from lean_spec.node.api import AggregatorController, ApiServer, ApiServerConfig
-from tests.lean_spec.helpers.builders import make_genesis_data
 
 # Default port for auto-started local server
 DEFAULT_PORT = 15099
@@ -56,8 +56,8 @@ class _ServerThread(threading.Thread):
 
             self.loop.run_forever()
 
-        except Exception as e:
-            self.error = e
+        except Exception as exception:
+            self.error = exception
             self.ready.set()
         finally:
             if self.loop:
@@ -65,10 +65,7 @@ class _ServerThread(threading.Thread):
 
     def _create_server(self) -> ApiServer:
         """Create the API server with a test store and aggregator controller."""
-        genesis = make_genesis_data(
-            num_validators=3, validator_index=None, genesis_time=int(time.time())
-        )
-        store = genesis.store
+        store = make_genesis_store(num_validators=3, observer=True, genesis_time=int(time.time()))
 
         controller = _make_conformance_controller(initial=False)
         config = ApiServerConfig(host="127.0.0.1", port=self.port)

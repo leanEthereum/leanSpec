@@ -148,7 +148,7 @@ def encode_varint(value: int, max_bytes: int = 10) -> bytes:
     if value >> (7 * max_bytes):
         raise ValueError(f"Varint value does not fit in {max_bytes} bytes")
 
-    result = bytearray()
+    encoded = bytearray()
 
     # Process 7 bits at a time until the value fits in 7 bits.
     #
@@ -158,16 +158,16 @@ def encode_varint(value: int, max_bytes: int = 10) -> bytes:
     #   - Set continuation bit (| 0x80) to signal more bytes follow
     #   - Shift right by 7 to process next group
     while value >= 0x80:
-        result.append((value & 0x7F) | 0x80)
+        encoded.append((value & 0x7F) | 0x80)
         value >>= 7
 
     # Emit final byte without continuation bit.
     #
     # At this point, value < 128, so it fits in 7 bits.
     # The missing continuation bit (MSB = 0) signals "end of varint".
-    result.append(value)
+    encoded.append(value)
 
-    return bytes(result)
+    return bytes(encoded)
 
 
 def decode_varint(data: bytes, offset: int = 0, max_bytes: int = 10) -> tuple[int, int]:
@@ -195,7 +195,7 @@ def decode_varint(data: bytes, offset: int = 0, max_bytes: int = 10) -> tuple[in
             before finding the final byte) or exceeds max_bytes
             (would overflow the declared range).
     """
-    result = 0
+    decoded_value = 0
     shift = 0
     pos = offset
 
@@ -214,7 +214,7 @@ def decode_varint(data: bytes, offset: int = 0, max_bytes: int = 10) -> tuple[in
         #
         # The shift accumulates: byte 0 contributes bits 0-6,
         # byte 1 contributes bits 7-13, byte 2 contributes bits 14-20, etc.
-        result |= (byte & 0x7F) << shift
+        decoded_value |= (byte & 0x7F) << shift
         shift += 7
 
         # Check the continuation bit (MSB).
@@ -231,4 +231,4 @@ def decode_varint(data: bytes, offset: int = 0, max_bytes: int = 10) -> tuple[in
         if pos - offset >= max_bytes:
             raise VarintError(f"Varint exceeds {max_bytes} bytes")
 
-    return result, pos - offset
+    return decoded_value, pos - offset

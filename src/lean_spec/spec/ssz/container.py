@@ -7,9 +7,9 @@ from typing import IO, Any, Self, override
 from pydantic import model_validator
 from pydantic.functional_validators import ModelWrapValidatorHandler
 
-from .exceptions import SSZError, SSZSerializationError, SSZTypeError
-from .ssz_base import BYTES_PER_LENGTH_OFFSET, SSZModel, SSZType
-from .uint import Uint32
+from lean_spec.spec.ssz.exceptions import SSZError, SSZSerializationError, SSZTypeError
+from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET, SSZModel, SSZType
+from lean_spec.spec.ssz.uint import Uint32
 
 
 class Container(SSZModel):
@@ -48,22 +48,22 @@ class Container(SSZModel):
     @override
     def serialize(self, stream: IO[bytes]) -> int:
         """Write the fixed part with offsets, then the variable payloads."""
-        values = [getattr(self, name) for name in type(self).model_fields]
+        field_values = [getattr(self, name) for name in type(self).model_fields]
 
         # Leading-part width: each slot is either the field's byte length or one offset.
         offset = sum(
             type(v).get_byte_length() if type(v).is_fixed_size() else BYTES_PER_LENGTH_OFFSET
-            for v in values
+            for v in field_values
         )
 
         # Variable payloads stage in a buffer while the output takes the fixed part.
         tail = io.BytesIO()
-        for value in values:
-            if type(value).is_fixed_size():
-                value.serialize(stream)
+        for field_value in field_values:
+            if type(field_value).is_fixed_size():
+                field_value.serialize(stream)
             else:
                 Uint32(offset).serialize(stream)
-                offset += value.serialize(tail)
+                offset += field_value.serialize(tail)
         stream.write(tail.getvalue())
         return offset
 
@@ -76,8 +76,8 @@ class Container(SSZModel):
         bytes_read = 0
 
         # Phase 1: each slot is either the field itself or an offset to its tail payload.
-        for name, info in cls.model_fields.items():
-            ftype: type[SSZType] = info.annotation
+        for name, field_definition in cls.model_fields.items():
+            ftype: type[SSZType] = field_definition.annotation
             if ftype.is_fixed_size():
                 width = ftype.get_byte_length()
                 fields[name] = ftype.deserialize(stream, width)

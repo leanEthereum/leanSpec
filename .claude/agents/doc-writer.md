@@ -68,6 +68,15 @@ When a comment involves a chain of blocks, draw it.
 # Slot 3 carries a supermajority attestation that justifies slot 1.
 ```
 
+### Consensus test-vector docstrings
+
+Tests under `tests/consensus/` use one fixed skeleton: a one-line summary, then Given, When, Then.
+One atomic fact per bullet, fixed notation for blocks, validators, votes, and the chain.
+The module-level file header is exactly one line.
+The body carries no inline comments — the docstring is the single source of truth.
+The full standard lives in `.claude/rules/documentation.md` under "Consensus test-vector docstrings".
+Follow it exactly so a reader moving between vectors never relearns the format.
+
 ### Role-labeled flow for multi-party logic
 
 When the comment describes prover/verifier, sender/receiver, or producer/consumer interaction, align the roles in a block:

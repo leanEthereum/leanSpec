@@ -18,8 +18,8 @@ from pydantic import Field, field_serializer, field_validator
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
 
-from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
-from .ssz_base import SSZModel, SSZType
+from lean_spec.spec.ssz.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
+from lean_spec.spec.ssz.ssz_base import SSZModel, SSZType
 
 
 class BaseBytes(bytes, SSZType):
@@ -67,7 +67,7 @@ class BaseBytes(bytes, SSZType):
             case str():
                 return bytes.fromhex(value.removeprefix("0x"))
             case Iterable():
-                return bytes(bytearray(value))
+                return bytes(value)
             case _:
                 raise TypeError(f"Cannot coerce {type(value).__name__} to bytes")
 
@@ -85,10 +85,12 @@ class BaseBytes(bytes, SSZType):
         if not hasattr(cls, "LENGTH"):
             raise SSZTypeError(f"{cls.__name__} must define LENGTH")
 
-        b = cls._coerce_to_bytes(value)
-        if len(b) != cls.LENGTH:
-            raise SSZValueError(f"{cls.__name__} requires exactly {cls.LENGTH} bytes, got {len(b)}")
-        return super().__new__(cls, b)
+        coerced_bytes = cls._coerce_to_bytes(value)
+        if len(coerced_bytes) != cls.LENGTH:
+            raise SSZValueError(
+                f"{cls.__name__} requires exactly {cls.LENGTH} bytes, got {len(coerced_bytes)}"
+            )
+        return super().__new__(cls, coerced_bytes)
 
     @classmethod
     def zero(cls) -> Self:
@@ -133,11 +135,13 @@ class BaseBytes(bytes, SSZType):
         """
         if scope != cls.LENGTH:
             raise SSZSerializationError(f"{cls.__name__}: expected {cls.LENGTH} bytes, got {scope}")
-        data = stream.read(scope)
-        if len(data) != scope:
-            raise SSZSerializationError(f"{cls.__name__}: expected {scope} bytes, got {len(data)}")
+        serialized_bytes = stream.read(scope)
+        if len(serialized_bytes) != scope:
+            raise SSZSerializationError(
+                f"{cls.__name__}: expected {scope} bytes, got {len(serialized_bytes)}"
+            )
         # Length already verified — bypass __new__'s coerce + revalidation.
-        return bytes.__new__(cls, data)
+        return bytes.__new__(cls, serialized_bytes)
 
     @override
     def encode_bytes(self) -> bytes:
@@ -239,12 +243,6 @@ class Bytes4(BaseBytes):
     LENGTH = 4
 
 
-class Bytes12(BaseBytes):
-    """Fixed-size byte array of exactly 12 bytes (AES-GCM nonce)."""
-
-    LENGTH = 12
-
-
 class Bytes16(BaseBytes):
     """Fixed-size byte array of exactly 16 bytes (Poly1305 authentication tag)."""
 
@@ -279,12 +277,6 @@ class Bytes64(BaseBytes):
     """Fixed-size byte array of exactly 64 bytes (secp256k1 signature)."""
 
     LENGTH = 64
-
-
-class Bytes65(BaseBytes):
-    """Fixed-size byte array of exactly 65 bytes (uncompressed secp256k1 public key)."""
-
-    LENGTH = 65
 
 
 ZERO_HASH: Bytes32 = Bytes32.zero()
@@ -377,10 +369,12 @@ class BaseByteList(SSZModel):
             raise SSZSerializationError(f"{cls.__name__}: negative scope")
         if scope > cls.LIMIT:
             raise SSZValueError(f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {scope}")
-        data = stream.read(scope)
-        if len(data) != scope:
-            raise SSZSerializationError(f"{cls.__name__}: expected {scope} bytes, got {len(data)}")
-        return cls(data=data)
+        serialized_bytes = stream.read(scope)
+        if len(serialized_bytes) != scope:
+            raise SSZSerializationError(
+                f"{cls.__name__}: expected {scope} bytes, got {len(serialized_bytes)}"
+            )
+        return cls(data=serialized_bytes)
 
     @override
     def encode_bytes(self) -> bytes:

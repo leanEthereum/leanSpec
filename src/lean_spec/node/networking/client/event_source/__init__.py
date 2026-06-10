@@ -1,8 +1,12 @@
 """Network event source bridging transport to sync service."""
 
-from .gossip import GossipHandler, read_gossip_message
-from .live import LiveNetworkEventSource
-from .protocol import SUPPORTED_PROTOCOLS, EventSource, GossipMessageError
+from lean_spec.node.networking.client.event_source.gossip import GossipHandler, read_gossip_message
+from lean_spec.node.networking.client.event_source.live import LiveNetworkEventSource
+from lean_spec.node.networking.client.event_source.protocol import (
+    SUPPORTED_PROTOCOLS,
+    EventSource,
+    GossipMessageError,
+)
 
 __all__ = [
     "SUPPORTED_PROTOCOLS",

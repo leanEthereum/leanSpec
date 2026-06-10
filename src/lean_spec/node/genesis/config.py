@@ -1,4 +1,5 @@
-"""Genesis configuration loader.
+"""
+Genesis configuration loader.
 
 Loads genesis configuration from YAML files compatible with ream and zeam.
 
@@ -103,11 +104,11 @@ class GenesisConfig(StrictBaseModel):
         return Validators(
             data=[
                 Validator(
-                    attestation_public_key=entry.attestation_public_key,
-                    proposal_public_key=entry.proposal_public_key,
-                    index=ValidatorIndex(i),
+                    attestation_public_key=genesis_validator.attestation_public_key,
+                    proposal_public_key=genesis_validator.proposal_public_key,
+                    index=ValidatorIndex(validator_index),
                 )
-                for i, entry in enumerate(self.genesis_validators)
+                for validator_index, genesis_validator in enumerate(self.genesis_validators)
             ]
         )
 
@@ -125,6 +126,6 @@ class GenesisConfig(StrictBaseModel):
             pydantic.ValidationError: If the data fails validation.
         """
         path = Path(path)
-        with path.open(encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        return cls.model_validate(data)
+        with path.open(encoding="utf-8") as yaml_file:
+            parsed_yaml = yaml.safe_load(yaml_file)
+        return cls.model_validate(parsed_yaml)

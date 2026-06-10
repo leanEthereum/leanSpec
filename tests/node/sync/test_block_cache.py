@@ -1,0 +1,554 @@
+"""Tests for block cache module."""
+
+from __future__ import annotations
+
+from consensus_testing import make_signed_block
+from lean_spec.node.networking import PeerId
+from lean_spec.node.sync.block_cache import BlockCache, PendingBlock
+from lean_spec.node.sync.config import MAX_CACHED_BLOCKS
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.ssz import Bytes32
+
+
+class TestPendingBlock:
+    """Tests for PendingBlock dataclass."""
+
+    def test_create_pending_block(self, peer_id: PeerId) -> None:
+        """PendingBlock can be created with required fields."""
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+        root = hash_tree_root(block.block)
+
+        pending = PendingBlock(
+            block=block,
+            root=root,
+            parent_root=block.block.parent_root,
+            slot=block.block.slot,
+            received_from=peer_id,
+        )
+
+        assert pending == PendingBlock(
+            block=block,
+            root=root,
+            parent_root=Bytes32.zero(),
+            slot=Slot(1),
+            received_from=peer_id,
+            backfill_depth=0,
+        )
+
+    def test_pending_block_custom_backfill_depth(self, peer_id: PeerId) -> None:
+        """PendingBlock can be created with custom backfill depth."""
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+        root = hash_tree_root(block.block)
+
+        pending = PendingBlock(
+            block=block,
+            root=root,
+            parent_root=Bytes32.zero(),
+            slot=Slot(1),
+            received_from=peer_id,
+            backfill_depth=5,
+        )
+
+        assert pending == PendingBlock(
+            block=block,
+            root=root,
+            parent_root=Bytes32.zero(),
+            slot=Slot(1),
+            received_from=peer_id,
+            backfill_depth=5,
+        )
+
+
+class TestBlockCacheBasicOperations:
+    """Tests for basic BlockCache operations."""
+
+    def test_empty_cache(self) -> None:
+        """New BlockCache is empty."""
+        cache = BlockCache()
+
+        assert len(cache) == 0
+        assert cache.orphan_count == 0
+
+    def test_add_block(self, peer_id: PeerId) -> None:
+        """Adding a block stores it in the cache."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+
+        root = hash_tree_root(block.block)
+        assert len(cache) == 1
+        assert pending == PendingBlock(
+            block=block,
+            root=root,
+            parent_root=Bytes32.zero(),
+            slot=Slot(1),
+            received_from=peer_id,
+            backfill_depth=0,
+        )
+
+    def test_contains_block(self, peer_id: PeerId) -> None:
+        """Contains check works for cached blocks."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+
+        assert pending.root in cache
+        assert Bytes32(b"\xff" * 32) not in cache
+
+    def test_get_block(self, peer_id: PeerId) -> None:
+        """Getting a block by root returns the PendingBlock."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+        retrieved = cache.get(pending.root)
+
+        assert retrieved == pending
+
+    def test_get_nonexistent_block(self) -> None:
+        """Getting a nonexistent block returns None."""
+        cache = BlockCache()
+
+        cached_block = cache.get(Bytes32.zero())
+
+        assert cached_block is None
+
+    def test_remove_block(self, peer_id: PeerId) -> None:
+        """Removing a block returns it and removes from cache."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+        removed = cache.remove(pending.root)
+
+        assert removed == pending
+        assert len(cache) == 0
+        assert pending.root not in cache
+
+    def test_remove_nonexistent_block(self) -> None:
+        """Removing a nonexistent block returns None."""
+        cache = BlockCache()
+
+        removed_block = cache.remove(Bytes32.zero())
+
+        assert removed_block is None
+
+    def test_clear_cache(self, peer_id: PeerId) -> None:
+        """Clear removes all blocks from the cache."""
+        cache = BlockCache()
+        for i in range(5):
+            block = make_signed_block(
+                slot=Slot(i + 1),
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32(i.to_bytes(32, "big")),
+                state_root=Bytes32.zero(),
+            )
+            cache.add(block, peer_id)
+
+        assert len(cache) == 5
+
+        cache.clear()
+
+        assert len(cache) == 0
+        assert cache.orphan_count == 0
+
+
+class TestBlockCacheDeduplication:
+    """Tests for block deduplication in BlockCache."""
+
+    def test_adding_same_block_twice_returns_existing(self, peer_id: PeerId) -> None:
+        """Adding the same block twice returns the existing PendingBlock."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending1 = cache.add(block, peer_id)
+        pending2 = cache.add(block, peer_id)
+
+        assert pending1 is pending2
+        assert len(cache) == 1
+
+    def test_deduplication_preserves_original_peer(
+        self, peer_id: PeerId, peer_id_2: PeerId
+    ) -> None:
+        """Deduplication keeps the original peer, not the second sender."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending1 = cache.add(block, peer_id)
+        pending2 = cache.add(block, peer_id_2)
+
+        assert pending2.received_from == peer_id  # Original peer preserved
+        assert pending1.received_from == peer_id_2 or pending1.received_from == peer_id
+
+
+class TestBlockCacheOrphanTracking:
+    """Tests for orphan block tracking in BlockCache."""
+
+    def test_mark_orphan(self, peer_id: PeerId) -> None:
+        """Marking a block as orphan adds it to the orphan set."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+        cache.mark_orphan(pending.root)
+
+        assert cache.orphan_count == 1
+
+    def test_mark_orphan_idempotent(self, peer_id: PeerId) -> None:
+        """Marking the same block as orphan multiple times does not duplicate."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+        cache.mark_orphan(pending.root)
+        cache.mark_orphan(pending.root)
+
+        assert cache.orphan_count == 1
+
+    def test_mark_orphan_nonexistent_block_does_nothing(self) -> None:
+        """Marking a nonexistent block as orphan does nothing."""
+        cache = BlockCache()
+
+        cache.mark_orphan(Bytes32.zero())
+
+        assert cache.orphan_count == 0
+
+    def test_unmark_orphan(self, peer_id: PeerId) -> None:
+        """Unmarking an orphan removes it from the orphan set."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+        cache.mark_orphan(pending.root)
+        cache.unmark_orphan(pending.root)
+
+        assert cache.orphan_count == 0
+
+    def test_unmark_orphan_nonexistent_does_nothing(self) -> None:
+        """Unmarking a nonexistent orphan does nothing."""
+        cache = BlockCache()
+
+        # Should not raise
+        cache.unmark_orphan(Bytes32.zero())
+
+        assert cache.orphan_count == 0
+
+    def test_remove_clears_orphan_status(self, peer_id: PeerId) -> None:
+        """Removing a block also removes its orphan status."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+        cache.mark_orphan(pending.root)
+
+        assert cache.orphan_count == 1
+
+        cache.remove(pending.root)
+
+        assert cache.orphan_count == 0
+
+
+class TestBlockCacheParentChildIndex:
+    """Tests for parent-to-children index in BlockCache."""
+
+    def test_get_children_empty(self) -> None:
+        """get_children returns empty list for unknown parent."""
+        cache = BlockCache()
+
+        children = cache.get_children(Bytes32.zero())
+
+        assert children == []
+
+    def test_get_children_single_child(self, peer_id: PeerId) -> None:
+        """get_children returns the single child of a parent."""
+        cache = BlockCache()
+        parent_root = Bytes32(b"\x01" * 32)
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=parent_root,
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+
+        children = cache.get_children(parent_root)
+
+        assert children == [pending]
+
+    def test_get_children_multiple_children(self, peer_id: PeerId) -> None:
+        """get_children returns all children of a parent."""
+        cache = BlockCache()
+        parent_root = Bytes32(b"\x01" * 32)
+
+        # Two blocks with the same parent (competing blocks)
+        block1 = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=parent_root,
+            state_root=Bytes32.zero(),
+        )
+        block2 = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(1),
+            parent_root=parent_root,
+            state_root=Bytes32(b"\x02" * 32),
+        )
+
+        pending1 = cache.add(block1, peer_id)
+        pending2 = cache.add(block2, peer_id)
+
+        children = cache.get_children(parent_root)
+
+        # Both blocks have the same slot, so order within that slot is non-deterministic.
+        assert sorted(children, key=lambda p: p.root) == sorted(
+            [pending1, pending2], key=lambda p: p.root
+        )
+
+    def test_get_children_sorted_by_slot(self, peer_id: PeerId) -> None:
+        """get_children returns children sorted by slot."""
+        cache = BlockCache()
+        parent_root = Bytes32(b"\x01" * 32)
+
+        # Add blocks out of order
+        block_slot3 = make_signed_block(
+            slot=Slot(3),
+            proposer_index=ValidatorIndex(0),
+            parent_root=parent_root,
+            state_root=Bytes32(b"\x03" * 32),
+        )
+        block_slot1 = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=parent_root,
+            state_root=Bytes32(b"\x01" * 32),
+        )
+        block_slot2 = make_signed_block(
+            slot=Slot(2),
+            proposer_index=ValidatorIndex(0),
+            parent_root=parent_root,
+            state_root=Bytes32(b"\x02" * 32),
+        )
+
+        pending3 = cache.add(block_slot3, peer_id)
+        pending1 = cache.add(block_slot1, peer_id)
+        pending2 = cache.add(block_slot2, peer_id)
+
+        children = cache.get_children(parent_root)
+
+        assert children == [pending1, pending2, pending3]
+
+    def test_remove_clears_parent_index(self, peer_id: PeerId) -> None:
+        """Removing a block clears it from the parent-to-children index."""
+        cache = BlockCache()
+        parent_root = Bytes32(b"\x01" * 32)
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=parent_root,
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+        assert cache.get_children(parent_root) == [pending]
+
+        cache.remove(pending.root)
+
+        assert cache.get_children(parent_root) == []
+
+
+class TestBlockCacheCapacityManagement:
+    """Tests for cache capacity management and FIFO eviction."""
+
+    def test_cache_respects_max_capacity(self, peer_id: PeerId) -> None:
+        """Cache does not exceed MAX_CACHED_BLOCKS."""
+        cache = BlockCache()
+
+        # Add more blocks than the limit
+        for i in range(MAX_CACHED_BLOCKS + 10):
+            block = make_signed_block(
+                slot=Slot(i + 1),
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32(i.to_bytes(32, "big")),
+                state_root=Bytes32((i + 1).to_bytes(32, "big")),
+            )
+            cache.add(block, peer_id)
+
+        assert len(cache) == MAX_CACHED_BLOCKS
+
+    def test_fifo_eviction_oldest_first(self, peer_id: PeerId) -> None:
+        """FIFO eviction removes the oldest blocks first."""
+        cache = BlockCache()
+
+        # Track the first blocks added
+        first_roots = []
+        for i in range(MAX_CACHED_BLOCKS):
+            block = make_signed_block(
+                slot=Slot(i + 1),
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32(i.to_bytes(32, "big")),
+                state_root=Bytes32((i + 1).to_bytes(32, "big")),
+            )
+            pending = cache.add(block, peer_id)
+            if i < 10:  # Track first 10 blocks
+                first_roots.append(pending.root)
+
+        # All first blocks should still be present
+        for root in first_roots:
+            assert root in cache
+
+        # Add 10 more blocks to trigger eviction
+        for i in range(10):
+            block = make_signed_block(
+                slot=Slot(MAX_CACHED_BLOCKS + i + 1),
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32((MAX_CACHED_BLOCKS + i).to_bytes(32, "big")),
+                state_root=Bytes32((MAX_CACHED_BLOCKS + i + 1).to_bytes(32, "big")),
+            )
+            cache.add(block, peer_id)
+
+        # First 10 blocks should have been evicted
+        for root in first_roots:
+            assert root not in cache
+
+        assert len(cache) == MAX_CACHED_BLOCKS
+
+    def test_eviction_clears_orphan_status(self, peer_id: PeerId) -> None:
+        """Evicted blocks have their orphan status cleared."""
+        cache = BlockCache()
+
+        # Add a block and mark it as orphan
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32(b"\x01" * 32),
+            state_root=Bytes32.zero(),
+        )
+        pending = cache.add(block, peer_id)
+        cache.mark_orphan(pending.root)
+
+        assert cache.orphan_count == 1
+
+        # Fill cache to trigger eviction of the first block
+        for i in range(MAX_CACHED_BLOCKS):
+            new_block = make_signed_block(
+                slot=Slot(i + 2),
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32((i + 1).to_bytes(32, "big")),
+                state_root=Bytes32((i + 2).to_bytes(32, "big")),
+            )
+            cache.add(new_block, peer_id)
+
+        # The original orphan should be evicted
+        assert pending.root not in cache
+
+
+class TestBlockCacheBackfillDepth:
+    """Tests for backfill depth tracking."""
+
+    def test_add_with_backfill_depth(self, peer_id: PeerId) -> None:
+        """Adding a block with backfill depth tracks the depth."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id, backfill_depth=10)
+
+        root = hash_tree_root(block.block)
+        assert pending == PendingBlock(
+            block=block,
+            root=root,
+            parent_root=Bytes32.zero(),
+            slot=Slot(1),
+            received_from=peer_id,
+            backfill_depth=10,
+        )
+
+    def test_add_default_backfill_depth_is_zero(self, peer_id: PeerId) -> None:
+        """Adding a block without backfill depth defaults to 0."""
+        cache = BlockCache()
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=Bytes32.zero(),
+        )
+
+        pending = cache.add(block, peer_id)
+
+        root = hash_tree_root(block.block)
+        assert pending == PendingBlock(
+            block=block,
+            root=root,
+            parent_root=Bytes32.zero(),
+            slot=Slot(1),
+            received_from=peer_id,
+            backfill_depth=0,
+        )

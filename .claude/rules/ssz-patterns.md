@@ -29,7 +29,7 @@ When creating SSZ types, follow these established patterns:
 - These use Pydantic models with a `data` field for contents
 - Example: `MyList(data=[1, 2, 3])` *has* a list of data with SSZ serialization
 
-**Key principle**: If the type conceptually *holds* or *contains* other data, use SSZModel for consistent validation and SSZ encoding.
+**Key principle**: If the type conceptually *holds* or *contains* other data, use SSZModel for consistent validation and immutability.
 
 ## Modular Architecture
 

@@ -5,12 +5,11 @@ import os
 from itertools import batched
 from typing import Final, Self
 
+from lean_spec.spec.crypto.koalabear import Fp
+from lean_spec.spec.crypto.xmss.constants import PRF_KEY_LENGTH, XmssConfig
+from lean_spec.spec.crypto.xmss.types import HashDigestVector, Randomness
 from lean_spec.spec.ssz import Bytes16, Bytes32, Uint64
 from lean_spec.spec.ssz.byte_arrays import BaseBytes
-
-from ..koalabear import Fp
-from .constants import PRF_KEY_LENGTH, XmssConfig
-from .types import HashDigestVector, Randomness
 
 PRF_DOMAIN_SEP: Final = Bytes16(b"\xae\xae\x22\xff\x00\x01\xfa\xff\x21\xaf\x12\x00\x01\x11\xff\x00")
 """

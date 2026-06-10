@@ -16,6 +16,12 @@ from lean_spec.node.metrics import registry as metrics
 from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.storage import Database
+from lean_spec.node.sync.backfill_sync import BackfillSync, NetworkRequester
+from lean_spec.node.sync.block_cache import BlockCache
+from lean_spec.node.sync.config import MAX_PENDING_ATTESTATIONS
+from lean_spec.node.sync.head_sync import HeadSync
+from lean_spec.node.sync.peer_manager import PeerManager
+from lean_spec.node.sync.states import SyncState
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks import (
@@ -33,13 +39,6 @@ from lean_spec.spec.forks.lstar.containers import (
     SingleMessageAggregate,
 )
 from lean_spec.spec.ssz import Bytes32
-
-from .backfill_sync import BackfillSync, NetworkRequester
-from .block_cache import BlockCache
-from .config import MAX_PENDING_ATTESTATIONS
-from .head_sync import HeadSync
-from .peer_manager import PeerManager
-from .states import SyncState
 
 logger = logging.getLogger(__name__)
 
@@ -184,9 +183,9 @@ class SyncService:
             def ancestors(start: Bytes32) -> set[Bytes32]:
                 seen: set[Bytes32] = set()
                 root = start
-                while (b := new_store.blocks.get(root)) is not None:
+                while (block := new_store.blocks.get(root)) is not None:
                     seen.add(root)
-                    root = b.parent_root
+                    root = block.parent_root
                 return seen
 
             # Reorg depth = blocks that lived on the old chain but not on the new one.
@@ -227,7 +226,8 @@ class SyncService:
         return new_store
 
     def _persist_block(self, store: Store, block: Block) -> None:
-        """Persist the block, its state, indices, and chain pointers atomically.
+        """
+        Persist the block, its state, indices, and chain pointers atomically.
 
         - A crash mid-batch would leave the database inconsistent.
         - The single batch guarantees all-or-nothing persistence per block import.
@@ -349,7 +349,7 @@ class SyncService:
             raise RuntimeError("HeadSync not initialized")
 
         # Head-sync either processes the block now or caches it pending backfill.
-        result, new_store = await self._head_sync.on_gossip_block(
+        gossip_block_outcome, new_store = await self._head_sync.on_gossip_block(
             block=block,
             peer_id=peer_id,
             store=self.store,
@@ -358,7 +358,7 @@ class SyncService:
         # Only update our store if the block was actually processed.
         #
         # A block may be cached instead of processed if its parent is unknown.
-        if result.processed:
+        if gossip_block_outcome.processed:
             block_root = hash_tree_root(block.block)
             logger.info(
                 "Block processed slot=%s root=%s from peer %s",
@@ -413,14 +413,14 @@ class SyncService:
                 slot,
                 validator_index,
             )
-        except (AssertionError, KeyError) as e:
+        except (AssertionError, KeyError) as exception:
             metrics.lean_attestations_invalid_total.labels(source="gossip").inc()
             logger.warning(
                 "Attestation from peer %s slot=%s validator=%s: validation or signature failed: %s",
                 peer_str,
                 slot,
                 validator_index,
-                e,
+                exception,
             )
             # Target block has not arrived yet; buffer for post-block replay.
             #
@@ -457,12 +457,12 @@ class SyncService:
                 peer_str,
                 slot,
             )
-        except (AssertionError, KeyError) as e:
+        except (AssertionError, KeyError) as exception:
             logger.warning(
                 "Aggregated attestation from peer %s slot=%s: validation or signature failed: %s",
                 peer_str,
                 slot,
-                e,
+                exception,
             )
             # Target block has not arrived yet; buffer for post-block replay.
             #
@@ -511,7 +511,8 @@ class SyncService:
         store: Store,
         block: SignedBlock,
     ) -> tuple[Store, list[SignedAggregatedAttestation]]:
-        """Recover per-attestation proofs from a processed block.
+        """
+        Recover per-attestation proofs from a processed block.
 
         On block import we already trust the block-attestation participant
         bitfields via spec on_block signature verification. The block carries
@@ -557,40 +558,41 @@ class SyncService:
         for attestation in block_attestations:
             public_keys_per_message.append(
                 [
-                    validators[validator_index].get_attestation_public_key()
+                    PublicKey.decode_bytes(validators[validator_index].attestation_public_key)
                     for validator_index in attestation.aggregation_bits.to_validator_indices()
                 ]
             )
         public_keys_per_message.append(
-            [validators[block.block.proposer_index].get_proposal_public_key()]
+            [PublicKey.decode_bytes(validators[block.block.proposer_index].proposal_public_key)]
         )
 
         # Index local partial single-message aggregate proofs by AttestationData root. Equivalent
         # AttestationData instances from different code paths may not share a
         # dict key, so match on the hash tree root instead.
         local_proofs_by_root: dict[Bytes32, list[SingleMessageAggregate]] = {}
-        for data, proofs in store.latest_new_aggregated_payloads.items():
-            local_proofs_by_root.setdefault(hash_tree_root(data), []).extend(proofs)
+        for attestation_data, proofs in store.latest_new_aggregated_payloads.items():
+            local_proofs_by_root.setdefault(hash_tree_root(attestation_data), []).extend(proofs)
 
         # Working copy of the pending pool.
         # The combined proof is retained locally so the block-sourced
         # aggregate survives without depending on gossip loopback. Shallow
         # copy the dict and its inner sets to preserve store immutability.
         new_payloads: dict[AttestationData, set[SingleMessageAggregate]] = {
-            k: set(v) for k, v in store.latest_new_aggregated_payloads.items()
+            pending_data: set(pending_proofs)
+            for pending_data, pending_proofs in store.latest_new_aggregated_payloads.items()
         }
         aggregates: list[SignedAggregatedAttestation] = []
 
         for attestation in block_attestations:
-            data = attestation.data
+            attestation_data = attestation.data
 
             # Only spend a split on attestations that can still move
             # justification forward. A target at or behind the store's
             # justified checkpoint cannot, so skip it.
-            if data.target.slot <= store.latest_justified.slot:
+            if attestation_data.target.slot <= store.latest_justified.slot:
                 continue
 
-            data_root = hash_tree_root(data)
+            data_root = hash_tree_root(attestation_data)
             block_participants = set(attestation.aggregation_bits.to_validator_indices())
 
             local_proofs = local_proofs_by_root.get(data_root, [])
@@ -618,7 +620,9 @@ class SyncService:
                             (
                                 child,
                                 [
-                                    validators[validator_index].get_attestation_public_key()
+                                    PublicKey.decode_bytes(
+                                        validators[validator_index].attestation_public_key
+                                    )
                                     for validator_index in child.participants.to_validator_indices()
                                 ],
                             )
@@ -626,7 +630,7 @@ class SyncService:
                         ],
                         raw_xmss=[],
                         message=data_root,
-                        slot=data.slot,
+                        slot=attestation_data.slot,
                     )
                 else:
                     # Data unseen locally: nothing to merge, use as-is.
@@ -650,16 +654,17 @@ class SyncService:
                     else:
                         del new_payloads[key]
 
-            new_payloads.setdefault(data, set()).add(combined)
-            aggregates.append(SignedAggregatedAttestation(data=data, proof=combined))
+            new_payloads.setdefault(attestation_data, set()).add(combined)
+            aggregates.append(SignedAggregatedAttestation(data=attestation_data, proof=combined))
 
         if aggregates:
-            store.latest_new_aggregated_payloads = new_payloads
+            store = store.model_copy(update={"latest_new_aggregated_payloads": new_payloads})
 
         return store, aggregates
 
     async def _publish_pending_block_aggregates(self) -> None:
-        """Gossip the aggregates recovered from processed blocks.
+        """
+        Gossip the aggregates recovered from processed blocks.
 
         Every processed block is deconstructed in the block wrapper, which
         writes the recovered proofs into the store and queues the combined
@@ -698,7 +703,8 @@ class SyncService:
             await self._transition_to(SyncState.SYNCED)
 
     async def _transition_to(self, new_state: SyncState) -> None:
-        """Transition to a new sync state, rejecting invalid moves.
+        """
+        Transition to a new sync state, rejecting invalid moves.
 
         Two invariants are enforced:
 

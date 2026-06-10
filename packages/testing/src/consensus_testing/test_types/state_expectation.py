@@ -3,7 +3,8 @@
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from lean_spec.base import CamelModel
+from consensus_testing.test_types.selective_check import SelectiveCheck
+from consensus_testing.test_types.utils import resolve_block_root
 from lean_spec.spec.forks import Slot
 from lean_spec.spec.forks.lstar.containers import (
     Block,
@@ -15,10 +16,8 @@ from lean_spec.spec.forks.lstar.containers import (
 )
 from lean_spec.spec.ssz import Bytes32
 
-from .utils import resolve_block_root
 
-
-class StateExpectation(CamelModel):
+class StateExpectation(SelectiveCheck):
     """
     Expected State fields after state transition (selective validation).
 
@@ -36,7 +35,7 @@ class StateExpectation(CamelModel):
         )
     """
 
-    _ACCESSORS: ClassVar[dict[str, Callable[["State"], Any]]] = {
+    _SCALAR_ACCESSORS: ClassVar[dict[str, Callable[["State"], Any]]] = {
         "slot": lambda s: s.slot,
         "latest_justified_slot": lambda s: s.latest_justified.slot,
         "latest_justified_root": lambda s: s.latest_justified.root,
@@ -165,31 +164,24 @@ class StateExpectation(CamelModel):
                 raise ValueError(f"label '{label}' specified but block_registry not provided")
             return resolve_block_root(label, block_registry)
 
-        for field_name in fields & self._ACCESSORS.keys():
-            accessor = self._ACCESSORS[field_name]
-            expected = getattr(self, field_name)
-            actual = accessor(state)
-            if actual != expected:
-                raise AssertionError(
-                    f"State validation failed: {field_name} = {actual}, expected {expected}"
-                )
+        self.validate_scalar_fields(state, "State validation failed")
 
         if "latest_justified_root_label" in fields:
             assert self.latest_justified_root_label is not None
-            expected = _resolve(self.latest_justified_root_label)
-            if state.latest_justified.root != expected:
+            expected_justified_root = _resolve(self.latest_justified_root_label)
+            if state.latest_justified.root != expected_justified_root:
                 raise AssertionError(
                     f"State validation failed: latest_justified.root = "
-                    f"{state.latest_justified.root}, expected {expected}"
+                    f"{state.latest_justified.root}, expected {expected_justified_root}"
                 )
 
         if "latest_finalized_root_label" in fields:
             assert self.latest_finalized_root_label is not None
-            expected = _resolve(self.latest_finalized_root_label)
-            if state.latest_finalized.root != expected:
+            expected_finalized_root = _resolve(self.latest_finalized_root_label)
+            if state.latest_finalized.root != expected_finalized_root:
                 raise AssertionError(
                     f"State validation failed: latest_finalized.root = "
-                    f"{state.latest_finalized.root}, expected {expected}"
+                    f"{state.latest_finalized.root}, expected {expected_finalized_root}"
                 )
 
         if "justifications_roots_labels" in fields:

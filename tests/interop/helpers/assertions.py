@@ -12,8 +12,8 @@ import asyncio
 import logging
 import time
 
-from .diagnostics import PipelineDiagnostics
-from .node_runner import NodeCluster
+from tests.interop.helpers.diagnostics import PipelineDiagnostics
+from tests.interop.helpers.node_runner import NodeCluster
 
 logger = logging.getLogger(__name__)
 

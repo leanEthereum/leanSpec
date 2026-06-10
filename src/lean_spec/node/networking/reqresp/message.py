@@ -7,12 +7,11 @@ domain. All messages are SSZ-encoded and then compressed with Snappy frames.
 
 from typing import ClassVar, Final
 
+from lean_spec.node.networking.config import MAX_REQUEST_BLOCKS
+from lean_spec.node.networking.types import ProtocolId
 from lean_spec.spec.forks import Checkpoint, Slot
 from lean_spec.spec.ssz import Bytes32, SSZList, Uint64
 from lean_spec.spec.ssz.container import Container
-
-from ..config import MAX_REQUEST_BLOCKS
-from ..types import ProtocolId
 
 STATUS_PROTOCOL_V1: Final = ProtocolId("/leanconsensus/req/status/1/ssz_snappy")
 """The protocol ID for the Status v1 request/response message."""

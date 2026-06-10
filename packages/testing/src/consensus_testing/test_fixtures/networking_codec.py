@@ -1,7 +1,13 @@
 """Networking codec test fixture for wire-format conformance testing."""
 
-from typing import Any, ClassVar
+from collections.abc import Callable
+from typing import Annotated, ClassVar, Final, Literal
 
+from pydantic import Field
+
+from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
+from consensus_testing.test_fixtures.hex_codec import from_hex, to_hex
+from lean_spec.base import StrictBaseModel
 from lean_spec.node.networking.enr.enr import ENR
 from lean_spec.node.networking.gossipsub.message import GossipsubMessage
 from lean_spec.node.networking.gossipsub.rpc import (
@@ -27,224 +33,337 @@ from lean_spec.node.networking.varint import decode_varint, encode_varint
 from lean_spec.node.snappy import compress, decompress, frame_compress, frame_decompress
 from lean_spec.spec.forks import SubnetId
 
-from .base import BaseConsensusFixture
+
+class EncodedOutput(StrictBaseModel):
+    """Reference encoding for a roundtrip vector."""
+
+    encoded: str
+    """Hex encoding the client must reproduce."""
 
 
-def _to_hex(data: bytes) -> str:
-    """Format raw bytes as a 0x-prefixed hex string."""
-    return "0x" + data.hex()
+class VarintOutput(StrictBaseModel):
+    """Reference LEB128 encoding."""
+
+    encoded: str
+    """Hex LEB128 bytes the client must reproduce."""
+
+    byte_length: int
+    """Number of bytes in the encoding."""
 
 
-def _from_hex(hex_str: str) -> bytes:
-    """Parse a 0x-prefixed hex string into raw bytes."""
-    return bytes.fromhex(hex_str.removeprefix("0x"))
+class VarintRoundtrip(StrictBaseModel):
+    """Encode a value as LEB128, decode it back, assert roundtrip."""
 
+    kind: Literal["varint"] = "varint"
+    """Discriminator field for serialization."""
 
-class NetworkingCodecTest(BaseConsensusFixture):
-    """Fixture for networking wire-format conformance.
+    value: int
+    """Value to encode."""
 
-    Verifies encode/decode roundtrips for networking codecs.
-
-    JSON output: codecName, input, output.
-    """
-
-    format_name: ClassVar[str] = "networking_codec"
-    description: ClassVar[str] = "Tests networking codec encode/decode roundtrip"
-
-    codec_name: str
-    """Codec under test: varint, gossip_topic, or gossip_message_id."""
-
-    input: dict[str, Any]
-    """Codec-specific input parameters."""
-
-    output: dict[str, Any] = {}
-    """Computed output. Filled by make_fixture."""
-
-    def make_fixture(self) -> "NetworkingCodecTest":
-        """Dispatch to the codec handler and produce computed output.
-
-        Returns:
-            A copy of this fixture with output populated.
-
-        Raises:
-            ValueError: If codec_name is unknown.
-        """
-        match self.codec_name:
-            case "varint":
-                output = self._make_varint()
-            case "gossip_topic":
-                output = self._make_gossip_topic()
-            case "gossip_message_id":
-                output = self._make_gossip_message_id()
-            case "gossipsub_rpc":
-                output = self._make_gossipsub_rpc()
-            case "reqresp_request":
-                output = self._make_reqresp_request()
-            case "reqresp_response":
-                output = self._make_reqresp_response()
-            case "reqresp_response_stream":
-                output = self._make_reqresp_response_stream()
-            case "enr":
-                output = self._make_enr()
-            case "peer_id":
-                output = self._make_peer_id()
-            case "snappy_block":
-                output = self._make_snappy_block()
-            case "snappy_frame":
-                output = self._make_snappy_frame()
-            case "decode_failure":
-                output = self._make_decode_failure()
-            case _:
-                raise ValueError(f"Unknown codec: {self.codec_name}")
-        self.output = output
-        return self
-
-    def _make_decode_failure(self) -> dict[str, Any]:
-        """Assert that decoding `input.bytes` with `input.decoder` raises.
-
-        Dispatches to one of the wire-format decoders and confirms that the
-        expected exception (on :attribute:`expect_exception`) is raised. Used to
-        generate negative-path test vectors for client decoders.
-
-        The input record carries two fields:
-
-        - `decoder`: name of the target decoder (`varint`, `snappy_frame`,
-          `gossipsub_rpc`, `reqresp_request`, `reqresp_response`, `enr`).
-        - `bytes`: hex-encoded malformed input.
-
-        Returns:
-            A dict echoing the decoder name along with the error type and
-            message for reproducibility.
-
-        Raises:
-            AssertionError: If the decoder succeeds or raises a mismatched
-                exception type.
-            ValueError: If `expect_exception` is unset or the decoder is
-                unknown.
-        """
-        if self.expect_exception is None:
-            raise ValueError("decode_failure codec requires expect_exception to be set")
-
-        decoder_name = self.input["decoder"]
-        raw = _from_hex(self.input["bytes"])
-
-        decoders: dict[str, Any] = {
-            "varint": decode_varint,
-            "snappy_frame": frame_decompress,
-            "snappy_block": decompress,
-            "gossipsub_rpc": RPC.decode,
-            "reqresp_request": decode_request,
-            "reqresp_response": ResponseCode.decode,
-            "enr": ENR.from_rlp,
-        }
-        if decoder_name not in decoders:
-            raise ValueError(f"Unknown decoder for decode_failure: {decoder_name!r}")
-
-        decoder = decoders[decoder_name]
-        exception_raised: Exception | None = None
-        try:
-            decoder(raw)
-        except Exception as exception:
-            exception_raised = exception
-
-        if exception_raised is None:
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} from "
-                f"{decoder_name!r} decode, but decode succeeded"
-            )
-        if not isinstance(exception_raised, self.expect_exception):
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} but got "
-                f"{type(exception_raised).__name__}: {exception_raised}"
-            )
-
-        return {
-            "decoder": decoder_name,
-            "errorType": type(exception_raised).__name__,
-            "errorMessage": str(exception_raised),
-        }
-
-    def _make_varint(self) -> dict[str, Any]:
-        """Encode a value as LEB128, decode it back, assert roundtrip."""
-        value = self.input["value"]
-        encoded = encode_varint(value)
+    def run(self) -> VarintOutput:
+        """Encode, decode back, and emit the reference bytes."""
+        encoded = encode_varint(self.value)
 
         # Decode must recover the original value and consume all bytes.
         decoded, byte_length = decode_varint(encoded)
-        assert decoded == value, f"Varint roundtrip: {value} -> {encoded.hex()} -> {decoded}"
+        assert decoded == self.value, (
+            f"Varint roundtrip: {self.value} -> {encoded.hex()} -> {decoded}"
+        )
         assert byte_length == len(encoded), f"Length: {byte_length} != {len(encoded)}"
 
-        return {"encoded": _to_hex(encoded), "byteLength": byte_length}
+        return VarintOutput(encoded=to_hex(encoded), byte_length=byte_length)
 
-    def _make_gossip_topic(self) -> dict[str, Any]:
-        """Build a topic string from components, parse it back, assert roundtrip.
 
-        When the input carries `expectedForkDigest`, also run validate_fork
-        against the parsed topic and report whether the network name matched.
-        This pins the accept / reject branches clients must agree on when
-        deciding which mesh to admit a topic into.
-        """
-        kind = TopicKind(self.input["kind"])
-        network_name = self.input["forkDigest"]
-        raw_subnet = self.input.get("subnetId")
-        subnet_id = SubnetId(raw_subnet) if raw_subnet is not None else None
+class GossipTopicOutput(StrictBaseModel):
+    """Reference topic string and optional fork verdict."""
 
-        topic = GossipTopic(kind=kind, network_name=network_name, subnet_id=subnet_id)
+    topic_string: str
+    """Canonical topic string the client must produce."""
+
+    fork_valid: bool | None = None
+    """Fork validation verdict, present when an expected network name was given."""
+
+
+class GossipTopicRoundtrip(StrictBaseModel):
+    """
+    Build a topic string from components, parse it back, assert roundtrip.
+
+    When an expected network name is given, also run fork validation
+    against the parsed topic and report whether the network name matched.
+    This pins the accept / reject branches clients must agree on when
+    deciding which mesh to admit a topic into.
+    """
+
+    kind: Literal["gossip_topic"] = "gossip_topic"
+    """Discriminator field for serialization."""
+
+    topic_kind: str
+    """Topic kind under test (e.g. block, attestation)."""
+
+    network_name: str
+    """Network name component of the topic."""
+
+    subnet_id: int | None = None
+    """Optional subnet component for subnet topics."""
+
+    expected_network_name: str | None = None
+    """When set, the parsed topic is validated against this network name."""
+
+    def run(self) -> GossipTopicOutput:
+        """Build, parse back, optionally validate the fork, and emit the verdicts."""
+        topic = GossipTopic(
+            kind=TopicKind(self.topic_kind),
+            network_name=self.network_name,
+            subnet_id=SubnetId(self.subnet_id) if self.subnet_id is not None else None,
+        )
         topic_string = topic.to_topic_id()
 
         # Parse the string back to verify it reconstructs the same topic.
         parsed = GossipTopic.from_string(topic_string)
         assert parsed == topic, f"Topic roundtrip: {topic} -> {topic_string!r} -> {parsed}"
 
-        output: dict[str, Any] = {"topicString": topic_string}
-
-        expected_network_name = self.input.get("expectedForkDigest")
-        if expected_network_name is not None:
+        fork_valid: bool | None = None
+        if self.expected_network_name is not None:
             try:
-                parsed.validate_fork(expected_network_name)
-                output["forkValid"] = True
+                parsed.validate_fork(self.expected_network_name)
+                fork_valid = True
             except ValueError:
-                output["forkValid"] = False
+                fork_valid = False
 
-        return output
+        return GossipTopicOutput(topic_string=topic_string, fork_valid=fork_valid)
 
-    def _make_gossip_message_id(self) -> dict[str, Any]:
-        """Compute a 20-byte gossipsub message ID from topic, data, and domain."""
-        topic = _from_hex(self.input["topic"])
-        data = _from_hex(self.input["data"])
-        domain = _from_hex(self.input["domain"])
 
-        # SHA256(domain + uint64_le(len(topic)) + topic + data)[:20]
-        message_id = GossipsubMessage.compute_id(topic, data, domain=domain)
+class GossipMessageIdentifierOutput(StrictBaseModel):
+    """Reference gossipsub message identifier."""
 
-        return {"messageId": _to_hex(message_id)}
+    message_id: str
+    """Hex 20-byte message identifier the client must reproduce."""
 
-    def _make_gossipsub_rpc(self) -> dict[str, Any]:
-        """Encode an RPC message as protobuf, decode it back, assert roundtrip."""
-        rpc = _build_rpc(self.input)
+
+class GossipMessageIdentifier(StrictBaseModel):
+    """Compute a 20-byte gossipsub message identifier from topic, data, and domain."""
+
+    kind: Literal["gossip_message_id"] = "gossip_message_id"
+    """Discriminator field for serialization."""
+
+    topic: str
+    """Hex topic bytes."""
+
+    data: str
+    """Hex message payload."""
+
+    domain: str
+    """Hex domain separator."""
+
+    def run(self) -> GossipMessageIdentifierOutput:
+        """Compute the identifier: SHA256(domain + uint64_le(len(topic)) + topic + data)[:20]."""
+        message_id = GossipsubMessage.compute_id(
+            from_hex(self.topic), from_hex(self.data), domain=from_hex(self.domain)
+        )
+        return GossipMessageIdentifierOutput(message_id=to_hex(message_id))
+
+
+class RpcSubscriptionSpec(StrictBaseModel):
+    """One subscription change inside an RPC."""
+
+    subscribe: bool
+    """True to subscribe, False to unsubscribe."""
+
+    topic_id: str
+    """Topic the change applies to."""
+
+
+class RpcMessageSpec(StrictBaseModel):
+    """One published message inside an RPC. Bytes fields are hex-encoded."""
+
+    from_peer: str | None = None
+    """Hex sender peer bytes."""
+
+    data: str | None = None
+    """Hex message payload."""
+
+    seqno: str | None = None
+    """Hex sequence number bytes."""
+
+    topic: str = ""
+    """Topic the message belongs to."""
+
+    signature: str | None = None
+    """Hex message signature."""
+
+    key: str | None = None
+    """Hex signer key."""
+
+    def build(self) -> Message:
+        """Convert to the wire-format message."""
+        return Message(
+            from_peer=from_hex(self.from_peer) if self.from_peer else b"",
+            data=from_hex(self.data) if self.data else b"",
+            seqno=from_hex(self.seqno) if self.seqno else b"",
+            topic=TopicId(self.topic),
+            signature=from_hex(self.signature) if self.signature else b"",
+            key=from_hex(self.key) if self.key else b"",
+        )
+
+
+class RpcIHaveSpec(StrictBaseModel):
+    """One IHAVE control entry."""
+
+    topic_id: str = ""
+    """Topic the advertised messages belong to."""
+
+    message_ids: list[str] = []
+    """Hex identifiers of the advertised messages."""
+
+
+class RpcIWantSpec(StrictBaseModel):
+    """One IWANT control entry."""
+
+    message_ids: list[str] = []
+    """Hex identifiers of the requested messages."""
+
+
+class RpcGraftSpec(StrictBaseModel):
+    """One GRAFT control entry."""
+
+    topic_id: str
+    """Topic to graft into the mesh."""
+
+
+class RpcPruneSpec(StrictBaseModel):
+    """One PRUNE control entry."""
+
+    topic_id: str = ""
+    """Topic to prune from the mesh."""
+
+    backoff: int = 0
+    """Backoff seconds before re-grafting is allowed."""
+
+
+class RpcIDontWantSpec(StrictBaseModel):
+    """One IDONTWANT control entry."""
+
+    message_ids: list[str] = []
+    """Hex identifiers of the unwanted messages."""
+
+
+class RpcControlSpec(StrictBaseModel):
+    """Control sub-messages inside an RPC."""
+
+    ihave: list[RpcIHaveSpec] = []
+    """IHAVE advertisements."""
+
+    iwant: list[RpcIWantSpec] = []
+    """IWANT requests."""
+
+    graft: list[RpcGraftSpec] = []
+    """GRAFT requests."""
+
+    prune: list[RpcPruneSpec] = []
+    """PRUNE notices."""
+
+    idontwant: list[RpcIDontWantSpec] = []
+    """IDONTWANT notices."""
+
+    def build(self) -> ControlMessage:
+        """Convert to the wire-format control message."""
+        return ControlMessage(
+            ihave=[
+                ControlIHave(
+                    topic_id=TopicId(ihave.topic_id),
+                    message_ids=[from_hex(message_id) for message_id in ihave.message_ids],
+                )
+                for ihave in self.ihave
+            ],
+            iwant=[
+                ControlIWant(message_ids=[from_hex(message_id) for message_id in iwant.message_ids])
+                for iwant in self.iwant
+            ],
+            graft=[ControlGraft(topic_id=TopicId(graft.topic_id)) for graft in self.graft],
+            prune=[
+                ControlPrune(topic_id=TopicId(prune.topic_id), backoff=prune.backoff)
+                for prune in self.prune
+            ],
+            idontwant=[
+                ControlIDontWant(
+                    message_ids=[from_hex(message_id) for message_id in idontwant.message_ids]
+                )
+                for idontwant in self.idontwant
+            ],
+        )
+
+
+class GossipsubRpcRoundtrip(StrictBaseModel):
+    """Encode an RPC message as protobuf, decode it back, assert roundtrip."""
+
+    kind: Literal["gossipsub_rpc"] = "gossipsub_rpc"
+    """Discriminator field for serialization."""
+
+    subscriptions: list[RpcSubscriptionSpec] = []
+    """Subscription changes carried by the RPC."""
+
+    publish: list[RpcMessageSpec] = []
+    """Messages carried by the RPC."""
+
+    control: RpcControlSpec | None = None
+    """Optional control sub-messages."""
+
+    def run(self) -> EncodedOutput:
+        """Encode the RPC, decode it back, and emit the reference bytes."""
+        rpc = RPC(
+            subscriptions=[
+                SubOpts(subscribe=subscription.subscribe, topic_id=TopicId(subscription.topic_id))
+                for subscription in self.subscriptions
+            ],
+            publish=[message.build() for message in self.publish],
+            control=self.control.build() if self.control is not None else None,
+        )
         encoded = rpc.encode()
 
         # Decode and re-encode must produce identical bytes.
         re_encoded = RPC.decode(encoded).encode()
         assert encoded == re_encoded, "RPC roundtrip produced different bytes"
 
-        return {"encoded": _to_hex(encoded)}
+        return EncodedOutput(encoded=to_hex(encoded))
 
-    def _make_reqresp_request(self) -> dict[str, Any]:
-        """Encode an SSZ request as varint + snappy, decode it back, assert roundtrip."""
-        ssz_data = _from_hex(self.input["sszData"])
+
+class ReqRespRequestRoundtrip(StrictBaseModel):
+    """Encode an SSZ request as varint + snappy, decode it back, assert roundtrip."""
+
+    kind: Literal["reqresp_request"] = "reqresp_request"
+    """Discriminator field for serialization."""
+
+    ssz_data: str
+    """Hex SSZ payload."""
+
+    def run(self) -> EncodedOutput:
+        """Encode the request, decode it back, and emit the reference bytes."""
+        ssz_data = from_hex(self.ssz_data)
         encoded = encode_request(ssz_data)
 
         # Decode must recover the original SSZ bytes.
         decoded = decode_request(encoded)
         assert decoded == ssz_data, "Request roundtrip produced different bytes"
 
-        return {"encoded": _to_hex(encoded)}
+        return EncodedOutput(encoded=to_hex(encoded))
 
-    def _make_reqresp_response(self) -> dict[str, Any]:
-        """Encode an SSZ response with code, decode it back, assert roundtrip."""
-        code = ResponseCode(self.input["responseCode"])
-        ssz_data = _from_hex(self.input["sszData"])
+
+class ReqRespResponseRoundtrip(StrictBaseModel):
+    """Encode an SSZ response with code, decode it back, assert roundtrip."""
+
+    kind: Literal["reqresp_response"] = "reqresp_response"
+    """Discriminator field for serialization."""
+
+    response_code: int
+    """Response code byte."""
+
+    ssz_data: str
+    """Hex SSZ payload."""
+
+    def run(self) -> EncodedOutput:
+        """Encode the response, decode it back, and emit the reference bytes."""
+        code = ResponseCode(self.response_code)
+        ssz_data = from_hex(self.ssz_data)
         encoded = code.encode(ssz_data)
 
         # Decode must recover both the response code and SSZ bytes.
@@ -252,196 +371,401 @@ class NetworkingCodecTest(BaseConsensusFixture):
         assert decoded_code == code, f"Code mismatch: {decoded_code} != {code}"
         assert decoded_data == ssz_data, "Response roundtrip produced different bytes"
 
-        return {"encoded": _to_hex(encoded)}
+        return EncodedOutput(encoded=to_hex(encoded))
 
-    def _make_reqresp_response_stream(self) -> dict[str, Any]:
-        """Encode a sequence of response chunks as a concatenated stream.
 
-        Multi-chunk responses (for example BlocksByRoot returning N blocks)
-        send their chunks back-to-back on a single libp2p stream: each
-        chunk is its own [code][varint][snappy_frame] triple, and the
-        receiver reads them in order until EOF.
+class ResponseChunkSpec(StrictBaseModel):
+    """One chunk of a multi-chunk response stream."""
 
-        Input keys:
+    response_code: int
+    """Response code byte for this chunk."""
 
-        - `chunks`: ordered list of `{"responseCode": int, "sszData": hex}`.
-          Each entry is encoded independently with ResponseCode.encode
-          and the resulting bytes are concatenated.
+    ssz_data: str
+    """Hex SSZ payload for this chunk."""
 
-        Output:
 
-        - `encoded`: concatenated stream hex. Clients reproduce the
-          same bytes and their multi-chunk reader must yield the same
-          sequence of (code, ssz_data) records.
-        - `chunkCount`: number of chunks in the stream.
-        """
-        raw_chunks = self.input["chunks"]
+class ResponseStreamOutput(StrictBaseModel):
+    """Reference encoding of a multi-chunk response stream."""
+
+    encoded: str
+    """Concatenated stream hex the client must reproduce."""
+
+    chunk_count: int
+    """Number of chunks in the stream."""
+
+
+class ReqRespResponseStream(StrictBaseModel):
+    """
+    Encode a sequence of response chunks as a concatenated stream.
+
+    Multi-chunk responses (for example BlocksByRoot returning N blocks)
+    send their chunks back-to-back on a single libp2p stream: each
+    chunk is its own [code][varint][snappy_frame] triple, and the
+    receiver reads them in order until EOF.
+    """
+
+    kind: Literal["reqresp_response_stream"] = "reqresp_response_stream"
+    """Discriminator field for serialization."""
+
+    chunks: list[ResponseChunkSpec]
+    """Ordered chunks; each is encoded independently and concatenated."""
+
+    def run(self) -> ResponseStreamOutput:
+        """Encode every chunk back-to-back and emit the reference stream."""
         buffer = bytearray()
-        for entry in raw_chunks:
-            code = ResponseCode(entry["responseCode"])
-            ssz_data = _from_hex(entry["sszData"])
-            buffer.extend(code.encode(ssz_data))
-        return {
-            "encoded": _to_hex(bytes(buffer)),
-            "chunkCount": len(raw_chunks),
-        }
+        for chunk in self.chunks:
+            buffer.extend(ResponseCode(chunk.response_code).encode(from_hex(chunk.ssz_data)))
+        return ResponseStreamOutput(
+            encoded=to_hex(bytes(buffer)),
+            chunk_count=len(self.chunks),
+        )
 
-    def _make_snappy_block(self) -> dict[str, Any]:
-        """Compress with raw Snappy block format, decompress, assert roundtrip."""
-        data = _from_hex(self.input["data"])
-        compressed = compress(data)
 
-        decompressed = decompress(compressed)
-        assert decompressed == data, "Snappy block roundtrip produced different bytes"
+class EnrEth2DataOutput(StrictBaseModel):
+    """Decoded eth2 ENR entry."""
 
-        return {
-            "compressed": _to_hex(compressed),
-            "compressedLength": len(compressed),
-            "uncompressedLength": len(data),
-        }
+    fork_digest: str
+    """Hex fork digest."""
 
-    def _make_snappy_frame(self) -> dict[str, Any]:
-        """Compress with Snappy framing format (Ethereum wire format), decompress, roundtrip."""
-        data = _from_hex(self.input["data"])
-        framed = frame_compress(data)
+    next_fork_version: str
+    """Hex next fork version."""
 
-        decompressed = frame_decompress(framed)
-        assert decompressed == data, "Snappy frame roundtrip produced different bytes"
+    next_fork_epoch: int
+    """Next fork epoch."""
 
-        return {
-            "framed": _to_hex(framed),
-            "framedLength": len(framed),
-            "uncompressedLength": len(data),
-        }
 
-    def _make_enr(self) -> dict[str, Any]:
-        """Parse an ENR string, re-serialize, assert roundtrip, extract properties."""
-        enr_string = self.input["enrString"]
-        enr = ENR.from_string(enr_string)
+class EnrOutput(StrictBaseModel):
+    """Decoded ENR properties the client must reproduce."""
+
+    rlp: str
+    """Hex RLP encoding."""
+
+    seq: int
+    """Sequence number."""
+
+    identity_scheme: str
+    """Identity scheme name."""
+
+    node_id: str | None = None
+    """Hex node identifier, when derivable."""
+
+    public_key: str | None = None
+    """Hex public key, when present."""
+
+    ip4: str | None = None
+    """IPv4 address, when present."""
+
+    udp_port: int | None = None
+    """UDP port, when present."""
+
+    quic_port: int | None = None
+    """QUIC port, when present."""
+
+    multiaddr: str | None = None
+    """Derived multiaddress, when derivable."""
+
+    eth2_data: EnrEth2DataOutput | None = None
+    """Decoded eth2 entry, when present."""
+
+    attestation_subnets: list[int] | None = None
+    """Subscribed attestation subnets, when the attnets entry is present."""
+
+    is_aggregator: bool
+    """Aggregator flag."""
+
+    signature_valid: bool
+    """Whether the record signature verifies."""
+
+    is_valid: bool
+    """Whether the record is valid overall."""
+
+
+class EnrRoundtrip(StrictBaseModel):
+    """Parse an ENR string, re-serialize, assert roundtrip, extract properties."""
+
+    kind: Literal["enr"] = "enr"
+    """Discriminator field for serialization."""
+
+    enr_string: str
+    """Text ENR record under test."""
+
+    def run(self) -> EnrOutput:
+        """Roundtrip the record through text and RLP, then emit its properties."""
+        enr = ENR.from_string(self.enr_string)
 
         # Text roundtrip: parse → serialize → must match original.
-        assert enr.to_string() == enr_string, "ENR text roundtrip failed"
+        assert enr.to_string() == self.enr_string, "ENR text roundtrip failed"
 
         # RLP roundtrip: serialize → parse → serialize → must match.
         rlp_bytes = enr.to_rlp()
         assert ENR.from_rlp(rlp_bytes).to_rlp() == rlp_bytes, "ENR RLP roundtrip failed"
 
-        # Extract all properties into the output.
-        output: dict[str, Any] = {
-            "rlp": _to_hex(rlp_bytes),
-            "seq": int(enr.seq),
-            "identityScheme": enr.identity_scheme,
-        }
+        # Invariant: every record that survives the roundtrips names its scheme.
+        assert enr.identity_scheme is not None, "ENR record carries no identity scheme"
 
-        if enr.node_id:
-            output["nodeId"] = _to_hex(enr.node_id)
-        if enr.public_key:
-            output["publicKey"] = _to_hex(enr.public_key)
-        if enr.ip4:
-            output["ip4"] = enr.ip4
-        if enr.udp_port is not None:
-            output["udpPort"] = int(enr.udp_port)
-        if enr.quic_port is not None:
-            output["quicPort"] = int(enr.quic_port)
-        if (ma := enr.multiaddr()) is not None:
-            output["multiaddr"] = str(ma)
-        if (eth2 := enr.eth2_data) is not None:
-            output["eth2Data"] = {
-                "forkDigest": _to_hex(eth2.fork_digest),
-                "nextForkVersion": _to_hex(eth2.next_fork_version),
-                "nextForkEpoch": int(eth2.next_fork_epoch),
-            }
-        if (subnets := enr.attestation_subnets) is not None:
-            output["attestationSubnets"] = [int(s) for s in subnets.subscribed_subnets()]
-        output["isAggregator"] = enr.is_aggregator
-        output["signatureValid"] = enr.verify_signature()
-        output["isValid"] = enr.is_valid()
+        eth2_data = enr.eth2_data
+        attestation_subnets = enr.attestation_subnets
+        return EnrOutput(
+            rlp=to_hex(rlp_bytes),
+            seq=int(enr.seq),
+            identity_scheme=enr.identity_scheme,
+            node_id=to_hex(enr.node_id) if enr.node_id else None,
+            public_key=to_hex(enr.public_key) if enr.public_key else None,
+            ip4=enr.ip4 if enr.ip4 else None,
+            udp_port=int(enr.udp_port) if enr.udp_port is not None else None,
+            quic_port=int(enr.quic_port) if enr.quic_port is not None else None,
+            multiaddr=str(enr.multiaddr()) if enr.multiaddr() is not None else None,
+            eth2_data=(
+                EnrEth2DataOutput(
+                    fork_digest=to_hex(eth2_data.fork_digest),
+                    next_fork_version=to_hex(eth2_data.next_fork_version),
+                    next_fork_epoch=int(eth2_data.next_fork_epoch),
+                )
+                if eth2_data is not None
+                else None
+            ),
+            attestation_subnets=(
+                [int(subnet_id) for subnet_id in attestation_subnets.subscribed_subnets()]
+                if attestation_subnets is not None
+                else None
+            ),
+            is_aggregator=enr.is_aggregator,
+            signature_valid=enr.verify_signature(),
+            is_valid=enr.is_valid(),
+        )
 
-        return output
 
-    def _make_peer_id(self) -> dict[str, Any]:
-        """Derive a PeerId from a public key, output protobuf encoding and Base58 string."""
-        key_type_map = {
-            "ed25519": KeyType.ED25519,
-            "secp256k1": KeyType.SECP256K1,
-            "ecdsa": KeyType.ECDSA,
-            "rsa": KeyType.RSA,
-        }
-        key_type = key_type_map[self.input["keyType"]]
-        key_data = _from_hex(self.input["publicKey"])
+class PeerIdentifierOutput(StrictBaseModel):
+    """Reference peer identifier derivation."""
 
-        protobuf = PublicKeyProtobuf(key_type=key_type, key_data=key_data)
-        encoded_protobuf = protobuf.encode()
+    protobuf_encoded: str
+    """Hex protobuf encoding of the public key."""
+
+    peer_id: str
+    """Base58 peer identifier string."""
+
+
+class PeerIdentifierDerivation(StrictBaseModel):
+    """Derive a peer identifier from a public key."""
+
+    kind: Literal["peer_id"] = "peer_id"
+    """Discriminator field for serialization."""
+
+    key_type: Literal["ed25519", "secp256k1", "ecdsa", "rsa"]
+    """Public key algorithm."""
+
+    public_key: str
+    """Hex public key bytes."""
+
+    def run(self) -> PeerIdentifierOutput:
+        """Derive the identifier and assert the Base58 roundtrip."""
+        # The literal values match the enum member names once upper-cased.
+        protobuf = PublicKeyProtobuf(
+            key_type=KeyType[self.key_type.upper()], key_data=from_hex(self.public_key)
+        )
         peer_id = PeerId.from_public_key(protobuf)
-        peer_id_str = str(peer_id)
+        peer_id_string = str(peer_id)
 
         # Roundtrip: Base58 decode → re-encode must match.
-        roundtrip = PeerId.from_base58(peer_id_str)
+        roundtrip = PeerId.from_base58(peer_id_string)
         assert roundtrip == peer_id, "PeerId Base58 roundtrip failed"
 
-        return {
-            "protobufEncoded": _to_hex(encoded_protobuf),
-            "peerId": peer_id_str,
-        }
+        return PeerIdentifierOutput(
+            protobuf_encoded=to_hex(protobuf.encode()),
+            peer_id=peer_id_string,
+        )
 
 
-def _build_rpc(d: dict[str, Any]) -> RPC:
-    """Build an RPC from a JSON-friendly dict."""
-    subs = [_build_sub_opts(s) for s in d.get("subscriptions", [])]
-    messages = [_build_message(m) for m in d.get("publish", [])]
-    ctrl = _build_control(d["control"]) if d.get("control") else None
-    return RPC(subscriptions=subs, publish=messages, control=ctrl)
+class SnappyBlockOutput(StrictBaseModel):
+    """Reference raw Snappy block compression."""
+
+    compressed: str
+    """Hex compressed bytes."""
+
+    compressed_length: int
+    """Compressed byte count."""
+
+    uncompressed_length: int
+    """Original byte count."""
 
 
-def _build_sub_opts(d: dict[str, Any]) -> SubOpts:
-    """Build a SubOpts from a dict."""
-    return SubOpts(subscribe=d["subscribe"], topic_id=TopicId(d["topicId"]))
+class SnappyBlockRoundtrip(StrictBaseModel):
+    """Compress with raw Snappy block format, decompress, assert roundtrip."""
+
+    kind: Literal["snappy_block"] = "snappy_block"
+    """Discriminator field for serialization."""
+
+    data: str
+    """Hex payload to compress."""
+
+    def run(self) -> SnappyBlockOutput:
+        """Compress, decompress back, and emit the reference bytes."""
+        uncompressed_bytes = from_hex(self.data)
+        compressed = compress(uncompressed_bytes)
+
+        decompressed = decompress(compressed)
+        assert decompressed == uncompressed_bytes, "Snappy block roundtrip produced different bytes"
+
+        return SnappyBlockOutput(
+            compressed=to_hex(compressed),
+            compressed_length=len(compressed),
+            uncompressed_length=len(uncompressed_bytes),
+        )
 
 
-def _build_message(d: dict[str, Any]) -> Message:
-    """Build a Message from a dict. Bytes fields are hex-encoded."""
-    return Message(
-        from_peer=_from_hex(d["fromPeer"]) if d.get("fromPeer") else b"",
-        data=_from_hex(d["data"]) if d.get("data") else b"",
-        seqno=_from_hex(d["seqno"]) if d.get("seqno") else b"",
-        topic=TopicId(d.get("topic", "")),
-        signature=_from_hex(d["signature"]) if d.get("signature") else b"",
-        key=_from_hex(d["key"]) if d.get("key") else b"",
-    )
+class SnappyFrameOutput(StrictBaseModel):
+    """Reference framed Snappy compression."""
+
+    framed: str
+    """Hex framed bytes."""
+
+    framed_length: int
+    """Framed byte count."""
+
+    uncompressed_length: int
+    """Original byte count."""
 
 
-def _build_control(d: dict[str, Any]) -> ControlMessage:
-    """Build a ControlMessage from a dict."""
-    return ControlMessage(
-        ihave=[_build_ihave(x) for x in d.get("ihave", [])],
-        iwant=[_build_iwant(x) for x in d.get("iwant", [])],
-        graft=[ControlGraft(topic_id=TopicId(x["topicId"])) for x in d.get("graft", [])],
-        prune=[_build_prune(x) for x in d.get("prune", [])],
-        idontwant=[_build_idontwant(x) for x in d.get("idontwant", [])],
-    )
+class SnappyFrameRoundtrip(StrictBaseModel):
+    """Compress with Snappy framing format (Ethereum wire format), decompress, roundtrip."""
+
+    kind: Literal["snappy_frame"] = "snappy_frame"
+    """Discriminator field for serialization."""
+
+    data: str
+    """Hex payload to compress."""
+
+    def run(self) -> SnappyFrameOutput:
+        """Compress with framing, decompress back, and emit the reference bytes."""
+        uncompressed_bytes = from_hex(self.data)
+        framed = frame_compress(uncompressed_bytes)
+
+        decompressed = frame_decompress(framed)
+        assert decompressed == uncompressed_bytes, "Snappy frame roundtrip produced different bytes"
+
+        return SnappyFrameOutput(
+            framed=to_hex(framed),
+            framed_length=len(framed),
+            uncompressed_length=len(uncompressed_bytes),
+        )
 
 
-def _build_ihave(d: dict[str, Any]) -> ControlIHave:
-    """Build a ControlIHave from a dict."""
-    return ControlIHave(
-        topic_id=TopicId(d.get("topicId", "")),
-        message_ids=[_from_hex(mid) for mid in d.get("messageIds", [])],
-    )
+class DecodeFailureOutput(StrictBaseModel):
+    """Echo of the decoder a rejection vector targets."""
+
+    decoder: str
+    """Name of the decoder that must reject the input."""
 
 
-def _build_iwant(d: dict[str, Any]) -> ControlIWant:
-    """Build a ControlIWant from a dict."""
-    return ControlIWant(message_ids=[_from_hex(mid) for mid in d.get("messageIds", [])])
+_DECODERS_BY_NAME: Final[dict[str, Callable[[bytes], object]]] = {
+    "varint": decode_varint,
+    "snappy_frame": frame_decompress,
+    "snappy_block": decompress,
+    "gossipsub_rpc": RPC.decode,
+    "reqresp_request": decode_request,
+    "reqresp_response": ResponseCode.decode,
+    "enr": ENR.from_rlp,
+}
+"""Wire-format decoders keyed by the name a rejection vector targets."""
 
 
-def _build_prune(d: dict[str, Any]) -> ControlPrune:
-    """Build a ControlPrune from a dict."""
-    return ControlPrune(
-        topic_id=TopicId(d.get("topicId", "")),
-        backoff=d.get("backoff", 0),
-    )
+class DecodeFailure(StrictBaseModel):
+    """Assert that a wire-format decoder rejects malformed input."""
+
+    kind: Literal["decode_failure"] = "decode_failure"
+    """Discriminator field for serialization."""
+
+    decoder: Literal[
+        "varint",
+        "snappy_frame",
+        "snappy_block",
+        "gossipsub_rpc",
+        "reqresp_request",
+        "reqresp_response",
+        "enr",
+    ]
+    """Decoder under test."""
+
+    raw_bytes: str
+    """Hex malformed input the decoder must reject."""
+
+    def attempt_decode(self) -> Exception | None:
+        """Run the decoder on the malformed input and return what it raised."""
+        try:
+            _DECODERS_BY_NAME[self.decoder](from_hex(self.raw_bytes))
+        except Exception as exception:
+            return exception
+        return None
 
 
-def _build_idontwant(d: dict[str, Any]) -> ControlIDontWant:
-    """Build a ControlIDontWant from a dict."""
-    return ControlIDontWant(message_ids=[_from_hex(mid) for mid in d.get("messageIds", [])])
+NetworkingCodec = Annotated[
+    VarintRoundtrip
+    | GossipTopicRoundtrip
+    | GossipMessageIdentifier
+    | GossipsubRpcRoundtrip
+    | ReqRespRequestRoundtrip
+    | ReqRespResponseRoundtrip
+    | ReqRespResponseStream
+    | EnrRoundtrip
+    | PeerIdentifierDerivation
+    | SnappyBlockRoundtrip
+    | SnappyFrameRoundtrip
+    | DecodeFailure,
+    Field(discriminator="kind"),
+]
+"""Discriminated union of every networking codec case under test."""
+
+NetworkingCodecOutput = (
+    VarintOutput
+    | GossipTopicOutput
+    | GossipMessageIdentifierOutput
+    | EncodedOutput
+    | ResponseStreamOutput
+    | EnrOutput
+    | PeerIdentifierOutput
+    | SnappyBlockOutput
+    | SnappyFrameOutput
+    | DecodeFailureOutput
+)
+"""Union of the computed results, paired with the codec kind."""
+
+
+class NetworkingCodecFixture(BaseConsensusFixture):
+    """
+    Emitted vector for networking wire-format conformance.
+
+    JSON output: codec, output.
+    """
+
+    codec: NetworkingCodec
+    """Codec case under test, with its typed inputs."""
+
+    output: NetworkingCodecOutput
+    """Computed result the client must reproduce."""
+
+
+class NetworkingCodecTest(BaseTestSpec):
+    """
+    Spec for networking wire-format conformance.
+
+    Verifies encode/decode roundtrips for networking codecs.
+    """
+
+    format_name: ClassVar[str] = "networking_codec_test"
+    description: ClassVar[str] = "Tests networking codec encode/decode roundtrip"
+
+    codec: NetworkingCodec
+    """Codec case to run, with its typed inputs."""
+
+    def generate(self) -> NetworkingCodecFixture:
+        """Run the codec case and emit the vector."""
+        if isinstance(self.codec, DecodeFailure):
+            # Emit the language-neutral reason clients assert against.
+            return NetworkingCodecFixture(
+                codec=self.codec,
+                output=DecodeFailureOutput(decoder=self.codec.decoder),
+                rejection_reason=self.assert_decode_rejection(
+                    self.codec.attempt_decode(), self.codec.decoder
+                ),
+            )
+        return NetworkingCodecFixture(codec=self.codec, output=self.codec.run())

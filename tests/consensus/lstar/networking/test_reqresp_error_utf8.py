@@ -1,63 +1,83 @@
 """Req/resp error-response payload roundtrip at size and UTF-8 boundaries."""
 
 import pytest
-from consensus_testing import NetworkingCodecTestFiller
+
+from consensus_testing import NetworkingCodecTestFiller, ReqRespResponseRoundtrip
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def test_reqresp_error_at_max_error_message_size(
-    networking_codec: NetworkingCodecTestFiller,
+    networking_codec_test: NetworkingCodecTestFiller,
 ) -> None:
-    """Error response carrying a payload at the maximum error-message size roundtrips.
+    """
+    An error response at the maximum error-message size roundtrips.
 
-    The handler truncates server-side error strings to 256 bytes before
-    encoding. A payload at that boundary exercises the exact wire shape
-    clients may receive and must be able to decode back to the same
-    bytes without loss.
+    Given
+    -----
+    - response code 1 (invalid request).
+    - a 256-byte payload.
+    - 256 bytes is the limit error strings are truncated to.
+
+    When
+    ----
+    - the response is encoded then decoded.
+
+    Then
+    ----
+    - the decoded payload equals the original byte-for-byte.
     """
     payload = b"e" * 256
-    networking_codec(
-        codec_name="reqresp_response",
-        input={
-            "responseCode": 1,
-            "sszData": "0x" + payload.hex(),
-        },
+    networking_codec_test(
+        codec=ReqRespResponseRoundtrip(response_code=1, ssz_data="0x" + payload.hex()),
     )
 
 
 def test_reqresp_error_with_multi_byte_utf8(
-    networking_codec: NetworkingCodecTestFiller,
+    networking_codec_test: NetworkingCodecTestFiller,
 ) -> None:
-    """Error response carrying multi-byte UTF-8 text roundtrips byte-for-byte.
+    """
+    An error response carrying multi-byte UTF-8 text roundtrips byte-for-byte.
 
-    The codec treats the payload as opaque bytes. A multi-byte UTF-8
-    payload verifies that compression, length framing, and decode
-    preserve the original bytes even when they are not ASCII-only.
+    Given
+    -----
+    - response code 2 (server error).
+    - a payload of multi-byte UTF-8 text that is not ASCII-only.
+
+    When
+    ----
+    - the response is encoded then decoded.
+
+    Then
+    ----
+    - the decoded payload equals the original byte-for-byte.
     """
     payload = "errür😀fail".encode()
-    networking_codec(
-        codec_name="reqresp_response",
-        input={
-            "responseCode": 2,
-            "sszData": "0x" + payload.hex(),
-        },
+    networking_codec_test(
+        codec=ReqRespResponseRoundtrip(response_code=2, ssz_data="0x" + payload.hex()),
     )
 
 
 def test_reqresp_error_resource_unavailable_with_informational_text(
-    networking_codec: NetworkingCodecTestFiller,
+    networking_codec_test: NetworkingCodecTestFiller,
 ) -> None:
-    """Error code 3 response carrying a short descriptive message roundtrips.
+    """
+    A resource-unavailable response carrying a short message roundtrips.
 
-    Pins the wire shape for the common peer-observed case of an
-    informational error string alongside the RESOURCE_UNAVAILABLE code.
+    Given
+    -----
+    - response code 3 (resource unavailable).
+    - a short descriptive message payload.
+
+    When
+    ----
+    - the response is encoded then decoded.
+
+    Then
+    ----
+    - the decoded code and payload equal the originals.
     """
     payload = b"block not found"
-    networking_codec(
-        codec_name="reqresp_response",
-        input={
-            "responseCode": 3,
-            "sszData": "0x" + payload.hex(),
-        },
+    networking_codec_test(
+        codec=ReqRespResponseRoundtrip(response_code=3, ssz_data="0x" + payload.hex()),
     )

@@ -12,7 +12,6 @@ import time
 from dataclasses import dataclass, field
 from typing import cast
 
-from lean_spec.node.chain.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.node.networking import PeerId
 from lean_spec.node.networking.client import LiveNetworkEventSource
 from lean_spec.node.networking.gossipsub.types import TopicId
@@ -25,12 +24,12 @@ from lean_spec.node.validator.registry import ValidatorEntry
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME, SecretKey
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
+from lean_spec.spec.forks.lstar.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.spec.forks.lstar.containers import Validator, Validators
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import Bytes52, Uint64
-
-from .diagnostics import PipelineDiagnostics
-from .port_allocator import PortAllocator
+from tests.interop.helpers.diagnostics import PipelineDiagnostics
+from tests.interop.helpers.port_allocator import PortAllocator
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +83,8 @@ class TestNode:
 
     @property
     def peer_count(self) -> int:
-        """Number of connected peers.
+        """
+        Number of connected peers.
 
         Reads the raw connection map rather than the peer manager,
         which is updated asynchronously and may lag behind.
@@ -361,8 +361,10 @@ class NodeCluster:
         if listener_task.done():
             try:
                 listener_task.result()
-            except OSError as e:
-                raise RuntimeError(f"Failed to start listener on {listen_address}: {e}") from e
+            except OSError as exception:
+                raise RuntimeError(
+                    f"Failed to start listener on {listen_address}: {exception}"
+                ) from exception
 
         test_node._listener_task = listener_task
 
@@ -525,43 +527,6 @@ class NodeCluster:
         await asyncio.gather(*(node.stop() for node in self.nodes), return_exceptions=True)
         self.nodes.clear()
         logger.info("All nodes stopped")
-
-    async def wait_for_finalization(
-        self,
-        target_slot: int,
-        timeout: float = 120.0,
-        poll_interval: float = 1.0,
-    ) -> bool:
-        """
-        Wait until all nodes finalize to at least target_slot.
-
-        Args:
-            target_slot: Minimum finalized slot to wait for.
-            timeout: Maximum wait time in seconds.
-            poll_interval: Time between checks.
-
-        Returns:
-            True if all nodes reached target, False on timeout.
-        """
-        start = time.monotonic()
-
-        while time.monotonic() - start < timeout:
-            all_finalized = all(node.finalized_slot >= target_slot for node in self.nodes)
-
-            if all_finalized:
-                logger.info("All %d nodes finalized to slot %d", len(self.nodes), target_slot)
-                return True
-
-            slots = [node.finalized_slot for node in self.nodes]
-            logger.debug("Finalized slots: %s (target: %d)", slots, target_slot)
-
-            await asyncio.sleep(poll_interval)
-
-        slots = [node.finalized_slot for node in self.nodes]
-        logger.warning(
-            "Timeout waiting for finalization. Slots: %s (target: %d)", slots, target_slot
-        )
-        return False
 
     async def wait_for_slot(
         self,

@@ -3,18 +3,9 @@ XMSS Key Management for Consensus Testing
 
 Management of XMSS key pairs for test validators.
 
-Keys are pre-generated and cached on disk to avoid expensive generation during tests.
-
-Downloading Pre-generated Keys:
-
-    python -m consensus_testing.keys --download --scheme test    # test scheme
-    python -m consensus_testing.keys --download --scheme prod    # prod scheme
-
-Regenerating Keys:
-
-    python -m consensus_testing.keys                   # defaults
-    python -m consensus_testing.keys --count 20        # more validators
-    python -m consensus_testing.keys --max-slot 200    # longer lifetime
+Keys are pre-generated and cached on disk to avoid expensive generation
+during tests.
+The companion CLI module generates or downloads them.
 
 File format:
 
@@ -27,16 +18,9 @@ File format:
 
 from __future__ import annotations
 
-import argparse
+import hashlib
 import json
-import os
-import shutil
-import tarfile
-import tempfile
-import urllib.request
 from collections.abc import Iterator, Mapping
-from concurrent.futures import ProcessPoolExecutor
-from functools import partial
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -67,21 +51,10 @@ from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     SingleMessageAggregate,
 )
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz import Bytes32
 
 KeyRole = Literal["attestation", "proposal"]
 """Discriminator for which signing role's key to load from a validator key pair."""
-
-KEY_DOWNLOAD_URLS = {
-    "test": "https://github.com/leanEthereum/leansig-test-keys/releases/download/latest/test_scheme.tar.gz",
-    "prod": "https://github.com/leanEthereum/leansig-test-keys/releases/download/latest/prod_scheme.tar.gz",
-}
-"""
-GitHub release URLs for pre-generated key archives.
-
-Keyed by scheme name ("test" or "prod").
-Each URL points to a tar.gz containing per-validator JSON files.
-"""
 
 LEAN_ENV_TO_SCHEMES: dict[str, GeneralizedXmssScheme] = {
     "test": TEST_SIGNATURE_SCHEME,
@@ -135,21 +108,6 @@ Default max slot for the shared key manager.
 Slot 10 is high enough for most unit tests while keeping key generation fast.
 """
 
-NUM_VALIDATORS: int = 8
-"""
-Default number of validator key pairs.
-
-Eight validators is enough to exercise committee logic and 2/3 supermajority
-thresholds while keeping key generation and test execution fast.
-"""
-
-CLI_DEFAULT_MAX_SLOT = Slot(100)
-"""
-Maximum slot when generating keys via CLI (inclusive).
-
-One hundred slots provides ample signing headroom for typical test scenarios.
-"""
-
 
 def get_keys_directory(scheme_name: str) -> Path:
     """
@@ -162,6 +120,29 @@ def get_keys_directory(scheme_name: str) -> Path:
         Absolute path to the scheme's key directory.
     """
     return Path(__file__).parent / "test_keys" / f"{scheme_name}_scheme"
+
+
+def compute_key_set_digest(keys_directory: Path) -> str:
+    """
+    Compute the SHA-256 digest identifying a directory's key set.
+
+    Hashes every validator's public keys in ascending index order.
+    Two fills agree on vectors only if they agree on this digest.
+
+    Args:
+        keys_directory: Directory holding per-validator key files.
+
+    Returns:
+        Hex digest prefixed with 0x.
+    """
+    digest = hashlib.sha256()
+    key_files = sorted(keys_directory.glob("*.json"), key=lambda key_file: int(key_file.stem))
+    for key_file in key_files:
+        key_data = json.loads(key_file.read_text())
+        digest.update(key_file.stem.encode())
+        digest.update(bytes.fromhex(key_data["attestation_keypair"]["public_key"]))
+        digest.update(bytes.fromhex(key_data["proposal_keypair"]["public_key"]))
+    return f"0x{digest.hexdigest()}"
 
 
 class XmssKeyManager:
@@ -189,6 +170,7 @@ class XmssKeyManager:
         "_public_cache",
         "_available_indices",
         "_secret_state",
+        "_key_set_digest",
     )
 
     _cache: ClassVar[dict[str, XmssKeyManager]] = {}
@@ -219,12 +201,12 @@ class XmssKeyManager:
             return cached
 
         # No suitable cached manager exists. Build a new one and cache it.
-        manager = cls(max_slot=max_slot, scheme_name=LEAN_ENV)
+        manager = cls(max_slot=max_slot)
         cls._cache[LEAN_ENV] = manager
         return manager
 
     @classmethod
-    def reset_signing_state(cls, scheme_name: str | None = None) -> None:
+    def reset_signing_state(cls) -> None:
         """
         Clear advanced secret-key state from the cached manager.
 
@@ -234,26 +216,19 @@ class XmssKeyManager:
 
         Only the mutable signing state is cleared. The JSON and public-key
         caches are immutable and preserved to avoid expensive re-loading.
-
-        Args:
-            scheme_name: Scheme entry to reset. Defaults to the current LEAN_ENV.
         """
-        cached = cls._cache.get(LEAN_ENV if scheme_name is None else scheme_name)
+        cached = cls._cache.get(LEAN_ENV)
         if cached is not None:
             cached._secret_state.clear()
 
-    def __init__(
-        self,
-        max_slot: Slot = DEFAULT_MAX_SLOT,
-        scheme_name: str = "test",
-    ) -> None:
-        """Initialize with a scheme name and maximum slot for key validity."""
-        if scheme_name not in LEAN_ENV_TO_SCHEMES:
-            raise ValueError(f"Unknown scheme: {scheme_name!r}")
+    def __init__(self, max_slot: Slot = DEFAULT_MAX_SLOT) -> None:
+        """Initialize with the active scheme and a maximum slot for key validity."""
+        if LEAN_ENV not in LEAN_ENV_TO_SCHEMES:
+            raise ValueError(f"Unknown scheme: {LEAN_ENV!r}")
         self.max_slot = max_slot
-        self.scheme_name = scheme_name
-        self.scheme = LEAN_ENV_TO_SCHEMES[scheme_name]
-        self._keys_directory = get_keys_directory(scheme_name)
+        self.scheme_name = LEAN_ENV
+        self.scheme = LEAN_ENV_TO_SCHEMES[LEAN_ENV]
+        self._keys_directory = get_keys_directory(LEAN_ENV)
 
         # Raw JSON cache: nested dict of hex-encoded SSZ strings, very lightweight.
         self._json_cache: dict[ValidatorIndex, dict[str, dict[str, str]]] = {}
@@ -266,6 +241,9 @@ class XmssKeyManager:
 
         # Advanced secret-key state held as live Python objects.
         self._secret_state: dict[tuple[ValidatorIndex, KeyRole], SecretKey] = {}
+
+        # Computed lazily on first request.
+        self._key_set_digest: str | None = None
 
     def _scan_indices(self) -> set[ValidatorIndex]:
         """
@@ -284,19 +262,20 @@ class XmssKeyManager:
             if not self._keys_directory.exists():
                 raise FileNotFoundError(
                     f"Keys directory not found: {self._keys_directory} - "
-                    f"Run: python -m consensus_testing.keys --scheme {self.scheme_name}"
+                    f"Run: uv run keys --scheme {self.scheme_name}"
                 )
 
             # Each JSON file is named by its validator index (e.g. "0.json").
             self._available_indices = {
-                ValidatorIndex(int(f.stem)) for f in self._keys_directory.glob("*.json")
+                ValidatorIndex(int(key_file.stem))
+                for key_file in self._keys_directory.glob("*.json")
             }
 
             # An empty directory is as bad as a missing one.
             if not self._available_indices:
                 raise FileNotFoundError(
                     f"No key files found in: {self._keys_directory} - "
-                    f"Run: python -m consensus_testing.keys --scheme {self.scheme_name}"
+                    f"Run: uv run keys --scheme {self.scheme_name}"
                 )
         return self._available_indices
 
@@ -320,8 +299,8 @@ class XmssKeyManager:
             # Resolve the per-validator JSON file path.
             key_file = self._keys_directory / f"{index}.json"
             try:
-                with key_file.open() as f:
-                    self._json_cache[index] = json.load(f)
+                with key_file.open() as key_file_handle:
+                    self._json_cache[index] = json.load(key_file_handle)
             except FileNotFoundError:
                 raise KeyError(f"Key file not found: {key_file}") from None
         return self._json_cache[index]
@@ -369,6 +348,16 @@ class XmssKeyManager:
     def __iter__(self) -> Iterator[ValidatorIndex]:
         """Iterate over validator indices in ascending order."""
         return iter(sorted(self._scan_indices()))
+
+    def key_set_digest(self) -> str:
+        """
+        Return the digest identifying this manager's on-disk key set.
+
+        Computed once and cached for the manager's lifetime.
+        """
+        if self._key_set_digest is None:
+            self._key_set_digest = compute_key_set_digest(self._keys_directory)
+        return self._key_set_digest
 
     def get_public_keys(self, index: ValidatorIndex) -> tuple[PublicKey, PublicKey]:
         """
@@ -513,6 +502,7 @@ class XmssKeyManager:
         self,
         validator_indices: list[ValidatorIndex],
         attestation_data: AttestationData,
+        precomputed_signatures: Mapping[ValidatorIndex, Signature] | None = None,
     ) -> SingleMessageAggregate:
         """
         Sign attestation data with each validator and aggregate the result.
@@ -528,15 +518,19 @@ class XmssKeyManager:
         Args:
             validator_indices: Validators to sign with.
             attestation_data: The attestation data to sign.
+            precomputed_signatures: Optional pre-computed signatures keyed by
+                validator index. Missing entries are signed on the fly.
 
         Returns:
             Cryptographically valid single-message aggregate proof covering validator_indices.
         """
+        signatures = precomputed_signatures or {}
         raw_xmss = [
             (
                 validator_index,
                 self.get_public_keys(validator_index)[0],
-                self.sign_attestation_data(validator_index, attestation_data),
+                signatures.get(validator_index)
+                or self.sign_attestation_data(validator_index, attestation_data),
             )
             for validator_index in validator_indices
         ]
@@ -576,217 +570,14 @@ class XmssKeyManager:
         """
         lookup = signature_lookup or {}
 
-        proofs: list[SingleMessageAggregate] = []
-        for aggregate in aggregated_attestations:
-            # Decode which validators participated from the bitfield.
-            validator_indices = aggregate.aggregation_bits.to_validator_indices()
-
-            # Try the lookup first for pre-computed signatures.
-            # Fall back to signing on the fly for any missing entries.
-            signatures_for_data = lookup.get(aggregate.data, {})
-
-            # Collect the attestation public keys for each participant.
-            public_keys = [
-                self.get_public_keys(validator_index)[0] for validator_index in validator_indices
-            ]
-
-            # Gather individual signatures, computing any that are missing.
-            signatures = [
-                signatures_for_data.get(validator_index)
-                or self.sign_attestation_data(validator_index, aggregate.data)
-                for validator_index in validator_indices
-            ]
-
-            # Produce a single aggregated proof that the leanVM can verify
-            # in one pass over all participants.
-            proofs.append(
-                SingleMessageAggregate.aggregate(
-                    children=[],
-                    raw_xmss=list(zip(validator_indices, public_keys, signatures, strict=True)),
-                    message=hash_tree_root(aggregate.data),
-                    slot=aggregate.data.slot,
-                )
+        # Produce one aggregated proof per attestation that the leanVM can
+        # verify in one pass over all participants.
+        # Participants are decoded from each attestation's bitfield.
+        return [
+            self.sign_and_aggregate(
+                list(aggregate.aggregation_bits.to_validator_indices()),
+                aggregate.data,
+                precomputed_signatures=lookup.get(aggregate.data, {}),
             )
-
-        return proofs
-
-
-def _generate_single_keypair(
-    scheme: GeneralizedXmssScheme, num_slots: int, index: int
-) -> ValidatorKeyPair:
-    """
-    Generate attestation and proposal key pairs for one validator.
-
-    Defined at module level so it can be pickled for multiprocessing.
-
-    Args:
-        scheme: XMSS scheme instance to use for key generation.
-        num_slots: Total number of slots the keys must cover.
-        index: Validator index (used only for progress logging).
-
-    Returns:
-        Complete key pair with both attestation and proposal keys.
-    """
-    import sys
-    import time
-
-    # Generate two independent key pairs: one for attestations, one for proposals.
-    #
-    # Separate keys allow signing both roles within the same slot
-    # without exhausting a one-time leaf.
-    start = time.monotonic()
-    print(f"[key #{index}] generating attestation key...", flush=True)
-    attestation_keypair = scheme.key_gen(Slot(0), Uint64(num_slots))
-
-    elapsed = time.monotonic() - start
-    print(
-        f"[key #{index}] attestation key done ({elapsed:.0f}s), generating proposal key...",
-        flush=True,
-    )
-    proposal_keypair = scheme.key_gen(Slot(0), Uint64(num_slots))
-
-    elapsed = time.monotonic() - start
-    print(f"[key #{index}] done ({elapsed:.0f}s)", file=sys.stderr, flush=True)
-
-    return ValidatorKeyPair(
-        attestation_keypair=attestation_keypair, proposal_keypair=proposal_keypair
-    )
-
-
-def _generate_keys(lean_env: str, count: int, max_slot: int) -> None:
-    """
-    Generate XMSS key pairs in parallel and write each to a separate file.
-
-    Each validator gets its own JSON file to keep individual files small,
-    which matters especially for production-scheme keys.
-
-    Args:
-        lean_env: Scheme name (e.g. "test" or "prod").
-        count: Number of validator key pairs to generate.
-        max_slot: Maximum signable slot (key lifetime = max_slot + 1 slots).
-    """
-    scheme = LEAN_ENV_TO_SCHEMES[lean_env]
-    keys_directory = get_keys_directory(lean_env)
-    num_slots = max_slot + 1
-    num_workers = os.cpu_count() or 1
-
-    print(
-        f"Generating {count} XMSS key pairs for {lean_env} environment "
-        f"({num_slots} slots) using {num_workers} cores..."
-    )
-
-    # Ensure the output directory exists.
-    keys_directory.mkdir(parents=True, exist_ok=True)
-
-    # Remove stale key files from previous runs that may have generated
-    # a different number of keys.
-    for old_file in keys_directory.glob("*.json"):
-        old_file.unlink()
-
-    # Generate key pairs in parallel across all CPU cores.
-    # Results arrive in index order thanks to executor.map.
-    import time
-
-    gen_start = time.monotonic()
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        worker_func = partial(_generate_single_keypair, scheme, num_slots)
-        for index, key_pair in enumerate(executor.map(worker_func, range(count))):
-            elapsed = time.monotonic() - gen_start
-            print(f"[{index + 1}/{count}] saved key #{index} ({elapsed:.0f}s elapsed)")
-
-            key_file = keys_directory / f"{index}.json"
-            key_file.write_text(key_pair.model_dump_json(indent=2))
-
-    total = time.monotonic() - gen_start
-    print(f"Saved {count} key pairs to {keys_directory}/ ({total:.0f}s total)")
-
-
-def download_keys(scheme: str) -> None:
-    """
-    Download pre-generated key pairs from a GitHub release.
-
-    Downloads a tar.gz archive for the specified scheme, removes any
-    existing keys for that scheme, and extracts the archive in place.
-
-    Args:
-        scheme: Scheme name ("test" or "prod").
-    """
-    base_directory = Path(__file__).parent / "test_keys"
-    url = KEY_DOWNLOAD_URLS[scheme]
-
-    print(f"Downloading {scheme} keys from {url}...")
-
-    # Reserve a temp path; we open it explicitly below so the writer can close
-    # before the reader opens.
-    temporary_fd, temporary_name = tempfile.mkstemp(suffix=".tar.gz")
-    os.close(temporary_fd)
-    tmp_path = Path(temporary_name)
-
-    try:
-        # Close the writer before opening the reader.
-        # Otherwise Python's userspace buffer can withhold the tail of the gzip stream.
-        # That produces a near-end decompression failure that looks like a truncated download.
-        with urllib.request.urlopen(url) as response, tmp_path.open("wb") as out:
-            shutil.copyfileobj(response, out)
-
-        # Remove any existing keys for this scheme before extracting.
-        target_directory = base_directory / f"{scheme}_scheme"
-        if target_directory.exists():
-            shutil.rmtree(target_directory)
-        base_directory.mkdir(parents=True, exist_ok=True)
-
-        # Extract the archive into the base directory.
-        # The archive root is the scheme directory itself.
-        with tarfile.open(tmp_path, "r:gz") as tar:
-            tar.extractall(path=base_directory, filter="data")
-
-        print(f"Extracted {scheme} keys to {target_directory}/")
-    finally:
-        # Always clean up the temporary download file.
-        tmp_path.unlink(missing_ok=True)
-
-    print("Download complete!")
-
-
-def main() -> None:
-    """CLI entry point for generating or downloading test keys."""
-    parser = argparse.ArgumentParser(
-        description="Generate XMSS key pairs for consensus testing",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        "--download",
-        action="store_true",
-        help="Download pre-generated keys from a GitHub release",
-    )
-    parser.add_argument(
-        "--scheme",
-        choices=LEAN_ENV_TO_SCHEMES.keys(),
-        default="test",
-        help="XMSS scheme to use",
-    )
-    parser.add_argument(
-        "--count",
-        type=int,
-        default=NUM_VALIDATORS,
-        help="Number of validator key pairs",
-    )
-    parser.add_argument(
-        "--max-slot",
-        type=int,
-        default=int(CLI_DEFAULT_MAX_SLOT),
-        help="Maximum slot (key lifetime = max_slot + 1)",
-    )
-    args = parser.parse_args()
-
-    # Download pre-generated keys instead of generating locally.
-    if args.download:
-        download_keys(scheme=args.scheme)
-        return
-
-    # Generate fresh keys with the specified parameters.
-    _generate_keys(lean_env=args.scheme, count=args.count, max_slot=args.max_slot)
-
-
-if __name__ == "__main__":
-    main()
+            for aggregate in aggregated_attestations
+        ]

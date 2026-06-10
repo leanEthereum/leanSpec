@@ -1,0 +1,1580 @@
+"""Tests for Validator Service."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from consensus_testing import (
+    TEST_VALIDATOR_INDEX,
+    MockNetworkRequester,
+    make_genesis_store,
+    make_signed_block,
+)
+from consensus_testing.keys import XmssKeyManager
+from lean_spec.node.chain.clock import SlotClock
+from lean_spec.node.sync.block_cache import BlockCache
+from lean_spec.node.sync.peer_manager import PeerManager
+from lean_spec.node.sync.service import SyncService
+from lean_spec.node.validator import ValidatorRegistry, ValidatorService
+from lean_spec.node.validator.constants import SYNC_LAG_THRESHOLD
+from lean_spec.node.validator.registry import ValidatorEntry
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
+from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar import Store
+from lean_spec.spec.forks.lstar.config import MILLISECONDS_PER_INTERVAL
+from lean_spec.spec.forks.lstar.containers import (
+    AttestationData,
+    Block,
+    SignedAttestation,
+    SignedBlock,
+    SingleMessageAggregate,
+)
+from lean_spec.spec.forks.lstar.spec import LstarSpec
+from lean_spec.spec.ssz import Bytes32, Uint64
+
+# Patch target for the XMSS scheme reference inside service.py.
+_SCHEME = "lean_spec.node.validator.service.TARGET_SIGNATURE_SCHEME"
+
+_INTERVAL_SECONDS = int(MILLISECONDS_PER_INTERVAL) / 1000
+
+
+def _interval_time(slot: int, interval: int) -> float:
+    """Return seconds since genesis for a specific slot and interval."""
+    total = slot * 5 + interval
+    return total * _INTERVAL_SECONDS
+
+
+def _make_registry(key_manager: XmssKeyManager, *indices: int) -> ValidatorRegistry:
+    """Build a ValidatorRegistry with real XMSS keys for the given indices."""
+    registry = ValidatorRegistry()
+    for i in indices:
+        validator_index = ValidatorIndex(i)
+        kp = key_manager[validator_index]
+        registry.add(
+            ValidatorEntry(
+                index=validator_index,
+                attestation_secret_key=kp.attestation_keypair.secret_key,
+                proposal_secret_key=kp.proposal_keypair.secret_key,
+            )
+        )
+    return registry
+
+
+def _make_entry(key_manager: XmssKeyManager, index: int = 0) -> ValidatorEntry:
+    """Return a ValidatorEntry with real XMSS keys."""
+    validator_index = ValidatorIndex(index)
+    kp = key_manager[validator_index]
+    return ValidatorEntry(
+        index=validator_index,
+        attestation_secret_key=kp.attestation_keypair.secret_key,
+        proposal_secret_key=kp.proposal_keypair.secret_key,
+    )
+
+
+@pytest.fixture
+def sync_service(keyed_store: Store) -> SyncService:
+    """Sync service backed by a store with real XMSS keys."""
+    return SyncService(
+        store=keyed_store,
+        peer_manager=PeerManager(),
+        block_cache=BlockCache(),
+        clock=SlotClock(genesis_time=Uint64(0)),
+        network=MockNetworkRequester(),
+    )
+
+
+@pytest.fixture
+def real_registry(key_manager: XmssKeyManager) -> ValidatorRegistry:
+    """Registry with real XMSS keys for all 8 validators."""
+    return _make_registry(key_manager, *range(8))
+
+
+class TestSignBlock:
+    """Unit tests for block signing with real XMSS keys and signature verification."""
+
+    def _setup(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        *,
+        slot: int = 1,
+    ) -> tuple[ValidatorService, Block]:
+        registry = _make_registry(key_manager, 0)
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=registry,
+        )
+        block = Block(
+            slot=Slot(slot),
+            proposer_index=ValidatorIndex(0),
+            parent_root=sync_service.store.head,
+            state_root=sync_service.store.head,
+            body=sync_service.store.blocks[sync_service.store.head].body,
+        )
+        return service, block
+
+    def test_wraps_the_input_block(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """The returned signed block contains the exact block object that was passed in."""
+        service, block = self._setup(sync_service, key_manager)
+
+        signed_block = service._sign_block(block, ValidatorIndex(0), [])
+
+        assert signed_block.block is block
+
+    def test_attestation_proofs_merge_into_envelope(
+        self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
+    ) -> None:
+        """Aggregated attestation proofs are merged into the block envelope."""
+        service, block = self._setup(sync_service, key_manager)
+        attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
+        aggregate_proof = key_manager.sign_and_aggregate([ValidatorIndex(0)], attestation_data)
+
+        signed_block = service._sign_block(block, ValidatorIndex(0), [aggregate_proof])
+
+        assert signed_block.block.proposer_index == ValidatorIndex(0)
+
+    def test_missing_validator_raises_value_error(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Signing a block with an unregistered validator index raises ValueError."""
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+        block = Block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(42),
+            parent_root=sync_service.store.head,
+            state_root=sync_service.store.head,
+            body=sync_service.store.blocks[sync_service.store.head].body,
+        )
+
+        with pytest.raises(ValueError) as exception_info:
+            service._sign_block(block, ValidatorIndex(42), [])
+        assert str(exception_info.value) == "No secret key for validator 42"
+
+
+class TestSignAttestation:
+    """Unit tests for attestation signing with real XMSS keys."""
+
+    def _setup(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        spec: LstarSpec,
+        index: int = 0,
+    ) -> tuple[ValidatorService, AttestationData]:
+        registry = _make_registry(key_manager, index)
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=registry,
+        )
+        attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
+        return service, attestation_data
+
+    def test_fields_populated_correctly(
+        self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
+    ) -> None:
+        """The signed attestation contains the correct validator ID, data, and a valid signature."""
+        service, attestation_data = self._setup(sync_service, key_manager, spec, index=3)
+
+        signed_attestation = service._sign_attestation(attestation_data, ValidatorIndex(3))
+
+        assert signed_attestation.validator_index == ValidatorIndex(3)
+        assert signed_attestation.data is attestation_data
+
+        public_key = key_manager[ValidatorIndex(3)].attestation_keypair.public_key
+        assert TARGET_SIGNATURE_SCHEME.verify(
+            public_key=public_key,
+            slot=attestation_data.slot,
+            message=hash_tree_root(attestation_data),
+            signature=signed_attestation.signature,
+        )
+
+    def test_uses_attestation_key_not_proposal_key(
+        self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
+    ) -> None:
+        """Attestation signature verifies with the attestation public key, not the proposal key."""
+        service, attestation_data = self._setup(sync_service, key_manager, spec)
+
+        signed_attestation = service._sign_attestation(attestation_data, ValidatorIndex(0))
+
+        attestation_public_key = key_manager[ValidatorIndex(0)].attestation_keypair.public_key
+        assert TARGET_SIGNATURE_SCHEME.verify(
+            public_key=attestation_public_key,
+            slot=attestation_data.slot,
+            message=hash_tree_root(attestation_data),
+            signature=signed_attestation.signature,
+        )
+
+    def test_missing_validator_raises_value_error(
+        self, sync_service: SyncService, key_manager: XmssKeyManager, spec: LstarSpec
+    ) -> None:
+        """Signing an attestation with an unregistered validator index raises ValueError."""
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+        attestation_data = spec.produce_attestation_data(sync_service.store, Slot(1))
+
+        with pytest.raises(ValueError) as exception_info:
+            service._sign_attestation(attestation_data, ValidatorIndex(99))
+        assert str(exception_info.value) == "No secret key for validator 99"
+
+
+class TestSignWithKey:
+    """
+    Unit tests for the XMSS key advancement and signing logic.
+
+    The scheme is patched to test the advancement loop mechanics in isolation.
+    Real XMSS keys are used so object identity checks work correctly.
+    """
+
+    def _setup(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        index: int = 0,
+    ) -> tuple[ValidatorService, ValidatorRegistry, ValidatorEntry, object, object]:
+        validator_entry = _make_entry(key_manager, index)
+        attestation_key = validator_entry.attestation_secret_key
+        proposal_key = validator_entry.proposal_secret_key
+        registry = ValidatorRegistry()
+        registry.add(validator_entry)
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=registry,
+        )
+        return service, registry, validator_entry, attestation_key, proposal_key
+
+    def test_no_advancement_when_slot_already_prepared(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """No key advancement when the slot is already within the prepared interval."""
+        service, _, validator_entry, attestation_key, _ = self._setup(sync_service, key_manager)
+        mock_signature = MagicMock(name="sig")
+
+        with patch(_SCHEME) as scheme:
+            scheme.get_prepared_interval.return_value = [3]
+            scheme.sign.return_value = mock_signature
+
+            service._sign_with_key(validator_entry, Slot(3), MagicMock(), "attestation_secret_key")
+
+        scheme.advance_preparation.assert_not_called()
+        scheme.sign.assert_called_once_with(attestation_key, Slot(3), scheme.sign.call_args[0][2])
+
+    def test_key_advanced_once_until_slot_in_interval(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Key advances exactly once when one step covers the target slot."""
+        service, _, validator_entry, attestation_key, _ = self._setup(sync_service, key_manager)
+        advanced = MagicMock(name="advanced_key")
+        mock_signature = MagicMock(name="sig")
+
+        with patch(_SCHEME) as scheme:
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [5]
+            )
+            scheme.advance_preparation.return_value = advanced
+            scheme.sign.return_value = mock_signature
+
+            service._sign_with_key(validator_entry, Slot(5), MagicMock(), "attestation_secret_key")
+
+        scheme.advance_preparation.assert_called_once_with(attestation_key)
+        scheme.sign.assert_called_once_with(advanced, Slot(5), scheme.sign.call_args[0][2])
+
+    def test_key_advanced_multiple_times_until_prepared(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Key advancement loops until the target slot falls within the interval."""
+        service, _, validator_entry, attestation_key, _ = self._setup(sync_service, key_manager)
+        key_v1 = MagicMock(name="key_v1")
+        key_v2 = MagicMock(name="key_v2")
+        key_v3 = MagicMock(name="key_v3")
+        mock_signature = MagicMock(name="sig")
+
+        with patch(_SCHEME) as scheme:
+            scheme.get_prepared_interval.side_effect = lambda key: [7] if key is key_v3 else []
+            scheme.advance_preparation.side_effect = [key_v1, key_v2, key_v3]
+            scheme.sign.return_value = mock_signature
+
+            service._sign_with_key(validator_entry, Slot(7), MagicMock(), "attestation_secret_key")
+
+        assert scheme.advance_preparation.call_count == 3
+        scheme.sign.assert_called_once_with(key_v3, Slot(7), scheme.sign.call_args[0][2])
+
+    def test_updated_entry_persisted_in_registry(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """After signing, the registry holds an entry with the advanced key."""
+        service, registry, validator_entry, attestation_key, _ = self._setup(
+            sync_service, key_manager
+        )
+        advanced = MagicMock(name="advanced_att")
+
+        with patch(_SCHEME) as scheme:
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [4]
+            )
+            scheme.advance_preparation.return_value = advanced
+            scheme.sign.return_value = MagicMock()
+
+            service._sign_with_key(validator_entry, Slot(4), MagicMock(), "attestation_secret_key")
+
+        stored = registry.get(ValidatorIndex(0))
+        assert stored is not None
+        assert stored.attestation_secret_key is advanced
+
+    def test_attestation_key_updated_proposal_key_unchanged(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Signing with the attestation key updates only that key; proposal key is untouched."""
+        service, registry, validator_entry, attestation_key, proposal_key = self._setup(
+            sync_service, key_manager
+        )
+        advanced_attestation = MagicMock(name="new_att")
+
+        with patch(_SCHEME) as scheme:
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [1]
+            )
+            scheme.advance_preparation.return_value = advanced_attestation
+            scheme.sign.return_value = MagicMock()
+
+            service._sign_with_key(validator_entry, Slot(1), MagicMock(), "attestation_secret_key")
+
+        stored = registry.get(ValidatorIndex(0))
+        assert stored is not None
+        assert stored.attestation_secret_key is advanced_attestation
+        assert stored.proposal_secret_key is proposal_key
+
+    def test_proposal_key_updated_attestation_key_unchanged(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Signing with the proposal key updates only that key; attestation key is untouched."""
+        service, registry, validator_entry, attestation_key, proposal_key = self._setup(
+            sync_service, key_manager
+        )
+        advanced_proposal = MagicMock(name="new_prop")
+
+        with patch(_SCHEME) as scheme:
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is proposal_key else [1]
+            )
+            scheme.advance_preparation.return_value = advanced_proposal
+            scheme.sign.return_value = MagicMock()
+
+            service._sign_with_key(validator_entry, Slot(1), MagicMock(), "proposal_secret_key")
+
+        stored = registry.get(ValidatorIndex(0))
+        assert stored is not None
+        assert stored.proposal_secret_key is advanced_proposal
+        assert stored.attestation_secret_key is attestation_key
+
+    def test_returns_updated_entry_and_signature(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Return value is (updated ValidatorEntry, Signature) — both fields correct."""
+        service, _, validator_entry, attestation_key, _ = self._setup(sync_service, key_manager)
+        advanced = MagicMock(name="adv")
+        mock_signature = MagicMock(name="ret_sig")
+
+        with patch(_SCHEME) as scheme:
+            scheme.get_prepared_interval.side_effect = (
+                lambda key: [] if key is attestation_key else [2]
+            )
+            scheme.advance_preparation.return_value = advanced
+            scheme.sign.return_value = mock_signature
+
+            returned_entry, returned_signature = service._sign_with_key(
+                validator_entry, Slot(2), MagicMock(), "attestation_secret_key"
+            )
+
+        assert returned_signature is mock_signature
+        assert returned_entry.attestation_secret_key is advanced
+
+
+class TestValidatorServiceBasic:
+    """Basic tests for lifecycle properties."""
+
+    def test_service_starts_stopped(
+        self,
+        sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """A new service is not running and has zero counters."""
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+        )
+
+        assert not service.is_running
+        assert service.blocks_produced == 0
+        assert service.attestations_produced == 0
+
+    def test_stop_sets_running_to_false(
+        self,
+        sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """Stopping the service sets the running flag to False."""
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+        )
+
+        service._running = True
+        service.stop()
+        assert not service.is_running
+
+
+class TestMaybeProduceBlock:
+    """Unit tests for block production edge cases using real Store."""
+
+    async def test_non_proposer_does_not_produce(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+    ) -> None:
+        """No block is produced when the validator is not the proposer for the slot."""
+        # With 8 validators, proposer for slot 5 is validator 5 (5 % 8 = 5).
+        # Register only validator 0, so it should not produce at slot 5.
+        registry = _make_registry(key_manager, 0)
+        blocks: list[SignedBlock] = []
+
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=registry,
+            on_block=lambda b: blocks.append(b),
+        )
+
+        await service._maybe_produce_block(Slot(5))
+
+        assert blocks == []
+
+    async def test_assertion_error_is_logged_and_skipped(
+        self,
+        sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Store AssertionError during block production is caught; no block emitted."""
+        blocks: list[SignedBlock] = []
+
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_block=lambda b: blocks.append(b),
+        )
+
+        with patch.object(
+            service.spec,
+            "produce_block_with_signatures",
+            side_effect=AssertionError("mismatch"),
+        ):
+            # Slot 0: proposer is validator 0 (0 % 8 = 0), which is in the registry.
+            await service._maybe_produce_block(Slot(0))
+
+        assert blocks == []
+
+
+class TestValidatorServiceDuties:
+    """Tests for duty execution edge cases."""
+
+    async def test_no_block_when_not_proposer(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+    ) -> None:
+        """No block produced when we're not the scheduled proposer."""
+        blocks_received: list[SignedBlock] = []
+
+        async def capture_block(block: SignedBlock) -> None:
+            blocks_received.append(block)
+
+        # With 8 validators, proposer for slot 2 is validator 2.
+        # Register only validator 2, so slots 0 and 1 should produce nothing.
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=_make_registry(key_manager, 2),
+            on_block=capture_block,
+        )
+
+        await service._maybe_produce_block(Slot(0))
+        await service._maybe_produce_block(Slot(1))
+
+        assert blocks_received == []
+
+    async def test_empty_registry_skips_attestations(
+        self,
+        sync_service: SyncService,
+    ) -> None:
+        """Empty registry produces no attestations."""
+        attestations_received: list[SignedAttestation] = []
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestations_received.append(attestation)
+
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+            on_attestation=capture_attestation,
+        )
+
+        await service._produce_attestations(Slot(0))
+
+        assert attestations_received == []
+        assert service.attestations_produced == 0
+
+
+class TestProduceAttestationsAdvanced:
+    """Unit tests for the block-wait polling loop and local attestation processing."""
+
+    async def test_block_wait_polls_up_to_eight_times_when_no_block_arrives(
+        self, sync_service: SyncService
+    ) -> None:
+        """
+        If no block for the target slot ever arrives, the wait loop runs exactly 8 times
+        with 0.05-second sleeps, then gives up and continues to attest anyway.
+        """
+        target_slot = Slot(99)
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+
+        sleep_durations: list[float] = []
+
+        async def mock_sleep(duration: float) -> None:
+            sleep_durations.append(duration)
+
+        with patch("asyncio.sleep", new=mock_sleep):
+            await service._produce_attestations(target_slot)
+
+        assert len(sleep_durations) == 8
+        assert all(d == pytest.approx(0.05) for d in sleep_durations)
+
+    async def test_block_wait_exits_early_when_block_arrives(
+        self, sync_service: SyncService
+    ) -> None:
+        """The polling loop breaks as soon as it detects a block for the target slot."""
+        target_slot = Slot(1)
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+
+        # The store initially has only the genesis block (slot 0).
+        # Inject a block at the target slot during the third sleep.
+        sleep_calls = [0]
+
+        async def mock_sleep(duration: float) -> None:
+            sleep_calls[0] += 1
+            if sleep_calls[0] == 3:
+                sb = make_signed_block(
+                    slot=target_slot,
+                    proposer_index=ValidatorIndex(0),
+                    parent_root=Bytes32.zero(),
+                    state_root=Bytes32.zero(),
+                )
+                root = hash_tree_root(sb.block)
+                sync_service.store = sync_service.store.model_copy(
+                    update={"blocks": {**sync_service.store.blocks, root: sb.block}}
+                )
+
+        with patch("asyncio.sleep", new=mock_sleep):
+            await service._produce_attestations(target_slot)
+
+        assert sleep_calls[0] == 3
+
+    async def test_attestation_processed_locally(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+    ) -> None:
+        """
+        Each produced attestation is validated by the store's gossip handler,
+        ensuring the full signing and validation pipeline works end-to-end.
+        """
+        target_slot = Slot(1)
+        published: list[SignedAttestation] = []
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            published.append(attestation)
+
+        registry = _make_registry(key_manager, 0)
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=registry,
+            on_attestation=capture_attestation,
+        )
+
+        await service._produce_attestations(target_slot)
+
+        # Attestation was published.
+        assert len(published) == 1
+        assert published[0].validator_index == ValidatorIndex(0)
+
+    async def test_gossip_handler_exception_logged_and_attestation_still_published(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """
+        If local gossip processing raises, the exception is logged and the attestation
+        is still published so the network receives it.
+        """
+        target_slot = Slot(1)
+        published: list[SignedAttestation] = []
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            published.append(attestation)
+
+        registry = _make_registry(key_manager, 0)
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=registry,
+            on_attestation=capture_attestation,
+        )
+
+        with (
+            caplog.at_level("DEBUG"),
+            patch.object(
+                service.spec,
+                "on_gossip_attestation",
+                side_effect=RuntimeError("store error"),
+            ),
+        ):
+            await service._produce_attestations(target_slot)
+
+        assert len(published) == 1
+        assert "on_gossip_attestation failed" in caplog.text
+
+
+class TestValidatorServiceRun:
+    """Tests for the main run loop using real SlotClock."""
+
+    async def test_run_loop_can_be_stopped(
+        self,
+        sync_service: SyncService,
+    ) -> None:
+        """The main loop exits when the service is stopped."""
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=ValidatorRegistry(),
+        )
+
+        call_count = 0
+
+        async def stop_on_second_call(_duration: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                service.stop()
+
+        with patch("asyncio.sleep", new=stop_on_second_call):
+            await service.run()
+
+        assert not service.is_running
+
+    async def test_interval_0_triggers_block_production(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """At interval 0, the main loop triggers block production for the current slot."""
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(0, 0))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+
+        block_slots: list[Slot] = []
+
+        async def mock_produce(self_inner, slot: Slot) -> None:
+            block_slots.append(slot)
+            service.stop()
+
+        with patch.object(ValidatorService, "_maybe_produce_block", mock_produce):
+            await service.run()
+
+        assert block_slots == [Slot(0)]
+
+    async def test_interval_1_triggers_attestation(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """At interval >= 1, the main loop triggers attestation production."""
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(0, 1))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+
+        attest_slots: list[Slot] = []
+
+        async def mock_attest(self_inner, slot: Slot) -> None:
+            attest_slots.append(slot)
+            service.stop()
+
+        with patch.object(ValidatorService, "_produce_attestations", mock_attest):
+            await service.run()
+
+        assert attest_slots == [Slot(0)]
+
+    async def test_empty_registry_skips_all_duties(self, sync_service: SyncService) -> None:
+        """With an empty registry, the loop skips all duties without calling production."""
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(0, 0))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=ValidatorRegistry(),
+        )
+
+        sleep_calls = [0]
+
+        async def stop_after_two_sleeps(_duration: float) -> None:
+            sleep_calls[0] += 1
+            if sleep_calls[0] >= 2:
+                service.stop()
+
+        block_calls: list[Slot] = []
+        attest_calls: list[Slot] = []
+
+        with (
+            patch("asyncio.sleep", new=stop_after_two_sleeps),
+            patch.object(
+                ValidatorService,
+                "_maybe_produce_block",
+                lambda self, s: block_calls.append(s),
+            ),
+            patch.object(
+                ValidatorService,
+                "_produce_attestations",
+                lambda self, s: attest_calls.append(s),
+            ),
+        ):
+            await service.run()
+
+        assert block_calls == []
+        assert attest_calls == []
+
+    async def test_duplicate_prevention_same_slot_not_attested_twice(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """A slot already in the attested set does not trigger attestation production again."""
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(5, 1))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+        service._attested_slots = {Slot(5)}  # already attested
+
+        async def stop_on_sleep(_duration: float) -> None:
+            service.stop()
+
+        attest_calls: list[Slot] = []
+
+        async def mock_attest(self_inner, slot: Slot) -> None:
+            attest_calls.append(slot)
+
+        with (
+            patch("asyncio.sleep", new=stop_on_sleep),
+            patch.object(ValidatorService, "_produce_attestations", mock_attest),
+        ):
+            await service.run()
+
+        assert attest_calls == []
+
+    async def test_slot_pruning_removes_old_slots(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """
+        After attesting at slot N, old slots are pruned to bound memory.
+
+        At slot 10: prune_threshold = max(0, 10 - 4) = 6.
+        Slots 0-5 (all < 6) must be removed; slot 10 must be present.
+        """
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 1))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+        service._attested_slots = {Slot(i) for i in range(6)}  # slots 0-5
+
+        async def mock_attest(self_inner, slot: Slot) -> None:
+            service.stop()
+
+        with patch.object(ValidatorService, "_produce_attestations", mock_attest):
+            await service.run()
+
+        for old_slot in range(6):
+            assert Slot(old_slot) not in service._attested_slots
+        assert Slot(10) in service._attested_slots
+
+
+class TestProposerGossipAttestation:
+    """Tests verifying that all validators (including proposers) produce gossip attestations."""
+
+    @pytest.mark.parametrize(
+        ("num_validators", "slot"),
+        [
+            (2, Slot(0)),  # 2 validators, proposer is validator 0
+            (3, Slot(2)),  # 3 validators, proposer is validator 2
+        ],
+    )
+    async def test_all_validators_attest_including_proposer(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        num_validators: int,
+        slot: Slot,
+    ) -> None:
+        """
+        All validators produce gossip attestations, including the proposer.
+
+        With dual keys, the proposer signs the block envelope with the proposal
+        key and gossips a separate attestation with the attestation key.
+        """
+        registry = _make_registry(key_manager, *range(num_validators))
+        attestation_validator_indices: list[ValidatorIndex] = []
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestation_validator_indices.append(attestation.validator_index)
+
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=registry,
+            on_attestation=capture_attestation,
+        )
+
+        await service._produce_attestations(slot)
+
+        expected_validator_indices = {ValidatorIndex(i) for i in range(num_validators)}
+        assert set(attestation_validator_indices) == expected_validator_indices
+        assert service.attestations_produced == num_validators
+
+
+class TestValidatorServiceIntegration:
+    """
+    Integration tests using real cryptographic keys and signature verification.
+
+    These tests verify the full signing flow end-to-end without mocking.
+    All signatures are cryptographically valid and verifiable.
+    """
+
+    @pytest.fixture
+    def key_manager(self) -> XmssKeyManager:
+        """Key manager with pre-generated test keys."""
+        return XmssKeyManager.shared(max_slot=Slot(10))
+
+    @pytest.fixture
+    def real_store(self, key_manager: XmssKeyManager) -> Store:
+        """Forkchoice store with validators using real public keys."""
+        return make_genesis_store(num_validators=6, validator_index=TEST_VALIDATOR_INDEX)
+
+    @pytest.fixture
+    def real_sync_service(self, real_store: Store) -> SyncService:
+        """Sync service initialized with the real store."""
+        return SyncService(
+            store=real_store,
+            peer_manager=PeerManager(),
+            block_cache=BlockCache(),
+            clock=SlotClock(genesis_time=Uint64(0)),
+            network=MockNetworkRequester(),
+        )
+
+    @pytest.fixture
+    def real_registry(self, key_manager: XmssKeyManager) -> ValidatorRegistry:
+        """Registry populated with real secret keys from key manager."""
+        registry = ValidatorRegistry()
+        for i in range(6):
+            validator_index = ValidatorIndex(i)
+            kp = key_manager[validator_index]
+            registry.add(
+                ValidatorEntry(
+                    index=validator_index,
+                    attestation_secret_key=kp.attestation_keypair.secret_key,
+                    proposal_secret_key=kp.proposal_keypair.secret_key,
+                )
+            )
+        return registry
+
+    async def test_produce_real_block_with_valid_signature(
+        self,
+        key_manager: XmssKeyManager,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """
+        Produce a block and verify the proposer signature is cryptographically valid.
+
+        The signature must pass verification using the proposer's public key.
+        """
+        blocks_produced: list[SignedBlock] = []
+
+        async def capture_block(block: SignedBlock) -> None:
+            blocks_produced.append(block)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_block=capture_block,
+        )
+
+        # Slot 1: proposer is validator 1 (1 % 6 == 1)
+        await service._maybe_produce_block(Slot(1))
+
+        assert len(blocks_produced) == 1
+        signed_block = blocks_produced[0]
+
+        assert signed_block.block.slot == Slot(1)
+        assert signed_block.block.proposer_index == ValidatorIndex(1)
+
+    async def test_produce_real_attestation_with_valid_signature(
+        self,
+        key_manager: XmssKeyManager,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """
+        Produce attestations and verify each signature is cryptographically valid.
+
+        All validators produce attestations with valid XMSS signatures.
+        """
+        attestations_produced: list[SignedAttestation] = []
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestations_produced.append(attestation)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_attestation=capture_attestation,
+        )
+
+        await service._produce_attestations(Slot(1))
+
+        assert len(attestations_produced) == 6
+
+        for signed_attestation in attestations_produced:
+            validator_index = signed_attestation.validator_index
+            public_key = key_manager[validator_index].attestation_keypair.public_key
+            message_bytes = hash_tree_root(signed_attestation.data)
+
+            is_valid = TARGET_SIGNATURE_SCHEME.verify(
+                public_key=public_key,
+                slot=signed_attestation.data.slot,
+                message=message_bytes,
+                signature=signed_attestation.signature,
+            )
+            assert is_valid, f"Attestation signature for validator {validator_index} failed"
+
+    async def test_attestation_data_references_correct_checkpoints(
+        self,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """
+        Verify attestation data contains correct head, target, and source checkpoints.
+
+        The attestation must reference:
+        - head: the current chain head
+        - target: the attestation target based on forkchoice
+        - source: the latest justified checkpoint
+        """
+        attestations_produced: list[SignedAttestation] = []
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestations_produced.append(attestation)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_attestation=capture_attestation,
+        )
+
+        await service._produce_attestations(Slot(1))
+
+        store = real_sync_service.store
+        expected_head_root = store.head
+        expected_source = store.latest_justified
+
+        for signed_attestation in attestations_produced:
+            attestation_data = signed_attestation.data
+            assert attestation_data.head.root == expected_head_root
+            assert attestation_data.source == expected_source
+            assert attestation_data.slot == Slot(1)
+
+    async def test_proposer_signature_in_block(
+        self,
+        key_manager: XmssKeyManager,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """Verify the proposer's signature over the block root is cryptographically valid."""
+        blocks_produced: list[SignedBlock] = []
+
+        async def capture_block(block: SignedBlock) -> None:
+            blocks_produced.append(block)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_block=capture_block,
+        )
+
+        await service._maybe_produce_block(Slot(2))
+
+        assert len(blocks_produced) == 1
+
+    async def test_block_includes_pending_attestations(
+        self,
+        key_manager: XmssKeyManager,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+        spec: LstarSpec,
+    ) -> None:
+        """
+        Verify attestations from the pool are included in produced blocks.
+
+        When the store has pending attestations, the proposer should aggregate
+        and include them in the block body.
+        """
+        store = real_sync_service.store
+        attestation_data = spec.produce_attestation_data(store, Slot(0))
+        data_root = hash_tree_root(attestation_data)
+
+        participants = [ValidatorIndex(3), ValidatorIndex(4)]
+        public_keys = []
+        signatures = []
+
+        for validator_index in participants:
+            signature = key_manager.sign_attestation_data(validator_index, attestation_data)
+            signatures.append(signature)
+            public_keys.append(key_manager[validator_index].attestation_keypair.public_key)
+
+        proof = SingleMessageAggregate.aggregate(
+            children=[],
+            raw_xmss=list(zip(participants, public_keys, signatures, strict=True)),
+            message=data_root,
+            slot=attestation_data.slot,
+        )
+
+        updated_store = store.model_copy(
+            update={"latest_known_aggregated_payloads": {attestation_data: {proof}}}
+        )
+        real_sync_service.store = updated_store
+
+        blocks_produced: list[SignedBlock] = []
+
+        async def capture_block(block: SignedBlock) -> None:
+            blocks_produced.append(block)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_block=capture_block,
+        )
+
+        await service._maybe_produce_block(Slot(1))
+
+        assert len(blocks_produced) == 1
+        signed_block = blocks_produced[0]
+
+        body_attestations = signed_block.block.body.attestations
+        assert len(body_attestations) > 0
+
+    async def test_multiple_slots_produce_different_attestations(
+        self,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """Attestations produced at different slots have distinct slot values."""
+        attestations_by_slot: dict[Slot, list[SignedAttestation]] = {
+            Slot(1): [],
+            Slot(2): [],
+        }
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestations_by_slot[attestation.data.slot].append(attestation)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_attestation=capture_attestation,
+        )
+
+        await service._produce_attestations(Slot(1))
+        await service._produce_attestations(Slot(2))
+
+        assert len(attestations_by_slot[Slot(1)]) > 0
+        assert len(attestations_by_slot[Slot(2)]) > 0
+
+        for attestation in attestations_by_slot[Slot(1)]:
+            assert attestation.data.slot == Slot(1)
+        for attestation in attestations_by_slot[Slot(2)]:
+            assert attestation.data.slot == Slot(2)
+
+    async def test_proposer_also_gossips_attestation(
+        self,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """
+        The proposer produces a block at interval 0 and a gossip attestation at interval 1.
+
+        Both intervals use independent keys, so there is no OTS conflict.
+        """
+        blocks_produced: list[SignedBlock] = []
+        attestations_produced: list[SignedAttestation] = []
+
+        async def capture_block(block: SignedBlock) -> None:
+            blocks_produced.append(block)
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestations_produced.append(attestation)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_block=capture_block,
+            on_attestation=capture_attestation,
+        )
+
+        slot = Slot(3)
+        proposer_index = ValidatorIndex(3)  # 3 % 6 == 3
+
+        await service._maybe_produce_block(slot)
+        await service._produce_attestations(slot)
+
+        assert len(blocks_produced) == 1
+        assert blocks_produced[0].block.proposer_index == proposer_index
+
+        attestation_validator_indices = {
+            attestation.validator_index for attestation in attestations_produced
+        }
+        expected_attesters = {ValidatorIndex(i) for i in range(6)}
+        assert attestation_validator_indices == expected_attesters
+
+    async def test_block_state_root_is_valid(
+        self,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """
+        The produced block has a valid state root matching the post-state hash.
+        """
+        blocks_produced: list[SignedBlock] = []
+
+        async def capture_block(block: SignedBlock) -> None:
+            blocks_produced.append(block)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_block=capture_block,
+        )
+
+        await service._maybe_produce_block(Slot(4))
+
+        assert len(blocks_produced) == 1
+        produced_block = blocks_produced[0].block
+
+        assert produced_block.state_root != Bytes32.zero()
+
+        store = real_sync_service.store
+        block_hash = hash_tree_root(produced_block)
+        assert block_hash in store.blocks
+        assert block_hash in store.states
+
+        stored_state = store.states[block_hash]
+        computed_state_root = hash_tree_root(stored_state)
+        assert produced_block.state_root == computed_state_root
+
+    async def test_signature_uses_correct_slot(
+        self,
+        key_manager: XmssKeyManager,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+    ) -> None:
+        """Signatures verify with the signing slot but fail with any other slot."""
+        attestations_produced: list[SignedAttestation] = []
+
+        async def capture_attestation(attestation: SignedAttestation) -> None:
+            attestations_produced.append(attestation)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_attestation=capture_attestation,
+        )
+
+        test_slot = Slot(5)
+
+        await service._produce_attestations(test_slot)
+
+        for signed_attestation in attestations_produced:
+            validator_index = signed_attestation.validator_index
+            public_key = key_manager[validator_index].attestation_keypair.public_key
+            message_bytes = hash_tree_root(signed_attestation.data)
+
+            is_valid = TARGET_SIGNATURE_SCHEME.verify(
+                public_key=public_key,
+                slot=test_slot,
+                message=message_bytes,
+                signature=signed_attestation.signature,
+            )
+            assert is_valid, f"Slot {test_slot} signature failed for validator {validator_index}"
+
+            wrong_slot = test_slot + Slot(1)
+            is_invalid = TARGET_SIGNATURE_SCHEME.verify(
+                public_key=public_key,
+                slot=wrong_slot,
+                message=message_bytes,
+                signature=signed_attestation.signature,
+            )
+            assert not is_invalid, "Signature should not verify with the wrong slot"
+
+
+def _replace_head_at_slot(sync_service: SyncService, head_slot: Slot) -> None:
+    """
+    Rewrite the head block at the given slot, preserving the map invariant.
+
+    Preserves
+    ---------
+    - All other blocks already in the store stay in place.
+    - The new head is keyed by the cryptographic root of its content.
+
+    Why
+    ---
+    The duty gate reads both the head block and the freshest block in
+    the map. A helper that broke the key-equals-root invariant would
+    mask real bugs.
+    """
+    blocks = dict(sync_service.store.blocks)
+    old_head_block = blocks.pop(sync_service.store.head)
+    new_head_block = Block(
+        slot=head_slot,
+        proposer_index=old_head_block.proposer_index,
+        parent_root=old_head_block.parent_root,
+        state_root=old_head_block.state_root,
+        body=old_head_block.body,
+    )
+    new_root = hash_tree_root(new_head_block)
+    blocks[new_root] = new_head_block
+    sync_service.store = sync_service.store.model_copy(update={"blocks": blocks, "head": new_root})
+
+
+def _add_block_at_slot(sync_service: SyncService, slot: Slot) -> Bytes32:
+    """
+    Add a non-head block at the given slot, returning its root.
+
+    Why
+    ---
+    Injects freshness evidence without touching the head. The gate's
+    stall signal scans the highest slot across every block in the map.
+    """
+    template = next(iter(sync_service.store.blocks.values()))
+    new_block = Block(
+        slot=slot,
+        proposer_index=template.proposer_index,
+        parent_root=template.parent_root,
+        state_root=template.state_root,
+        body=template.body,
+    )
+    new_root = hash_tree_root(new_block)
+    new_blocks = {**sync_service.store.blocks, new_root: new_block}
+    sync_service.store = sync_service.store.model_copy(update={"blocks": new_blocks})
+    return new_root
+
+
+def _build_gate_service(sync_service: SyncService) -> ValidatorService:
+    """
+    Build a service for gate-only tests with an empty registry.
+
+    The gate logic never consults the registry, so emptying it keeps
+    the focus on the predicate under test.
+    """
+    return ValidatorService(
+        sync_service=sync_service,
+        clock=SlotClock(genesis_time=Uint64(0)),
+        registry=ValidatorRegistry(),
+    )
+
+
+class TestSyncLagGate:
+    """
+    Sync-lag duty gate.
+
+    Decision matrix
+    ---------------
+    - Lag at or under threshold: duties run.
+    - Lag over threshold, fresh blocks locally: duties skip.
+    - Lag over threshold, no fresh blocks: duties run (network stall).
+    - Once closed, the gate reopens only after lag drops past the band.
+    """
+
+    def test_lag_within_threshold_allows_duties(self, sync_service: SyncService) -> None:
+        """Lag 0..threshold leaves the gate open."""
+
+        # Head at slot 10, wall clock sweeps 10..14 (lag 0..4).
+        _replace_head_at_slot(sync_service, Slot(10))
+        service = _build_gate_service(sync_service)
+
+        # Every lag in the inclusive range must pass.
+        for lag in range(SYNC_LAG_THRESHOLD + 1):
+            assert service._is_synced_for_duties(Slot(10 + lag), "block")
+
+    def test_lag_over_threshold_with_fresh_local_block_gates(
+        self, sync_service: SyncService
+    ) -> None:
+        """Stale head plus a fresh local block: gate closes."""
+
+        # Head at slot 10, wall clock at 20: local lag 10 (> 4).
+        _replace_head_at_slot(sync_service, Slot(10))
+
+        # Fresh local block at slot 20 makes the freshest seen slot 20.
+        # Network is not stalling, only local lag drives the decision.
+        _add_block_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        assert not service._is_synced_for_duties(Slot(20), "block")
+
+    def test_clock_skew_saturates_to_zero_lag(self, sync_service: SyncService) -> None:
+        """Head ahead of wall clock saturates to zero lag, not unlimited trust."""
+
+        # Head at slot 20, wall clock at slot 15: head leads by 5 slots.
+        # Saturation pins lag at 0, which trivially passes the threshold.
+        _replace_head_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        assert service._is_synced_for_duties(Slot(15), "block")
+
+    def test_no_extra_blocks_treats_isolation_as_network_stall(
+        self, sync_service: SyncService
+    ) -> None:
+        """Isolated node with only a stale head: gate stays open."""
+
+        # Head at slot 0, wall clock at slot 100, nothing else in the map.
+        # Freshest seen slot is 0, network lag is 100 (> 8): stall fires.
+        _replace_head_at_slot(sync_service, Slot(0))
+        service = _build_gate_service(sync_service)
+
+        assert service._is_synced_for_duties(Slot(100), "block")
+
+    def test_network_wide_stall_keeps_duties_live(self, sync_service: SyncService) -> None:
+        """All locally-known blocks stale: gate stays open."""
+
+        # Head at slot 0, wall clock at slot 50, no fresh blocks.
+        # Network lag 50 (> 8). Without this branch every validator
+        # would silence at once and recovery would be impossible.
+        _replace_head_at_slot(sync_service, Slot(0))
+        service = _build_gate_service(sync_service)
+
+        assert service._is_synced_for_duties(Slot(50), "block")
+
+    def test_boundary_lag_equal_threshold_allowed(self, sync_service: SyncService) -> None:
+        """Lag exactly at the threshold (4) leaves the gate open."""
+
+        # Head at slot 10, wall clock at slot 14: lag equals threshold.
+        # Fresh block at slot 14 keeps the stall branch from masking this.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(14))
+        service = _build_gate_service(sync_service)
+
+        assert service._is_synced_for_duties(Slot(10 + SYNC_LAG_THRESHOLD), "block")
+
+    def test_boundary_lag_one_over_threshold_gated(self, sync_service: SyncService) -> None:
+        """Lag of threshold + 1 closes the gate."""
+
+        # Head at slot 10, wall clock at slot 15: lag is 5.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(15))
+        service = _build_gate_service(sync_service)
+
+        assert not service._is_synced_for_duties(Slot(10 + SYNC_LAG_THRESHOLD + 1), "block")
+
+    def test_hysteresis_prevents_flap(self, sync_service: SyncService) -> None:
+        """
+        Closed gate stays closed near the threshold.
+
+        Lag sequence
+        ------------
+        - 5  -> gate closes (lag past threshold of 4).
+        - 4  -> stays closed (still inside the band).
+        - 5  -> stays closed (no flap).
+        - 2  -> reopens (lag at or below 4 - 2).
+        """
+
+        # Initial head at slot 10, fresh local block at slot 20.
+        # The fresh block keeps the stall escape from masking the band test.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        # Lag = 5: gate closes.
+        assert not service._is_synced_for_duties(Slot(15), "block")
+
+        # Lag = 4: stays closed because the band requires lag <= 2.
+        _replace_head_at_slot(sync_service, Slot(11))
+        _add_block_at_slot(sync_service, Slot(20))
+        assert not service._is_synced_for_duties(Slot(15), "block")
+
+        # Lag back to 5: still closed, no flap event.
+        _replace_head_at_slot(sync_service, Slot(10))
+        _add_block_at_slot(sync_service, Slot(20))
+        assert not service._is_synced_for_duties(Slot(15), "block")
+
+        # Lag = 2: at or below the 4 - 2 band, gate reopens.
+        _replace_head_at_slot(sync_service, Slot(13))
+        _add_block_at_slot(sync_service, Slot(20))
+        assert service._is_synced_for_duties(Slot(15), "block")
+
+    async def test_run_loop_skips_block_production_when_gated(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """Closed gate at interval 0 skips block production."""
+
+        # Wall clock at slot 10 interval 0, head stuck at slot 0.
+        # Fresh local block at slot 10 makes the lag local, not network-wide.
+        _replace_head_at_slot(sync_service, Slot(0))
+        _add_block_at_slot(sync_service, Slot(10))
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 0))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+
+        block_calls: list[Slot] = []
+
+        async def mock_block(_self, slot: Slot) -> None:
+            block_calls.append(slot)
+
+        async def stop_on_sleep(_d: float) -> None:
+            service.stop()
+
+        with (
+            patch.object(ValidatorService, "_maybe_produce_block", mock_block),
+            patch("asyncio.sleep", new=stop_on_sleep),
+        ):
+            await service.run()
+
+        # Block path bypassed.
+        assert block_calls == []
+
+    async def test_run_loop_skips_attestation_when_gated(
+        self, sync_service: SyncService, key_manager: XmssKeyManager
+    ) -> None:
+        """
+        Closed gate at interval 1 skips attestation and leaves the slot retryable.
+
+        Why
+        ---
+        Keeping the slot out of the attested set lets the next loop
+        iteration retry within the same slot if the node catches up
+        before slot end.
+        """
+
+        # Same setup as the block path but advanced to interval 1.
+        _replace_head_at_slot(sync_service, Slot(0))
+        _add_block_at_slot(sync_service, Slot(10))
+        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 1))
+        service = ValidatorService(
+            sync_service=sync_service,
+            clock=clock,
+            registry=_make_registry(key_manager, 0),
+        )
+
+        attest_calls: list[Slot] = []
+
+        async def mock_attest(_self, slot: Slot) -> None:
+            attest_calls.append(slot)
+
+        async def stop_on_sleep(_d: float) -> None:
+            service.stop()
+
+        with (
+            patch.object(ValidatorService, "_produce_attestations", mock_attest),
+            patch("asyncio.sleep", new=stop_on_sleep),
+        ):
+            await service.run()
+
+        # Attestation skipped, slot retryable.
+        assert attest_calls == []
+        assert Slot(10) not in service._attested_slots
+
+    def test_gate_logs_only_on_transition(
+        self, sync_service: SyncService, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """
+        One INFO record per state change, not one per query.
+
+        Fields recorded
+        ---------------
+        - duty
+        - slot
+        - head_slot
+        - lag
+        - max_seen_slot
+        """
+
+        # Head at slot 3, fresh block at slot 20.
+        # Wall clock 20 puts lag at 17 with no stall escape.
+        _replace_head_at_slot(sync_service, Slot(3))
+        _add_block_at_slot(sync_service, Slot(20))
+        service = _build_gate_service(sync_service)
+
+        with caplog.at_level("INFO"):
+            # Two consecutive queries: only the first is a transition.
+            first = service._is_synced_for_duties(Slot(20), "block")
+            second = service._is_synced_for_duties(Slot(20), "block")
+
+        assert first is False
+        assert second is False
+
+        # Exactly one closure record, with the expected fields.
+        transition_records = [
+            r.getMessage() for r in caplog.records if "duty gate closed" in r.getMessage()
+        ]
+        assert len(transition_records) == 1
+        message = transition_records[0]
+        assert "duty=block" in message
+        assert "slot=20" in message
+        assert "head_slot=3" in message
+        assert "lag=17" in message
+        assert "max_seen_slot=20" in message

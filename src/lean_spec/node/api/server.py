@@ -14,10 +14,9 @@ from dataclasses import dataclass, field
 
 from aiohttp import web
 
+from lean_spec.node.api.aggregator_controller import AggregatorController
+from lean_spec.node.api.routes import ADMIN_ROUTES, ROUTES
 from lean_spec.spec.forks import LstarSpec, Store
-
-from .aggregator_controller import AggregatorController
-from .routes import ADMIN_ROUTES, ROUTES
 
 logger = logging.getLogger(__name__)
 

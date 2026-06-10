@@ -40,13 +40,12 @@ from aioquic.quic.events import (
 )
 
 from lean_spec.node.networking.config import LIBP2P_ALPN_PROTOCOL
+from lean_spec.node.networking.transport.identity import IdentityKeypair
+from lean_spec.node.networking.transport.peer_id import PeerId
+from lean_spec.node.networking.transport.quic.stream import QuicStream, QuicTransportError
+from lean_spec.node.networking.transport.quic.stream_adapter import QuicStreamAdapter
+from lean_spec.node.networking.transport.quic.tls import generate_libp2p_certificate
 from lean_spec.node.networking.types import ProtocolId
-
-from ..identity import IdentityKeypair
-from ..peer_id import PeerId
-from .stream import QuicStream, QuicTransportError
-from .stream_adapter import QuicStreamAdapter
-from .tls import generate_libp2p_certificate
 
 logger = logging.getLogger(__name__)
 
@@ -267,8 +266,8 @@ def is_quic_multiaddr(multiaddr: str) -> bool:
     """
     # Multiaddr protocol names are case-sensitive per the multiaddr spec.
     # Valid QUIC components are lowercase "quic" and "quic-v1".
-    parts = multiaddr.split("/")
-    return "quic" in parts or "quic-v1" in parts
+    multiaddr_components = multiaddr.split("/")
+    return "quic" in multiaddr_components or "quic-v1" in multiaddr_components
 
 
 def parse_multiaddr(multiaddr: str) -> tuple[str, int, str | None, PeerId | None]:
@@ -282,7 +281,7 @@ def parse_multiaddr(multiaddr: str) -> tuple[str, int, str | None, PeerId | None
         (host, port, transport, peer_id) tuple.
         transport is "quic", peer_id may be None.
     """
-    parts = multiaddr.strip("/").split("/")
+    multiaddr_components = multiaddr.strip("/").split("/")
 
     host = None
     port = None
@@ -290,18 +289,18 @@ def parse_multiaddr(multiaddr: str) -> tuple[str, int, str | None, PeerId | None
     peer_id = None
 
     i = 0
-    while i < len(parts):
-        if parts[i] == "ip4" and i + 1 < len(parts):
-            host = parts[i + 1]
+    while i < len(multiaddr_components):
+        if multiaddr_components[i] == "ip4" and i + 1 < len(multiaddr_components):
+            host = multiaddr_components[i + 1]
             i += 2
-        elif parts[i] == "udp" and i + 1 < len(parts):
-            port = int(parts[i + 1])
+        elif multiaddr_components[i] == "udp" and i + 1 < len(multiaddr_components):
+            port = int(multiaddr_components[i + 1])
             i += 2
-        elif parts[i] in ("quic", "quic-v1"):
+        elif multiaddr_components[i] in ("quic", "quic-v1"):
             transport = "quic"
             i += 1
-        elif parts[i] == "p2p" and i + 1 < len(parts):
-            peer_id = PeerId.from_base58(parts[i + 1])
+        elif multiaddr_components[i] == "p2p" and i + 1 < len(multiaddr_components):
+            peer_id = PeerId.from_base58(multiaddr_components[i + 1])
             i += 2
         else:
             i += 1
@@ -452,15 +451,16 @@ class QuicConnectionManager:
             self._connections[peer_id] = connection
             return connection
 
-        except Exception as e:
-            raise QuicTransportError(f"Failed to connect: {e}") from e
+        except Exception as exception:
+            raise QuicTransportError(f"Failed to connect: {exception}") from exception
 
     async def listen(
         self,
         multiaddr: str,
         on_connection: Callable[[QuicConnection], Awaitable[None]],
     ) -> None:
-        """Listen for incoming QUIC connections.
+        """
+        Listen for incoming QUIC connections.
 
         Creates a server using aioquic with libp2p-tls authentication.
         Runs until shutdown is requested.

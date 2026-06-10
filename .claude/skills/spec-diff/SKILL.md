@@ -11,8 +11,8 @@ Show what changed in the **spec code** (`src/lean_spec/`) and **consensus test v
 **Scope**: Protocol-level spec types, functions, containers, forkchoice logic, and the
 test fixtures that generate cross-client test vectors.
 
-**Excluded**: Test framework infrastructure (`packages/testing/`, `consensus_testing/`,
-`execution_testing/`), unit tests (`tests/lean_spec/`), interop tests (`tests/interop/`),
+**Excluded**: Test framework infrastructure (`packages/testing/`, `consensus_testing/`),
+unit tests (`tests/`), interop tests (`tests/interop/`),
 documentation (`docs/`), CI/tooling configs, and the node implementation layer
 (networking, sync, storage, node runner).
 

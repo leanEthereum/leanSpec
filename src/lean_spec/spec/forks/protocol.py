@@ -25,10 +25,6 @@ class SpecSSZType(Protocol):
         ...
 
 
-class SpecConfigType(SpecSSZType, Protocol):
-    """Structural contract: any fork's genesis Config container class."""
-
-
 class SpecStateType(SpecSSZType, Protocol):
     """Structural contract: any fork's State container class exposes genesis."""
 
@@ -38,7 +34,7 @@ class SpecStateType(SpecSSZType, Protocol):
         ...
 
     @property
-    def config(self) -> "SpecConfigType":
+    def config(self) -> "SpecSSZType":
         """Genesis configuration carried by the state."""
         ...
 
@@ -67,73 +63,9 @@ class SpecBlockType(SpecSSZType, Protocol):
         ...
 
 
-class SpecBlockBodyType(SpecSSZType, Protocol):
-    """Structural contract: any fork's BlockBody container class.
-
-    Carries the variable-size payload attached to a block — typically
-    aggregated attestations and any future operation lists.
-    """
-
-
-class SpecBlockHeaderType(SpecSSZType, Protocol):
-    """Structural contract: any fork's BlockHeader container class.
-
-    The fixed-shape summary of a block used in state-transition tracking
-    and state-root caching. Carries slot, proposer, parent root, state
-    root, and body root.
-    """
-
-
-class SpecAggregatedAttestationsType(SpecSSZType, Protocol):
-    """Structural contract: any fork's AggregatedAttestations list class.
-
-    Bounded SSZ list of aggregated attestations included in a block body.
-    """
-
-
-class SpecAttestationDataType(SpecSSZType, Protocol):
-    """Structural contract: any fork's AttestationData container class.
-
-    Encodes a validator's view of the chain (slot + source/target/head
-    checkpoints) and is the payload that gets signed.
-    """
-
-    @property
-    def slot(self) -> Slot:
-        """Slot the attestation is voting at."""
-        ...
-
-    @property
-    def head(self) -> Checkpoint:
-        """Head checkpoint the attestation votes for."""
-        ...
-
-    @property
-    def source(self) -> Checkpoint:
-        """Source checkpoint of the attestation."""
-        ...
-
-    @property
-    def target(self) -> Checkpoint:
-        """Target checkpoint of the attestation."""
-        ...
-
-
-class SpecAggregatedAttestationType(SpecSSZType, Protocol):
-    """Structural contract: any fork's AggregatedAttestation container class.
-
-    An attestation aggregated over multiple validators via a participation
-    bitfield.
-    """
-
-    @property
-    def data(self) -> SpecAttestationDataType:
-        """The unsigned attestation payload."""
-        ...
-
-
 class SpecStoreType(Protocol):
-    """Structural contract: any fork's forkchoice Store.
+    """
+    Structural contract: any fork's forkchoice Store.
 
     Exposes anchor construction plus the read/write surface that sync,
     chain, and node services drive without depending on a concrete fork.
@@ -206,26 +138,26 @@ class ForkProtocol(ABC):
     block_class: type[SpecBlockType]
     """Concrete Block container class owned by this fork."""
 
-    block_body_class: type[SpecBlockBodyType]
+    block_body_class: type[SpecSSZType]
     """Concrete BlockBody container class owned by this fork."""
 
-    block_header_class: type[SpecBlockHeaderType]
+    block_header_class: type[SpecSSZType]
     """Concrete BlockHeader container class owned by this fork."""
 
-    aggregated_attestations_class: type[SpecAggregatedAttestationsType]
+    aggregated_attestations_class: type[SpecSSZType]
     """Concrete AggregatedAttestations list class — block-body aggregated votes."""
 
     store_class: type[SpecStoreType]
     """Concrete forkchoice Store class owned by this fork."""
 
-    attestation_data_class: type[SpecAttestationDataType]
+    attestation_data_class: type[SpecSSZType]
     """Concrete AttestationData container class."""
 
-    aggregated_attestation_class: type[SpecAggregatedAttestationType]
+    aggregated_attestation_class: type[SpecSSZType]
     """Concrete AggregatedAttestation container class."""
 
-    config_class: type[SpecConfigType]
-    """Concrete genesis Config container class."""
+    genesis_config_class: type[SpecSSZType]
+    """Concrete genesis configuration container class."""
 
     @abstractmethod
     def generate_genesis(self, genesis_time: Uint64, validators: SSZList[Any]) -> SpecStateType:

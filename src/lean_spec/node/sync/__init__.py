@@ -32,7 +32,7 @@ __all__ = [
     "PeerManager",
 ]
 
-from .backfill_sync import NetworkRequester
-from .block_cache import BlockCache
-from .peer_manager import PeerManager
-from .service import SyncService
+from lean_spec.node.sync.backfill_sync import NetworkRequester
+from lean_spec.node.sync.block_cache import BlockCache
+from lean_spec.node.sync.peer_manager import PeerManager
+from lean_spec.node.sync.service import SyncService

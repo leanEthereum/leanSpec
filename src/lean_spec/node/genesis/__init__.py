@@ -1,5 +1,5 @@
 """Genesis configuration and state initialization."""
 
-from .config import GenesisConfig
+from lean_spec.node.genesis.config import GenesisConfig
 
 __all__ = ["GenesisConfig"]

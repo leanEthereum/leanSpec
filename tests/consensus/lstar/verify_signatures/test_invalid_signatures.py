@@ -1,40 +1,38 @@
-"""Invalid signature verification tests"""
+"""Signature verification rejects blocks carrying an invalid proposer or attester signature."""
 
 import pytest
+
 from consensus_testing import (
     AggregatedAttestationSpec,
     BlockSpec,
+    ExpectedRejection,
     VerifySignaturesTestFiller,
     generate_pre_state,
 )
+from lean_spec.spec.forks import RejectionReason, Slot, ValidatorIndex
 
-from lean_spec.spec.forks import Slot, ValidatorIndex
-
-pytestmark = pytest.mark.valid_until("Lstar")
+pytestmark = [pytest.mark.valid_until("Lstar"), pytest.mark.real_crypto]
 
 
 def test_invalid_proposer_signature(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
     """
-    Test that invalid signatures are properly rejected during verification.
+    A block carrying an invalid proposer signature is rejected.
 
-    Scenario
-    --------
-    - Single block at slot 1
-    - Proposer attestation has an invalid signature
-    - No additional attestations (only proposer attestation)
+    Given
+    -----
+    - a registry of 1 validator.
+    - a block at slot 1 with no attestations.
+    - the proposer signature is invalid.
 
-    Expected Behavior
-    -----------------
-    1. Proposer's signature in SignedBlock is rejected
+    When
+    ----
+    - signature verification runs.
 
-    Why This Matters
-    ----------------
-    This test verifies the negative case:
-    - Signature verification actually validates cryptographic correctness
-      not just structural correctness.
-    - Invalid signatures are caught, not silently accepted
+    Then
+    ----
+    - verification is rejected as an invalid block proof.
     """
     verify_signatures_test(
         anchor_state=generate_pre_state(num_validators=1),
@@ -43,7 +41,7 @@ def test_invalid_proposer_signature(
             attestations=[],
             valid_signature=False,
         ),
-        expect_exception=AssertionError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.INVALID_BLOCK_PROOF),
     )
 
 
@@ -51,33 +49,29 @@ def test_invalid_aggregated_attestation_signature(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
     """
-    Test that invalid aggregated attestation signatures are properly rejected.
+    A block is rejected when any one of its aggregates carries an invalid signature.
 
-    Scenario
-    --------
-    - Single block at slot 1
-    - Proposer attestation from validator 1 (valid)
-    - Two aggregated attestations with different data:
-      - One from validator 0 with valid signature
-      - One from validator 2 with invalid signature
+    Given
+    -----
+    - a registry of 3 validators.
+    - a valid aggregate from V0.
+    - an invalid aggregate from V2 targeting different data, forcing a separate group.
+    - the proposer signature is valid.
 
-    Expected Behavior
-    -----------------
-    1. The SignedBlock is rejected due to invalid aggregated signature
+    When
+    ----
+    - signature verification runs.
 
-    Why This Matters
-    ----------------
-    This test verifies that aggregated signature verification:
-    - Properly validates leanVM aggregated proofs for each attestation group
-    - Rejects blocks containing any invalid aggregated attestation signature
-    - Works correctly even when some attestations have valid signatures
+    Then
+    ----
+    - verification is rejected as an invalid block proof.
+    - one bad aggregate rejects the block even when another aggregate is valid.
     """
     verify_signatures_test(
         anchor_state=generate_pre_state(num_validators=3),
         block=BlockSpec(
             slot=Slot(2),
             attestations=[
-                # Valid aggregated attestation
                 AggregatedAttestationSpec(
                     validator_indices=[ValidatorIndex(0)],
                     slot=Slot(2),
@@ -85,7 +79,6 @@ def test_invalid_aggregated_attestation_signature(
                     target_root_label="genesis",
                     valid_signature=True,
                 ),
-                # Invalid aggregated attestation (different target to force separate aggregation)
                 AggregatedAttestationSpec(
                     validator_indices=[ValidatorIndex(2)],
                     slot=Slot(1),
@@ -95,5 +88,5 @@ def test_invalid_aggregated_attestation_signature(
                 ),
             ],
         ),
-        expect_exception=AssertionError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.INVALID_BLOCK_PROOF),
     )

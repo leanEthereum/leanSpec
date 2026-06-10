@@ -19,7 +19,7 @@ Pass additional arguments after `--`:
 
 - `/test -- -v` - Verbose output
 - `/test -- -k "test_serialize"` - Run matching tests
-- `/test -- tests/lean_spec/subspecs/ssz/` - Run specific test directory
+- `/test -- tests/spec/ssz/` - Run specific test directory
 
 ## Examples
 

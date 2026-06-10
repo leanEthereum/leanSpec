@@ -13,7 +13,7 @@ LiveNetworkEventSource
     Bridges connection events to NetworkService events.
 """
 
-from .event_source import LiveNetworkEventSource
+from lean_spec.node.networking.client.event_source import LiveNetworkEventSource
 
 __all__ = [
     "LiveNetworkEventSource",

@@ -64,7 +64,8 @@ class ProtobufDecodeError(ValueError):
 
 
 def _decode_length_at(data: bytes, pos: int) -> tuple[int, int]:
-    """Decode a length varint and validate bounds.
+    """
+    Decode a length varint and validate bounds.
 
     Returns:
         (length, new_position) tuple.
@@ -134,10 +135,10 @@ class SubOpts:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
-        result.extend(encode_bool(1, self.subscribe))
-        result.extend(encode_string(2, self.topic_id))
-        return bytes(result)
+        encoded = bytearray()
+        encoded.extend(encode_bool(1, self.subscribe))
+        encoded.extend(encode_string(2, self.topic_id))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> SubOpts:
@@ -150,9 +151,9 @@ class SubOpts:
             field_num, wire_type, pos = decode_tag(data, pos)
 
             if field_num == 1 and wire_type == WIRE_TYPE_VARINT:
-                value, consumed = decode_varint(data, pos)
+                subscribe_flag, consumed = decode_varint(data, pos)
                 pos += consumed
-                subscribe = value != 0
+                subscribe = subscribe_flag != 0
             elif field_num == 2 and wire_type == WIRE_TYPE_LENGTH_DELIMITED:
                 length, pos = _decode_length_at(data, pos)
                 topic_id = TopicId(data[pos : pos + length].decode("utf-8"))
@@ -187,20 +188,20 @@ class Message:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
+        encoded = bytearray()
         if self.from_peer:
-            result.extend(encode_bytes(1, self.from_peer))
+            encoded.extend(encode_bytes(1, self.from_peer))
         if self.data:
-            result.extend(encode_bytes(2, self.data))
+            encoded.extend(encode_bytes(2, self.data))
         if self.seqno:
-            result.extend(encode_bytes(3, self.seqno))
+            encoded.extend(encode_bytes(3, self.seqno))
         if self.topic:
-            result.extend(encode_string(4, self.topic))
+            encoded.extend(encode_string(4, self.topic))
         if self.signature:
-            result.extend(encode_bytes(5, self.signature))
+            encoded.extend(encode_bytes(5, self.signature))
         if self.key:
-            result.extend(encode_bytes(6, self.key))
-        return bytes(result)
+            encoded.extend(encode_bytes(6, self.key))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> Message:
@@ -246,12 +247,12 @@ class ControlIHave:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
+        encoded = bytearray()
         if self.topic_id:
-            result.extend(encode_string(1, self.topic_id))
+            encoded.extend(encode_string(1, self.topic_id))
         for message_id in self.message_ids:
-            result.extend(encode_bytes(2, message_id))
-        return bytes(result)
+            encoded.extend(encode_bytes(2, message_id))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> ControlIHave:
@@ -287,10 +288,10 @@ class ControlIWant:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
+        encoded = bytearray()
         for message_id in self.message_ids:
-            result.extend(encode_bytes(1, message_id))
-        return bytes(result)
+            encoded.extend(encode_bytes(1, message_id))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> ControlIWant:
@@ -320,10 +321,10 @@ class ControlGraft:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
+        encoded = bytearray()
         if self.topic_id:
-            result.extend(encode_string(1, self.topic_id))
-        return bytes(result)
+            encoded.extend(encode_string(1, self.topic_id))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> ControlGraft:
@@ -356,12 +357,12 @@ class ControlPrune:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
+        encoded = bytearray()
         if self.topic_id:
-            result.extend(encode_string(1, self.topic_id))
+            encoded.extend(encode_string(1, self.topic_id))
         if self.backoff > 0:
-            result.extend(encode_uint64(3, self.backoff))
-        return bytes(result)
+            encoded.extend(encode_uint64(3, self.backoff))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> ControlPrune:
@@ -395,10 +396,10 @@ class ControlIDontWant:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
+        encoded = bytearray()
         for message_id in self.message_ids:
-            result.extend(encode_bytes(1, message_id))
-        return bytes(result)
+            encoded.extend(encode_bytes(1, message_id))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> ControlIDontWant:
@@ -440,18 +441,18 @@ class ControlMessage:
 
     def encode(self) -> bytes:
         """Encode as protobuf."""
-        result = bytearray()
+        encoded = bytearray()
         for ihave in self.ihave:
-            result.extend(encode_length_delimited(1, ihave.encode()))
+            encoded.extend(encode_length_delimited(1, ihave.encode()))
         for iwant in self.iwant:
-            result.extend(encode_length_delimited(2, iwant.encode()))
+            encoded.extend(encode_length_delimited(2, iwant.encode()))
         for graft in self.graft:
-            result.extend(encode_length_delimited(3, graft.encode()))
+            encoded.extend(encode_length_delimited(3, graft.encode()))
         for prune in self.prune:
-            result.extend(encode_length_delimited(4, prune.encode()))
-        for idw in self.idontwant:
-            result.extend(encode_length_delimited(5, idw.encode()))
-        return bytes(result)
+            encoded.extend(encode_length_delimited(4, prune.encode()))
+        for idontwant in self.idontwant:
+            encoded.extend(encode_length_delimited(5, idontwant.encode()))
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> ControlMessage:
@@ -515,18 +516,18 @@ class RPC:
             field 2: repeated Message publish
             field 3: optional ControlMessage control
         """
-        result = bytearray()
+        encoded = bytearray()
 
-        for sub in self.subscriptions:
-            result.extend(encode_length_delimited(1, sub.encode()))
+        for subscription in self.subscriptions:
+            encoded.extend(encode_length_delimited(1, subscription.encode()))
 
         for message in self.publish:
-            result.extend(encode_length_delimited(2, message.encode()))
+            encoded.extend(encode_length_delimited(2, message.encode()))
 
         if self.control and not self.control.is_empty():
-            result.extend(encode_length_delimited(3, self.control.encode()))
+            encoded.extend(encode_length_delimited(3, self.control.encode()))
 
-        return bytes(result)
+        return bytes(encoded)
 
     @classmethod
     def decode(cls, data: bytes) -> RPC:
@@ -576,7 +577,8 @@ class RPC:
 
 
 def _skip_field(data: bytes, pos: int, wire_type: int) -> int:
-    """Skip an unknown field based on wire type.
+    """
+    Skip an unknown field based on wire type.
 
     Raises:
         ProtobufDecodeError: If the wire type is unrecognized (e.g. deprecated

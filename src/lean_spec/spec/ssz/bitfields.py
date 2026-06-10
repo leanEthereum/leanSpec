@@ -25,9 +25,9 @@ from typing import (
 
 from pydantic import Field, field_validator
 
-from .boolean import Boolean
-from .exceptions import SSZSerializationError, SSZTypeError, SSZValueError
-from .ssz_base import SSZModel
+from lean_spec.spec.ssz.boolean import Boolean
+from lean_spec.spec.ssz.exceptions import SSZSerializationError, SSZTypeError, SSZValueError
+from lean_spec.spec.ssz.ssz_base import SSZModel
 
 
 class BaseBitvector(SSZModel):
@@ -60,24 +60,24 @@ class BaseBitvector(SSZModel):
 
     @field_validator("data", mode="before")
     @classmethod
-    def _coerce_and_validate(cls, v: Any) -> tuple[Boolean, ...]:
+    def _coerce_and_validate(cls, bits_input: Any) -> tuple[Boolean, ...]:
         """Enforce the exact bit count and coerce inputs into booleans."""
         # Subclasses must declare LENGTH before any instances can be validated.
         if not hasattr(cls, "LENGTH"):
             raise SSZTypeError(f"{cls.__name__} must define LENGTH")
 
         # Materialize generic iterables into a tuple so the length check works.
-        if not isinstance(v, (list, tuple)):
-            v = tuple(v)
+        if not isinstance(bits_input, (list, tuple)):
+            bits_input = tuple(bits_input)
 
         # Fixed-length type: the input must contain exactly LENGTH elements.
-        if len(v) != cls.LENGTH:
+        if len(bits_input) != cls.LENGTH:
             raise SSZValueError(
-                f"{cls.__name__} requires exactly {cls.LENGTH} elements, got {len(v)}"
+                f"{cls.__name__} requires exactly {cls.LENGTH} elements, got {len(bits_input)}"
             )
 
         # Wrap each value in Boolean — the constructor rejects anything outside 0 or 1.
-        return tuple(Boolean(bit) for bit in v)
+        return tuple(Boolean(bit) for bit in bits_input)
 
     @classmethod
     @override
@@ -107,10 +107,12 @@ class BaseBitvector(SSZModel):
             raise SSZSerializationError(
                 f"{cls.__name__}: expected {expected_byte_count} bytes, got {scope}"
             )
-        data = stream.read(scope)
-        if len(data) != scope:
-            raise SSZSerializationError(f"{cls.__name__}: expected {scope} bytes, got {len(data)}")
-        return cls.decode_bytes(data)
+        serialized_bytes = stream.read(scope)
+        if len(serialized_bytes) != scope:
+            raise SSZSerializationError(
+                f"{cls.__name__}: expected {scope} bytes, got {len(serialized_bytes)}"
+            )
+        return cls.decode_bytes(serialized_bytes)
 
     @override
     def encode_bytes(self) -> bytes:
@@ -124,8 +126,8 @@ class BaseBitvector(SSZModel):
             ceil(N / 8) bytes containing the packed bits.
         """
         # Build the packed bits as one integer, then split into little-endian bytes.
-        value = sum(1 << i for i, bit in enumerate(self.data) if bit)
-        return value.to_bytes(math.ceil(self.LENGTH / 8), "little")
+        packed_bits = sum(1 << i for i, bit in enumerate(self.data) if bit)
+        return packed_bits.to_bytes(self.get_byte_length(), "little")
 
     @classmethod
     @override
@@ -208,7 +210,7 @@ class BaseBitlist(SSZModel):
 
     @field_validator("data", mode="before")
     @classmethod
-    def _coerce_and_validate(cls, v: Any) -> tuple[Boolean, ...]:
+    def _coerce_and_validate(cls, bits_input: Any) -> tuple[Boolean, ...]:
         """Enforce the maximum bit count and coerce inputs into booleans."""
         # Subclasses must declare LIMIT before any instances can be validated.
         if not hasattr(cls, "LIMIT"):
@@ -219,12 +221,12 @@ class BaseBitlist(SSZModel):
         #   - list or tuple    pass through directly.
         #   - other iterables  materialize into a list so length is known.
         #   - str or bytes     rejected — iterable but elements are not booleans.
-        if isinstance(v, (list, tuple)):
-            elements = v
-        elif hasattr(v, "__iter__") and not isinstance(v, (str, bytes)):
-            elements = list(v)
+        if isinstance(bits_input, (list, tuple)):
+            elements = bits_input
+        elif hasattr(bits_input, "__iter__") and not isinstance(bits_input, (str, bytes)):
+            elements = list(bits_input)
         else:
-            raise SSZTypeError(f"Expected iterable, got {type(v).__name__}")
+            raise SSZTypeError(f"Expected iterable, got {type(bits_input).__name__}")
 
         # Variable-length type: any count is fine, up to LIMIT.
         if len(elements) > cls.LIMIT:
@@ -283,10 +285,12 @@ class BaseBitlist(SSZModel):
     @override
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
         """Read SSZ bytes from a stream and return an instance."""
-        data = stream.read(scope)
-        if len(data) != scope:
-            raise SSZSerializationError(f"{cls.__name__}: expected {scope} bytes, got {len(data)}")
-        return cls.decode_bytes(data)
+        serialized_bytes = stream.read(scope)
+        if len(serialized_bytes) != scope:
+            raise SSZSerializationError(
+                f"{cls.__name__}: expected {scope} bytes, got {len(serialized_bytes)}"
+            )
+        return cls.decode_bytes(serialized_bytes)
 
     @override
     def encode_bytes(self) -> bytes:
@@ -325,8 +329,8 @@ class BaseBitlist(SSZModel):
         # It is what lets the decoder recover the original bit count.
         # Converting an integer to bytes runs the bit-to-byte split in C.
         # That avoids a Python loop over every bit.
-        value = sum(1 << i for i, bit in enumerate(self.data) if bit) | (1 << num_bits)
-        return value.to_bytes(math.ceil((num_bits + 1) / 8), "little")
+        packed_bits = sum(1 << i for i, bit in enumerate(self.data) if bit) | (1 << num_bits)
+        return packed_bits.to_bytes(math.ceil((num_bits + 1) / 8), "little")
 
     @classmethod
     @override

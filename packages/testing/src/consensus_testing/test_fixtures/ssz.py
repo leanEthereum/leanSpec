@@ -4,29 +4,75 @@ from typing import Any, ClassVar
 
 from pydantic import field_serializer
 
+from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
+from consensus_testing.test_fixtures.hex_codec import from_hex, to_hex
 from lean_spec.base import CamelModel
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.ssz.boolean import Boolean
 from lean_spec.spec.ssz.ssz_base import SSZType
 
-from .base import BaseConsensusFixture
+
+def _serialize_ssz_value(ssz_value: SSZType) -> Any:
+    """Convert an SSZ value to a JSON-safe representation."""
+    if isinstance(ssz_value, CamelModel):
+        return ssz_value.to_json()
+    # Boolean before int — Boolean subclasses int.
+    if isinstance(ssz_value, Boolean):
+        return bool(ssz_value)
+    if isinstance(ssz_value, bytes):
+        return to_hex(ssz_value)
+    if isinstance(ssz_value, int):
+        return str(ssz_value)
+    if isinstance(ssz_value, Fp):
+        return str(ssz_value.value)
+    return str(ssz_value)
 
 
-class SSZTest(BaseConsensusFixture):
-    """Fixture for SSZ conformance testing.
+class SSZFixture(BaseConsensusFixture):
+    """
+    Emitted vector for SSZ conformance.
+
+    JSON output: typeName, value, rawBytes (decode-failure mode only),
+    serialized, root.
+    """
+
+    type_name: str
+    """SSZ type class name."""
+
+    value: SSZType
+    """The SSZ value under test."""
+
+    raw_bytes: str | None = None
+    """Hex-encoded malformed input, present in decode-failure mode only."""
+
+    serialized: str
+    """Hex SSZ bytes; carries the malformed input verbatim on decode failure."""
+
+    root: str
+    """Hex hash_tree_root. Empty in decode-failure mode."""
+
+    @field_serializer("value", when_used="json")
+    def serialize_value(self, ssz_value: SSZType) -> Any:
+        """Convert an SSZ value to a JSON-safe representation."""
+        return _serialize_ssz_value(ssz_value)
+
+
+class SSZTest(BaseTestSpec):
+    """
+    Spec for SSZ conformance testing.
 
     Supports two modes:
 
     - Roundtrip mode (default): encode `value`, decode back, verify equality
       and compute `hash_tree_root`. JSON output: typeName, value, serialized, root.
-    - Decode-failure mode: when `expect_exception` is set, `raw_bytes` holds
-      the malformed input. The fixture decodes the input as `type(value)` and
-      asserts the expected exception is raised. JSON output keeps the same
-      shape; `serialized` holds the malformed bytes and `root` is empty.
+    - Decode-failure mode: when `expected_rejection` is set, `raw_bytes` holds
+      the malformed input. Generation decodes the input as `type(value)` and
+      asserts the decoder rejects it. JSON output keeps the same shape;
+      `serialized` holds the malformed bytes and `root` is empty.
     """
 
-    format_name: ClassVar[str] = "ssz"
+    format_name: ClassVar[str] = "ssz_test"
     description: ClassVar[str] = "Tests SSZ serialization roundtrip and hash_tree_root"
 
     type_name: str
@@ -45,46 +91,24 @@ class SSZTest(BaseConsensusFixture):
     """
     Hex-encoded malformed input for decode-failure mode.
 
-    Only consulted when `expect_exception` is set. The fixture decodes these
+    Only consulted when `expected_rejection` is set. Generation decodes these
     bytes using `type(value).decode_bytes` and asserts the decoder raises.
     """
 
-    serialized: str = ""
-    """Hex SSZ bytes. Empty until fixture generation fills it."""
-
-    root: str = ""
-    """Hex hash_tree_root. Empty in decode-failure mode."""
-
-    @field_serializer("value", when_used="json")
-    def serialize_value(self, value: SSZType) -> Any:
-        """Convert an SSZ value to a JSON-safe representation."""
-        if isinstance(value, CamelModel):
-            return value.to_json()
-        # Boolean before int — Boolean subclasses int.
-        if isinstance(value, Boolean):
-            return bool(value)
-        if isinstance(value, bytes):
-            return "0x" + value.hex()
-        if isinstance(value, int):
-            return str(value)
-        if isinstance(value, Fp):
-            return str(value.value)
-        return str(value)
-
-    def make_fixture(self) -> "SSZTest":
-        """Verify SSZ roundtrip or decode-failure and produce the reference output.
+    def generate(self) -> SSZFixture:
+        """
+        Verify SSZ roundtrip or decode-failure and produce the reference output.
 
         Returns:
-            A copy of this fixture with `serialized` and `root` populated.
+            The emitted vector with serialized bytes and root populated.
 
         Raises:
             AssertionError:
                 - In roundtrip mode, if `decode(encode(value)) != value`.
-                - In decode-failure mode, if the decoder does not raise the
-                  expected exception type.
+                - In decode-failure mode, if the decoder does not reject.
         """
-        if self.expect_exception is not None:
-            return self._make_decode_failure()
+        if self.expected_rejection is not None:
+            return self._generate_decode_failure()
 
         ssz_bytes = self.value.encode_bytes()
         decoded = self.value.decode_bytes(ssz_bytes)
@@ -98,25 +122,29 @@ class SSZTest(BaseConsensusFixture):
 
         root = hash_tree_root(self.value)
 
-        self.serialized = "0x" + ssz_bytes.hex()
-        self.root = "0x" + root.hex()
-        return self
+        return SSZFixture(
+            type_name=self.type_name,
+            value=self.value,
+            raw_bytes=self.raw_bytes,
+            serialized=to_hex(ssz_bytes),
+            root=to_hex(root),
+        )
 
-    def _make_decode_failure(self) -> "SSZTest":
-        """Run the decode-failure path: assert decoding `raw_bytes` raises.
+    def _generate_decode_failure(self) -> SSZFixture:
+        """
+        Run the decode-failure path: assert decoding `raw_bytes` raises.
 
         The class of `value` is used as the decoder. `serialized` carries
         the malformed bytes verbatim so consumers can reproduce the input.
 
         Raises:
-            AssertionError: If the decoder succeeds or raises a different type.
+            AssertionError: If the decoder succeeds.
             ValueError: If `raw_bytes` is missing.
         """
-        assert self.expect_exception is not None
         if self.raw_bytes is None:
-            raise ValueError("raw_bytes is required when expect_exception is set")
+            raise ValueError("raw_bytes is required when expected_rejection is set")
 
-        raw = bytes.fromhex(self.raw_bytes.removeprefix("0x"))
+        raw = from_hex(self.raw_bytes)
         decoder = type(self.value)
         exception_raised: Exception | None = None
         try:
@@ -124,17 +152,13 @@ class SSZTest(BaseConsensusFixture):
         except Exception as exception:
             exception_raised = exception
 
-        if exception_raised is None:
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} from "
-                f"{decoder.__name__}.decode_bytes, but decode succeeded"
-            )
-        if not isinstance(exception_raised, self.expect_exception):
-            raise AssertionError(
-                f"Expected {self.expect_exception.__name__} but got "
-                f"{type(exception_raised).__name__}: {exception_raised}"
-            )
-
-        self.serialized = "0x" + raw.hex()
-        self.root = ""
-        return self
+        return SSZFixture(
+            type_name=self.type_name,
+            value=self.value,
+            raw_bytes=self.raw_bytes,
+            serialized=to_hex(raw),
+            root="",
+            rejection_reason=self.assert_decode_rejection(
+                exception_raised, f"{decoder.__name__}.decode_bytes"
+            ),
+        )

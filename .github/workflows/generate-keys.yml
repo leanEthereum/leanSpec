@@ -38,10 +38,10 @@ jobs:
         run: uv sync --no-progress
 
       - name: Generate test scheme keys
-        run: uv run python -m consensus_testing.keys --scheme test
+        run: uv run keys --scheme test
 
       - name: Generate prod scheme keys
-        run: LEAN_ENV=prod uv run python -m consensus_testing.keys --scheme prod
+        run: LEAN_ENV=prod uv run keys --scheme prod
 
       - name: Publish to leansig-test-keys
         run: |

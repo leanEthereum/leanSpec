@@ -8,7 +8,8 @@ from lean_spec.spec.ssz import Bytes4, Bytes32, Uint16, Uint64
 
 
 class DomainType(Bytes4):
-    """4-byte domain for message-id isolation in Gossipsub.
+    """
+    4-byte domain for message-id isolation in Gossipsub.
 
     Per the Ethereum consensus spec, DomainType is 4 bytes.
     Prepended to the message hash to compute the gossip message ID.

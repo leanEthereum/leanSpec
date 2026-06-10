@@ -1,7 +1,7 @@
 """Exports the networking subspec components."""
 
-from .service import NetworkService
-from .transport import PeerId
+from lean_spec.node.networking.service import NetworkService
+from lean_spec.node.networking.transport import PeerId
 
 __all__ = [
     "NetworkService",

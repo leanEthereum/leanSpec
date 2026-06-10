@@ -2,26 +2,34 @@
 
 from typing import override
 
-from pydantic import field_serializer, model_serializer
+from pydantic import model_serializer
 
 from lean_spec.base import StrictBaseModel
-from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.container import Container
-
-from .constants import TARGET_CONFIG
-from .merkle import HashSubTree
-from .prf import PRFKey
-from .types import (
+from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
+from lean_spec.spec.crypto.xmss.merkle import HashSubTree
+from lean_spec.spec.crypto.xmss.prf import PRFKey
+from lean_spec.spec.crypto.xmss.types import (
     HashDigestList,
     HashDigestVector,
     HashTreeOpening,
     Parameter,
     Randomness,
 )
+from lean_spec.spec.forks.lstar.slot import Slot
+from lean_spec.spec.ssz import Uint64
+from lean_spec.spec.ssz.container import Container
 
 
-class PublicKey(Container):
+class HexSerializedContainer(Container):
+    """Container that serializes to a 0x-prefixed hex SSZ payload in JSON mode."""
+
+    @model_serializer(mode="plain", when_used="json")
+    def _serialize_as_hex(self) -> str:
+        """Serialize as a 0x-prefixed hex string for JSON output."""
+        return "0x" + self.encode_bytes().hex()
+
+
+class PublicKey(HexSerializedContainer):
     """Long-lived public component of an XMSS key pair."""
 
     root: HashDigestVector
@@ -31,10 +39,8 @@ class PublicKey(Container):
     """Public personalization tag mixed into every hash."""
 
 
-class Signature(Container):
+class Signature(HexSerializedContainer):
     """A single XMSS signature for one slot and message under one public key."""
-
-    model_config = Container.model_config | {"frozen": True}
 
     path: HashTreeOpening
     """Authentication path from the one-time key up to the Merkle root."""
@@ -57,18 +63,14 @@ class Signature(Container):
         """Fixed byte length of an SSZ-encoded signature."""
         return TARGET_CONFIG.SIGNATURE_LENGTH_BYTES
 
-    @model_serializer(mode="plain", when_used="json")
-    def _serialize_as_bytes(self) -> str:
-        """Serialize as a 0x-prefixed hex string for JSON output."""
-        return "0x" + self.encode_bytes().hex()
-
     def __hash__(self) -> int:
         """Content-deterministic hash via SSZ encoding."""
         return hash(self.encode_bytes())
 
 
-class SecretKey(Container):
-    """Private state of an XMSS key pair.
+class SecretKey(HexSerializedContainer):
+    """
+    Private state of an XMSS key pair.
 
     Must be kept confidential.
 
@@ -134,22 +136,16 @@ class SecretKey(Container):
 class KeyPair(StrictBaseModel):
     """A single XMSS public/secret pair returned by key generation."""
 
-    model_config = StrictBaseModel.model_config | {"frozen": True}
-
     public_key: PublicKey
     """Public key."""
 
     secret_key: SecretKey
     """Secret key."""
 
-    @field_serializer("public_key", "secret_key", when_used="json")
-    def _encode_hex(self, value: PublicKey | SecretKey) -> str:
-        """Emit each half as plain hex in JSON mode only."""
-        return value.encode_bytes().hex()
-
 
 class ValidatorKeyPair(StrictBaseModel):
-    """Two independent XMSS key pairs for one validator's two signing roles.
+    """
+    Two independent XMSS key pairs for one validator's two signing roles.
 
     A validator signs two messages per slot:
 
@@ -160,8 +156,6 @@ class ValidatorKeyPair(StrictBaseModel):
     So one key cannot cover both roles in the same slot.
     Two independent pairs let each role sign from its own Winternitz chains.
     """
-
-    model_config = StrictBaseModel.model_config | {"frozen": True}
 
     attestation_keypair: KeyPair
     """Key pair used to sign attestation data."""

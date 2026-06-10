@@ -66,13 +66,14 @@ from collections import deque
 from dataclasses import dataclass, field
 from itertools import islice
 
-from .message import GossipsubMessage
-from .types import MessageId, Timestamp, TopicId
+from lean_spec.node.networking.gossipsub.message import GossipsubMessage
+from lean_spec.node.networking.gossipsub.types import MessageId, Timestamp, TopicId
 
 
 @dataclass(slots=True)
 class CacheEntry:
-    """A single entry in the message cache.
+    """
+    A single entry in the message cache.
 
     Stores the message along with its topic for efficient retrieval
     during IWANT responses and topic-filtered IHAVE gossip.
@@ -90,7 +91,8 @@ class CacheEntry:
 
 @dataclass(slots=True)
 class MessageCache:
-    """Sliding window cache for gossipsub messages.
+    """
+    Sliding window cache for gossipsub messages.
 
     Maintains recent messages for:
 
@@ -133,7 +135,8 @@ class MessageCache:
         self._windows.append(set())
 
     def put(self, topic: TopicId, message: GossipsubMessage) -> bool:
-        """Add a message to the cache.
+        """
+        Add a message to the cache.
 
         Messages are added to the newest window (index 0) and
         indexed for fast retrieval. Duplicates are ignored.
@@ -155,7 +158,8 @@ class MessageCache:
         return True
 
     def get(self, message_id: MessageId) -> GossipsubMessage | None:
-        """Retrieve a message by ID.
+        """
+        Retrieve a message by ID.
 
         Used to respond to IWANT requests from peers.
 
@@ -165,11 +169,12 @@ class MessageCache:
         Returns:
             The cached message, or None if not found/evicted.
         """
-        entry = self._by_id.get(message_id)
-        return entry.message if entry else None
+        cache_entry = self._by_id.get(message_id)
+        return cache_entry.message if cache_entry else None
 
     def has(self, message_id: MessageId) -> bool:
-        """Check if a message is cached.
+        """
+        Check if a message is cached.
 
         Args:
             message_id: Message ID to check.
@@ -180,7 +185,8 @@ class MessageCache:
         return message_id in self._by_id
 
     def get_gossip_ids(self, topic: TopicId) -> list[MessageId]:
-        """Get message IDs for IHAVE gossip.
+        """
+        Get message IDs for IHAVE gossip.
 
         Returns IDs from the most recent `mcache_gossip` windows
         that belong to the specified topic.
@@ -191,20 +197,21 @@ class MessageCache:
         Returns:
             List of message IDs for IHAVE advertisement.
         """
-        result: list[MessageId] = []
+        gossip_message_ids: list[MessageId] = []
 
         windows_to_check = min(self.mcache_gossip, len(self._windows))
 
         for window in islice(self._windows, windows_to_check):
             for message_id in window:
-                entry = self._by_id.get(message_id)
-                if entry and entry.topic == topic:
-                    result.append(message_id)
+                cache_entry = self._by_id.get(message_id)
+                if cache_entry and cache_entry.topic == topic:
+                    gossip_message_ids.append(message_id)
 
-        return result
+        return gossip_message_ids
 
     def shift(self) -> int:
-        """Shift the cache window, evicting the oldest.
+        """
+        Shift the cache window, evicting the oldest.
 
         Called at each heartbeat to age the cache:
 
@@ -230,7 +237,8 @@ class MessageCache:
 
 @dataclass(slots=True)
 class SeenCache:
-    """TTL-based cache for deduplicating messages.
+    """
+    TTL-based cache for deduplicating messages.
 
     Tracks message IDs that have been seen to prevent reprocessing
     duplicates. Unlike `MessageCache`, this only stores IDs (not
@@ -262,7 +270,8 @@ class SeenCache:
     """
 
     def add(self, message_id: MessageId, timestamp: Timestamp) -> bool:
-        """Mark a message as seen.
+        """
+        Mark a message as seen.
 
         Args:
             message_id: Message ID to mark as seen.
@@ -278,7 +287,8 @@ class SeenCache:
         return True
 
     def has(self, message_id: MessageId) -> bool:
-        """Check if a message has been seen.
+        """
+        Check if a message has been seen.
 
         Args:
             message_id: Message ID to check.
@@ -289,7 +299,8 @@ class SeenCache:
         return message_id in self._timestamps
 
     def cleanup(self, current_time: float) -> int:
-        """Remove expired entries.
+        """
+        Remove expired entries.
 
         Should be called periodically (e.g., each heartbeat)
         to prevent unbounded memory growth.

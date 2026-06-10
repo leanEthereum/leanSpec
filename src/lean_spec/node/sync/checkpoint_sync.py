@@ -98,8 +98,8 @@ async def fetch_finalized_state(url: str, state_class: type[State]) -> State:
         raise CheckpointSyncError(
             f"HTTP error {exception.response.status_code}: {exception.response.text[:200]}"
         ) from exception
-    except Exception as e:
-        raise CheckpointSyncError(f"Failed to fetch state: {e}") from e
+    except Exception as exception:
+        raise CheckpointSyncError(f"Failed to fetch state: {exception}") from exception
 
 
 def verify_checkpoint_state(state: State) -> bool:
@@ -149,6 +149,6 @@ def verify_checkpoint_state(state: State) -> bool:
         logger.info("Checkpoint state verified: slot=%s, root=%s...", state.slot, state_root)
         return True
 
-    except Exception as e:
-        logger.error("State verification failed: %s", e)
+    except Exception as exception:
+        logger.error("State verification failed: %s", exception)
         return False

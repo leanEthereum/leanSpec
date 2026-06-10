@@ -1,48 +1,40 @@
-"""Signature Verification: Out-of-Range Attestation Validator Index."""
+"""Signature verification rejects an aggregate naming a validator index past the registry."""
 
 import pytest
+
 from consensus_testing import (
     AggregatedAttestationSpec,
     BlockSpec,
+    ExpectedRejection,
     VerifySignaturesTestFiller,
-    generate_pre_state,
 )
+from lean_spec.spec.forks import RejectionReason, Slot, ValidatorIndex
 
-from lean_spec.spec.forks import Slot, ValidatorIndex
-
-pytestmark = pytest.mark.valid_until("Lstar")
+pytestmark = [pytest.mark.valid_until("Lstar"), pytest.mark.real_crypto]
 
 
 def test_attestation_validator_index_out_of_range_rejected(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
     """
-    An attestation whose participants include an index beyond the registry is rejected.
+    An aggregate naming a validator index past the registry is rejected.
 
-    Scenario
-    --------
-    - Anchor state has 4 validators.
-    - Block at slot 2 carries one aggregated attestation whose participants
-      bitfield includes validator index 99.
-    - The attestation is marked valid_signature=False so the fixture path
-      builds an invalid proof directly, without attempting XMSS signing for
-      the out-of-range index.
+    Given
+    -----
+    - a registry of 4 validators (indices 0 through 3).
+    - an aggregate naming validator index 99.
+    - the aggregate carries an invalid signature, so no signing is attempted for the missing index.
 
-    Expected Behavior
-    -----------------
-    Signature verification fails with AssertionError: "Validator index out of range"
+    When
+    ----
+    - signature verification runs.
 
-    Why This Matters
-    ----------------
-    Enforces the validator-registry bound during attestation verification:
-
-    - A malformed bitfield that references indices past the registry would
-      otherwise cause undefined behaviour in public-key lookup.
-    - The bound-check runs before attestation aggregate-signature verification
-      so the failure reason is unambiguous across clients.
+    Then
+    ----
+    - verification is rejected as an out-of-range validator index.
+    - the bound check runs before signature checking, so the reason is unambiguous.
     """
     verify_signatures_test(
-        anchor_state=generate_pre_state(),
         block=BlockSpec(
             slot=Slot(2),
             attestations=[
@@ -55,5 +47,5 @@ def test_attestation_validator_index_out_of_range_rejected(
                 ),
             ],
         ),
-        expect_exception=AssertionError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.VALIDATOR_INDEX_OUT_OF_RANGE),
     )

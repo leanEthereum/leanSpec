@@ -64,8 +64,7 @@ Reference: https://github.com/google/snappy
 from __future__ import annotations
 
 from lean_spec.node.networking.varint import encode_varint
-
-from .constants import (
+from lean_spec.node.snappy.constants import (
     BLOCK_SIZE,
     HASH_MULTIPLIER,
     INPUT_MARGIN_BYTES,
@@ -73,11 +72,12 @@ from .constants import (
     MIN_HASH_TABLE_BITS,
     SNAPPY_VARINT_MAX_BYTES,
 )
-from .encoding import encode_copy_tag, encode_literal_tag
+from lean_spec.node.snappy.encoding import encode_copy_tag, encode_literal_tag
 
 
 def compress(data: bytes) -> bytes:
-    """Compress data using the Snappy algorithm.
+    """
+    Compress data using the Snappy algorithm.
 
     Args:
         data: Uncompressed input bytes.
@@ -125,7 +125,8 @@ def compress(data: bytes) -> bytes:
 
 
 def max_compressed_length(source_bytes: int) -> int:
-    """Calculate the maximum possible compressed length for a given input size.
+    """
+    Calculate the maximum possible compressed length for a given input size.
 
     Snappy guarantees that compressed output never exceeds this size.
     Useful for pre-allocating buffers.
@@ -148,7 +149,8 @@ def max_compressed_length(source_bytes: int) -> int:
 
 
 def _compress_block(block: bytes) -> bytes:
-    """Compress a single block (up to 64KB).
+    """
+    Compress a single block (up to 64KB).
 
     This is the heart of the compression algorithm.
 
@@ -255,7 +257,8 @@ def _compress_block(block: bytes) -> bytes:
 
 
 def _compute_table_bits(block_size: int) -> int:
-    """Compute hash table size (as power of 2) for a given block size.
+    """
+    Compute hash table size (as power of 2) for a given block size.
 
     Args:
         block_size: Size of the block being compressed.
@@ -278,7 +281,8 @@ def _compute_table_bits(block_size: int) -> int:
 
 
 def _hash_4_bytes(data: bytes, pos: int, table_bits: int) -> int:
-    """Hash 4 bytes into a table index.
+    """
+    Hash 4 bytes into a table index.
 
     Args:
         data: Input data.
@@ -318,15 +322,17 @@ def _hash_4_bytes(data: bytes, pos: int, table_bits: int) -> int:
     #   data[1] = 0x42 (B)
     #   data[2] = 0x43 (C)
     #   data[3] = 0x44 (D)
-    #   value = 0x44434241 (D C B A in memory order)
-    value = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24)
+    #   little_endian_word = 0x44434241 (D C B A in memory order)
+    little_endian_word = (
+        data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24)
+    )
 
     # Multiply and mask to 32 bits.
     #
     # The magic constant (0x1e35a7bd) is chosen to spread input bits
     # across the output. This reduces collisions for similar inputs.
     # We mask to 32 bits because Python integers are arbitrary precision.
-    hash_value = (value * HASH_MULTIPLIER) & 0xFFFFFFFF
+    hash_value = (little_endian_word * HASH_MULTIPLIER) & 0xFFFFFFFF
 
     # Take top bits.
     #
@@ -338,7 +344,8 @@ def _hash_4_bytes(data: bytes, pos: int, table_bits: int) -> int:
 
 
 def _matches_at(data: bytes, pos1: int, pos2: int) -> bool:
-    """Check if 4 bytes at pos1 equal 4 bytes at pos2.
+    """
+    Check if 4 bytes at pos1 equal 4 bytes at pos2.
 
     Args:
         data: Input data.
@@ -372,7 +379,8 @@ def _matches_at(data: bytes, pos1: int, pos2: int) -> bool:
 
 
 def _extend_match(data: bytes, match_pos: int, current_pos: int) -> int:
-    """Extend a match as far as possible.
+    """
+    Extend a match as far as possible.
 
     Args:
         data: Input data.
@@ -424,7 +432,8 @@ def _extend_match(data: bytes, match_pos: int, current_pos: int) -> int:
 
 
 def _emit_literal(literal_data: bytes) -> bytes:
-    """Encode literal data (unmatched bytes).
+    """
+    Encode literal data (unmatched bytes).
 
     Args:
         literal_data: Raw bytes to emit.

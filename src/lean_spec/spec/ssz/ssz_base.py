@@ -5,8 +5,7 @@ from abc import ABC, abstractmethod
 from typing import IO, Final, Self
 
 from lean_spec.base import StrictBaseModel
-
-from .exceptions import SSZSerializationError
+from lean_spec.spec.ssz.exceptions import SSZSerializationError
 
 BYTES_PER_LENGTH_OFFSET: Final = 4
 """Width of an SSZ offset prefixing each variable-size element.
@@ -20,7 +19,8 @@ class SSZType(ABC):
     @classmethod
     @abstractmethod
     def is_fixed_size(cls) -> bool:
-        """Whether every instance encodes to the same number of bytes.
+        """
+        Whether every instance encodes to the same number of bytes.
 
         Returns:
             True for fixed-size types, False for variable-size.
@@ -30,7 +30,8 @@ class SSZType(ABC):
     @classmethod
     @abstractmethod
     def get_byte_length(cls) -> int:
-        """Fixed encoded byte length of this type.
+        """
+        Fixed encoded byte length of this type.
 
         Returns:
             The constant byte width every instance encodes to.
@@ -42,7 +43,8 @@ class SSZType(ABC):
 
     @abstractmethod
     def serialize(self, stream: IO[bytes]) -> int:
-        """Write the SSZ encoding to a binary stream.
+        """
+        Write the SSZ encoding to a binary stream.
 
         Args:
             stream: Output binary stream.
@@ -55,7 +57,8 @@ class SSZType(ABC):
     @classmethod
     @abstractmethod
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
-        """Read one value from a binary stream within a bounded byte budget.
+        """
+        Read one value from a binary stream within a bounded byte budget.
 
         Args:
             stream: Source binary stream.
@@ -67,7 +70,8 @@ class SSZType(ABC):
         ...
 
     def encode_bytes(self) -> bytes:
-        """Encode this value to its SSZ byte representation.
+        """
+        Encode this value to its SSZ byte representation.
 
         Returns:
             Serialized bytes.
@@ -78,7 +82,8 @@ class SSZType(ABC):
 
     @classmethod
     def decode_bytes(cls, data: bytes) -> Self:
-        """Decode SSZ bytes into a new instance.
+        """
+        Decode SSZ bytes into a new instance.
 
         Rejects trailing bytes left over after the stream-based decoder finishes.
         A spec decoder must accept exactly one canonical encoding per value.
@@ -105,7 +110,8 @@ class SSZType(ABC):
 
 
 class SSZModel(StrictBaseModel, SSZType):
-    """Pydantic-backed SSZ base used by containers, lists, vectors, and bitfields.
+    """
+    Pydantic-backed SSZ base used by containers, lists, vectors, and bitfields.
 
     Two shapes share this base:
 
@@ -117,16 +123,16 @@ class SSZModel(StrictBaseModel, SSZType):
 
     def __len__(self) -> int:
         """Element count for collections, field count for containers."""
-        data = getattr(self, "data", None)
-        if data is not None:
-            return len(data)
+        data_field = getattr(self, "data", None)
+        if data_field is not None:
+            return len(data_field)
         return len(type(self).model_fields)
 
     def __repr__(self) -> str:
         """Show collection contents as data=[...] or container fields as name=value pairs."""
         cls_name = type(self).__name__
-        data = getattr(self, "data", None)
-        if data is not None:
-            return f"{cls_name}(data={list(data)!r})"
+        data_field = getattr(self, "data", None)
+        if data_field is not None:
+            return f"{cls_name}(data={list(data_field)!r})"
         field_strs = [f"{name}={getattr(self, name)!r}" for name in type(self).model_fields]
         return f"{cls_name}({' '.join(field_strs)})"

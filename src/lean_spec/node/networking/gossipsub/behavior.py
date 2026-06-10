@@ -95,7 +95,8 @@ logger = logging.getLogger(__name__)
 
 
 def _try_decompress(data: bytes) -> tuple[bytes, bytes]:
-    """Attempt Snappy decompression and return data with domain.
+    """
+    Attempt Snappy decompression and return data with domain.
 
     Decompress once upfront so that message ID computation and event delivery share the result.
 
@@ -167,9 +168,6 @@ class PeerState:
 
     receive_task: asyncio.Task[None] | None = None
     """Task running the receive loop for this peer."""
-
-    last_rpc_time: float = 0.0
-    """Timestamp of last RPC exchange."""
 
     backoff: dict[TopicId, float] = field(default_factory=dict)
     """Per-topic backoff expiry times (from PRUNE)."""
@@ -259,7 +257,8 @@ class GossipsubBehavior:
         self._stop_event.set()
 
     def subscribe(self, topic: TopicId) -> None:
-        """Subscribe to a topic.
+        """
+        Subscribe to a topic.
 
         Joining a topic means:
 
@@ -282,7 +281,8 @@ class GossipsubBehavior:
             self._spawn_background_task(self._broadcast_subscription(topic, subscribe=True))
 
     def unsubscribe(self, topic: TopicId) -> None:
-        """Unsubscribe from a topic.
+        """
+        Unsubscribe from a topic.
 
         Leaving a topic means:
 
@@ -349,7 +349,8 @@ class GossipsubBehavior:
         *,
         inbound: bool = False,
     ) -> None:
-        """Add a connected peer and establish gossipsub session.
+        """
+        Add a connected peer and establish gossipsub session.
 
         Libp2p uses separate streams for each direction:
 
@@ -448,7 +449,8 @@ class GossipsubBehavior:
         logger.info("Removed gossipsub peer %s", peer_id)
 
     async def publish(self, topic: TopicId, data: bytes) -> None:
-        """Publish a message to a topic.
+        """
+        Publish a message to a topic.
 
         Sends the message to mesh peers, or fanout peers if not subscribed.
 
@@ -511,7 +513,8 @@ class GossipsubBehavior:
     async def get_next_event(
         self,
     ) -> GossipsubMessageEvent | GossipsubPeerEvent | None:
-        """Get the next event from the queue.
+        """
+        Get the next event from the queue.
 
         Returns None when stopped or no event available.
         """
@@ -741,7 +744,8 @@ class GossipsubBehavior:
             logger.debug("Sent %d messages in response to IWANT from %s", len(messages), peer_id)
 
     def _handle_idontwant(self, peer_id: PeerId, idontwant: ControlIDontWant) -> None:
-        """Handle an IDONTWANT message from a peer (v1.2).
+        """
+        Handle an IDONTWANT message from a peer (v1.2).
 
         Records message IDs the peer does not want so we skip
         forwarding those messages to them.
@@ -765,11 +769,12 @@ class GossipsubBehavior:
                 await self._heartbeat()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.warning("Heartbeat error: %s", e)
+            except Exception as exception:
+                logger.warning("Heartbeat error: %s", exception)
 
     async def _heartbeat(self) -> None:
-        """Perform heartbeat maintenance.
+        """
+        Perform heartbeat maintenance.
 
         1. Maintain mesh sizes (GRAFT/PRUNE)
         2. Send IHAVE gossip to non-mesh peers
@@ -883,24 +888,25 @@ class GossipsubBehavior:
         )
 
     async def _send_rpc(self, peer_id: PeerId, rpc: RPC) -> None:
-        """Deliver an RPC to a peer using length-prefixed framing.
+        """
+        Deliver an RPC to a peer using length-prefixed framing.
 
         Silently skips if the peer has no outbound stream yet.
         This is normal during connection setup -- the outbound
         stream arrives shortly after the inbound one.
         """
-        state = self._peers.get(peer_id)
-        if state is None or state.outbound_stream is None:
+        peer_state = self._peers.get(peer_id)
+        if peer_state is None or peer_state.outbound_stream is None:
             logger.debug("Cannot send RPC to %s: no outbound stream yet", peer_id)
             return
 
         try:
-            data = rpc.encode()
+            encoded_rpc = rpc.encode()
 
             # Libp2p frames each RPC with a varint length prefix.
             # The receiver uses this to know where one message ends
             # and the next begins on the multiplexed stream.
-            frame = encode_varint(len(data)) + data
+            frame = encode_varint(len(encoded_rpc)) + encoded_rpc
             logger.debug(
                 "Sending RPC to %s: %d bytes (subs=%d, msgs=%d)",
                 peer_id,
@@ -908,15 +914,14 @@ class GossipsubBehavior:
                 len(rpc.subscriptions),
                 len(rpc.publish),
             )
-            state.outbound_stream.write(frame)
-            await state.outbound_stream.drain()
-
-            state.last_rpc_time = time.time()
-        except Exception as e:
-            logger.warning("Failed to send RPC to %s: %s", peer_id, e)
+            peer_state.outbound_stream.write(frame)
+            await peer_state.outbound_stream.drain()
+        except Exception as exception:
+            logger.warning("Failed to send RPC to %s: %s", peer_id, exception)
 
     async def _receive_loop(self, peer_id: PeerId, stream: QuicStreamAdapter) -> None:
-        """Process incoming RPCs from a peer for the lifetime of the connection.
+        """
+        Process incoming RPCs from a peer for the lifetime of the connection.
 
         Each RPC is length-prefixed with a varint, matching the libp2p
         framing convention: `[varint length][RPC payload] ...`
@@ -956,16 +961,16 @@ class GossipsubBehavior:
                         try:
                             rpc = RPC.decode(rpc_data)
                             await self._handle_rpc(peer_id, rpc)
-                        except Exception as e:
+                        except Exception as exception:
                             # Frame was already extracted; skip this RPC
                             # but continue parsing subsequent frames.
-                            logger.warning("Error decoding RPC from %s: %s", peer_id, e)
+                            logger.warning("Error decoding RPC from %s: %s", peer_id, exception)
                             continue
 
                 except asyncio.CancelledError:
                     break
-                except Exception as e:
-                    logger.warning("Error receiving from %s: %s", peer_id, e)
+                except Exception as exception:
+                    logger.warning("Error receiving from %s: %s", peer_id, exception)
                     break
         finally:
             await self.remove_peer(peer_id)
@@ -976,7 +981,8 @@ class GossipsubBehavior:
         subscribe: bool,
         prune_peers: set[PeerId] | None = None,
     ) -> None:
-        """Announce a subscription change and adjust the mesh accordingly.
+        """
+        Announce a subscription change and adjust the mesh accordingly.
 
         Every peer learns about the change so they can update their
         peer-subscription tables. Beyond that:

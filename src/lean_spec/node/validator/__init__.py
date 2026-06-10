@@ -15,8 +15,8 @@ Lifecycle:
 4. At interval 1, produce attestations for non-proposers
 """
 
-from .registry import ValidatorRegistry
-from .service import ValidatorService
+from lean_spec.node.validator.registry import ValidatorRegistry
+from lean_spec.node.validator.service import ValidatorService
 
 __all__ = [
     "ValidatorService",

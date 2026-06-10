@@ -34,11 +34,22 @@ Source = "https://github.com/leanEthereum/lean-spec"
 Issues = "https://github.com/leanEthereum/lean-spec/issues"
 
 [project.scripts]
-fill = "framework.cli.fill:fill"
-apitest = "framework.cli.apitest:apitest"
+fill = "consensus_testing.cli.fill:fill"
+apitest = "consensus_testing.cli.apitest:apitest"
+keys = "consensus_testing.keys_cli:keys"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Ship only the committed test-scheme keys.
+# Prod-scheme keys are large local downloads and are fetched on demand.
+# Why explicit opt-out: the default sweeps every file in package
+# directories, including multi-megabyte locally downloaded prod keys.
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.package-data]
+consensus_testing = ["py.typed", "test_keys/test_scheme/*.json", "cli/pytest_ini_files/*.ini"]
 
 [tool.uv.sources]
 lean-spec = { workspace = true }

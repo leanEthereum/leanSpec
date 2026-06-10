@@ -1,20 +1,13 @@
 """Fork definitions for consensus layer testing."""
 
-from typing import Type
+from consensus_testing.forks.base import BaseFork
+from consensus_testing.forks.forks import Lstar
 
-from framework.forks import BaseFork, BaseForkMeta, ForkRegistry
-
-from . import forks as _forks_module
-from .forks import Lstar
-
-Fork = Type[BaseFork]
-
-registry = ForkRegistry(_forks_module)
+FORKS_BY_NAME: dict[str, type[BaseFork]] = {"lstar": Lstar}
+"""Registered consensus forks, keyed by lowercase fork name."""
 
 __all__ = [
     "BaseFork",
-    "BaseForkMeta",
-    "Fork",
+    "FORKS_BY_NAME",
     "Lstar",
-    "registry",
 ]

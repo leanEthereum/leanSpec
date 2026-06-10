@@ -1,6 +1,7 @@
 """State Transition: Justification"""
 
 import pytest
+
 from consensus_testing import (
     AggregatedAttestationSpec,
     BlockSpec,
@@ -8,7 +9,6 @@ from consensus_testing import (
     StateTransitionTestFiller,
     generate_pre_state,
 )
-
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     JustificationRoots,
@@ -24,24 +24,24 @@ def test_supermajority_attestations_justify_block(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that aggregated attestations advance justification end to end.
+    A supermajority of votes justifies the target slot.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Process block_1 at slot 1
-    3. Process a block at slot 2 with attestations from validators 0, 1, and 2
-       targeting block_1 at slot 1
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1, V2's votes for block_1.
 
-    Expected Behavior
-    -----------------
-    1. Slot 1 is a justifiable target after finalized slot 0
-    2. Three of four validators form a supermajority
-    3. The attestation target resolves to block_1 and matches chain history
-    4. latest_justified_slot advances to slot 1
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - block_1's slot is justified.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -72,21 +72,23 @@ def test_even_validator_threshold_boundary(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that exact two-thirds support is sufficient for justification.
+    Exactly two-thirds support justifies the target slot.
 
-    Scenario
-    --------
-    1. Start from genesis with 6 validators
-    2. Process block_1 at slot 1
-    3. Process a block at slot 2 with attestations from validators 0, 1, 2,
-       and 3 targeting block_1 at slot 1
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1, V2, V3's votes for block_1.
+    - 4 of 6 meets the threshold exactly.
 
-    Expected Behavior
-    -----------------
-    1. Slot 1 is a justifiable target after finalized slot 0
-    2. Four of six validators meet the exact two-thirds threshold
-    3. The >= supermajority rule applies at the boundary
-    4. latest_justified_slot advances to slot 1
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - block_1's slot is justified.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=6),
@@ -121,21 +123,23 @@ def test_below_threshold_support_does_not_justify(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that support below two-thirds does not justify a target.
+    Support below two-thirds does not justify the target slot.
 
-    Scenario
-    --------
-    1. Start from genesis with 6 validators
-    2. Process block_1 at slot 1
-    3. Process a block at slot 2 with attestations from validators 0, 1, and 2
-       targeting block_1 at slot 1
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1, V2's votes for block_1.
+    - 3 of 6 falls below the threshold.
 
-    Expected Behavior
-    -----------------
-    1. Slot 1 is a justifiable target after finalized slot 0
-    2. Three of six validators are below the two-thirds threshold
-    3. The pending tally remains below supermajority
-    4. latest_justified_slot stays at genesis
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - justified stays at slot 0.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=6),
@@ -169,24 +173,26 @@ def test_votes_accumulate_across_blocks(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that pending justification votes persist across multiple blocks.
+    Pending votes for one target accumulate across blocks until justified.
 
-    Scenario
-    --------
-    1. Start from genesis with 6 validators
-    2. Process block_1 at slot 1
-    3. Process a block at slot 2 with attestations from validators 0, 1, and 2
-       targeting block_1 at slot 1
-    4. Process a block at slot 3 with a new attestation from validator 3
-       targeting the same block_1 at slot 1
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block(3)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2's tally of 3 is below the threshold.
+    - block(3) includes V3's vote for block_1.
+    - the votes accumulate to 4 of 6, reaching the threshold.
 
-    Expected Behavior
-    -----------------
-    1. The first attestation set is below threshold on its own
-    2. The later attestation reuses the same target and preserves prior votes
-    3. Four of six validators are accumulated for block_1 across blocks
-    4. latest_justified_slot advances to slot 1
-    5. Pending vote tracking is cleared after justification
+    When
+    ----
+    - the chain processes block_1, block_2, and block(3).
+
+    Then
+    ----
+    - block_1's slot is justified.
+    - no pending votes remain.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=6),
@@ -237,26 +243,26 @@ def test_repeated_validators_do_not_double_count_across_blocks(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that repeated validator votes do not count twice across blocks.
+    Repeating the same voters across blocks does not add weight.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Process block_1 at slot 1
-    3. Process block_2 at slot 2 with attestations from validators 0 and 1
-       targeting block_1 at slot 1
-    4. Process block_3 at slot 3 with the same validators 0 and 1 targeting
-       block_1 again
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3)
+    - block_2 includes V0, V1's votes for block_1.
+    - block_3 includes V0, V1's votes for block_1 again.
+    - unique support stays at 2 of 4, below the threshold.
 
-    Expected Behavior
-    -----------------
-    1. The first attestation set is below threshold on its own
-    2. Repeating the same validators in a later block does not add new weight
-    3. Unique support remains two of four validators, which is below two-thirds
-    4. latest_justified_slot stays at genesis
+    When
+    ----
+    - the chain processes block_1, block_2, and block_3.
+
+    Then
+    ----
+    - justified stays at slot 0.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -303,21 +309,26 @@ def test_repeated_validator_does_not_double_count_within_same_block(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that the same validator is counted once even across distinct attestations.
+    The same voter counts once across distinct votes in one block.
 
-    Scenario
-    --------
-    1. Start from genesis with 6 validators
-    2. Process block_1 at slot 1
-    3. Process block_2 at slot 2 with two attestations targeting block_1:
-       - validators 0, 1, and 2 attest with attestation slot 1
-       - validator 0 attests again with attestation slot 2
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1, V2's votes for block_1.
+    - block(2) also includes V0's vote for block_1 again.
+    - tallies are keyed by target, so V0 counts once.
+    - unique support stays at 3 of 6, below the threshold.
 
-    Expected Behavior
-    -----------------
-    1. Justification tallies are keyed by target root, not by raw attestation count
-    2. Validator 0 contributes only one unit of support toward block_1
-    3. Unique support remains three of six validators, below the threshold
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - justified stays at slot 0.
+    - the pending tally marks V0, V1, V2 only.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=6),
@@ -371,24 +382,26 @@ def test_pronic_boundary_acceptance(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that a pronic-distance target is accepted for justification.
+    A target at a pronic distance is justifiable.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Build a linear chain through block_7 at slot 7
-    3. Process block_7 with attestations from validators 0, 1, and 2
-       targeting block_6 at slot 6
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_7(7)
+    - block_7 includes V0, V1, V2's votes for block_6.
+    - slot 6 is justifiable, since delta 6 from finalized 0 is pronic.
 
-    Expected Behavior
-    -----------------
-    1. latest_finalized_slot remains at genesis
-    2. Slot 6 is a valid target because delta 6 is pronic
-    3. Three of four validators form a supermajority
-    4. latest_justified_slot advances to slot 6
+    When
+    ----
+    - the chain processes block_1 through block_7.
+
+    Then
+    ----
+    - block_6's slot is justified.
+    - finalized stays at slot 0.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -425,24 +438,27 @@ def test_non_justifiable_boundary_rejection(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that a non-justifiable boundary target is rejected.
+    A target at a non-justifiable distance is ignored even with supermajority support.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Build a linear chain through block_8 at slot 8
-    3. Process block_8 with attestations from validators 0, 1, and 2
-       targeting block_7 at slot 7
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_8(8)
+    - block_8 includes V0, V1, V2's votes for block_7.
+    - slot 7 is not justifiable, since delta 7 from finalized 0 is neither square nor pronic.
+    - the vote is ignored despite reaching the threshold.
 
-    Expected Behavior
-    -----------------
-    1. latest_finalized_slot remains at genesis
-    2. Slot 7 is not justifiable after finalized slot 0
-    3. Even with supermajority support, the attestation is ignored
-    4. latest_justified_slot stays at genesis
+    When
+    ----
+    - the chain processes block_1 through block_8.
+
+    Then
+    ----
+    - justified stays at slot 0.
+    - finalized stays at slot 0.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -480,24 +496,26 @@ def test_square_boundary_acceptance(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that a square-distance target is accepted for justification.
+    A target at a perfect-square distance is justifiable.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Build a linear chain through block_10 at slot 10
-    3. Process block_10 with attestations from validators 0, 1, and 2
-       targeting block_9 at slot 9
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_10(10)
+    - block_10 includes V0, V1, V2's votes for block_9.
+    - slot 9 is justifiable, since delta 9 from finalized 0 is a perfect square.
 
-    Expected Behavior
-    -----------------
-    1. latest_finalized_slot remains at genesis
-    2. Slot 9 is a valid target because delta 9 is a perfect square
-    3. Three of four validators form a supermajority
-    4. latest_justified_slot advances to slot 9
+    When
+    ----
+    - the chain processes block_1 through block_10.
+
+    Then
+    ----
+    - block_9's slot is justified.
+    - finalized stays at slot 0.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -537,22 +555,27 @@ def test_split_supermajority_aggregations_in_same_block_justify(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that two aggregates for the same target combine within a single block.
+    Two split aggregates for one target combine within a single block to justify.
 
-    Scenario
-    --------
-    1. Start from genesis with 6 validators
-    2. Process block_1 at slot 1
-    3. Process a block at slot 2 with two separate attestations targeting
-       block_1 at slot 1: validators 0-1 in one aggregate, validators 2-3
-       in another
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1's votes for block_1.
+    - block(2) includes V2, V3's votes for block_1.
+    - neither aggregate alone reaches the threshold.
+    - the two aggregates merge to 4 of 6, reaching the threshold.
 
-    Expected Behavior
-    -----------------
-    1. Neither aggregate alone reaches the two-thirds threshold
-    2. The implementation merges both aggregates toward the same tally
-    3. Four of six validators form a supermajority when combined
-    4. latest_justified_slot advances to slot 1
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - block_1's slot is justified.
+    - finalized stays at slot 0.
+    - no pending votes remain.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=6),
@@ -598,20 +621,25 @@ def test_odd_validator_threshold_boundary_justifies(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that four of five validators meet the two-thirds threshold.
+    Four of five validators clears the two-thirds threshold and justifies.
 
-    Scenario
-    --------
-    1. Start from genesis with 5 validators
-    2. Process block_1 at slot 1
-    3. Process a block at slot 2 with attestations from validators 0, 1, 2,
-       and 3 targeting block_1 at slot 1
+    Given
+    -----
+    - 5 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1, V2, V3's votes for block_1.
+    - 4 of 5 clears the threshold, since 4*3 = 12 is at least 5*2 = 10.
 
-    Expected Behavior
-    -----------------
-    1. Four of five validators is 80%, above the two-thirds threshold
-    2. The integer math check passes: 4 * 3 = 12 >= 5 * 2 = 10
-    3. latest_justified_slot advances to slot 1
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - block_1's slot is justified.
+    - finalized stays at slot 0.
+    - no pending votes remain.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=5),
@@ -650,20 +678,25 @@ def test_odd_validator_threshold_boundary_does_not_justify(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that three of five validators do not meet the two-thirds threshold.
+    Three of five validators falls below the two-thirds threshold.
 
-    Scenario
-    --------
-    1. Start from genesis with 5 validators
-    2. Process block_1 at slot 1
-    3. Process a block at slot 2 with attestations from validators 0, 1,
-       and 2 targeting block_1 at slot 1
+    Given
+    -----
+    - 5 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1, V2's votes for block_1.
+    - 3 of 5 falls below the threshold, since 3*3 = 9 is less than 5*2 = 10.
 
-    Expected Behavior
-    -----------------
-    1. Three of five validators is 60%, below the two-thirds threshold
-    2. The integer math check fails: 3 * 3 = 9 < 5 * 2 = 10
-    3. latest_justified_slot stays at genesis
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - justified stays at slot 0.
+    - finalized stays at slot 0.
+    - the pending tally marks V0, V1, V2 only.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=5),
@@ -708,23 +741,28 @@ def test_supermajority_with_mismatched_target_root_is_ignored(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that a supermajority cannot justify a slot with the wrong canonical root.
+    A supermajority for a target slot with the wrong root is ignored.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Process block_1 at slot 1 and block_2 at slot 2
-    3. Process a block at slot 3 with attestations from validators 0, 1, and 2
-       targeting slot 1 but using block_2's root instead of block_1's root
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block(3)
+    - block(3) includes V0, V1, V2's votes for target slot 1 using block_2's root.
+    - the attested root does not match the canonical block at slot 1.
+    - the vote is ignored despite reaching the threshold.
 
-    Expected Behavior
-    -----------------
-    1. The attested root does not match the canonical block at slot 1
-    2. Even with supermajority support, the attestation is rejected
-    3. latest_justified_slot stays at genesis
+    When
+    ----
+    - the chain processes block_1, block_2, and block(3).
+
+    Then
+    ----
+    - justified stays at slot 0.
+    - finalized stays at slot 0.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -759,24 +797,28 @@ def test_attestation_with_target_root_not_in_historical_hashes_is_skipped(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that an attestation with a fabricated target root is silently skipped.
+    A vote whose target root is absent from chain history is silently skipped.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Process block_1 at slot 1
-    3. Process block_2 at slot 2 with attestations from validators 0, 1, and 2
-       targeting slot 1 with a valid Bytes32 root that does not match block_1
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes V0, V1, V2's votes for target slot 1 with a fabricated root.
+    - the head stays canonical, so the vote reaches state processing.
+    - the target root is absent from chain history, so the vote is skipped.
 
-    Expected Behavior
-    -----------------
-    1. The block at slot 2 is processed successfully
-    2. The attestation reaches state processing because its head stays canonical
-    3. The target root fails the historical_block_hashes check and is skipped
-    4. latest_justified_slot stays at genesis
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - justified stays at slot 0.
+    - finalized stays at slot 0.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -807,26 +849,90 @@ def test_attestation_with_target_root_not_in_historical_hashes_is_skipped(
     )
 
 
+def test_attestation_with_off_canonical_head_does_not_justify_target(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    A vote whose head is off the canonical chain is skipped before any tally.
+
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) carries a forced V0, V1, V2 vote from genesis to block_1.
+    - the source and target roots match the canonical chain.
+    - the head root is a sibling at slot 1, where block_1 is canonical.
+    - the head does not match, so the whole vote is skipped.
+
+    When
+    ----
+    - the chain processes both blocks.
+
+    Then
+    ----
+    - justified stays at slot 0.
+    - finalized stays at slot 0.
+    - no pending votes remain.
+    """
+    state_transition_test(
+        blocks=[
+            BlockSpec(slot=Slot(1), label="block_1"),
+            BlockSpec(
+                slot=Slot(2),
+                parent_label="block_1",
+                forced_attestations=[
+                    AggregatedAttestationSpec(
+                        validator_indices=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(2),
+                        target_slot=Slot(1),
+                        target_root_label="block_1",
+                        head_root=Bytes32(b"\x99" * 32),
+                        head_slot=Slot(1),
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(2),
+            latest_justified_slot=Slot(0),
+            latest_finalized_slot=Slot(0),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
+        ),
+    )
+
+
 def test_justification_clears_only_the_resolved_target_votes(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that justifying one target clears only that target's pending votes.
+    Justifying one target clears only that target's pending votes.
 
-    Scenario
-    --------
-    1. Start from genesis with 6 validators
-    2. Process block_1 at slot 1
-    3. Process block_2 at slot 2 with validators 0, 1, and 2 voting for block_1
-    4. Process block_3 at slot 3 with validators 0 and 1 voting for block_2
-    5. Process block_4 at slot 4 with validator 3 voting for block_1 again
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block(4)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_3 includes V0, V1's votes for block_2.
+    - block(4) includes V3's vote for block_1.
+    - block_1 reaches 4 of 6 and is justified.
+    - the pending tally for block_2 is unrelated and stays.
 
-    Expected Behavior
-    -----------------
-    1. Votes for block_1 and block_2 are tracked independently
-    2. The later vote from validator 3 brings block_1 to the two-thirds threshold
-    3. Pending votes for block_1 are cleared once slot 1 becomes justified
-    4. The unrelated pending votes for block_2 remain tracked
+    When
+    ----
+    - the chain processes block_1, block_2, block_3, and block(4).
+
+    Then
+    ----
+    - block_1's slot is justified.
+    - finalized stays at slot 0.
+    - the pending tally for block_2 marks V0, V1 only.
     """
     state_transition_test(
         pre=generate_pre_state(num_validators=6),
@@ -903,25 +1009,34 @@ def test_target_at_or_before_source_is_ignored(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that a vote cannot move backward to a target at or before its source.
+    A vote whose target is at or before its source is ignored.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Justify block_1 at slot 1 in block_2
-    3. Create a pending vote tally for block_2 in block_3 with validators 0 and 1
-    4. Justify block_4 at slot 4 in block_5 so the source advances to slot 4
-    5. Process block_6 with validator 2 voting for the older block_2 target
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+          -> block_5(5) -> block(6)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_3 includes V0, V1's votes for block_2.
+    - block_3's partial tally for block_2 stays pending.
+    - block_5 includes V0, V1, V2's votes for block_4.
+    - block_5 justifies slot 4, so the source advances to slot 4.
+    - block(6) includes V2's vote for the older block_2.
+    - target slot 2 is not after source slot 4, so the vote is ignored.
 
-    Expected Behavior
-    -----------------
-    1. The block_6 attestation uses source slot 4 from the current justified checkpoint
-    2. Its target slot 2 is not strictly after the source slot and is ignored
-    3. The old pending votes for block_2 do not gain validator 2's support
-    4. latest_justified_slot remains at slot 4
+    When
+    ----
+    - the chain processes block_1 through block(6).
+
+    Then
+    ----
+    - justified stays at slot 4.
+    - finalized stays at slot 0.
+    - the pending tally for block_2 marks V0, V1 only.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -1023,28 +1138,31 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Attestation targeting an already-justified slot is ignored without error.
+    A vote for an already-justified slot is ignored without error.
 
-    Scenario
-    --------
-    1. Start from genesis with 4 validators
-    2. Process block_1 at slot 1
-    3. Process block_2 at slot 2 with attestations from validators 0, 1, and 2
-       targeting block_1 at slot 1, justifying slot 1
-    4. Process block_3 at slot 3 with an attestation from validator 3
-       targeting block_1 at slot 1 (already justified)
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block(3)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block(3) includes V3's vote for block_1, which is already justified.
+    - the duplicate vote is skipped with no state change.
 
-    Expected Behavior
-    -----------------
-    1. Slot 1 becomes justified after block_2
-    2. The attestation in block_3 targets an already-justified slot
-    3. The duplicate attestation is silently skipped with no state change
-    4. The block containing the duplicate attestation is accepted as valid
+    When
+    ----
+    - the chain processes block_1, block_2, and block(3).
+
+    Then
+    ----
+    - block_1's slot stays justified.
+    - finalized stays at slot 0.
+    - the justified-slots bitfield marks slot 1 alone.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
-            # Step 1 — Build chain and justify slot X
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
                 slot=Slot(2),
@@ -1063,9 +1181,6 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
                     ),
                 ],
             ),
-            # Step 2 — Include duplicate attestation targeting slot X
-            # Step 3 — Apply state transition
-            # Assertion C — No errors during processing
             BlockSpec(
                 slot=Slot(3),
                 parent_label="block_2",
@@ -1083,10 +1198,8 @@ def test_attestation_with_already_justified_target_is_silently_skipped(
         ],
         post=StateExpectation(
             slot=Slot(3),
-            # Assertion A — Justification preserved
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
-            # Assertion B — No additional state change from the duplicate attestation
             justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False)]),
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
@@ -1098,45 +1211,43 @@ def test_attestation_with_zero_hash_source_root_is_skipped(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Attestation with ZERO_HASH source root has no effect on state.
+    A vote with a zero-hash source root has no effect, and the valid vote justifies.
 
-    Scenario
-    --------
-    Four validators. Block 2 carries two attestations targeting slot 1:
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes a malformed V0, V1, V2 vote for block_1 with a zero-hash source root.
+    - block(2) includes a valid V0, V1, V2 vote for block_1.
+    - the malformed vote has no effect.
+    - the valid vote justifies slot 1.
 
-    - First: source root overridden to ZERO_HASH (malformed)
-    - Second: valid source from genesis justified
+    When
+    ----
+    - the chain processes both blocks.
 
-    Expected post-state
-    -------------------
-    - Justified slot: 1 (only the valid attestation counted)
-    - No pending votes (the malformed attestation had no effect)
+    Then
+    ----
+    - block_1's slot is justified.
+    - finalized stays at slot 0.
+    - the justified-slots bitfield marks slot 1 alone.
+    - no pending votes remain.
 
-    What this verifies
-    ------------------
-    A Byzantine proposer could include an attestation with a zero-hash
-    source root. The state transition must process the block without
-    error and the malformed attestation must not affect justification.
-
-    The test cannot isolate WHICH guard rejects the attestation.
-    The spec has two guards that both catch this case:
-
-    - Zero-hash early exit (source.root == ZERO_HASH)
-    - Historical hashes mismatch (ZERO_HASH != genesis block root)
-
-    The post-state is identical regardless of which fires first.
-    What matters for client teams: correct post-state, no crash.
+    Note
+    ----
+    Two guards both reject the malformed vote.
+    One is the zero-hash early exit on the source root.
+    The other is the absence of a zero hash from chain history.
+    The post-state is the same regardless of which fires first.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
                 slot=Slot(2),
                 parent_label="block_1",
                 attestations=[
-                    # Malformed: source root = ZERO_HASH.
-                    # A real source root would be the genesis block hash.
                     AggregatedAttestationSpec(
                         validator_indices=[
                             ValidatorIndex(0),
@@ -1148,8 +1259,6 @@ def test_attestation_with_zero_hash_source_root_is_skipped(
                         target_root_label="block_1",
                         source_root=ZERO_HASH,
                     ),
-                    # Valid: correct source derived from genesis justified.
-                    # Threshold: 3*3=9 >= 2*4=8 -> justifies slot 1.
                     AggregatedAttestationSpec(
                         validator_indices=[
                             ValidatorIndex(0),
@@ -1165,13 +1274,9 @@ def test_attestation_with_zero_hash_source_root_is_skipped(
         ],
         post=StateExpectation(
             slot=Slot(2),
-            # Only the valid attestation produced state changes.
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
             justified_slots=JustifiedSlots(data=[Boolean(True)]),
-            # No pending votes: the malformed attestation did not create
-            # any entries, and the valid one's votes were cleared on
-            # justification.
             justifications_roots=JustificationRoots(data=[]),
             justifications_validators=JustificationValidators(data=[]),
         ),
@@ -1182,39 +1287,43 @@ def test_attestation_with_zero_hash_target_root_is_skipped(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Attestation with ZERO_HASH target root has no effect on state.
+    A vote with a zero-hash target root has no effect, and the valid vote justifies.
 
-    Scenario
-    --------
-    Four validators. Block 2 carries two attestations targeting slot 1:
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block(2)
+    - block(2) includes a malformed V0, V1, V2 vote for target slot 1 with a zero-hash root.
+    - block(2) includes a valid V0, V1, V2 vote for block_1.
+    - the malformed vote has no effect.
+    - the valid vote justifies slot 1.
 
-    - First: target root overridden to ZERO_HASH (malformed)
-    - Second: valid target from block_1
+    When
+    ----
+    - the chain processes both blocks.
 
-    Expected post-state
-    -------------------
-    - Justified slot: 1 (only the valid attestation counted)
-    - No pending votes (the malformed attestation had no effect)
+    Then
+    ----
+    - block_1's slot is justified.
+    - finalized stays at slot 0.
+    - the justified-slots bitfield marks slot 1 alone.
+    - no pending votes remain.
 
-    What this verifies
-    ------------------
-    Same principle as the source zero-hash test. Two guards catch this:
-
-    - Zero-hash early exit (target.root == ZERO_HASH)
-    - Historical hashes mismatch (ZERO_HASH != block_1 root)
-
-    The test proves correct post-state regardless of which fires.
+    Note
+    ----
+    Two guards both reject the malformed vote.
+    One is the zero-hash early exit on the target root.
+    The other is the absence of a zero hash from chain history.
+    The post-state is the same regardless of which fires first.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
                 slot=Slot(2),
                 parent_label="block_1",
                 attestations=[
-                    # Malformed: target root = ZERO_HASH.
-                    # A real target root would be block_1's hash.
                     AggregatedAttestationSpec(
                         validator_indices=[
                             ValidatorIndex(0),
@@ -1225,8 +1334,6 @@ def test_attestation_with_zero_hash_target_root_is_skipped(
                         target_slot=Slot(1),
                         target_root=ZERO_HASH,
                     ),
-                    # Valid: correct target resolved from block_1 label.
-                    # Threshold: 3*3=9 >= 2*4=8 -> justifies slot 1.
                     AggregatedAttestationSpec(
                         validator_indices=[
                             ValidatorIndex(0),
@@ -1255,44 +1362,38 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Attestation whose source slot is not justified is ignored without error.
+    A vote whose source slot is not justified is ignored without error.
 
-    Scenario
-    --------
-    Four validators. Justify slot 1 in block 2, then in block 4 include:
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block(4)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_3 carries no votes, so slot 2 stays unjustified.
+    - block(4) includes V0, V1's vote from block_1 to block_2.
+    - block(4) carries a forced V2, V3 vote from block_2 to block_3.
+    - the forced vote bypasses the builder, which would otherwise filter it.
+    - the forced vote passes every guard except the source-justified check.
+    - its source slot 2 is not justified, so it is skipped at the first guard.
 
-    - Valid: V0, V1 with source=slot 1 (justified), target=slot 2
-    - Forced: V2, V3 with source=slot 2 (NOT justified), target=slot 3
+    When
+    ----
+    - the chain processes block_1, block_2, block_3, and block(4).
 
-    The forced attestation bypasses the block builder (which would
-    filter it out) so it reaches the state transition directly.
-
-    Expected post-state
-    -------------------
-    - Justified slot: 1 (unchanged, valid attestation is 2/4 = below threshold)
-    - Pending votes: [True, True, False, False] (only V0, V1 recorded)
-    - No pending votes from V2, V3 (their attestation was skipped)
-
-    Why this test is precise
-    ------------------------
-    The forced attestation is crafted so that EVERY guard in the
-    attestation processing EXCEPT the source-justified check would pass:
-
-    - Source root matches historical hashes (real block_2 root)
-    - Target root matches historical hashes (real block_3 root)
-    - Neither root is zero-hash
-    - Chronological order holds (target slot 3 > source slot 2)
-    - Target is justifiable (delta=3 from finalized=0, within window)
-
-    Only the source-justified guard (slot 2 is not justified) rejects it.
-    The 4-entry pending votes (not 8) proves it was skipped.
+    Then
+    ----
+    - block_1's slot stays justified.
+    - finalized stays at slot 0.
+    - the valid vote is 2 of 4, below the threshold, so it only adds pending votes.
+    - the pending roots hold one target, block_2.
+    - the pending tally marks V0, V1 only.
+    - the skip leaves 4 tally entries, not the 8 a second target would add.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
-            # Justify slot 1: 3/4 validators attest.
-            # Threshold: 3*3=9 >= 2*4=8 -> passes.
             BlockSpec(
                 slot=Slot(2),
                 parent_label="block_1",
@@ -1310,21 +1411,11 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
                     ),
                 ],
             ),
-            # Empty block. Slot 2 stays unjustified.
             BlockSpec(
                 slot=Slot(3),
                 parent_label="block_2",
                 label="block_3",
             ),
-            # Two attestations: one valid (through builder), one forced (bypasses builder).
-            #
-            # Valid: V0, V1 with justified source=1, target=2.
-            #   2/4 below threshold -> creates pending votes, no justification.
-            #
-            # Forced: V2, V3 with unjustified source=2, target=3.
-            #   Source slot 2 is NOT justified -> skipped at the first guard.
-            #   If not skipped, it would create a second set of pending votes
-            #   (8 total entries). The 4-entry result proves the skip.
             BlockSpec(
                 slot=Slot(4),
                 parent_label="block_3",
@@ -1358,16 +1449,8 @@ def test_attestation_with_unjustified_source_is_silently_skipped(
             slot=Slot(4),
             latest_justified_slot=Slot(1),
             latest_finalized_slot=Slot(0),
-            # Slot 1 justified, slots 2 and 3 not.
             justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False), Boolean(False)]),
-            # Exactly 1 pending target root (the valid attestation's target = block_2).
-            # If the forced attestation had been processed, there would be 2 roots
-            # (block_2 and block_3).
             justifications_roots_count=1,
-            # 4 entries = 1 target x 4 validators.
-            # V0 and V1 voted (True), V2 and V3 did not (False).
-            # If the forced attestation had been processed, there would be
-            # 8 entries (2 targets x 4 validators).
             justifications_validators_count=4,
             justifications_validators=JustificationValidators(
                 data=[
@@ -1385,32 +1468,32 @@ def test_same_block_multi_target_attestations_advance_to_highest_slot(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Multiple supermajority attestations in one block advance latest_justified
-    to the highest justified slot, not the last one processed.
+    Several supermajorities in one block advance justified to the highest target.
 
-    Scenario
-    --------
-    Four validators.
-    Linear chain block_1 through block_9 with empty blocks.
-    Block 10 carries three supermajority attestations in this order:
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_9(9) -> block(10)
+    - block(10) includes V0, V1, V2's votes for block_4.
+    - slot 4 is justifiable, since delta 4 from finalized 0 is in the immediate window.
+    - block(10) includes V0, V1, V2's votes for block_9.
+    - slot 9 is justifiable, since delta 9 from finalized 0 is a perfect square.
+    - block(10) carries a forced V0, V1, V2 vote for block_6.
+    - slot 6 is justifiable, since delta 6 from finalized 0 is pronic.
+    - the on-chain body order is target slot 4, then 9, then 6.
 
-    - validators 0, 1, 2 with target slot 4 (delta=4, immediate window)
-    - validators 0, 1, 2 with target slot 9 (delta=9, perfect square)
-    - validators 0, 1, 2 with target slot 6 (delta=6, pronic number)
+    When
+    ----
+    - the chain processes block_1 through block(10).
 
-    Expected post-state
-    -------------------
-    - latest_justified_slot: 9 (the highest justified target)
-    - justified_slots: slots 4, 6, and 9 all marked True
-
-    Why this test exists
-    --------------------
-    Iteration order must not move the justified checkpoint backwards.
-    Processing slot 6 after slot 9 should leave latest_justified at slot 9,
-    since slot 9 is later in chain history.
+    Then
+    ----
+    - slots 4, 6, and 9 are each justified.
+    - justified slot is 9, the highest target, not the last one processed.
+    - finalized stays at slot 0.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -1421,9 +1504,6 @@ def test_same_block_multi_target_attestations_advance_to_highest_slot(
             BlockSpec(slot=Slot(7), parent_label="block_6", label="block_7"),
             BlockSpec(slot=Slot(8), parent_label="block_7", label="block_8"),
             BlockSpec(slot=Slot(9), parent_label="block_8", label="block_9"),
-            # The block builder sorts attestations by target slot ascending.
-            # Slots 4 and 9 go through the builder; the slot 6 entry is forced
-            # in last so the on-chain body order becomes [4, 9, 6].
             BlockSpec(
                 slot=Slot(10),
                 parent_label="block_9",

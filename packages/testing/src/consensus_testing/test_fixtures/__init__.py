@@ -1,53 +1,203 @@
 """Consensus test fixture format definitions (Pydantic models)."""
 
-from .api_endpoint import ApiEndpointTest
-from .base import BaseConsensusFixture
-from .fork_choice import ForkChoiceTest
-from .gossipsub_handler import GossipsubHandlerTest
-from .justifiability import JustifiabilityTest
-from .networking_codec import NetworkingCodecTest
-from .poseidon_permutation import PoseidonPermutationTest
-from .slot_clock import SlotClockTest
-from .ssz import SSZTest
-from .state_transition import StateTransitionTest
-from .sync import SyncTest
-from .verify_multi_message_proofs import (
-    DropComponentMessageBinding,
-    IncrementComponentSlot,
-    RebindComponentToAlternateHeadRoot,
-    SwapComponentMessageBindings,
-    SwapComponentParticipantPublicKey,
-    VerifyMultiMessageProofsTest,
+from consensus_testing.test_fixtures.api_endpoint import ApiEndpointFixture, ApiEndpointTest
+from consensus_testing.test_fixtures.base import (
+    PROOF_FAILURE_REJECTION_REASONS,
+    BaseConsensusFixture,
+    BaseTestSpec,
+    ExpectedRejection,
+    FixtureInfo,
+    ProofSetting,
 )
-from .verify_signatures import VerifySignaturesTest
-from .verify_single_message_proofs import (
+from consensus_testing.test_fixtures.fork_choice import ForkChoiceFixture, ForkChoiceTest
+from consensus_testing.test_fixtures.gossipsub_handler import (
+    CachedMessage,
+    GossipsubEvent,
+    GossipsubHandlerFixture,
+    GossipsubHandlerTest,
+    GossipsubInitialState,
+    GossipsubMeshParameters,
+    IncomingGraft,
+    IncomingIDontWant,
+    IncomingIHave,
+    IncomingIWant,
+    IncomingPrune,
+    IncomingPublish,
+    PeerConfiguration,
+)
+from consensus_testing.test_fixtures.justifiability import (
+    JustifiabilityFixture,
+    JustifiabilityTest,
+)
+from consensus_testing.test_fixtures.networking_codec import (
+    DecodeFailure,
+    EnrRoundtrip,
+    GossipMessageIdentifier,
+    GossipsubRpcRoundtrip,
+    GossipTopicRoundtrip,
+    NetworkingCodecFixture,
+    NetworkingCodecTest,
+    PeerIdentifierDerivation,
+    ReqRespRequestRoundtrip,
+    ReqRespResponseRoundtrip,
+    ReqRespResponseStream,
+    ResponseChunkSpec,
+    RpcControlSpec,
+    RpcGraftSpec,
+    RpcIDontWantSpec,
+    RpcIHaveSpec,
+    RpcIWantSpec,
+    RpcMessageSpec,
+    RpcPruneSpec,
+    RpcSubscriptionSpec,
+    SnappyBlockRoundtrip,
+    SnappyFrameRoundtrip,
+    VarintRoundtrip,
+)
+from consensus_testing.test_fixtures.poseidon_permutation import (
+    PoseidonPermutationFixture,
+    PoseidonPermutationTest,
+)
+from consensus_testing.test_fixtures.slot_clock import (
+    CurrentInterval,
+    CurrentSlot,
+    FromSlot,
+    FromUnixTime,
+    SlotClockFixture,
+    SlotClockTest,
+    TotalIntervals,
+)
+from consensus_testing.test_fixtures.ssz import SSZFixture, SSZTest
+from consensus_testing.test_fixtures.state_transition import (
+    StateTransitionFixture,
+    StateTransitionTest,
+)
+from consensus_testing.test_fixtures.sync import SyncFixture, SyncTest, VerifyCheckpoint
+from consensus_testing.test_fixtures.verify_proofs import (
+    DropMessageBinding,
     IncrementEmittedSlot,
     RebindToAlternateHeadRoot,
+    SwapMessageBindings,
     SwapParticipantPublicKey,
+    VerifyMultiMessageProofsFixture,
+    VerifyMultiMessageProofsTest,
+    VerifySingleMessageProofsFixture,
     VerifySingleMessageProofsTest,
 )
+from consensus_testing.test_fixtures.verify_signatures import (
+    AppendPhantomAttestation,
+    ClearFirstAttestationBits,
+    CorruptProof,
+    MutateStateRoot,
+    SetProposerIndex,
+    SwapFirstTwoAttestations,
+    VerifySignaturesFixture,
+    VerifySignaturesTest,
+)
+
+FIXTURE_FORMATS: tuple[type[BaseTestSpec], ...] = (
+    ApiEndpointTest,
+    ForkChoiceTest,
+    GossipsubHandlerTest,
+    JustifiabilityTest,
+    NetworkingCodecTest,
+    PoseidonPermutationTest,
+    SlotClockTest,
+    SSZTest,
+    StateTransitionTest,
+    SyncTest,
+    VerifyMultiMessageProofsTest,
+    VerifySignaturesTest,
+    VerifySingleMessageProofsTest,
+)
+"""
+Canonical registry of every consensus fixture format.
+
+The pytest plugin registers one filler fixture per entry.
+A new format becomes fillable by adding its class here.
+"""
 
 __all__ = [
+    "CachedMessage",
+    "GossipsubEvent",
+    "GossipsubInitialState",
+    "GossipsubMeshParameters",
+    "IncomingGraft",
+    "IncomingIDontWant",
+    "IncomingIHave",
+    "IncomingIWant",
+    "IncomingPrune",
+    "IncomingPublish",
+    "PeerConfiguration",
+    "DecodeFailure",
+    "EnrRoundtrip",
+    "GossipMessageIdentifier",
+    "GossipsubRpcRoundtrip",
+    "GossipTopicRoundtrip",
+    "PeerIdentifierDerivation",
+    "ReqRespRequestRoundtrip",
+    "ReqRespResponseRoundtrip",
+    "ReqRespResponseStream",
+    "ResponseChunkSpec",
+    "RpcControlSpec",
+    "RpcGraftSpec",
+    "RpcIDontWantSpec",
+    "RpcIHaveSpec",
+    "RpcIWantSpec",
+    "RpcMessageSpec",
+    "RpcPruneSpec",
+    "RpcSubscriptionSpec",
+    "SnappyBlockRoundtrip",
+    "SnappyFrameRoundtrip",
+    "VarintRoundtrip",
+    "CurrentInterval",
+    "CurrentSlot",
+    "FromSlot",
+    "FromUnixTime",
+    "TotalIntervals",
+    "VerifyCheckpoint",
+    "FIXTURE_FORMATS",
     "BaseConsensusFixture",
+    "BaseTestSpec",
+    "ExpectedRejection",
+    "FixtureInfo",
+    "ProofSetting",
+    "PROOF_FAILURE_REJECTION_REASONS",
+    "StateTransitionFixture",
     "StateTransitionTest",
+    "ForkChoiceFixture",
     "ForkChoiceTest",
+    "VerifySingleMessageProofsFixture",
     "VerifySingleMessageProofsTest",
+    "VerifyMultiMessageProofsFixture",
+    "VerifyMultiMessageProofsTest",
     "RebindToAlternateHeadRoot",
     "IncrementEmittedSlot",
     "SwapParticipantPublicKey",
-    "VerifyMultiMessageProofsTest",
-    "RebindComponentToAlternateHeadRoot",
-    "IncrementComponentSlot",
-    "SwapComponentParticipantPublicKey",
-    "SwapComponentMessageBindings",
-    "DropComponentMessageBinding",
+    "SwapMessageBindings",
+    "DropMessageBinding",
+    "VerifySignaturesFixture",
     "VerifySignaturesTest",
+    "SetProposerIndex",
+    "ClearFirstAttestationBits",
+    "CorruptProof",
+    "AppendPhantomAttestation",
+    "MutateStateRoot",
+    "SwapFirstTwoAttestations",
+    "SSZFixture",
     "SSZTest",
+    "NetworkingCodecFixture",
     "NetworkingCodecTest",
+    "GossipsubHandlerFixture",
     "GossipsubHandlerTest",
+    "ApiEndpointFixture",
     "ApiEndpointTest",
+    "SlotClockFixture",
     "SlotClockTest",
+    "JustifiabilityFixture",
     "JustifiabilityTest",
+    "PoseidonPermutationFixture",
     "PoseidonPermutationTest",
+    "SyncFixture",
     "SyncTest",
 ]

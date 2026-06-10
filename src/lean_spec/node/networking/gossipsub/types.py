@@ -6,7 +6,8 @@ from lean_spec.spec.ssz import Bytes20
 
 
 class MessageId(Bytes20):
-    """20-byte message identifier.
+    """
+    20-byte message identifier.
 
     Computed from message contents using SHA256::
 
@@ -19,7 +20,8 @@ class MessageId(Bytes20):
 
 
 class TopicId(str):
-    """Topic string identifier.
+    """
+    Topic string identifier.
 
     Follows the Ethereum consensus format::
 
@@ -30,7 +32,8 @@ class TopicId(str):
 
 
 class Timestamp(float):
-    """Unix timestamp in seconds since epoch.
+    """
+    Unix timestamp in seconds since epoch.
 
     Used for:
 

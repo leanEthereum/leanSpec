@@ -1,12 +1,15 @@
-"""Test vectors for slot clock timing computations.
-
-Every consensus client must derive identical slot and interval numbers
-from wall-clock timestamps. These vectors verify the conversion logic
-for a 4-second slot with 5 intervals of 800 ms each.
-"""
+"""Test vectors for slot clock timing computations (4-second slot, 5 intervals of 800 ms)."""
 
 import pytest
-from consensus_testing import SlotClockTestFiller
+
+from consensus_testing import (
+    CurrentInterval,
+    CurrentSlot,
+    FromSlot,
+    FromUnixTime,
+    SlotClockTestFiller,
+    TotalIntervals,
+)
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -14,204 +17,551 @@ GENESIS = 1700000000
 """Arbitrary genesis timestamp (seconds) used across most vectors."""
 
 
-# --- Interval.from_unix_time ---
+def test_from_unix_time_at_genesis(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp at genesis maps to interval 0.
 
+    Given
+    -----
+    - a timestamp equal to the genesis time.
 
-def test_from_unix_time_at_genesis(slot_clock: SlotClockTestFiller) -> None:
-    """At genesis, zero seconds elapsed yields interval 0."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": GENESIS, "genesisTime": GENESIS},
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 0.
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=GENESIS, genesis_time=GENESIS),
     )
 
 
-def test_from_unix_time_one_second(slot_clock: SlotClockTestFiller) -> None:
-    """One second = 1000 ms. floor(1000 / 800) = 1 interval."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": GENESIS + 1, "genesisTime": GENESIS},
+def test_from_unix_time_one_second(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp one second past genesis maps to interval 1.
+
+    Given
+    -----
+    - a timestamp one second (1000 ms) past genesis.
+
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 1 (floor of 1000 over 800).
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=GENESIS + 1, genesis_time=GENESIS),
     )
 
 
-def test_from_unix_time_one_slot(slot_clock: SlotClockTestFiller) -> None:
-    """One slot = 4 seconds = 4000 ms. 4000 / 800 = 5 intervals."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": GENESIS + 4, "genesisTime": GENESIS},
+def test_from_unix_time_one_slot(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp one slot past genesis maps to interval 5.
+
+    Given
+    -----
+    - a timestamp one slot (4 seconds, 4000 ms) past genesis.
+
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 5 (4000 over 800).
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=GENESIS + 4, genesis_time=GENESIS),
     )
 
 
-def test_from_unix_time_two_seconds(slot_clock: SlotClockTestFiller) -> None:
-    """Two seconds = 2000 ms. floor(2000 / 800) = 2 intervals."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": GENESIS + 2, "genesisTime": GENESIS},
+def test_from_unix_time_two_seconds(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp two seconds past genesis maps to interval 2.
+
+    Given
+    -----
+    - a timestamp two seconds (2000 ms) past genesis.
+
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 2 (floor of 2000 over 800).
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=GENESIS + 2, genesis_time=GENESIS),
     )
 
 
-def test_from_unix_time_three_seconds(slot_clock: SlotClockTestFiller) -> None:
-    """Three seconds = 3000 ms. floor(3000 / 800) = 3 intervals."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": GENESIS + 3, "genesisTime": GENESIS},
+def test_from_unix_time_three_seconds(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp three seconds past genesis maps to interval 3.
+
+    Given
+    -----
+    - a timestamp three seconds (3000 ms) past genesis.
+
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 3 (floor of 3000 over 800).
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=GENESIS + 3, genesis_time=GENESIS),
     )
 
 
-def test_from_unix_time_ten_slots(slot_clock: SlotClockTestFiller) -> None:
-    """Ten slots = 40 seconds = 50 intervals."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": GENESIS + 40, "genesisTime": GENESIS},
+def test_from_unix_time_ten_slots(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp ten slots past genesis maps to interval 50.
+
+    Given
+    -----
+    - a timestamp ten slots (40 seconds) past genesis.
+
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 50.
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=GENESIS + 40, genesis_time=GENESIS),
     )
 
 
-def test_from_unix_time_one_day(slot_clock: SlotClockTestFiller) -> None:
-    """One day = 86400 seconds = 108000 intervals."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": GENESIS + 86400, "genesisTime": GENESIS},
+def test_from_unix_time_one_day(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp one day past genesis maps to interval 108000.
+
+    Given
+    -----
+    - a timestamp one day (86400 seconds) past genesis.
+
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 108000.
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=GENESIS + 86400, genesis_time=GENESIS),
     )
 
 
-def test_from_unix_time_genesis_zero(slot_clock: SlotClockTestFiller) -> None:
-    """Genesis at Unix epoch 0. 100 seconds elapsed = 125 intervals."""
-    slot_clock(
-        operation="from_unix_time",
-        input={"unixSeconds": 100, "genesisTime": 0},
+def test_from_unix_time_genesis_zero(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A timestamp 100 seconds past a zero genesis maps to interval 125.
+
+    Given
+    -----
+    - a genesis time at Unix epoch 0.
+    - a timestamp 100 seconds past genesis.
+
+    When
+    ----
+    - the interval for that timestamp is computed.
+
+    Then
+    ----
+    - the interval is 125.
+    """
+    slot_clock_test(
+        operation=FromUnixTime(unix_seconds=100, genesis_time=0),
     )
 
 
-# --- Interval.from_slot ---
+def test_from_slot_zero(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    Slot 0 starts at interval 0.
 
+    Given
+    -----
+    - slot 0.
 
-def test_from_slot_zero(slot_clock: SlotClockTestFiller) -> None:
-    """Slot 0 starts at interval 0."""
-    slot_clock(operation="from_slot", input={"slot": 0})
+    When
+    ----
+    - the starting interval of the slot is computed.
 
-
-def test_from_slot_one(slot_clock: SlotClockTestFiller) -> None:
-    """Slot 1 starts at interval 5."""
-    slot_clock(operation="from_slot", input={"slot": 1})
-
-
-def test_from_slot_ten(slot_clock: SlotClockTestFiller) -> None:
-    """Slot 10 starts at interval 50."""
-    slot_clock(operation="from_slot", input={"slot": 10})
-
-
-def test_from_slot_hundred(slot_clock: SlotClockTestFiller) -> None:
-    """Slot 100 starts at interval 500."""
-    slot_clock(operation="from_slot", input={"slot": 100})
-
-
-# --- SlotClock.current_slot ---
-
-
-def test_current_slot_at_genesis(slot_clock: SlotClockTestFiller) -> None:
-    """Exactly at genesis: slot 0."""
-    slot_clock(
-        operation="current_slot",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000},
+    Then
+    ----
+    - the interval is 0.
+    """
+    slot_clock_test(
+        operation=FromSlot(slot=0),
     )
 
 
-def test_current_slot_before_genesis(slot_clock: SlotClockTestFiller) -> None:
-    """Before genesis: clamped to slot 0."""
-    slot_clock(
-        operation="current_slot",
-        input={"genesisTime": GENESIS, "currentTimeMs": (GENESIS - 10) * 1000},
+def test_from_slot_one(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    Slot 1 starts at interval 5.
+
+    Given
+    -----
+    - slot 1.
+
+    When
+    ----
+    - the starting interval of the slot is computed.
+
+    Then
+    ----
+    - the interval is 5.
+    """
+    slot_clock_test(
+        operation=FromSlot(slot=1),
     )
 
 
-def test_current_slot_mid_slot(slot_clock: SlotClockTestFiller) -> None:
-    """2 seconds into slot 0: still slot 0."""
-    slot_clock(
-        operation="current_slot",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 2000},
+def test_from_slot_ten(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    Slot 10 starts at interval 50.
+
+    Given
+    -----
+    - slot 10.
+
+    When
+    ----
+    - the starting interval of the slot is computed.
+
+    Then
+    ----
+    - the interval is 50.
+    """
+    slot_clock_test(
+        operation=FromSlot(slot=10),
     )
 
 
-def test_current_slot_at_boundary(slot_clock: SlotClockTestFiller) -> None:
-    """Exactly at slot 1 boundary (4 seconds): slot 1."""
-    slot_clock(
-        operation="current_slot",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 4000},
+def test_from_slot_hundred(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    Slot 100 starts at interval 500.
+
+    Given
+    -----
+    - slot 100.
+
+    When
+    ----
+    - the starting interval of the slot is computed.
+
+    Then
+    ----
+    - the interval is 500.
+    """
+    slot_clock_test(
+        operation=FromSlot(slot=100),
     )
 
 
-def test_current_slot_before_boundary(slot_clock: SlotClockTestFiller) -> None:
-    """One ms before slot 1 boundary: still slot 0 (integer division floors)."""
-    slot_clock(
-        operation="current_slot",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 3999},
+def test_current_slot_at_genesis(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock exactly at genesis reports slot 0.
+
+    Given
+    -----
+    - a wall-clock time equal to the genesis time.
+
+    When
+    ----
+    - the current slot is computed.
+
+    Then
+    ----
+    - the current slot is 0.
+    """
+    slot_clock_test(
+        operation=CurrentSlot(genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000),
     )
 
 
-# --- SlotClock.current_interval ---
+def test_current_slot_before_genesis(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock before genesis clamps to slot 0.
 
+    Given
+    -----
+    - a wall-clock time ten seconds before genesis.
 
-def test_current_interval_at_slot_start(slot_clock: SlotClockTestFiller) -> None:
-    """Exactly at slot start: interval 0."""
-    slot_clock(
-        operation="current_interval",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000},
+    When
+    ----
+    - the current slot is computed.
+
+    Then
+    ----
+    - the current slot is clamped to 0.
+    """
+    slot_clock_test(
+        operation=CurrentSlot(
+            genesis_time=GENESIS, current_time_milliseconds=(GENESIS - 10) * 1000
+        ),
     )
 
 
-def test_current_interval_800ms(slot_clock: SlotClockTestFiller) -> None:
-    """800 ms into slot: interval 1."""
-    slot_clock(
-        operation="current_interval",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 800},
+def test_current_slot_mid_slot(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock partway through slot 0 still reports slot 0.
+
+    Given
+    -----
+    - a wall-clock time two seconds past genesis.
+
+    When
+    ----
+    - the current slot is computed.
+
+    Then
+    ----
+    - the current slot is 0.
+    """
+    slot_clock_test(
+        operation=CurrentSlot(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 2000
+        ),
     )
 
 
-def test_current_interval_1600ms(slot_clock: SlotClockTestFiller) -> None:
-    """1600 ms into slot: interval 2."""
-    slot_clock(
-        operation="current_interval",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 1600},
+def test_current_slot_at_boundary(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock exactly at the slot 1 boundary reports slot 1.
+
+    Given
+    -----
+    - a wall-clock time four seconds past genesis.
+
+    When
+    ----
+    - the current slot is computed.
+
+    Then
+    ----
+    - the current slot is 1.
+    """
+    slot_clock_test(
+        operation=CurrentSlot(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 4000
+        ),
     )
 
 
-def test_current_interval_3200ms(slot_clock: SlotClockTestFiller) -> None:
-    """3200 ms into slot: interval 4."""
-    slot_clock(
-        operation="current_interval",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 3200},
+def test_current_slot_before_boundary(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock one millisecond before the slot 1 boundary still reports slot 0.
+
+    Given
+    -----
+    - a wall-clock time one millisecond before the slot 1 boundary.
+
+    When
+    ----
+    - the current slot is computed.
+
+    Then
+    ----
+    - the current slot is 0.
+    - the floor of the division keeps the slot below 1.
+    """
+    slot_clock_test(
+        operation=CurrentSlot(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 3999
+        ),
     )
 
 
-def test_current_interval_wraps_at_next_slot(slot_clock: SlotClockTestFiller) -> None:
-    """4000 ms = next slot start: interval wraps back to 0."""
-    slot_clock(
-        operation="current_interval",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 4000},
+def test_current_interval_at_slot_start(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock exactly at a slot start reports interval 0.
+
+    Given
+    -----
+    - a wall-clock time at the start of a slot.
+
+    When
+    ----
+    - the interval within the slot is computed.
+
+    Then
+    ----
+    - the interval is 0.
+    """
+    slot_clock_test(
+        operation=CurrentInterval(genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000),
     )
 
 
-def test_current_interval_before_genesis(slot_clock: SlotClockTestFiller) -> None:
-    """Before genesis: interval 0."""
-    slot_clock(
-        operation="current_interval",
-        input={"genesisTime": GENESIS, "currentTimeMs": (GENESIS - 5) * 1000},
+def test_current_interval_800ms(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock 800 ms into a slot reports interval 1.
+
+    Given
+    -----
+    - a wall-clock time 800 ms into a slot.
+
+    When
+    ----
+    - the interval within the slot is computed.
+
+    Then
+    ----
+    - the interval is 1.
+    """
+    slot_clock_test(
+        operation=CurrentInterval(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 800
+        ),
     )
 
 
-# --- SlotClock.total_intervals ---
+def test_current_interval_1600ms(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock 1600 ms into a slot reports interval 2.
 
+    Given
+    -----
+    - a wall-clock time 1600 ms into a slot.
 
-def test_total_intervals_multi_slot(slot_clock: SlotClockTestFiller) -> None:
-    """14.4 seconds = 18 intervals (14400 ms / 800 ms)."""
-    slot_clock(
-        operation="total_intervals",
-        input={"genesisTime": GENESIS, "currentTimeMs": GENESIS * 1000 + 14400},
+    When
+    ----
+    - the interval within the slot is computed.
+
+    Then
+    ----
+    - the interval is 2.
+    """
+    slot_clock_test(
+        operation=CurrentInterval(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 1600
+        ),
     )
 
 
-def test_total_intervals_before_genesis(slot_clock: SlotClockTestFiller) -> None:
-    """Before genesis: 0 intervals."""
-    slot_clock(
-        operation="total_intervals",
-        input={"genesisTime": GENESIS, "currentTimeMs": (GENESIS - 1) * 1000},
+def test_current_interval_3200ms(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock 3200 ms into a slot reports interval 4.
+
+    Given
+    -----
+    - a wall-clock time 3200 ms into a slot.
+
+    When
+    ----
+    - the interval within the slot is computed.
+
+    Then
+    ----
+    - the interval is 4.
+    """
+    slot_clock_test(
+        operation=CurrentInterval(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 3200
+        ),
+    )
+
+
+def test_current_interval_wraps_at_next_slot(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock at the next slot start wraps the interval back to 0.
+
+    Given
+    -----
+    - a wall-clock time 4000 ms past the slot start.
+    - 4000 ms is the start of the next slot.
+
+    When
+    ----
+    - the interval within the slot is computed.
+
+    Then
+    ----
+    - the interval wraps back to 0.
+    """
+    slot_clock_test(
+        operation=CurrentInterval(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 4000
+        ),
+    )
+
+
+def test_current_interval_before_genesis(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock before genesis reports interval 0.
+
+    Given
+    -----
+    - a wall-clock time five seconds before genesis.
+
+    When
+    ----
+    - the interval within the slot is computed.
+
+    Then
+    ----
+    - the interval is 0.
+    """
+    slot_clock_test(
+        operation=CurrentInterval(
+            genesis_time=GENESIS, current_time_milliseconds=(GENESIS - 5) * 1000
+        ),
+    )
+
+
+def test_total_intervals_multi_slot(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock 14400 ms past genesis counts 18 total intervals.
+
+    Given
+    -----
+    - a wall-clock time 14400 ms past genesis.
+
+    When
+    ----
+    - the total intervals elapsed since genesis are computed.
+
+    Then
+    ----
+    - the count is 18 (14400 over 800).
+    """
+    slot_clock_test(
+        operation=TotalIntervals(
+            genesis_time=GENESIS, current_time_milliseconds=GENESIS * 1000 + 14400
+        ),
+    )
+
+
+def test_total_intervals_before_genesis(slot_clock_test: SlotClockTestFiller) -> None:
+    """
+    A clock before genesis counts 0 total intervals.
+
+    Given
+    -----
+    - a wall-clock time one second before genesis.
+
+    When
+    ----
+    - the total intervals elapsed since genesis are computed.
+
+    Then
+    ----
+    - the count is 0.
+    """
+    slot_clock_test(
+        operation=TotalIntervals(
+            genesis_time=GENESIS, current_time_milliseconds=(GENESIS - 1) * 1000
+        ),
     )

@@ -147,14 +147,14 @@ class Base58:
         return "".join(reversed(result))
 
     @classmethod
-    def decode(cls, s: str) -> bytes:
+    def decode(cls, encoded: str) -> bytes:
         """
         Decode Base58 string to bytes.
 
         Leading '1' characters become leading zero bytes.
 
         Args:
-            s: Base58-encoded string.
+            encoded: Base58-encoded string.
 
         Returns:
             Decoded bytes.
@@ -163,23 +163,23 @@ class Base58:
             ValueError: If string contains invalid characters.
         """
         # Count leading '1's (they represent leading zeros)
-        leading_ones = len(s) - len(s.lstrip("1"))
+        leading_ones = len(encoded) - len(encoded.lstrip("1"))
 
         # Convert from base58 to integer
         num = 0
-        for character in s:
-            index = cls.ALPHABET.find(character)
-            if index < 0:
+        for character in encoded:
+            alphabet_position = cls.ALPHABET.find(character)
+            if alphabet_position < 0:
                 raise ValueError(f"Invalid Base58 character: {character!r}")
-            num = num * 58 + index
+            num = num * 58 + alphabet_position
 
         # Convert to bytes
         if num == 0:
-            result = b""
+            decoded_bytes = b""
         else:
-            result = num.to_bytes((num.bit_length() + 7) // 8, "big")
+            decoded_bytes = num.to_bytes((num.bit_length() + 7) // 8, "big")
 
-        return b"\x00" * leading_ones + result
+        return b"\x00" * leading_ones + decoded_bytes
 
 
 _IDENTITY_THRESHOLD: Final[int] = 42

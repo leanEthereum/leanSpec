@@ -7,7 +7,8 @@ from pydantic.alias_generators import to_camel
 
 
 class CamelModel(BaseModel):
-    """Base model that serializes field names as camelCase.
+    """
+    Base model that serializes field names as camelCase.
 
     All spec types inherit from this model so that JSON test vectors
     use camelCase keys for cross-client compatibility.
@@ -46,15 +47,18 @@ class CamelModel(BaseModel):
 
 
 class StrictBaseModel(CamelModel):
-    """Strict base model for all spec types.
+    """
+    Immutable, strict base model for all spec types.
 
-    Adds two constraints on top of CamelModel:
+    Adds three constraints on top of CamelModel:
 
+    - Frozen: attribute assignment after construction raises
     - Extra forbidden: unknown fields rejected at construction
     - Strict: no implicit type coercion
     """
 
     model_config = CamelModel.model_config | {
         "extra": "forbid",
+        "frozen": True,
         "strict": True,
     }

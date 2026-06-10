@@ -5,8 +5,8 @@ Metric names and types follow the leanMetrics spec:
 https://github.com/leanEthereum/leanMetrics/blob/main/metrics.md
 """
 
-from .registry import get_metrics_output, registry
-from .spec_observer import PrometheusObserver
+from lean_spec.node.metrics.registry import get_metrics_output, registry
+from lean_spec.node.metrics.spec_observer import PrometheusObserver
 
 __all__ = [
     "PrometheusObserver",

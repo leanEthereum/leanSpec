@@ -12,18 +12,18 @@ References:
     - libp2p TLS spec: https://github.com/libp2p/specs/blob/master/tls/tls.md
 """
 
-from .connection import (
+from lean_spec.node.networking.transport.quic.connection import (
     QuicConnection,
     QuicConnectionManager,
     QuicStream,
     is_quic_multiaddr,
 )
-from .stream import (
-    QuicStreamResetError,
-    QuicTransportError,
+from lean_spec.node.networking.transport.quic.stream import QuicStreamResetError, QuicTransportError
+from lean_spec.node.networking.transport.quic.stream_adapter import (
+    NegotiationError,
+    QuicStreamAdapter,
 )
-from .stream_adapter import NegotiationError, QuicStreamAdapter
-from .tls import generate_libp2p_certificate
+from lean_spec.node.networking.transport.quic.tls import generate_libp2p_certificate
 
 __all__ = [
     "NegotiationError",

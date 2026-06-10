@@ -1,16 +1,24 @@
 """Store checks model for selective validation in fork choice tests."""
 
-from typing import Literal
+from collections.abc import Callable
+from typing import Any, ClassVar, Literal
 
+from consensus_testing.test_types.selective_check import SelectiveCheck
+from consensus_testing.test_types.utils import resolve_block_root
 from lean_spec.base import CamelModel
-from lean_spec.node.chain.clock import Interval
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks import Interval, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import AttestationData, Block, Store
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import ZERO_HASH, Bytes32
 
-from .utils import resolve_block_root
+_ATTESTATION_SLOT_ACCESSORS: dict[str, Callable[[AttestationData], Slot]] = {
+    "attestation_slot": lambda attestation: attestation.slot,
+    "head_slot": lambda attestation: attestation.head.slot,
+    "source_slot": lambda attestation: attestation.source.slot,
+    "target_slot": lambda attestation: attestation.target.slot,
+}
+"""Per-validator attestation check field to the slot it reads."""
 
 
 def _ancestor_set(blocks: dict[Bytes32, Block], head: Bytes32) -> set[Bytes32]:
@@ -78,51 +86,53 @@ class AttestationCheck(CamelModel):
         self, attestation: "AttestationData", location: str, step_index: int
     ) -> None:
         """Validate attestation properties."""
-        fields_to_check = self.model_fields_set - {"validator", "location"}
-
-        for field_name in fields_to_check:
-            expected = getattr(self, field_name)
-
-            if field_name == "attestation_slot":
-                actual = attestation.slot
-                if actual != expected:
-                    raise AssertionError(
-                        f"Step {step_index}: validator {self.validator} {location} "
-                        f"attestation slot = {actual}, expected {expected}"
-                    )
-
-            elif field_name == "head_slot":
-                actual = attestation.head.slot
-                if actual != expected:
-                    raise AssertionError(
-                        f"Step {step_index}: validator {self.validator} {location} "
-                        f"head slot = {actual}, expected {expected}"
-                    )
-
-            elif field_name == "source_slot":
-                actual = attestation.source.slot
-                if actual != expected:
-                    raise AssertionError(
-                        f"Step {step_index}: validator {self.validator} {location} "
-                        f"source slot = {actual}, expected {expected}"
-                    )
-
-            elif field_name == "target_slot":
-                actual = attestation.target.slot
-                if actual != expected:
-                    raise AssertionError(
-                        f"Step {step_index}: validator {self.validator} {location} "
-                        f"target slot = {actual}, expected {expected}"
-                    )
+        for field_name in self.model_fields_set & _ATTESTATION_SLOT_ACCESSORS.keys():
+            expected_slot = getattr(self, field_name)
+            actual_slot = _ATTESTATION_SLOT_ACCESSORS[field_name](attestation)
+            if actual_slot != expected_slot:
+                raise AssertionError(
+                    f"Step {step_index}: validator {self.validator} {location} "
+                    f"{field_name} = {actual_slot}, expected {expected_slot}"
+                )
 
 
-class StoreChecks(CamelModel):
+class StoreChecks(SelectiveCheck):
     """
     Store state checks for fork choice tests.
 
     All fields are optional. Only specified fields are validated.
     This allows tests to focus on the properties they care about.
     """
+
+    _SCALAR_ACCESSORS: ClassVar[dict[str, Callable[[Store], Any]]] = {
+        "time": lambda store: store.time,
+        "head_slot": lambda store: store.blocks[store.head].slot,
+        "head_root": lambda store: store.head,
+        "latest_justified_slot": lambda store: store.latest_justified.slot,
+        "latest_justified_root": lambda store: store.latest_justified.root,
+        "latest_finalized_slot": lambda store: store.latest_finalized.slot,
+        "latest_finalized_root": lambda store: store.latest_finalized.root,
+        "safe_target": lambda store: store.safe_target,
+        "safe_target_slot": lambda store: store.blocks[store.safe_target].slot,
+    }
+    """Scalar field to the store value it must equal."""
+
+    _LABEL_ROOT_ACCESSORS: ClassVar[dict[str, Callable[[Store], Bytes32]]] = {
+        "head_root_label": lambda store: store.head,
+        "latest_justified_root_label": lambda store: store.latest_justified.root,
+        "latest_finalized_root_label": lambda store: store.latest_finalized.root,
+        "safe_target_root_label": lambda store: store.safe_target,
+    }
+    """Label-reference field to the store root it must resolve to."""
+
+    _POOL_TARGET_SLOT_ACCESSORS: ClassVar[dict[str, Callable[[Store], Any]]] = {
+        "attestation_signature_target_slots": lambda store: store.attestation_signatures,
+        "latest_new_aggregated_target_slots": lambda store: store.latest_new_aggregated_payloads,
+        "latest_known_aggregated_target_slots": (
+            lambda store: store.latest_known_aggregated_payloads
+        ),
+    }
+    """Pool target-slot field to the pool whose keyed target slots it compares."""
 
     time: Interval | None = None
     """Expected store time (in intervals since genesis)."""
@@ -318,30 +328,13 @@ class StoreChecks(CamelModel):
             return resolve_block_root(label, block_registry)
 
         # Scalar store fields
-        if "time" in fields:
-            _check("time", store.time, self.time)
-        if "head_slot" in fields:
-            _check("head.slot", store.blocks[store.head].slot, self.head_slot)
-        if "head_root" in fields:
-            _check("head.root", store.head, self.head_root)
-        if "latest_justified_slot" in fields:
-            _check("latest_justified.slot", store.latest_justified.slot, self.latest_justified_slot)
-        if "latest_justified_root" in fields:
-            _check("latest_justified.root", store.latest_justified.root, self.latest_justified_root)
-        if "latest_finalized_slot" in fields:
-            _check("latest_finalized.slot", store.latest_finalized.slot, self.latest_finalized_slot)
-        if "latest_finalized_root" in fields:
-            _check("latest_finalized.root", store.latest_finalized.root, self.latest_finalized_root)
-        if "safe_target" in fields:
-            _check("safe_target", store.safe_target, self.safe_target)
-        if "safe_target_slot" in fields:
-            _check("safe_target.slot", store.blocks[store.safe_target].slot, self.safe_target_slot)
+        self.validate_scalar_fields(store, f"Step {step_index}")
 
         # Label-based root checks (resolve label -> root, then compare)
-        if "head_root_label" in fields:
-            assert self.head_root_label is not None
-            expected = _resolve(self.head_root_label)
-            _check("head.root", store.head, expected)
+        for field_name in fields & self._LABEL_ROOT_ACCESSORS.keys():
+            expected_root = _resolve(getattr(self, field_name))
+            _check(field_name, self._LABEL_ROOT_ACCESSORS[field_name](store), expected_root)
+
         if "filled_block_root_label" in fields:
             if filled_block is None:
                 raise ValueError(
@@ -349,81 +342,62 @@ class StoreChecks(CamelModel):
                     f"filled_block not provided"
                 )
             assert self.filled_block_root_label is not None
-            expected = _resolve(self.filled_block_root_label)
-            _check("filled_block.root", hash_tree_root(filled_block), expected)
-        if "latest_justified_root_label" in fields:
-            assert self.latest_justified_root_label is not None
-            expected = _resolve(self.latest_justified_root_label)
-            _check("latest_justified.root", store.latest_justified.root, expected)
-        if "latest_finalized_root_label" in fields:
-            assert self.latest_finalized_root_label is not None
-            expected = _resolve(self.latest_finalized_root_label)
-            _check("latest_finalized.root", store.latest_finalized.root, expected)
-        if "safe_target_root_label" in fields:
-            assert self.safe_target_root_label is not None
-            expected = _resolve(self.safe_target_root_label)
-            _check("safe_target", store.safe_target, expected)
+            expected_filled_block_root = _resolve(self.filled_block_root_label)
+            _check("filled_block.root", hash_tree_root(filled_block), expected_filled_block_root)
 
         # Attestation target checkpoint (slot + root consistency)
         if "attestation_target_slot" in fields:
-            target = LstarSpec().get_attestation_target(store)
-            _check("attestation_target.slot", target.slot, self.attestation_target_slot)
+            attestation_target = LstarSpec().get_attestation_target(store)
+            _check("attestation_target.slot", attestation_target.slot, self.attestation_target_slot)
 
             block_found = any(
-                b.slot == self.attestation_target_slot and r == target.root
-                for r, b in store.blocks.items()
+                block.slot == self.attestation_target_slot and block_root == attestation_target.root
+                for block_root, block in store.blocks.items()
             )
             if not block_found:
-                available = [
-                    f"0x{r.hex()}"
-                    for r, b in store.blocks.items()
-                    if b.slot == self.attestation_target_slot
+                block_roots_at_target_slot = [
+                    f"0x{block_root.hex()}"
+                    for block_root, block in store.blocks.items()
+                    if block.slot == self.attestation_target_slot
                 ]
                 raise AssertionError(
                     f"Step {step_index}: attestation_target.root = "
-                    f"0x{target.root.hex()} does not match any "
+                    f"0x{attestation_target.root.hex()} does not match any "
                     f"block at slot {self.attestation_target_slot}. "
-                    f"Available blocks: {available}"
+                    f"Available blocks: {block_roots_at_target_slot}"
                 )
 
         # Per-validator attestation content checks
         if "attestation_checks" in fields:
             assert self.attestation_checks is not None
-            for check in self.attestation_checks:
-                if check.location == "new":
+            for attestation_check in self.attestation_checks:
+                if attestation_check.location == "new":
                     payloads = store.latest_new_aggregated_payloads
                     label = "in latest_new"
                 else:
                     payloads = store.latest_known_aggregated_payloads
                     label = "in latest_known"
 
-                extracted = LstarSpec().extract_attestations_from_aggregated_payloads(
-                    store, payloads
+                extracted_attestations = LstarSpec().extract_attestations_from_aggregated_payloads(
+                    payloads
                 )
-                if check.validator not in extracted:
+                if attestation_check.validator not in extracted_attestations:
                     raise AssertionError(
-                        f"Step {step_index}: validator {check.validator} not found "
+                        f"Step {step_index}: validator {attestation_check.validator} not found "
                         f"{label}_aggregated_payloads"
                     )
-                check.validate_attestation(extracted[check.validator], label, step_index)
+                attestation_check.validate_attestation(
+                    extracted_attestations[attestation_check.validator], label, step_index
+                )
 
-        if "attestation_signature_target_slots" in fields:
-            assert self.attestation_signature_target_slots is not None
-            actual = sorted({data.target.slot for data in store.attestation_signatures})
-            expected = sorted(self.attestation_signature_target_slots)
-            _check("attestation_signatures.target_slots", actual, expected)
-
-        if "latest_new_aggregated_target_slots" in fields:
-            assert self.latest_new_aggregated_target_slots is not None
-            actual = sorted({data.target.slot for data in store.latest_new_aggregated_payloads})
-            expected = sorted(self.latest_new_aggregated_target_slots)
-            _check("latest_new_aggregated_payloads.target_slots", actual, expected)
-
-        if "latest_known_aggregated_target_slots" in fields:
-            assert self.latest_known_aggregated_target_slots is not None
-            actual = sorted({data.target.slot for data in store.latest_known_aggregated_payloads})
-            expected = sorted(self.latest_known_aggregated_target_slots)
-            _check("latest_known_aggregated_payloads.target_slots", actual, expected)
+        # Target slots keyed in each attestation pool
+        for field_name in fields & self._POOL_TARGET_SLOT_ACCESSORS.keys():
+            pool = self._POOL_TARGET_SLOT_ACCESSORS[field_name](store)
+            actual_target_slots = sorted(
+                {attestation_data.target.slot for attestation_data in pool}
+            )
+            expected_target_slots = sorted(getattr(self, field_name))
+            _check(field_name, actual_target_slots, expected_target_slots)
 
         # Block body attestation count
         if "block_attestation_count" in fields:
@@ -499,44 +473,49 @@ class StoreChecks(CamelModel):
         """Validate detailed attestation structure in the block body."""
         actual_attestations = filled_block.body.attestations.data
         actual_participants_list = [
-            {int(v) for v in attestation.aggregation_bits.to_validator_indices()}
+            {
+                int(validator_index)
+                for validator_index in attestation.aggregation_bits.to_validator_indices()
+            }
             for attestation in actual_attestations
         ]
 
-        for check in expected_checks:
+        for attestation_check in expected_checks:
             matching_attestation = None
             matching_index = None
-            for index, attestation in enumerate(actual_attestations):
+            for attestation_index, attestation in enumerate(actual_attestations):
                 actual_participants = {
-                    int(v) for v in attestation.aggregation_bits.to_validator_indices()
+                    int(validator_index)
+                    for validator_index in attestation.aggregation_bits.to_validator_indices()
                 }
-                if actual_participants == check.participants:
+                if actual_participants == attestation_check.participants:
                     matching_attestation = attestation
-                    matching_index = index
+                    matching_index = attestation_index
                     break
 
             if matching_attestation is None:
                 raise AssertionError(
                     f"Step {step_index}: no aggregated attestation found with "
-                    f"participants={check.participants}\n"
+                    f"participants={attestation_check.participants}\n"
                     f"Available attestations: {actual_participants_list}"
                 )
 
-            if check.attestation_slot is not None:
-                if matching_attestation.data.slot != check.attestation_slot:
+            if attestation_check.attestation_slot is not None:
+                if matching_attestation.data.slot != attestation_check.attestation_slot:
                     raise AssertionError(
                         f"Step {step_index}: attestation[{matching_index}] with "
-                        f"participants={check.participants} has "
-                        f"slot={matching_attestation.data.slot}, expected {check.attestation_slot}"
+                        f"participants={attestation_check.participants} has "
+                        f"slot={matching_attestation.data.slot}, "
+                        f"expected {attestation_check.attestation_slot}"
                     )
 
-            if check.target_slot is not None:
-                if matching_attestation.data.target.slot != check.target_slot:
+            if attestation_check.target_slot is not None:
+                if matching_attestation.data.target.slot != attestation_check.target_slot:
                     raise AssertionError(
                         f"Step {step_index}: attestation[{matching_index}] with "
-                        f"participants={check.participants} has "
+                        f"participants={attestation_check.participants} has "
                         f"target_slot={matching_attestation.data.target.slot}, "
-                        f"expected {check.target_slot}"
+                        f"expected {attestation_check.target_slot}"
                     )
 
     @staticmethod
@@ -553,8 +532,10 @@ class StoreChecks(CamelModel):
                 f"to test tiebreaker behavior, got {len(fork_labels)}: {fork_labels}"
             )
 
-        # Resolve all fork labels to roots and compute their weights
-        fork_data: dict[str, tuple[Bytes32, Slot, int]] = {}
+        # Resolve all fork labels to roots and compute their weights.
+        spec_block_weights = LstarSpec().compute_block_weights(store)
+
+        fork_data: dict[str, tuple[Bytes32, int]] = {}
         for label in fork_labels:
             if label not in block_registry:
                 raise ValueError(
@@ -562,34 +543,13 @@ class StoreChecks(CamelModel):
                     f"not found in block registry. Available: {list(block_registry.keys())}"
                 )
 
-            block = block_registry[label]
-            root = hash_tree_root(block)
-            slot = block.slot
-
-            spec = LstarSpec()
-            known_attestations = spec.extract_attestations_from_aggregated_payloads(
-                store, store.latest_known_aggregated_payloads
-            )
-            weight = 0
-            for attestation in known_attestations.values():
-                attestation_head_root = attestation.head.root
-                if attestation_head_root == root:
-                    weight += 1
-                elif attestation_head_root in store.blocks:
-                    current = attestation_head_root
-                    while current in store.blocks and store.blocks[current].slot > slot:
-                        parent = store.blocks[current].parent_root
-                        if parent == root:
-                            weight += 1
-                            break
-                        current = parent
-
-            fork_data[label] = (root, slot, weight)
+            fork_root = hash_tree_root(block_registry[label])
+            fork_data[label] = (fork_root, spec_block_weights.get(fork_root, 0))
 
         # Verify all forks have equal weight
-        weights = [weight for _, _, weight in fork_data.values()]
+        weights = [weight for _, weight in fork_data.values()]
         if len(set(weights)) > 1:
-            weight_info = {label: weight for label, (_, _, weight) in fork_data.items()}
+            weight_info = {label: weight for label, (_, weight) in fork_data.items()}
             raise AssertionError(
                 f"Step {step_index}: lexicographic_head_among forks have "
                 f"unequal weights: {weight_info}. All forks must have equal "
@@ -598,7 +558,7 @@ class StoreChecks(CamelModel):
                 f"applies when competing forks have identical weight."
             )
 
-        fork_roots = {label: root for label, (root, _, _) in fork_data.items()}
+        fork_roots = {label: root for label, (root, _) in fork_data.items()}
         expected_head_root = max(fork_roots.values())
 
         actual_head_root = store.head
@@ -612,7 +572,7 @@ class StoreChecks(CamelModel):
             )
             fork_info = "\n".join(
                 f"  {label}: root=0x{root.hex()} weight={weight}"
-                for label, (root, _, weight) in sorted(fork_data.items())
+                for label, (root, weight) in sorted(fork_data.items())
             )
             raise AssertionError(
                 f"Step {step_index}: lexicographic tiebreaker failed.\n"

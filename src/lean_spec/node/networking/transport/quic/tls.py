@@ -30,8 +30,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from ..identity import IdentityKeypair
-from ..peer_id import KeyType
+from lean_spec.node.networking.transport.identity import IdentityKeypair
+from lean_spec.node.networking.transport.peer_id import KeyType
 
 LIBP2P_EXTENSION_OID: Final = x509.ObjectIdentifier("1.3.6.1.4.1.53594.1.1")
 """libp2p TLS extension OID (Protocol Labs assigned)."""

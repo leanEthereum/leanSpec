@@ -5,18 +5,12 @@ from itertools import batched
 from pydantic import PrivateAttr
 
 from lean_spec.base import StrictBaseModel
+from lean_spec.spec.crypto.koalabear import Fp
+from lean_spec.spec.crypto.poseidon import PARAMS_16, PARAMS_24, Poseidon, PoseidonParams
+from lean_spec.spec.crypto.xmss.constants import TWEAK_PREFIX_CHAIN, TWEAK_PREFIX_TREE, XmssConfig
+from lean_spec.spec.crypto.xmss.field import int_to_base_p
+from lean_spec.spec.crypto.xmss.types import ChainTweak, HashDigestVector, Parameter, TreeTweak
 from lean_spec.spec.ssz import Uint64
-
-from ..koalabear import Fp
-from ..poseidon import (
-    PARAMS_16,
-    PARAMS_24,
-    Poseidon,
-    PoseidonParams,
-)
-from .constants import TWEAK_PREFIX_CHAIN, TWEAK_PREFIX_TREE, XmssConfig
-from .field import int_to_base_p
-from .types import ChainTweak, HashDigestVector, Parameter, TreeTweak
 
 
 class PoseidonXmss(StrictBaseModel):
@@ -31,7 +25,8 @@ class PoseidonXmss(StrictBaseModel):
     _engines: dict[int, Poseidon] = PrivateAttr(default_factory=dict)
 
     def _get_engine(self, width: int) -> Poseidon:
-        """Return a cached Poseidon engine for the given width.
+        """
+        Return a cached Poseidon engine for the given width.
 
         Raises:
             ValueError: When the width is neither 16 nor 24.
@@ -48,7 +43,8 @@ class PoseidonXmss(StrictBaseModel):
         return self._engines[width]
 
     def compress(self, input_vec: list[Fp], width: int, output_length: int) -> list[Fp]:
-        """Poseidon in compression mode.
+        """
+        Poseidon in compression mode.
 
         Computes Truncate(Permute(padded_input) + padded_input).
         The padded input is the original vector zero-extended to the state width.
@@ -81,7 +77,8 @@ class PoseidonXmss(StrictBaseModel):
         return final_state[:output_length]
 
     def safe_domain_separator(self, lengths: list[int], capacity_length: int) -> list[Fp]:
-        """Build a capacity initialization vector for the sponge construction.
+        """
+        Build a capacity initialization vector for the sponge construction.
 
         Hashes the packed length parameters into a fixed-size capacity value.
         This prevents collisions between sponges that absorb data of different shapes.
@@ -94,13 +91,13 @@ class PoseidonXmss(StrictBaseModel):
             A capacity vector of length capacity_length.
         """
         # Pack all lengths into a single unambiguous integer using 32-bit slots.
-        acc = 0
+        packed_lengths = 0
         for length in lengths:
-            acc = (acc << 32) | length
+            packed_lengths = (packed_lengths << 32) | length
 
         # Compress the decomposed vector through the width-24 engine.
         # Width 24 is the only mode used for sponge domain separation.
-        input_vec = int_to_base_p(acc, 24)
+        input_vec = int_to_base_p(packed_lengths, 24)
         return self.compress(input_vec, 24, capacity_length)
 
     def sponge(
@@ -110,7 +107,8 @@ class PoseidonXmss(StrictBaseModel):
         output_length: int,
         width: int,
     ) -> list[Fp]:
-        """Poseidon in sponge mode.
+        """
+        Poseidon in sponge mode.
 
         Phase 1: load capacity, zero-extend input to a multiple of the rate.
         Phase 2: absorb each rate-sized chunk by replacement, then permute.
@@ -142,9 +140,10 @@ class PoseidonXmss(StrictBaseModel):
         state[:cap_length] = capacity_value
 
         # Phase 2: absorb each chunk by overwriting the rate slots.
+        #
+        # Padding makes every chunk exactly rate wide, so the slice always matches.
         for chunk in batched(padded_input, rate):
-            for j, value in enumerate(chunk):
-                state[cap_length + j] = value
+            state[cap_length : cap_length + rate] = chunk
             state = engine.permute(state)
 
         # Phase 3: squeeze rate slots, permuting until enough output is available.
@@ -162,7 +161,8 @@ class PoseidonXmss(StrictBaseModel):
         tweak: TreeTweak | ChainTweak,
         message_parts: list[HashDigestVector],
     ) -> HashDigestVector:
-        """Apply the tweakable hash to one or more digests.
+        """
+        Apply the tweakable hash to one or more digests.
 
         Mode selection:
 
@@ -188,15 +188,17 @@ class PoseidonXmss(StrictBaseModel):
         # Every other field sits in its own bit range above the prefix.
         match tweak:
             case TreeTweak(level=level, index=index):
-                acc = (level << 40) | (int(index) << 8) | TWEAK_PREFIX_TREE
+                packed_tweak = (level << 40) | (int(index) << 8) | TWEAK_PREFIX_TREE
             case ChainTweak(epoch=epoch, chain_index=chain_index, step=step):
-                acc = (int(epoch) << 24) | (chain_index << 16) | (step << 8) | TWEAK_PREFIX_CHAIN
-        encoded_tweak = int_to_base_p(acc, config.TWEAK_LENGTH_FIELD_ELEMENTS)
+                packed_tweak = (
+                    (int(epoch) << 24) | (chain_index << 16) | (step << 8) | TWEAK_PREFIX_CHAIN
+                )
+        encoded_tweak = int_to_base_p(packed_tweak, config.TWEAK_LENGTH_FIELD_ELEMENTS)
 
         if len(message_parts) == 1:
             # Hash chain step: width-16 compression of (digest || parameter || tweak).
             input_vec = message_parts[0].elements + parameter.elements + encoded_tweak
-            result = self.compress(input_vec, 16, config.HASH_LENGTH_FIELD_ELEMENTS)
+            digest = self.compress(input_vec, 16, config.HASH_LENGTH_FIELD_ELEMENTS)
 
         elif len(message_parts) == 2:
             # Merkle node: width-24 compression of (parameter || tweak || left || right).
@@ -206,11 +208,13 @@ class PoseidonXmss(StrictBaseModel):
                 + message_parts[0].elements
                 + message_parts[1].elements
             )
-            result = self.compress(input_vec, 24, config.HASH_LENGTH_FIELD_ELEMENTS)
+            digest = self.compress(input_vec, 24, config.HASH_LENGTH_FIELD_ELEMENTS)
 
         else:
             # Merkle leaf: sponge mode over many concatenated digests.
-            flattened_message = [element for part in message_parts for element in part.elements]
+            flattened_message = [
+                element for message_part in message_parts for element in message_part.elements
+            ]
             input_vec = parameter.elements + encoded_tweak + flattened_message
 
             # The domain separator binds the sponge to this hashing task shape.
@@ -221,9 +225,9 @@ class PoseidonXmss(StrictBaseModel):
                 config.HASH_LENGTH_FIELD_ELEMENTS,
             ]
             capacity_value = self.safe_domain_separator(lengths, config.CAPACITY)
-            result = self.sponge(input_vec, capacity_value, config.HASH_LENGTH_FIELD_ELEMENTS, 24)
+            digest = self.sponge(input_vec, capacity_value, config.HASH_LENGTH_FIELD_ELEMENTS, 24)
 
-        return HashDigestVector(data=result)
+        return HashDigestVector(data=digest)
 
     def hash_chain(
         self,
@@ -235,7 +239,8 @@ class PoseidonXmss(StrictBaseModel):
         num_steps: int,
         start_digest: HashDigestVector,
     ) -> HashDigestVector:
-        """Iterate the tweakable hash along a Winternitz chain.
+        """
+        Iterate the tweakable hash along a Winternitz chain.
 
         Each iteration uses a distinct chain tweak so every step is domain-separated.
 
@@ -259,8 +264,5 @@ class PoseidonXmss(StrictBaseModel):
         return current_digest
 
 
-PROD_POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
-"""Poseidon engine with production parameters."""
-
-TEST_POSEIDON = PROD_POSEIDON
-"""Test environment reuses the production Poseidon parameters."""
+POSEIDON = PoseidonXmss(params16=PARAMS_16, params24=PARAMS_24)
+"""Poseidon engine."""

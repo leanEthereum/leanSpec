@@ -1,50 +1,79 @@
-"""Checkpoint-sync verification vectors at post-genesis anchor slots.
-
-Existing verify_checkpoint vectors run against fresh genesis states.
-These pin the verdict after the chain has advanced through empty
-blocks, so clients' state deserialisation is exercised on the non-zero
-historical_block_hashes path that real checkpoint-sync downloads hit.
-"""
+"""Checkpoint-sync verification vectors at post-genesis anchor slots."""
 
 import pytest
-from consensus_testing import SyncTestFiller
+
+from consensus_testing import SyncTestFiller, VerifyCheckpoint
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
 
-def test_checkpoint_verify_advanced_slot_three(sync: SyncTestFiller) -> None:
-    """Advanced anchor state at slot 3 with four validators is accepted.
-
-    The chain walks through three empty blocks. The resulting state
-    carries non-empty historical_block_hashes and a non-zero latest
-    block header. Pins the accepted verdict plus the exact SSZ bytes.
+def test_checkpoint_verify_advanced_slot_three(sync_test: SyncTestFiller) -> None:
     """
-    sync(
-        operation="verify_checkpoint",
-        input={"numValidators": 4, "anchorSlot": 3},
+    An advanced anchor state at slot 3 with four validators is accepted.
+
+    Given
+    -----
+    - 4 validators.
+    - the chain walks through three empty blocks to slot 3.
+    - the resulting state carries non-empty historical block hashes.
+    - the resulting state carries a non-zero latest block header.
+
+    When
+    ----
+    - the anchor state is verified before seeding a fork-choice store.
+
+    Then
+    ----
+    - the state is accepted.
+    - the exact serialized state bytes are pinned.
+    """
+    sync_test(
+        operation=VerifyCheckpoint(num_validators=4, anchor_slot=3),
     )
 
 
-def test_checkpoint_verify_advanced_slot_ten(sync: SyncTestFiller) -> None:
-    """Advanced anchor state at slot 10 with four validators is accepted.
-
-    Ten empty blocks populate historical_block_hashes and justified_slots
-    with longer lists. Pins the verdict and state bytes at a larger
-    history than the slot-three case.
+def test_checkpoint_verify_advanced_slot_ten(sync_test: SyncTestFiller) -> None:
     """
-    sync(
-        operation="verify_checkpoint",
-        input={"numValidators": 4, "anchorSlot": 10},
+    An advanced anchor state at slot 10 with four validators is accepted.
+
+    Given
+    -----
+    - 4 validators.
+    - the chain walks through ten empty blocks to slot 10.
+    - the longer history fills the block-hash and justified-slot lists.
+
+    When
+    ----
+    - the anchor state is verified before seeding a fork-choice store.
+
+    Then
+    ----
+    - the state is accepted.
+    - the exact serialized state bytes are pinned.
+    """
+    sync_test(
+        operation=VerifyCheckpoint(num_validators=4, anchor_slot=10),
     )
 
 
-def test_checkpoint_verify_advanced_eight_validators(sync: SyncTestFiller) -> None:
-    """Advanced anchor state at slot 5 with eight validators is accepted.
-
-    Exercises the combination of larger validator set with a non-zero
-    anchor slot so clients diff both axes in a single vector.
+def test_checkpoint_verify_advanced_eight_validators(sync_test: SyncTestFiller) -> None:
     """
-    sync(
-        operation="verify_checkpoint",
-        input={"numValidators": 8, "anchorSlot": 5},
+    An advanced anchor state at slot 5 with eight validators is accepted.
+
+    Given
+    -----
+    - 8 validators.
+    - the chain walks through five empty blocks to slot 5.
+
+    When
+    ----
+    - the anchor state is verified before seeding a fork-choice store.
+
+    Then
+    ----
+    - the state is accepted.
+    - the exact serialized state bytes are pinned.
+    """
+    sync_test(
+        operation=VerifyCheckpoint(num_validators=8, anchor_slot=5),
     )

@@ -1,4 +1,5 @@
-"""Validator duty-gate thresholds.
+"""
+Validator duty-gate thresholds.
 
 Informative, not normative:
 

@@ -2,7 +2,7 @@
 
 from itertools import pairwise
 
-from .protocol import ForkProtocol
+from lean_spec.spec.forks.protocol import ForkProtocol
 
 
 class ForkRegistry:
@@ -36,28 +36,8 @@ class ForkRegistry:
             raise ValueError(f"Fork names must be unique: {names}")
 
         self._forks = forks
-        self._by_name = {f.NAME: f for f in forks}
 
     @property
     def current(self) -> ForkProtocol:
         """Return the latest (highest version) fork."""
         return self._forks[-1]
-
-    def get_fork(self, name: str) -> ForkProtocol:
-        """
-        Look up a fork by name.
-
-        Args:
-            name: Fork name (e.g. 'lstar').
-
-        Returns:
-            The matching ForkProtocol instance.
-
-        Raises:
-            KeyError: If no fork matches the name.
-        """
-        try:
-            return self._by_name[name]
-        except KeyError as exception:
-            known = sorted(self._by_name)
-            raise KeyError(f"Unknown fork: {name!r}. Known: {known}") from exception

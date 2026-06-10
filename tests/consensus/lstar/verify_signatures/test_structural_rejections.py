@@ -1,129 +1,137 @@
-"""Signature verification: structural rejection vectors for the merged proof.
-
-These cover structural invariants a peer could break that the block
-builder upholds by construction:
-
-- the merged proof must decode,
-- its component count must match the body plus the proposer,
-- each component stays bound to the message it signed.
-"""
+"""Signature verification rejects merged proofs that break structural invariants."""
 
 import pytest
+
 from consensus_testing import (
     AggregatedAttestationSpec,
+    AppendPhantomAttestation,
     BlockSpec,
+    CorruptProof,
+    ExpectedRejection,
+    MutateStateRoot,
+    SwapFirstTwoAttestations,
     VerifySignaturesTestFiller,
     build_anchor,
     generate_pre_state,
 )
-
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks import RejectionReason, Slot, ValidatorIndex
 
-pytestmark = pytest.mark.valid_until("Lstar")
+pytestmark = [pytest.mark.valid_until("Lstar"), pytest.mark.real_crypto]
 
 
+@pytest.mark.real_crypto(smoke=True)
 def test_corrupt_proof_rejected(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
-    """A signed block whose merged proof does not decode is rejected.
+    """
+    A block whose merged proof does not decode is rejected.
 
-    Scenario
-    --------
-    - Anchor state has 1 validator.
-    - Block at slot 1 carries only the proposer component.
-    - The tamper hook overwrites the merged proof with a short blob.
+    Given
+    -----
+    - a registry of 1 validator.
+    - a block at slot 1 carrying only the proposer component.
+    - the merged proof is overwritten with a short blob.
 
-    Expected Behavior
-    -----------------
-    Verification fails with AssertionError because the multi-message aggregate envelope
-    cannot be decoded.
+    When
+    ----
+    - signature verification runs.
 
-    Why This Matters
-    ----------------
-    The proof blob arrives over the wire.
-    A peer can send arbitrary bytes.
-    Clients must reject before attempting to verify a malformed proof.
+    Then
+    ----
+    - verification is rejected as an invalid block proof.
+    - the aggregate envelope cannot be decoded.
     """
     verify_signatures_test(
         anchor_state=generate_pre_state(num_validators=1),
         block=BlockSpec(slot=Slot(1), attestations=[]),
-        tamper={"operation": "corrupt_proof"},
-        expect_exception=AssertionError,
+        tamper=CorruptProof(),
+        expected_rejection=ExpectedRejection(reason=RejectionReason.INVALID_BLOCK_PROOF),
     )
 
 
 def test_proof_component_count_mismatch_rejected(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
-    """A block whose body claims more components than the proof is rejected.
+    """
+    A block whose body claims more components than the proof carries is rejected.
 
-    Scenario
-    --------
-    - Anchor state has 1 validator.
-    - Block at slot 1 carries only the proposer component.
-    - The tamper hook appends a body attestation that has no matching
-      proof component.
+    Given
+    -----
+    - a registry of 1 validator.
+    - a block at slot 1 carrying only the proposer component.
+    - a body attestation is appended that has no matching proof component.
 
-    Expected Behavior
-    -----------------
-    Verification fails with AssertionError: the proof component count no
-    longer matches the body plus the proposer.
+    When
+    ----
+    - signature verification runs.
 
-    Why This Matters
-    ----------------
-    The merged proof and the body attestation list are parallel.
-    A peer could add body entries to credit votes the proof never
-    carried.
-    Clients must reject any count mismatch.
+    Then
+    ----
+    - verification is rejected as an invalid block proof.
+    - the proof component count no longer matches the body plus the proposer.
     """
     verify_signatures_test(
         anchor_state=generate_pre_state(num_validators=1),
         block=BlockSpec(slot=Slot(1), attestations=[]),
-        tamper={"operation": "append_phantom_attestation"},
-        expect_exception=AssertionError,
+        tamper=AppendPhantomAttestation(),
+        expected_rejection=ExpectedRejection(reason=RejectionReason.INVALID_BLOCK_PROOF),
     )
 
 
+@pytest.mark.real_crypto(smoke=True)
 def test_proof_reused_under_different_message_rejected(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
-    """An honest proof reused under a different block is rejected.
+    """
+    An honest proof reused under a different block is rejected.
 
-    Scenario
-    --------
-    - Anchor state has 1 validator.
-    - Block at slot 1 is signed honestly.
-    - The tamper hook rewrites the block's state root after signing, so
-      the block root differs while the proof is unchanged.
+    Given
+    -----
+    - a registry of 1 validator.
+    - a block at slot 1 signed honestly.
+    - the block state root is rewritten after signing, so the block root differs.
+    - the proof is left unchanged.
 
-    Expected Behavior
-    -----------------
-    Verification fails with AssertionError: each proof component is bound
-    to the message it signed, and the proposer component no longer
-    matches the recomputed block root.
+    When
+    ----
+    - signature verification runs.
 
-    Why This Matters
-    ----------------
-    Without the per-component binding, honest signatures could be lifted
-    onto attacker-chosen block or attestation data that resolves to the
-    same public keys.
-    Validators would be credited for messages they never signed, directly
-    attackable for justification manipulation.
-    This pins the binding that closes that hole.
+    Then
+    ----
+    - verification is rejected as an invalid block proof.
+    - the proposer component no longer matches the recomputed block root.
     """
     verify_signatures_test(
         anchor_state=generate_pre_state(num_validators=1),
         block=BlockSpec(slot=Slot(1), attestations=[]),
-        tamper={"operation": "mutate_state_root"},
-        expect_exception=AssertionError,
+        tamper=MutateStateRoot(),
+        expected_rejection=ExpectedRejection(reason=RejectionReason.INVALID_BLOCK_PROOF),
     )
 
 
 def test_attestation_proof_order_mismatch_rejected(
     verify_signatures_test: VerifySignaturesTestFiller,
 ) -> None:
-    """A block whose body order no longer matches proof order is rejected."""
+    """
+    A block whose body order no longer matches proof order is rejected.
+
+    Given
+    -----
+    - a registry of 4 validators.
+    - a block at slot 3 carrying an aggregate from V0 then an aggregate from V2.
+    - the two body attestations are swapped after signing.
+    - the proof order is left unchanged.
+
+    When
+    ----
+    - signature verification runs.
+
+    Then
+    ----
+    - verification is rejected as an invalid block proof.
+    - each proof component no longer aligns with its body attestation.
+    """
     anchor_state, anchor_block = build_anchor(num_validators=4, anchor_slot=Slot(2))
     parent_root = hash_tree_root(anchor_block)
 
@@ -151,6 +159,6 @@ def test_attestation_proof_order_mismatch_rejected(
                 ),
             ],
         ),
-        tamper={"operation": "swap_first_two_attestations"},
-        expect_exception=AssertionError,
+        tamper=SwapFirstTwoAttestations(),
+        expected_rejection=ExpectedRejection(reason=RejectionReason.INVALID_BLOCK_PROOF),
     )

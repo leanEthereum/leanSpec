@@ -4,7 +4,7 @@ Network service module.
 This module provides the event routing layer between libp2p and consensus.
 """
 
-from .events import (
+from lean_spec.node.networking.service.events import (
     GossipAttestationEvent,
     GossipBlockEvent,
     NetworkEvent,
@@ -12,7 +12,7 @@ from .events import (
     PeerDisconnectedEvent,
     PeerStatusEvent,
 )
-from .service import NetworkService
+from lean_spec.node.networking.service.service import NetworkService
 
 __all__ = [
     # Service

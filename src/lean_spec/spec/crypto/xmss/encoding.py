@@ -1,4 +1,5 @@
-"""Message-to-codeword pipeline for the Generalized XMSS scheme.
+"""
+Message-to-codeword pipeline for the Generalized XMSS scheme.
 
 # Overview
 
@@ -47,38 +48,40 @@ The value P - 1 falls outside every group.
 The decode rejects it, a rare event near 4.7e-10 that barely affects signing.
 """
 
+from lean_spec.spec.crypto.koalabear import Fp
+from lean_spec.spec.crypto.xmss.constants import TWEAK_PREFIX_MESSAGE, XmssConfig
+from lean_spec.spec.crypto.xmss.field import int_to_base_p
+from lean_spec.spec.crypto.xmss.poseidon import PoseidonXmss
+from lean_spec.spec.crypto.xmss.types import Parameter, Randomness
 from lean_spec.spec.ssz import Bytes32, Uint64
-
-from ..koalabear import Fp
-from .constants import TWEAK_PREFIX_MESSAGE, XmssConfig
-from .field import int_to_base_p
-from .poseidon import PoseidonXmss
-from .types import Parameter, Randomness
 
 
 def encode_message(config: XmssConfig, message: Bytes32) -> list[Fp]:
-    """Encode a 32-byte message into field elements via base-P decomposition.
+    """
+    Encode a 32-byte message into field elements via base-P decomposition.
 
     The bytes are read little-endian as a single integer.
     """
-    acc = int.from_bytes(message, "little")
-    return int_to_base_p(acc, config.MESSAGE_LENGTH_FIELD_ELEMENTS)
+    message_integer = int.from_bytes(message, "little")
+    return int_to_base_p(message_integer, config.MESSAGE_LENGTH_FIELD_ELEMENTS)
 
 
 def encode_epoch(config: XmssConfig, epoch: Uint64) -> list[Fp]:
-    """Encode the epoch and the message-hash subdomain into field elements.
+    """
+    Encode the epoch and the message-hash subdomain into field elements.
 
     The 8-bit prefix separates the message-hash subdomain from the chain and tree subdomains.
     """
     # Layout:
     #
     #     (epoch << 8) | MESSAGE_PREFIX
-    acc = (int(epoch) << 8) | TWEAK_PREFIX_MESSAGE
-    return int_to_base_p(acc, config.TWEAK_LENGTH_FIELD_ELEMENTS)
+    encoded_tweak = (int(epoch) << 8) | TWEAK_PREFIX_MESSAGE
+    return int_to_base_p(encoded_tweak, config.TWEAK_LENGTH_FIELD_ELEMENTS)
 
 
 def aborting_decode(config: XmssConfig, field_elements: list[Fp]) -> list[int] | None:
-    """Reject-sample each field element into base-BASE digits.
+    """
+    Reject-sample each field element into base-BASE digits.
 
     For each element A_i:
 
@@ -91,18 +94,18 @@ def aborting_decode(config: XmssConfig, field_elements: list[Fp]) -> list[int] |
     threshold = config.Q * config.BASE**config.Z
 
     digits: list[int] = []
-    for fe in field_elements:
-        a = int(fe)
+    for field_element in field_elements:
+        element_value = int(field_element)
 
         # The only rejection case is A_i == P - 1.
-        if a >= threshold:
+        if element_value >= threshold:
             return None
 
         # Quotient by Q strips the residue.
         # The remainder is uniform in [0, BASE^Z - 1].
-        d = a // config.Q
+        quotient = element_value // config.Q
         for _ in range(config.Z):
-            d, digit = divmod(d, config.BASE)
+            quotient, digit = divmod(quotient, config.BASE)
             digits.append(digit)
 
     return digits[: config.DIMENSION]
@@ -116,7 +119,8 @@ def message_hash(
     rho: Randomness,
     message: Bytes32,
 ) -> list[int] | None:
-    """Hash the inputs with Poseidon and decode into a candidate codeword.
+    """
+    Hash the inputs with Poseidon and decode into a candidate codeword.
 
     Args:
         poseidon: Cached Poseidon engine.
@@ -148,7 +152,8 @@ def target_sum_encode(
     rho: Randomness,
     epoch: Uint64,
 ) -> list[int] | None:
-    """Encode a message into a codeword if it meets the target sum.
+    """
+    Encode a message into a codeword if it meets the target sum.
 
     The signer retries with fresh randomness on rejection.
 

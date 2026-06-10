@@ -1,18 +1,12 @@
-"""SSZ: decode-failure vectors for malformed inputs.
-
-Exercises the SSZ decoder's user-triggerable rejection paths through the
-decode-failure fixture. Each vector captures the expected exception class
-so client implementations can align on the rejection contract, not only
-the roundtrip contract covered by the basic-types vectors.
-"""
+"""SSZ decode-rejection vectors for malformed inputs."""
 
 from typing import ClassVar
 
 import pytest
-from consensus_testing import SSZTestFiller
 
+from consensus_testing import ExpectedRejection, SSZTestFiller
+from lean_spec.spec.forks import RejectionReason
 from lean_spec.spec.ssz import BaseBitlist, BaseBitvector, Boolean, Bytes4, Uint32
-from lean_spec.spec.ssz.exceptions import SSZSerializationError, SSZValueError
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -29,91 +23,157 @@ class DecodeBitvector16(BaseBitvector):
     LENGTH: ClassVar[int] = 16
 
 
-def test_bitlist_decode_rejects_empty_input(ssz: SSZTestFiller) -> None:
-    """Bitlist decoding of zero bytes has no delimiter bit and must be rejected.
-
-    Every SSZ bitlist encoding ends in a sentinel set bit that signals the
-    bit-length. Empty input carries no such sentinel, so the decoder cannot
-    determine how many bits the value was supposed to hold.
+def test_bitlist_decode_rejects_empty_input(ssz_test: SSZTestFiller) -> None:
     """
-    ssz(
+    Decoding an empty input into a bitlist is rejected.
+
+    Given
+    -----
+    - a bitlist type capped at eight bits.
+    - an input of zero bytes.
+
+    When
+    ----
+    - the input is decoded into that type.
+
+    Then
+    ----
+    - decoding is rejected.
+    - the reason is that no sentinel bit marks the bit-length.
+    """
+    ssz_test(
         type_name="DecodeBitlist8",
         value=DecodeBitlist8(data=[Boolean(False)]),
         raw_bytes="0x",
-        expect_exception=SSZSerializationError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.DECODE_ERROR),
     )
 
 
-def test_bitlist_decode_rejects_missing_delimiter(ssz: SSZTestFiller) -> None:
-    """Bitlist bytes with no set bits carry no sentinel and must be rejected.
-
-    A single 0x00 byte encodes eight clear bits with nothing marking the
-    end of the logical bitlist. The decoder needs the sentinel to know
-    where the payload stops.
+def test_bitlist_decode_rejects_missing_delimiter(ssz_test: SSZTestFiller) -> None:
     """
-    ssz(
+    Decoding bitlist bytes that carry no set bit is rejected.
+
+    Given
+    -----
+    - a bitlist type capped at eight bits.
+    - the input byte 0x00, which holds eight clear bits and no sentinel.
+
+    When
+    ----
+    - the input is decoded into that type.
+
+    Then
+    ----
+    - decoding is rejected.
+    - the reason is that no sentinel marks where the bitlist ends.
+    """
+    ssz_test(
         type_name="DecodeBitlist8",
         value=DecodeBitlist8(data=[Boolean(False)]),
         raw_bytes="0x00",
-        expect_exception=SSZSerializationError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.DECODE_ERROR),
     )
 
 
-def test_bitlist_decode_rejects_length_above_limit(ssz: SSZTestFiller) -> None:
-    """Bitlist whose sentinel implies a bit-length beyond the type limit must be rejected.
-
-    The payload 0x0002 places the sentinel at bit index nine, implying a
-    nine-bit bitlist. The type caps at eight bits, so the decoder must
-    refuse to widen past its own limit.
+def test_bitlist_decode_rejects_length_above_limit(ssz_test: SSZTestFiller) -> None:
     """
-    ssz(
+    Decoding a bitlist whose sentinel implies too many bits is rejected.
+
+    Given
+    -----
+    - a bitlist type capped at eight bits.
+    - the input bytes 0x0002, which place the sentinel at bit index nine.
+
+    When
+    ----
+    - the input is decoded into that type.
+
+    Then
+    ----
+    - decoding is rejected.
+    - the reason is that the implied bit-length exceeds the limit.
+    """
+    ssz_test(
         type_name="DecodeBitlist8",
         value=DecodeBitlist8(data=[Boolean(False)]),
         raw_bytes="0x0002",
-        expect_exception=SSZValueError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.DECODE_ERROR),
     )
 
 
-def test_bitvector_decode_rejects_wrong_byte_length(ssz: SSZTestFiller) -> None:
-    """Fixed-width bitvector decoding rejects inputs whose byte count does not match LENGTH.
-
-    The fixed-width bitvector here occupies exactly two bytes. A single-byte
-    input underfills the vector. The fixed-size decode path requires an
-    exact byte match, so the decoder must reject.
+def test_bitvector_decode_rejects_wrong_byte_length(ssz_test: SSZTestFiller) -> None:
     """
-    ssz(
+    Decoding a fixed-width bitvector from the wrong byte count is rejected.
+
+    Given
+    -----
+    - a fixed-width bitvector that occupies exactly two bytes.
+    - a single-byte input that underfills the vector.
+
+    When
+    ----
+    - the input is decoded into that type.
+
+    Then
+    ----
+    - decoding is rejected.
+    - the reason is that the byte count does not match the fixed width.
+    """
+    ssz_test(
         type_name="DecodeBitvector16",
         value=DecodeBitvector16(data=[Boolean(False)] * 16),
         raw_bytes="0x00",
-        expect_exception=SSZValueError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.DECODE_ERROR),
     )
 
 
-def test_bytes4_decode_rejects_extra_trailing_bytes(ssz: SSZTestFiller) -> None:
-    """Fixed-size byte arrays reject inputs longer than their declared LENGTH.
-
-    A four-byte fixed array cannot consume five input bytes. The extra
-    trailing byte has no slot in the type, so the decoder must raise
-    rather than silently ignore the overflow.
+def test_bytes4_decode_rejects_extra_trailing_bytes(ssz_test: SSZTestFiller) -> None:
     """
-    ssz(
+    Decoding a fixed-size byte array from a longer input is rejected.
+
+    Given
+    -----
+    - a fixed-size four-byte array type.
+    - a five-byte input with one extra trailing byte.
+
+    When
+    ----
+    - the input is decoded into that type.
+
+    Then
+    ----
+    - decoding is rejected.
+    - the reason is that the extra trailing byte has no slot in the type.
+    """
+    ssz_test(
         type_name="Bytes4",
         value=Bytes4(b"\x00\x00\x00\x00"),
         raw_bytes="0x0102030405",
-        expect_exception=SSZValueError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.DECODE_ERROR),
     )
 
 
-def test_uint32_decode_rejects_wrong_byte_length(ssz: SSZTestFiller) -> None:
-    """Fixed-size uint types reject input whose byte length does not match the type.
-
-    A uint32 is always four bytes. A three-byte input underfills the slot
-    and cannot be safely widened. The decoder raises rather than guessing
-    a padding convention.
+def test_uint32_decode_rejects_wrong_byte_length(ssz_test: SSZTestFiller) -> None:
     """
-    ssz(
+    Decoding a four-byte uint from a shorter input is rejected.
+
+    Given
+    -----
+    - a uint type that is always four bytes.
+    - a three-byte input that underfills the value.
+
+    When
+    ----
+    - the input is decoded into that type.
+
+    Then
+    ----
+    - decoding is rejected.
+    - the reason is that the byte length does not match the fixed size.
+    """
+    ssz_test(
         type_name="Uint32",
         value=Uint32(0),
         raw_bytes="0x010203",
-        expect_exception=SSZSerializationError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.DECODE_ERROR),
     )

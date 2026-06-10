@@ -6,7 +6,8 @@ from enum import Enum, auto
 
 
 class SyncState(Enum):
-    """Three-phase progression for the sync service.
+    """
+    Three-phase progression for the sync service.
 
     Lifecycle:
 

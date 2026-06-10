@@ -75,14 +75,14 @@ from __future__ import annotations
 
 from enum import IntEnum
 
+from lean_spec.node.networking.config import MAX_PAYLOAD_SIZE
+from lean_spec.node.networking.varint import VarintError, decode_varint, encode_varint
 from lean_spec.node.snappy import SnappyDecompressionError, frame_compress, frame_decompress
-
-from ..config import MAX_PAYLOAD_SIZE
-from ..varint import VarintError, decode_varint, encode_varint
 
 
 class CodecError(Exception):
-    """Raised when encoding or decoding fails.
+    """
+    Raised when encoding or decoding fails.
 
     This covers all wire format errors:
       - Truncated or malformed varints
@@ -166,8 +166,8 @@ def decode_request(data: bytes) -> bytes:
     # This tells us the expected uncompressed size.
     try:
         declared_length, varint_size = decode_varint(data)
-    except VarintError as e:
-        raise CodecError(f"Invalid request length: {e}") from e
+    except VarintError as exception:
+        raise CodecError(f"Invalid request length: {exception}") from exception
 
     # Step 3: Validate declared length.
     #
@@ -181,8 +181,8 @@ def decode_request(data: bytes) -> bytes:
     compressed_data = data[varint_size:]
     try:
         decompressed = frame_decompress(compressed_data)
-    except SnappyDecompressionError as e:
-        raise CodecError(f"Decompression failed: {e}") from e
+    except SnappyDecompressionError as exception:
+        raise CodecError(f"Decompression failed: {exception}") from exception
 
     # Step 5: Validate length matches.
     #
@@ -311,8 +311,8 @@ class ResponseCode(IntEnum):
         # Starts at offset 1 (after the code byte).
         try:
             declared_length, varint_size = decode_varint(data, offset=1)
-        except VarintError as e:
-            raise CodecError(f"Invalid response length: {e}") from e
+        except VarintError as exception:
+            raise CodecError(f"Invalid response length: {exception}") from exception
 
         # Step 5: Validate declared length.
         if declared_length > MAX_PAYLOAD_SIZE:
@@ -324,8 +324,8 @@ class ResponseCode(IntEnum):
         compressed_data = data[1 + varint_size :]
         try:
             decompressed = frame_decompress(compressed_data)
-        except SnappyDecompressionError as e:
-            raise CodecError(f"Decompression failed: {e}") from e
+        except SnappyDecompressionError as exception:
+            raise CodecError(f"Decompression failed: {exception}") from exception
 
         # Step 7: Validate length matches.
         if len(decompressed) != declared_length:

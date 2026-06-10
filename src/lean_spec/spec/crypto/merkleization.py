@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from functools import singledispatch
 from hashlib import sha256
 from itertools import accumulate, repeat
-from math import ceil
 from typing import Final
 
 from lean_spec.spec.crypto.koalabear import Fp
@@ -54,7 +54,8 @@ Depth 64 covers any chunk count the protocol uses.
 
 
 def _zero_tree_root(width: int) -> Bytes32:
-    """Root of an all-zero perfect binary tree with the given leaf count.
+    """
+    Root of an all-zero perfect binary tree with the given leaf count.
 
     The width must be a power of two.
     """
@@ -75,7 +76,8 @@ def _zero_tree_root(width: int) -> Bytes32:
 
 
 def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
-    r"""Compute the SSZ Merkle root over a chunk sequence.
+    r"""
+    Compute the SSZ Merkle root over a chunk sequence.
 
     Tree layout for three leaves with no limit:
 
@@ -99,12 +101,12 @@ def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
     Raises:
         ValueError: If the chunk count exceeds the limit.
     """
-    n = len(chunks)
-    if n == 0:
+    chunk_count = len(chunks)
+    if chunk_count == 0:
         return _zero_tree_root(_next_pow2(limit)) if limit is not None else ZERO_HASH
     if limit is None:
-        width = _next_pow2(n)
-    elif limit < n:
+        width = _next_pow2(chunk_count)
+    elif limit < chunk_count:
         raise ValueError("merkleize: input exceeds limit")
     else:
         width = _next_pow2(limit)
@@ -138,7 +140,8 @@ def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
 
 
 def mix_in_length(root: Bytes32, length: int) -> Bytes32:
-    """Mix a length into a Merkle root via the SSZ uint256 little-endian encoding.
+    """
+    Mix a length into a Merkle root via the SSZ uint256 little-endian encoding.
 
     Variable-length types append their declared length to disambiguate roots.
     Two lists with identical elements but different lengths must produce different roots.
@@ -159,7 +162,8 @@ def mix_in_length(root: Bytes32, length: int) -> Bytes32:
 
 
 def _pack_bytes(data: bytes) -> list[Bytes32]:
-    """Right-pad serialized bytes to a chunk boundary and split into chunks.
+    """
+    Right-pad serialized bytes to a chunk boundary and split into chunks.
 
     Layout for a 5-byte payload:
 
@@ -176,7 +180,8 @@ def _pack_bytes(data: bytes) -> list[Bytes32]:
 
 
 def _pack_bits(bits: Sequence[Boolean]) -> list[Bytes32]:
-    """Pack a boolean sequence into bytes, then into chunks for merkleization.
+    """
+    Pack a boolean sequence into bytes, then into chunks for merkleization.
 
     The first input bit becomes the least significant bit of the first byte.
     Each next input bit moves up one position, wrapping to the next byte after eight.
@@ -191,13 +196,14 @@ def _pack_bits(bits: Sequence[Boolean]) -> list[Bytes32]:
     The SSZ serialization delimiter and the length-mix are separate steps,
     handled by the caller when needed.
     """
-    value = sum(1 << i for i, bit in enumerate(bits) if bit)
-    return _pack_bytes(value.to_bytes(ceil(len(bits) / 8), "little"))
+    packed_bits = sum(1 << i for i, bit in enumerate(bits) if bit)
+    return _pack_bytes(packed_bits.to_bytes(math.ceil(len(bits) / 8), "little"))
 
 
 @singledispatch
 def hash_tree_root(value: object) -> Bytes32:
-    """Compute the SSZ Merkle root of a value.
+    """
+    Compute the SSZ Merkle root of a value.
 
     Raises:
         TypeError: If the value's type has no registered handler.
@@ -242,20 +248,22 @@ def _htr_bytevector(value: BaseBytes) -> Bytes32:
 
 @hash_tree_root.register
 def _htr_bytelist(value: BaseByteList) -> Bytes32:
-    data = value.encode_bytes()
-    limit_chunks = ceil(type(value).LIMIT / BYTES_PER_CHUNK)
-    return mix_in_length(merkleize(_pack_bytes(data), limit=limit_chunks), len(data))
+    serialized_bytes = value.encode_bytes()
+    limit_chunks = math.ceil(type(value).LIMIT / BYTES_PER_CHUNK)
+    return mix_in_length(
+        merkleize(_pack_bytes(serialized_bytes), limit=limit_chunks), len(serialized_bytes)
+    )
 
 
 @hash_tree_root.register
 def _htr_bitvector_base(value: BaseBitvector) -> Bytes32:
-    limit = ceil(type(value).LENGTH / BITS_PER_CHUNK)
+    limit = math.ceil(type(value).LENGTH / BITS_PER_CHUNK)
     return merkleize(_pack_bits(value.data), limit=limit)
 
 
 @hash_tree_root.register
 def _htr_bitlist_base(value: BaseBitlist) -> Bytes32:
-    limit = ceil(type(value).LIMIT / BITS_PER_CHUNK)
+    limit = math.ceil(type(value).LIMIT / BITS_PER_CHUNK)
     return mix_in_length(
         merkleize(_pack_bits(value.data), limit=limit),
         len(value.data),
@@ -269,7 +277,7 @@ def _htr_vector(value: SSZVector) -> Bytes32:
     if issubclass(element_t, (BaseUint, Boolean, Fp)):
         # Basic elements pack their serialized bytes into a single byte stream before chunking.
         element_size = element_t.get_byte_length()
-        limit_chunks = ceil(length * element_size / BYTES_PER_CHUNK)
+        limit_chunks = math.ceil(length * element_size / BYTES_PER_CHUNK)
         return merkleize(
             _pack_bytes(b"".join(e.encode_bytes() for e in value)),
             limit=limit_chunks,
@@ -284,7 +292,7 @@ def _htr_list(value: SSZList) -> Bytes32:
     element_t, limit = cls.ELEMENT_TYPE, cls.LIMIT
     if issubclass(element_t, (BaseUint, Boolean, Fp)):
         element_size = element_t.get_byte_length()
-        limit_chunks = ceil(limit * element_size / BYTES_PER_CHUNK)
+        limit_chunks = math.ceil(limit * element_size / BYTES_PER_CHUNK)
         root = merkleize(
             _pack_bytes(b"".join(e.encode_bytes() for e in value)),
             limit=limit_chunks,

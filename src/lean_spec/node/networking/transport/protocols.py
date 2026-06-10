@@ -1,4 +1,5 @@
-"""Shared protocol definitions for transport layer.
+"""
+Shared protocol definitions for transport layer.
 
 InboundStreamProtocol
     Used by ReqResp handler and gossip message processing. Matches
@@ -11,7 +12,8 @@ from typing import Protocol
 
 
 class InboundStreamProtocol(Protocol):
-    """Buffered stream for inbound request and gossip handling.
+    """
+    Buffered stream for inbound request and gossip handling.
 
     Matches QuicStreamAdapter and test mocks.
 

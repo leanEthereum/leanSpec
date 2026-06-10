@@ -58,13 +58,13 @@ import hashlib
 from dataclasses import dataclass, field
 
 from lean_spec.node.networking.config import MESSAGE_DOMAIN_INVALID_SNAPPY
-
-from .types import MessageId
+from lean_spec.node.networking.gossipsub.types import MessageId
 
 
 @dataclass(slots=True)
 class GossipsubMessage:
-    r"""A gossipsub message with lazy ID computation.
+    r"""
+    A gossipsub message with lazy ID computation.
 
     Encapsulates topic, payload, and message ID logic. The ID is
     computed lazily on first access and cached thereafter.
@@ -100,7 +100,8 @@ class GossipsubMessage:
 
     @property
     def id(self) -> MessageId:
-        """Get the 20-byte message ID.
+        """
+        Get the 20-byte message ID.
 
         Computed lazily on first access using the Ethereum consensus
         message ID function. The result is cached.
@@ -119,7 +120,8 @@ class GossipsubMessage:
         *,
         domain: bytes | None = None,
     ) -> MessageId:
-        """Compute a 20-byte message ID from raw data.
+        """
+        Compute a 20-byte message ID from raw data.
 
         Implements the Ethereum consensus message ID function::
 
@@ -145,7 +147,8 @@ class GossipsubMessage:
         return MessageId(hashlib.sha256(preimage).digest()[:20])
 
     def __hash__(self) -> int:
-        """Hash based on message ID.
+        """
+        Hash based on message ID.
 
         Allows messages to be used in sets and as dict keys.
         """

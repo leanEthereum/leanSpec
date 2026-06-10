@@ -111,7 +111,8 @@ Used in the topic string to identify committee's aggregation messages.
 
 
 class TopicKind(Enum):
-    """Gossip topic types.
+    """
+    Gossip topic types.
 
     Enumerates the different message types that can be gossiped.
 
@@ -135,7 +136,8 @@ class TopicKind(Enum):
 
 @dataclass(frozen=True, slots=True)
 class GossipTopic:
-    """A fully-qualified gossipsub topic.
+    """
+    A fully-qualified gossipsub topic.
 
     Immutable representation of a topic that combines the message type
     and network name. Can be converted to/from the string format.
@@ -159,7 +161,8 @@ class GossipTopic:
     """Subnet id for attestation subnet topics (required for ATTESTATION_SUBNET)."""
 
     def to_topic_id(self) -> TopicId:
-        """Return the full topic string as a TopicId.
+        """
+        Return the full topic string as a TopicId.
 
         Returns:
             Topic in format `/{prefix}/{fork}/{name}/{encoding}`
@@ -191,7 +194,8 @@ class GossipTopic:
 
     @classmethod
     def from_string(cls, topic_str: str) -> GossipTopic:
-        """Parse a topic string into a GossipTopic.
+        """
+        Parse a topic string into a GossipTopic.
 
         Args:
             topic_str: Full topic string to parse.
@@ -233,7 +237,8 @@ class GossipTopic:
 
     @classmethod
     def from_string_validated(cls, topic_str: str, expected_network_name: str) -> GossipTopic:
-        """Parse a topic string and validate fork compatibility.
+        """
+        Parse a topic string and validate fork compatibility.
 
         Combines parsing and fork validation into a single operation.
         Use this when receiving gossip messages to reject wrong-fork topics early.
@@ -255,7 +260,8 @@ class GossipTopic:
 
     @classmethod
     def block(cls, network_name: str) -> GossipTopic:
-        """Create a block topic for the given fork.
+        """
+        Create a block topic for the given fork.
 
         Args:
             network_name: Network name as hex string (no 0x prefix) string.
@@ -267,7 +273,8 @@ class GossipTopic:
 
     @classmethod
     def committee_aggregation(cls, network_name: str) -> GossipTopic:
-        """Create a committee aggregation topic for the given fork.
+        """
+        Create a committee aggregation topic for the given fork.
 
         Args:
             network_name: Network name as hex string (no 0x prefix) string.
@@ -279,7 +286,8 @@ class GossipTopic:
 
     @classmethod
     def attestation_subnet(cls, network_name: str, subnet_id: SubnetId) -> GossipTopic:
-        """Create an attestation subnet topic for the given fork and subnet.
+        """
+        Create an attestation subnet topic for the given fork and subnet.
 
         Args:
             network_name: Network name as hex string (no 0x prefix) string.
@@ -294,7 +302,8 @@ class GossipTopic:
 
 
 def parse_topic_string(topic_str: str) -> tuple[str, str, str, str]:
-    """Parse a topic string into its components.
+    """
+    Parse a topic string into its components.
 
     Low-level function for deconstructing topic strings.
     Prefer the dataclass parser for most use cases.
@@ -308,9 +317,14 @@ def parse_topic_string(topic_str: str) -> tuple[str, str, str, str]:
     Raises:
         ValueError: If the topic string is malformed.
     """
-    parts = topic_str.lstrip("/").split("/")
+    topic_components = topic_str.lstrip("/").split("/")
 
-    if len(parts) != 4:
-        raise ValueError(f"Invalid topic format: expected 4 parts, got {len(parts)}")
+    if len(topic_components) != 4:
+        raise ValueError(f"Invalid topic format: expected 4 parts, got {len(topic_components)}")
 
-    return (parts[0], parts[1], parts[2], parts[3])
+    return (
+        topic_components[0],
+        topic_components[1],
+        topic_components[2],
+        topic_components[3],
+    )

@@ -5,10 +5,10 @@ References:
 - EIP-778: https://eips.ethereum.org/EIPS/eip-778
 """
 
-from . import keys
-from .enr import ENR
-from .eth2 import FAR_FUTURE_EPOCH, AttestationSubnets, Eth2Data
-from .keys import EnrKey
+from lean_spec.node.networking.enr import keys
+from lean_spec.node.networking.enr.enr import ENR
+from lean_spec.node.networking.enr.eth2 import FAR_FUTURE_EPOCH, AttestationSubnets, Eth2Data
+from lean_spec.node.networking.enr.keys import EnrKey
 
 __all__ = [
     "ENR",

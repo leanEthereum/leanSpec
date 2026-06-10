@@ -29,21 +29,20 @@ Each layer records the absolute index of its first node, keeping positions in fu
 from itertools import batched
 from typing import Self
 
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.collections import SSZList
-from lean_spec.spec.ssz.container import Container
-
-from .constants import TARGET_CONFIG, XmssConfig
-from .field import random_domain
-from .poseidon import PoseidonXmss
-from .prf import PRFKey
-from .types import (
+from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG, XmssConfig
+from lean_spec.spec.crypto.xmss.field import random_domain
+from lean_spec.spec.crypto.xmss.poseidon import PoseidonXmss
+from lean_spec.spec.crypto.xmss.prf import PRFKey
+from lean_spec.spec.crypto.xmss.types import (
     HashDigestList,
     HashDigestVector,
     HashTreeOpening,
     Parameter,
     TreeTweak,
 )
+from lean_spec.spec.ssz import Uint64
+from lean_spec.spec.ssz.collections import SSZList
+from lean_spec.spec.ssz.container import Container
 
 
 class HashTreeLayer(Container):
@@ -215,12 +214,12 @@ class HashSubTree(Container):
 
         # Phase 1: pad the input layer.
         layers: list[HashTreeLayer] = []
-        current = HashTreeLayer.padded(config, lowest_layer_nodes, start_index)
-        layers.append(current)
+        current_layer = HashTreeLayer.padded(config, lowest_layer_nodes, start_index)
+        layers.append(current_layer)
 
         # Phases 2 + 3: hash sibling pairs, pad, repeat.
         for level in range(lowest_layer, highest_layer):
-            parent_start = current.start_index // Uint64(2)
+            parent_start = current_layer.start_index // Uint64(2)
             parents = [
                 poseidon.tweak_hash(
                     config,
@@ -228,10 +227,10 @@ class HashSubTree(Container):
                     TreeTweak(level=level + 1, index=parent_start + Uint64(i)),
                     [left, right],
                 )
-                for i, (left, right) in enumerate(batched(current.nodes, 2))
+                for i, (left, right) in enumerate(batched(current_layer.nodes, 2))
             ]
-            current = HashTreeLayer.padded(config, parents, parent_start)
-            layers.append(current)
+            current_layer = HashTreeLayer.padded(config, parents, parent_start)
+            layers.append(current_layer)
 
         return cls(
             depth=depth,
@@ -249,7 +248,8 @@ class HashSubTree(Container):
         parameter: Parameter,
         bottom_tree_roots: list[HashDigestVector],
     ) -> Self:
-        """Build the top tree from bottom-tree roots up to the global root.
+        """
+        Build the top tree from bottom-tree roots up to the global root.
 
         The top tree starts at layer depth/2 and treats bottom-tree roots as its leaves.
 
@@ -425,7 +425,8 @@ class HashSubTree(Container):
         )
 
     def root(self) -> HashDigestVector:
-        """Return the single node in the highest stored layer.
+        """
+        Return the single node in the highest stored layer.
 
         Raises:
             ValueError: When the subtree is empty or the highest layer has no nodes.
@@ -588,25 +589,27 @@ def verify_path(
         return False
 
     # Phase 1: hash the leaf parts to derive the starting node.
-    current = poseidon.tweak_hash(
+    current_node = poseidon.tweak_hash(
         config,
         parameter,
         TreeTweak(level=0, index=Uint64(position)),
         leaf_parts,
     )
-    pos = int(position)
+    current_position = int(position)
 
     # Phase 2: hash with each sibling, climbing one layer per iteration.
     for level, sibling in enumerate(opening.siblings):
         # The current node sits on the left when its position is even.
-        left, right = (current, sibling) if pos % 2 == 0 else (sibling, current)
-        pos //= 2
-        current = poseidon.tweak_hash(
+        left, right = (
+            (current_node, sibling) if current_position % 2 == 0 else (sibling, current_node)
+        )
+        current_position //= 2
+        current_node = poseidon.tweak_hash(
             config,
             parameter,
-            TreeTweak(level=level + 1, index=Uint64(pos)),
+            TreeTweak(level=level + 1, index=Uint64(current_position)),
             [left, right],
         )
 
     # Phase 3: compare against the trusted root.
-    return current == root
+    return current_node == root

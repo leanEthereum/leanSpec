@@ -1,18 +1,13 @@
-"""
-Gossipsub handler test fixture for protocol behavior conformance.
-
-Generates JSON test vectors that assert gossipsub protocol decisions.
-Each vector captures an initial peer/mesh/cache state, an incoming RPC event,
-and the expected outbound RPCs plus resulting mesh topology.
-
-The fixture tests protocol logic only, not wire encoding or I/O.
-"""
+"""Gossipsub handler test fixture for protocol behavior conformance."""
 
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 from unittest.mock import patch
 
+from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
+from consensus_testing.test_fixtures.hex_codec import from_hex, to_hex
+from lean_spec.base import StrictBaseModel
 from lean_spec.node.networking import PeerId
 from lean_spec.node.networking.gossipsub.behavior import GossipsubBehavior, PeerState
 from lean_spec.node.networking.gossipsub.message import GossipsubMessage
@@ -28,8 +23,6 @@ from lean_spec.node.networking.gossipsub.rpc import (
     Message,
 )
 from lean_spec.node.networking.gossipsub.types import MessageId, Timestamp, TopicId
-
-from .base import BaseConsensusFixture
 
 # Sentinel that satisfies `outbound_stream is not None` checks.
 # The patched _send_rpc never touches the stream, so any non-None value works.
@@ -51,131 +44,355 @@ def _peer_id(name: str) -> PeerId:
     return PeerId.from_base58(name)
 
 
-def _unhex(hex_str: str) -> bytes:
-    """Decode a 0x-prefixed hex string to bytes."""
-    return bytes.fromhex(hex_str.removeprefix("0x"))
+class GossipsubMeshParameters(StrictBaseModel):
+    """Mesh degree parameters the handler runs under."""
+
+    d: int = 8
+    """Target mesh degree."""
+
+    d_low: int = 6
+    """Lower mesh degree bound."""
+
+    d_high: int = 12
+    """Upper mesh degree bound."""
+
+    d_lazy: int = 6
+    """Gossip emission degree."""
 
 
-def _serialize_rpcs(
-    sent: list[tuple[PeerId, RPC]], peer_names: dict[PeerId, str]
-) -> list[dict[str, Any]]:
-    """
-    Convert captured outbound RPCs to JSON-friendly dicts.
+class PeerConfiguration(StrictBaseModel):
+    """Initial protocol state for one registered peer."""
 
-    Each entry in the output list represents one RPC sent to a peer.
-    The structure mirrors the gossipsub RPC wire format:
+    subscriptions: list[str] = []
+    """Topics the peer is subscribed to."""
 
-    - toPeer: human-readable peer name
-    - subscriptions: topic subscribe/unsubscribe changes (if any)
-    - publish: forwarded messages with hex-encoded data (if any)
-    - control: GRAFT, PRUNE, IWANT, IDONTWANT sub-messages (if any)
+    with_stream: bool = True
+    """Whether the peer has an open outbound stream."""
 
-    Fixture consumers use this to assert exact outbound behavior.
-    """
-    result = []
-    for pid, rpc in sent:
-        name = peer_names.get(pid, str(pid))
-        entry: dict[str, Any] = {"toPeer": name}
+    backoff: dict[str, float] = {}
+    """Backoff expiry per topic, blocking re-GRAFT until then."""
 
-        if rpc.subscriptions:
-            entry["subscriptions"] = [
-                {"subscribe": s.subscribe, "topicId": str(s.topic_id)} for s in rpc.subscriptions
+    dont_want_ids: list[str] = []
+    """Hex message identifiers the peer asked not to receive."""
+
+
+class CachedMessage(StrictBaseModel):
+    """One message preloaded into the message cache."""
+
+    topic: str
+    """Topic the cached message belongs to."""
+
+    data: str
+    """Hex message payload."""
+
+    message_id: str
+    """Hex identifier the cache stores the message under."""
+
+
+class GossipsubInitialState(StrictBaseModel):
+    """Behavior state seeded before the incoming event is dispatched."""
+
+    subscriptions: list[str] = []
+    """Topics the local node participates in."""
+
+    peers: dict[str, PeerConfiguration] = {}
+    """Registered peers keyed by short test name."""
+
+    meshes: dict[str, list[str]] = {}
+    """Mesh members per topic, by short peer name."""
+
+    seen_message_ids: list[str] = []
+    """Hex identifiers of previously received messages."""
+
+    cached_messages: list[CachedMessage] = []
+    """Messages preloaded into the cache for IWANT responses."""
+
+
+class IncomingGraft(StrictBaseModel):
+    """One GRAFT in the incoming RPC."""
+
+    topic_id: str
+    """Topic the sender wants to graft."""
+
+
+class IncomingPrune(StrictBaseModel):
+    """One PRUNE in the incoming RPC."""
+
+    topic_id: str
+    """Topic the sender prunes."""
+
+    backoff: int = 0
+    """Backoff seconds the sender requests."""
+
+
+class IncomingIHave(StrictBaseModel):
+    """One IHAVE in the incoming RPC."""
+
+    topic_id: str
+    """Topic the advertised messages belong to."""
+
+    message_ids: list[str] = []
+    """Hex identifiers of the advertised messages."""
+
+
+class IncomingIWant(StrictBaseModel):
+    """One IWANT in the incoming RPC."""
+
+    message_ids: list[str] = []
+    """Hex identifiers of the requested messages."""
+
+
+class IncomingIDontWant(StrictBaseModel):
+    """One IDONTWANT in the incoming RPC."""
+
+    message_ids: list[str] = []
+    """Hex identifiers of the unwanted messages."""
+
+
+class IncomingPublish(StrictBaseModel):
+    """One published message in the incoming RPC."""
+
+    topic: str = ""
+    """Topic the message belongs to."""
+
+    data: str | None = None
+    """Hex message payload."""
+
+
+class GossipsubEvent(StrictBaseModel):
+    """One incoming RPC from a peer."""
+
+    from_peer: str
+    """Short name of the sending peer."""
+
+    graft: list[IncomingGraft] = []
+    """GRAFT requests carried by the RPC."""
+
+    prune: list[IncomingPrune] = []
+    """PRUNE notices carried by the RPC."""
+
+    ihave: list[IncomingIHave] = []
+    """IHAVE advertisements carried by the RPC."""
+
+    iwant: list[IncomingIWant] = []
+    """IWANT requests carried by the RPC."""
+
+    idontwant: list[IncomingIDontWant] = []
+    """IDONTWANT notices carried by the RPC."""
+
+    publish: list[IncomingPublish] = []
+    """Messages carried by the RPC."""
+
+    def build_rpc(self) -> RPC:
+        """Convert to the wire-format RPC the handler receives."""
+        control_components: dict[str, list[Any]] = {}
+
+        if self.graft:
+            control_components["graft"] = [
+                ControlGraft(topic_id=TopicId(graft.topic_id)) for graft in self.graft
+            ]
+        if self.prune:
+            control_components["prune"] = [
+                ControlPrune(topic_id=TopicId(prune.topic_id), backoff=prune.backoff)
+                for prune in self.prune
+            ]
+        if self.ihave:
+            control_components["ihave"] = [
+                ControlIHave(
+                    topic_id=TopicId(ihave.topic_id),
+                    message_ids=[from_hex(message_id) for message_id in ihave.message_ids],
+                )
+                for ihave in self.ihave
+            ]
+        if self.iwant:
+            control_components["iwant"] = [
+                ControlIWant(message_ids=[from_hex(message_id) for message_id in iwant.message_ids])
+                for iwant in self.iwant
+            ]
+        if self.idontwant:
+            control_components["idontwant"] = [
+                ControlIDontWant(
+                    message_ids=[from_hex(message_id) for message_id in idontwant.message_ids]
+                )
+                for idontwant in self.idontwant
             ]
 
-        if rpc.publish:
-            entry["publish"] = [
-                {"topic": str(m.topic), "data": "0x" + m.data.hex()} for m in rpc.publish
-            ]
-
-        # Only include control fields that carry sub-messages.
-        if rpc.control and not rpc.control.is_empty():
-            ctrl: dict[str, Any] = {}
-            if rpc.control.graft:
-                ctrl["graft"] = [{"topicId": str(g.topic_id)} for g in rpc.control.graft]
-            if rpc.control.prune:
-                ctrl["prune"] = [
-                    {"topicId": str(p.topic_id), "backoff": p.backoff} for p in rpc.control.prune
-                ]
-            if rpc.control.iwant:
-                ctrl["iwant"] = [
-                    {"messageIds": ["0x" + mid.hex() for mid in w.message_ids]}
-                    for w in rpc.control.iwant
-                ]
-            if rpc.control.idontwant:
-                ctrl["idontwant"] = [
-                    {"messageIds": ["0x" + mid.hex() for mid in d.message_ids]}
-                    for d in rpc.control.idontwant
-                ]
-            entry["control"] = ctrl
-
-        result.append(entry)
-    return result
+        return RPC(
+            publish=[
+                Message(
+                    topic=TopicId(message.topic),
+                    data=from_hex(message.data) if message.data else b"",
+                )
+                for message in self.publish
+            ],
+            control=ControlMessage(**control_components) if control_components else None,
+        )
 
 
-def _serialize_meshes(
-    behavior: GossipsubBehavior, peer_names: dict[PeerId, str]
-) -> dict[str, list[str]]:
+class SentSubscription(StrictBaseModel):
+    """One subscription change in an outbound RPC."""
+
+    subscribe: bool
+    """True to subscribe, False to unsubscribe."""
+
+    topic_id: str
+    """Topic the change applies to."""
+
+
+class SentPublish(StrictBaseModel):
+    """One forwarded message in an outbound RPC."""
+
+    topic: str
+    """Topic the message belongs to."""
+
+    data: str
+    """Hex message payload."""
+
+
+class SentGraft(StrictBaseModel):
+    """One GRAFT in an outbound RPC."""
+
+    topic_id: str
+    """Topic grafted."""
+
+
+class SentPrune(StrictBaseModel):
+    """One PRUNE in an outbound RPC."""
+
+    topic_id: str
+    """Topic pruned."""
+
+    backoff: int
+    """Backoff seconds requested."""
+
+
+class SentMessageIdentifiers(StrictBaseModel):
+    """One IWANT or IDONTWANT entry in an outbound RPC."""
+
+    message_ids: list[str]
+    """Hex identifiers carried by the entry."""
+
+
+class SentControl(StrictBaseModel):
+    """Control sub-messages in an outbound RPC; absent groups stay None."""
+
+    graft: list[SentGraft] | None = None
+    """GRAFT requests, when any."""
+
+    prune: list[SentPrune] | None = None
+    """PRUNE notices, when any."""
+
+    iwant: list[SentMessageIdentifiers] | None = None
+    """IWANT requests, when any."""
+
+    idontwant: list[SentMessageIdentifiers] | None = None
+    """IDONTWANT notices, when any."""
+
+
+class SentRpc(StrictBaseModel):
+    """One outbound RPC the handler must emit."""
+
+    to_peer: str
+    """Short name of the receiving peer."""
+
+    subscriptions: list[SentSubscription] | None = None
+    """Subscription changes, when any."""
+
+    publish: list[SentPublish] | None = None
+    """Forwarded messages, when any."""
+
+    control: SentControl | None = None
+    """Control sub-messages, when any."""
+
+
+class GossipsubExpectation(StrictBaseModel):
+    """Outbound RPCs and final mesh topology the client must reproduce."""
+
+    sent_rpcs: list[SentRpc]
+    """Outbound RPCs in send order."""
+
+    mesh_after: dict[str, list[str]]
+    """Mesh members per topic after the event, sorted by peer name."""
+
+
+class GossipsubHandlerFixture(BaseConsensusFixture):
     """
-    Snapshot the mesh topology after handler execution.
+    Emitted vector for gossipsub handler behavior conformance.
 
-    Returns a dict mapping each topic to a sorted list of peer names.
-    Sorting ensures deterministic output for fixture comparison.
+    JSON output: handlerName, params, initialState, event, now, expected.
     """
-    return {
-        str(topic): sorted(peer_names.get(p, str(p)) for p in behavior.mesh.get_mesh_peers(topic))
-        for topic in behavior.mesh.subscriptions
-    }
+
+    handler_name: str
+    """Handler under test."""
+
+    params: GossipsubMeshParameters
+    """Mesh degree parameters."""
+
+    initial_state: GossipsubInitialState
+    """Behavior state seeded before the event."""
+
+    event: GossipsubEvent
+    """Incoming RPC dispatched to the handler."""
+
+    now: float
+    """Current timestamp for backoff checks."""
+
+    expected: GossipsubExpectation
+    """Expected outbound RPCs and final mesh state."""
 
 
-class GossipsubHandlerTest(BaseConsensusFixture):
-    """Fixture for gossipsub handler behavior conformance.
+class GossipsubHandlerTest(BaseTestSpec):
+    """
+    Spec for gossipsub handler behavior conformance.
 
     Tests protocol decisions: given initial state + incoming event,
     what RPCs are sent and how does the mesh change?
-
-    JSON output: params, initialState, event, now, expected.
     """
 
-    format_name: ClassVar[str] = "gossipsub_handler"
+    format_name: ClassVar[str] = "gossipsub_handler_test"
     description: ClassVar[str] = "Tests gossipsub handler protocol decisions"
 
     handler_name: str
     """Handler being tested: graft, prune, ihave, iwant, message."""
 
-    params: dict[str, int]
-    """Gossipsub parameters: d, dLow, dHigh, dLazy."""
+    params: GossipsubMeshParameters = GossipsubMeshParameters()
+    """Mesh degree parameters."""
 
-    initial_state: dict[str, Any]
-    """Initial behavior state: subscriptions, meshes, peers, caches."""
+    initial_state: GossipsubInitialState
+    """Behavior state to seed before the event: subscriptions, meshes, peers, caches."""
 
-    event: dict[str, Any]
-    """Incoming event: fromPeer + RPC content."""
+    event: GossipsubEvent
+    """Incoming event: sending peer plus RPC content."""
 
     now: float = 1000.0
     """Current timestamp for backoff checks."""
 
-    expected: dict[str, Any] = {}
-    """Expected output. Filled by make_fixture."""
+    def generate(self) -> GossipsubHandlerFixture:
+        """Produce the emitted vector with expected outputs filled in."""
+        return GossipsubHandlerFixture(
+            handler_name=self.handler_name,
+            params=self.params,
+            initial_state=self.initial_state,
+            event=self.event,
+            now=self.now,
+            expected=asyncio.run(self._execute()),
+        )
 
-    def make_fixture(self) -> "GossipsubHandlerTest":
-        """Produce the completed fixture with expected outputs filled in."""
-        self.expected = asyncio.run(self._execute())
-        return self
-
-    async def _execute(self) -> dict[str, Any]:
+    async def _execute(self) -> GossipsubExpectation:
         """
         Run the handler against a fully-configured behavior instance.
 
         Builds the gossipsub behavior from fixture inputs, dispatches the
         incoming RPC, and returns the outbound RPCs and final mesh state.
         """
-        gs_params = GossipsubParameters(
-            d=self.params.get("d", 8),
-            d_low=self.params.get("dLow", 6),
-            d_high=self.params.get("dHigh", 12),
-            d_lazy=self.params.get("dLazy", 6),
+        behavior = GossipsubBehavior(
+            params=GossipsubParameters(
+                d=self.params.d,
+                d_low=self.params.d_low,
+                d_high=self.params.d_high,
+                d_lazy=self.params.d_lazy,
+            )
         )
-        behavior = GossipsubBehavior(params=gs_params)
 
         # Intercept outbound RPCs instead of sending them over the network.
         capture = _SendCapture()
@@ -187,128 +404,160 @@ class GossipsubHandlerTest(BaseConsensusFixture):
         # Subscriptions define which topics the local node participates in.
         #
         # Handlers ignore messages for topics we are not subscribed to.
-        for topic in self.initial_state.get("subscriptions", []):
+        for topic in self.initial_state.subscriptions:
             behavior.mesh.subscribe(TopicId(topic))
 
         # Register each peer with its subscriptions and protocol state.
         #
         # Peer properties like backoff timers and IDONTWANT sets directly
         # influence handler decisions (e.g., reject GRAFTs, skip forwarding).
-        for name, info in self.initial_state.get("peers", {}).items():
-            pid = _peer_id(name)
-            peer_names[pid] = name
-            state = PeerState(
-                peer_id=pid,
-                subscriptions={TopicId(t) for t in info.get("subscriptions", [])},
-                outbound_stream=_FAKE_STREAM if info.get("withStream", True) else None,
+        for peer_name, peer_configuration in self.initial_state.peers.items():
+            peer_id = _peer_id(peer_name)
+            peer_names[peer_id] = peer_name
+            peer_state = PeerState(
+                peer_id=peer_id,
+                subscriptions={
+                    TopicId(topic_string) for topic_string in peer_configuration.subscriptions
+                },
+                outbound_stream=_FAKE_STREAM if peer_configuration.with_stream else None,
             )
 
             # Backoff prevents re-GRAFTing a recently-pruned peer.
-            for topic_str, expiry in info.get("backoff", {}).items():
-                state.backoff[TopicId(topic_str)] = expiry
+            for topic_string, expiry in peer_configuration.backoff.items():
+                peer_state.backoff[TopicId(topic_string)] = expiry
 
             # IDONTWANT suppresses forwarding to peers that already have the message.
-            for mid_hex in info.get("dontWantIds", []):
-                state.dont_want_ids.add(MessageId(_unhex(mid_hex)))
-            behavior._peers[pid] = state
+            for message_id_hex in peer_configuration.dont_want_ids:
+                peer_state.dont_want_ids.add(MessageId(from_hex(message_id_hex)))
+            behavior._peers[peer_id] = peer_state
 
         # Mesh topology determines who receives forwarded messages.
         #
         # Handlers check mesh membership for GRAFT acceptance, PRUNE removal,
         # and message forwarding decisions.
-        for topic_str, peer_list in self.initial_state.get("meshes", {}).items():
-            topic = TopicId(topic_str)
-            for name in peer_list:
-                behavior.mesh.add_to_mesh(topic, _peer_id(name))
+        for topic_string, mesh_peer_names in self.initial_state.meshes.items():
+            topic = TopicId(topic_string)
+            for peer_name in mesh_peer_names:
+                behavior.mesh.add_to_mesh(topic, _peer_id(peer_name))
 
         # Seen cache tracks previously-received message IDs.
         #
         # Duplicate messages are silently dropped; IHAVE for seen IDs
         # does not trigger an IWANT response.
-        for mid_hex in self.initial_state.get("seenMessageIds", []):
-            behavior.seen_cache.add(MessageId(_unhex(mid_hex)), Timestamp(self.now))
+        for message_id_hex in self.initial_state.seen_message_ids:
+            behavior.seen_cache.add(MessageId(from_hex(message_id_hex)), Timestamp(self.now))
 
         # Message cache holds full message payloads for IWANT responses.
         #
         # When a peer requests a message via IWANT, the handler looks it up
         # here and sends the payload back.
-        for entry in self.initial_state.get("cachedMessages", []):
+        for cached_message in self.initial_state.cached_messages:
             message = GossipsubMessage(
-                topic=entry["topic"].encode("utf-8"),
-                raw_data=_unhex(entry["data"]),
+                topic=cached_message.topic.encode("utf-8"),
+                raw_data=from_hex(cached_message.data),
             )
-            message._cached_id = MessageId(_unhex(entry["messageId"]))
-            behavior.message_cache.put(TopicId(entry["topic"]), message)
+            message._cached_id = MessageId(from_hex(cached_message.message_id))
+            behavior.message_cache.put(TopicId(cached_message.topic), message)
 
         # Build the incoming RPC from the event.
-        from_peer = _peer_id(self.event["fromPeer"])
-        peer_names.setdefault(from_peer, self.event["fromPeer"])
+        from_peer = _peer_id(self.event.from_peer)
+        peer_names.setdefault(from_peer, self.event.from_peer)
 
         # Fix the clock so backoff and TTL checks are deterministic.
         with patch("time.time", return_value=self.now):
-            await behavior._handle_rpc(from_peer, _build_event_rpc(self.event))
+            await behavior._handle_rpc(from_peer, self.event.build_rpc())
 
-        return {
-            "sentRpcs": _serialize_rpcs(capture.sent, peer_names),
-            "meshAfter": _serialize_meshes(behavior, peer_names),
+        # Convert captured outbound RPCs to typed expectation entries.
+        #
+        # Each entry represents one RPC sent to a peer.
+        # The structure mirrors the gossipsub RPC wire format.
+        # Fixture consumers use this to assert exact outbound behavior.
+        # Emit outbound RPCs in canonical recipient order.
+        # The send order to mesh peers is set-driven.
+        # It is not consensus-relevant.
+        # Sorting by recipient keeps the emitted vector reproducible across runs.
+        sent_rpcs = []
+        for recipient_peer_id, rpc in sorted(
+            capture.sent, key=lambda entry: peer_names.get(entry[0], str(entry[0]))
+        ):
+            subscriptions = (
+                [
+                    SentSubscription(
+                        subscribe=subscription.subscribe, topic_id=str(subscription.topic_id)
+                    )
+                    for subscription in rpc.subscriptions
+                ]
+                if rpc.subscriptions
+                else None
+            )
+
+            publish = (
+                [
+                    SentPublish(topic=str(message.topic), data=to_hex(message.data))
+                    for message in rpc.publish
+                ]
+                if rpc.publish
+                else None
+            )
+
+            # Only include control fields that carry sub-messages.
+            control = None
+            if rpc.control and not rpc.control.is_empty():
+                control = SentControl(
+                    graft=(
+                        [SentGraft(topic_id=str(graft.topic_id)) for graft in rpc.control.graft]
+                        if rpc.control.graft
+                        else None
+                    ),
+                    prune=(
+                        [
+                            SentPrune(topic_id=str(prune.topic_id), backoff=prune.backoff)
+                            for prune in rpc.control.prune
+                        ]
+                        if rpc.control.prune
+                        else None
+                    ),
+                    iwant=(
+                        [
+                            SentMessageIdentifiers(
+                                message_ids=[to_hex(message_id) for message_id in iwant.message_ids]
+                            )
+                            for iwant in rpc.control.iwant
+                        ]
+                        if rpc.control.iwant
+                        else None
+                    ),
+                    idontwant=(
+                        [
+                            SentMessageIdentifiers(
+                                message_ids=[
+                                    to_hex(message_id) for message_id in idontwant.message_ids
+                                ]
+                            )
+                            for idontwant in rpc.control.idontwant
+                        ]
+                        if rpc.control.idontwant
+                        else None
+                    ),
+                )
+
+            sent_rpcs.append(
+                SentRpc(
+                    to_peer=peer_names.get(recipient_peer_id, str(recipient_peer_id)),
+                    subscriptions=subscriptions,
+                    publish=publish,
+                    control=control,
+                )
+            )
+
+        # Snapshot the mesh topology after handler execution.
+        # Sorting ensures deterministic output for fixture comparison.
+        mesh_after = {
+            str(topic): sorted(
+                peer_names.get(peer_id, str(peer_id))
+                for peer_id in behavior.mesh.get_mesh_peers(topic)
+            )
+            for topic in behavior.mesh.subscriptions
         }
 
-
-def _build_event_rpc(event: dict[str, Any]) -> RPC:
-    """
-    Construct an RPC from the event dict supplied by the test fixture.
-
-    The event dict describes one incoming message from a peer.
-    Required key:
-
-    - fromPeer: short name of the sending peer
-
-    Optional keys (include one or more to build the RPC):
-
-    - graft: list of dicts with topicId
-    - prune: list of dicts with topicId and optional backoff
-    - ihave: list of dicts with topicId and hex messageIds
-    - iwant: list of dicts with hex messageIds
-    - idontwant: list of dicts with hex messageIds
-    - publish: list of dicts with topic and hex data
-    """
-    control_parts: dict[str, list[Any]] = {}
-
-    if "graft" in event:
-        control_parts["graft"] = [
-            ControlGraft(topic_id=TopicId(g["topicId"])) for g in event["graft"]
-        ]
-    if "prune" in event:
-        control_parts["prune"] = [
-            ControlPrune(topic_id=TopicId(p["topicId"]), backoff=p.get("backoff", 0))
-            for p in event["prune"]
-        ]
-    if "ihave" in event:
-        control_parts["ihave"] = [
-            ControlIHave(
-                topic_id=TopicId(ih["topicId"]),
-                message_ids=[_unhex(m) for m in ih.get("messageIds", [])],
-            )
-            for ih in event["ihave"]
-        ]
-    if "iwant" in event:
-        control_parts["iwant"] = [
-            ControlIWant(message_ids=[_unhex(m) for m in iw.get("messageIds", [])])
-            for iw in event["iwant"]
-        ]
-    if "idontwant" in event:
-        control_parts["idontwant"] = [
-            ControlIDontWant(message_ids=[_unhex(m) for m in idw.get("messageIds", [])])
-            for idw in event["idontwant"]
-        ]
-
-    return RPC(
-        publish=[
-            Message(
-                topic=TopicId(m.get("topic", "")),
-                data=_unhex(m["data"]) if m.get("data") else b"",
-            )
-            for m in event.get("publish", [])
-        ],
-        control=ControlMessage(**control_parts) if control_parts else None,
-    )
+        return GossipsubExpectation(sent_rpcs=sent_rpcs, mesh_after=mesh_after)

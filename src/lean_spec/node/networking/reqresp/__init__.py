@@ -1,12 +1,12 @@
 """ReqResp specs for the Lean Ethereum consensus specification."""
 
-from .codec import (
+from lean_spec.node.networking.reqresp.codec import (
     CodecError,
     ResponseCode,
     decode_request,
     encode_request,
 )
-from .handler import (
+from lean_spec.node.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
     AsyncBlockBySlotLookup,
     AsyncBlockLookup,
@@ -14,7 +14,7 @@ from .handler import (
     RequestHandler,
     StreamResponseAdapter,
 )
-from .message import (
+from lean_spec.node.networking.reqresp.message import (
     BLOCKS_BY_RANGE_PROTOCOL_V1,
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,

@@ -43,11 +43,10 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 
 from lean_spec.node.networking.transport.peer_id import PeerId
+from lean_spec.node.sync.config import MAX_CACHED_BLOCKS
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import SignedBlock, Slot, Store
+from lean_spec.spec.forks import SignedBlock, Slot
 from lean_spec.spec.ssz import Bytes32
-
-from .config import MAX_CACHED_BLOCKS
 
 
 @dataclass(slots=True)
@@ -308,35 +307,6 @@ class BlockCache:
         # If block A at slot 100 and block B at slot 101 both waited for
         # parent P, we must process A before B.
         return sorted(children, key=lambda p: p.slot)
-
-    def get_processable(self, store: Store) -> list[PendingBlock]:
-        """
-        Get blocks whose parents exist in the Store.
-
-        This method scans the cache for blocks that can be immediately processed.
-        A block is processable if its parent is already in the Store (not just
-        in the cache - it must be fully validated and integrated).
-
-        Use this after processing new blocks to find newly-unblocked descendants.
-
-        Args:
-            store: The Store to check for parent existence.
-
-        Returns:
-            List of processable pending blocks, sorted by slot (earliest first).
-        """
-        processable: list[PendingBlock] = []
-
-        for pending in self._blocks.values():
-            # A block is processable if its parent is in the Store.
-            #
-            # Note: we check store.blocks, not the cache. The parent must be
-            # fully processed, not just received.
-            if pending.parent_root in store.blocks:
-                processable.append(pending)
-
-        # Sort ensures parent-before-child processing order.
-        return sorted(processable, key=lambda p: p.slot)
 
     @property
     def orphan_count(self) -> int:

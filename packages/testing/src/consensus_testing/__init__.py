@@ -1,34 +1,113 @@
 """Test tools for generating and consuming leanSpec consensus test vectors."""
 
-from typing import Type
+from collections.abc import Callable
 
-from . import forks
-from .genesis import build_anchor, generate_pre_state
-from .test_fixtures import (
+from consensus_testing import forks
+from consensus_testing.genesis import (
+    build_anchor,
+    generate_pre_state,
+    make_genesis_block,
+    make_genesis_state,
+    make_genesis_store,
+    make_validators,
+)
+from consensus_testing.mocks import (
+    MockEventSource,
+    MockForkchoiceStore,
+    MockNetworkRequester,
+    RecordedCall,
+    RecordingSyncDatabase,
+    create_mock_sync_service,
+)
+from consensus_testing.test_fixtures import (
+    FIXTURE_FORMATS,
+    ApiEndpointFixture,
     ApiEndpointTest,
+    AppendPhantomAttestation,
     BaseConsensusFixture,
-    DropComponentMessageBinding,
+    BaseTestSpec,
+    ClearFirstAttestationBits,
+    CorruptProof,
+    DropMessageBinding,
+    ExpectedRejection,
+    FixtureInfo,
+    ForkChoiceFixture,
     ForkChoiceTest,
+    GossipsubHandlerFixture,
     GossipsubHandlerTest,
-    IncrementComponentSlot,
     IncrementEmittedSlot,
+    JustifiabilityFixture,
     JustifiabilityTest,
+    MutateStateRoot,
+    NetworkingCodecFixture,
     NetworkingCodecTest,
+    PoseidonPermutationFixture,
     PoseidonPermutationTest,
-    RebindComponentToAlternateHeadRoot,
     RebindToAlternateHeadRoot,
+    SetProposerIndex,
+    SlotClockFixture,
     SlotClockTest,
+    SSZFixture,
     SSZTest,
+    StateTransitionFixture,
     StateTransitionTest,
-    SwapComponentMessageBindings,
-    SwapComponentParticipantPublicKey,
+    SwapFirstTwoAttestations,
+    SwapMessageBindings,
     SwapParticipantPublicKey,
+    SyncFixture,
     SyncTest,
+    VerifyMultiMessageProofsFixture,
     VerifyMultiMessageProofsTest,
+    VerifySignaturesFixture,
     VerifySignaturesTest,
+    VerifySingleMessageProofsFixture,
     VerifySingleMessageProofsTest,
 )
-from .test_types import (
+from consensus_testing.test_fixtures.gossipsub_handler import (
+    CachedMessage,
+    GossipsubEvent,
+    GossipsubInitialState,
+    GossipsubMeshParameters,
+    IncomingGraft,
+    IncomingIDontWant,
+    IncomingIHave,
+    IncomingIWant,
+    IncomingPrune,
+    IncomingPublish,
+    PeerConfiguration,
+)
+from consensus_testing.test_fixtures.networking_codec import (
+    DecodeFailure,
+    EnrRoundtrip,
+    GossipMessageIdentifier,
+    GossipsubRpcRoundtrip,
+    GossipTopicRoundtrip,
+    PeerIdentifierDerivation,
+    ReqRespRequestRoundtrip,
+    ReqRespResponseRoundtrip,
+    ReqRespResponseStream,
+    ResponseChunkSpec,
+    RpcControlSpec,
+    RpcGraftSpec,
+    RpcIDontWantSpec,
+    RpcIHaveSpec,
+    RpcIWantSpec,
+    RpcMessageSpec,
+    RpcPruneSpec,
+    RpcSubscriptionSpec,
+    SnappyBlockRoundtrip,
+    SnappyFrameRoundtrip,
+    VarintRoundtrip,
+)
+from consensus_testing.test_fixtures.slot_clock import (
+    CurrentInterval,
+    CurrentSlot,
+    FromSlot,
+    FromUnixTime,
+    TotalIntervals,
+)
+from consensus_testing.test_fixtures.sync import VerifyCheckpoint
+from consensus_testing.test_types import (
     AggregatedAttestationCheck,
     AggregatedAttestationSpec,
     AttestationCheck,
@@ -37,60 +116,141 @@ from .test_types import (
     BlockSpec,
     BlockStep,
     ForkChoiceStep,
-    GossipAggregatedAttestationSpec,
     GossipAggregatedAttestationStep,
     GossipAttestationSpec,
     StateExpectation,
     StoreChecks,
+    StoreSnapshot,
     TickStep,
 )
+from consensus_testing.values import (
+    TEST_VALIDATOR_INDEX,
+    make_signed_attestation,
+    make_signed_block,
+    make_test_block,
+    make_test_status,
+)
 
-StateTransitionTestFiller = Type[StateTransitionTest]
-ForkChoiceTestFiller = Type[ForkChoiceTest]
-VerifySingleMessageProofsTestFiller = Type[VerifySingleMessageProofsTest]
-VerifyMultiMessageProofsTestFiller = Type[VerifyMultiMessageProofsTest]
-VerifySignaturesTestFiller = Type[VerifySignaturesTest]
-SSZTestFiller = Type[SSZTest]
-NetworkingCodecTestFiller = Type[NetworkingCodecTest]
-GossipsubHandlerTestFiller = Type[GossipsubHandlerTest]
-ApiEndpointTestFiller = Type[ApiEndpointTest]
-SlotClockTestFiller = Type[SlotClockTest]
-JustifiabilityTestFiller = Type[JustifiabilityTest]
-PoseidonPermutationTestFiller = Type[PoseidonPermutationTest]
-SyncTestFiller = Type[SyncTest]
+StateTransitionTestFiller = Callable[..., StateTransitionFixture]
+ForkChoiceTestFiller = Callable[..., ForkChoiceFixture]
+VerifySingleMessageProofsTestFiller = Callable[..., VerifySingleMessageProofsFixture]
+VerifyMultiMessageProofsTestFiller = Callable[..., VerifyMultiMessageProofsFixture]
+VerifySignaturesTestFiller = Callable[..., VerifySignaturesFixture]
+SSZTestFiller = Callable[..., SSZFixture]
+NetworkingCodecTestFiller = Callable[..., NetworkingCodecFixture]
+GossipsubHandlerTestFiller = Callable[..., GossipsubHandlerFixture]
+ApiEndpointTestFiller = Callable[..., ApiEndpointFixture]
+SlotClockTestFiller = Callable[..., SlotClockFixture]
+JustifiabilityTestFiller = Callable[..., JustifiabilityFixture]
+PoseidonPermutationTestFiller = Callable[..., PoseidonPermutationFixture]
+SyncTestFiller = Callable[..., SyncFixture]
 
 __all__ = [
+    "CachedMessage",
+    "GossipsubEvent",
+    "GossipsubInitialState",
+    "GossipsubMeshParameters",
+    "IncomingGraft",
+    "IncomingIDontWant",
+    "IncomingIHave",
+    "IncomingIWant",
+    "IncomingPrune",
+    "IncomingPublish",
+    "PeerConfiguration",
+    "DecodeFailure",
+    "EnrRoundtrip",
+    "GossipMessageIdentifier",
+    "GossipsubRpcRoundtrip",
+    "GossipTopicRoundtrip",
+    "PeerIdentifierDerivation",
+    "ReqRespRequestRoundtrip",
+    "ReqRespResponseRoundtrip",
+    "ReqRespResponseStream",
+    "ResponseChunkSpec",
+    "RpcControlSpec",
+    "RpcGraftSpec",
+    "RpcIDontWantSpec",
+    "RpcIHaveSpec",
+    "RpcIWantSpec",
+    "RpcMessageSpec",
+    "RpcPruneSpec",
+    "RpcSubscriptionSpec",
+    "SnappyBlockRoundtrip",
+    "SnappyFrameRoundtrip",
+    "VarintRoundtrip",
+    "CurrentInterval",
+    "CurrentSlot",
+    "FromSlot",
+    "FromUnixTime",
+    "TotalIntervals",
+    "VerifyCheckpoint",
     # Public API
     "AggregatedAttestationSpec",
-    "GossipAggregatedAttestationSpec",
     "GossipAttestationSpec",
     "BlockSpec",
     "forks",
     "build_anchor",
     "generate_pre_state",
+    # Unit-test builders and value constructors
+    "make_genesis_block",
+    "make_genesis_state",
+    "make_genesis_store",
+    "make_validators",
+    "create_mock_sync_service",
+    "TEST_VALIDATOR_INDEX",
+    "make_signed_attestation",
+    "make_signed_block",
+    "make_test_block",
+    "make_test_status",
+    # Unit-test fakes
+    "MockEventSource",
+    "MockForkchoiceStore",
+    "MockNetworkRequester",
+    "RecordedCall",
+    "RecordingSyncDatabase",
     # Base types
-    # Fixture classes
+    "FIXTURE_FORMATS",
     "BaseConsensusFixture",
+    "BaseTestSpec",
+    "ExpectedRejection",
+    "FixtureInfo",
+    # Spec and fixture classes
+    "StateTransitionFixture",
     "StateTransitionTest",
+    "ForkChoiceFixture",
     "ForkChoiceTest",
+    "VerifySingleMessageProofsFixture",
     "VerifySingleMessageProofsTest",
+    "VerifyMultiMessageProofsFixture",
+    "VerifyMultiMessageProofsTest",
     "RebindToAlternateHeadRoot",
     "IncrementEmittedSlot",
     "SwapParticipantPublicKey",
-    "VerifyMultiMessageProofsTest",
-    "RebindComponentToAlternateHeadRoot",
-    "IncrementComponentSlot",
-    "SwapComponentParticipantPublicKey",
-    "SwapComponentMessageBindings",
-    "DropComponentMessageBinding",
+    "SwapMessageBindings",
+    "DropMessageBinding",
+    "VerifySignaturesFixture",
     "VerifySignaturesTest",
+    "SetProposerIndex",
+    "ClearFirstAttestationBits",
+    "CorruptProof",
+    "AppendPhantomAttestation",
+    "MutateStateRoot",
+    "SwapFirstTwoAttestations",
+    "SSZFixture",
     "SSZTest",
+    "NetworkingCodecFixture",
     "NetworkingCodecTest",
+    "GossipsubHandlerFixture",
     "GossipsubHandlerTest",
+    "ApiEndpointFixture",
     "ApiEndpointTest",
+    "SlotClockFixture",
     "SlotClockTest",
+    "JustifiabilityFixture",
     "JustifiabilityTest",
+    "PoseidonPermutationFixture",
     "PoseidonPermutationTest",
+    "SyncFixture",
     "SyncTest",
     # Test types
     "BaseForkChoiceStep",
@@ -101,6 +261,7 @@ __all__ = [
     "ForkChoiceStep",
     "StateExpectation",
     "StoreChecks",
+    "StoreSnapshot",
     "AttestationCheck",
     "AggregatedAttestationCheck",
     # Type aliases for test function signatures

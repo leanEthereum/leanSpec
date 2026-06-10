@@ -69,15 +69,8 @@ from lean_spec.node.networking.config import (
     MAX_REQUEST_BLOCKS,
     MIN_SLOTS_FOR_BLOCK_REQUESTS,
 )
-from lean_spec.node.networking.transport.protocols import InboundStreamProtocol
-from lean_spec.node.networking.types import ProtocolId
-from lean_spec.node.networking.varint import VarintError, decode_varint
-from lean_spec.node.snappy import SnappyDecompressionError, frame_decompress
-from lean_spec.spec.forks import SignedBlock, Slot
-from lean_spec.spec.ssz import Bytes32, Uint64
-
-from .codec import ResponseCode
-from .message import (
+from lean_spec.node.networking.reqresp.codec import ResponseCode
+from lean_spec.node.networking.reqresp.message import (
     BLOCKS_BY_RANGE_PROTOCOL_V1,
     BLOCKS_BY_ROOT_PROTOCOL_V1,
     STATUS_PROTOCOL_V1,
@@ -85,13 +78,20 @@ from .message import (
     BlocksByRootRequest,
     Status,
 )
+from lean_spec.node.networking.transport.protocols import InboundStreamProtocol
+from lean_spec.node.networking.types import ProtocolId
+from lean_spec.node.networking.varint import VarintError, decode_varint
+from lean_spec.node.snappy import SnappyDecompressionError, frame_decompress
+from lean_spec.spec.forks import SignedBlock, Slot
+from lean_spec.spec.ssz import Bytes32, Uint64
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
 class StreamResponseAdapter:
-    """Encodes responses using the wire format from codec.py and writes
+    """
+    Encodes responses using the wire format from codec.py and writes
     them to the underlying stream.
     """
 
@@ -99,7 +99,8 @@ class StreamResponseAdapter:
     """Underlying transport stream."""
 
     async def send_success(self, ssz_data: bytes) -> None:
-        """Send a SUCCESS response chunk.
+        """
+        Send a SUCCESS response chunk.
 
         Args:
             ssz_data: SSZ-encoded response payload.
@@ -109,7 +110,8 @@ class StreamResponseAdapter:
         await self._stream.drain()
 
     async def send_error(self, code: ResponseCode, message: str) -> None:
-        """Send an error response.
+        """
+        Send an error response.
 
         Args:
             code: Error code.
@@ -247,12 +249,12 @@ class RequestHandler:
                 # The spec allows partial responses.
                 # Peers handle missing blocks by requesting from other peers.
                 # Sending RESOURCE_UNAVAILABLE for each missing block would be noisy.
-            except Exception as e:
+            except Exception as exception:
                 # Lookup error: Log and continue.
                 #
                 # Database errors, timeouts, etc. should not abort the response.
                 # The peer can retry or ask another peer for this specific block.
-                logger.warning("Error looking up block %s: %s", root.hex()[:8], e)
+                logger.warning("Error looking up block %s: %s", root.hex()[:8], exception)
 
     async def handle_blocks_by_range(
         self,
@@ -315,8 +317,8 @@ class RequestHandler:
                 block = await self.block_by_slot_lookup(slot)
                 if block is not None:
                     await response.send_success(block.encode_bytes())
-            except Exception as e:
-                logger.warning("Error looking up block at slot %s: %s", slot, e)
+            except Exception as exception:
+                logger.warning("Error looking up block at slot %s: %s", slot, exception)
 
 
 REQRESP_PROTOCOL_IDS: Final[frozenset[ProtocolId]] = frozenset(
@@ -398,13 +400,13 @@ class ReqRespServer:
             # - Which handler processes the request
             await self._dispatch(protocol_id, ssz_bytes, response)
 
-        except Exception as e:
+        except Exception as exception:
             # Catch-all for unexpected errors.
             #
             # Any exception reaching here indicates a bug or system failure.
             # Send SERVER_ERROR so the peer knows we had an internal problem.
             # The peer may retry or try another node.
-            logger.warning("Unexpected error handling request: %s", e)
+            logger.warning("Unexpected error handling request: %s", exception)
             try:
                 await response.send_error(ResponseCode.SERVER_ERROR, "Internal error")
             except Exception:
@@ -522,12 +524,12 @@ class ReqRespServer:
             # - Correct size (80 bytes for Status)
             # - Valid field offsets
             try:
-                _request = Status.decode_bytes(ssz_bytes)  # noqa: F841
-            except Exception as e:
+                Status.decode_bytes(ssz_bytes)
+            except Exception as exception:
                 # SSZ decode failure: wrong size, malformed offsets, etc.
                 #
                 # This is INVALID_REQUEST - the peer sent bad SSZ.
-                logger.debug("Status decode error: %s", e)
+                logger.debug("Status decode error: %s", exception)
                 await response.send_error(ResponseCode.INVALID_REQUEST, "Invalid Status message")
                 return
             await self.handler.handle_status(response)
@@ -539,9 +541,9 @@ class ReqRespServer:
             # Length must be a multiple of 32 bytes.
             try:
                 request = BlocksByRootRequest.decode_bytes(ssz_bytes)
-            except Exception as e:
+            except Exception as exception:
                 # SSZ decode failure: wrong size, not multiple of 32, etc.
-                logger.debug("BlocksByRootRequest decode error: %s", e)
+                logger.debug("BlocksByRootRequest decode error: %s", exception)
                 await response.send_error(
                     ResponseCode.INVALID_REQUEST, "Invalid BlocksByRootRequest message"
                 )
@@ -554,9 +556,9 @@ class ReqRespServer:
             # The request is an SSZ object with start_slot and count.
             try:
                 request = BlocksByRangeRequest.decode_bytes(ssz_bytes)
-            except Exception as e:
+            except Exception as exception:
                 # SSZ decode failure: wrong size, malformed offsets, etc.
-                logger.debug("BlocksByRangeRequest decode error: %s", e)
+                logger.debug("BlocksByRangeRequest decode error: %s", exception)
                 await response.send_error(
                     ResponseCode.INVALID_REQUEST, "Invalid BlocksByRangeRequest message"
                 )

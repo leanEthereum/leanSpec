@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from .constants import (
+from lean_spec.node.snappy.constants import (
     COPY_1_BYTE_OFFSET,
     COPY_2_BYTE_OFFSET,
     COPY_4_BYTE_OFFSET,
@@ -79,7 +79,8 @@ type TagType = Literal["literal", "copy"]
 
 
 def encode_literal_tag(length: int) -> bytes:
-    """Encode a literal tag for the given data length.
+    """
+    Encode a literal tag for the given data length.
 
     Returns the tag byte(s) that should precede literal data in the
     compressed stream. The actual literal bytes follow immediately.
@@ -298,7 +299,8 @@ def encode_literal_tag(length: int) -> bytes:
 
 
 def encode_copy_tag(length: int, offset: int) -> bytes:
-    """Encode a copy tag for the given length and offset.
+    """
+    Encode a copy tag for the given length and offset.
 
     Automatically selects the most compact encoding based on the
     offset and length values.
@@ -338,7 +340,8 @@ def encode_copy_tag(length: int, offset: int) -> bytes:
 
 
 def _encode_copy_1(length: int, offset: int) -> bytes:
-    """Encode a copy-1 tag (2 bytes).
+    """
+    Encode a copy-1 tag (2 bytes).
 
     Format:
       Tag byte: [offset_high (3 bits)][length-4 (3 bits)][01 (2 bits)]
@@ -361,7 +364,8 @@ def _encode_copy_1(length: int, offset: int) -> bytes:
 
 
 def _encode_copy_2(length: int, offset: int) -> bytes:
-    """Encode a copy-2 tag (3 bytes).
+    """
+    Encode a copy-2 tag (3 bytes).
 
     Format:
       Tag byte: [length-1 (6 bits)][10 (2 bits)]
@@ -372,7 +376,8 @@ def _encode_copy_2(length: int, offset: int) -> bytes:
 
 
 def _encode_copy_4(length: int, offset: int) -> bytes:
-    """Encode a copy-4 tag (5 bytes).
+    """
+    Encode a copy-4 tag (5 bytes).
 
     Format:
       Tag byte: [length-1 (6 bits)][11 (2 bits)]
@@ -458,7 +463,8 @@ def _encode_copy_4(length: int, offset: int) -> bytes:
 
 
 def decode_tag(data: bytes, offset: int = 0) -> tuple[TagType, int, int, int]:
-    """Decode a tag at the given offset in the data.
+    """
+    Decode a tag at the given offset in the data.
 
     Parses the tag byte and any following length/offset bytes to determine
     the operation type, data length, and for copies, the backward offset.

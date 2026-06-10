@@ -1,14 +1,14 @@
 """Helper utilities for interop tests."""
 
-from .assertions import (
+from tests.interop.helpers.assertions import (
     assert_checkpoint_monotonicity,
     assert_heads_consistent,
     assert_peer_connections,
 )
-from .diagnostics import PipelineDiagnostics
-from .node_runner import NodeCluster
-from .port_allocator import PortAllocator
-from .topology import full_mesh
+from tests.interop.helpers.diagnostics import PipelineDiagnostics
+from tests.interop.helpers.node_runner import NodeCluster
+from tests.interop.helpers.port_allocator import PortAllocator
+from tests.interop.helpers.topology import full_mesh
 
 __all__ = [
     # Assertions

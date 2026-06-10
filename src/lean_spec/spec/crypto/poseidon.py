@@ -1,4 +1,5 @@
-"""Specification of the Poseidon permutation over the KoalaBear field.
+"""
+Specification of the Poseidon permutation over the KoalaBear field.
 
 Based on "Poseidon: A New Hash Function for Zero-Knowledge Proof Systems".
 See https://eprint.iacr.org/2019/458.
@@ -15,8 +16,8 @@ from numba import njit
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
-from ...base import StrictBaseModel
-from .koalabear import Fp, P
+from lean_spec.base import StrictBaseModel
+from lean_spec.spec.crypto.koalabear import Fp, P
 
 # For width 16: 28 rounds x 16 = 448 constants
 # Layout: initial_full (4 x 16) + partial (20 x 16) + terminal_full (4 x 16)
@@ -1227,10 +1228,10 @@ _RAW_CONSTANTS_24: list[int] = [
 ]
 
 # For width 16 (needs (8 + 20) * 16 = 448 constants).
-ROUND_CONSTANTS_16: list[Fp] = [Fp(value=v) for v in _RAW_CONSTANTS_16]
+ROUND_CONSTANTS_16: list[Fp] = [Fp(value=raw_constant) for raw_constant in _RAW_CONSTANTS_16]
 
 # For width 24 (needs (8 + 23) * 24 = 744 constants).
-ROUND_CONSTANTS_24: list[Fp] = [Fp(value=v) for v in _RAW_CONSTANTS_24]
+ROUND_CONSTANTS_24: list[Fp] = [Fp(value=raw_constant) for raw_constant in _RAW_CONSTANTS_24]
 
 
 @njit(cache=True)
@@ -1244,26 +1245,26 @@ def _mds_multiply_jit(
     Each product is reduced mod p before accumulation to prevent overflow.
     """
     # State length doubles as the matrix dimension since MDS is square.
-    n = state.shape[0]
+    dimension = state.shape[0]
 
     # Output buffer, written in place by the inner loop.
-    result = np.empty(n, dtype=np.int64)
+    product = np.empty(dimension, dtype=np.int64)
 
     # One iteration computes a single row of the matrix-vector product.
-    for i in range(n):
+    for i in range(dimension):
         # Accumulator collects n pre-reduced contributions before the final fold.
-        s = np.int64(0)
+        row_sum = np.int64(0)
 
-        for j in range(n):
+        for j in range(dimension):
             # Each factor sits below p, so the product fits in 62 bits.
             #
             # Without per-product reduction, summing n products would risk int64 overflow.
-            s += (mds[i, j] * state[j]) % p
+            row_sum += (mds[i, j] * state[j]) % p
 
         # Final fold back into the field after n already-reduced terms.
-        result[i] = s % p
+        product[i] = row_sum % p
 
-    return result
+    return product
 
 
 @njit(cache=True)
@@ -1340,7 +1341,8 @@ def _permute_jit(
 
 
 class PoseidonParams(StrictBaseModel):
-    """Parameters for a specific Poseidon instance.
+    """
+    Parameters for a specific Poseidon instance.
 
     - The paper requires at least 6 full rounds for statistical-attack security.
     - Some regimes raise this bound to 10 per Eq. 2 of the paper.
@@ -1455,7 +1457,7 @@ class Poseidon:
             P,
         )
 
-        return [Fp(value=int(x)) for x in state]
+        return [Fp(value=int(state_element)) for state_element in state]
 
 
 _MDS_FIRST_ROW_16: list[int] = [1, 1, 51, 1, 11, 17, 2, 1, 101, 63, 15, 2, 67, 22, 13, 3]
@@ -1503,7 +1505,7 @@ PARAMS_16 = PoseidonParams(
     width=16,
     rounds_f=8,
     rounds_p=20,
-    mds_first_row=[Fp(value=v) for v in _MDS_FIRST_ROW_16],
+    mds_first_row=[Fp(value=row_entry) for row_entry in _MDS_FIRST_ROW_16],
     round_constants=ROUND_CONSTANTS_16,
 )
 """Poseidon parameters for width-16 permutation (8 full rounds, 20 partial)."""
@@ -1512,7 +1514,7 @@ PARAMS_24 = PoseidonParams(
     width=24,
     rounds_f=8,
     rounds_p=23,
-    mds_first_row=[Fp(value=v) for v in _MDS_FIRST_ROW_24],
+    mds_first_row=[Fp(value=row_entry) for row_entry in _MDS_FIRST_ROW_24],
     round_constants=ROUND_CONSTANTS_24,
 )
 """Poseidon parameters for width-24 permutation (8 full rounds, 23 partial)."""

@@ -1,14 +1,15 @@
 """State Transition: Block Processing"""
 
 import pytest
+
 from consensus_testing import (
     BlockSpec,
+    ExpectedRejection,
     StateExpectation,
     StateTransitionTestFiller,
     generate_pre_state,
 )
-
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks import RejectionReason, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import JustifiedSlots
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import Boolean, Bytes32
@@ -20,24 +21,26 @@ def test_process_first_block_after_genesis(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test processing the first block after genesis.
+    Processing the first block advances the state from genesis to slot 1.
 
-    Scenario
-    --------
-    Process a single block at slot 1 immediately after genesis.
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block(1)
 
-    Expected Behavior
-    -----------------
-    1. State advances from slot 0 to slot 1
-    2. Block header is validated and processed
-    3. Latest block header updated to new block
-    4. Historical roots updated with genesis
-    5. Post-state at slot 1
+    When
+    ----
+    - the chain processes the block at slot 1.
 
-    This is the foundation for all subsequent blocks.
+    Then
+    ----
+    - the state slot is 1.
+    - the chain tip header sits at slot 1.
+    - the chain tip header state root is zero.
+    - the history holds one entry.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1)),
         ],
@@ -54,23 +57,23 @@ def test_linear_chain_multiple_blocks(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test building a linear chain of multiple blocks.
+    A linear chain of five blocks advances the state to slot 5.
 
-    Scenario
-    --------
-    Build a 5-block linear chain:
-    genesis → block1 → block2 → block3 → block4 → block5
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
 
-    Expected Behavior
-    -----------------
-    1. Each block processes in sequence
-    2. Parent linkage maintained throughout
-    3. State advances monotonically
-    4. Historical roots accumulate
-    5. Final state at slot 5
+    When
+    ----
+    - the chain processes all five blocks in order.
+
+    Then
+    ----
+    - the state slot is 5.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -86,35 +89,27 @@ def test_blocks_with_gaps(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test blocks separated by empty slots.
+    Parent linkage spans empty slots when proposals are missed.
 
-    Scenario
-    --------
-    Build chain with gaps:
-    - Slot 1: Block
-    - Slots 2-3: Empty
-    - Slot 4: Block
-    - Slots 5-7: Empty
-    - Slot 8: Block
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block_1(1) -> block_4(4) -> block_8(8)
+    - slots 2, 3, 5, 6, and 7 carry no block.
 
-    Expected Behavior
-    -----------------
-    1. Blocks process at specified slots
-    2. Empty slots handled automatically
-    3. Parent linkage spans gaps correctly
-    4. State advances to slot 8
+    When
+    ----
+    - the chain processes block_1, block_4, and block_8.
 
-    Why This Matters
-    ----------------
-    Missed proposals are common:
-    - Validators offline
-    - Network partitions
-    - Missed attestations
-
-    This validates resilience to gaps.
+    Then
+    ----
+    - the state slot is 8.
+    - the chain tip header sits at slot 8.
+    - the chain tip header state root is zero.
+    - the history holds eight entries.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(4), parent_label="block_1", label="block_4"),
@@ -133,24 +128,24 @@ def test_block_at_large_slot_number(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test block processing at high slot numbers.
+    A block at a high slot number processes across many empty slots.
 
-    Scenario
-    --------
-    Jump directly from genesis to slot 100, simulating:
-    - Network bootstrap after long downtime
-    - Test environment with artificial time jump
-    - Integer overflow boundary testing
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block(100)
+    - slots 1 through 99 carry no block.
 
-    Expected Behavior
-    -----------------
-    1. Process 99 empty slots: 1→2→...→99→100
-    2. Block at slot 100 processes correctly
-    3. No integer overflow or wraparound
-    4. State remains consistent
+    When
+    ----
+    - the chain processes the block at slot 100.
+
+    Then
+    ----
+    - the state slot is 100.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(100)),
         ],
@@ -162,27 +157,26 @@ def test_block_at_very_large_slot_with_many_skipped(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    State transition handles hundreds of empty slots without error.
+    A block at slot 500 processes hundreds of empty slots without error.
 
-    Scenario
-    --------
-    Jump directly from genesis to slot 500, simulating:
-    - Network bootstrap after very long downtime
-    - Integer overflow boundary testing at scale
-    - Memory usage stress test for slot processing
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block(500)
+    - slots 1 through 499 carry no block.
 
-    Expected Behavior
-    -----------------
-    1. Process 499 empty slots: 1→2→...→499→500
-    2. Block at slot 500 processes correctly
-    3. historical_block_hashes has 500 entries:
-       - Genesis parent root
-       - 499 ZERO_HASH entries for skipped slots
-    4. justified_slots tracks slots 1..499 = 499 entries (all False)
-    5. No integer overflow or memory issues
+    When
+    ----
+    - the chain processes the block at slot 500.
+
+    Then
+    ----
+    - the state slot is 500.
+    - the history holds 500 entries.
+    - the justified-slots bitfield holds 499 entries, all unjustified.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(500)),
         ],
@@ -198,42 +192,31 @@ def test_block_with_invalid_proposer(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that blocks from wrong proposer are rejected.
+    Only the designated proposer may produce a block for a slot.
 
-    Scenario
-    --------
-    Attempt to process a block where proposer index doesn't match
-    the expected proposer for that slot.
+    Given
+    -----
+    - the default genesis state.
+    - the proposer for slot 1 is V1, from 1 modulo 4.
 
-    Expected Behavior
-    -----------------
-    Block processing fails with AssertionError: "Incorrect block proposer"
+    When
+    ----
+    - a block at slot 1 claims proposer V3.
 
-    Why This Matters
-    ----------------
-    Prevents unauthorized block production:
-    - Only designated proposer can produce blocks
-    - Prevents validator impersonation
-    - Maintains protocol security
-    - Essential for consensus integrity
-
-    Without this check, any validator could produce blocks for any slot.
+    Then
+    ----
+    - the proposer does not match the slot.
+    - the block is rejected as the wrong proposer.
     """
-    # Manually specify wrong proposer (not matching slot % validators)
-    #
-    # For slot 1:
-    # - expected proposer is Uint64(1),
-    # - we'll try to use Uint64(5) instead
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(
                 slot=Slot(1),
-                proposer_index=ValidatorIndex(3),  # Wrong proposer
+                proposer_index=ValidatorIndex(3),
             ),
         ],
-        post=None,  # Expect failure
-        expect_exception=AssertionError,
+        post=None,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.WRONG_PROPOSER),
     )
 
 
@@ -241,37 +224,30 @@ def test_block_with_invalid_parent_root(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that blocks with wrong parent root are rejected.
+    A block must reference the root of the current chain tip header.
 
-    Scenario
-    --------
-    Attempt to process a block where parent root doesn't match
-    hash_tree_root(state.latest block header).
+    Given
+    -----
+    - the default genesis state.
 
-    Expected Behavior
-    -----------------
-    Block processing fails with AssertionError: "Block parent root mismatch"
+    When
+    ----
+    - a block at slot 1 claims a parent root that is not the chain tip header root.
 
-    Why This Matters
-    ----------------
-    Maintains chain integrity:
-    - Blocks must reference correct parent
-    - Prevents chain history forgery
-    - Ensures linear chain continuity
-    - Critical for fork resolution
-
-    Without this check, attackers could create invalid chain branches.
+    Then
+    ----
+    - the parent root does not match the chain tip header.
+    - the block is rejected as a parent root mismatch.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(
                 slot=Slot(1),
-                parent_root=Bytes32(b"\xde\xad" * 16),  # Invalid parent
+                parent_root=Bytes32(b"\xde\xad" * 16),
             ),
         ],
         post=None,
-        expect_exception=AssertionError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.PARENT_ROOT_MISMATCH),
     )
 
 
@@ -279,58 +255,49 @@ def test_block_with_invalid_state_root(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that blocks with wrong state root commitment are rejected.
+    A block must commit to the actual post-state root.
 
-    Scenario
-    --------
-    Create a block with state root that doesn't match the actual
-    post-state hash.
+    Given
+    -----
+    - the default genesis state.
 
-    Expected Behavior
-    -----------------
-    Block processing fails with AssertionError: "Invalid block state root"
+    When
+    ----
+    - a block at slot 1 claims a state root that is not the actual post-state root.
 
-    Why This Matters
-    ----------------
-    Cryptographic state commitment is fundamental:
-    - Proves correct state execution
-    - Prevents state manipulation
-
-    This is a critical validation - without it, proposers could claim any arbitrary state.
+    Then
+    ----
+    - the claimed state root does not match the computed post-state.
+    - the block is rejected as a state root mismatch.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(
                 slot=Slot(1),
-                state_root=Bytes32(b"\xba\xad" * 16),  # Wrong state root
+                state_root=Bytes32(b"\xba\xad" * 16),
             ),
         ],
         post=None,
-        expect_exception=AssertionError,
+        expected_rejection=ExpectedRejection(reason=RejectionReason.STATE_ROOT_MISMATCH),
     )
 
 
 def test_block_with_wrong_slot(state_transition_test: StateTransitionTestFiller) -> None:
     """
-    Test that blocks with mismatched slot are rejected.
+    A block must claim the slot the state has been advanced to.
 
-    Scenario
-    --------
-    Attempt to process a block at slot 1, but the block claims to be
-    at slot 2.
+    Given
+    -----
+    - the state is pre-advanced to slot 1.
 
-    Expected Behavior
-    -----------------
-    Block processing fails with AssertionError: "Block slot mismatch"
+    When
+    ----
+    - a block claiming slot 2 is processed while slot processing is skipped.
 
-    Why This Matters
-    ----------------
-    Ensures temporal consistency:
-    - Blocks can't lie about their slot
-    - Prevents time manipulation attacks
-    - Maintains protocol timing integrity
-    - Essential for slot-based consensus
+    Then
+    ----
+    - the block slot does not match the state slot.
+    - the block is rejected as a block slot mismatch.
     """
     pre_state = generate_pre_state()
     pre_state = LstarSpec().process_slots(pre_state, Slot(1))
@@ -344,8 +311,10 @@ def test_block_with_wrong_slot(state_transition_test: StateTransitionTestFiller)
             ),
         ],
         post=None,
-        expect_exception=AssertionError,
-        expect_exception_message="Block slot mismatch",
+        expected_rejection=ExpectedRejection(
+            reason=RejectionReason.BLOCK_SLOT_MISMATCH,
+            message_substring="Block slot mismatch",
+        ),
     )
 
 
@@ -353,20 +322,21 @@ def test_block_extends_deep_chain(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test that blocks can extend already-deep chains.
+    A deep linear chain of twenty blocks advances the state to slot 20.
 
-    Scenario
-    --------
-    Build a 20-block chain to simulate a mature blockchain state,
-    then verify new blocks can still extend it correctly.
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_20(20)
 
-    Expected Behavior
-    -----------------
-    1. All 20 blocks process successfully
-    2. Parent linkage maintained throughout
-    3. State advances to slot 20
-    4. Historical roots accumulate correctly
-    5. No degradation in processing
+    When
+    ----
+    - the chain processes all twenty blocks in order.
+
+    Then
+    ----
+    - the state slot is 20.
     """
     blocks = [BlockSpec(slot=Slot(1), label="block_1")]
     blocks.extend(
@@ -377,7 +347,6 @@ def test_block_extends_deep_chain(
     )
 
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=blocks,
         post=StateExpectation(slot=Slot(20)),
     )
@@ -387,23 +356,24 @@ def test_empty_blocks(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test processing blocks with empty body (no attestations).
+    A chain of blocks with empty bodies advances the state to slot 6.
 
-    Scenario
-    --------
-    Build chain of blocks with empty body:
-    - Slot 1: Block, Empty body
-    - Slot 2: Block, Empty body
-    - Slot 3: Block, Empty body
-    - Slot 4: Block, Empty body
-    - Slot 5: Block, Empty body
-    - Slot 6: Block, Empty body
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5) -> block_6(6)
+    - every block carries an empty body.
 
-    Expected Behavior
-    -----------------
-    1. Blocks process as expected
-    2. State advances to slot 6
+    When
+    ----
+    - the chain processes all six blocks in order.
 
+    Then
+    ----
+    - the state slot is 6.
+    - the chain tip header sits at slot 6.
+    - the history holds six entries.
     """
     blocks = [
         BlockSpec(slot=Slot(1), body=None, label="block_1"),
@@ -419,7 +389,6 @@ def test_empty_blocks(
     ]
 
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=blocks,
         post=StateExpectation(
             slot=Slot(6), latest_block_header_slot=Slot(6), historical_block_hashes_count=6
@@ -431,32 +400,31 @@ def test_empty_blocks_with_missed_slots(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test processing blocks with empty body (no attestations) combined with missed slots.
+    Empty-body blocks process across a missed slot up to slot 6.
 
-    Scenario
-     --------
-     Build chain of blocks with empty body + missed slot:
-     - Slot 1: Block
-     - Slot 2: Block, Empty body
-     - Slot 3: BLock, Empty body
-     - Slot 4: Missed
-     - Slot 5: Block, Empty body
-     - Slot 6: Block
+    Given
+    -----
+    - the default genesis state.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_5(5) -> block_6(6)
+    - block_2, block_3, and block_5 carry empty bodies.
+    - slot 4 carries no block.
 
-     Expected Behavior
-     -----------------
-     1. Blocks process at specified slots
-     2. Empty slots handled automatically
-     3. State advances to slot 6
+    When
+    ----
+    - the chain processes block_1, block_2, block_3, block_5, and block_6.
 
+    Then
+    ----
+    - the state slot is 6.
+    - the chain tip header sits at slot 6.
+    - the history holds six entries.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), body=None, parent_label="block_1", label="block_2"),
             BlockSpec(slot=Slot(3), body=None, parent_label="block_2", label="block_3"),
-            # slot = 4 missed
             BlockSpec(slot=Slot(5), body=None, parent_label="block_3", label="block_5"),
             BlockSpec(slot=Slot(6), parent_label="block_5", label="block_6"),
         ],

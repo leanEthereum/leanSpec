@@ -3,17 +3,29 @@
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from consensus_testing.genesis import build_anchor, generate_pre_state, make_genesis_block
+from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
+from lean_spec.base import StrictBaseModel
+from lean_spec.spec.forks import Slot
 from lean_spec.spec.forks.lstar import Store
-from lean_spec.spec.forks.lstar.containers import AggregatedAttestations, Block, BlockBody, State
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz import Uint64
 
-from ..genesis import build_anchor, generate_pre_state
-from .base import BaseConsensusFixture
 
-EndpointHandler = Callable[[Store, "ApiEndpointTest"], dict[str, Any]]
+class EndpointResponseContract(StrictBaseModel):
+    """The status, content type, and body one endpoint handler expects a client to return."""
+
+    status_code: int
+    """Expected HTTP status code."""
+
+    content_type: str
+    """Expected response MIME type."""
+
+    body: Any = None
+    """Expected response payload: a JSON object or a hex SSZ string."""
+
+
+EndpointHandler = Callable[[Store, "ApiEndpointTest"], EndpointResponseContract]
 """Uniform signature for all endpoint response builders.
 
 Every handler receives both arguments even if it only needs one.
@@ -21,20 +33,9 @@ This keeps the dispatch table simple: one signature, one call site.
 """
 
 
-def _make_genesis_block(state: State) -> Block:
-    """Build a slot-0 block anchored to the given genesis state."""
-    body = BlockBody(attestations=AggregatedAttestations(data=[]))
-    return Block(
-        slot=Slot(0),
-        proposer_index=ValidatorIndex(0),
-        parent_root=Bytes32.zero(),
-        state_root=Bytes32(hash_tree_root(state)),
-        body=body,
-    )
-
-
 def _build_store(num_validators: int, genesis_time: int, anchor_slot: int = 0) -> Store:
-    """Build a deterministic store rooted at genesis or at an advanced anchor.
+    """
+    Build a deterministic store rooted at genesis or at an advanced anchor.
 
     At anchor_slot 0 the store is genesis-only. At higher slots the store
     is seeded with a real (state, block) pair produced by advancing an
@@ -49,7 +50,7 @@ def _build_store(num_validators: int, genesis_time: int, anchor_slot: int = 0) -
         state = generate_pre_state(
             fork=fork, genesis_time=Uint64(genesis_time), num_validators=num_validators
         )
-        block = _make_genesis_block(state)
+        block = make_genesis_block(state)
         # No validator identity — fixture only reads store data, never signs.
         return fork.create_store(state, block, validator_index=None)
 
@@ -65,38 +66,40 @@ def _build_store(num_validators: int, genesis_time: int, anchor_slot: int = 0) -
     return fork.create_store(state, block, validator_index=None)
 
 
-def _health_response(_store: Store, _fixture: "ApiEndpointTest") -> dict[str, Any]:
+def _health_response(_store: Store, _fixture: "ApiEndpointTest") -> EndpointResponseContract:
     """Static liveness check. Independent of consensus state."""
-    return {
-        "expected_status_code": 200,
-        "expected_content_type": "application/json",
-        "expected_body": {"status": "healthy", "service": "lean-rpc-api"},
-    }
+    return EndpointResponseContract(
+        status_code=200,
+        content_type="application/json",
+        body={"status": "healthy", "service": "lean-rpc-api"},
+    )
 
 
-def _justified_response(store: Store, _fixture: "ApiEndpointTest") -> dict[str, Any]:
+def _justified_response(store: Store, _fixture: "ApiEndpointTest") -> EndpointResponseContract:
     """Latest justified checkpoint: slot + root. Root varies with validator count."""
-    return {
-        "expected_status_code": 200,
-        "expected_content_type": "application/json",
-        "expected_body": {
+    return EndpointResponseContract(
+        status_code=200,
+        content_type="application/json",
+        body={
             "slot": int(store.latest_justified.slot),
             "root": "0x" + store.latest_justified.root.hex(),
         },
-    }
+    )
 
 
-def _finalized_state_response(store: Store, _fixture: "ApiEndpointTest") -> dict[str, Any]:
+def _finalized_state_response(
+    store: Store, _fixture: "ApiEndpointTest"
+) -> EndpointResponseContract:
     """Full SSZ-encoded finalized state as hex bytes."""
     state = store.states[store.latest_finalized.root]
-    return {
-        "expected_status_code": 200,
-        "expected_content_type": "application/octet-stream",
-        "expected_body": "0x" + state.encode_bytes().hex(),
-    }
+    return EndpointResponseContract(
+        status_code=200,
+        content_type="application/octet-stream",
+        body="0x" + state.encode_bytes().hex(),
+    )
 
 
-def _fork_choice_response(store: Store, _fixture: "ApiEndpointTest") -> dict[str, Any]:
+def _fork_choice_response(store: Store, _fixture: "ApiEndpointTest") -> EndpointResponseContract:
     """Fork choice tree: blocks with weights, head, checkpoints, validator count."""
     weights = LstarSpec().compute_block_weights(store)
 
@@ -115,10 +118,10 @@ def _fork_choice_response(store: Store, _fixture: "ApiEndpointTest") -> dict[str
 
     # Validator count from head state (most current view).
     head_state = store.states.get(store.head)
-    return {
-        "expected_status_code": 200,
-        "expected_content_type": "application/json",
-        "expected_body": {
+    return EndpointResponseContract(
+        status_code=200,
+        content_type="application/json",
+        body={
             "nodes": nodes,
             "head": "0x" + store.head.hex(),
             "justified": {
@@ -132,20 +135,23 @@ def _fork_choice_response(store: Store, _fixture: "ApiEndpointTest") -> dict[str
             "safe_target": "0x" + store.safe_target.hex(),
             "validator_count": len(head_state.validators) if head_state is not None else 0,
         },
-    }
+    )
 
 
-def _aggregator_status_response(_store: Store, fixture: "ApiEndpointTest") -> dict[str, Any]:
+def _aggregator_status_response(
+    _store: Store, fixture: "ApiEndpointTest"
+) -> EndpointResponseContract:
     """Current aggregator role as seeded by initial_is_aggregator."""
-    return {
-        "expected_status_code": 200,
-        "expected_content_type": "application/json",
-        "expected_body": {"is_aggregator": fixture.initial_is_aggregator},
-    }
+    return EndpointResponseContract(
+        status_code=200,
+        content_type="application/json",
+        body={"is_aggregator": fixture.initial_is_aggregator},
+    )
 
 
-def _metrics_response(_store: Store, _fixture: "ApiEndpointTest") -> dict[str, Any]:
-    """Prometheus-format metrics scrape.
+def _metrics_response(_store: Store, _fixture: "ApiEndpointTest") -> EndpointResponseContract:
+    """
+    Prometheus-format metrics scrape.
 
     The body of /metrics is dynamic (counters accumulate, timestamps shift)
     so the fixture pins only the stable contract: status, content-type,
@@ -180,15 +186,18 @@ def _metrics_response(_store: Store, _fixture: "ApiEndpointTest") -> dict[str, A
     # Touch the module import so spec refactors that remove the registry
     # trip the fixture instead of failing silently.
     assert metrics_registry is not None
-    return {
-        "expected_status_code": 200,
-        "expected_content_type": "text/plain; version=0.0.4; charset=utf-8",
-        "expected_body": {"required_metric_names": required_metric_names},
-    }
+    return EndpointResponseContract(
+        status_code=200,
+        content_type="text/plain; version=0.0.4; charset=utf-8",
+        body={"required_metric_names": required_metric_names},
+    )
 
 
-def _aggregator_toggle_response(_store: Store, fixture: "ApiEndpointTest") -> dict[str, Any]:
-    """Expected response after toggling the aggregator role.
+def _aggregator_toggle_response(
+    _store: Store, fixture: "ApiEndpointTest"
+) -> EndpointResponseContract:
+    """
+    Expected response after toggling the aggregator role.
 
     The fixture models a single POST against a node whose starting state is
     initial_is_aggregator. The response reflects the new value and the
@@ -201,14 +210,14 @@ def _aggregator_toggle_response(_store: Store, fixture: "ApiEndpointTest") -> di
             "with a boolean 'enabled' field"
         )
     new_value = body["enabled"]
-    return {
-        "expected_status_code": 200,
-        "expected_content_type": "application/json",
-        "expected_body": {
+    return EndpointResponseContract(
+        status_code=200,
+        content_type="application/json",
+        body={
             "is_aggregator": new_value,
             "previous": fixture.initial_is_aggregator,
         },
-    }
+    )
 
 
 _ENDPOINT_HANDLERS: dict[tuple[str, str], EndpointHandler] = {
@@ -223,14 +232,44 @@ _ENDPOINT_HANDLERS: dict[tuple[str, str], EndpointHandler] = {
 """Maps (method, path) tuples to response builders."""
 
 
-class ApiEndpointTest(BaseConsensusFixture):
-    """Fixture for API endpoint response conformance.
+class ApiEndpointFixture(BaseConsensusFixture):
+    """
+    Emitted vector for API endpoint response conformance.
 
-    JSON output: endpoint, genesisParams, expectedStatusCode,
-    expectedContentType, expectedBody.
+    JSON output: endpoint, method, genesisParams, requestBody,
+    initialIsAggregator, expectedStatusCode, expectedContentType,
+    expectedBody.
     """
 
-    format_name: ClassVar[str] = "api_endpoint"
+    endpoint: str
+    """API path under test."""
+
+    method: str
+    """HTTP method under test."""
+
+    genesis_params: dict[str, int]
+    """Genesis store inputs."""
+
+    request_body: Any = None
+    """Request body for non-GET methods."""
+
+    initial_is_aggregator: bool
+    """Aggregator role seeded before the request is sent."""
+
+    expected_status_code: int
+    """HTTP status code."""
+
+    expected_content_type: str
+    """Response MIME type."""
+
+    expected_body: Any = None
+    """Response payload. JSON dict or hex SSZ string."""
+
+
+class ApiEndpointTest(BaseTestSpec):
+    """Spec for API endpoint response conformance."""
+
+    format_name: ClassVar[str] = "api_endpoint_test"
     description: ClassVar[str] = "Tests API endpoint responses against known state"
 
     endpoint: str
@@ -263,17 +302,8 @@ class ApiEndpointTest(BaseConsensusFixture):
     fixture. Ignored by other endpoints.
     """
 
-    expected_status_code: int = 0
-    """HTTP status code. Filled by make_fixture."""
-
-    expected_content_type: str = ""
-    """Response MIME type. Filled by make_fixture."""
-
-    expected_body: Any = None
-    """Response payload. JSON dict or hex SSZ string. Filled by make_fixture."""
-
-    def make_fixture(self) -> "ApiEndpointTest":
-        """Build genesis store, compute expected response, populate output fields."""
+    def generate(self) -> ApiEndpointFixture:
+        """Build genesis store, compute expected response, emit the vector."""
         handler = _ENDPOINT_HANDLERS.get((self.method, self.endpoint))
         if handler is None:
             raise ValueError(f"Unknown endpoint: {self.method} {self.endpoint}")
@@ -283,6 +313,14 @@ class ApiEndpointTest(BaseConsensusFixture):
             genesis_time=self.genesis_params.get("genesisTime", 0),
             anchor_slot=self.genesis_params.get("anchorSlot", 0),
         )
-        for k, v in handler(store, self).items():
-            setattr(self, k, v)
-        return self
+        response_contract = handler(store, self)
+        return ApiEndpointFixture(
+            endpoint=self.endpoint,
+            method=self.method,
+            genesis_params=self.genesis_params,
+            request_body=self.request_body,
+            initial_is_aggregator=self.initial_is_aggregator,
+            expected_status_code=response_contract.status_code,
+            expected_content_type=response_contract.content_type,
+            expected_body=response_contract.body,
+        )

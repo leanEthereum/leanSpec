@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from .types import DomainType, ProtocolId
+from lean_spec.node.networking.types import DomainType, ProtocolId
 
 MAX_REQUEST_BLOCKS: Final[int] = 2**10
 """Maximum number of blocks in a single request (1024)."""

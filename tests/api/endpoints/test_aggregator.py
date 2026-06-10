@@ -26,9 +26,9 @@ class TestAggregatorStatus:
     def test_response_has_is_aggregator_field(self, server_url: str) -> None:
         """GET response contains the is_aggregator boolean field."""
         response = httpx.get(f"{server_url}/lean/v0/admin/aggregator")
-        data = response.json()
-        assert "is_aggregator" in data
-        assert isinstance(data["is_aggregator"], bool)
+        response_body = response.json()
+        assert "is_aggregator" in response_body
+        assert isinstance(response_body["is_aggregator"], bool)
 
 
 class TestAggregatorToggle:
@@ -56,11 +56,11 @@ class TestAggregatorToggle:
             f"{server_url}/lean/v0/admin/aggregator",
             json={"enabled": True},
         )
-        data = response.json()
-        assert "is_aggregator" in data
-        assert "previous" in data
-        assert isinstance(data["is_aggregator"], bool)
-        assert isinstance(data["previous"], bool)
+        response_body = response.json()
+        assert "is_aggregator" in response_body
+        assert "previous" in response_body
+        assert isinstance(response_body["is_aggregator"], bool)
+        assert isinstance(response_body["previous"], bool)
 
     def test_toggle_reflects_requested_value(self, server_url: str) -> None:
         """POST response reflects the requested enabled value."""

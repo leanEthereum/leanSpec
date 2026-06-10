@@ -28,19 +28,19 @@ class TestJustifiedCheckpoint:
     def test_has_slot(self, server_url: str) -> None:
         """Justified checkpoint response has a slot field."""
         response = get_justified_checkpoint(server_url)
-        data = response.json()
+        response_body = response.json()
 
-        assert "slot" in data
-        assert isinstance(data["slot"], int)
-        assert data["slot"] >= 0
+        assert "slot" in response_body
+        assert isinstance(response_body["slot"], int)
+        assert response_body["slot"] >= 0
 
     def test_has_root(self, server_url: str) -> None:
         """Justified checkpoint response has a valid root field."""
         response = get_justified_checkpoint(server_url)
-        data = response.json()
+        response_body = response.json()
 
-        assert "root" in data
-        root = data["root"]
+        assert "root" in response_body
+        root = response_body["root"]
 
         # Root should be a 0x-prefixed hex string (32 bytes = 66 characters with prefix)
         assert isinstance(root, str)

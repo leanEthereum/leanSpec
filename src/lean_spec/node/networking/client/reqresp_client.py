@@ -138,8 +138,8 @@ class ReqRespClient:
         except asyncio.TimeoutError:
             logger.warning("Timeout requesting blocks from %s", peer_id)
             return []
-        except Exception as e:
-            logger.warning("Error requesting blocks from %s: %s", peer_id, e)
+        except Exception as exception:
+            logger.warning("Error requesting blocks from %s: %s", peer_id, exception)
             return []
 
     async def _do_blocks_by_root_request(
@@ -198,8 +198,8 @@ class ReqRespClient:
                         logger.debug("BlocksByRoot error response: %s", code)
                         break
 
-                except CodecError as e:
-                    logger.debug("BlocksByRoot decode error: %s", e)
+                except CodecError as exception:
+                    logger.debug("BlocksByRoot decode error: %s", exception)
                     break
 
             return blocks
@@ -260,8 +260,8 @@ class ReqRespClient:
         except asyncio.TimeoutError:
             logger.warning("Timeout requesting blocks from %s", peer_id)
             return []
-        except Exception as e:
-            logger.warning("Error requesting blocks from %s: %s", peer_id, e)
+        except Exception as exception:
+            logger.warning("Error requesting blocks from %s: %s", peer_id, exception)
             return []
 
     async def _do_blocks_by_range_request(
@@ -357,9 +357,9 @@ class ReqRespClient:
                         stream_ended = True
                         break
 
-                except CodecError as e:
+                except CodecError as exception:
                     # Protocol violation: log with peer id and re-raise.
-                    logger.warning("Protocol violation from %s: %s", connection.peer_id, e)
+                    logger.warning("Protocol violation from %s: %s", connection.peer_id, exception)
                     raise
 
             # No-more-than-count enforcement.
@@ -383,8 +383,8 @@ class ReqRespClient:
             # Always close the stream.
             try:
                 await stream.close()
-            except Exception as e:
-                logger.debug("Error closing stream: %s", e)
+            except Exception as exception:
+                logger.debug("Error closing stream: %s", exception)
 
     async def send_status(
         self,
@@ -414,8 +414,8 @@ class ReqRespClient:
         except asyncio.TimeoutError:
             logger.warning("Timeout exchanging status with %s", peer_id)
             return None
-        except Exception as e:
-            logger.warning("Error exchanging status with %s: %s", peer_id, e)
+        except Exception as exception:
+            logger.warning("Error exchanging status with %s: %s", peer_id, exception)
             return None
 
     async def _do_status_request(
@@ -471,7 +471,7 @@ class ReqRespClient:
             logger.debug("Status error response: %s", code)
             return None
 
-        except Exception as e:
+        except Exception as exception:
             # Retry once with a new stream if the first attempt fails.
             #
             # QUIC stream 0 can sometimes be in a bad state right after
@@ -481,7 +481,7 @@ class ReqRespClient:
                 logger.debug(
                     "Status request failed (attempt %d), retrying: %s",
                     retry_count + 1,
-                    e,
+                    exception,
                 )
                 if stream is not None:
                     try:

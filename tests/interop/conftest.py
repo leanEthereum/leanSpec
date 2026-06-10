@@ -12,7 +12,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 
-from .helpers import NodeCluster, PortAllocator
+from tests.interop.helpers import NodeCluster, PortAllocator
 
 logger = logging.getLogger(__name__)
 

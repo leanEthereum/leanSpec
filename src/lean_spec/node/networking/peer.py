@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .enr import ENR
-from .reqresp import Status
-from .transport import PeerId
-from .types import ConnectionState, Direction, Multiaddr
+from lean_spec.node.networking.enr import ENR
+from lean_spec.node.networking.reqresp import Status
+from lean_spec.node.networking.transport import PeerId
+from lean_spec.node.networking.types import ConnectionState, Direction, Multiaddr
 
 
 @dataclass(slots=True)

@@ -1,0 +1,119 @@
+"""Fork Choice: Attestation Source Under Justified Divergence"""
+
+import pytest
+
+from consensus_testing import (
+    AggregatedAttestationCheck,
+    AggregatedAttestationSpec,
+    BlockSpec,
+    BlockStep,
+    ForkChoiceTestFiller,
+    StoreChecks,
+)
+from lean_spec.spec.forks import Slot, ValidatorIndex
+
+pytestmark = pytest.mark.valid_until("Lstar")
+
+
+def test_justified_divergence_self_heals_in_next_block(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    A block adopts the votes that justify a slot from a fork it did not extend.
+
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis
+        - common(1)
+          - block_2(2) -> block_3(3)
+          - fork_4(4)
+    - block_3 includes V0's vote for block_2.
+    - fork_4 includes V1, V2, V3's votes for common.
+    - fork_4 reaches 3 votes, so it justifies slot 1.
+    - block_3 has only 1 vote, so it justifies nothing.
+    - the views diverge: node = slot 1, head chain = slot 0.
+
+    When
+    ----
+    - block_5 is built on block_3, carrying no votes of its own.
+
+    Then
+    ----
+    - block_5 pulls the slot-1 votes from the pool and includes them.
+    - V0's slot-2 vote is already recorded on the head chain.
+    - that vote adds no new voters, so the builder omits it.
+    - the block body holds 1 aggregated vote.
+    - the head chain justifies slot 1, matching the node.
+    - finalized stays at slot 0.
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="common"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="common", label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="block_2",
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[ValidatorIndex(0)],
+                            slot=Slot(2),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(head_slot=Slot(3)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(4),
+                    parent_label="common",
+                    label="fork_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[
+                                ValidatorIndex(1),
+                                ValidatorIndex(2),
+                                ValidatorIndex(3),
+                            ],
+                            slot=Slot(1),
+                            target_slot=Slot(1),
+                            target_root_label="common",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(3),
+                    head_root_label="block_3",
+                    latest_justified_slot=Slot(1),
+                    latest_justified_root_label="common",
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(5), label="block_5"),
+                checks=StoreChecks(
+                    head_slot=Slot(5),
+                    head_root_label="block_5",
+                    latest_justified_slot=Slot(1),
+                    latest_justified_root_label="common",
+                    block_attestation_count=1,
+                    block_attestations=[
+                        AggregatedAttestationCheck(
+                            participants={1, 2, 3},
+                            target_slot=Slot(1),
+                        ),
+                    ],
+                ),
+            ),
+        ],
+    )

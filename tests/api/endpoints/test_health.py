@@ -28,10 +28,10 @@ def test_health_content_type_is_json(server_url: str) -> None:
 def test_health_response_structure(server_url: str) -> None:
     """Health endpoint returns expected JSON structure."""
     response = get_health(server_url)
-    data = response.json()
+    response_body = response.json()
 
-    assert "status" in data
-    assert data["status"] == health.STATUS_HEALTHY
+    assert "status" in response_body
+    assert response_body["status"] == health.STATUS_HEALTHY
 
-    assert "service" in data
-    assert data["service"] == health.SERVICE_NAME
+    assert "service" in response_body
+    assert response_body["service"] == health.SERVICE_NAME

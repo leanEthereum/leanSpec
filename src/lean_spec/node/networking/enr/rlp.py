@@ -61,12 +61,12 @@ class RLPDecodingError(Exception):
     """Raised when RLP input is malformed or non-canonical."""
 
 
-def encode_rlp(item: RLPItem) -> bytes:
+def encode_rlp(rlp_item: RLPItem) -> bytes:
     """
     Encode bytes or a nested list of bytes to RLP.
 
     Args:
-        item: A byte string or a list of items (lists may nest arbitrarily).
+        rlp_item: A byte string or a list of items (lists may nest arbitrarily).
 
     Returns:
         The RLP encoding of the input.
@@ -85,10 +85,10 @@ def encode_rlp(item: RLPItem) -> bytes:
     #   b"\x80"   ->  81 80            (length-prefixed: single byte at or above 0x80)
     #   b""       ->  80               (empty string is the length-zero short form)
     #   b"dog"    ->  83 64 6f 67      (short string of length 3)
-    if isinstance(item, bytes):
-        if len(item) == 1 and item[0] < STRING_BASE:
-            return item
-        return _with_length_prefix(item, base=STRING_BASE)
+    if isinstance(rlp_item, bytes):
+        if len(rlp_item) == 1 and rlp_item[0] < STRING_BASE:
+            return rlp_item
+        return _with_length_prefix(rlp_item, base=STRING_BASE)
 
     # List branch: encode each element, concatenate, then wrap with a list prefix.
     #
@@ -100,11 +100,11 @@ def encode_rlp(item: RLPItem) -> bytes:
     #   []                ->  c0                                    (empty list)
     #   [b"a", b"b"]      ->  c2 61 62                              (short list, payload "a" "b")
     #   [b"dog", b"god"]  ->  c8 83 64 6f 67 83 67 6f 64            (two short strings inside)
-    if isinstance(item, list):
-        payload = b"".join(encode_rlp(element) for element in item)
-        return _with_length_prefix(payload, base=LIST_BASE)
+    if isinstance(rlp_item, list):
+        encoded_elements = b"".join(encode_rlp(element) for element in rlp_item)
+        return _with_length_prefix(encoded_elements, base=LIST_BASE)
 
-    raise TypeError(f"Cannot RLP encode type: {type(item).__name__}")
+    raise TypeError(f"Cannot RLP encode type: {type(rlp_item).__name__}")
 
 
 def _with_length_prefix(payload: bytes, base: int) -> bytes:
@@ -173,13 +173,13 @@ def decode_rlp(data: bytes) -> RLPItem:
     if len(data) == 0:
         raise RLPDecodingError("Empty RLP data")
 
-    item, consumed = _decode_item(data, 0)
+    decoded_item, consumed = _decode_item(data, 0)
 
     # Reject trailing data so each input maps to exactly one item.
     if consumed != len(data):
         raise RLPDecodingError(f"Trailing data: decoded {consumed} of {len(data)} bytes")
 
-    return item
+    return decoded_item
 
 
 def decode_rlp_list(data: bytes) -> list[bytes]:
@@ -197,22 +197,22 @@ def decode_rlp_list(data: bytes) -> list[bytes]:
     Raises:
         RLPDecodingError: If the input is not a flat list of byte strings.
     """
-    item = decode_rlp(data)
+    decoded = decode_rlp(data)
 
     # Top-level must be a list, not a bare byte string.
-    if not isinstance(item, list):
+    if not isinstance(decoded, list):
         raise RLPDecodingError("Expected RLP list")
 
     # Validate every element while building the narrowed result.
     #
     # Each iteration proves the element is bytes before appending.
     # The new list carries the precise element type without needing a cast.
-    result: list[bytes] = []
-    for index, element in enumerate(item):
+    byte_strings: list[bytes] = []
+    for index, element in enumerate(decoded):
         if not isinstance(element, bytes):
             raise RLPDecodingError(f"Element {index} is not bytes")
-        result.append(element)
-    return result
+        byte_strings.append(element)
+    return byte_strings
 
 
 def _decode_item(data: bytes, offset: int) -> tuple[RLPItem, int]:
@@ -279,14 +279,14 @@ def _decode_item(data: bytes, offset: int) -> tuple[RLPItem, int]:
     #   payload range   =  [1, 9)
     #   cursor walk     =  1 -> 5 -> 9   (two short strings consumed in turn)
     #   items           =  [b"dog", b"god"]
-    items: list[RLPItem] = []
+    decoded_items: list[RLPItem] = []
     cursor = payload_start
     while cursor < payload_end:
-        inner, cursor = _decode_item(data, cursor)
-        items.append(inner)
+        inner_item, cursor = _decode_item(data, cursor)
+        decoded_items.append(inner_item)
     if cursor != payload_end:
         raise RLPDecodingError("List payload length mismatch")
-    return items, payload_end
+    return decoded_items, payload_end
 
 
 def _decode_length(data: bytes, offset: int, base: int) -> tuple[int, int]:

@@ -23,15 +23,12 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from lean_spec.spec.forks import Checkpoint, Slot
-from lean_spec.spec.forks.protocol import (
-    SpecBlockType,
-    SpecStateType,
+from lean_spec.node.storage.exceptions import (
+    StorageCorruptionError,
+    StorageReadError,
+    StorageWriteError,
 )
-from lean_spec.spec.ssz import Bytes32, Uint64
-
-from .exceptions import StorageCorruptionError, StorageReadError, StorageWriteError
-from .namespaces import (
+from lean_spec.node.storage.namespaces import (
     BLOCKS_CREATE_INDEX,
     BLOCKS_CREATE_TABLE,
     BLOCKS_TABLE_NAME,
@@ -49,6 +46,12 @@ from .namespaces import (
     STATES_CREATE_TABLE,
     STATES_TABLE_NAME,
 )
+from lean_spec.spec.forks import Checkpoint, Slot
+from lean_spec.spec.forks.protocol import (
+    SpecBlockType,
+    SpecStateType,
+)
+from lean_spec.spec.ssz import Bytes32, Uint64
 
 
 class SQLiteDatabase:
@@ -147,16 +150,18 @@ class SQLiteDatabase:
                 (bytes(root),),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read block {root.hex()}: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageReadError(f"Failed to read block {root.hex()}: {exception}") from exception
 
         if row is None:
             return None
 
         try:
             return self._block_class.decode_bytes(row["data"])
-        except Exception as e:
-            raise StorageCorruptionError(f"Corrupt block data for root {root.hex()}: {e}") from e
+        except Exception as exception:
+            raise StorageCorruptionError(
+                f"Corrupt block data for root {root.hex()}: {exception}"
+            ) from exception
 
     def put_block(self, block: SpecBlockType, root: Bytes32) -> None:
         """Store a block with its root hash."""
@@ -175,8 +180,10 @@ class SQLiteDatabase:
                 """,
                 (bytes(root), int(block.slot), block.encode_bytes()),
             )
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to write block {root.hex()}: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to write block {root.hex()}: {exception}"
+            ) from exception
 
     # State Operations
 
@@ -194,18 +201,20 @@ class SQLiteDatabase:
                 (bytes(root),),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read state for block {root.hex()}: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageReadError(
+                f"Failed to read state for block {root.hex()}: {exception}"
+            ) from exception
 
         if row is None:
             return None
 
         try:
             return self._state_class.decode_bytes(row["data"])
-        except Exception as e:
+        except Exception as exception:
             raise StorageCorruptionError(
-                f"Corrupt state data for block root {root.hex()}: {e}"
-            ) from e
+                f"Corrupt state data for block root {root.hex()}: {exception}"
+            ) from exception
 
     def put_state(self, state: SpecStateType, root: Bytes32) -> None:
         """Store a state indexed by its associated block root."""
@@ -223,8 +232,10 @@ class SQLiteDatabase:
                 """,
                 (bytes(root), int(state.slot), state.encode_bytes()),
             )
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to write state for block {root.hex()}: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to write state for block {root.hex()}: {exception}"
+            ) from exception
 
     # Checkpoint Operations
 
@@ -247,16 +258,20 @@ class SQLiteDatabase:
                 (CHECKPOINTS_KEY_JUSTIFIED,),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read justified checkpoint: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageReadError(
+                f"Failed to read justified checkpoint: {exception}"
+            ) from exception
 
         if row is None:
             return None
 
         try:
             return Checkpoint.decode_bytes(row["data"])
-        except Exception as e:
-            raise StorageCorruptionError(f"Corrupt justified checkpoint data: {e}") from e
+        except Exception as exception:
+            raise StorageCorruptionError(
+                f"Corrupt justified checkpoint data: {exception}"
+            ) from exception
 
     def put_justified_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Store the latest justified checkpoint."""
@@ -269,8 +284,10 @@ class SQLiteDatabase:
                 """,
                 (CHECKPOINTS_KEY_JUSTIFIED, checkpoint.encode_bytes()),
             )
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to write justified checkpoint: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to write justified checkpoint: {exception}"
+            ) from exception
 
     def get_finalized_checkpoint(self) -> Checkpoint | None:
         """Retrieve the latest finalized checkpoint."""
@@ -286,16 +303,20 @@ class SQLiteDatabase:
                 (CHECKPOINTS_KEY_FINALIZED,),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read finalized checkpoint: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageReadError(
+                f"Failed to read finalized checkpoint: {exception}"
+            ) from exception
 
         if row is None:
             return None
 
         try:
             return Checkpoint.decode_bytes(row["data"])
-        except Exception as e:
-            raise StorageCorruptionError(f"Corrupt finalized checkpoint data: {e}") from e
+        except Exception as exception:
+            raise StorageCorruptionError(
+                f"Corrupt finalized checkpoint data: {exception}"
+            ) from exception
 
     def put_finalized_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Store the latest finalized checkpoint."""
@@ -308,8 +329,10 @@ class SQLiteDatabase:
                 """,
                 (CHECKPOINTS_KEY_FINALIZED, checkpoint.encode_bytes()),
             )
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to write finalized checkpoint: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to write finalized checkpoint: {exception}"
+            ) from exception
 
     # Head Tracking
 
@@ -331,8 +354,8 @@ class SQLiteDatabase:
                 (CHECKPOINTS_KEY_HEAD,),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read head root: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageReadError(f"Failed to read head root: {exception}") from exception
 
         if row is None:
             return None
@@ -351,8 +374,8 @@ class SQLiteDatabase:
                 """,
                 (CHECKPOINTS_KEY_HEAD, bytes(root)),
             )
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to write head root: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(f"Failed to write head root: {exception}") from exception
 
     # Slot Index Operations
 
@@ -375,8 +398,10 @@ class SQLiteDatabase:
                 (int(slot),),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read block root for slot {slot}: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageReadError(
+                f"Failed to read block root for slot {slot}: {exception}"
+            ) from exception
 
         if row is None:
             return None
@@ -398,8 +423,10 @@ class SQLiteDatabase:
                 """,
                 (int(slot), bytes(root)),
             )
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to write slot index for slot {slot}: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to write slot index for slot {slot}: {exception}"
+            ) from exception
 
     # State Root Index Operations
 
@@ -417,10 +444,10 @@ class SQLiteDatabase:
                 (bytes(state_root),),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
+        except sqlite3.Error as exception:
             raise StorageReadError(
-                f"Failed to read block root for state root {state_root.hex()}: {e}"
-            ) from e
+                f"Failed to read block root for state root {state_root.hex()}: {exception}"
+            ) from exception
 
         if row is None:
             return None
@@ -437,10 +464,10 @@ class SQLiteDatabase:
                 """,
                 (bytes(state_root), bytes(block_root)),
             )
-        except sqlite3.Error as e:
+        except sqlite3.Error as exception:
             raise StorageWriteError(
-                f"Failed to write state root index {state_root.hex()}: {e}"
-            ) from e
+                f"Failed to write state root index {state_root.hex()}: {exception}"
+            ) from exception
 
     # Genesis Time
 
@@ -457,8 +484,8 @@ class SQLiteDatabase:
                 (CHECKPOINTS_KEY_GENESIS_TIME,),
             )
             row = cursor.fetchone()
-        except sqlite3.Error as e:
-            raise StorageReadError(f"Failed to read genesis time: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageReadError(f"Failed to read genesis time: {exception}") from exception
 
         if row is None:
             return None
@@ -477,8 +504,8 @@ class SQLiteDatabase:
                 """,
                 (CHECKPOINTS_KEY_GENESIS_TIME, int(genesis_time).to_bytes(8, byteorder="little")),
             )
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to write genesis time: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(f"Failed to write genesis time: {exception}") from exception
 
     # Transaction Control
 
@@ -496,9 +523,9 @@ class SQLiteDatabase:
         except (StorageWriteError, StorageCorruptionError):
             self._connection.rollback()
             raise
-        except sqlite3.Error as e:
+        except sqlite3.Error as exception:
             self._connection.rollback()
-            raise StorageWriteError(f"Batch write failed: {e}") from e
+            raise StorageWriteError(f"Batch write failed: {exception}") from exception
         except BaseException:
             self._connection.rollback()
             raise
@@ -567,8 +594,10 @@ class SQLiteDatabase:
             total_pruned += cursor.rowcount
 
             return total_pruned
-        except sqlite3.Error as e:
-            raise StorageWriteError(f"Failed to prune before slot {slot}: {e}") from e
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to prune before slot {slot}: {exception}"
+            ) from exception
 
     # Lifecycle
 

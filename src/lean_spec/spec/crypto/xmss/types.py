@@ -3,11 +3,10 @@
 from typing import Final, NamedTuple
 
 from lean_spec.spec.crypto.koalabear import Fp
+from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
 from lean_spec.spec.ssz import Uint64
 from lean_spec.spec.ssz.collections import SSZList, SSZVector
 from lean_spec.spec.ssz.container import Container
-
-from .constants import TARGET_CONFIG
 
 
 class TreeTweak(NamedTuple):
@@ -68,7 +67,8 @@ class HashDigestList(SSZList[HashDigestVector]):
 
 
 class Parameter(SSZVector[Fp]):
-    """The public parameter P.
+    """
+    The public parameter P.
 
     - Unique, randomly generated value associated with a single key pair.
     - Mixed into every hash to personalize the function and block cross-key attacks.

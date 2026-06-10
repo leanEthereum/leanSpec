@@ -1,4 +1,5 @@
-r"""Buffered read/write adapter for QuicStream with multistream-select negotiation.
+r"""
+Buffered read/write adapter for QuicStream with multistream-select negotiation.
 
 QuicStream provides raw, unbuffered I/O — each read returns exactly one
 QUIC frame's worth of data. Higher-level protocols (multistream-select,
@@ -31,10 +32,9 @@ from __future__ import annotations
 import asyncio
 from typing import Final
 
+from lean_spec.node.networking.transport.quic.stream import QuicStream
 from lean_spec.node.networking.types import ProtocolId
 from lean_spec.node.networking.varint import decode_varint, encode_varint
-
-from .stream import QuicStream
 
 MULTISTREAM_PROTOCOL_ID: Final[str] = "/multistream/1.0.0"
 """Protocol identifier for multistream-select 1.0."""
@@ -57,7 +57,8 @@ class NegotiationError(Exception):
 
 
 class QuicStreamAdapter:
-    """Adapts QuicStream for buffered, protocol-level I/O.
+    """
+    Adapts QuicStream for buffered, protocol-level I/O.
 
     Provides:
 
@@ -78,7 +79,8 @@ class QuicStreamAdapter:
         self._write_buffer = b""
 
     async def read(self, n: int | None = None) -> bytes:
-        """Read bytes from the stream.
+        """
+        Read bytes from the stream.
 
         - If *n* is provided, returns at most *n* bytes.
         - If *n* is None, returns all available data (no limit).
@@ -87,27 +89,28 @@ class QuicStreamAdapter:
         """
         if n is None:
             if self._buffer:
-                result = self._buffer
+                buffered_bytes = self._buffer
                 self._buffer = b""
-                return result
+                return buffered_bytes
             return await self._stream.read()
 
         if self._buffer:
-            result = self._buffer[:n]
+            buffered_bytes = self._buffer[:n]
             self._buffer = self._buffer[n:]
-            return result
+            return buffered_bytes
 
-        data = await self._stream.read()
-        if not data:
+        stream_bytes = await self._stream.read()
+        if not stream_bytes:
             return b""
 
-        if len(data) > n:
-            self._buffer = data[n:]
-            return data[:n]
-        return data
+        if len(stream_bytes) > n:
+            self._buffer = stream_bytes[n:]
+            return stream_bytes[:n]
+        return stream_bytes
 
     async def readexactly(self, n: int) -> bytes:
-        """Read exactly *n* bytes from the stream.
+        """
+        Read exactly *n* bytes from the stream.
 
         Raises:
             EOFError: If the stream closes before *n* bytes arrive.
@@ -118,9 +121,9 @@ class QuicStreamAdapter:
                 raise EOFError("Stream closed before enough data received")
             self._buffer += chunk
 
-        result = self._buffer[:n]
+        buffered_bytes = self._buffer[:n]
         self._buffer = self._buffer[n:]
-        return result
+        return buffered_bytes
 
     def write(self, data: bytes) -> None:
         """Buffer data for writing (synchronous for StreamWriter compatibility)."""
@@ -137,7 +140,8 @@ class QuicStreamAdapter:
         await self._stream.close()
 
     async def finish_write(self) -> None:
-        """Half-close the stream (signal end of writing).
+        """
+        Half-close the stream (signal end of writing).
 
         Flushes any buffered data before sending FIN.
         """
@@ -151,7 +155,8 @@ class QuicStreamAdapter:
         supported: set[ProtocolId],
         timeout: float = DEFAULT_TIMEOUT,
     ) -> ProtocolId:
-        """Server-side protocol negotiation.
+        """
+        Server-side protocol negotiation.
 
         Waits for client to propose protocols, accepts first supported one.
 
@@ -194,7 +199,8 @@ class QuicStreamAdapter:
             raise NegotiationError(f"Negotiation timed out after {timeout}s") from None
 
     async def negotiate_lazy_client(self, protocol: ProtocolId) -> ProtocolId:
-        """Lazy client-side negotiation for single protocol.
+        """
+        Lazy client-side negotiation for single protocol.
 
         Sends both the multistream header and protocol proposal together,
         then waits for server to accept. Reduces round trips when we only
@@ -226,17 +232,19 @@ class QuicStreamAdapter:
             raise NegotiationError(f"Unexpected response: {response!r}")
 
     async def _write_negotiation_message(self, message: str) -> None:
-        r"""Write a multistream message.
+        r"""
+        Write a multistream message.
 
         Format: [varint length][message + '\n']
         """
-        payload = message.encode("utf-8") + b"\n"
-        length_prefix = encode_varint(len(payload))
-        self.write(length_prefix + payload)
+        message_bytes = message.encode("utf-8") + b"\n"
+        length_prefix = encode_varint(len(message_bytes))
+        self.write(length_prefix + message_bytes)
         await self.drain()
 
     async def _read_negotiation_message(self) -> str:
-        """Read a multistream message.
+        """
+        Read a multistream message.
 
         Returns:
             Message content (without newline).
@@ -261,8 +269,8 @@ class QuicStreamAdapter:
 
         try:
             length, _ = decode_varint(bytes(length_bytes))
-        except Exception as e:
-            raise NegotiationError(f"Invalid varint: {e}") from e
+        except Exception as exception:
+            raise NegotiationError(f"Invalid varint: {exception}") from exception
 
         if length > MAX_MESSAGE_SIZE:
             raise NegotiationError(f"Message too large: {length}")
@@ -270,9 +278,9 @@ class QuicStreamAdapter:
         if length == 0:
             raise NegotiationError("Empty message")
 
-        payload = await self.readexactly(length)
+        message_bytes = await self.readexactly(length)
 
-        if not payload.endswith(b"\n"):
+        if not message_bytes.endswith(b"\n"):
             raise NegotiationError("Message must end with newline")
 
-        return payload[:-1].decode("utf-8")
+        return message_bytes[:-1].decode("utf-8")

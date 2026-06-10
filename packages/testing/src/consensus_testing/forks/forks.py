@@ -1,8 +1,6 @@
 """Consensus fork definitions for test fixture generation."""
 
-from framework.forks import BaseFork
-
-from lean_spec.spec.forks.lstar.spec import LstarSpec
+from consensus_testing.forks.base import BaseFork
 
 
 class Lstar(BaseFork):
@@ -12,13 +10,3 @@ class Lstar(BaseFork):
     def name(cls) -> str:
         """Return the fork name."""
         return "Lstar"
-
-    @classmethod
-    def spec_class(cls) -> type[LstarSpec]:
-        """Return the ForkProtocol implementation for this fork."""
-        return LstarSpec
-
-    @classmethod
-    def state_class(cls) -> type:
-        """Return the State container class for this fork."""
-        return LstarSpec.state_class

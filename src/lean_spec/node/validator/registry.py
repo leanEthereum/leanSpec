@@ -1,4 +1,5 @@
-"""Validator registry for managing validator keys.
+"""
+Validator registry for managing validator keys.
 
 Loads validator keys from YAML configuration files compatible with ream and zeam.
 
@@ -121,10 +122,10 @@ def load_node_validator_mapping(path: Path) -> NodeValidatorMapping:
         Mapping from node ID to list of validator indices.
         Empty dict if file is empty.
     """
-    with path.open() as f:
-        data = yaml.safe_load(f)
+    with path.open() as yaml_file:
+        parsed_yaml = yaml.safe_load(yaml_file)
     # YAML returns None for empty file
-    return data or {}
+    return parsed_yaml or {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,7 +218,8 @@ class ValidatorRegistry:
 
     @classmethod
     def from_keys_directory(cls, node_id: str, base_directory: Path | str) -> ValidatorRegistry:
-        """Load a validator registry from the ream/zeam keystore layout.
+        """
+        Load a validator registry from the ream/zeam keystore layout.
 
         Two files relative to the base directory:
 
@@ -285,47 +287,54 @@ class ValidatorRegistry:
         manifest = ValidatorManifest.from_yaml_file(manifest_path)
 
         # Build index lookup from manifest.
-        manifest_by_index = {v.index: v for v in manifest.validators}
+        manifest_by_index = {
+            manifest_validator.index: manifest_validator
+            for manifest_validator in manifest.validators
+        }
 
         # Load keys for assigned validators.
         registry = cls()
         manifest_directory = manifest_path.parent
 
-        for index in assigned_indices:
-            entry = manifest_by_index.get(ValidatorIndex(index))
-            if entry is None:
+        for validator_index in assigned_indices:
+            manifest_entry = manifest_by_index.get(ValidatorIndex(validator_index))
+            if manifest_entry is None:
                 # Validator index in validators.yaml but missing from manifest.
                 # This can happen if the manifest was regenerated with fewer validators.
                 logger.warning(
                     "Validator index %d assigned to node %s but not found in manifest",
-                    index,
+                    validator_index,
                     node_id,
                 )
                 continue
 
             # Load attestation secret key from SSZ file.
-            attestation_key_path = manifest_directory / entry.attestation_private_key_file
+            attestation_key_path = manifest_directory / manifest_entry.attestation_private_key_file
             try:
                 attestation_secret_key = SecretKey.decode_bytes(attestation_key_path.read_bytes())
-            except FileNotFoundError as e:
-                raise ValueError(f"Attestation key file not found: {attestation_key_path}") from e
-            except Exception as e:
+            except FileNotFoundError as exception:
                 raise ValueError(
-                    f"Failed to load attestation key for validator {index}: {e}"
-                ) from e
+                    f"Attestation key file not found: {attestation_key_path}"
+                ) from exception
+            except Exception as exception:
+                raise ValueError(
+                    f"Failed to load attestation key for validator {validator_index}: {exception}"
+                ) from exception
 
             # Load proposal secret key from SSZ file.
-            proposal_key_path = manifest_directory / entry.proposal_private_key_file
+            proposal_key_path = manifest_directory / manifest_entry.proposal_private_key_file
             try:
                 proposal_secret_key = SecretKey.decode_bytes(proposal_key_path.read_bytes())
-            except FileNotFoundError as e:
-                raise ValueError(f"Proposal key file not found: {proposal_key_path}") from e
-            except Exception as e:
-                raise ValueError(f"Failed to load proposal key for validator {index}: {e}") from e
+            except FileNotFoundError as exception:
+                raise ValueError(f"Proposal key file not found: {proposal_key_path}") from exception
+            except Exception as exception:
+                raise ValueError(
+                    f"Failed to load proposal key for validator {validator_index}: {exception}"
+                ) from exception
 
             registry.add(
                 ValidatorEntry(
-                    index=ValidatorIndex(index),
+                    index=ValidatorIndex(validator_index),
                     attestation_secret_key=attestation_secret_key,
                     proposal_secret_key=proposal_secret_key,
                 )

@@ -15,7 +15,8 @@ from lean_spec.node.networking.types import ProtocolId
 
 
 class EventSource(Protocol):
-    """Protocol for network event sources.
+    """
+    Protocol for network event sources.
 
     Defines the minimal interface needed by the network service.
     One implementation uses real network I/O.

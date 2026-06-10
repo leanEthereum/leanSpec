@@ -37,14 +37,21 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from lean_spec.node.chain.clock import Interval, SlotClock
+from lean_spec.node.chain.clock import SlotClock
 from lean_spec.node.sync import SyncService
+from lean_spec.node.validator.constants import (
+    HYSTERESIS_BAND,
+    NETWORK_STALL_THRESHOLD,
+    SYNC_LAG_THRESHOLD,
+)
+from lean_spec.node.validator.registry import ValidatorEntry, ValidatorRegistry
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.crypto.xmss.containers import PublicKey, Signature
 from lean_spec.spec.forks import (
     AttestationData,
     Block,
+    Interval,
     LstarSpec,
     SignedAttestation,
     SignedBlock,
@@ -53,9 +60,6 @@ from lean_spec.spec.forks import (
 )
 from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate, SingleMessageAggregate
 from lean_spec.spec.ssz import Bytes32, Uint64
-
-from .constants import HYSTERESIS_BAND, NETWORK_STALL_THRESHOLD, SYNC_LAG_THRESHOLD
-from .registry import ValidatorEntry, ValidatorRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +282,7 @@ class ValidatorService:
         #
         # Only one validator can be the proposer per slot.
         for validator_index in self.registry.indices():
-            if not validator_index.is_proposer_for(slot, num_validators):
+            if validator_index != ValidatorIndex.proposer_for_slot(slot, num_validators):
                 continue
 
             # We are the proposer for this slot.
@@ -315,7 +319,7 @@ class ValidatorService:
                 if self.on_block is not None:
                     await self.on_block(signed_block)
 
-            except AssertionError as e:
+            except AssertionError as exception:
                 # Proposer validation failed.
                 #
                 # This can happen during slot boundary transitions.
@@ -324,7 +328,7 @@ class ValidatorService:
                     "Block production skipped for validator %d at slot %d: %s",
                     validator_index,
                     slot,
-                    e,
+                    exception,
                 )
 
             # Only one proposer per slot.
@@ -423,14 +427,14 @@ class ValidatorService:
         Returns:
             Signed block ready for publishing.
         """
-        entry = self.registry.get(validator_index)
-        if entry is None:
+        validator_entry = self.registry.get(validator_index)
+        if validator_entry is None:
             raise ValueError(f"No secret key for validator {validator_index}")
 
         # Sign the block root with the proposal key.
         block_root = hash_tree_root(block)
         _, proposer_signature = self._sign_with_key(
-            entry,
+            validator_entry,
             block.slot,
             block_root,
             "proposal_secret_key",
@@ -446,9 +450,11 @@ class ValidatorService:
             )
 
         validators = key_state.validators
-        if not validator_index.is_valid(Uint64(len(validators))):
+        if not validator_index.is_within_registry(Uint64(len(validators))):
             raise ValueError(f"Validator {validator_index} not found in state validators")
-        proposer_public_key = validators[validator_index].get_proposal_public_key()
+        proposer_public_key = PublicKey.decode_bytes(
+            validators[validator_index].proposal_public_key
+        )
 
         # Wrap the proposer's raw XMSS signature into a singleton single-message aggregate.
         # The single fresh entry carries the proposer index alongside its key and signature.
@@ -467,27 +473,29 @@ class ValidatorService:
         # A stale partial aggregate would otherwise blow up deep inside
         # the aggregator with an opaque KeyError.
         num_validators = Uint64(len(validators))
-        public_keys_per_part: list[list[PublicKey]] = []
-        for proof in attestation_proofs:
-            part_public_keys: list[PublicKey] = []
-            for validator_index in proof.participants.to_validator_indices():
-                if not validator_index.is_valid(num_validators):
+        public_keys_per_aggregate: list[list[PublicKey]] = []
+        for attestation_proof in attestation_proofs:
+            participant_public_keys: list[PublicKey] = []
+            for validator_index in attestation_proof.participants.to_validator_indices():
+                if not validator_index.is_within_registry(num_validators):
                     raise ValueError(
                         f"Attestation proof references validator {validator_index}; "
                         f"active set has {num_validators} validators"
                     )
-                part_public_keys.append(validators[validator_index].get_attestation_public_key())
-            public_keys_per_part.append(part_public_keys)
-        public_keys_per_part.append([proposer_public_key])
+                participant_public_keys.append(
+                    PublicKey.decode_bytes(validators[validator_index].attestation_public_key)
+                )
+            public_keys_per_aggregate.append(participant_public_keys)
+        public_keys_per_aggregate.append([proposer_public_key])
 
-        merged = MultiMessageAggregate.aggregate(
+        merged_block_proof = MultiMessageAggregate.aggregate(
             [*attestation_proofs, proposer_single_message_aggregate],
-            public_keys_per_part=public_keys_per_part,
+            public_keys_per_aggregate=public_keys_per_aggregate,
         )
 
         return SignedBlock(
             block=block,
-            proof=merged,
+            proof=merged_block_proof,
         )
 
     def _sign_attestation(
@@ -508,13 +516,13 @@ class ValidatorService:
             Signed attestation ready for publishing.
         """
         # Get the secret key for this validator.
-        entry = self.registry.get(validator_index)
-        if entry is None:
+        validator_entry = self.registry.get(validator_index)
+        if validator_entry is None:
             raise ValueError(f"No secret key for validator {validator_index}")
 
         # Sign the attestation data root with the attestation key.
         _, signature = self._sign_with_key(
-            entry,
+            validator_entry,
             attestation_data.slot,
             hash_tree_root(attestation_data),
             "attestation_secret_key",
@@ -528,7 +536,7 @@ class ValidatorService:
 
     def _sign_with_key(
         self,
-        entry: ValidatorEntry,
+        validator_entry: ValidatorEntry,
         slot: Slot,
         message: Bytes32,
         key_field: Literal["attestation_secret_key", "proposal_secret_key"],
@@ -543,7 +551,7 @@ class ValidatorService:
         3. Persist the updated key state in the registry
 
         Args:
-            entry: Validator entry containing the secret keys.
+            validator_entry: Validator entry containing the secret keys.
             slot: The slot to sign for.
             message: The message bytes to sign.
             key_field: Which secret key field to use and advance.
@@ -552,7 +560,7 @@ class ValidatorService:
             Tuple of (updated entry, signature).
         """
         scheme = TARGET_SIGNATURE_SCHEME
-        secret_key = getattr(entry, key_field)
+        secret_key = getattr(validator_entry, key_field)
 
         slot_int = int(slot)
         while slot_int not in scheme.get_prepared_interval(secret_key):
@@ -561,10 +569,10 @@ class ValidatorService:
         signature = scheme.sign(secret_key, slot, message)
 
         updated_entry = ValidatorEntry(
-            index=entry.index,
+            index=validator_entry.index,
             **{
-                "attestation_secret_key": entry.attestation_secret_key,
-                "proposal_secret_key": entry.proposal_secret_key,
+                "attestation_secret_key": validator_entry.attestation_secret_key,
+                "proposal_secret_key": validator_entry.proposal_secret_key,
                 key_field: secret_key,
             },
         )
@@ -576,7 +584,8 @@ class ValidatorService:
         slot: Slot,
         duty: Literal["block", "attestation"],
     ) -> bool:
-        """Decide whether duties may run for the given slot.
+        """
+        Decide whether duties may run for the given slot.
 
         Combines local lag and local-store stall evidence with
         hysteresis. Returns False only when the local view is stale

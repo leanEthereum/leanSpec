@@ -51,6 +51,10 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
 )
 
 from lean_spec.base import StrictBaseModel
+from lean_spec.node.networking.enr import keys
+from lean_spec.node.networking.enr.eth2 import AttestationSubnets, Eth2Data
+from lean_spec.node.networking.enr.keys import EnrKey
+from lean_spec.node.networking.enr.rlp import RLPDecodingError, RLPItem, decode_rlp_list, encode_rlp
 from lean_spec.node.networking.types import (
     ForkDigest,
     Multiaddr,
@@ -60,11 +64,6 @@ from lean_spec.node.networking.types import (
     Version,
 )
 from lean_spec.spec.ssz import Bytes33, Bytes64, Uint64
-
-from . import keys
-from .eth2 import AttestationSubnets, Eth2Data
-from .keys import EnrKey
-from .rlp import RLPDecodingError, RLPItem, decode_rlp_list, encode_rlp
 
 ENR_PREFIX: Final = "enr:"
 """Text prefix for ENR strings."""
@@ -135,7 +134,8 @@ class ENR(StrictBaseModel):
         return Port(int.from_bytes(raw, "big")) if raw else None
 
     def multiaddr(self) -> Multiaddr | None:
-        """Construct QUIC multiaddress from endpoint info.
+        """
+        Construct QUIC multiaddress from endpoint info.
 
         Use QUIC port if available, otherwise UDP port.
         """
@@ -224,9 +224,9 @@ class ENR(StrictBaseModel):
         try:
             # Hash the content (excludes signature).
             content = self._content_rlp()
-            k = keccak.new(digest_bits=256)
-            k.update(content)
-            digest = k.digest()
+            keccak_hasher = keccak.new(digest_bits=256)
+            keccak_hasher.update(content)
+            digest = keccak_hasher.digest()
 
             # Load the compressed public key.
             public_key = ec.EllipticCurvePublicKey.from_encoded_point(
@@ -266,9 +266,9 @@ class ENR(StrictBaseModel):
             )
 
             # Hash the 64-byte x||y (excluding 0x04 prefix).
-            k = keccak.new(digest_bits=256)
-            k.update(uncompressed[1:])
-            return NodeId(k.digest())
+            keccak_hasher = keccak.new(digest_bits=256)
+            keccak_hasher.update(uncompressed[1:])
+            return NodeId(keccak_hasher.digest())
         except (ValueError, TypeError):
             return None
 
@@ -279,8 +279,8 @@ class ENR(StrictBaseModel):
         Format: [signature, seq, k1, v1, k2, v2, ...]
         Keys are sorted lexicographically per EIP-778.
         """
-        items = [bytes(self.signature)] + self._build_content_items()
-        return encode_rlp(items)
+        rlp_items = [bytes(self.signature)] + self._build_content_items()
+        return encode_rlp(rlp_items)
 
     def to_string(self) -> str:
         """
@@ -294,16 +294,16 @@ class ENR(StrictBaseModel):
 
     def __str__(self) -> str:
         """Human-readable summary."""
-        parts = [f"ENR(seq={self.seq}"]
+        summary_fields = [f"ENR(seq={self.seq}"]
         if self.ip4:
-            parts.append(f"ip={self.ip4}")
+            summary_fields.append(f"ip={self.ip4}")
         if self.udp_port:
-            parts.append(f"udp={self.udp_port}")
+            summary_fields.append(f"udp={self.udp_port}")
         if self.quic_port:
-            parts.append(f"quic={self.quic_port}")
+            summary_fields.append(f"quic={self.quic_port}")
         if eth2 := self.eth2_data:
-            parts.append(f"fork={eth2.fork_digest.hex()}")
-        return ", ".join(parts) + ")"
+            summary_fields.append(f"fork={eth2.fork_digest.hex()}")
+        return ", ".join(summary_fields) + ")"
 
     @classmethod
     def from_rlp(cls, rlp_data: bytes) -> Self:
@@ -329,22 +329,22 @@ class ENR(StrictBaseModel):
 
         # RLP decode: [signature, seq, k1, v1, k2, v2, ...]
         try:
-            items = decode_rlp_list(rlp_data)
-        except RLPDecodingError as e:
-            raise ValueError(f"Invalid RLP encoding: {e}") from e
+            rlp_items = decode_rlp_list(rlp_data)
+        except RLPDecodingError as exception:
+            raise ValueError(f"Invalid RLP encoding: {exception}") from exception
 
-        if len(items) < 2:
+        if len(rlp_items) < 2:
             raise ValueError("ENR must have at least signature and seq")
 
-        if len(items) % 2 != 0:
+        if len(rlp_items) % 2 != 0:
             raise ValueError("ENR key/value pairs must be even")
 
-        signature_raw = items[0]
+        signature_raw = rlp_items[0]
         if len(signature_raw) != 64:
             raise ValueError(f"ENR signature must be 64 bytes, got {len(signature_raw)}")
         signature = Bytes64(signature_raw)
 
-        seq_bytes = items[1]
+        seq_bytes = rlp_items[1]
         seq = int.from_bytes(seq_bytes, "big") if seq_bytes else 0
 
         # Parse key/value pairs.
@@ -353,15 +353,15 @@ class ENR(StrictBaseModel):
         # EIP-778 requires keys to be lexicographically sorted.
         pairs: dict[EnrKey, bytes] = {}
         previous_key: EnrKey | None = None
-        for i in range(2, len(items), 2):
-            key = EnrKey(items[i].decode("utf-8"))
+        for i in range(2, len(rlp_items), 2):
+            key = EnrKey(rlp_items[i].decode("utf-8"))
             if previous_key is not None and key <= previous_key:
                 raise ValueError(
                     f"ENR keys must be lexicographically sorted per EIP-778: "
                     f"'{key}' follows '{previous_key}'"
                 )
-            value = items[i + 1]
-            pairs[key] = value
+            entry_value = rlp_items[i + 1]
+            pairs[key] = entry_value
             previous_key = key
 
         enr = cls(
@@ -373,7 +373,7 @@ class ENR(StrictBaseModel):
         # Compute and store node_id for routing/identification.
         node_id = enr.compute_node_id()
         if node_id is not None:
-            enr.node_id = node_id
+            enr = enr.model_copy(update={"node_id": node_id})
 
         return enr
 
@@ -408,7 +408,7 @@ class ENR(StrictBaseModel):
 
         try:
             rlp_data = base64.urlsafe_b64decode(b64_content)
-        except Exception as e:
-            raise ValueError(f"Invalid base64 encoding: {e}") from e
+        except Exception as exception:
+            raise ValueError(f"Invalid base64 encoding: {exception}") from exception
 
         return cls.from_rlp(rlp_data)

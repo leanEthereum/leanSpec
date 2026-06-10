@@ -57,22 +57,22 @@ async def handle_toggle(request: web.Request) -> web.Response:
         raise web.HTTPServiceUnavailable(reason="Aggregator controller not available")
 
     try:
-        payload = await request.json()
+        request_body = await request.json()
     except json.JSONDecodeError as exception:
         raise web.HTTPBadRequest(reason="Invalid JSON body") from exception
 
-    if not isinstance(payload, dict) or "enabled" not in payload:
+    if not isinstance(request_body, dict) or "enabled" not in request_body:
         raise web.HTTPBadRequest(reason="Missing 'enabled' field in body")
 
-    enabled = payload["enabled"]
+    enabled = request_body["enabled"]
     # Explicit bool check rejects ints like 0/1, which JSON does not distinguish
     # from booleans in loose parsers but Python does.
     if not isinstance(enabled, bool):
         raise web.HTTPBadRequest(reason="'enabled' must be a boolean")
 
-    previous = await controller.set_enabled(enabled)
+    previous_aggregator_state = await controller.set_enabled(enabled)
 
     return web.Response(
-        body=json.dumps({"is_aggregator": enabled, "previous": previous}),
+        body=json.dumps({"is_aggregator": enabled, "previous": previous_aggregator_state}),
         content_type="application/json",
     )

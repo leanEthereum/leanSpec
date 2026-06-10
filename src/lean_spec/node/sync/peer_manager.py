@@ -14,9 +14,8 @@ from typing import Final
 from lean_spec.node.networking.peer import PeerInfo
 from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.networking.transport.peer_id import PeerId
+from lean_spec.node.sync.config import MAX_CONCURRENT_REQUESTS
 from lean_spec.spec.forks import Slot
-
-from .config import MAX_CONCURRENT_REQUESTS
 
 INITIAL_PEER_SCORE: Final = 100
 """Starting score for newly added peers."""
@@ -99,14 +98,14 @@ class PeerManager:
         """Check if a peer is being tracked."""
         return peer_id in self.peers
 
-    def add_peer(self, info: PeerInfo) -> SyncPeer:
+    def add_peer(self, peer_info: PeerInfo) -> SyncPeer:
         """Register a new peer or update existing."""
-        if info.peer_id in self.peers:
-            self.peers[info.peer_id].info = info
-            return self.peers[info.peer_id]
+        if peer_info.peer_id in self.peers:
+            self.peers[peer_info.peer_id].info = peer_info
+            return self.peers[peer_info.peer_id]
 
-        sync_peer = SyncPeer(info=info)
-        self.peers[info.peer_id] = sync_peer
+        sync_peer = SyncPeer(info=peer_info)
+        self.peers[peer_info.peer_id] = sync_peer
         return sync_peer
 
     def remove_peer(self, peer_id: PeerId) -> SyncPeer | None:

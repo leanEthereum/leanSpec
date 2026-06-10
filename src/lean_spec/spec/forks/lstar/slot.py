@@ -1,9 +1,4 @@
-"""Slot primitive shared by the consensus and crypto layers.
-
-The crypto signing scheme binds each signature to a specific slot.
-Hosting the type here lets the crypto layer name the slot without
-importing the rest of the consensus container module.
-"""
+"""Slot primitive shared by the consensus and crypto layers."""
 
 import math
 from typing import Final
@@ -15,7 +10,7 @@ IMMEDIATE_JUSTIFICATION_WINDOW: Final = 5
 
 
 class Slot(Uint64):
-    """Represents a slot number as a 64-bit unsigned integer."""
+    """A slot number, as a 64-bit unsigned integer."""
 
     def justified_index_after(self, finalized_slot: "Slot") -> int | None:
         """
@@ -35,7 +30,7 @@ class Slot(Uint64):
         Checks if this slot is a valid candidate for justification after a given finalized slot.
 
         According to the 3SF-mini specification, a slot is justifiable if its
-        distance (`delta`) from the last finalized slot is:
+        distance (delta) from the last finalized slot is:
           1. Less than or equal to 5.
           2. A perfect square (e.g., 9, 16, 25...).
           3. A pronic number (of the form x^2 + x, e.g., 6, 12, 20...).
@@ -56,6 +51,10 @@ class Slot(Uint64):
         # Convert to int for pure arithmetic operations below.
         delta = int(self - finalized_slot)
 
+        # Compute the pronic discriminant and its integer square root once.
+        pronic_discriminant = 4 * delta + 1
+        discriminant_root = math.isqrt(pronic_discriminant)
+
         return (
             # Rule 1: The first N slots after finalization are always justifiable.
             #
@@ -72,8 +71,5 @@ class Slot(Uint64):
             # Mathematical insight: For pronic delta = n(n+1), we have:
             #   4*delta + 1 = 4n(n+1) + 1 = (2n+1)^2
             # Check: 4*delta+1 is an odd perfect square
-            or (
-                math.isqrt(4 * delta + 1) ** 2 == 4 * delta + 1
-                and math.isqrt(4 * delta + 1) % 2 == 1
-            )
+            or (discriminant_root**2 == pronic_discriminant and discriminant_root % 2 == 1)
         )

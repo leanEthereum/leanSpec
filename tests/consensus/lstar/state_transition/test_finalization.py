@@ -1,6 +1,7 @@
 """State Transition: Finalization"""
 
 import pytest
+
 from consensus_testing import (
     AggregatedAttestationSpec,
     BlockSpec,
@@ -8,7 +9,6 @@ from consensus_testing import (
     StateTransitionTestFiller,
     generate_pre_state,
 )
-
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
@@ -26,26 +26,32 @@ def test_finalization_on_next_justifiable_step(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state after adjacent justifications finalize slot 1.
+    Adjacent justifications finalize the earlier slot.
 
-    Scenario
-    --------
-    1. Build block_1 at slot 1
-    2. Build block_2 at slot 2 with a supermajority attesting to block_1
-    3. Build block_3 at slot 3 with a supermajority attesting to block_2
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_3 includes V0, V1, V2's votes for block_2.
+    - block_3 justifies slot 2.
+    - block_3 then finalizes slot 1.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 3
-    2. latest_justified_slot is 2
-    3. latest_justified_root is block_2
-    4. latest_finalized_slot is 1
-    5. latest_finalized_root is block_1
-    6. justified_slots contains a single justified entry for slot 2
-    7. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1, block_2, and block_3.
+
+    Then
+    ----
+    - the state slot is 3.
+    - justified slot is 2, rooted at block_2.
+    - finalized slot is 1, rooted at block_1.
+    - the justified-slots bitfield marks slot 2 alone.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -99,28 +105,34 @@ def test_pending_justification_survives_finalization_rebase(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when one pending justification remains after a rebase.
+    A pending vote survives the window rebase that follows finalization.
 
-    Scenario
-    --------
-    1. Justify block_1 by block_2
-    2. Extend the chain through block_4
-    3. Process block_5 with one partial attestation to block_3
-       and one supermajority attestation to block_2
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_5 includes V0's vote for block_3.
+    - block_5 includes V0, V1, V2's votes for block_2.
+    - block_5's supermajority justifies slot 2.
+    - block_5 then finalizes slot 1, which rebases the window.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 5
-    2. latest_justified_slot is 2
-    3. latest_justified_root is block_2
-    4. latest_finalized_slot is 1
-    5. latest_finalized_root is block_1
-    6. justified_slots equals [True, False, False] relative to finalized slot 1
-    7. justifications_roots contains block_3
-    8. justifications_validators contains a single 1-of-4 pending tally
+    When
+    ----
+    - the chain processes block_1 through block_5.
+
+    Then
+    ----
+    - the state slot is 5.
+    - justified slot is 2, rooted at block_2.
+    - finalized slot is 1, rooted at block_1.
+    - the justified-slots bitfield is [True, False, False] relative to slot 1.
+    - the pending-vote roots hold block_3.
+    - the pending tally for block_3 is 1 of 4.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -199,23 +211,32 @@ def test_no_finalization_when_intermediate_justifiable_slot_exists(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when slot 4 is justified and finalization stays at genesis.
+    A non-adjacent justification leaves an intermediate slot, so finalization stays.
 
-    Scenario
-    --------
-    1. Justify block_1 by block_2
-    2. Extend the chain through block_4
-    3. Process block_5 with a supermajority attesting to block_4
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_5 includes V0, V1, V2's votes for block_4.
+    - block_5 justifies slot 4.
+    - slot 1 to slot 4 is not adjacent, so no slot is finalized.
+    - the anchor root is the chain tip header at slot 1 before block_1.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 5
-    2. latest_justified_slot is 4
-    3. latest_justified_root is block_4
-    4. latest_finalized_slot remains 0
-    5. latest_finalized_root stays at the parent root of block 1
-    6. justified_slots marks slots 1 and 4 as justified
-    7. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1 through block_5.
+
+    Then
+    ----
+    - the state slot is 5.
+    - justified slot is 4, rooted at block_4.
+    - finalized stays at slot 0.
+    - the finalized root is the anchor root.
+    - the justified-slots bitfield marks slots 1 and 4.
+    - no pending votes remain.
     """
     pre = generate_pre_state()
     anchor_state = LstarSpec().process_slots(pre, Slot(1))
@@ -288,26 +309,34 @@ def test_mid_block_finalized_slot_visibility(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state after block 8 justifies slots 2 and 7 and finalizes slot 1.
+    One block carrying two supermajorities justifies two slots and finalizes one.
 
-    Scenario
-    --------
-    1. Justify block_1 by block_3
-    2. Extend the chain through block_7
-    3. Process block_8 with supermajority attestations to block_2 and block_7
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+          -> block_5(5) -> block_6(6) -> block_7(7) -> block_8(8)
+    - block_3 includes V0, V1, V2's votes for block_1.
+    - block_3 justifies slot 1.
+    - block_8 includes V0, V1, V2's votes for block_2.
+    - block_8 includes V0, V1, V2's votes for block_7.
+    - block_8 justifies slot 2 and slot 7.
+    - block_8 then finalizes slot 1.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 8
-    2. latest_justified_slot is 7
-    3. latest_justified_root is block_7
-    4. latest_finalized_slot is 1
-    5. latest_finalized_root is block_1
-    6. justified_slots marks slots 2 and 7 as justified relative to slot 1
-    7. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1 through block_8.
+
+    Then
+    ----
+    - the state slot is 8.
+    - justified slot is 7, rooted at block_7.
+    - finalized slot is 1, rooted at block_1.
+    - the justified-slots bitfield marks slots 2 and 7 relative to slot 1.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -385,27 +414,37 @@ def test_finalization_prunes_stale_pending_votes_and_rebases_window(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state after finalizing slot 4 and clearing pending votes.
+    Finalizing slot 4 prunes stale pending votes and rebases the window.
 
-    Scenario
-    --------
-    1. Justify block_1 in block_2
-    2. Create a pending tally for block_2 in block_3
-    3. Justify block_4 in block_5
-    4. Justify block_5 in block_6
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+          -> block_5(5) -> block_6(6)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_3 includes V0, V1's votes for block_2.
+    - block_3's partial tally for block_2 stays pending.
+    - block_5 includes V0, V1, V2's votes for block_4.
+    - block_5 justifies slot 4.
+    - block_6 includes V0, V1, V2's votes for block_5.
+    - block_6 justifies slot 5.
+    - block_6 then finalizes slot 4, which prunes the stale tally.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 6
-    2. latest_justified_slot is 5
-    3. latest_justified_root is block_5
-    4. latest_finalized_slot is 4
-    5. latest_finalized_root is block_4
-    6. justified_slots contains a single justified entry for slot 5
-    7. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1 through block_6.
+
+    Then
+    ----
+    - the state slot is 6.
+    - justified slot is 5, rooted at block_5.
+    - finalized slot is 4, rooted at block_4.
+    - the justified-slots bitfield marks slot 5 alone.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -497,23 +536,32 @@ def test_stale_finalized_source_justifies_without_rewinding_finalization(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when a vote uses a source behind the finalized boundary.
+    A vote whose source is behind the finalized boundary justifies but never refinalizes.
 
-    Scenario
-    --------
-    1. Finalize block_4 through ordinary supermajority attestations
-    2. Process block_7 with a supermajority attesting from block_1 to block_6
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+          -> block_5(5) -> block_6(6) -> block_7(7)
+    - block_2, block_5, and block_6 carry supermajorities that finalize slot 4.
+    - block_7 includes V0, V1, V2's vote from block_1 to block_6.
+    - the source slot 1 sits behind the finalized slot 4.
+    - block_7 justifies slot 6.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 7
-    2. latest_justified_slot advances to 6
-    3. latest_finalized_slot remains 4
-    4. justified_slots marks slots 5 and 6 as justified
-    5. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1 through block_7.
+
+    Then
+    ----
+    - the state slot is 7.
+    - justified slot is 6, rooted at block_6.
+    - finalized stays at slot 4, rooted at block_4.
+    - the justified-slots bitfield marks slots 5 and 6.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -620,27 +668,32 @@ def test_source_at_finalized_boundary_justifies_without_refinalizing(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when a vote uses a source exactly at the finalized boundary.
+    A vote whose source sits exactly at the finalized boundary justifies but never refinalizes.
 
-    This pins the boundary case of the finalization-advance guard.
-    A source whose slot equals the finalized slot is already final.
-    It may justify a newer target, but it must never re-finalize.
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+          -> block_5(5) -> block_6(6) -> block_7(7)
+    - block_2, block_5, and block_6 carry supermajorities that finalize slot 4.
+    - block_7 includes V0, V1, V2's vote from block_4 to block_6.
+    - the source slot 4 equals the finalized slot, which is already final.
+    - block_7 justifies slot 6.
 
-    Scenario
-    --------
-    1. Finalize block_4 through ordinary supermajority attestations
-    2. Process block_7 with a supermajority attesting from block_4 to block_6
+    When
+    ----
+    - the chain processes block_1 through block_7.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 7
-    2. latest_justified_slot advances to 6
-    3. latest_finalized_slot remains 4
-    4. justified_slots marks slots 5 and 6 as justified
-    5. There are no pending justifications
+    Then
+    ----
+    - the state slot is 7.
+    - justified slot is 6, rooted at block_6.
+    - finalized stays at slot 4, rooted at block_4.
+    - the justified-slots bitfield marks slots 5 and 6.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -747,27 +800,34 @@ def test_non_adjacent_justification_finalizes_across_non_justifiable_gap(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state after finalizing slot 6 and justifying slot 9.
+    Finalization spans a non-justifiable gap between two justified slots.
 
-    Scenario
-    --------
-    1. Build the chain through block_6
-    2. Justify block_6 in block_7
-    3. Extend the chain through block_9
-    4. Process block_10 with a supermajority attesting to block_9
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4)
+          -> block_5(5) -> block_6(6) -> block_7(7) -> block_8(8)
+          -> block_9(9) -> block_10(10)
+    - block_7 includes V0, V1, V2's votes for block_6.
+    - block_7 justifies slot 6.
+    - block_10 includes V0, V1, V2's votes for block_9.
+    - block_10 justifies slot 9.
+    - block_10 then finalizes slot 6 across the non-justifiable gap.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 10
-    2. latest_justified_slot is 9
-    3. latest_justified_root is block_9
-    4. latest_finalized_slot is 6
-    5. latest_finalized_root is block_6
-    6. justified_slots equals [False, False, True] relative to slot 6
-    7. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1 through block_10.
+
+    Then
+    ----
+    - the state slot is 10.
+    - justified slot is 9, rooted at block_9.
+    - finalized slot is 6, rooted at block_6.
+    - the justified-slots bitfield is [False, False, True] relative to slot 6.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -828,27 +888,35 @@ def test_no_finalization_when_rebased_boundary_exposes_intermediate_justifiable_
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when slot 13 is justified and finalization remains at slot 1.
+    A rebased window exposes an intermediate justifiable slot, so finalization stays.
 
-    Scenario
-    --------
-    1. Justify slot 1 in block_3
-    2. Process block_8 so slots 2 and 7 become justified and slot 1 becomes finalized
-    3. Extend the chain through block_13
-    4. Process block_14 with a supermajority attesting to block_13
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_14(14)
+    - block_3 includes V0, V1, V2's votes for block_1.
+    - block_3 justifies slot 1.
+    - block_8 includes V0, V1, V2's votes for block_2.
+    - block_8 includes V0, V1, V2's votes for block_7.
+    - block_8 justifies slots 2 and 7 and finalizes slot 1.
+    - block_14 includes V0, V1, V2's votes for block_13.
+    - block_14 justifies slot 13.
+    - an intermediate justifiable slot blocks further finalization.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 14
-    2. latest_justified_slot is 13
-    3. latest_justified_root is block_13
-    4. latest_finalized_slot is 1
-    5. latest_finalized_root is block_1
-    6. justified_slots contains justified entries for slots 2, 7, and 13
-    7. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1 through block_14.
+
+    Then
+    ----
+    - the state slot is 14.
+    - justified slot is 13, rooted at block_13.
+    - finalized stays at slot 1, rooted at block_1.
+    - the justified-slots bitfield marks slots 2, 7, and 13.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),
@@ -954,26 +1022,33 @@ def test_mid_block_finalized_slot_rejects_target_that_loses_justifiability(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when block 10 finalizes slot 1 and leaves slot 9 unresolved.
+    A target that loses justifiability after the rebase is dropped, leaving slot 9 unresolved.
 
-    Scenario
-    --------
-    1. Justify block_1 in block_2
-    2. Extend the chain through block_9
-    3. Process block_10 with supermajority attestations to block_2 and block_9
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_10(10)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_10 includes V0, V1, V2's votes for block_2.
+    - block_10 includes V0, V1, V2's votes for block_9.
+    - block_10 justifies slot 2 and finalizes slot 1.
+    - slot 9 loses justifiability after the window rebases to slot 1.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 10
-    2. latest_justified_slot is 2
-    3. latest_justified_root is block_2
-    4. latest_finalized_slot is 1
-    5. latest_finalized_root is block_1
-    6. justified_slots contains a single justified entry for slot 2 relative to slot 1
-    7. There are no pending justifications
+    When
+    ----
+    - the chain processes block_1 through block_10.
+
+    Then
+    ----
+    - the state slot is 10.
+    - justified slot is 2, rooted at block_2.
+    - finalized slot is 1, rooted at block_1.
+    - the justified-slots bitfield marks slot 2 alone relative to slot 1.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -1055,31 +1130,34 @@ def test_merged_attestations_for_same_target_justify_and_finalize_cleanly(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when block 3 justifies slot 2 and leaves no pending votes.
+    Two votes for the same target merge, then justify and finalize cleanly.
 
-    Scenario
-    --------
-    1. Justify block_1 in block_2
-    2. Process block_3 with two attestation specs both targeting block_2:
-       one supermajority (V0-V2) and one single-validator (V3)
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> block_2(2) -> block_3(3)
+    - block_2 includes V0, V1, V2's votes for block_1.
+    - block_2 justifies slot 1.
+    - block_3 includes V0, V1, V2's votes for block_2.
+    - block_3 includes V3's vote for block_2.
+    - both votes share one target, so the builder merges them into one tally.
+    - block_3 justifies slot 2.
+    - block_3 then finalizes slot 1.
 
-    The block builder merges both specs into a single aggregated
-    attestation covering all 4 validators (same AttestationData).
-    The merged attestation justifies slot 2 and finalizes slot 1
-    in one step. No pending votes remain.
+    When
+    ----
+    - the chain processes block_1, block_2, and block_3.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 3
-    2. latest_justified_slot is 2
-    3. latest_justified_root is block_2
-    4. latest_finalized_slot is 1
-    5. latest_finalized_root is block_1
-    6. justified_slots contains a single justified entry for slot 2
-    7. There are no pending justifications
+    Then
+    ----
+    - the state slot is 3.
+    - justified slot is 2, rooted at block_2.
+    - finalized slot is 1, rooted at block_1.
+    - the justified-slots bitfield marks slot 2 alone.
+    - no pending votes remain.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(
@@ -1141,30 +1219,38 @@ def test_rebased_finalization_prunes_stale_votes_and_preserves_future_votes(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:
     """
-    Test the post-state when a second rebase leaves one future pending tally.
+    A second rebase prunes stale votes but keeps a future pending tally.
 
-    Scenario
-    --------
-    1. Justify block_1 in block_3
-    2. Record a pending tally for block_4 in block_5
-    3. Process block_8 so slots 2 and 7 are justified and slot 1 is finalized
-    4. Build the chain through block_13
-    5. Process block_14 with a partial attestation to block_13
-       and a supermajority attestation to block_10
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - the chain:
+        genesis -> block_1(1) -> ... -> block_14(14)
+    - block_3 includes V0, V1, V2's votes for block_1.
+    - block_3 justifies slot 1.
+    - block_5 includes V0, V1's votes for block_4.
+    - block_5's partial tally for block_4 stays pending.
+    - block_8 includes V0, V1, V2's votes for block_2.
+    - block_8 includes V0, V1, V2's votes for block_7.
+    - block_8 justifies slots 2 and 7 and finalizes slot 1.
+    - block_14 includes V0's vote for block_13.
+    - block_14 includes V0, V1, V2's votes for block_10.
+    - block_14 justifies slot 10 and finalizes slot 7, which rebases again.
 
-    Expected Behavior
-    -----------------
-    1. The post-state slot is 14
-    2. latest_justified_slot is 10
-    3. latest_justified_root is block_10
-    4. latest_finalized_slot is 7
-    5. latest_finalized_root is block_7
-    6. justified_slots equals [False, False, True, False, False, False] relative to slot 7
-    7. justifications_roots contains block_13
-    8. justifications_validators contains a single 1-of-4 pending tally
+    When
+    ----
+    - the chain processes block_1 through block_14.
+
+    Then
+    ----
+    - the state slot is 14.
+    - justified slot is 10, rooted at block_10.
+    - finalized slot is 7, rooted at block_7.
+    - the justified-slots bitfield is [False, False, True, False, False, False] relative to slot 7.
+    - the pending-vote roots hold block_13.
+    - the pending tally for block_13 is 1 of 4.
     """
     state_transition_test(
-        pre=generate_pre_state(),
         blocks=[
             BlockSpec(slot=Slot(1), label="block_1"),
             BlockSpec(slot=Slot(2), parent_label="block_1", label="block_2"),

@@ -2,18 +2,32 @@
 
 import secrets
 
-from ..koalabear import Fp, P
-from .constants import XmssConfig
-from .types import HashDigestVector, Parameter
+from lean_spec.spec.crypto.koalabear import Fp, P
+from lean_spec.spec.crypto.xmss.constants import XmssConfig
+from lean_spec.spec.crypto.xmss.types import HashDigestVector, Parameter
 
 
 def int_to_base_p(value: int, num_limbs: int) -> list[Fp]:
-    """Decompose an integer into a fixed-size list of base-P field elements."""
-    acc = value
+    """
+    Decompose a non-negative integer into a fixed-size list of base-P field elements.
+
+    The integer must be small enough to fit in the requested number of limbs.
+
+    Raises:
+        ValueError: When the integer is too large to fit in the requested limbs.
+    """
+    remaining_value = value
     limbs: list[Fp] = []
     for _ in range(num_limbs):
-        limbs.append(Fp(value=acc))
-        acc //= P
+        limbs.append(Fp(value=remaining_value))
+        remaining_value //= P
+
+    # A nonzero remainder means the integer was wider than the requested limbs.
+    # Dropping the high part would silently change the resulting hash.
+    # Reject it instead of returning a truncated decomposition.
+    if remaining_value != 0:
+        raise ValueError(f"value does not fit in {num_limbs} base-P limbs")
+
     return limbs
 
 

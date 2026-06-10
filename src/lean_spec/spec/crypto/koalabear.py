@@ -1,5 +1,6 @@
 """Core definition of the KoalaBear prime field Fp."""
 
+import math
 from typing import IO, Any, Final, NoReturn, Self, override
 
 from pydantic.annotated_handlers import GetCoreSchemaHandler
@@ -22,7 +23,7 @@ The prime is chosen because the cube map (x -> x^3) is an automorphism of the mu
 P_BITS: Final = 31
 """The number of bits in the prime P."""
 
-P_BYTES: Final = (P_BITS + 7) // 8
+P_BYTES: Final = math.ceil(P_BITS / 8)
 """The size of a KoalaBear field element in bytes."""
 
 
@@ -99,13 +100,15 @@ class Fp(int, SSZType):
         """Deserialize a field element from a binary stream."""
         if scope != P_BYTES:
             raise SSZSerializationError(f"Expected {P_BYTES} bytes for Fp, got {scope}")
-        data = stream.read(P_BYTES)
-        if len(data) != P_BYTES:
-            raise SSZSerializationError(f"Expected {P_BYTES} bytes for Fp, got {len(data)}")
-        value = int.from_bytes(data, byteorder="little")
-        if value >= P:
-            raise SSZValueError(f"Value {value} exceeds field modulus {P}")
-        return cls(value)
+        serialized_bytes = stream.read(P_BYTES)
+        if len(serialized_bytes) != P_BYTES:
+            raise SSZSerializationError(
+                f"Expected {P_BYTES} bytes for Fp, got {len(serialized_bytes)}"
+            )
+        decoded_integer = int.from_bytes(serialized_bytes, byteorder="little")
+        if decoded_integer >= P:
+            raise SSZValueError(f"Value {decoded_integer} exceeds field modulus {P}")
+        return cls(decoded_integer)
 
     def _reject(self, other: Any, op: str) -> NoReturn:
         """Raise a consistent TypeError for a non-Fp operand."""
@@ -148,6 +151,10 @@ class Fp(int, SSZType):
         """Reverse multiplication: reject non-Fp left operand to prevent silent int fallback."""
         self._reject(other, "*")
 
+    # The int base declares a three-argument pow with an optional modulus.
+    #
+    # The field already reduces modulo P, so the modulus argument is meaningless here.
+    # Narrowing to the field type is intentional and safe by Liskov substitution.
     def __pow__(self, exponent: int) -> Self:  # ty: ignore[invalid-method-override]
         """Field exponentiation."""
         return type(self)(pow(int(self), exponent, P))

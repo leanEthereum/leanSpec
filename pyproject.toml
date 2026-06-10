@@ -29,7 +29,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.12.0,<3",
     "typing-extensions>=4.4",
-    "lean-multisig-py>=0.0.5",
+    "lean-multisig-py>=0.0.9",
     "httpx>=0.28.0,<1",
     "aiohttp>=3.11.0,<4",
     "cryptography>=46.0.0",
@@ -59,22 +59,30 @@ packages = ["src/lean_spec"]
 
 [tool.ruff]
 line-length = 100
+# The vulture whitelist is data for dead-code detection, not executable code.
+# It references symbols by bare name, which is not valid standalone Python.
+extend-exclude = ["vulture_whitelist.py"]
 
 [tool.ruff.format]
 docstring-code-format = true
 
 [tool.ruff.lint]
-select = ["E", "F", "B", "W", "I", "A", "N", "D", "C"]
-fixable = ["I", "B", "E", "F", "W", "D", "C"]
+# D213 is selected by exact code: the google convention would otherwise disable it.
+# It forces multi-line docstring summaries onto the second line (after the opening quotes).
+select = ["E", "F", "B", "W", "I", "A", "N", "D", "D213", "C", "TID"]
+fixable = ["I", "B", "E", "F", "W", "D", "C", "TID"]
 ignore = ["D205", "D203", "D212", "D415", "C901", "A005", "C420"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 force-single-line = false
-known-first-party = ["lean_spec"]
+known-first-party = ["lean_spec", "consensus_testing"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
@@ -84,7 +92,12 @@ known-first-party = ["lean_spec"]
 python-version = "3.12"
 
 [tool.ty.src]
-exclude = [".claude/"]
+exclude = [".claude/", "vulture_whitelist.py"]
+
+[tool.ty.rules]
+# Flag any suppression comment that no longer matches a real diagnostic.
+# Keeps the ignore set honest as the code evolves and prevents stale or duplicate suppressions.
+unused-ignore-comment = "error"
 
 [tool.ty.terminal]
 error-on-warning = true
@@ -126,6 +139,16 @@ branch = true
 [tool.coverage.report]
 fail_under = 90
 
+[tool.vulture]
+# Scan source, the testing framework, the test tree, and the whitelist together.
+# Most spec code is exercised only through the test suite, so the tests must be
+# in scope or every test-only-used symbol shows up as a false positive.
+# The whitelist names the indirectly-used symbols vulture cannot see; listing
+# them explicitly keeps the ignores tight instead of relying on wide globs.
+paths = ["src", "packages", "tests", "vulture_whitelist.py"]
+# Show the largest unused blocks first; they are the highest-value removals.
+sort_by_size = true
+
 [tool.mdformat]
 number = true
 wrap = 80
@@ -138,7 +161,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 lean-ethereum-testing = { workspace = true }
-lean-multisig-py = { git = "https://github.com/anshalshukla/leanMultisig-py", tag = "v0.0.5" }
+lean-multisig-py = { git = "https://github.com/anshalshukla/leanMultisig-py", tag = "v0.0.9" }
 
 [dependency-groups]
 test = [
@@ -149,13 +172,14 @@ test = [
     "pytest-timeout>=2.2.0,<3",
     "hypothesis>=6.138.14",
     "lean-ethereum-testing",
-    "lean-multisig-py>=0.0.5",
+    "lean-multisig-py>=0.0.9",
     "pycryptodome>=3.20.0,<4",
 ]
 lint = [
     "ty>=0.0.1a34",
     "ruff>=0.13.2,<1",
     "codespell>=2.4.1,<3",
+    "vulture>=2.14,<3",
 ]
 docs = [
     "mkdocs>=1.6.1,<2",

@@ -46,14 +46,15 @@ import random
 import time
 from dataclasses import dataclass, field
 
-from ..transport import PeerId
-from .parameters import GossipsubParameters
-from .types import TopicId
+from lean_spec.node.networking.gossipsub.parameters import GossipsubParameters
+from lean_spec.node.networking.gossipsub.types import TopicId
+from lean_spec.node.networking.transport import PeerId
 
 
 @dataclass(slots=True)
 class FanoutEntry:
-    """Fanout state for a publish-only topic.
+    """
+    Fanout state for a publish-only topic.
 
     Tracks peers used when publishing to topics we don't subscribe to.
     Fanout entries expire after a period of inactivity (fanout_ttl).
@@ -75,7 +76,8 @@ class FanoutEntry:
     """
 
     def is_stale(self, current_time: float, ttl: float) -> bool:
-        """Check if this fanout entry has expired.
+        """
+        Check if this fanout entry has expired.
 
         Args:
             current_time: Current Unix timestamp.
@@ -89,7 +91,8 @@ class FanoutEntry:
 
 @dataclass(slots=True)
 class TopicMesh:
-    """Mesh state for a single topic.
+    """
+    Mesh state for a single topic.
 
     Represents the set of peers we exchange full messages with
     for a specific topic. Mesh membership is managed via
@@ -104,7 +107,8 @@ class TopicMesh:
     """
 
     def add_peer(self, peer_id: PeerId) -> bool:
-        """Add a peer to this topic's mesh.
+        """
+        Add a peer to this topic's mesh.
 
         Args:
             peer_id: Peer to add.
@@ -118,7 +122,8 @@ class TopicMesh:
         return True
 
     def remove_peer(self, peer_id: PeerId) -> bool:
-        """Remove a peer from this topic's mesh.
+        """
+        Remove a peer from this topic's mesh.
 
         Args:
             peer_id: Peer to remove.
@@ -134,7 +139,8 @@ class TopicMesh:
 
 @dataclass(slots=True)
 class MeshState:
-    """Complete mesh state for all subscribed topics.
+    """
+    Complete mesh state for all subscribed topics.
 
     Central data structure managing mesh topology across all topics.
     Provides operations for subscription management, peer tracking,
@@ -164,7 +170,8 @@ class MeshState:
         return set(self._fanouts)
 
     def subscribe(self, topic: TopicId) -> None:
-        """Subscribe to a topic, initializing its mesh.
+        """
+        Subscribe to a topic, initializing its mesh.
 
         If we have fanout peers for this topic, they are
         promoted to the mesh automatically.
@@ -185,7 +192,8 @@ class MeshState:
         self._meshes[topic] = mesh
 
     def unsubscribe(self, topic: TopicId) -> set[PeerId]:
-        """Unsubscribe from a topic.
+        """
+        Unsubscribe from a topic.
 
         Args:
             topic: Topic identifier to unsubscribe from.
@@ -198,7 +206,8 @@ class MeshState:
         return mesh.peers if mesh else set()
 
     def get_mesh_peers(self, topic: TopicId) -> set[PeerId]:
-        """Get mesh peers for a topic.
+        """
+        Get mesh peers for a topic.
 
         Args:
             topic: Topic identifier.
@@ -210,7 +219,8 @@ class MeshState:
         return mesh.peers.copy() if mesh else set()
 
     def add_to_mesh(self, topic: TopicId, peer_id: PeerId) -> bool:
-        """Add a peer to a topic's mesh.
+        """
+        Add a peer to a topic's mesh.
 
         Args:
             topic: Topic identifier.
@@ -226,7 +236,8 @@ class MeshState:
         return mesh.add_peer(peer_id)
 
     def remove_from_mesh(self, topic: TopicId, peer_id: PeerId) -> bool:
-        """Remove a peer from a topic's mesh.
+        """
+        Remove a peer from a topic's mesh.
 
         Args:
             topic: Topic identifier.
@@ -242,7 +253,8 @@ class MeshState:
         return mesh.remove_peer(peer_id)
 
     def get_fanout_peers(self, topic: TopicId) -> set[PeerId]:
-        """Get fanout peers for a topic.
+        """
+        Get fanout peers for a topic.
 
         Args:
             topic: Topic identifier.
@@ -254,7 +266,8 @@ class MeshState:
         return fanout.peers.copy() if fanout else set()
 
     def fill_fanout(self, topic: TopicId, available_peers: set[PeerId]) -> None:
-        """Fill fanout for a topic up to D peers without updating last_published.
+        """
+        Fill fanout for a topic up to D peers without updating last_published.
 
         Used during heartbeat to maintain fanout sizes.
 
@@ -273,7 +286,8 @@ class MeshState:
             fanout.peers.update(new_peers)
 
     def update_fanout(self, topic: TopicId, available_peers: set[PeerId]) -> set[PeerId]:
-        """Update fanout for publishing to a non-subscribed topic.
+        """
+        Update fanout for publishing to a non-subscribed topic.
 
         For subscribed topics, returns mesh peers instead.
 
@@ -294,17 +308,14 @@ class MeshState:
 
         fanout.last_published = time.time()
 
-        # Fill fanout up to D peers
-        if len(fanout.peers) < self.params.d:
-            candidates = available_peers - fanout.peers
-            needed = self.params.d - len(fanout.peers)
-            new_peers = random.sample(list(candidates), min(needed, len(candidates)))
-            fanout.peers.update(new_peers)
+        # Top up to D peers, reusing the same fill routine the heartbeat runs.
+        self.fill_fanout(topic, available_peers)
 
         return fanout.peers.copy()
 
     def cleanup_fanouts(self, ttl: float, now: float | None = None) -> int:
-        """Remove expired fanout entries.
+        """
+        Remove expired fanout entries.
 
         Args:
             ttl: Time-to-live in seconds.
@@ -320,7 +331,8 @@ class MeshState:
         return len(stale)
 
     def select_peers_for_gossip(self, topic: TopicId, all_topic_peers: set[PeerId]) -> list[PeerId]:
-        """Select non-mesh peers for IHAVE gossip.
+        """
+        Select non-mesh peers for IHAVE gossip.
 
         Randomly selects up to D_lazy peers from those not in the mesh.
         These peers receive IHAVE messages during heartbeat.
