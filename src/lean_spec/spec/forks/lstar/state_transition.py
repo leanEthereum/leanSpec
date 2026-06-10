@@ -329,6 +329,12 @@ class StateTransitionMixin(LstarSpecBase):
         1. Processes each attestation
         2. Updates justified status for target checkpoints
         3. Applies finalization rules based on justified status
+
+        Raises:
+            SpecRejectionError: EMPTY_AGGREGATION_BITS if an attestation that passes
+                the vote filters has no set bits.
+            SpecRejectionError: VALIDATOR_INDEX_OUT_OF_RANGE if a set bit points
+                outside the validator registry.
         """
         # Reconstruct the vote-tracking structure
         #
@@ -438,6 +444,25 @@ class StateTransitionMixin(LstarSpecBase):
             if not target.slot.is_justifiable_after(finalized_slot):
                 continue
 
+            # Resolve the participating validators from the aggregation bits.
+            #
+            # An aggregation with no set bits names no voter at all.
+            # Such an attestation is malformed and rejects the whole block.
+            voting_validator_indices = attestation.aggregation_bits.to_validator_indices()
+
+            # Reject set bits that point outside the validator registry.
+            #
+            # The tally below holds one flag per registered validator.
+            # A vote from a nonexistent validator has no flag to set,
+            # so the whole block is invalid.
+            # Trailing unset bits beyond the registry are harmless padding.
+            for validator_index in voting_validator_indices:
+                if not validator_index.is_within_registry(Uint64(len(state.validators))):
+                    raise SpecRejectionError(
+                        RejectionReason.VALIDATOR_INDEX_OUT_OF_RANGE,
+                        "Attestation aggregation bits reference a validator outside the registry",
+                    )
+
             # Record the vote.
             #
             # If this is the first vote for the target block, create a fresh tally sheet:
@@ -449,7 +474,7 @@ class StateTransitionMixin(LstarSpecBase):
             #
             # A vote is a boolean flag set to True.
             # Re-marking an existing voter is idempotent, so no guard is needed.
-            for validator_index in attestation.aggregation_bits.to_validator_indices():
+            for validator_index in voting_validator_indices:
                 justifications[target.root][validator_index] = Boolean(True)
 
             # Check whether the vote count crosses the supermajority threshold.
