@@ -9,7 +9,7 @@ from consensus_testing.keys import XmssKeyManager
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from consensus_testing.test_types import AggregatedAttestationSpec, BlockSpec, StateExpectation
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import AggregationBits, SpecRejectionError
+from lean_spec.spec.forks import SpecRejectionError
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
@@ -135,9 +135,14 @@ class StateTransitionTest(BaseTestSpec):
         try:
             state = self.pre
 
-            for block_spec in self.blocks:
+            for block_index, block_spec in enumerate(self.blocks):
                 # Build block and optionally get cached post-state to avoid redundant transitions
-                block, cached_state = self._build_block_from_spec(block_spec, state, block_registry)
+                block, cached_state = self._build_block_from_spec(
+                    block_spec,
+                    state,
+                    block_registry,
+                    is_final_block=block_index == len(self.blocks) - 1,
+                )
 
                 # Store the filled Block for serialization
                 filled_blocks.append(block)
@@ -194,6 +199,7 @@ class StateTransitionTest(BaseTestSpec):
         block_spec: BlockSpec,
         state: State,
         block_registry: dict[str, Block],
+        is_final_block: bool,
     ) -> tuple[Block, State | None]:
         """
         Build a Block from a BlockSpec, optionally caching the post-state.
@@ -201,7 +207,9 @@ class StateTransitionTest(BaseTestSpec):
         Three construction paths:
 
         1. Explicit state_root -- caller controls the root, no transition
-        2. Invalid or skip-slot -- placeholder zero root, no transition
+        2. Final block of an invalid test, or skip-slot -- placeholder zero
+           root, no transition. Earlier blocks of an invalid test build
+           normally so processing reaches the block expected to fail.
         3. Normal -- full build_block with computed state root
 
         After construction, any forced attestations are appended to the
@@ -212,6 +220,7 @@ class StateTransitionTest(BaseTestSpec):
             block_spec: Block specification with optional field overrides.
             state: Current state to build against.
             block_registry: Labeled blocks for parent and target resolution.
+            is_final_block: Whether this is the last block of the test.
 
         Returns:
             Block and cached post-state (None if not computed).
@@ -245,8 +254,11 @@ class StateTransitionTest(BaseTestSpec):
                 body=body,
             )
 
-        # Path 2: invalid test or skip-slot -- placeholder root, no transition.
-        elif self.expected_rejection is not None or block_spec.skip_slot_processing:
+        # Path 2: failing block of an invalid test, or skip-slot --
+        # placeholder root, no transition.
+        elif (
+            self.expected_rejection is not None and is_final_block
+        ) or block_spec.skip_slot_processing:
             block = Block(
                 slot=block_spec.slot,
                 proposer_index=proposer_index,
@@ -282,9 +294,7 @@ class StateTransitionTest(BaseTestSpec):
         if block_spec.forced_attestations:
             forced = [
                 AggregatedAttestation(
-                    aggregation_bits=AggregationBits.from_indices(
-                        forced_attestation.validator_indices
-                    ),
+                    aggregation_bits=forced_attestation.resolve_aggregation_bits(),
                     data=forced_attestation.build_attestation_data(
                         block_registry, state.latest_justified
                     ),
