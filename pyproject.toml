@@ -59,6 +59,9 @@ packages = ["src/lean_spec"]
 
 [tool.ruff]
 line-length = 100
+# The vulture whitelist is data for dead-code detection, not executable code.
+# It references symbols by bare name, which is not valid standalone Python.
+extend-exclude = ["vulture_whitelist.py"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -89,7 +92,7 @@ known-first-party = ["lean_spec", "consensus_testing"]
 python-version = "3.12"
 
 [tool.ty.src]
-exclude = [".claude/"]
+exclude = [".claude/", "vulture_whitelist.py"]
 
 [tool.ty.rules]
 # Flag any suppression comment that no longer matches a real diagnostic.
@@ -136,6 +139,16 @@ branch = true
 [tool.coverage.report]
 fail_under = 90
 
+[tool.vulture]
+# Scan source, the testing framework, the test tree, and the whitelist together.
+# Most spec code is exercised only through the test suite, so the tests must be
+# in scope or every test-only-used symbol shows up as a false positive.
+# The whitelist names the indirectly-used symbols vulture cannot see; listing
+# them explicitly keeps the ignores tight instead of relying on wide globs.
+paths = ["src", "packages", "tests", "vulture_whitelist.py"]
+# Show the largest unused blocks first; they are the highest-value removals.
+sort_by_size = true
+
 [tool.mdformat]
 number = true
 wrap = 80
@@ -166,6 +179,7 @@ lint = [
     "ty>=0.0.1a34",
     "ruff>=0.13.2,<1",
     "codespell>=2.4.1,<3",
+    "vulture>=2.14,<3",
 ]
 docs = [
     "mkdocs>=1.6.1,<2",

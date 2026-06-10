@@ -37,6 +37,11 @@ fix:
 typecheck *args:
     uv run --group lint ty check "$@"
 
+# Detect dead code with vulture (paths and ignores configured in pyproject.toml)
+[group('quality')]
+deadcode *args:
+    uv run --group lint vulture "$@"
+
 # Spell check source, tests, packages, and docs
 [group('quality')]
 spellcheck *args:
