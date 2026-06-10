@@ -38,9 +38,6 @@ class MockOutboundStream:
     def close(self) -> None:
         pass
 
-    async def wait_closed(self) -> None:
-        pass
-
 
 def make_behavior(
     d: int = 8, d_low: int = 6, d_high: int = 12, d_lazy: int = 6

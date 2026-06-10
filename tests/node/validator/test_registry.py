@@ -346,13 +346,6 @@ def _write_manifest(path: Path, validators: list[dict[str, object]]) -> None:
     )
 
 
-def _write_key_files(directory: Path, indices: list[int]) -> None:
-    """Write dummy SSZ key file stubs for the given validator indices."""
-    for i in indices:
-        (directory / f"att_key_{i}.ssz").write_bytes(b"att" + bytes([i]))
-        (directory / f"prop_key_{i}.ssz").write_bytes(b"prop" + bytes([i]))
-
-
 class TestValidatorRegistryFromYaml:
     """Integration tests for the full YAML loading pipeline (files on disk -> registry)."""
 

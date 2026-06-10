@@ -106,9 +106,6 @@ class MockResponseStream:
     errors: list[tuple[ResponseCode, str]] = field(default_factory=list)
     """Errors sent via send_error as (code, message) tuples."""
 
-    finished: bool = False
-    """Whether finish() was called."""
-
     async def send_success(self, ssz_data: bytes) -> None:
         """Record a success response."""
         self.successes.append(ssz_data)
@@ -118,8 +115,7 @@ class MockResponseStream:
         self.errors.append((code, message))
 
     async def finish(self) -> None:
-        """Mark stream as finished."""
-        self.finished = True
+        """Accept the finish call."""
 
 
 class TestStreamResponseAdapter:

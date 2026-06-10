@@ -86,19 +86,17 @@ def test_merkleize_empty_no_limit() -> None:
 
 
 @pytest.mark.parametrize(
-    "limit, expected_width, expected_zero_root",
+    "limit, expected_zero_root",
     [
-        (0, 1, Z[0]),  # limit=0 -> width=1 -> root is Z[0]
-        (1, 1, Z[0]),  # limit=1 -> width=1 -> root is Z[0]
-        (2, 2, Z[1]),  # limit=2 -> width=2 -> root is Z[1]
-        (3, 4, Z[2]),  # limit=3 -> width=4 -> root is Z[2]
-        (7, 8, Z[3]),  # limit=7 -> width=8 -> root is Z[3]
-        (8, 8, Z[3]),
+        (0, Z[0]),  # limit=0 -> width=1 -> root is Z[0]
+        (1, Z[0]),  # limit=1 -> width=1 -> root is Z[0]
+        (2, Z[1]),  # limit=2 -> width=2 -> root is Z[1]
+        (3, Z[2]),  # limit=3 -> width=4 -> root is Z[2]
+        (7, Z[3]),  # limit=7 -> width=8 -> root is Z[3]
+        (8, Z[3]),
     ],
 )
-def test_merkleize_empty_with_limit(
-    limit: int, expected_width: int, expected_zero_root: Bytes32
-) -> None:
+def test_merkleize_empty_with_limit(limit: int, expected_zero_root: Bytes32) -> None:
     """Empty input with a limit yields the zero-subtree root at the rounded-up width."""
     assert merkleize([], limit=limit) == expected_zero_root
 

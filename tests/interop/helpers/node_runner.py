@@ -528,43 +528,6 @@ class NodeCluster:
         self.nodes.clear()
         logger.info("All nodes stopped")
 
-    async def wait_for_finalization(
-        self,
-        target_slot: int,
-        timeout: float = 120.0,
-        poll_interval: float = 1.0,
-    ) -> bool:
-        """
-        Wait until all nodes finalize to at least target_slot.
-
-        Args:
-            target_slot: Minimum finalized slot to wait for.
-            timeout: Maximum wait time in seconds.
-            poll_interval: Time between checks.
-
-        Returns:
-            True if all nodes reached target, False on timeout.
-        """
-        start = time.monotonic()
-
-        while time.monotonic() - start < timeout:
-            all_finalized = all(node.finalized_slot >= target_slot for node in self.nodes)
-
-            if all_finalized:
-                logger.info("All %d nodes finalized to slot %d", len(self.nodes), target_slot)
-                return True
-
-            slots = [node.finalized_slot for node in self.nodes]
-            logger.debug("Finalized slots: %s (target: %d)", slots, target_slot)
-
-            await asyncio.sleep(poll_interval)
-
-        slots = [node.finalized_slot for node in self.nodes]
-        logger.warning(
-            "Timeout waiting for finalization. Slots: %s (target: %d)", slots, target_slot
-        )
-        return False
-
     async def wait_for_slot(
         self,
         target_slot: int,

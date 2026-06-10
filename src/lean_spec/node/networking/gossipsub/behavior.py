@@ -169,9 +169,6 @@ class PeerState:
     receive_task: asyncio.Task[None] | None = None
     """Task running the receive loop for this peer."""
 
-    last_rpc_time: float = 0.0
-    """Timestamp of last RPC exchange."""
-
     backoff: dict[TopicId, float] = field(default_factory=dict)
     """Per-topic backoff expiry times (from PRUNE)."""
 
@@ -919,8 +916,6 @@ class GossipsubBehavior:
             )
             peer_state.outbound_stream.write(frame)
             await peer_state.outbound_stream.drain()
-
-            peer_state.last_rpc_time = time.time()
         except Exception as exception:
             logger.warning("Failed to send RPC to %s: %s", peer_id, exception)
 
