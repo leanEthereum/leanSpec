@@ -85,6 +85,7 @@ def test_multiple_attestations_same_target_merge_into_one(
         ],
     )
 
+
 @pytest.mark.real_crypto(smoke=True)
 def test_overlapping_proofs_same_target_recursively_merge_into_one(
     fork_choice_test: ForkChoiceTestFiller,
