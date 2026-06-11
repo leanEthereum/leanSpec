@@ -85,13 +85,12 @@ def test_multiple_attestations_same_target_merge_into_one(
         ],
     )
 
-
+@pytest.mark.real_crypto(smoke=True)
 def test_overlapping_proofs_same_target_recursively_merge_into_one(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    Two overlapping proofs (enforced by 2 separate gossips) for one target
-    fold into a single in-block attestation.
+    Two overlapping proofs for one target fold into a single in-block attestation.
 
     Given
     -----
@@ -102,7 +101,6 @@ def test_overlapping_proofs_same_target_recursively_merge_into_one(
     - one proof covers V1, V2, V3 targeting block_1.
     - the two proofs overlap on V1, V2.
     - both proofs carry identical attestation data.
-    - the clock ticks past slot 1's aggregate phase before they gossip.
     - both proofs arrive by gossip.
     - both proofs wait unmerged in the known pool.
 
@@ -112,10 +110,8 @@ def test_overlapping_proofs_same_target_recursively_merge_into_one(
 
     Then
     ----
-    - the builder takes the first proof.
-    - the builder takes the second proof for its one uncovered voter.
-    - the builder folds both proofs into one attestation.
-    - block_2 holds 1 aggregated attestation covering V0, V1, V2, V3.
+    - block_2 holds 1 aggregated attestation.
+    - that aggregation covers V0, V1, V2, V3.
     - head is block_2 at slot 2.
 
     Timing
