@@ -157,6 +157,7 @@ latest_known_aggregated_target_slots
 participant_sets
 block_weights
 known_aggregated_payloads
+is_justifiable
 
 # SSZ container and model field names declared inside unit tests.
 # Serialized by the SSZ codec or set through pydantic, never read by attribute.
