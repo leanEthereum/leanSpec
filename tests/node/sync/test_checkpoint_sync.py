@@ -9,14 +9,18 @@ import pytest
 
 from lean_spec.node.api import ApiServer, ApiServerConfig
 from lean_spec.node.sync.checkpoint_sync import (
+    FINALIZED_BLOCK_ENDPOINT,
     FINALIZED_STATE_ENDPOINT,
     CheckpointSyncError,
+    fetch_finalized_block,
     fetch_finalized_state,
     verify_checkpoint_state,
 )
-from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, Slot
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, SignedBlock, Slot
 from lean_spec.spec.forks.lstar import State, Store
-from lean_spec.spec.forks.lstar.containers import Validators
+from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate, Validators
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 
 
 class _MockTransport(httpx.AsyncBaseTransport):
@@ -211,6 +215,79 @@ class TestFetchFinalizedState:
         assert captured == [f"http://example.com{FINALIZED_STATE_ENDPOINT}"]
 
 
+class TestFetchFinalizedBlock:
+    """
+    Tests for error handling when fetching the finalized block over HTTP.
+
+    Mirrors the state-fetch error tests: failures are injected through the
+    transport so the real httpx client and error wrapping run unchanged.
+    """
+
+    async def test_network_error_raises_checkpoint_sync_error(self) -> None:
+        """TCP-level failure surfaces as CheckpointSyncError with the URL."""
+        transport = _MockTransport(
+            exc=httpx.RequestError(
+                "connection refused",
+                request=httpx.Request("GET", f"http://example.com{FINALIZED_BLOCK_ENDPOINT}"),
+            )
+        )
+
+        with (
+            patch(
+                "lean_spec.node.sync.checkpoint_sync.httpx.AsyncClient",
+                return_value=httpx.AsyncClient(transport=transport),
+            ),
+            pytest.raises(CheckpointSyncError) as exception_info,
+        ):
+            await fetch_finalized_block("http://example.com")
+        assert str(exception_info.value) == (
+            "Network error while connecting to "
+            "http://example.com/lean/v0/blocks/finalized: connection refused"
+        )
+
+    @pytest.mark.parametrize(
+        ("status_code", "status_text"),
+        [
+            (404, "Not Found"),
+            (503, "Service Unavailable"),
+        ],
+    )
+    async def test_http_error_response_raises_checkpoint_sync_error(
+        self, status_code: int, status_text: str
+    ) -> None:
+        """
+        Non-success HTTP status surfaces as CheckpointSyncError with the code.
+
+        Covers missing endpoints (404) and sources without a signed-block
+        source (503), the two cases the anchor builder falls back on.
+        """
+        transport = _MockTransport(status=status_code, content=status_text.encode())
+
+        with (
+            patch(
+                "lean_spec.node.sync.checkpoint_sync.httpx.AsyncClient",
+                return_value=httpx.AsyncClient(transport=transport),
+            ),
+            pytest.raises(CheckpointSyncError) as exception_info,
+        ):
+            await fetch_finalized_block("http://example.com")
+        assert str(exception_info.value) == f"HTTP error {status_code}: {status_text}"
+
+    async def test_corrupt_ssz_raises_checkpoint_sync_error(self) -> None:
+        """Corrupt response body surfaces as CheckpointSyncError."""
+        transport = _MockTransport(content=b"\xff\xfe corrupt")
+
+        with (
+            patch(
+                "lean_spec.node.sync.checkpoint_sync.httpx.AsyncClient",
+                return_value=httpx.AsyncClient(transport=transport),
+            ),
+            pytest.raises(CheckpointSyncError) as exception_info,
+        ):
+            await fetch_finalized_block("http://example.com")
+        assert str(exception_info.value).startswith("Failed to fetch signed block: ")
+
+
 class TestCheckpointSyncClientServerIntegration:
     """Integration tests for checkpoint sync client fetching from server."""
 
@@ -229,6 +306,49 @@ class TestCheckpointSyncClientServerIntegration:
 
             is_valid = verify_checkpoint_state(state)
             assert is_valid is True
+
+        finally:
+            await server.aclose()
+
+    async def test_client_fetches_and_deserializes_block(self, base_store: Store) -> None:
+        """Client fetches the finalized block the server's signed-block source provides."""
+
+        def signed_block_for(root: Bytes32) -> SignedBlock | None:
+            block = base_store.blocks.get(root)
+            if block is None:
+                return None
+            return SignedBlock(
+                block=block,
+                proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+            )
+
+        config = ApiServerConfig(port=15075)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=signed_block_for,
+        )
+
+        await server.start()
+
+        try:
+            signed_block = await fetch_finalized_block("http://127.0.0.1:15075")
+
+            assert hash_tree_root(signed_block.block) == base_store.latest_finalized.root
+
+        finally:
+            await server.aclose()
+
+    async def test_block_fetch_raises_when_source_unconfigured(self, base_store: Store) -> None:
+        """A server without a signed-block source yields the 503 error path."""
+        config = ApiServerConfig(port=15076)
+        server = ApiServer(config=config, store_getter=lambda: base_store)
+
+        await server.start()
+
+        try:
+            with pytest.raises(CheckpointSyncError, match="HTTP error 503"):
+                await fetch_finalized_block("http://127.0.0.1:15076")
 
         finally:
             await server.aclose()

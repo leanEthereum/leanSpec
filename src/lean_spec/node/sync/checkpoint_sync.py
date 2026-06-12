@@ -24,7 +24,7 @@ from typing import Final
 import httpx
 
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, State
+from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, SignedBlock, State
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,13 @@ DEFAULT_TIMEOUT: Final = 60.0
 
 FINALIZED_STATE_ENDPOINT: Final = "/lean/v0/states/finalized"
 """API endpoint for fetching finalized state. Follows Beacon API conventions."""
+
+FINALIZED_BLOCK_ENDPOINT: Final = "/lean/v0/blocks/finalized"
+"""API endpoint for fetching the signed block matching the finalized state.
+
+Together with the state, this forms the anchor pair for store creation.
+Checkpoint sync requires the source to serve it.
+"""
 
 
 class CheckpointSyncError(Exception):
@@ -100,6 +107,56 @@ async def fetch_finalized_state(url: str, state_class: type[State]) -> State:
         ) from exception
     except Exception as exception:
         raise CheckpointSyncError(f"Failed to fetch state: {exception}") from exception
+
+
+async def fetch_finalized_block(url: str) -> SignedBlock:
+    """
+    Fetch the signed block matching the finalized state via checkpoint sync.
+
+    The returned block carries the real body, so its hash tree root equals
+    the finalized root the rest of the network agrees on.
+    The caller must verify the block's state root against the fetched state
+    before pairing them into a store.
+
+    Args:
+        url: Base URL of the node API (e.g., "http://localhost:5052").
+
+    Returns:
+        The finalized signed block.
+
+    Raises:
+        CheckpointSyncError: If the request fails or block bytes are invalid.
+    """
+    base_url = url.rstrip("/")
+    full_url = f"{base_url}{FINALIZED_BLOCK_ENDPOINT}"
+
+    logger.info("Fetching finalized signed block from %s", full_url)
+
+    headers = {"Accept": "application/octet-stream"}
+
+    try:
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.get(full_url, headers=headers)
+            response.raise_for_status()
+
+            ssz_data = response.content
+            logger.info("Downloaded %d bytes of SSZ signed block data", len(ssz_data))
+
+            signed_block = SignedBlock.decode_bytes(ssz_data)
+            logger.info("Deserialized signed block at slot %s", signed_block.block.slot)
+
+            return signed_block
+
+    except httpx.RequestError as exception:
+        raise CheckpointSyncError(
+            f"Network error while connecting to {exception.request.url}: {exception}"
+        ) from exception
+    except httpx.HTTPStatusError as exception:
+        raise CheckpointSyncError(
+            f"HTTP error {exception.response.status_code}: {exception.response.text[:200]}"
+        ) from exception
+    except Exception as exception:
+        raise CheckpointSyncError(f"Failed to fetch signed block: {exception}") from exception
 
 
 def verify_checkpoint_state(state: State) -> bool:
