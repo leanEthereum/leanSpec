@@ -102,7 +102,6 @@ def test_overlapping_proofs_same_target_recursively_merge_into_one(
     - one proof covers V1, V2, V3 targeting block_1.
     - the two proofs overlap on V1, V2.
     - both proofs carry identical attestation data.
-    - both proofs arrive by gossip.
     - both proofs wait unmerged in the known pool.
 
     When
@@ -113,11 +112,13 @@ def test_overlapping_proofs_same_target_recursively_merge_into_one(
     ----
     - block_2 holds 1 aggregated attestation.
     - that aggregation covers V0, V1, V2, V3.
-    - head is block_2 at slot 2.
+    - head is block_2.
+    - head is at slot 2.
 
     Timing
     ------
-    - the proofs are gossipped at slot 1, interval 3 (past the aggregate phase).
+    - the proofs are gossipped at slot 1, interval 3.
+    - interval 3 is past the aggregate phase.
     """
     fork_choice_test(
         steps=[
@@ -154,6 +155,7 @@ def test_overlapping_proofs_same_target_recursively_merge_into_one(
                 block=BlockSpec(slot=Slot(2), label="block_2"),
                 checks=StoreChecks(
                     head_slot=Slot(2),
+                    head_root_label="block_2",
                     block_attestation_count=1,
                     block_attestations=[
                         AggregatedAttestationCheck(
