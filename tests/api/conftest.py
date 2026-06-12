@@ -11,6 +11,9 @@ import pytest
 
 from consensus_testing import make_genesis_store
 from lean_spec.node.api import AggregatorController, ApiServer, ApiServerConfig
+from lean_spec.spec.forks import SignedBlock
+from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 
 # Default port for auto-started local server
 DEFAULT_PORT = 15099
@@ -67,11 +70,24 @@ class _ServerThread(threading.Thread):
         """Create the API server with a test store and aggregator controller."""
         store = make_genesis_store(num_validators=3, observer=True, genesis_time=int(time.time()))
 
+        def signed_block_for(root: Bytes32) -> SignedBlock | None:
+            # The store retains only unsigned blocks.
+            # Wrap the anchor block with an empty proof, like a node
+            # serving a genesis anchor that no proposer ever signed.
+            block = store.blocks.get(root)
+            if block is None:
+                return None
+            return SignedBlock(
+                block=block,
+                proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+            )
+
         controller = _make_conformance_controller(initial=False)
         config = ApiServerConfig(host="127.0.0.1", port=self.port)
         return ApiServer(
             config=config,
             store_getter=lambda: store,
+            signed_block_getter=signed_block_for,
             aggregator_controller=controller,
         )
 

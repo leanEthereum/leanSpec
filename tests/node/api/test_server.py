@@ -12,12 +12,17 @@ These tests cover leanSpec-specific implementation details:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import httpx
 
 from lean_spec.node.api import AggregatorController, ApiServer, ApiServerConfig
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import SignedBlock
 from lean_spec.spec.forks.lstar import Store
+from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 
 
 @dataclass(slots=True)
@@ -97,6 +102,102 @@ class TestFinalizedStateEndpoint:
                 response = await client.get("http://127.0.0.1:15054/lean/v0/states/finalized")
 
                 assert response.status_code == 503
+
+        finally:
+            await server.aclose()
+
+
+class TestFinalizedBlockEndpoint:
+    """Tests for the /lean/v0/blocks/finalized endpoint."""
+
+    @staticmethod
+    def _signed_block_getter_for(store: Store) -> Callable[[Bytes32], SignedBlock | None]:
+        """Build a signed-block lookup wrapping the store's unsigned blocks."""
+
+        def signed_block_for(root: Bytes32) -> SignedBlock | None:
+            block = store.blocks.get(root)
+            if block is None:
+                return None
+            return SignedBlock(
+                block=block,
+                proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+            )
+
+        return signed_block_for
+
+    async def test_returns_503_when_store_not_initialized(self) -> None:
+        """Endpoint returns 503 Service Unavailable when store is not set."""
+        config = ApiServerConfig(port=15071)
+        server = ApiServer(config=config)
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:15071/lean/v0/blocks/finalized")
+
+                assert response.status_code == 503
+
+        finally:
+            await server.aclose()
+
+    async def test_returns_503_without_signed_block_source(self, base_store: Store) -> None:
+        """Endpoint returns 503 when no signed-block source is configured."""
+        config = ApiServerConfig(port=15072)
+        server = ApiServer(config=config, store_getter=lambda: base_store)
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:15072/lean/v0/blocks/finalized")
+
+                assert response.status_code == 503
+
+        finally:
+            await server.aclose()
+
+    async def test_returns_404_when_block_unavailable(self, base_store: Store) -> None:
+        """Endpoint returns 404 when the source has no block for the finalized root."""
+        config = ApiServerConfig(port=15073)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=lambda root: None,
+        )
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:15073/lean/v0/blocks/finalized")
+
+                assert response.status_code == 404
+
+        finally:
+            await server.aclose()
+
+    async def test_returns_finalized_anchor_block(self, base_store: Store) -> None:
+        """Endpoint serves the signed block matching the finalized checkpoint root."""
+        config = ApiServerConfig(port=15074)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=self._signed_block_getter_for(base_store),
+        )
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:15074/lean/v0/blocks/finalized")
+
+                assert response.status_code == 200
+                assert "application/octet-stream" in response.headers["content-type"]
+
+                signed_block = SignedBlock.decode_bytes(response.content)
+
+                assert hash_tree_root(signed_block.block) == base_store.latest_finalized.root
 
         finally:
             await server.aclose()

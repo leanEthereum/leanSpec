@@ -16,7 +16,8 @@ from aiohttp import web
 
 from lean_spec.node.api.aggregator_controller import AggregatorController
 from lean_spec.node.api.routes import ADMIN_ROUTES, ROUTES
-from lean_spec.spec.forks import LstarSpec, Store
+from lean_spec.spec.forks import LstarSpec, SignedBlock, Store
+from lean_spec.spec.ssz import Bytes32
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,16 @@ class ApiServer:
     store_getter: Callable[[], Store | None] | None = None
     """Callable that returns the current Store instance."""
 
+    signed_block_getter: Callable[[Bytes32], SignedBlock | None] | None = None
+    """
+    Optional callable returning the signed block for a block root.
+
+    The fork-choice store retains only unsigned blocks, so serving the
+    checkpoint-sync anchor block needs a separate signed-block source.
+    The embedding node injects one here.
+    When absent, the finalized block endpoint returns 503.
+    """
+
     aggregator_controller: AggregatorController | None = None
     """
     Optional controller for toggling the aggregator role at runtime.
@@ -95,6 +106,10 @@ class ApiServer:
 
         # Store the store_getter in app for handlers that need store access
         app["store_getter"] = self.store_getter
+
+        # Expose the signed-block lookup for endpoints serving signed blocks.
+        # Absence is fine; the finalized block endpoint returns 503 when unset.
+        app["signed_block_getter"] = self.signed_block_getter
 
         # Expose the fork spec for handlers that drive consensus computations.
         app["spec"] = self.spec

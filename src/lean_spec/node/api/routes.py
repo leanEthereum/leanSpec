@@ -8,6 +8,7 @@ from aiohttp import web
 
 from lean_spec.node.api.endpoints import (
     aggregator,
+    blocks,
     checkpoints,
     fork_choice,
     health,
@@ -21,6 +22,7 @@ Handler = Callable[[web.Request], Awaitable[web.Response]]
 ROUTES: dict[str, Handler] = {
     "/lean/v0/health": health.handle,
     "/lean/v0/states/finalized": states.handle_finalized,
+    "/lean/v0/blocks/finalized": blocks.handle_finalized,
     "/lean/v0/checkpoints/justified": checkpoints.handle_justified,
     "/lean/v0/fork_choice": fork_choice.handle,
     "/metrics": metrics.handle,
