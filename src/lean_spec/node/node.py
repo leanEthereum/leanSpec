@@ -211,9 +211,6 @@ class Node:
                 block_class=config.fork.block_class,
             )
 
-        #
-        # If database contains valid state, resume from there.
-        # Otherwise, fall through to genesis initialization.
         validator_index = (
             config.validator_registry.primary_index() if config.validator_registry else None
         )
@@ -225,6 +222,9 @@ class Node:
             f"Only LstarSpec is supported at the composition root, got {type(config.fork).__name__}"
         )
         fork = config.fork
+
+        # If the database contains valid state, resume from there.
+        # Otherwise, fall through to genesis initialization.
         store = cls._try_load_store_from_database(
             database, validator_index, config.genesis_time, config.time_fn, fork
         )
@@ -333,21 +333,21 @@ class Node:
         # Wire callbacks to publish produced blocks/attestations to the network.
         validator_service: ValidatorService | None = None
         if config.validator_registry is not None:
-            # These wrappers serve a dual purpose:
+            # These callbacks serve a dual purpose:
             #
             # 1. Publish to the network so peers receive the block/attestation.
             # 2. Process locally so the node's own store reflects what it produced.
             #
             # Without local processing, the node would not see its own produced
             # blocks/attestations in forkchoice until they arrived back via gossip.
-            async def publish_attestation_wrapper(attestation: SignedAttestation) -> None:
+            async def publish_and_process_attestation(attestation: SignedAttestation) -> None:
                 subnet_id = attestation.validator_index.compute_subnet_id(
                     ATTESTATION_COMMITTEE_COUNT
                 )
                 await network_service.publish_attestation(attestation, subnet_id)
                 await sync_service.on_gossip_attestation(attestation)
 
-            async def publish_block_wrapper(block: SignedBlock) -> None:
+            async def publish_and_process_block(block: SignedBlock) -> None:
                 await network_service.publish_block(block)
                 await sync_service.on_gossip_block(block, peer_id=None)
 
@@ -356,8 +356,8 @@ class Node:
                 clock=clock,
                 registry=config.validator_registry,
                 spec=fork,
-                on_block=publish_block_wrapper,
-                on_attestation=publish_attestation_wrapper,
+                on_block=publish_and_process_block,
+                on_attestation=publish_and_process_attestation,
             )
 
         return cls(
@@ -537,18 +537,18 @@ class Node:
                 len(self.validator_service.registry) if self.validator_service is not None else 0
             )
             metrics.lean_validators_count.set(count)
-            j = store.latest_justified
-            f = store.latest_finalized
-            j_root = j.root.hex()
-            f_root = f.root.hex()
+            justified_checkpoint = store.latest_justified
+            finalized_checkpoint = store.latest_finalized
+            justified_root = justified_checkpoint.root.hex()
+            finalized_root = finalized_checkpoint.root.hex()
             logger.info("=" * 64)
             logger.info(
                 "Peers=%s | Justified slot=%s root=%s | Finalized slot=%s root=%s",
                 peers_connected,
-                j.slot,
-                j_root,
-                f.slot,
-                f_root,
+                justified_checkpoint.slot,
+                justified_root,
+                finalized_checkpoint.slot,
+                finalized_root,
             )
             logger.info("=" * 64)
 
@@ -578,8 +578,3 @@ class Node:
         Signals the node to stop all services and exit.
         """
         self._shutdown.set()
-
-    @property
-    def is_running(self) -> bool:
-        """Check if node is currently running."""
-        return not self._shutdown.is_set()

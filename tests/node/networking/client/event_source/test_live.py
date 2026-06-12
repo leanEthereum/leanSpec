@@ -34,10 +34,8 @@ def _block_topic(digest: str = FORK_DIGEST) -> str:
 
 
 def _make_mock_connection_manager() -> MagicMock:
-    """Provide a mock QUIC connection manager with a stubbed identity key."""
-    mgr = MagicMock(spec=QuicConnectionManager)
-    mgr._identity_key = MagicMock()
-    return mgr
+    """Provide a mock QUIC connection manager."""
+    return MagicMock(spec=QuicConnectionManager)
 
 
 def _make_mock_reqresp_client() -> MagicMock:

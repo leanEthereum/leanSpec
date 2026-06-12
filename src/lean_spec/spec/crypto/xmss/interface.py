@@ -315,6 +315,12 @@ class GeneralizedXmssScheme(StrictBaseModel):
         if codeword is None:
             return False
 
+        # The released chain count is recovered from the wire with only an upper bound.
+        # An attacker can send fewer than one hash per chain.
+        # Reject the malformed length here so the per-chain loop never indexes out of range.
+        if len(signature.hashes) != config.DIMENSION:
+            return False
+
         # Phase 3: finish each chain from the released hash to its endpoint.
         chain_ends: list[HashDigestVector] = []
         for chain_index, digit in enumerate(codeword):

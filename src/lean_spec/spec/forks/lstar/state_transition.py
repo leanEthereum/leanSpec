@@ -456,6 +456,9 @@ class StateTransitionMixin(LstarSpecBase):
             # A vote from a nonexistent validator has no flag to set,
             # so the whole block is invalid.
             # Trailing unset bits beyond the registry are harmless padding.
+            #
+            # Signature verification normally rejects such a bit first.
+            # This guards the unsigned path, which has no signature stage.
             for validator_index in voting_validator_indices:
                 if not validator_index.is_within_registry(Uint64(len(state.validators))):
                     raise SpecRejectionError(

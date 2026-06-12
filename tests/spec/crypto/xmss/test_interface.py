@@ -9,6 +9,7 @@ from lean_spec.spec.crypto.xmss.interface import (
     GeneralizedXmssScheme,
     _expand_activation_time,
 )
+from lean_spec.spec.crypto.xmss.types import HashDigestList
 from lean_spec.spec.forks import Slot
 from lean_spec.spec.ssz import Bytes32, Uint64
 
@@ -336,4 +337,23 @@ class TestVerifySecurityBounds:
 
         # Must return False, not raise.
         is_valid = scheme.verify(public_key, huge_epoch, message, signature)
+        assert is_valid is False
+
+    def test_rejects_signature_with_too_few_hashes(self) -> None:
+        """verify returns False when the released chain count is below DIMENSION."""
+        scheme = TEST_SIGNATURE_SCHEME
+        key_pair = scheme.key_gen(Slot(0), Uint64(int(scheme.config.LIFETIME)))
+        public_key, secret_key = key_pair.public_key, key_pair.secret_key
+
+        valid_epoch = Slot(4)
+        message = Bytes32(b"\x42" * 32)
+        signature = scheme.sign(secret_key, valid_epoch, message)
+
+        # The wire only bounds the count from above, so an attacker can drop chains.
+        # One short hash list would make the per-chain loop index out of range.
+        truncated_hashes = HashDigestList(data=list(signature.hashes)[:-1])
+        truncated_signature = signature.model_copy(update={"hashes": truncated_hashes})
+
+        # Must return False, not raise IndexError.
+        is_valid = scheme.verify(public_key, valid_epoch, message, truncated_signature)
         assert is_valid is False

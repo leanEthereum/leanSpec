@@ -161,21 +161,15 @@ class AggregatedAttestationSpec(AttestationSpec):
 
     aggregation_bits: AggregationBits | None = None
     """
-    Raw aggregation bits placed into the block body verbatim.
+    Raw aggregation bits for the block body, overriding index derivation.
 
-    When None (default), the bits are derived from the validator indices,
-    producing the tightest bitfield that covers the highest set index.
-    Set this to author bit patterns the derivation cannot express:
-    a zero-length bitfield, all-false bits, or trailing padding past the
-    validator registry.
-
-    Only honored by the state transition format's forced-attestation
-    path, which bypasses signing. Signed paths derive their bits from
-    the validator indices so proofs match the claimed participants.
+    - When unset, bits are derived from the validator indices.
+    - When set, the bits are used verbatim, even when zero-length or padded.
+    - Only the unsigned forced-attestation path honors the override.
     """
 
     def resolve_aggregation_bits(self) -> AggregationBits:
-        """Return the explicit bits override, or bits derived from the validator indices."""
+        """Return the bit override when present, else bits derived from the validator indices."""
         if self.aggregation_bits is not None:
             return self.aggregation_bits
         return AggregationBits.from_indices(self.validator_indices)

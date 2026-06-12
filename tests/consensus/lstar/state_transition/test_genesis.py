@@ -198,6 +198,47 @@ def test_genesis_custom_validator_set(
     )
 
 
+def test_genesis_registry_holds_exact_validator_entries(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Genesis carries the exact validator registry it was seeded with.
+
+    Given
+    -----
+    - 3 validators with zeroed public keys.
+    - V0, V1, V2 carry indices 0, 1, 2 in registry order.
+
+    When
+    ----
+    - genesis is generated and no blocks are processed.
+
+    Then
+    ----
+    - the registry holds those three entries in that order.
+    """
+    zero_public_key = Bytes52(b"\x00" * 52)
+    seeded_validators = Validators(
+        data=[
+            Validator(
+                attestation_public_key=zero_public_key,
+                proposal_public_key=zero_public_key,
+                index=ValidatorIndex(validator_position),
+            )
+            for validator_position in range(3)
+        ]
+    )
+
+    state_transition_test(
+        pre=LstarSpec().generate_genesis(
+            genesis_time=Uint64(0),
+            validators=seeded_validators,
+        ),
+        blocks=[],
+        post=StateExpectation(validators=seeded_validators),
+    )
+
+
 def test_genesis_maximum_validators_with_forced_threshold_attestation(
     state_transition_test: StateTransitionTestFiller,
 ) -> None:

@@ -99,8 +99,11 @@ class ChainService:
         store = self.sync_service.store
         all_new_aggregates: list[SignedAggregatedAttestation] = []
 
-        # The target comes from wall clock, so it never moves time backward.
-        assert target_interval >= store.time
+        # The target comes from the wall clock, which can step backward.
+        # NTP slew, a leap second, or a VM migration can move it before the store time.
+        # A backward target ticks nothing, so return the empty result without ticking.
+        if target_interval <= store.time:
+            return []
 
         # Skip stale intervals when falling behind.
         # Jump to the last full slot boundary before the target.

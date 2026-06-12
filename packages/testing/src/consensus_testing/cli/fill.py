@@ -51,7 +51,7 @@ from consensus_testing.keys_cli import PINNED_KEY_SET_DIGESTS, download_keys
 @click.option(
     "--check-determinism/--no-check-determinism",
     default=True,
-    help="After filling, regenerate the order-sensitive vectors under two hash "
+    help="After filling, regenerate the full fixture tree under two hash "
     "seeds and fail if the emitted bytes differ (default: on)",
 )
 @click.pass_context
@@ -75,7 +75,7 @@ def fill(
         # Use specific XMSS scheme (overrides LEAN_ENV env var)
         fill --fork=Lstar --scheme=prod --clean -v
     """
-    # Why: the spec config reads this flag once, at import time.
+    # The spec config reads this flag once, at import time.
     # The current process froze the old value when the package imported.
     # Only the pytest subprocess below starts fresh and sees this export.
     os.environ["LEAN_ENV"] = scheme.lower()
@@ -91,7 +91,7 @@ def fill(
     if not (keys_directory.exists() and any(keys_directory.glob("*.json"))):
         click.echo(f"Test keys for '{scheme}' scheme not found. Downloading...")
         download_keys(scheme.lower())
-    # Why: stale or modified local keys would silently change every vector.
+    # Stale or modified local keys would silently change every vector.
     elif compute_key_set_digest(keys_directory) != PINNED_KEY_SET_DIGESTS[scheme.lower()]:
         click.echo(f"Local '{scheme}' keys do not match the pinned key set. Re-downloading...")
         download_keys(scheme.lower())
@@ -133,18 +133,21 @@ def fill(
         sys.exit(exit_code)
 
     if check_determinism:
-        verify_order_sensitive_determinism(config_path, project_root, fork)
+        verify_fixture_determinism(config_path, project_root, fork)
 
     sys.exit(0)
 
 
-def verify_order_sensitive_determinism(config_path: Path, project_root: Path, fork: str) -> None:
+def verify_fixture_determinism(config_path: Path, project_root: Path, fork: str) -> None:
     """
-    Regenerate the order-sensitive vectors under two hash seeds and diff them.
+    Regenerate the full fixture tree under two hash seeds and diff them.
 
     Set and dict iteration order is randomized per process by PYTHONHASHSEED.
     A vector whose bytes depend on that order is not reproducible across clients.
-    Two seeds producing byte-identical output proves the marked subset is order-free.
+    Two seeds producing byte-identical output proves every vector is order-free.
+
+    Determinism is checked for all vectors by default, not an opt-in subset.
+    A new vector that emits set- or dict-derived fields is covered automatically.
 
     The mocked prover is forced so proof bytes stay deterministic across both runs.
     A single process pins each seed cleanly, so distribution is disabled.
@@ -164,8 +167,6 @@ def verify_order_sensitive_determinism(config_path: Path, project_root: Path, fo
                 "--crypto=mocked",
                 "--clean",
                 str(consensus_tests),
-                "-m",
-                "order_sensitive",
                 "-n",
                 "0",
                 "-q",
@@ -176,13 +177,13 @@ def verify_order_sensitive_determinism(config_path: Path, project_root: Path, fo
                 env=child_environment,
             ).returncode
 
-            # Exit code 5 means no test matched the marker, so there is nothing to check.
+            # Exit code 5 means no test was collected, so there is nothing to check.
             if child_exit_code == 5:
-                click.echo("Determinism check skipped: no order-sensitive vectors selected.")
+                click.echo("Determinism check skipped: no vectors selected.")
                 return
             if child_exit_code != 0:
                 click.echo(
-                    "Determinism check could not generate the order-sensitive subset.",
+                    "Determinism check could not regenerate the fixture tree.",
                     err=True,
                 )
                 sys.exit(child_exit_code)
@@ -191,16 +192,14 @@ def verify_order_sensitive_determinism(config_path: Path, project_root: Path, fo
         differing_fixtures = diff_fixture_trees(emitted_under_seed[0], emitted_under_seed[1])
         if differing_fixtures:
             click.echo(
-                "Determinism check FAILED: order-sensitive vectors differ across hash seeds.",
+                "Determinism check FAILED: vectors differ across hash seeds.",
                 err=True,
             )
             for relative_path in differing_fixtures:
                 click.echo(f"  differs: {relative_path}", err=True)
             sys.exit(1)
 
-    click.echo(
-        "Determinism check passed: order-sensitive vectors are byte-identical across hash seeds."
-    )
+    click.echo("Determinism check passed: all vectors are byte-identical across hash seeds.")
 
 
 def diff_fixture_trees(first_tree: Path, second_tree: Path) -> list[str]:

@@ -57,22 +57,26 @@ class SlotClock:
         - Returns time until genesis if called before genesis.
         - Returns a full interval when exactly on a boundary, never zero.
         """
-        now = self.time_fn()
-        genesis = int(self.genesis_time)
-        elapsed = now - genesis
+        now_milliseconds = int(self.time_fn() * 1000)
+        genesis_milliseconds = int(self.genesis_time) * 1000
 
-        if elapsed < 0:
-            return -elapsed
+        # Before genesis, the next boundary is genesis itself.
+        if now_milliseconds < genesis_milliseconds:
+            return (genesis_milliseconds - now_milliseconds) / 1000.0
 
-        # Position within the current interval, in milliseconds.
-        elapsed_ms = int(elapsed * 1000)
-        time_into_interval_ms = elapsed_ms % int(MILLISECONDS_PER_INTERVAL)
+        # Position within the current interval, off the shared millisecond
+        # time-base that every other accessor on this clock uses.
+        milliseconds_into_interval = int(self._milliseconds_since_genesis()) % int(
+            MILLISECONDS_PER_INTERVAL
+        )
 
         # Remaining milliseconds until the boundary.
         #
         # A full interval when already exactly on a boundary.
-        ms_until_next = int(MILLISECONDS_PER_INTERVAL) - time_into_interval_ms
-        return ms_until_next / 1000.0
+        milliseconds_until_next_interval = (
+            int(MILLISECONDS_PER_INTERVAL) - milliseconds_into_interval
+        )
+        return milliseconds_until_next_interval / 1000.0
 
     async def sleep_until_next_interval(self) -> None:
         """Sleep until the next interval boundary."""

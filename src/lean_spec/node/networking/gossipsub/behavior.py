@@ -65,6 +65,7 @@ from itertools import count
 from typing import ClassVar, Final, cast
 
 from lean_spec.node.networking.config import (
+    MAX_PAYLOAD_SIZE,
     MESSAGE_DOMAIN_INVALID_SNAPPY,
     MESSAGE_DOMAIN_VALID_SNAPPY,
     PRUNE_BACKOFF,
@@ -150,6 +151,24 @@ warrant the overhead of IDONTWANT control messages.
 """
 
 
+GOSSIP_RETRANSMISSION: Final = 3
+"""Maximum times one message is re-served to a peer per heartbeat window.
+
+A peer can repeatedly ask for the same message via IWANT to amplify our
+outbound traffic.
+Past this count the message is skipped until the window resets.
+Matches the gossipsub-v1.1 default.
+"""
+
+
+MAX_IWANT_MESSAGE_IDS_PER_REQUEST: Final = 5000
+"""Maximum message IDs processed from a single IWANT request.
+
+One RPC frame can list an unbounded number of IDs.
+This caps the per-call work and reply size to bound amplification.
+"""
+
+
 @dataclass(slots=True)
 class PeerState:
     """State tracked for each connected peer."""
@@ -176,6 +195,13 @@ class PeerState:
     """Message IDs this peer does not want.
 
     Populated from incoming IDONTWANT control messages.
+    Cleared each heartbeat.
+    """
+
+    iwant_served_counts: dict[MessageId, int] = field(default_factory=dict)
+    """Times each message was served to this peer via IWANT in the current window.
+
+    Bounds gossip amplification from repeated IWANT requests.
     Cleared each heartbeat.
     """
 
@@ -576,6 +602,12 @@ class GossipsubBehavior:
         if not message.topic:
             return
 
+        # Drop messages on topics this node does not participate in.
+        # A peer could otherwise flood arbitrary topics to fill the
+        # message cache and the event queue without ever joining our mesh.
+        if message.topic not in self.mesh.subscriptions:
+            return
+
         topic_bytes = message.topic.encode("utf-8")
 
         # Decompress once for message ID computation and event delivery.
@@ -584,6 +616,12 @@ class GossipsubBehavior:
         # The decompressed data is also passed to the event consumer,
         # eliminating a second decompression there.
         decompressed, domain = _try_decompress(message.data)
+
+        # Snappy decompression is pure Python and otherwise unbounded.
+        # Reject payloads that expand past the wire limit before caching.
+        if len(decompressed) > MAX_PAYLOAD_SIZE:
+            return
+
         message_id = GossipsubMessage.compute_id(topic_bytes, decompressed, domain=domain)
 
         # Deduplicate: each message is processed at most once.
@@ -726,17 +764,35 @@ class GossipsubBehavior:
         logger.debug("Sent IWANT for %d messages from %s", len(wanted), peer_id)
 
     async def _handle_iwant(self, peer_id: PeerId, iwant: ControlIWant) -> None:
-        """Handle an IWANT request from a peer."""
+        """
+        Handle an IWANT request from a peer.
+
+        Per-peer retransmission counts and a per-call ID cap bound the
+        amplification an attacker can extract from a single oversized request.
+        """
+        state = self._peers.get(peer_id)
+        if state is None:
+            return
+
         messages = []
 
-        for message_id in iwant.message_ids:
+        # Bound the per-call work and reply size against an oversized request.
+        for message_id in iwant.message_ids[:MAX_IWANT_MESSAGE_IDS_PER_REQUEST]:
             if len(message_id) != 20:
                 continue
             message_id_typed = MessageId(message_id)
+
+            # Skip a message already served the maximum times this window.
+            if state.iwant_served_counts.get(message_id_typed, 0) >= GOSSIP_RETRANSMISSION:
+                continue
+
             cached = self.message_cache.get(message_id_typed)
             if cached:
                 topic_id = TopicId(cached.topic.decode("utf-8"))
                 messages.append(Message(topic=topic_id, data=cached.raw_data))
+                state.iwant_served_counts[message_id_typed] = (
+                    state.iwant_served_counts.get(message_id_typed, 0) + 1
+                )
 
         if messages:
             rpc = RPC(publish=messages)
@@ -808,8 +864,11 @@ class GossipsubBehavior:
 
         # IDONTWANT is only valid within a single heartbeat window;
         # stale entries would suppress legitimate new forwards.
+        # IWANT retransmission budgets reset on the same window so a fresh
+        # heartbeat allows legitimate re-requests again.
         for state in self._peers.values():
             state.dont_want_ids.clear()
+            state.iwant_served_counts.clear()
 
     async def _maintain_mesh(self, topic: TopicId, now: float) -> None:
         """Maintain mesh size for a topic."""

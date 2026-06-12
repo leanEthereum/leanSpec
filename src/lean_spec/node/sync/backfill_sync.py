@@ -45,7 +45,7 @@ from typing import Protocol
 from lean_spec.node.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.sync.block_cache import BlockCache
-from lean_spec.node.sync.config import MAX_BACKFILL_DEPTH, MAX_BLOCKS_PER_REQUEST
+from lean_spec.node.sync.config import MAX_BACKFILL_DEPTH
 from lean_spec.node.sync.peer_manager import PeerManager
 from lean_spec.spec.forks import SignedBlock, Slot
 from lean_spec.spec.ssz import Bytes32, Uint64
@@ -220,9 +220,13 @@ class BackfillSync:
         self._pending.update(roots_to_fetch)
 
         try:
-            # Fetch in batches to respect request limits.
-            for batch_start in range(0, len(roots_to_fetch), MAX_BLOCKS_PER_REQUEST):
-                batch = roots_to_fetch[batch_start : batch_start + MAX_BLOCKS_PER_REQUEST]
+            # Split into per-message batches bounded by the wire request limit.
+            #
+            # A by-root request carries at most MAX_REQUEST_BLOCKS roots.
+            # That is the same ceiling the responder enforces.
+            # A wider set becomes several round-trips here.
+            for batch_start in range(0, len(roots_to_fetch), MAX_REQUEST_BLOCKS):
+                batch = roots_to_fetch[batch_start : batch_start + MAX_REQUEST_BLOCKS]
                 await self._fetch_batch(batch, depth)
         finally:
             # Always clear pending status, even on error.
@@ -280,6 +284,51 @@ class BackfillSync:
             await self._fetch_range(current_slot, Uint64(batch_count), depth)
             current_slot = current_slot + Slot(batch_count)
             remaining -= batch_count
+
+    async def fill_gap_above_head(
+        self,
+        target_slot: Slot,
+        head_slot: Slot,
+        depth: int = 0,
+    ) -> bool:
+        """
+        Range-fetch the contiguous gap between the head and a target slot.
+
+        When a target block sits several slots above the current head, fetching
+        the gap as one contiguous range is cheaper than recursing parent-by-parent.
+
+        The floor is the head slot, not the finalized slot.
+        Slots above finalized but at or below head are already in the Store.
+        Re-downloading them would be wasted work.
+
+        Args:
+            target_slot: Slot of the block whose parent chain is being filled.
+            head_slot: Highest known canonical slot.
+            depth: Current backfill depth.
+
+        Returns:
+            True if a range fetch was issued, False if the gap was empty.
+        """
+        if target_slot <= head_slot:
+            return False
+
+        gap_floor = head_slot + Slot(1)
+        gap_size = int(target_slot - gap_floor)
+        if gap_size <= 0:
+            return False
+
+        logger.debug(
+            "Backfill gap (%d slots) above head %s; range-fetching from %s.",
+            gap_size,
+            head_slot,
+            gap_floor,
+        )
+        await self.fill_range(
+            start_slot=gap_floor,
+            count=Uint64(gap_size),
+            depth=depth,
+        )
+        return True
 
     async def _fetch_range(
         self,
@@ -416,32 +465,12 @@ class BackfillSync:
         # When the earliest received block still has a missing parent far above
         # the highest slot we already know, fetching the gap as a contiguous
         # range is cheaper than recursing parent-by-parent.
-        #
-        # Floor the range at the head slot (highest known canonical slot), not
-        # at the finalized slot. Slots above finalized but at or below head are
-        # already in the Store and should not be re-downloaded.
         if self.store_view is not None and blocks:
             earliest_block = min(blocks, key=lambda b: b.block.slot)
-            head_slot = self.store_view.head_slot()
-            if earliest_block.block.slot > head_slot:
-                gap_floor = head_slot + Slot(1)
-                gap_size = int(earliest_block.block.slot - gap_floor)
-                if gap_size > 0:
-                    logger.debug(
-                        "Backfill gap (%d slots) at slot %s; range-fetching from %s.",
-                        gap_size,
-                        earliest_block.block.slot,
-                        gap_floor,
-                    )
-                    await self.fill_range(
-                        start_slot=gap_floor,
-                        count=Uint64(gap_size),
-                        depth=depth + 1,
-                    )
+            await self.fill_gap_above_head(
+                target_slot=earliest_block.block.slot,
+                head_slot=self.store_view.head_slot(),
+                depth=depth + 1,
+            )
 
         await self.fill_missing(new_orphan_parents, depth=depth + 1)
-
-    def reset(self) -> None:
-        """Clear all pending state."""
-        self._pending.clear()
-        self._max_range_slot = Slot(0)

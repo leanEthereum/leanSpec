@@ -15,15 +15,11 @@ from dataclasses import dataclass, field
 from aiohttp import web
 
 from lean_spec.node.api.aggregator_controller import AggregatorController
-from lean_spec.node.api.routes import ADMIN_ROUTES, ROUTES
+from lean_spec.node.api.routes import ROUTES
 from lean_spec.spec.forks import LstarSpec, Store
 
 logger = logging.getLogger(__name__)
 
-
-_routes = [web.get(path, handler) for path, handler in ROUTES.items()]
-_routes += [web.route(method, path, handler) for method, path, handler in ADMIN_ROUTES]
-"""aiohttp route definitions generated from ROUTES and ADMIN_ROUTES."""
 
 # The following classes are implementation details.
 # Other implementations may structure their code differently.
@@ -103,8 +99,9 @@ class ApiServer:
         # Absence is fine; endpoints return 503 when unset.
         app["aggregator_controller"] = self.aggregator_controller
 
-        # Add all routes
-        app.add_routes(_routes)
+        # Register every route from the unified table, keyed by its verb.
+        routes = [web.route(route.method, route.path, route.handler) for route in ROUTES]
+        app.add_routes(routes)
 
         self._runner = web.AppRunner(app)
         await self._runner.setup()
@@ -126,14 +123,10 @@ class ApiServer:
     def stop(self) -> None:
         """Request graceful shutdown (fire-and-forget). Prefer aclose() in async code."""
         if self._runner is not None:
-            asyncio.create_task(self._async_stop())
+            asyncio.create_task(self.aclose())
 
     async def aclose(self) -> None:
         """Gracefully stop the server. Await this in async code for clean shutdown."""
-        await self._async_stop()
-
-    async def _async_stop(self) -> None:
-        """Gracefully stop the server."""
         if self._runner:
             await self._runner.cleanup()
             self._runner = None

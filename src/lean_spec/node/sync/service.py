@@ -28,10 +28,12 @@ from lean_spec.spec.forks import (
     AttestationData,
     Block,
     LstarSpec,
+    RejectionReason,
     SignedAggregatedAttestation,
     SignedAttestation,
     SignedBlock,
     Slot,
+    SpecRejectionError,
     Store,
 )
 from lean_spec.spec.forks.lstar.containers import (
@@ -41,6 +43,26 @@ from lean_spec.spec.forks.lstar.containers import (
 from lean_spec.spec.ssz import Bytes32
 
 logger = logging.getLogger(__name__)
+
+
+class UnknownAttestationBlockError(Exception):
+    """
+    An attestation references a source, target, or head block the store has not seen.
+
+    A later block can still supply the missing block.
+    The sync service buffers the attestation and replays it after the next block.
+    This is the only attestation rejection worth retrying, so it carries its own type.
+    """
+
+
+BUFFERABLE_REJECTION_REASONS: frozenset[RejectionReason] = frozenset(
+    {
+        RejectionReason.UNKNOWN_SOURCE_BLOCK,
+        RejectionReason.UNKNOWN_TARGET_BLOCK,
+        RejectionReason.UNKNOWN_HEAD_BLOCK,
+    }
+)
+"""Rejections a later block can resolve, so the attestation is worth replaying."""
 
 
 @dataclass(slots=True)
@@ -399,13 +421,11 @@ class SyncService:
 
         # The store validates the signature and updates branch weights.
         #
-        # Failures are logged and the event loop continues.
+        # A missing block buffers for replay.
+        # Any permanent rejection is logged and dropped.
+        # A genuine bug raises some other exception and propagates uncaught.
         try:
-            self.store = self.spec.on_gossip_attestation(
-                self.store,
-                signed_attestation=attestation,
-                is_aggregator=is_aggregator_role,
-            )
+            self.store = self._integrate_gossip_attestation(attestation, is_aggregator_role)
             metrics.lean_attestations_valid_total.labels(source="gossip").inc()
             logger.info(
                 "Attestation from peer %s slot=%s validator=%s: validation and signature ok",
@@ -413,19 +433,26 @@ class SyncService:
                 slot,
                 validator_index,
             )
-        except (AssertionError, KeyError) as exception:
+        except UnknownAttestationBlockError as missing_block:
             metrics.lean_attestations_invalid_total.labels(source="gossip").inc()
             logger.warning(
-                "Attestation from peer %s slot=%s validator=%s: validation or signature failed: %s",
+                "Attestation from peer %s slot=%s validator=%s: %s",
                 peer_str,
                 slot,
                 validator_index,
-                exception,
+                missing_block,
             )
-            # Target block has not arrived yet; buffer for post-block replay.
-            #
             # Cap drops oldest on overflow: newer attestations are likelier to land soon.
             self._pending_attestations.append(attestation)
+        except SpecRejectionError as rejection:
+            metrics.lean_attestations_invalid_total.labels(source="gossip").inc()
+            logger.warning(
+                "Attestation from peer %s slot=%s validator=%s: rejected: %s",
+                peer_str,
+                slot,
+                validator_index,
+                rejection,
+            )
 
     async def on_gossip_aggregated_attestation(
         self,
@@ -449,25 +476,71 @@ class SyncService:
         # - verifies the aggregated signature,
         # - credits weight to every validator covered by the aggregate.
         #
-        # Failures are logged and the event loop continues.
+        # A missing block buffers for replay.
+        # Any permanent rejection is logged and dropped.
+        # A genuine bug raises some other exception and propagates uncaught.
         try:
-            self.store = self.spec.on_gossip_aggregated_attestation(self.store, signed_attestation)
+            self.store = self._integrate_gossip_aggregated_attestation(signed_attestation)
             logger.info(
                 "Aggregated attestation from peer %s slot=%s: validation and signature ok",
                 peer_str,
                 slot,
             )
-        except (AssertionError, KeyError) as exception:
+        except UnknownAttestationBlockError as missing_block:
             logger.warning(
-                "Aggregated attestation from peer %s slot=%s: validation or signature failed: %s",
+                "Aggregated attestation from peer %s slot=%s: %s",
                 peer_str,
                 slot,
-                exception,
+                missing_block,
             )
-            # Target block has not arrived yet; buffer for post-block replay.
-            #
             # Cap drops oldest on overflow: newer aggregates are likelier to land soon.
             self._pending_aggregated_attestations.append(signed_attestation)
+        except SpecRejectionError as rejection:
+            logger.warning(
+                "Aggregated attestation from peer %s slot=%s: rejected: %s",
+                peer_str,
+                slot,
+                rejection,
+            )
+
+    def _integrate_gossip_attestation(
+        self,
+        attestation: SignedAttestation,
+        is_aggregator_role: bool,
+    ) -> Store:
+        """
+        Process a single-validator attestation, flagging a missing block as retryable.
+
+        A rejection naming an unseen source, target, or head block becomes the retryable type.
+        Every other rejection propagates unchanged, and so does any genuine bug.
+        """
+        try:
+            return self.spec.on_gossip_attestation(
+                self.store,
+                signed_attestation=attestation,
+                is_aggregator=is_aggregator_role,
+            )
+        except SpecRejectionError as rejection:
+            if rejection.reason in BUFFERABLE_REJECTION_REASONS:
+                raise UnknownAttestationBlockError(str(rejection)) from rejection
+            raise
+
+    def _integrate_gossip_aggregated_attestation(
+        self,
+        signed_attestation: SignedAggregatedAttestation,
+    ) -> Store:
+        """
+        Process an aggregated attestation, flagging a missing block as retryable.
+
+        A rejection naming an unseen source, target, or head block becomes the retryable type.
+        Every other rejection propagates unchanged, and so does any genuine bug.
+        """
+        try:
+            return self.spec.on_gossip_aggregated_attestation(self.store, signed_attestation)
+        except SpecRejectionError as rejection:
+            if rejection.reason in BUFFERABLE_REJECTION_REASONS:
+                raise UnknownAttestationBlockError(str(rejection)) from rejection
+            raise
 
     def _replay_pending_attestations(self) -> None:
         """Retry buffered attestations after a block is processed."""
@@ -476,35 +549,35 @@ class SyncService:
 
         # Drain the queue into a local and iterate it.
         # Successful retries disappear into the store.
-        # Failed retries re-append to the now-empty field.
+        # Retries whose block is still missing re-append to the now-empty field.
         #
         # Example: queue is [A (target=T1), B (target=T2)]; a block carrying T1 just landed.
         #   - A succeeds: T1 is in the store, A is consumed.
         #   - B fails:    T2 still missing, B is re-appended.
         # Post-loop queue: [B].
+        #
+        # A retry that became permanently invalid is dropped, not re-buffered.
+        # A genuine bug raises some other exception and propagates uncaught.
         pending = self._pending_attestations
         self._pending_attestations = deque(maxlen=MAX_PENDING_ATTESTATIONS)
         for attestation in pending:
             try:
-                self.store = self.spec.on_gossip_attestation(
-                    self.store,
-                    signed_attestation=attestation,
-                    is_aggregator=is_aggregator_role,
-                )
-            except (AssertionError, KeyError):
-                # Block still missing; preserve for the next replay cycle.
+                self.store = self._integrate_gossip_attestation(attestation, is_aggregator_role)
+            except UnknownAttestationBlockError:
                 self._pending_attestations.append(attestation)
+            except SpecRejectionError:
+                pass
 
         # Same mechanism for aggregated attestations.
         pending_aggregate = self._pending_aggregated_attestations
         self._pending_aggregated_attestations = deque(maxlen=MAX_PENDING_ATTESTATIONS)
         for signed_attestation in pending_aggregate:
             try:
-                self.store = self.spec.on_gossip_aggregated_attestation(
-                    self.store, signed_attestation
-                )
-            except (AssertionError, KeyError):
+                self.store = self._integrate_gossip_aggregated_attestation(signed_attestation)
+            except UnknownAttestationBlockError:
                 self._pending_aggregated_attestations.append(signed_attestation)
+            except SpecRejectionError:
+                pass
 
     def _deconstruct_block_into_store(
         self,
@@ -615,6 +688,16 @@ class SyncService:
                 )
 
                 if local_proofs:
+                    # The local proofs arrive in set-iteration order.
+                    # That order is not stable across nodes.
+                    # Folding them stays order-invariant for consensus.
+                    #
+                    # The merged participant bitfield is positional and ascending.
+                    # It names the same validators regardless of child order.
+                    #
+                    # Folding may emit byte-distinct proofs across orderings.
+                    # Every ordering verifies against that same canonical key set.
+                    # No consensus rule compares these re-merged proofs by bytes.
                     combined = SingleMessageAggregate.aggregate(
                         children=[
                             (

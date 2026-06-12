@@ -84,7 +84,7 @@ class StoreSnapshot(StrictBaseModel):
     """
     Every block root the store retains, ascending.
 
-    Why: pruning behavior stays invisible without the full membership.
+    Pruning behavior stays invisible without the full membership.
     An over- or under-pruning client must fail here.
     """
 
@@ -93,9 +93,9 @@ class StoreSnapshot(StrictBaseModel):
     Fork-choice weight per block above the finalized slot, ascending by root.
 
     Zero-weight blocks are included.
-    Why: two clients can agree on the head while holding divergent
-    weights, then split on the next attestation. The weights drive
-    head selection and must match exactly.
+    Two clients can agree on the head while holding divergent weights.
+    They then split on the next attestation.
+    The weights drive head selection and must match exactly.
     """
 
     attestation_signatures: list[AttestationPoolEntry]

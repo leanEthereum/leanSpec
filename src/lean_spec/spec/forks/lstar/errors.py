@@ -28,6 +28,9 @@ class RejectionReason(StrEnum):
     PROPOSER_INDEX_OUT_OF_RANGE = "PROPOSER_INDEX_OUT_OF_RANGE"
     """The proposer index does not address any registered validator."""
 
+    EMPTY_VALIDATOR_REGISTRY = "EMPTY_VALIDATOR_REGISTRY"
+    """The registry holds no validators, so no proposer can be scheduled for any slot."""
+
     WRONG_PROPOSER = "WRONG_PROPOSER"
     """The block proposer is not the scheduled proposer for its slot."""
 

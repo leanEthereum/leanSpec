@@ -555,36 +555,27 @@ class SQLiteDatabase:
             total_pruned = 0
 
             # Build the exclusion set for parameterized queries.
-            keep_bytes = [bytes(r) for r in keep_roots]
-            placeholders = ",".join("?" for _ in keep_bytes)
+            keep_root_bytes = [bytes(root) for root in keep_roots]
+            placeholders = ",".join("?" for _ in keep_root_bytes)
 
-            # Prune blocks below the threshold, preserving kept roots.
-            if keep_bytes:
-                cursor.execute(
-                    f"DELETE FROM {BLOCKS_TABLE_NAME} "
-                    f"WHERE slot < ? AND root NOT IN ({placeholders})",
-                    [int(slot), *keep_bytes],
-                )
-            else:
-                cursor.execute(
-                    f"DELETE FROM {BLOCKS_TABLE_NAME} WHERE slot < ?",
-                    (int(slot),),
-                )
-            total_pruned += cursor.rowcount
+            def prune_table_below_slot(table_name: str) -> int:
+                # Delete rows below the threshold, preserving kept roots.
+                # An empty keep set omits the NOT IN clause to avoid invalid empty parentheses.
+                if keep_root_bytes:
+                    cursor.execute(
+                        f"DELETE FROM {table_name} WHERE slot < ? AND root NOT IN ({placeholders})",
+                        [int(slot), *keep_root_bytes],
+                    )
+                else:
+                    cursor.execute(
+                        f"DELETE FROM {table_name} WHERE slot < ?",
+                        (int(slot),),
+                    )
+                return cursor.rowcount
 
-            # Prune states below the threshold, preserving kept roots.
-            if keep_bytes:
-                cursor.execute(
-                    f"DELETE FROM {STATES_TABLE_NAME} "
-                    f"WHERE slot < ? AND root NOT IN ({placeholders})",
-                    [int(slot), *keep_bytes],
-                )
-            else:
-                cursor.execute(
-                    f"DELETE FROM {STATES_TABLE_NAME} WHERE slot < ?",
-                    (int(slot),),
-                )
-            total_pruned += cursor.rowcount
+            # Blocks and states share the same root and slot columns, so prune both identically.
+            total_pruned += prune_table_below_slot(BLOCKS_TABLE_NAME)
+            total_pruned += prune_table_below_slot(STATES_TABLE_NAME)
 
             # Prune slot index entries below the threshold.
             cursor.execute(

@@ -66,6 +66,7 @@ from typing import Final
 
 from lean_spec.node.networking.config import (
     MAX_ERROR_MESSAGE_SIZE,
+    MAX_PAYLOAD_SIZE,
     MAX_REQUEST_BLOCKS,
     MIN_SLOTS_FOR_BLOCK_REQUESTS,
 )
@@ -459,6 +460,16 @@ class ReqRespServer:
                 # Need more data for varint
                 continue
 
+        # Reject an oversized declared length before sizing any buffer.
+        #
+        # The declared length is attacker-controlled.
+        # A 10-byte varint can claim a value up to 2^70.
+        # Without this bound the worst-case expansion below grows astronomically.
+        # The size guard never trips, so the node buffers attacker bytes.
+        # This mirrors the guard in the non-streaming request decoder.
+        if declared_length > MAX_PAYLOAD_SIZE:
+            return b""
+
         # Guard against unbounded compressed data.
         # Snappy's worst-case expansion is ~(n + n/6 + 1024).
         max_compressed = declared_length + declared_length // 6 + 1024
@@ -481,11 +492,18 @@ class ReqRespServer:
 
             chunk = await stream.read()
             if not chunk:
-                # Stream closed, try one more decompress
+                # Stream closed, try one final decompress.
+                # The decompressed payload must still match the declared length.
+                # A short or failed decode means the request is incomplete.
+                # Return empty so the caller raises a clean INVALID_REQUEST,
+                # never the raw length-prefixed buffer as if it were SSZ.
                 try:
-                    return frame_decompress(bytes(compressed_data))
+                    decompressed = frame_decompress(bytes(compressed_data))
                 except SnappyDecompressionError:
-                    return bytes(buffer)
+                    return b""
+                if len(decompressed) == declared_length:
+                    return decompressed
+                return b""
             compressed_data.extend(chunk)
 
     async def _dispatch(

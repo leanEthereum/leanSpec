@@ -3,7 +3,11 @@
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from consensus_testing.genesis import build_anchor, generate_pre_state, make_genesis_block
+from consensus_testing.genesis import (
+    build_anchor,
+    generate_pre_state,
+    reconstruct_block_from_header,
+)
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from lean_spec.base import StrictBaseModel
 from lean_spec.spec.forks import Slot
@@ -50,7 +54,7 @@ def _build_store(num_validators: int, genesis_time: int, anchor_slot: int = 0) -
         state = generate_pre_state(
             fork=fork, genesis_time=Uint64(genesis_time), num_validators=num_validators
         )
-        block = make_genesis_block(state)
+        block = reconstruct_block_from_header(state)
         # No validator identity — fixture only reads store data, never signs.
         return fork.create_store(state, block, validator_index=None)
 

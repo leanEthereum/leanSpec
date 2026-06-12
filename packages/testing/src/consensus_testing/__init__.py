@@ -6,10 +6,10 @@ from consensus_testing import forks
 from consensus_testing.genesis import (
     build_anchor,
     generate_pre_state,
-    make_genesis_block,
     make_genesis_state,
     make_genesis_store,
     make_validators,
+    reconstruct_block_from_header,
 )
 from consensus_testing.mocks import (
     MockEventSource,
@@ -192,7 +192,7 @@ __all__ = [
     "build_anchor",
     "generate_pre_state",
     # Unit-test builders and value constructors
-    "make_genesis_block",
+    "reconstruct_block_from_header",
     "make_genesis_state",
     "make_genesis_store",
     "make_validators",

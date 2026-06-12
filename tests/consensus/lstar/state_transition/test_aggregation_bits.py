@@ -27,8 +27,8 @@ def test_aggregation_bit_beyond_validator_registry_rejects_block(
     - 4 validators (indices 0-3); the vote tally has one flag per validator.
     - the chain:
         genesis -> block_1(1) -> block(2)
-    - block(2) carries an attestation for block_1 whose aggregation bits
-      name V0 and V1 plus nonexistent validator 4.
+    - block(2) carries an attestation for block_1 naming V0, V1, and V4.
+    - index 4 is within the bitfield limit but one past the registry.
 
     When
     ----
@@ -37,9 +37,6 @@ def test_aggregation_bit_beyond_validator_registry_rejects_block(
     Then
     ----
     - the block is rejected with VALIDATOR_INDEX_OUT_OF_RANGE.
-    - a client that silently skips the attestation instead would accept a
-      block the rest of the network refuses: a consensus split on a single
-      crafted block.
     """
     state_transition_test(
         blocks=[
@@ -48,8 +45,6 @@ def test_aggregation_bit_beyond_validator_registry_rejects_block(
                 slot=Slot(2),
                 parent_label="block_1",
                 forced_attestations=[
-                    # Bits 0, 1, and 4 are set.
-                    # Bit 4 points one past the 4-validator registry.
                     AggregatedAttestationSpec(
                         validator_indices=[
                             ValidatorIndex(0),
@@ -89,9 +84,6 @@ def test_all_false_aggregation_bits_rejects_block(
     Then
     ----
     - the block is rejected with EMPTY_AGGREGATION_BITS.
-    - a client that processes the attestation as a no-op instead leaves an
-      all-false tally entry in its post-state, diverging from clients that
-      reject the block.
     """
     state_transition_test(
         blocks=[
@@ -128,6 +120,7 @@ def test_zero_length_aggregation_bits_rejects_block(
         genesis -> block_1(1) -> block(2)
     - block(2) carries an attestation for block_1 whose aggregation bits
       hold no bits at all.
+    - a zero-length bitfield is a distinct SSZ encoding from an all-false one.
 
     When
     ----
@@ -136,9 +129,6 @@ def test_zero_length_aggregation_bits_rejects_block(
     Then
     ----
     - the block is rejected with EMPTY_AGGREGATION_BITS.
-    - the zero-length bitfield is a distinct SSZ encoding from an all-false
-      bitfield of registry size; both name no voter and both must reject
-      the block identically across clients.
     """
     state_transition_test(
         blocks=[
@@ -173,8 +163,9 @@ def test_oversized_aggregation_bits_with_in_range_votes_processes_normally(
     - 4 validators; a slot needs 3 votes (2/3) to be justified.
     - the chain:
         genesis -> block_1(1) -> block(2)
-    - block(2) carries an attestation for block_1 whose bitfield is 6 bits
-      long (two bits past the registry) with only V0, V1, and V2 set.
+    - block(2) carries an attestation for block_1.
+    - the bitfield is 6 bits long with only V0, V1, V2 set.
+    - bits 4 and 5 are unset padding past the registry.
 
     When
     ----
@@ -182,12 +173,9 @@ def test_oversized_aggregation_bits_with_in_range_votes_processes_normally(
 
     Then
     ----
-    - the attestation is processed normally: every set bit addresses a real
-      validator, and the trailing unset padding is harmless.
-    - block_1's slot is justified and its pending tally is cleared.
-    - a client that skips the attestation because of the bitfield length
-      computes a different post-state for a valid block; the pinned
-      post-state root catches that divergence directly.
+    - block_1's slot is justified.
+    - the pending tally for block_1 is cleared.
+    - finalization stays at genesis.
     """
     state_transition_test(
         blocks=[
@@ -196,8 +184,6 @@ def test_oversized_aggregation_bits_with_in_range_votes_processes_normally(
                 slot=Slot(2),
                 parent_label="block_1",
                 forced_attestations=[
-                    # Bits 0-2 are set; bits 3-5 are unset.
-                    # Bits 4 and 5 pad past the 4-validator registry.
                     AggregatedAttestationSpec(
                         validator_indices=[],
                         aggregation_bits=AggregationBits(

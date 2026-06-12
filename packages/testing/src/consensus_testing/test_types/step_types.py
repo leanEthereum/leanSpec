@@ -58,7 +58,7 @@ class BaseForkChoiceStep(CamelModel):
         """
         Require a declared rejection on every step expected to fail.
 
-        Why: a vector saying only "reject this" lets a client reject
+        A vector saying only "reject this" lets a client reject
         for the wrong reason and still pass.
         """
         if not self.valid and self.expected_rejection is None:

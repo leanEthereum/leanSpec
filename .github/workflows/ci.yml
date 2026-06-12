@@ -45,6 +45,32 @@ jobs:
       - name: Run all quality checks
         run: just check
 
+  dead-code:
+    name: Dead code detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout leanSpec
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Detect dead code with vulture
+        run: just deadcode
+
   test:
     name: Tests - Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

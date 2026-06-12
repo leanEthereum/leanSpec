@@ -205,18 +205,6 @@ class BlockCache:
 
         return pending
 
-    def get(self, root: Bytes32) -> PendingBlock | None:
-        """
-        Get a cached block by root.
-
-        Args:
-            root: The block root to look up.
-
-        Returns:
-            The PendingBlock if found, None otherwise.
-        """
-        return self._blocks.get(root)
-
     def remove(self, root: Bytes32) -> PendingBlock | None:
         """
         Remove a block from the cache.
@@ -312,12 +300,6 @@ class BlockCache:
     def orphan_count(self) -> int:
         """Number of orphan blocks in the cache."""
         return len(self._orphans)
-
-    def clear(self) -> None:
-        """Remove all blocks from the cache."""
-        self._blocks.clear()
-        self._orphans.clear()
-        self._by_parent.clear()
 
     def _evict_oldest(self) -> None:
         """

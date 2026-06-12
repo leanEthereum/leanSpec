@@ -26,12 +26,19 @@ from lean_spec.node.sync.service import SyncService
 from lean_spec.node.sync.states import SyncState
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.containers import PublicKey
-from lean_spec.spec.forks import Checkpoint, Interval, Slot, ValidatorIndex
+from lean_spec.spec.forks import (
+    Checkpoint,
+    Interval,
+    RejectionReason,
+    Slot,
+    ValidatorIndex,
+)
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     MultiMessageAggregate,
     SignedAggregatedAttestation,
+    SignedAttestation,
     SignedBlock,
     SingleMessageAggregate,
 )
@@ -377,6 +384,46 @@ class TestAttestationGossipHandling:
         await sync_service.on_gossip_attestation(attestation)
 
         assert list(sync_service._pending_attestations) == [attestation]
+
+    async def test_attestation_dropped_when_permanently_rejected(
+        self,
+        sync_service: SyncService,
+    ) -> None:
+        """Attestation rejected for a non-block reason is dropped, not buffered."""
+        sync_service.state = SyncState.SYNCING
+
+        # A bad signature can never be fixed by a later block.
+        mock_store = cast(MockForkchoiceStore, sync_service.store)
+        mock_store.rejection_reason = RejectionReason.INVALID_SIGNATURE
+        mock_store.reject_attestation = lambda _attestation: True
+
+        target = Checkpoint(root=sync_service.store.head, slot=Slot(0))
+        attestation = make_signed_attestation(validator=ValidatorIndex(0), target=target)
+
+        await sync_service.on_gossip_attestation(attestation)
+
+        assert list(sync_service._pending_attestations) == []
+
+    async def test_attestation_genuine_error_propagates(
+        self,
+        sync_service: SyncService,
+    ) -> None:
+        """A non-rejection error from processing propagates instead of being buffered."""
+        sync_service.state = SyncState.SYNCING
+
+        def raise_indexing_bug(_attestation: SignedAttestation) -> bool:
+            raise RuntimeError("indexing bug")
+
+        mock_store = cast(MockForkchoiceStore, sync_service.store)
+        mock_store.reject_attestation = raise_indexing_bug
+
+        target = Checkpoint(root=sync_service.store.head, slot=Slot(0))
+        attestation = make_signed_attestation(validator=ValidatorIndex(0), target=target)
+
+        with pytest.raises(RuntimeError) as exception_info:
+            await sync_service.on_gossip_attestation(attestation)
+        assert str(exception_info.value) == "indexing bug"
+        assert list(sync_service._pending_attestations) == []
 
     async def test_buffered_attestation_replayed_after_block(
         self,
@@ -735,11 +782,12 @@ class TestAggregatedAttestationGossip:
         mock_store = cast(MockForkchoiceStore, sync_service.store)
         assert mock_store.received_aggregated_attestations == [signed]
 
-    async def test_aggregated_buffered_on_key_error(
+    async def test_aggregated_buffered_when_block_unknown(
         self,
         sync_service: SyncService,
         key_manager: XmssKeyManager,
     ) -> None:
+        """Aggregated attestation naming an unseen block is buffered for replay."""
         sync_service.state = SyncState.SYNCING
         signed = _signed_aggregated_attestation(key_manager)
 

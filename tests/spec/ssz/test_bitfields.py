@@ -376,6 +376,27 @@ class TestBitfieldSSZ:
             Bitvector8.decode_bytes(b"\x01\x02")
         assert str(exception_info.value) == "Bitvector8: expected 1 bytes, got 2"
 
+    def test_bitvector_decode_rejects_non_zero_padding_bits(self) -> None:
+        """Bitvector.decode_bytes rejects a final byte with set bits above the data bits."""
+
+        class Bitvector5(BaseBitvector):
+            LENGTH = 5
+
+        # Bits 5, 6, 7 are padding above the 5 data bits and must be zero.
+        # 0b11111111 sets them, so it is a non-canonical encoding of [1] * 5.
+        with pytest.raises(SSZValueError) as exception_info:
+            Bitvector5.decode_bytes(b"\xff")
+        assert str(exception_info.value) == "Bitvector5: non-zero padding bits in final byte 0xff"
+
+    def test_bitvector_decode_canonical_with_zero_padding_bits(self) -> None:
+        """Bitvector.decode_bytes accepts the canonical encoding with zero padding bits."""
+
+        class Bitvector5(BaseBitvector):
+            LENGTH = 5
+
+        # 0b00011111 holds 5 data bits all set with zero padding above them.
+        assert Bitvector5.decode_bytes(b"\x1f") == Bitvector5(data=[Boolean(True)] * 5)
+
     def test_bitvector_deserialize_invalid_scope(self) -> None:
         """Bitvector.deserialize rejects a scope mismatching the type's byte length."""
 
@@ -417,6 +438,31 @@ class TestBitfieldSSZ:
         with pytest.raises(SSZSerializationError) as exception_info:
             Bitlist8.decode_bytes(b"\x00")
         assert str(exception_info.value) == "Bitlist8: no delimiter bit found"
+
+    def test_bitlist_decode_rejects_non_canonical_trailing_zero_byte(self) -> None:
+        """Bitlist.decode_bytes rejects a trailing zero byte after the delimiter byte."""
+
+        class Bitlist8(BaseBitlist):
+            LIMIT = 8
+
+        # Byte 0x0d encodes bits [1, 0, 1] with the delimiter at bit 3.
+        # Appending a zero byte leaves the delimiter in byte 0, not the final byte.
+        with pytest.raises(SSZSerializationError) as exception_info:
+            Bitlist8.decode_bytes(b"\x0d\x00")
+        assert (
+            str(exception_info.value)
+            == "Bitlist8: non-canonical trailing zero bytes after delimiter"
+        )
+
+    def test_bitlist_decode_canonical_encoding_round_trips(self) -> None:
+        """Bitlist.decode_bytes accepts the canonical single-byte encoding of bits [1, 0, 1]."""
+
+        class Bitlist8(BaseBitlist):
+            LIMIT = 8
+
+        assert Bitlist8.decode_bytes(b"\x0d") == Bitlist8(
+            data=(Boolean(True), Boolean(False), Boolean(True))
+        )
 
     def test_bitlist_decode_exceeds_limit(self) -> None:
         """Bitlist.decode_bytes rejects encodings whose recovered bit count exceeds LIMIT."""

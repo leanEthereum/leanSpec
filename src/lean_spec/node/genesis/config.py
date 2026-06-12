@@ -22,7 +22,12 @@ import yaml
 from pydantic import Field, field_validator
 
 from lean_spec.base import StrictBaseModel
-from lean_spec.spec.forks import Validator, ValidatorIndex, Validators
+from lean_spec.spec.forks import (
+    VALIDATOR_REGISTRY_LIMIT,
+    Validator,
+    ValidatorIndex,
+    Validators,
+)
 from lean_spec.spec.ssz import Bytes52, Uint64
 
 
@@ -93,6 +98,26 @@ class GenesisConfig(StrictBaseModel):
 
     Security note: 2/3+ collusion controls the chain until new validators join.
     """
+
+    @field_validator("genesis_validators")
+    @classmethod
+    def _reject_oversized_validator_set(
+        cls, genesis_validators: list[GenesisValidatorEntry]
+    ) -> list[GenesisValidatorEntry]:
+        """
+        Bound the genesis validator set against the registry limit.
+
+        The state registry holds at most this many validators.
+        A genesis list larger than the limit can never fit on chain.
+        Each entry also triggers an XMSS public-key decode, so an unbounded
+        list lets a malicious config exhaust memory during load.
+        """
+        if len(genesis_validators) > int(VALIDATOR_REGISTRY_LIMIT):
+            raise ValueError(
+                f"genesis validator count {len(genesis_validators)} "
+                f"exceeds registry limit {int(VALIDATOR_REGISTRY_LIMIT)}"
+            )
+        return genesis_validators
 
     def to_validators(self) -> Validators:
         """

@@ -51,10 +51,10 @@ GENESIS_TIME = Uint64(1704067200)
 _DEFAULT_TEST_SLOT = Slot(10)
 
 
-def _make_populated_db(
+def _make_block_state_checkpoint(
     test_slot: Slot = _DEFAULT_TEST_SLOT,
-) -> tuple[SQLiteDatabase, Block, State, Checkpoint]:
-    """Build a real in-memory database populated with block/state/checkpoint data."""
+) -> tuple[Bytes32, Block, State, Checkpoint]:
+    """Build the head root, block, state, and checkpoint used to populate a database."""
     head_root = Bytes32(b"\x01" * 32)
     block = Block(
         slot=test_slot,
@@ -84,7 +84,14 @@ def _make_populated_db(
         ),
         justifications_validators=JustificationValidators(data=[]),
     )
+    return head_root, block, state, checkpoint
 
+
+def _make_populated_db(
+    test_slot: Slot = _DEFAULT_TEST_SLOT,
+) -> tuple[SQLiteDatabase, Block, State, Checkpoint]:
+    """Build a real in-memory database populated with block/state/checkpoint data."""
+    head_root, block, state, checkpoint = _make_block_state_checkpoint(test_slot)
     db = SQLiteDatabase(":memory:", State, Block)
     db.put_block(block, head_root)
     db.put_state(state, head_root)
@@ -92,23 +99,6 @@ def _make_populated_db(
     db.put_justified_checkpoint(checkpoint)
     db.put_finalized_checkpoint(checkpoint)
     return db, block, state, checkpoint
-
-
-def _make_mock_db_with_partial_data() -> MagicMock:
-    """
-    Build a mock database pre-populated with valid data for negative-path tests.
-
-    Returns a MagicMock so individual methods can be overridden to return None,
-    simulating partial DB corruption.
-    """
-    db, block, state, checkpoint = _make_populated_db()
-    mock_db = MagicMock()
-    mock_db.get_head_root.return_value = Bytes32(b"\x01" * 32)
-    mock_db.get_block.return_value = block
-    mock_db.get_state.return_value = state
-    mock_db.get_justified_checkpoint.return_value = checkpoint
-    mock_db.get_finalized_checkpoint.return_value = checkpoint
-    return mock_db
 
 
 @pytest.fixture
@@ -188,42 +178,47 @@ class TestDatabaseLoading:
 
     def test_returns_none_when_no_head_root(self) -> None:
         """Empty database returns None."""
-        mock_db = MagicMock()
-        mock_db.get_head_root.return_value = None
+        empty_db = SQLiteDatabase(":memory:", State, Block)
 
-        assert Node._try_load_store_from_database(mock_db, validator_index=None) is None
+        assert Node._try_load_store_from_database(empty_db, validator_index=None) is None
 
     def test_returns_none_when_block_missing(self) -> None:
-        """Missing block returns None."""
-        mock_db = MagicMock()
-        mock_db.get_head_root.return_value = Bytes32(b"\x01" * 32)
-        mock_db.get_block.return_value = None
-        mock_db.get_state.return_value = MagicMock()
+        """A head root pointing at no stored block returns None."""
+        head_root, _, _, _ = _make_block_state_checkpoint()
+        db = SQLiteDatabase(":memory:", State, Block)
+        db.put_head_root(head_root)
 
-        assert Node._try_load_store_from_database(mock_db, validator_index=None) is None
+        assert Node._try_load_store_from_database(db, validator_index=None) is None
 
     def test_returns_none_when_state_missing(self) -> None:
-        """Missing state returns None."""
-        mock_db = MagicMock()
-        mock_db.get_head_root.return_value = Bytes32(b"\x01" * 32)
-        mock_db.get_block.return_value = MagicMock()
-        mock_db.get_state.return_value = None
+        """A head root with a stored block but no stored state returns None."""
+        head_root, block, _, _ = _make_block_state_checkpoint()
+        db = SQLiteDatabase(":memory:", State, Block)
+        db.put_block(block, head_root)
+        db.put_head_root(head_root)
 
-        assert Node._try_load_store_from_database(mock_db, validator_index=None) is None
+        assert Node._try_load_store_from_database(db, validator_index=None) is None
 
     def test_returns_none_when_justified_missing(self) -> None:
-        """Missing justified checkpoint returns None."""
-        mock_db = _make_mock_db_with_partial_data()
-        mock_db.get_justified_checkpoint.return_value = None
+        """A populated head with no justified checkpoint returns None."""
+        head_root, block, state, _ = _make_block_state_checkpoint()
+        db = SQLiteDatabase(":memory:", State, Block)
+        db.put_block(block, head_root)
+        db.put_state(state, head_root)
+        db.put_head_root(head_root)
 
-        assert Node._try_load_store_from_database(mock_db, validator_index=None) is None
+        assert Node._try_load_store_from_database(db, validator_index=None) is None
 
     def test_returns_none_when_finalized_missing(self) -> None:
-        """Missing finalized checkpoint returns None."""
-        mock_db = _make_mock_db_with_partial_data()
-        mock_db.get_finalized_checkpoint.return_value = None
+        """A populated head with a justified but no finalized checkpoint returns None."""
+        head_root, block, state, checkpoint = _make_block_state_checkpoint()
+        db = SQLiteDatabase(":memory:", State, Block)
+        db.put_block(block, head_root)
+        db.put_state(state, head_root)
+        db.put_head_root(head_root)
+        db.put_justified_checkpoint(checkpoint)
 
-        assert Node._try_load_store_from_database(mock_db, validator_index=None) is None
+        assert Node._try_load_store_from_database(db, validator_index=None) is None
 
     def test_successful_load_uses_wall_clock_time(self) -> None:
         """Store time uses wall clock when it exceeds block-based time."""
@@ -307,14 +302,6 @@ class TestNodeShutdown:
         assert not node._shutdown.is_set()
         node.stop()
         assert node._shutdown.is_set()
-
-    def test_is_running_reflects_shutdown_state(self, node_config: NodeConfig) -> None:
-        """is_running property reflects shutdown event state."""
-        node = Node.from_genesis(node_config)
-
-        assert node.is_running is True
-        node.stop()
-        assert node.is_running is False
 
     async def test_wait_shutdown_stops_chain_service(self, node_config: NodeConfig) -> None:
         """Shutdown stops the chain service."""

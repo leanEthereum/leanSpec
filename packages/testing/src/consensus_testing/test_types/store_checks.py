@@ -378,9 +378,18 @@ class StoreChecks(SelectiveCheck):
                     payloads = store.latest_known_aggregated_payloads
                     label = "in latest_known"
 
-                extracted_attestations = LstarSpec().extract_attestations_from_aggregated_payloads(
-                    payloads
-                )
+                # Map each validator to its highest-slot vote across the raw pool.
+                #
+                # The checker inspects pool content before pruning, so no finality cutoff applies.
+                # On equal slots the first vote seen wins, matching the fork-choice rule.
+                extracted_attestations: dict[ValidatorIndex, AttestationData] = {}
+                for attestation_data, proofs in payloads.items():
+                    for proof in proofs:
+                        for participant_index in proof.participants.to_validator_indices():
+                            previous_vote = extracted_attestations.get(participant_index)
+                            if previous_vote is None or previous_vote.slot < attestation_data.slot:
+                                extracted_attestations[participant_index] = attestation_data
+
                 if attestation_check.validator not in extracted_attestations:
                     raise AssertionError(
                         f"Step {step_index}: validator {attestation_check.validator} not found "

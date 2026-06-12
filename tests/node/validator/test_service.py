@@ -381,10 +381,10 @@ class TestSignWithKey:
         assert stored.proposal_secret_key is advanced_proposal
         assert stored.attestation_secret_key is attestation_key
 
-    def test_returns_updated_entry_and_signature(
+    def test_returns_signature(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
-        """Return value is (updated ValidatorEntry, Signature) — both fields correct."""
+        """Return value is the signature produced by the scheme."""
         service, _, validator_entry, attestation_key, _ = self._setup(sync_service, key_manager)
         advanced = MagicMock(name="adv")
         mock_signature = MagicMock(name="ret_sig")
@@ -396,12 +396,11 @@ class TestSignWithKey:
             scheme.advance_preparation.return_value = advanced
             scheme.sign.return_value = mock_signature
 
-            returned_entry, returned_signature = service._sign_with_key(
+            returned_signature = service._sign_with_key(
                 validator_entry, Slot(2), MagicMock(), "attestation_secret_key"
             )
 
         assert returned_signature is mock_signature
-        assert returned_entry.attestation_secret_key is advanced
 
 
 class TestValidatorServiceBasic:

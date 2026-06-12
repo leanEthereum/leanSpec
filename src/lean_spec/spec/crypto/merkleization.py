@@ -6,7 +6,7 @@ import math
 from collections.abc import Sequence
 from functools import singledispatch
 from hashlib import sha256
-from itertools import accumulate, repeat
+from itertools import accumulate, batched, repeat
 from typing import Final
 
 from lean_spec.spec.crypto.koalabear import Fp
@@ -120,15 +120,12 @@ def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
     subtree_size = 1
     while subtree_size < width:
         next_level: list[Bytes32] = []
-        i = 0
-        while i < len(level):
-            left = level[i]
-            i += 1
-            if i < len(level):
-                right = level[i]
-                i += 1
-            else:
-                right = _zero_tree_root(subtree_size)
+        # Each pair holds the left and right child of one parent node.
+        # An odd tail yields a length-one tuple.
+        # Its missing right sibling is the all-zero subtree of the current size.
+        for child_pair in batched(level, 2):
+            left = child_pair[0]
+            right = child_pair[1] if len(child_pair) == 2 else _zero_tree_root(subtree_size)
             next_level.append(Bytes32(sha256(left + right).digest()))
         level = next_level
         subtree_size *= 2

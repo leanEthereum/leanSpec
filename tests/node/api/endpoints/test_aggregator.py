@@ -23,12 +23,23 @@ class TestAggregatorStatus:
         response = httpx.get(f"{server_url}/lean/v0/admin/aggregator")
         assert "application/json" in response.headers.get("content-type", "")
 
-    def test_response_has_is_aggregator_field(self, server_url: str) -> None:
-        """GET response contains the is_aggregator boolean field."""
+    def test_status_reports_disabled_after_disabling(self, server_url: str) -> None:
+        """GET reports is_aggregator False after a POST disables the role."""
+        httpx.post(
+            f"{server_url}/lean/v0/admin/aggregator",
+            json={"enabled": False},
+        )
         response = httpx.get(f"{server_url}/lean/v0/admin/aggregator")
-        response_body = response.json()
-        assert "is_aggregator" in response_body
-        assert isinstance(response_body["is_aggregator"], bool)
+        assert response.json() == {"is_aggregator": False}
+
+    def test_status_reports_enabled_after_enabling(self, server_url: str) -> None:
+        """GET reports is_aggregator True after a POST enables the role."""
+        httpx.post(
+            f"{server_url}/lean/v0/admin/aggregator",
+            json={"enabled": True},
+        )
+        response = httpx.get(f"{server_url}/lean/v0/admin/aggregator")
+        assert response.json() == {"is_aggregator": True}
 
 
 class TestAggregatorToggle:
@@ -50,25 +61,41 @@ class TestAggregatorToggle:
         )
         assert "application/json" in response.headers.get("content-type", "")
 
-    def test_toggle_response_structure(self, server_url: str) -> None:
-        """POST response contains is_aggregator and previous boolean fields."""
+    def test_toggle_enabling_from_disabled(self, server_url: str) -> None:
+        """POST enabling from a disabled state returns the True state and False previous."""
+        httpx.post(
+            f"{server_url}/lean/v0/admin/aggregator",
+            json={"enabled": False},
+        )
         response = httpx.post(
             f"{server_url}/lean/v0/admin/aggregator",
             json={"enabled": True},
         )
-        response_body = response.json()
-        assert "is_aggregator" in response_body
-        assert "previous" in response_body
-        assert isinstance(response_body["is_aggregator"], bool)
-        assert isinstance(response_body["previous"], bool)
+        assert response.json() == {"is_aggregator": True, "previous": False}
 
-    def test_toggle_reflects_requested_value(self, server_url: str) -> None:
-        """POST response reflects the requested enabled value."""
+    def test_toggle_disabling_from_enabled(self, server_url: str) -> None:
+        """POST disabling from an enabled state returns the False state and True previous."""
+        httpx.post(
+            f"{server_url}/lean/v0/admin/aggregator",
+            json={"enabled": True},
+        )
         response = httpx.post(
             f"{server_url}/lean/v0/admin/aggregator",
             json={"enabled": False},
         )
-        assert response.json()["is_aggregator"] is False
+        assert response.json() == {"is_aggregator": False, "previous": True}
+
+    def test_toggle_to_same_value_reports_unchanged_previous(self, server_url: str) -> None:
+        """POST enabling an already-enabled role reports the unchanged True previous."""
+        httpx.post(
+            f"{server_url}/lean/v0/admin/aggregator",
+            json={"enabled": True},
+        )
+        response = httpx.post(
+            f"{server_url}/lean/v0/admin/aggregator",
+            json={"enabled": True},
+        )
+        assert response.json() == {"is_aggregator": True, "previous": True}
 
     def test_get_reflects_toggle(self, server_url: str) -> None:
         """A follow-up GET reflects the state set by a preceding POST."""
@@ -77,7 +104,7 @@ class TestAggregatorToggle:
             json={"enabled": True},
         )
         response = httpx.get(f"{server_url}/lean/v0/admin/aggregator")
-        assert response.json()["is_aggregator"] is True
+        assert response.json() == {"is_aggregator": True}
 
 
 class TestAggregatorErrors:

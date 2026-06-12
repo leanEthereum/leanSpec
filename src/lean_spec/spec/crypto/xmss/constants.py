@@ -15,9 +15,6 @@ from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET
 class XmssConfig(StrictBaseModel):
     """A model holding the configuration constants for an XMSS preset."""
 
-    MESSAGE_LENGTH: int
-    """The length in bytes for all messages to be signed."""
-
     LOG_LIFETIME: int
     """The base-2 logarithm of the scheme's maximum lifetime."""
 
@@ -115,7 +112,6 @@ class XmssConfig(StrictBaseModel):
 
 
 PROD_CONFIG: Final = XmssConfig(
-    MESSAGE_LENGTH=32,
     LOG_LIFETIME=32,
     DIMENSION=46,
     BASE=8,
@@ -134,7 +130,6 @@ PROD_CONFIG: Final = XmssConfig(
 
 
 TEST_CONFIG: Final = XmssConfig(
-    MESSAGE_LENGTH=32,
     LOG_LIFETIME=8,
     DIMENSION=4,
     BASE=8,

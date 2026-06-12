@@ -86,9 +86,11 @@ test-consensus *args:
     uv run --group test pytest -n auto --maxprocesses=10 --durations=10 --dist=worksteal tests/node/networking "$@"
 
 # Canonical CI fixture run; contributors should use `uv run fill` directly.
+# FILL_WORKERS overrides the xdist worker count (defaults to one per core).
+# The prod scheme lowers it so real proofs are not starved of rayon threads.
 [group('tests'), private]
 fill-ci *args:
-    uv run --group test fill --fork=Lstar --clean -n auto --dist=worksteal "$@"
+    uv run --group test fill --fork=Lstar --clean -n "${FILL_WORKERS:-auto}" --dist=worksteal "$@"
 
 # Standalone determinism audit: regenerate vectors twice under different hash seeds and diff.
 # The fill command already gates the order_sensitive subset on every run.

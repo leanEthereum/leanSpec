@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from collections import defaultdict
 
+from consensus_testing.genesis import reconstruct_block_from_header
 from consensus_testing.keys import XmssKeyManager, create_dummy_signature
 from consensus_testing.test_types.attestation_specs import AggregatedAttestationSpec
 from lean_spec.base import CamelModel
@@ -344,13 +345,7 @@ class BlockSpec(CamelModel):
         proposer_index = self.resolve_proposer_index(len(state.validators))
 
         # Build a genesis block registry so attestation specs can resolve labels.
-        anchor_block = Block(
-            slot=state.latest_block_header.slot,
-            proposer_index=state.latest_block_header.proposer_index,
-            parent_root=state.latest_block_header.parent_root,
-            state_root=hash_tree_root(state),
-            body=BlockBody(attestations=AggregatedAttestations(data=[])),
-        )
+        anchor_block = reconstruct_block_from_header(state)
         block_registry: dict[str, Block] = {"genesis": anchor_block}
 
         # Resolve the parent root.

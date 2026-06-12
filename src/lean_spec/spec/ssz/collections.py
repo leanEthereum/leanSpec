@@ -267,6 +267,33 @@ class _SSZSequence[T: SSZType](SSZModel):
         """Return a mutable copy of the elements as a list."""
         return list(self.data)
 
+    @classmethod
+    def _shape_input(cls, v: Any) -> Sequence[Any]:
+        """
+        Normalize a validator input into a length-checkable sequence.
+
+        Accept the natural input shapes:
+
+        - list or tuple    pass through directly.
+        - other iterables  materialize into a list so the length check works.
+        - str or bytes     rejected — iterating yields characters or ints.
+
+        The subclass enforces its own element-count rule on the returned sequence.
+
+        Raises:
+            SSZTypeError: When the input is a string, bytes, or non-iterable.
+        """
+        if isinstance(v, (list, tuple)):
+            return v
+        if isinstance(v, (str, bytes, bytearray)):
+            raise SSZTypeError(
+                f"{cls.__name__}: Expected iterable of {cls.ELEMENT_TYPE.__name__}, "
+                f"got {type(v).__name__}"
+            )
+        if hasattr(v, "__iter__"):
+            return list(v)
+        raise SSZTypeError(f"{cls.__name__}: Expected iterable, got {type(v).__name__}")
+
 
 class SSZVector[T: SSZType](_SSZSequence[T]):
     """
@@ -320,22 +347,8 @@ class SSZVector[T: SSZType](_SSZSequence[T]):
         if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LENGTH"):
             raise SSZTypeError(f"{cls.__name__} must define ELEMENT_TYPE and LENGTH")
 
-        # Accept the natural input shapes:
-        #
-        #   - list or tuple    pass through directly.
-        #   - other iterables  materialize into a list so the length check works.
-        #   - str or bytes     rejected — iterating yields characters or ints.
-        if isinstance(v, (list, tuple)):
-            input_elements: Sequence[Any] = v
-        elif isinstance(v, (str, bytes, bytearray)):
-            raise SSZTypeError(
-                f"{cls.__name__}: Expected iterable of {cls.ELEMENT_TYPE.__name__}, "
-                f"got {type(v).__name__}"
-            )
-        elif hasattr(v, "__iter__"):
-            input_elements = list(v)
-        else:
-            raise SSZTypeError(f"{cls.__name__}: Expected iterable, got {type(v).__name__}")
+        # Reject strings and non-iterables, then materialize into a sequence.
+        input_elements = cls._shape_input(v)
 
         # Fixed-length type: the input must contain exactly LENGTH elements.
         if len(input_elements) != cls.LENGTH:
@@ -484,22 +497,8 @@ class SSZList[T: SSZType](_SSZSequence[T]):
         if not hasattr(cls, "ELEMENT_TYPE") or not hasattr(cls, "LIMIT"):
             raise SSZTypeError(f"{cls.__name__} must define ELEMENT_TYPE and LIMIT")
 
-        # Accept the natural input shapes:
-        #
-        #   - list or tuple    pass through directly.
-        #   - other iterables  materialize into a list so the length check works.
-        #   - str or bytes     rejected — iterating yields characters or ints.
-        if isinstance(v, (list, tuple)):
-            input_elements: Sequence[Any] = v
-        elif isinstance(v, (str, bytes, bytearray)):
-            raise SSZTypeError(
-                f"{cls.__name__}: Expected iterable of {cls.ELEMENT_TYPE.__name__}, "
-                f"got {type(v).__name__}"
-            )
-        elif hasattr(v, "__iter__"):
-            input_elements = list(v)
-        else:
-            raise SSZTypeError(f"{cls.__name__}: Expected iterable, got {type(v).__name__}")
+        # Reject strings and non-iterables, then materialize into a sequence.
+        input_elements = cls._shape_input(v)
 
         # Variable-length type: any count is fine, up to LIMIT.
         if len(input_elements) > cls.LIMIT:

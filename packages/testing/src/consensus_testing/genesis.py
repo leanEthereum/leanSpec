@@ -16,7 +16,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32, Bytes52, Uint64
+from lean_spec.spec.ssz import Bytes52, Uint64
 
 _DEFAULT_GENESIS_TIME = Uint64(0)
 
@@ -114,14 +114,7 @@ def build_anchor(
 
     # Reconstruct the genesis block from the state's latest header.
     # The genesis block is fully determined by the genesis state.
-    genesis_block = Block(
-        slot=state.latest_block_header.slot,
-        proposer_index=state.latest_block_header.proposer_index,
-        parent_root=state.latest_block_header.parent_root,
-        state_root=hash_tree_root(state),
-        body=BlockBody(attestations=AggregatedAttestations(data=[])),
-    )
-    current_block = genesis_block
+    current_block = reconstruct_block_from_header(state)
     parent_root = hash_tree_root(current_block)
 
     num_validators_u64 = Uint64(num_validators)
@@ -201,12 +194,20 @@ def make_genesis_state(num_validators: int = 3, genesis_time: int = 0) -> State:
     )
 
 
-def make_genesis_block(state: State) -> Block:
-    """Build the genesis block matching a genesis state."""
+def reconstruct_block_from_header(state: State) -> Block:
+    """
+    Rebuild the block matching a state's latest header.
+
+    The header pins the slot, proposer index, and parent root.
+    The state root is the hash of the state itself.
+    The body is the empty body of the genesis and empty-block convention.
+
+    For a genesis state this is the genesis block.
+    """
     return Block(
-        slot=Slot(0),
-        proposer_index=ValidatorIndex(0),
-        parent_root=Bytes32.zero(),
+        slot=state.latest_block_header.slot,
+        proposer_index=state.latest_block_header.proposer_index,
+        parent_root=state.latest_block_header.parent_root,
         state_root=hash_tree_root(state),
         body=BlockBody(attestations=AggregatedAttestations(data=[])),
     )
@@ -234,7 +235,7 @@ def make_genesis_store(
     )
     store = LstarSpec().create_store(
         state,
-        make_genesis_block(state),
+        reconstruct_block_from_header(state),
         validator_index=None if observer else validator_index,
     )
     return store if time is None else store.model_copy(update={"time": time})

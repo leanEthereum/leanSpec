@@ -175,14 +175,30 @@ class TestCatchUp:
         await service._tick_to(Interval(3))
         assert spec.ticks == [(1, False, True), (2, False, True), (3, False, True)]
 
-    async def test_rejects_a_target_before_the_current_time(self) -> None:
-        """Catch-up refuses a target earlier than where the store already sits."""
-        service = make_service(ProbeSpec())
+    async def test_clamps_a_backward_wall_clock_target_to_a_no_op(self) -> None:
+        """A target before the store time ticks nothing and yields no aggregates."""
+        spec = ProbeSpec()
+        service = make_service(spec)
+        # A backward wall clock can target an interval the store already passed.
         service.sync_service.store = service.sync_service.store.model_copy(
             update={"time": Interval(5)}
         )
-        with pytest.raises(AssertionError):
-            await service._tick_to(Interval(3))
+        produced_aggregates = await service._tick_to(Interval(3))
+        assert produced_aggregates == []
+        assert spec.ticks == []
+        assert int(service.sync_service.store.time) == 5
+
+    async def test_clamps_a_target_equal_to_the_current_time_to_a_no_op(self) -> None:
+        """A target equal to the store time ticks nothing and yields no aggregates."""
+        spec = ProbeSpec()
+        service = make_service(spec)
+        service.sync_service.store = service.sync_service.store.model_copy(
+            update={"time": Interval(5)}
+        )
+        produced_aggregates = await service._tick_to(Interval(5))
+        assert produced_aggregates == []
+        assert spec.ticks == []
+        assert int(service.sync_service.store.time) == 5
 
     async def test_continues_on_a_store_swapped_in_during_the_yield(self) -> None:
         """A store replaced mid-catch-up is picked up on the next tick, not the stale one."""

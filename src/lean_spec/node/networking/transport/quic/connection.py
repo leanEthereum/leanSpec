@@ -207,26 +207,15 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
         """Initialize the libp2p QUIC protocol handler."""
         super().__init__(*args, **kwargs)
         self.connection: QuicConnection | None = None
-        self.peer_identity: PeerId | None = None
         self.handshake_complete = asyncio.Event()
         self._buffered_events: list[QuicEvent] = []
 
     def quic_event_received(self, event: QuicEvent) -> None:
         """Handle QUIC events."""
         if isinstance(event, HandshakeCompleted):
-            # Extract peer identity from certificate.
-            #
-            # aioquic stores the peer certificate in _quic.tls.
-            # We verify the libp2p extension and extract the identity.
-            try:
-                # Get peer certificate from TLS session.
-                # aioquic may not expose this directly, need to check.
-                # For now, mark handshake complete.
-                # TODO: Extract and verify peer certificate
-                self.peer_identity = None  # Will be set if we can extract certificate
-            except Exception:
-                self.peer_identity = None
-
+            # TODO: extract and verify the peer certificate from the TLS session.
+            # aioquic stores it in the underlying QUIC connection, but does not
+            # expose it directly, so the libp2p identity is not yet recovered.
             self.handshake_complete.set()
 
             # For server-side connections, invoke the handshake callback.
@@ -393,12 +382,26 @@ class QuicConnectionManager:
             Established connection.
 
         Raises:
-            QuicTransportError: If connection fails.
+            QuicTransportError: If the multiaddr is not a QUIC address.
+            QuicTransportError: If the multiaddr carries no peer identity.
+            QuicTransportError: If the connection fails.
         """
         host, port, transport, expected_peer_id = parse_multiaddr(multiaddr)
 
         if transport != "quic":
             raise QuicTransportError(f"Not a QUIC multiaddr: {multiaddr}")
+
+        # The remote peer identity must come from the dialed multiaddr.
+        #
+        # We do not yet extract identity from the verified libp2p
+        # certificate extension, so the multiaddr is the only trustworthy
+        # source of the remote peer identity.
+        # A missing identity means the connection cannot be keyed, so we
+        # fail cleanly rather than invent a fabricated one.
+        # This is checked before dialing so it is not re-wrapped as a
+        # connection failure below.
+        if expected_peer_id is None:
+            raise QuicTransportError(f"Multiaddr is missing a peer identity: {multiaddr}")
 
         try:
             # Create QUIC connection using aioquic.
@@ -423,32 +426,15 @@ class QuicConnectionManager:
             # Wait for handshake to complete.
             await protocol.handshake_complete.wait()
 
-            # For now, we don't verify peer certificate (requires deeper aioquic integration).
-            # In production, we would extract and verify the libp2p certificate extension.
-            #
-            # Without peer ID verification, we trust the connection based on:
-            # - QUIC encryption (TLS 1.3)
-            # - The peer being at the expected address
-
-            # Create a placeholder peer_id if we couldn't verify.
-            # In a real implementation, we'd extract this from the certificate.
-            if expected_peer_id:
-                peer_id = expected_peer_id
-            else:
-                # Generate a random peer ID for now.
-                # This is NOT correct for production but allows testing.
-                temp_key = IdentityKeypair.generate()
-                peer_id = temp_key.to_peer_id()
-
             connection = QuicConnection(
                 _protocol=protocol,
-                _peer_id=peer_id,
+                _peer_id=expected_peer_id,
                 _remote_address=multiaddr,
             )
             protocol.connection = connection
             protocol._replay_buffered_events()
 
-            self._connections[peer_id] = connection
+            self._connections[expected_peer_id] = connection
             return connection
 
         except Exception as exception:
@@ -465,18 +451,19 @@ class QuicConnectionManager:
         Creates a server using aioquic with libp2p-tls authentication.
         Runs until shutdown is requested.
 
-        For each accepted connection:
-
-        1. Complete QUIC/TLS handshake
-        2. Create QuicConnection wrapper
-        3. Invoke the callback
+        Inbound connections are rejected until peer identity verification
+        from the libp2p certificate extension is implemented.
+        Without it the remote peer identity is unknown, and keying a
+        connection by a fabricated identity is unsafe.
 
         Args:
             multiaddr: Address to listen on (e.g., "/ip4/0.0.0.0/udp/9000/quic-v1").
-            on_connection: Async callback invoked for each accepted connection.
+            on_connection: Async callback to invoke once inbound connections are supported.
 
         Raises:
-            QuicTransportError: If multiaddr is not a QUIC address.
+            QuicTransportError: If the multiaddr is not a QUIC address.
+            QuicTransportError: When an inbound connection completes its handshake,
+                because the remote peer identity cannot yet be verified.
         """
         host, port, transport, _ = parse_multiaddr(multiaddr)
 
@@ -496,24 +483,18 @@ class QuicConnectionManager:
             key_path = self._temp_directory / "key.pem"
             server_config.load_cert_chain(str(certificate_path), str(key_path))
 
-        # Callback to set up connection when handshake completes.
-        # Captures this manager's state (self, on_connection, host, port).
+        # Callback invoked when an inbound TLS handshake completes.
         def handle_handshake(protocol_instance: LibP2PQuicProtocol) -> None:
-            temp_key = IdentityKeypair.generate()
-            remote_peer_id = temp_key.to_peer_id()
-
-            remote_address = f"/ip4/{host}/udp/{port}/quic-v1/p2p/{remote_peer_id}"
-            connection = QuicConnection(
-                _protocol=protocol_instance,
-                _peer_id=remote_peer_id,
-                _remote_address=remote_address,
+            # An inbound connection has no multiaddr to carry the peer identity.
+            #
+            # The only trustworthy source is the libp2p certificate extension,
+            # whose verification is not yet implemented on this side.
+            # Until that exists we cannot key the connection by a real identity,
+            # so we fail cleanly rather than invent a fabricated one.
+            raise QuicTransportError(
+                "Cannot accept inbound connection: "
+                "peer identity verification from the libp2p certificate is not implemented"
             )
-            protocol_instance.connection = connection
-            protocol_instance._replay_buffered_events()
-            self._connections[remote_peer_id] = connection
-
-            # Invoke callback asynchronously so it doesn't block event processing.
-            asyncio.ensure_future(on_connection(connection))
 
         # Protocol factory that attaches our callback to each new instance.
         def create_protocol(*args, **kwargs) -> LibP2PQuicProtocol:
@@ -521,14 +502,12 @@ class QuicConnectionManager:
             protocol._on_handshake = handle_handshake
             return protocol
 
-        # Create a shutdown event to allow graceful termination.
-        shutdown_event = asyncio.Event()
-
         await quic_serve(
             host,
             port,
             configuration=server_config,
             create_protocol=create_protocol,
         )
-        # Keep running until shutdown is requested.
-        await shutdown_event.wait()
+        # Park until cancelled.
+        # The caller stops the server by cancelling this coroutine.
+        await asyncio.Event().wait()

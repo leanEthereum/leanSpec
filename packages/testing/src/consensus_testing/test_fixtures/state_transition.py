@@ -199,6 +199,7 @@ class StateTransitionTest(BaseTestSpec):
         block_spec: BlockSpec,
         state: State,
         block_registry: dict[str, Block],
+        *,
         is_final_block: bool,
     ) -> tuple[Block, State | None]:
         """

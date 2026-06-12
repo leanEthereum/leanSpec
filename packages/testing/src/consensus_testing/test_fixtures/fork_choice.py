@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from consensus_testing.genesis import generate_pre_state
+from consensus_testing.genesis import generate_pre_state, reconstruct_block_from_header
 from consensus_testing.keys import XmssKeyManager
 from consensus_testing.rejection import classify_rejection
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
@@ -34,10 +34,8 @@ from lean_spec.spec.forks import (
     ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.containers import (
-    AggregatedAttestations,
     AggregationError,
     Block,
-    BlockBody,
     SignedAggregatedAttestation,
     SignedAttestation,
     State,
@@ -144,13 +142,7 @@ class ForkChoiceTest(BaseTestSpec):
         #
         # The state already contains the block header.
         # We extract its fields to create a matching Block.
-        return Block(
-            slot=self.anchor_state.latest_block_header.slot,
-            proposer_index=self.anchor_state.latest_block_header.proposer_index,
-            parent_root=self.anchor_state.latest_block_header.parent_root,
-            state_root=hash_tree_root(self.anchor_state),
-            body=BlockBody(attestations=AggregatedAttestations(data=[])),
-        )
+        return reconstruct_block_from_header(self.anchor_state)
 
     def _resolved_max_slot(self) -> Slot:
         """
@@ -490,7 +482,7 @@ class ForkChoiceTest(BaseTestSpec):
             "steps must be empty when anchor_valid is False: "
             "Store.from_anchor is expected to fail before any step can run"
         )
-        # Why: a vector saying only "reject this anchor" lets a client
+        # A vector saying only "reject this anchor" lets a client
         # reject for the wrong reason and still pass.
         assert self.expected_rejection is not None, (
             "anchor_valid=False requires expected_rejection to be set"

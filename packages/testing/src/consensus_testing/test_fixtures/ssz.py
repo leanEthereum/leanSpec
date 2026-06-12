@@ -13,22 +13,6 @@ from lean_spec.spec.ssz.boolean import Boolean
 from lean_spec.spec.ssz.ssz_base import SSZType
 
 
-def _serialize_ssz_value(ssz_value: SSZType) -> Any:
-    """Convert an SSZ value to a JSON-safe representation."""
-    if isinstance(ssz_value, CamelModel):
-        return ssz_value.to_json()
-    # Boolean before int — Boolean subclasses int.
-    if isinstance(ssz_value, Boolean):
-        return bool(ssz_value)
-    if isinstance(ssz_value, bytes):
-        return to_hex(ssz_value)
-    if isinstance(ssz_value, int):
-        return str(ssz_value)
-    if isinstance(ssz_value, Fp):
-        return str(ssz_value.value)
-    return str(ssz_value)
-
-
 class SSZFixture(BaseConsensusFixture):
     """
     Emitted vector for SSZ conformance.
@@ -55,7 +39,18 @@ class SSZFixture(BaseConsensusFixture):
     @field_serializer("value", when_used="json")
     def serialize_value(self, ssz_value: SSZType) -> Any:
         """Convert an SSZ value to a JSON-safe representation."""
-        return _serialize_ssz_value(ssz_value)
+        if isinstance(ssz_value, CamelModel):
+            return ssz_value.to_json()
+        # Boolean before int — Boolean subclasses int.
+        if isinstance(ssz_value, Boolean):
+            return bool(ssz_value)
+        if isinstance(ssz_value, bytes):
+            return to_hex(ssz_value)
+        if isinstance(ssz_value, int):
+            return str(ssz_value)
+        if isinstance(ssz_value, Fp):
+            return str(ssz_value.value)
+        return str(ssz_value)
 
 
 class SSZTest(BaseTestSpec):

@@ -92,6 +92,91 @@ class CodecError(Exception):
     """
 
 
+def _encode_framed(ssz_data: bytes) -> bytes:
+    """
+    Build the shared length-prefixed Snappy frame for requests and responses.
+
+    Args:
+        ssz_data: SSZ-encoded message to frame.
+
+    Returns:
+        Bytes laid out as [varint: uncompressed_length][snappy_framed_payload].
+
+    Raises:
+        CodecError: If the payload exceeds MAX_PAYLOAD_SIZE (10 MiB).
+    """
+    # Step 1: Validate payload size.
+    #
+    # Reject payloads that exceed the protocol limit.
+    # This prevents encoding payloads that peers will reject.
+    if len(ssz_data) > MAX_PAYLOAD_SIZE:
+        raise CodecError(f"Payload too large: {len(ssz_data)} > {MAX_PAYLOAD_SIZE}")
+
+    # Step 2: Compress with Snappy framing.
+    #
+    # Snappy framing adds:
+    #   - Stream identifier (10 bytes)
+    #   - CRC32C checksums for error detection
+    #   - Chunking for large payloads
+    compressed = frame_compress(ssz_data)
+
+    # Step 3: Prepend uncompressed length as varint.
+    #
+    # The length is of the ORIGINAL data, not the compressed data.
+    # This lets receivers validate after decompression.
+    length_prefix = encode_varint(len(ssz_data))
+
+    return length_prefix + compressed
+
+
+def _decode_framed(data: bytes, offset: int, message_kind: str) -> bytes:
+    """
+    Decode the shared length-prefixed Snappy frame for requests and responses.
+
+    Args:
+        data: Wire-format bytes containing the frame.
+        offset: Index where the varint length prefix begins.
+        message_kind: Subject of the malformed-varint message, "request" or "response".
+
+    Returns:
+        Decompressed SSZ-encoded message.
+
+    Raises:
+        CodecError: If the varint is malformed, the declared length is oversized,
+            decompression fails, or the decompressed size mismatches.
+    """
+    # Step 1: Decode the varint length prefix.
+    #
+    # This tells us the expected uncompressed size.
+    try:
+        declared_length, varint_size = decode_varint(data, offset=offset)
+    except VarintError as exception:
+        raise CodecError(f"Invalid {message_kind} length: {exception}") from exception
+
+    # Step 2: Validate declared length.
+    #
+    # Reject before decompressing to prevent resource exhaustion.
+    if declared_length > MAX_PAYLOAD_SIZE:
+        raise CodecError(f"Declared length too large: {declared_length} > {MAX_PAYLOAD_SIZE}")
+
+    # Step 3: Decompress Snappy framed payload.
+    #
+    # The payload starts after the varint prefix.
+    compressed_data = data[offset + varint_size :]
+    try:
+        decompressed = frame_decompress(compressed_data)
+    except SnappyDecompressionError as exception:
+        raise CodecError(f"Decompression failed: {exception}") from exception
+
+    # Step 4: Validate length matches.
+    #
+    # This catches corrupted data or malicious length claims.
+    if len(decompressed) != declared_length:
+        raise CodecError(f"Length mismatch: declared {declared_length}, got {len(decompressed)}")
+
+    return decompressed
+
+
 def encode_request(ssz_data: bytes) -> bytes:
     """
     Encode an SSZ-serialized request for transmission.
@@ -114,28 +199,8 @@ def encode_request(ssz_data: bytes) -> bytes:
         1. Reject oversized requests before decompressing.
         2. Allocate the correct buffer size upfront.
     """
-    # Step 1: Validate payload size.
-    #
-    # Reject requests that exceed the protocol limit.
-    # This prevents encoding payloads that peers will reject.
-    if len(ssz_data) > MAX_PAYLOAD_SIZE:
-        raise CodecError(f"Payload too large: {len(ssz_data)} > {MAX_PAYLOAD_SIZE}")
-
-    # Step 2: Compress with Snappy framing.
-    #
-    # Snappy framing adds:
-    #   - Stream identifier (10 bytes)
-    #   - CRC32C checksums for error detection
-    #   - Chunking for large payloads
-    compressed = frame_compress(ssz_data)
-
-    # Step 3: Prepend uncompressed length as varint.
-    #
-    # The length is of the ORIGINAL data, not the compressed data.
-    # This lets receivers validate after decompression.
-    length_prefix = encode_varint(len(ssz_data))
-
-    return length_prefix + compressed
+    # A request is the bare length-prefixed Snappy frame, with no leading code byte.
+    return _encode_framed(ssz_data)
 
 
 def decode_request(data: bytes) -> bytes:
@@ -161,36 +226,8 @@ def decode_request(data: bytes) -> bytes:
     if not data:
         raise CodecError("Empty request")
 
-    # Step 2: Decode the varint length prefix.
-    #
-    # This tells us the expected uncompressed size.
-    try:
-        declared_length, varint_size = decode_varint(data)
-    except VarintError as exception:
-        raise CodecError(f"Invalid request length: {exception}") from exception
-
-    # Step 3: Validate declared length.
-    #
-    # Reject before decompressing to prevent resource exhaustion.
-    if declared_length > MAX_PAYLOAD_SIZE:
-        raise CodecError(f"Declared length too large: {declared_length} > {MAX_PAYLOAD_SIZE}")
-
-    # Step 4: Decompress Snappy framed payload.
-    #
-    # The payload starts after the varint prefix.
-    compressed_data = data[varint_size:]
-    try:
-        decompressed = frame_decompress(compressed_data)
-    except SnappyDecompressionError as exception:
-        raise CodecError(f"Decompression failed: {exception}") from exception
-
-    # Step 5: Validate length matches.
-    #
-    # This catches corrupted data or malicious length claims.
-    if len(decompressed) != declared_length:
-        raise CodecError(f"Length mismatch: declared {declared_length}, got {len(decompressed)}")
-
-    return decompressed
+    # Step 2: Decode the length-prefixed Snappy frame starting at offset 0.
+    return _decode_framed(data, offset=0, message_kind="request")
 
 
 class ResponseCode(IntEnum):
@@ -242,29 +279,11 @@ class ResponseCode(IntEnum):
 
             [response_code: 1 byte][varint: uncompressed_length][snappy_framed_payload]
         """
-        # Step 1: Validate payload size.
-        if len(ssz_data) > MAX_PAYLOAD_SIZE:
-            raise CodecError(f"Payload too large: {len(ssz_data)} > {MAX_PAYLOAD_SIZE}")
-
-        # Step 2: Compress with Snappy framing.
-        compressed = frame_compress(ssz_data)
-
-        # Step 3: Build response: [code][length][payload].
+        # Prepend the response code to the shared length-prefixed Snappy frame.
         #
         # The code byte comes first so receivers can quickly determine
         # whether to expect data or an error message.
-        output = bytearray()
-
-        # Response code (1 byte).
-        output.append(self)
-
-        # Uncompressed length as varint.
-        output.extend(encode_varint(len(ssz_data)))
-
-        # Snappy framed payload.
-        output.extend(compressed)
-
-        return bytes(output)
+        return bytes([self]) + _encode_framed(ssz_data)
 
     @classmethod
     def decode(cls, data: bytes) -> tuple[ResponseCode, bytes]:
@@ -306,31 +325,7 @@ class ResponseCode(IntEnum):
             else:
                 code = cls.INVALID_REQUEST
 
-        # Step 4: Decode the varint length prefix.
-        #
-        # Starts at offset 1 (after the code byte).
-        try:
-            declared_length, varint_size = decode_varint(data, offset=1)
-        except VarintError as exception:
-            raise CodecError(f"Invalid response length: {exception}") from exception
-
-        # Step 5: Validate declared length.
-        if declared_length > MAX_PAYLOAD_SIZE:
-            raise CodecError(f"Declared length too large: {declared_length} > {MAX_PAYLOAD_SIZE}")
-
-        # Step 6: Decompress Snappy framed payload.
-        #
-        # Payload starts after code (1 byte) + varint.
-        compressed_data = data[1 + varint_size :]
-        try:
-            decompressed = frame_decompress(compressed_data)
-        except SnappyDecompressionError as exception:
-            raise CodecError(f"Decompression failed: {exception}") from exception
-
-        # Step 7: Validate length matches.
-        if len(decompressed) != declared_length:
-            raise CodecError(
-                f"Length mismatch: declared {declared_length}, got {len(decompressed)}"
-            )
+        # Step 4: Decode the length-prefixed Snappy frame starting after the code byte.
+        decompressed = _decode_framed(data, offset=1, message_kind="response")
 
         return code, decompressed

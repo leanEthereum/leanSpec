@@ -1,6 +1,7 @@
 """Scalar identifiers naming validators, subnets, and the registry index space."""
 
 from lean_spec.spec.forks.lstar.config import VALIDATOR_REGISTRY_LIMIT
+from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
 from lean_spec.spec.forks.lstar.slot import Slot
 from lean_spec.spec.ssz import SSZList, Uint64
 
@@ -18,7 +19,17 @@ class ValidatorIndex(Uint64):
         Return the validator index responsible for proposing at the given slot.
 
         Round-robin selection: the proposer is slot modulo registry size.
+
+        Raises:
+            SpecRejectionError: EMPTY_VALIDATOR_REGISTRY if the registry is empty.
         """
+        # An empty registry has no validator to schedule.
+        # Reject explicitly so the modulo never divides by zero.
+        if int(num_validators) == 0:
+            raise SpecRejectionError(
+                RejectionReason.EMPTY_VALIDATOR_REGISTRY,
+                "Cannot schedule a proposer for an empty validator registry",
+            )
         return cls(int(slot) % int(num_validators))
 
     def is_within_registry(self, num_validators: Uint64) -> bool:

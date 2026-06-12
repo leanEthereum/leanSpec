@@ -8,11 +8,12 @@ import pytest
 
 from consensus_testing import MockNetworkRequester, make_signed_block
 from lean_spec.node.networking import PeerId
+from lean_spec.node.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.node.networking.peer import PeerInfo
 from lean_spec.node.networking.types import ConnectionState
 from lean_spec.node.sync.backfill_sync import BackfillSync
 from lean_spec.node.sync.block_cache import BlockCache, PendingBlock
-from lean_spec.node.sync.config import MAX_BACKFILL_DEPTH, MAX_BLOCKS_PER_REQUEST
+from lean_spec.node.sync.config import MAX_BACKFILL_DEPTH
 from lean_spec.node.sync.peer_manager import (
     INITIAL_PEER_SCORE,
     SCORE_FAILURE_PENALTY,
@@ -92,16 +93,18 @@ class TestBackfillChainResolution:
 
         await backfill_system.fill_missing([block_root])
 
-        cached = backfill_system.block_cache.get(block_root)
-        assert cached is not None
-        assert cached == PendingBlock(
-            block=block,
-            root=block_root,
-            parent_root=Bytes32.zero(),
-            slot=Slot(10),
-            received_from=peer_id,
-            backfill_depth=1,
-        )
+        # The fetched block is the sole child of the zero parent root.
+        # Look it up through the parent index.
+        assert backfill_system.block_cache.get_children(Bytes32.zero()) == [
+            PendingBlock(
+                block=block,
+                root=block_root,
+                parent_root=Bytes32.zero(),
+                slot=Slot(10),
+                received_from=peer_id,
+                backfill_depth=1,
+            )
+        ]
 
     async def test_recursive_parent_chain_resolution(
         self,
@@ -148,39 +151,40 @@ class TestBackfillChainResolution:
 
         await backfill.fill_missing([child_root])
 
-        child_cached = backfill.block_cache.get(child_root)
-        parent_cached = backfill.block_cache.get(parent_root)
-        grandparent_cached = backfill.block_cache.get(grandparent_root)
+        # Each cached block is the sole child of its parent root.
+        # Look each one up through the parent index.
+        assert backfill.block_cache.get_children(parent_root) == [
+            PendingBlock(
+                block=child,
+                root=child_root,
+                parent_root=parent_root,
+                slot=Slot(3),
+                received_from=peer_id,
+                backfill_depth=1,
+            )
+        ]
 
-        assert child_cached is not None
-        assert child_cached == PendingBlock(
-            block=child,
-            root=child_root,
-            parent_root=parent_root,
-            slot=Slot(3),
-            received_from=peer_id,
-            backfill_depth=1,
-        )
+        assert backfill.block_cache.get_children(grandparent_root) == [
+            PendingBlock(
+                block=parent,
+                root=parent_root,
+                parent_root=grandparent_root,
+                slot=Slot(2),
+                received_from=peer_id,
+                backfill_depth=2,
+            )
+        ]
 
-        assert parent_cached is not None
-        assert parent_cached == PendingBlock(
-            block=parent,
-            root=parent_root,
-            parent_root=grandparent_root,
-            slot=Slot(2),
-            received_from=peer_id,
-            backfill_depth=2,
-        )
-
-        assert grandparent_cached is not None
-        assert grandparent_cached == PendingBlock(
-            block=grandparent,
-            root=grandparent_root,
-            parent_root=Bytes32.zero(),
-            slot=Slot(1),
-            received_from=peer_id,
-            backfill_depth=3,
-        )
+        assert backfill.block_cache.get_children(Bytes32.zero()) == [
+            PendingBlock(
+                block=grandparent,
+                root=grandparent_root,
+                parent_root=Bytes32.zero(),
+                slot=Slot(1),
+                received_from=peer_id,
+                backfill_depth=3,
+            )
+        ]
 
     async def test_depth_limit_stops_infinite_recursion(
         self,
@@ -228,15 +232,15 @@ class TestBatchingAndPeerManagement:
         network: MockNetworkRequester,
         peer_id: PeerId,
     ) -> None:
-        """Requests larger than MAX_BLOCKS_PER_REQUEST are split."""
-        num_roots = MAX_BLOCKS_PER_REQUEST + 5
+        """Requests larger than MAX_REQUEST_BLOCKS are split."""
+        num_roots = MAX_REQUEST_BLOCKS + 5
         roots = [Bytes32(i.to_bytes(32, "big")) for i in range(num_roots)]
 
         await backfill_system.fill_missing(roots)
 
         assert network.root_request_log == [
-            (peer_id, roots[:MAX_BLOCKS_PER_REQUEST]),
-            (peer_id, roots[MAX_BLOCKS_PER_REQUEST:]),
+            (peer_id, roots[:MAX_REQUEST_BLOCKS]),
+            (peer_id, roots[MAX_REQUEST_BLOCKS:]),
         ]
 
     async def test_no_requests_without_available_peer(
@@ -489,17 +493,3 @@ class TestBackfillOptimizations:
         network.should_fail = False
         await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
         assert backfill_system._max_range_slot == Slot(10)
-
-    async def test_reset_clears_watermark(
-        self,
-        backfill_system: BackfillSync,
-        network: MockNetworkRequester,
-    ) -> None:
-        """reset() restores the watermark so post-reset range fetches are honored."""
-        await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
-        assert backfill_system._max_range_slot == Slot(10)
-
-        backfill_system.reset()
-
-        assert backfill_system._max_range_slot == Slot(0)
-        assert backfill_system._pending == set()

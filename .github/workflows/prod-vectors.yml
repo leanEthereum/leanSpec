@@ -94,8 +94,11 @@ jobs:
 
       - name: Fill production test fixtures
         env:
-          # RAYON_NUM_THREADS=1 keeps the runner from oversubscribing cores by giving each xdist worker one rayon thread.
-          RAYON_NUM_THREADS: "1"
+          # Only the real_crypto smoke vectors run genuine production XMSS proofs.
+          # Each proof parallelizes internally with rayon, so few heavy tasks dominate the run.
+          # Two xdist workers overlap the heavy proofs and chew through the mocked backlog.
+          # Leaving rayon unpinned lets each proof spread across cores instead of one thread.
+          FILL_WORKERS: "2"
         run: just fill-ci --scheme=prod
 
       - name: Bundle keys with fixtures

@@ -52,8 +52,8 @@ from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.sync.backfill_sync import BackfillSync
 from lean_spec.node.sync.block_cache import BlockCache
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import SignedBlock, Slot, Store
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.forks import SignedBlock, Store
+from lean_spec.spec.ssz import Bytes32
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +63,11 @@ class HeadSyncResult:
     """
     Result of processing a gossip block.
 
-    The SyncService only branches on the processed flag; the error string is
-    retained for incident-response logs and post-mortem inspection.
+    The SyncService only branches on the processed flag.
     """
 
     processed: bool
     """True if the block was immediately integrated into the Store."""
-
-    error: str | None = None
-    """Error message if processing failed."""
 
 
 @dataclass(slots=True)
@@ -236,7 +232,6 @@ class HeadSync:
                 )
                 return HeadSyncResult(
                     processed=False,
-                    error=str(exception),
                 ), store
 
             # Process cached descendants.
@@ -365,38 +360,19 @@ class HeadSync:
         #
         # When the new block sits several slots above the current head, fetch
         # the gap as a contiguous range rather than recursing parent-by-parent.
-        # The floor is the head slot; slots above finalized but at or below
-        # head are already in the Store.
         #
-        # Alt-fork gossip at a slot at or below head still goes through plain
-        # parent-by-root recursion: those blocks share an ancestor with the
-        # canonical chain and a range request would just refetch known slots.
+        # An empty gap means either a single-slot gap above head (direct parent
+        # missing) or alt-fork gossip at a slot at or below head.
+        # Both share an ancestor with the canonical chain, so recurse by parent
+        # root only; a range request would just refetch known slots.
         head_slot = store.blocks[store.head].slot
-        if block_inner.slot > head_slot:
-            gap_floor = head_slot + Slot(1)
-            gap_size = int(block_inner.slot - gap_floor)
-            if gap_size > 0:
-                logger.debug(
-                    "Backfill gap (%d slots) above head %s; range-fetching from %s.",
-                    gap_size,
-                    head_slot,
-                    gap_floor,
-                )
-                await self.backfill.fill_range(
-                    start_slot=gap_floor,
-                    count=Uint64(gap_size),
-                )
-            else:
-                # Direct parent missing (single-slot gap above head).
-                await self.backfill.fill_missing([parent_root])
-        else:
-            # Alt-fork gossip at or below head: recurse by parent root only.
+        range_fetched = await self.backfill.fill_gap_above_head(
+            target_slot=block_inner.slot,
+            head_slot=head_slot,
+        )
+        if not range_fetched:
             await self.backfill.fill_missing([parent_root])
 
         return HeadSyncResult(
             processed=False,
         ), store
-
-    def reset(self) -> None:
-        """Clear processing state."""
-        self._processing.clear()

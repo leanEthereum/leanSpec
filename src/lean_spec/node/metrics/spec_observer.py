@@ -11,9 +11,10 @@ The spec itself never imports this module.
 from __future__ import annotations
 
 from lean_spec.node.metrics.registry import registry as metrics
+from lean_spec.spec.observability.observer import SpecObserver
 
 
-class PrometheusObserver:
+class PrometheusObserver(SpecObserver):
     """Forward SpecObserver callbacks to Prometheus metrics."""
 
     def state_transition_timed(self, seconds: float) -> None:

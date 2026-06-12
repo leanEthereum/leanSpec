@@ -9,7 +9,7 @@ import yaml
 from pydantic import ValidationError
 
 from lean_spec.node.genesis import GenesisConfig
-from lean_spec.spec.forks import ValidatorIndex
+from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, ValidatorIndex
 from lean_spec.spec.ssz import Bytes52, SSZValueError, Uint64
 
 
@@ -208,6 +208,44 @@ class TestGenesisConfigValidation:
         )
         with pytest.raises(ValidationError):
             _load(yaml_content)
+
+    def test_validator_count_at_registry_limit_loads(self) -> None:
+        """Accepts a genesis set whose size equals the registry limit."""
+        config = GenesisConfig.model_validate(
+            {
+                "GENESIS_TIME": 1704085200,
+                "GENESIS_VALIDATORS": [
+                    {
+                        "attestation_public_key": SAMPLE_PUBLIC_KEY_1,
+                        "proposal_public_key": SAMPLE_PUBLIC_KEY_1,
+                    }
+                ]
+                * int(VALIDATOR_REGISTRY_LIMIT),
+            }
+        )
+
+        assert len(config.genesis_validators) == int(VALIDATOR_REGISTRY_LIMIT)
+
+    def test_validator_count_over_registry_limit_raises_error(self) -> None:
+        """Rejects a genesis set larger than the registry limit."""
+        with pytest.raises(ValidationError) as exception_info:
+            GenesisConfig.model_validate(
+                {
+                    "GENESIS_TIME": 1704085200,
+                    "GENESIS_VALIDATORS": [
+                        {
+                            "attestation_public_key": SAMPLE_PUBLIC_KEY_1,
+                            "proposal_public_key": SAMPLE_PUBLIC_KEY_1,
+                        }
+                    ]
+                    * (int(VALIDATOR_REGISTRY_LIMIT) + 1),
+                }
+            )
+
+        assert exception_info.value.errors()[0]["msg"] == (
+            f"Value error, genesis validator count {int(VALIDATOR_REGISTRY_LIMIT) + 1} "
+            f"exceeds registry limit {int(VALIDATOR_REGISTRY_LIMIT)}"
+        )
 
 
 class TestCrossClientFormat:

@@ -34,14 +34,17 @@ class TimelineMixin(LstarSpecBase):
         current_interval = Interval(int(store.time) % int(INTERVALS_PER_SLOT))
         new_aggregates: list[SignedAggregatedAttestation] = []
 
-        if current_interval == Interval(0) and has_proposal:
-            store = self.accept_new_attestations(store)
-        elif current_interval == Interval(2) and is_aggregator:
-            store, new_aggregates = self.aggregate(store)
-        elif current_interval == Interval(3):
-            store = self.update_safe_target(store)
-        elif current_interval == Interval(4):
-            store = self.accept_new_attestations(store)
+        match int(current_interval):
+            case 0 if has_proposal:
+                store = self.accept_new_attestations(store)
+            case 2 if is_aggregator:
+                store, new_aggregates = self.aggregate(store)
+            case 3:
+                store = self.update_safe_target(store)
+            case 4:
+                store = self.accept_new_attestations(store)
+            case _:
+                pass
 
         return store, new_aggregates
 

@@ -34,7 +34,7 @@ class FixtureInfo(StrictBaseModel):
     """
     Digest of the XMSS key set used during generation.
 
-    Why: consumers can detect vectors generated from a different key set.
+    Consumers can detect vectors generated from a different key set.
     """
 
 

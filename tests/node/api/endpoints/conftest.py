@@ -76,7 +76,7 @@ class _ServerThread(threading.Thread):
         )
 
     def stop(self) -> None:
-        """Stop the server and event loop, awaiting cleanup so _async_stop is run."""
+        """Stop the server and event loop, awaiting the graceful shutdown coroutine."""
         if self.server and self.loop:
 
             async def shutdown() -> None:

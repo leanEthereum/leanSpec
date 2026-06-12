@@ -624,6 +624,7 @@ class ForkChoiceMixin(LstarSpecBase):
     def extract_attestations_from_aggregated_payloads(
         self,
         aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
+        latest_finalized_slot: Slot,
     ) -> dict[ValidatorIndex, AttestationData]:
         """
         Map each participating validator to the latest vote it cast.
@@ -631,8 +632,12 @@ class ForkChoiceMixin(LstarSpecBase):
         This is the LMD view fork choice runs on.
         On equal slots the first vote seen wins, since the slot comparison is strict.
 
+        A vote whose head sits at or below the finalized slot carries no fork-choice weight.
+        Such stale votes are skipped here, so callers pass their pool without pre-filtering.
+
         Args:
             aggregated_payloads: Proof sets keyed by the vote they cover.
+            latest_finalized_slot: Finalized cutoff; votes at or below it are skipped.
 
         Returns:
             Each validator mapped to its highest-slot vote.
@@ -641,6 +646,10 @@ class ForkChoiceMixin(LstarSpecBase):
 
         # Walk every vote, every proof for it, and every validator the proof covers.
         for attestation_data, proofs in aggregated_payloads.items():
+            # Skip votes whose head no longer outlives the finalized slot.
+            if attestation_data.head.slot <= latest_finalized_slot:
+                continue
+
             for proof in proofs:
                 for validator_index in proof.participants.to_validator_indices():
                     # Keep this vote only when it is newer than the one already stored.
@@ -701,11 +710,8 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         # Reduce the counted pool to each validator's latest still-relevant vote.
         latest_votes = self.extract_attestations_from_aggregated_payloads(
-            {
-                attestation_data: proofs
-                for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                if attestation_data.head.slot > store.latest_finalized.slot
-            }
+            store.latest_known_aggregated_payloads,
+            store.latest_finalized.slot,
         )
 
         # Credit every block on those votes' ancestor chains above finalization.
@@ -791,11 +797,8 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         # Reduce the counted pool to each validator's latest still-relevant vote.
         latest_votes = self.extract_attestations_from_aggregated_payloads(
-            {
-                attestation_data: proofs
-                for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                if attestation_data.head.slot > store.latest_finalized.slot
-            }
+            store.latest_known_aggregated_payloads,
+            store.latest_finalized.slot,
         )
 
         # Descend from the justified root to the heaviest leaf.
@@ -864,11 +867,8 @@ class ForkChoiceMixin(LstarSpecBase):
 
         # Reduce the pending pool to each validator's latest still-relevant vote.
         latest_votes = self.extract_attestations_from_aggregated_payloads(
-            {
-                attestation_data: proofs
-                for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
-                if attestation_data.head.slot > store.latest_finalized.slot
-            }
+            store.latest_new_aggregated_payloads,
+            store.latest_finalized.slot,
         )
 
         # Descend from the justified root, taking only children that clear the threshold.

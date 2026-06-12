@@ -61,11 +61,11 @@ class JustifiedSlots(BaseBitlist):
         # If the caller asks for a slot too far in the future, it indicates a logic error.
         try:
             return self[relative_index]
-        except IndexError as e:
+        except IndexError as exception:
             raise IndexError(
                 f"Slot {target_slot} is outside the tracked range "
                 f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
-            ) from e
+            ) from exception
 
     def with_justified(
         self,
