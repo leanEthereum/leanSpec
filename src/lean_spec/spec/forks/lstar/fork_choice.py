@@ -84,6 +84,28 @@ class ForkChoiceMixin(LstarSpecBase):
         # The chain left the known tree before reaching the ancestor's slot.
         return False
 
+    def _finalized_on_head_chain(self, store: LstarStore) -> Checkpoint:
+        """
+        Return the finalized checkpoint that lies on the canonical head's chain.
+
+        The head state names the finalized slot. Its root is taken as the head's
+        own ancestor at that slot, so the checkpoint always lies on the head chain
+        and names a block the store holds -- even when the state carries a
+        placeholder root it cannot resolve to its own block, as a checkpoint-sync
+        anchor state does.
+
+        Args:
+            store: Fork-choice store holding the head and the block tree.
+
+        Returns:
+            The finalized checkpoint on the head's chain.
+        """
+        finalized_slot = store.states[store.head].latest_finalized.slot
+        finalized_root = store.head
+        while store.blocks[finalized_root].slot > finalized_slot:
+            finalized_root = store.blocks[finalized_root].parent_root
+        return Checkpoint(root=finalized_root, slot=finalized_slot)
+
     def create_store(
         self,
         state: SpecStateType,
@@ -578,15 +600,17 @@ class ForkChoiceMixin(LstarSpecBase):
             # Run the state transition from the parent state to this block's post-state.
             post_state = self.state_transition(parent_state, block)
 
-            # Advance the justified and finalized checkpoints from the post-state.
+            # Advance the justified checkpoint from the post-state.
             #
             # A candidate wins only when its slot is strictly higher than the store's.
             # On a slot tie the store keeps its checkpoint, avoiding a silent root swap:
             #
             #     store slot 5, candidate slot 7  ->  take candidate
             #     store slot 5, candidate slot 5  ->  keep store
+            #
+            # The finalized checkpoint is NOT taken as an independent max here; it is
+            # derived from the canonical head's state after head selection (below).
             latest_justified = store.latest_justified.advance_to(post_state.latest_justified)
-            latest_finalized = store.latest_finalized.advance_to(post_state.latest_finalized)
 
             # Seed each block-carried vote into the known pool with an empty proof set.
             #
@@ -607,12 +631,16 @@ class ForkChoiceMixin(LstarSpecBase):
                     "blocks": store.blocks | {block_root: block},
                     "states": store.states | {block_root: post_state},
                     "latest_justified": latest_justified,
-                    "latest_finalized": latest_finalized,
                     "latest_known_aggregated_payloads": new_known_aggregated_payloads,
                 }
             )
 
             # Recompute the head now that the block and its votes are in the store.
+            # update_head derives the finalized checkpoint from the new head's chain,
+            # never an independent max over every imported block, so latest_finalized
+            # always names a block on the canonical chain and the slot a validator
+            # attests against matches the slot the state transition validates against
+            # -- finalization cannot freeze.
             store = self.update_head(store)
 
             # Prune stale vote data, but only when finalization advanced past the snapshot.
@@ -806,7 +834,12 @@ class ForkChoiceMixin(LstarSpecBase):
             start_root=store.latest_justified.root,
             attestations=latest_votes,
         )
-        return store.model_copy(update={"head": new_head})
+        store = store.model_copy(update={"head": new_head})
+
+        # The finalized checkpoint travels with the head. Deriving it from the new
+        # head's chain on every recompute keeps it on the canonical chain, so it
+        # never lags a head that moved nor pins a fork that lost head selection.
+        return store.model_copy(update={"latest_finalized": self._finalized_on_head_chain(store)})
 
     def accept_new_attestations(self, store: LstarStore) -> LstarStore:
         """
