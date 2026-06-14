@@ -633,11 +633,6 @@ class ForkChoiceMixin(LstarSpecBase):
             )
 
             # Recompute the head now that the block and its votes are in the store.
-            # update_head derives the finalized checkpoint from the new head's chain,
-            # never an independent max over every imported block, so latest_finalized
-            # always names a block on the canonical chain and the slot a validator
-            # attests against matches the slot the state transition validates against
-            # -- finalization cannot freeze.
             store = self.update_head(store)
 
             # Prune stale vote data, but only when finalization advanced past the snapshot.
