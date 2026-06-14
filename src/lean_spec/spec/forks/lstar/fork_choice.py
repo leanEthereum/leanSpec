@@ -805,19 +805,23 @@ class ForkChoiceMixin(LstarSpecBase):
             attestations=latest_votes,
         )
         # Invariant: the finalized checkpoint stays on the head's chain.
-        # Its root is the head's own ancestor at the finalized slot.
-        # A checkpoint-sync anchor state holds a placeholder for its own block.
-        # The ancestor walk recovers the real block.
+        # Climb from the head to its ancestor at the finalized slot.
         finalized_slot = store.states[new_head].latest_finalized.slot
         finalized_root = new_head
-        while store.blocks[finalized_root].slot > finalized_slot:
-            finalized_root = store.blocks[finalized_root].parent_root
-        return store.model_copy(
-            update={
-                "head": new_head,
-                "latest_finalized": Checkpoint(root=finalized_root, slot=finalized_slot),
-            }
-        )
+        while finalized_root in store.blocks and store.blocks[finalized_root].slot > finalized_slot:
+            parent_root = store.blocks[finalized_root].parent_root
+            if parent_root not in store.blocks:
+                break
+            finalized_root = parent_root
+
+        # A fresh checkpoint-sync anchor stores no block at that slot.
+        # Keep the trusted anchor there rather than emit an unresolved root.
+        if store.blocks[finalized_root].slot == finalized_slot:
+            latest_finalized = Checkpoint(root=finalized_root, slot=finalized_slot)
+        else:
+            latest_finalized = store.latest_finalized
+
+        return store.model_copy(update={"head": new_head, "latest_finalized": latest_finalized})
 
     def accept_new_attestations(self, store: LstarStore) -> LstarStore:
         """

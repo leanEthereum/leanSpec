@@ -82,6 +82,55 @@ def test_store_init_from_non_genesis_anchor(
     )
 
 
+def test_head_recompute_on_anchor_below_its_finalized_slot(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Appending a block above a mid-chain anchor whose finalized sits below it does not crash.
+
+    Given
+    -----
+    - 4 validators.
+    - a mid-chain anchor at slot 10 built without rebasing its checkpoints.
+    - the anchor state's finalized stays at the genesis boundary, slot 0.
+    - slot 0 sits below the anchor block slot.
+    - the store holds only the anchor block.
+
+    When
+    ----
+    - one block is appended above the anchor, recomputing the head over the anchor chain.
+
+    Then
+    ----
+    - head advances to the appended block at slot 11.
+    - finalized stays at the trusted anchor at slot 10.
+    - the parent walk stops at the anchor, so head recomputation does not raise.
+    """
+    anchor_state, anchor_block = build_anchor(
+        synced=False, num_validators=NUM_VALIDATORS, anchor_slot=ANCHOR_SLOT
+    )
+
+    fork_choice_test(
+        anchor_state=anchor_state,
+        anchor_block=anchor_block,
+        steps=[
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(11),
+                    parent_label="genesis",
+                    label="block_11",
+                ),
+                checks=StoreChecks(
+                    head_slot=Slot(11),
+                    head_root_label="block_11",
+                    latest_finalized_slot=ANCHOR_SLOT,
+                    latest_finalized_root_label="genesis",
+                ),
+            ),
+        ],
+    )
+
+
 def test_extend_chain_from_non_genesis_anchor(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
