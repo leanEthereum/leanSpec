@@ -199,14 +199,10 @@ class ValidatorDutiesMixin(LstarSpecBase):
         # Compute block hash for storage.
         block_hash = hash_tree_root(final_block)
 
-        # Persist the produced block and advance the justified checkpoint.
-        #
-        # Locally produced blocks bypass normal block processing, so the justified
-        # checkpoint is advanced manually. The finalized checkpoint is not written
-        # here: update_head derives it from the canonical head, and get_proposal_head
-        # ran update_head just above, so the store's finalized already sits on the head
-        # this block extends. Pinning it here from the produced block's own state would
-        # strand it -- and prune against it -- if the proposal later lost head selection.
+        # A locally produced block skips the import path.
+        # Advance the justified checkpoint manually here.
+        # Leave the finalized checkpoint to head recomputation.
+        # Pinning it from this block's own state would strand it on a later reorg.
         latest_justified = store.latest_justified.advance_to(final_post_state.latest_justified)
         store = store.model_copy(
             update={

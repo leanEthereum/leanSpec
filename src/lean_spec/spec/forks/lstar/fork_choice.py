@@ -84,28 +84,6 @@ class ForkChoiceMixin(LstarSpecBase):
         # The chain left the known tree before reaching the ancestor's slot.
         return False
 
-    def _finalized_on_head_chain(self, store: LstarStore) -> Checkpoint:
-        """
-        Return the finalized checkpoint that lies on the canonical head's chain.
-
-        The head state names the finalized slot. Its root is taken as the head's
-        own ancestor at that slot, so the checkpoint always lies on the head chain
-        and names a block the store holds -- even when the state carries a
-        placeholder root it cannot resolve to its own block, as a checkpoint-sync
-        anchor state does.
-
-        Args:
-            store: Fork-choice store holding the head and the block tree.
-
-        Returns:
-            The finalized checkpoint on the head's chain.
-        """
-        finalized_slot = store.states[store.head].latest_finalized.slot
-        finalized_root = store.head
-        while store.blocks[finalized_root].slot > finalized_slot:
-            finalized_root = store.blocks[finalized_root].parent_root
-        return Checkpoint(root=finalized_root, slot=finalized_slot)
-
     def create_store(
         self,
         state: SpecStateType,
@@ -826,12 +804,20 @@ class ForkChoiceMixin(LstarSpecBase):
             start_root=store.latest_justified.root,
             attestations=latest_votes,
         )
-        store = store.model_copy(update={"head": new_head})
-
-        # The finalized checkpoint travels with the head. Deriving it from the new
-        # head's chain on every recompute keeps it on the canonical chain, so it
-        # never lags a head that moved nor pins a fork that lost head selection.
-        return store.model_copy(update={"latest_finalized": self._finalized_on_head_chain(store)})
+        # Invariant: the finalized checkpoint stays on the head's chain.
+        # Its root is the head's own ancestor at the finalized slot.
+        # A checkpoint-sync anchor state holds a placeholder for its own block.
+        # The ancestor walk recovers the real block.
+        finalized_slot = store.states[new_head].latest_finalized.slot
+        finalized_root = new_head
+        while store.blocks[finalized_root].slot > finalized_slot:
+            finalized_root = store.blocks[finalized_root].parent_root
+        return store.model_copy(
+            update={
+                "head": new_head,
+                "latest_finalized": Checkpoint(root=finalized_root, slot=finalized_slot),
+            }
+        )
 
     def accept_new_attestations(self, store: LstarStore) -> LstarStore:
         """
