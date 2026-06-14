@@ -607,9 +607,6 @@ class ForkChoiceMixin(LstarSpecBase):
             #
             #     store slot 5, candidate slot 7  ->  take candidate
             #     store slot 5, candidate slot 5  ->  keep store
-            #
-            # The finalized checkpoint is NOT taken as an independent max here; it is
-            # derived from the canonical head's state after head selection (below).
             latest_justified = store.latest_justified.advance_to(post_state.latest_justified)
 
             # Seed each block-carried vote into the known pool with an empty proof set.
