@@ -218,11 +218,11 @@ def test_produce_block_enforces_max_attestations_data_limit(
     # The first limit + 1 slots that are justifiable after genesis.
     # One more than the cap, so exactly one candidate must be dropped.
     target_slots: list[int] = []
-    candidate = 1
+    candidate_slot = 1
     while len(target_slots) < limit + 1:
-        if Slot(candidate).is_justifiable_after(Slot(0)):
-            target_slots.append(candidate)
-        candidate += 1
+        if Slot(candidate_slot).is_justifiable_after(Slot(0)):
+            target_slots.append(candidate_slot)
+        candidate_slot += 1
 
     # Build a contiguous chain up to the highest target slot, then produce one
     # slot later. Every target block must exist on-chain to be a valid target.

@@ -107,11 +107,11 @@ class JustifiedSlots(BaseBitlist):
                 f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
             )
 
-        # Clone the data, flip the one bit, and wrap it in a new instance.
-        new_data = list(self.data)
-        new_data[relative_index] = value
+        # Clone the bits, flip the one at the target index, and wrap in a new instance.
+        updated_justification_bits = list(self.data)
+        updated_justification_bits[relative_index] = value
 
-        return type(self)(data=new_data)
+        return type(self)(data=updated_justification_bits)
 
     def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> Self:
         """
