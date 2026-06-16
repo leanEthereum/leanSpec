@@ -60,9 +60,8 @@ class StoreSnapshot(StrictBaseModel):
     Recorded by the framework after every step, including rejected ones.
     Clients must reproduce every field, not just authored checks.
 
-    Why explicit fields instead of an opaque digest:
-    a digest needs a spec-defined canonical store encoding.
-    Explicit fields are self-describing and language-neutral.
+    Explicit fields avoid needing a spec-defined canonical store encoding.
+    They are self-describing and language-neutral.
     """
 
     time: Interval

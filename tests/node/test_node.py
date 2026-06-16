@@ -174,13 +174,18 @@ class TestDatabaseLoading:
 
     def test_returns_none_when_no_database(self) -> None:
         """No database returns None."""
-        assert Node._try_load_store_from_database(None, validator_index=None) is None
+        assert (
+            Node._try_load_store_from_database(None, validator_index=None, fork=LstarSpec()) is None
+        )
 
     def test_returns_none_when_no_head_root(self) -> None:
         """Empty database returns None."""
         empty_db = SQLiteDatabase(":memory:", State, Block)
 
-        assert Node._try_load_store_from_database(empty_db, validator_index=None) is None
+        assert (
+            Node._try_load_store_from_database(empty_db, validator_index=None, fork=LstarSpec())
+            is None
+        )
 
     def test_returns_none_when_block_missing(self) -> None:
         """A head root pointing at no stored block returns None."""
@@ -188,7 +193,9 @@ class TestDatabaseLoading:
         db = SQLiteDatabase(":memory:", State, Block)
         db.put_head_root(head_root)
 
-        assert Node._try_load_store_from_database(db, validator_index=None) is None
+        assert (
+            Node._try_load_store_from_database(db, validator_index=None, fork=LstarSpec()) is None
+        )
 
     def test_returns_none_when_state_missing(self) -> None:
         """A head root with a stored block but no stored state returns None."""
@@ -197,7 +204,9 @@ class TestDatabaseLoading:
         db.put_block(block, head_root)
         db.put_head_root(head_root)
 
-        assert Node._try_load_store_from_database(db, validator_index=None) is None
+        assert (
+            Node._try_load_store_from_database(db, validator_index=None, fork=LstarSpec()) is None
+        )
 
     def test_returns_none_when_justified_missing(self) -> None:
         """A populated head with no justified checkpoint returns None."""
@@ -207,7 +216,9 @@ class TestDatabaseLoading:
         db.put_state(state, head_root)
         db.put_head_root(head_root)
 
-        assert Node._try_load_store_from_database(db, validator_index=None) is None
+        assert (
+            Node._try_load_store_from_database(db, validator_index=None, fork=LstarSpec()) is None
+        )
 
     def test_returns_none_when_finalized_missing(self) -> None:
         """A populated head with a justified but no finalized checkpoint returns None."""
@@ -218,7 +229,9 @@ class TestDatabaseLoading:
         db.put_head_root(head_root)
         db.put_justified_checkpoint(checkpoint)
 
-        assert Node._try_load_store_from_database(db, validator_index=None) is None
+        assert (
+            Node._try_load_store_from_database(db, validator_index=None, fork=LstarSpec()) is None
+        )
 
     def test_successful_load_uses_wall_clock_time(self) -> None:
         """Store time uses wall clock when it exceeds block-based time."""
@@ -230,6 +243,7 @@ class TestDatabaseLoading:
         store = Node._try_load_store_from_database(
             db,
             validator_index=ValidatorIndex(0),
+            fork=LstarSpec(),
             genesis_time=GENESIS_TIME,
             time_fn=lambda: wall_time,
         )
@@ -253,6 +267,7 @@ class TestDatabaseLoading:
         store = Node._try_load_store_from_database(
             db,
             validator_index=ValidatorIndex(0),
+            fork=LstarSpec(),
             genesis_time=GENESIS_TIME,
             time_fn=lambda: wall_time,
         )
@@ -389,6 +404,7 @@ class TestDatabaseGenesisTimeFallback:
         store = Node._try_load_store_from_database(
             db,
             validator_index=None,
+            fork=LstarSpec(),
             genesis_time=None,
             time_fn=lambda: wall_time,
         )
@@ -409,6 +425,7 @@ class TestDatabaseGenesisTimeFallback:
         store = Node._try_load_store_from_database(
             db,
             validator_index=None,
+            fork=LstarSpec(),
             genesis_time=None,
             time_fn=lambda: wall_time,
         )

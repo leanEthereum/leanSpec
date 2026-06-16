@@ -158,7 +158,7 @@ def test_aggregated_attestation_target_slot_mismatch_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.TARGET_SLOT_MISMATCH,
-                    message_substring="Target checkpoint slot mismatch",
+                    exact_message="Target checkpoint slot mismatch",
                 ),
             ),
         ]
@@ -207,7 +207,7 @@ def test_aggregated_attestation_head_slot_mismatch_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.HEAD_SLOT_MISMATCH,
-                    message_substring="Head checkpoint slot mismatch",
+                    exact_message="Head checkpoint slot mismatch",
                 ),
             ),
         ]
@@ -260,7 +260,7 @@ def test_aggregated_attestation_source_after_target_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.SOURCE_AFTER_TARGET,
-                    message_substring="Source checkpoint slot must not exceed target",
+                    exact_message="Source checkpoint slot must not exceed target",
                 ),
             ),
         ]
@@ -308,7 +308,7 @@ def test_aggregated_attestation_too_far_in_future_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE,
-                    message_substring="Attestation too far in future",
+                    exact_message="Attestation too far in future",
                 ),
             ),
         ]
@@ -401,7 +401,7 @@ def test_aggregated_attestation_just_beyond_disparity_boundary_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE,
-                    message_substring="Attestation too far in future",
+                    exact_message="Attestation too far in future",
                 ),
             ),
         ]
@@ -454,7 +454,7 @@ def test_aggregated_attestation_one_full_slot_in_future_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE,
-                    message_substring="Attestation too far in future",
+                    exact_message="Attestation too far in future",
                 ),
             ),
         ]

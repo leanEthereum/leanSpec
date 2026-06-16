@@ -206,8 +206,8 @@ class BaseBytes(bytes, SSZType):
 
     def __repr__(self) -> str:
         """Return the official form: ClassName(hex_string)."""
-        tname = type(self).__name__
-        return f"{tname}({self.hex()})"
+        type_name = type(self).__name__
+        return f"{type_name}({self.hex()})"
 
     def __eq__(self, other: object) -> bool:
         """Strict equality — only another byte-array instance compares; anything else raises."""
@@ -304,17 +304,19 @@ class BaseByteList(SSZModel):
 
     @field_validator("data", mode="before")
     @classmethod
-    def _validate_byte_list_data(cls, v: Any) -> bytes:
+    def _validate_byte_list_data(cls, value: Any) -> bytes:
         """Enforce the maximum byte count and coerce inputs into a plain bytes object."""
         # Subclasses must declare LIMIT before any instances can be validated.
         if not hasattr(cls, "LIMIT"):
             raise SSZTypeError(f"{cls.__name__} must define LIMIT")
 
         # Coerce the input first, then enforce the upper bound.
-        b = BaseBytes._coerce_to_bytes(v)
-        if len(b) > cls.LIMIT:
-            raise SSZValueError(f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {len(b)}")
-        return b
+        coerced_bytes = BaseBytes._coerce_to_bytes(value)
+        if len(coerced_bytes) > cls.LIMIT:
+            raise SSZValueError(
+                f"{cls.__name__} exceeds limit of {cls.LIMIT}, got {len(coerced_bytes)}"
+            )
+        return coerced_bytes
 
     @field_serializer("data", when_used="json")
     def _serialize_data(self, value: bytes) -> str:
@@ -401,8 +403,8 @@ class BaseByteList(SSZModel):
 
     def __repr__(self) -> str:
         """Return the official form: ClassName(hex_string)."""
-        tname = type(self).__name__
-        return f"{tname}({self.data.hex()})"
+        type_name = type(self).__name__
+        return f"{type_name}({self.data.hex()})"
 
     def __eq__(self, other: object) -> bool:
         """Strict equality — only another byte-list instance compares; anything else raises."""

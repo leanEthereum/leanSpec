@@ -44,7 +44,10 @@ from lean_spec.node.networking.transport.identity import IdentityKeypair
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.networking.transport.quic.stream import QuicStream, QuicTransportError
 from lean_spec.node.networking.transport.quic.stream_adapter import QuicStreamAdapter
-from lean_spec.node.networking.transport.quic.tls import generate_libp2p_certificate
+from lean_spec.node.networking.transport.quic.tls import (
+    generate_libp2p_certificate,
+    verify_libp2p_certificate,
+)
 from lean_spec.node.networking.types import ProtocolId
 
 logger = logging.getLogger(__name__)
@@ -207,15 +210,35 @@ class LibP2PQuicProtocol(QuicConnectionProtocol):
         """Initialize the libp2p QUIC protocol handler."""
         super().__init__(*args, **kwargs)
         self.connection: QuicConnection | None = None
+        self.verified_peer_id: PeerId | None = None
+        self.verification_error: QuicTransportError | None = None
         self.handshake_complete = asyncio.Event()
         self._buffered_events: list[QuicEvent] = []
 
     def quic_event_received(self, event: QuicEvent) -> None:
         """Handle QUIC events."""
         if isinstance(event, HandshakeCompleted):
-            # TODO: extract and verify the peer certificate from the TLS session.
-            # aioquic stores it in the underlying QUIC connection, but does not
-            # expose it directly, so the libp2p identity is not yet recovered.
+            # Recover the remote peer identity from the certificate it presented.
+            #
+            # aioquic stores the peer's TLS 1.3 certificate on the TLS context
+            # once the handshake completes, for both client and server roles.
+            # The libp2p extension on that certificate proves which identity key
+            # the peer controls, so we verify it and key the connection by it.
+            #
+            # Verification failures are recorded rather than raised here.
+            # This callback runs inside aioquic's datagram processing, where a
+            # raised error would not reach the awaiting caller.
+            # The waiter inspects the recorded error and fails the connection.
+            try:
+                peer_certificate = self._quic.tls._peer_certificate
+                if peer_certificate is None:
+                    raise QuicTransportError(
+                        "Peer completed the QUIC handshake without presenting a certificate."
+                    )
+                self.verified_peer_id = verify_libp2p_certificate(peer_certificate)
+            except QuicTransportError as exception:
+                self.verification_error = exception
+
             self.handshake_complete.set()
 
             # For server-side connections, invoke the handshake callback.
@@ -391,13 +414,11 @@ class QuicConnectionManager:
         if transport != "quic":
             raise QuicTransportError(f"Not a QUIC multiaddr: {multiaddr}")
 
-        # The remote peer identity must come from the dialed multiaddr.
+        # The dialed multiaddr must name the peer we expect to reach.
         #
-        # We do not yet extract identity from the verified libp2p
-        # certificate extension, so the multiaddr is the only trustworthy
-        # source of the remote peer identity.
-        # A missing identity means the connection cannot be keyed, so we
-        # fail cleanly rather than invent a fabricated one.
+        # After the handshake we verify the certificate's identity against this
+        # expected value, so a missing identity leaves nothing to check against.
+        # We fail cleanly rather than accept whichever peer happens to answer.
         # This is checked before dialing so it is not re-wrapped as a
         # connection failure below.
         if expected_peer_id is None:
@@ -426,6 +447,21 @@ class QuicConnectionManager:
             # Wait for handshake to complete.
             await protocol.handshake_complete.wait()
 
+            # Surface any certificate verification failure from the handshake.
+            if protocol.verification_error is not None:
+                raise protocol.verification_error
+            assert protocol.verified_peer_id is not None
+
+            # The peer we reached must be the one the multiaddr named.
+            #
+            # Anything else means we connected to an impostor, so reject it.
+            if protocol.verified_peer_id != expected_peer_id:
+                raise QuicTransportError(
+                    "Peer identity mismatch: dialed "
+                    f"{expected_peer_id} but the certificate proves "
+                    f"{protocol.verified_peer_id}."
+                )
+
             connection = QuicConnection(
                 _protocol=protocol,
                 _peer_id=expected_peer_id,
@@ -451,19 +487,15 @@ class QuicConnectionManager:
         Creates a server using aioquic with libp2p-tls authentication.
         Runs until shutdown is requested.
 
-        Inbound connections are rejected until peer identity verification
-        from the libp2p certificate extension is implemented.
-        Without it the remote peer identity is unknown, and keying a
-        connection by a fabricated identity is unsafe.
+        Each inbound connection is keyed by the peer identity proven in its
+        libp2p certificate extension, then handed to the connection callback.
 
         Args:
             multiaddr: Address to listen on (e.g., "/ip4/0.0.0.0/udp/9000/quic-v1").
-            on_connection: Async callback to invoke once inbound connections are supported.
+            on_connection: Async callback invoked with each verified inbound connection.
 
         Raises:
             QuicTransportError: If the multiaddr is not a QUIC address.
-            QuicTransportError: When an inbound connection completes its handshake,
-                because the remote peer identity cannot yet be verified.
         """
         host, port, transport, _ = parse_multiaddr(multiaddr)
 
@@ -485,21 +517,71 @@ class QuicConnectionManager:
 
         # Callback invoked when an inbound TLS handshake completes.
         def handle_handshake(protocol_instance: LibP2PQuicProtocol) -> None:
-            # An inbound connection has no multiaddr to carry the peer identity.
+            # An inbound connection carries no dialed multiaddr.
             #
-            # The only trustworthy source is the libp2p certificate extension,
-            # whose verification is not yet implemented on this side.
-            # Until that exists we cannot key the connection by a real identity,
-            # so we fail cleanly rather than invent a fabricated one.
-            raise QuicTransportError(
-                "Cannot accept inbound connection: "
-                "peer identity verification from the libp2p certificate is not implemented"
+            # The peer identity comes solely from its libp2p certificate, which
+            # the handshake handler has already verified by this point.
+            # A verification failure leaves no trustworthy identity, so the
+            # connection is dropped rather than keyed by an unverified peer.
+            if protocol_instance.verification_error is not None:
+                logger.warning(
+                    "[QUIC] Rejecting inbound connection: %s",
+                    protocol_instance.verification_error,
+                )
+                protocol_instance._quic.close()
+                protocol_instance.transmit()
+                return
+
+            verified_peer_id = protocol_instance.verified_peer_id
+            assert verified_peer_id is not None
+
+            # Recover the peer address from the validated network path.
+            #
+            # The server socket is shared across peers, so the per-connection
+            # address lives on the QUIC connection rather than the transport.
+            network_paths = protocol_instance._quic._network_paths
+            host, udp_port = network_paths[0].addr[:2]
+            remote_address = f"/ip4/{host}/udp/{udp_port}/quic-v1/p2p/{verified_peer_id}"
+
+            connection = QuicConnection(
+                _protocol=protocol_instance,
+                _peer_id=verified_peer_id,
+                _remote_address=remote_address,
             )
+            protocol_instance.connection = connection
+            protocol_instance._replay_buffered_events()
+
+            self._connections[verified_peer_id] = connection
+
+            # Hand the connection to the caller on the running event loop.
+            #
+            # This callback is synchronous, but the consumer is async, so the
+            # work is scheduled as a task rather than awaited inline.
+            asyncio.ensure_future(on_connection(connection))
 
         # Protocol factory that attaches our callback to each new instance.
         def create_protocol(*args, **kwargs) -> LibP2PQuicProtocol:
             protocol = LibP2PQuicProtocol(*args, **kwargs)
             protocol._on_handshake = handle_handshake
+
+            # libp2p authenticates both peers, so the server must ask the
+            # client for its certificate.
+            #
+            # aioquic defaults to not requesting a client certificate, which
+            # would leave the inbound certificate unset and fail verification.
+            # The TLS context is created lazily the first time aioquic builds
+            # the connection, so the request flag is set by wrapping that
+            # initialization rather than touching a context that does not exist
+            # yet.
+            quic_connection = protocol._quic
+            original_initialize = quic_connection._initialize
+
+            def initialize_requesting_client_certificate(peer_cid: bytes) -> None:
+                original_initialize(peer_cid)
+                quic_connection.tls._request_client_certificate = True
+
+            quic_connection._initialize = initialize_requesting_client_certificate  # type: ignore[method-assign]
+
             return protocol
 
         await quic_serve(

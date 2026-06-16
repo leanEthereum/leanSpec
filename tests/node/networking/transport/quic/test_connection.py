@@ -8,12 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import ssl
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from lean_spec.node.networking.config import LIBP2P_ALPN_PROTOCOL
+from lean_spec.node.networking.transport.identity.keypair import IdentityKeypair
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.networking.transport.quic.connection import (
     ConnectionTerminated,
@@ -28,6 +33,7 @@ from lean_spec.node.networking.transport.quic.connection import (
     parse_multiaddr,
 )
 from lean_spec.node.networking.transport.quic.stream import QuicTransportError
+from lean_spec.node.networking.transport.quic.tls import generate_libp2p_certificate
 from lean_spec.node.networking.types import ProtocolId
 
 # Shared fixtures
@@ -683,10 +689,14 @@ class TestQuicConnectionManagerConnect:
         """
 
         # Simulate a protocol whose TLS handshake already completed.
+        #
+        # The certificate verified to the same identity the multiaddr names.
         mock_protocol = MagicMock(spec=LibP2PQuicProtocol)
         mock_protocol.handshake_complete = asyncio.Event()
         mock_protocol.handshake_complete.set()
         mock_protocol.connection = None
+        mock_protocol.verification_error = None
+        mock_protocol.verified_peer_id = PeerId.from_base58("peerB")
         mock_protocol._buffered_events = []
         mock_protocol._replay_buffered_events = MagicMock()
 
@@ -705,6 +715,38 @@ class TestQuicConnectionManagerConnect:
 
         # Buffered events from the handshake window are replayed.
         mock_protocol._replay_buffered_events.assert_called_once()
+
+    @patch("lean_spec.node.networking.transport.quic.connection.quic_connect")
+    async def test_connect_identity_mismatch_is_rejected(
+        self, mock_quic_connect: MagicMock, manager: QuicConnectionManager
+    ) -> None:
+        """
+        Reaching a peer whose proven identity differs from the dialed one is rejected.
+
+        The dialed multiaddr names one peer, but the certificate proves another.
+        The connection is refused and not registered.
+        """
+        mock_protocol = MagicMock(spec=LibP2PQuicProtocol)
+        mock_protocol.handshake_complete = asyncio.Event()
+        mock_protocol.handshake_complete.set()
+        mock_protocol.connection = None
+        mock_protocol.verification_error = None
+        mock_protocol.verified_peer_id = PeerId.from_base58("peerC")
+        mock_protocol._buffered_events = []
+        mock_protocol._replay_buffered_events = MagicMock()
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_protocol)
+        mock_quic_connect.return_value = mock_cm
+
+        with pytest.raises(QuicTransportError) as exception_info:
+            await manager.connect("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/peerB")
+        assert str(exception_info.value) == (
+            "Failed to connect: Peer identity mismatch: "
+            f"dialed {PeerId.from_base58('peerB')} but the certificate proves "
+            f"{PeerId.from_base58('peerC')}."
+        )
+        assert manager._connections == {}
 
     @patch("lean_spec.node.networking.transport.quic.connection.quic_connect")
     async def test_connect_without_peer_id_raises(
@@ -834,23 +876,23 @@ class TestQuicConnectionManagerListen:
 
     @patch("lean_spec.node.networking.transport.quic.connection.QuicConfiguration")
     @patch("lean_spec.node.networking.transport.quic.connection.quic_serve")
-    async def test_listen_handle_handshake_rejects_inbound_connection(
+    async def test_listen_handle_handshake_fails_closed_on_invalid_certificate(
         self,
         mock_quic_serve: MagicMock,
         mock_config_cls: MagicMock,
         manager_with_temp_directory: QuicConnectionManager,
     ) -> None:
         """
-        The handshake callback rejects inbound connections, never fabricating one.
+        An inbound peer with an unverifiable certificate is never registered or accepted.
 
-        Peer identity verification from the libp2p certificate is not
-        implemented, so the remote identity is unknown.
-        The callback raises rather than register a connection under a
-        fabricated identity.
+        The peer presents a self-signed certificate without the libp2p identity
+        extension.
+        The handshake handling records a verification error, registers no
+        connection, and never invokes the inbound callback.
         """
         mock_config_cls.return_value = MagicMock()
 
-        # Capture the protocol factory that listen() passes to quic_serve.
+        # Capture the protocol factory that the listener passes to the server.
         captured_create_protocol = None
 
         async def capture_serve(*args: object, **kwargs: object) -> MagicMock:
@@ -862,7 +904,7 @@ class TestQuicConnectionManagerListen:
 
         callback = AsyncMock()
 
-        # Force the shutdown event to raise immediately so listen() exits.
+        # Force the shutdown event to raise immediately so the listener exits.
         mock_event = MagicMock()
         mock_event.wait = AsyncMock(side_effect=asyncio.CancelledError)
 
@@ -875,37 +917,143 @@ class TestQuicConnectionManagerListen:
             mock_event_cls.return_value = mock_event
             await manager_with_temp_directory.listen("/ip4/0.0.0.0/udp/9000/quic-v1", callback)
 
-        # The factory must have been captured from quic_serve kwargs.
         assert captured_create_protocol is not None
 
-        # Create a protocol instance using the captured factory.
+        # Build a protocol via the captured factory.
         #
-        # The parent constructor is patched to avoid aioquic dependencies.
-        with patch.object(LibP2PQuicProtocol.__bases__[0], "__init__", return_value=None):
-            protocol_instance = captured_create_protocol()
+        # The parent constructor is patched to avoid aioquic socket dependencies,
+        # while still attaching the underlying connection the factory wraps.
+        def init_with_quic(self_instance: LibP2PQuicProtocol, *args: object) -> None:
+            self_instance._quic = MagicMock()
 
-        # The factory must have attached a handshake callback.
+        with patch.object(LibP2PQuicProtocol.__bases__[0], "__init__", init_with_quic):
+            protocol_instance = captured_create_protocol()
+        protocol_instance.connection = None
+        protocol_instance.verified_peer_id = None
+        protocol_instance.verification_error = None
+        protocol_instance.handshake_complete = asyncio.Event()
+        protocol_instance._buffered_events = []
+        protocol_instance.transmit = MagicMock()
         assert protocol_instance._on_handshake is not None
 
-        # Simulate the handshake callback being invoked by aioquic.
-        protocol_instance._quic = MagicMock()
-        protocol_instance.transmit = MagicMock()
-        protocol_instance.connection = None
-        protocol_instance._buffered_events = []
+        # The peer presents a real certificate that lacks the libp2p extension.
+        tls_private = ec.generate_private_key(ec.SECP256R1())
+        certificate_without_extension = (
+            x509.CertificateBuilder()
+            .subject_name(x509.Name([]))
+            .issuer_name(x509.Name([]))
+            .public_key(tls_private.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
+            .not_valid_after(datetime.now(timezone.utc) + timedelta(days=1))
+            .sign(tls_private, hashes.SHA256())
+        )
+        protocol_instance._quic.tls._peer_certificate = certificate_without_extension
 
-        with pytest.raises(QuicTransportError) as exception_info:
-            protocol_instance._on_handshake(protocol_instance)
-        assert str(exception_info.value) == (
-            "Cannot accept inbound connection: "
-            "peer identity verification from the libp2p certificate is not implemented"
+        # Drive the real handshake completion path.
+        protocol_instance.quic_event_received(
+            HandshakeCompleted(
+                alpn_protocol="libp2p", early_data_accepted=False, session_resumed=False
+            )
         )
 
-        # No connection is wired up and none is registered under a fabricated identity.
+        # Verification failed, so no identity was recovered.
+        assert protocol_instance.verified_peer_id is None
+        assert isinstance(protocol_instance.verification_error, QuicTransportError)
+        assert str(protocol_instance.verification_error) == (
+            "Peer certificate is missing the libp2p identity extension."
+        )
+
+        # No connection is wired onto the protocol and none is registered.
         assert protocol_instance.connection is None
         assert manager_with_temp_directory._connections == {}
 
-        # The inbound callback is never invoked.
+        # The inbound callback is never invoked for an unverified peer.
         callback.assert_not_called()
+
+    @patch("lean_spec.node.networking.transport.quic.connection.QuicConfiguration")
+    @patch("lean_spec.node.networking.transport.quic.connection.quic_serve")
+    async def test_listen_handle_handshake_registers_verified_peer(
+        self,
+        mock_quic_serve: MagicMock,
+        mock_config_cls: MagicMock,
+        manager_with_temp_directory: QuicConnectionManager,
+    ) -> None:
+        """
+        An inbound peer with a valid certificate is keyed and accepted by its proven identity.
+
+        The peer presents a generated libp2p certificate.
+        The handshake handling recovers the proven peer identity, registers the
+        connection under it, and schedules the inbound callback with that connection.
+        """
+        mock_config_cls.return_value = MagicMock()
+
+        captured_create_protocol = None
+
+        async def capture_serve(*args: object, **kwargs: object) -> MagicMock:
+            nonlocal captured_create_protocol
+            captured_create_protocol = kwargs.get("create_protocol")
+            return MagicMock()
+
+        mock_quic_serve.side_effect = capture_serve
+
+        accepted_connections: list[QuicConnection] = []
+
+        async def callback(connection: QuicConnection) -> None:
+            accepted_connections.append(connection)
+
+        mock_event = MagicMock()
+        mock_event.wait = AsyncMock(side_effect=asyncio.CancelledError)
+
+        with (
+            patch(
+                "lean_spec.node.networking.transport.quic.connection.asyncio.Event"
+            ) as mock_event_cls,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            mock_event_cls.return_value = mock_event
+            await manager_with_temp_directory.listen("/ip4/0.0.0.0/udp/9000/quic-v1", callback)
+
+        assert captured_create_protocol is not None
+
+        def init_with_quic(self_instance: LibP2PQuicProtocol, *args: object) -> None:
+            self_instance._quic = MagicMock()
+
+        with patch.object(LibP2PQuicProtocol.__bases__[0], "__init__", init_with_quic):
+            protocol_instance = captured_create_protocol()
+        protocol_instance.connection = None
+        protocol_instance.verified_peer_id = None
+        protocol_instance.verification_error = None
+        protocol_instance.handshake_complete = asyncio.Event()
+        protocol_instance._buffered_events = []
+        protocol_instance.transmit = MagicMock()
+
+        # The peer presents a valid certificate for a known identity key.
+        peer_identity_key = IdentityKeypair.generate()
+        _, _, peer_certificate = generate_libp2p_certificate(peer_identity_key)
+        protocol_instance._quic.tls._peer_certificate = peer_certificate
+        protocol_instance._quic._network_paths = [MagicMock(addr=("127.0.0.1", 9000))]
+
+        protocol_instance.quic_event_received(
+            HandshakeCompleted(
+                alpn_protocol="libp2p", early_data_accepted=False, session_resumed=False
+            )
+        )
+
+        # Drain the scheduled inbound callback.
+        await asyncio.sleep(0)
+
+        verified_peer_id = peer_identity_key.to_peer_id()
+        assert protocol_instance.verification_error is None
+        assert protocol_instance.verified_peer_id == verified_peer_id
+
+        # The connection is registered and handed to the callback under the proven identity.
+        assert protocol_instance.connection is not None
+        assert protocol_instance.connection.peer_id == verified_peer_id
+        assert manager_with_temp_directory._connections == {
+            verified_peer_id: protocol_instance.connection
+        }
+        assert accepted_connections == [protocol_instance.connection]
 
     @patch("lean_spec.node.networking.transport.quic.connection.QuicConfiguration")
     @patch("lean_spec.node.networking.transport.quic.connection.quic_serve")

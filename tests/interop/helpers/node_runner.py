@@ -54,6 +54,17 @@ class TestNode:
     index: int
     """Node index in the cluster."""
 
+    @property
+    def dial_address(self) -> str:
+        """
+        Listen address with this node's peer identity appended.
+
+        Dialers must supply the remote peer identity in the multiaddr.
+        The transport refuses to connect without it, since the identity
+        is the only trustworthy source for keying the connection.
+        """
+        return f"{self.listen_address}/p2p/{self.event_source.connection_manager.peer_id}"
+
     _task: asyncio.Task[None] | None = field(default=None, repr=False)
     """Background task running the node."""
 
@@ -479,7 +490,7 @@ class NodeCluster:
         for dialer_index, listener_index in topology:
             dialer = self.nodes[dialer_index]
             listener = self.nodes[listener_index]
-            success = await dialer.dial(listener.listen_address)
+            success = await dialer.dial(listener.dial_address)
             if success:
                 logger.info("Connected node %d -> node %d", dialer_index, listener_index)
             else:

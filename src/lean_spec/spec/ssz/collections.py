@@ -61,6 +61,9 @@ def _validate_offsets(offsets: list[int], scope: int, type_name: str) -> None:
     - Offsets are monotonically non-decreasing, so no body has negative width.
     - The final offset stays within scope, so no body reads past its budget.
 
+    The container decoder repeats these same checks inline.
+    The duplication is intentional: inlining there keeps the per-field name in each error.
+
     Raises:
         SSZSerializationError: When a later offset is smaller than an earlier one.
         SSZSerializationError: When the final offset exceeds the available scope.
@@ -268,7 +271,7 @@ class _SSZSequence[T: SSZType](SSZModel):
         return list(self.data)
 
     @classmethod
-    def _shape_input(cls, v: Any) -> Sequence[Any]:
+    def _shape_input(cls, raw_input: Any) -> Sequence[Any]:
         """
         Normalize a validator input into a length-checkable sequence.
 
@@ -283,16 +286,16 @@ class _SSZSequence[T: SSZType](SSZModel):
         Raises:
             SSZTypeError: When the input is a string, bytes, or non-iterable.
         """
-        if isinstance(v, (list, tuple)):
-            return v
-        if isinstance(v, (str, bytes, bytearray)):
+        if isinstance(raw_input, (list, tuple)):
+            return raw_input
+        if isinstance(raw_input, (str, bytes, bytearray)):
             raise SSZTypeError(
                 f"{cls.__name__}: Expected iterable of {cls.ELEMENT_TYPE.__name__}, "
-                f"got {type(v).__name__}"
+                f"got {type(raw_input).__name__}"
             )
-        if hasattr(v, "__iter__"):
-            return list(v)
-        raise SSZTypeError(f"{cls.__name__}: Expected iterable, got {type(v).__name__}")
+        if hasattr(raw_input, "__iter__"):
+            return list(raw_input)
+        raise SSZTypeError(f"{cls.__name__}: Expected iterable, got {type(raw_input).__name__}")
 
 
 class SSZVector[T: SSZType](_SSZSequence[T]):
@@ -329,7 +332,7 @@ class SSZVector[T: SSZType](_SSZSequence[T]):
 
     @field_validator("data", mode="before")
     @classmethod
-    def _coerce_and_validate(cls, v: Any) -> tuple[SSZType, ...]:
+    def _coerce_and_validate(cls, raw_input: Any) -> tuple[SSZType, ...]:
         """
         Enforce the exact element count and coerce inputs into ELEMENT_TYPE.
 
@@ -348,7 +351,7 @@ class SSZVector[T: SSZType](_SSZSequence[T]):
             raise SSZTypeError(f"{cls.__name__} must define ELEMENT_TYPE and LENGTH")
 
         # Reject strings and non-iterables, then materialize into a sequence.
-        input_elements = cls._shape_input(v)
+        input_elements = cls._shape_input(raw_input)
 
         # Fixed-length type: the input must contain exactly LENGTH elements.
         if len(input_elements) != cls.LENGTH:
@@ -479,7 +482,7 @@ class SSZList[T: SSZType](_SSZSequence[T]):
 
     @field_validator("data", mode="before")
     @classmethod
-    def _coerce_and_validate(cls, v: Any) -> tuple[SSZType, ...]:
+    def _coerce_and_validate(cls, raw_input: Any) -> tuple[SSZType, ...]:
         """
         Enforce the maximum element count and coerce inputs into ELEMENT_TYPE.
 
@@ -498,7 +501,7 @@ class SSZList[T: SSZType](_SSZSequence[T]):
             raise SSZTypeError(f"{cls.__name__} must define ELEMENT_TYPE and LIMIT")
 
         # Reject strings and non-iterables, then materialize into a sequence.
-        input_elements = cls._shape_input(v)
+        input_elements = cls._shape_input(raw_input)
 
         # Variable-length type: any count is fine, up to LIMIT.
         if len(input_elements) > cls.LIMIT:

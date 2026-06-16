@@ -1,7 +1,7 @@
 """Cryptographic constants and configuration presets for the XMSS spec."""
 
 import math
-from typing import Final
+from typing import Final, Self
 
 from pydantic import model_validator
 
@@ -57,7 +57,7 @@ class XmssConfig(StrictBaseModel):
     """The capacity of the Poseidon sponge, defining its security level."""
 
     @model_validator(mode="after")
-    def _validate_decomposition(self) -> "XmssConfig":
+    def _validate_decomposition(self) -> Self:
         """Verify that Q * BASE^Z == P - 1."""
         if self.Q * self.BASE**self.Z != P - 1:
             raise ValueError(f"Q * BASE^Z must equal P-1={P - 1}")

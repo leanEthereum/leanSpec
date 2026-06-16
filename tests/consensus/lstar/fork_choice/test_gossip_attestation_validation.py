@@ -108,7 +108,7 @@ def test_attestation_target_slot_mismatch_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.TARGET_SLOT_MISMATCH,
-                    message_substring="Target checkpoint slot mismatch",
+                    exact_message="Target checkpoint slot mismatch",
                 ),
             ),
         ],
@@ -156,7 +156,7 @@ def test_attestation_too_far_in_future_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE,
-                    message_substring="Attestation too far in future",
+                    exact_message="Attestation too far in future",
                 ),
             ),
         ],
@@ -249,7 +249,7 @@ def test_attestation_just_beyond_disparity_boundary_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE,
-                    message_substring="Attestation too far in future",
+                    exact_message="Attestation too far in future",
                 ),
             ),
         ],
@@ -302,7 +302,7 @@ def test_attestation_one_full_slot_in_future_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE,
-                    message_substring="Attestation too far in future",
+                    exact_message="Attestation too far in future",
                 ),
             ),
         ],
@@ -423,7 +423,7 @@ def test_gossip_attestation_with_invalid_signature(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.INVALID_SIGNATURE,
-                    message_substring="Signature verification failed",
+                    exact_message="Signature verification failed",
                 ),
             ),
         ],
@@ -525,7 +525,7 @@ def test_attestation_source_slot_exceeds_target_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.SOURCE_AFTER_TARGET,
-                    message_substring="Source checkpoint slot must not exceed target",
+                    exact_message="Source checkpoint slot must not exceed target",
                 ),
             ),
         ],
@@ -577,7 +577,7 @@ def test_attestation_head_older_than_target_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.HEAD_OLDER_THAN_TARGET,
-                    message_substring="Head checkpoint must not be older than target",
+                    exact_message="Head checkpoint must not be older than target",
                 ),
             ),
         ],
@@ -625,7 +625,7 @@ def test_attestation_source_slot_override_exceeds_target_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.SOURCE_AFTER_TARGET,
-                    message_substring="Source checkpoint slot must not exceed target",
+                    exact_message="Source checkpoint slot must not exceed target",
                 ),
             ),
         ],
@@ -675,7 +675,7 @@ def test_attestation_source_slot_mismatch_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.SOURCE_SLOT_MISMATCH,
-                    message_substring="Source checkpoint slot mismatch",
+                    exact_message="Source checkpoint slot mismatch",
                 ),
             ),
         ],
@@ -723,7 +723,7 @@ def test_attestation_head_slot_mismatch_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.HEAD_SLOT_MISMATCH,
-                    message_substring="Head checkpoint slot mismatch",
+                    exact_message="Head checkpoint slot mismatch",
                 ),
             ),
         ],
@@ -994,7 +994,119 @@ def test_attestation_head_on_sibling_fork_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.TARGET_NOT_ANCESTOR_OF_HEAD,
-                    message_substring="Target checkpoint must be ancestor of head",
+                    exact_message="Target checkpoint must be ancestor of head",
+                ),
+            ),
+        ],
+    )
+
+
+def test_attestation_slot_near_uint64_max_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    A vote with a slot near the unsigned 64-bit ceiling is rejected without overflow.
+
+    Given
+    -----
+    - 4 validators.
+    - the chain:
+        block_1(1) -> block_2(2)
+    - local time is at slot 2.
+
+    When
+    ----
+    - V1 gossips a vote naming target block_2 at slot 2.
+    - the vote's own slot is the largest unsigned 64-bit value.
+
+    Then
+    ----
+    - validation fails with attestation too far in future.
+
+    Regression
+    ----------
+    - an earlier rule multiplied the wire slot into intervals before the bound check.
+    - a near-ceiling slot overflowed the interval constructor and crashed the node.
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_index=ValidatorIndex(1),
+                    slot=Slot(2**64 - 1),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                    head_slot=Slot(2),
+                    head_root_label="block_2",
+                    valid_signature=False,
+                ),
+                valid=False,
+                expected_rejection=ExpectedRejection(
+                    reason=RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE,
+                    exact_message="Attestation too far in future",
+                ),
+            ),
+        ],
+    )
+
+
+def test_attestation_slot_before_head_rejected(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    A vote whose slot precedes the slot of its head block is rejected.
+
+    Given
+    -----
+    - 4 validators.
+    - the chain:
+        block_1(1) -> block_2(2) -> block_3(3)
+
+    When
+    ----
+    - V1 gossips a vote with target block_2 at slot 2 and head block_3 at slot 3.
+    - the vote's own slot is 2, before the head block's slot 3.
+
+    Then
+    ----
+    - validation fails because the vote slot precedes the head it claims to have seen.
+    """
+    fork_choice_test(
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2)),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), label="block_3"),
+                checks=StoreChecks(head_slot=Slot(3)),
+            ),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_index=ValidatorIndex(1),
+                    slot=Slot(2),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                    head_slot=Slot(3),
+                    head_root_label="block_3",
+                    valid_signature=False,
+                ),
+                valid=False,
+                expected_rejection=ExpectedRejection(
+                    reason=RejectionReason.ATTESTATION_SLOT_BEFORE_HEAD,
+                    exact_message="Attestation slot precedes head",
                 ),
             ),
         ],
@@ -1055,7 +1167,7 @@ def test_attestation_source_on_sibling_fork_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.SOURCE_NOT_ANCESTOR_OF_TARGET,
-                    message_substring="Source checkpoint must be ancestor of target",
+                    exact_message="Source checkpoint must be ancestor of target",
                 ),
             ),
         ],

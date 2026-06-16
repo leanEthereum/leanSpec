@@ -15,13 +15,8 @@
 
 # Single-dispatch handlers for the hash_tree_root generic function.
 # Dispatched by argument type, so they have no direct call site.
-_htr_uint
-_htr_boolean
-_htr_fp
+_htr_packed_leaf
 _htr_bytes
-_htr_bytearray
-_htr_memoryview
-_htr_bytevector
 _htr_bytelist
 _htr_bitvector_base
 _htr_bitlist_base
@@ -64,6 +59,8 @@ _.validate_target
 _.validate_rejection_is_declared
 _.validate_signatures_are_out_of_scope
 _._yaml_int_to_hex
+_._check_list_lengths
+_._reject_oversized_validator_set
 
 # Pydantic serializers, invoked by the model during serialization.
 _.serialize_value
@@ -82,11 +79,12 @@ source_type
 exitstatus
 amount
 
-# Inbound-connection callback on the QUIC listener.
-# Callers pass it across modules, so the use is real but invisible here.
-# It stays reserved until inbound peer-identity verification is implemented,
-# at which point the handshake stops rejecting and invokes it.
-on_connection
+# aioquic server-side TLS attribute, read by aioquic during the handshake to
+# decide whether to request the client certificate.
+# aioquic defaults to not requesting it, so we set it by wrapping the lazy
+# connection initializer.
+# aioquic reads it internally, so the assignment looks unused here.
+_._request_client_certificate
 
 # logging.Formatter.format override, invoked by the logging framework.
 _.format
@@ -169,3 +167,11 @@ y
 first_name
 slot_number
 _.slot_number
+
+# Access tier recorded on every route entry to document the route, not yet
+# read back by the registration path.
+is_admin
+
+# Attribute assignment in slotted-class tests that proves new attributes are
+# rejected; the assignment is the action under test, never read back.
+_.extra_field

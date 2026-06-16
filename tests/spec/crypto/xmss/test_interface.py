@@ -60,15 +60,15 @@ def _test_correctness_roundtrip(
     #
     # We detect this by checking if both messages encode to the same codeword.
     original_codeword = target_sum_encode(
-        scheme.poseidon, scheme.config, public_key.parameter, message, signature.rho, test_slot
+        scheme.poseidon, scheme.config, public_key.parameter, test_slot, signature.rho, message
     )
     tampered_codeword = target_sum_encode(
         scheme.poseidon,
         scheme.config,
         public_key.parameter,
-        tampered_message,
-        signature.rho,
         test_slot,
+        signature.rho,
+        tampered_message,
     )
 
     if tampered_codeword != original_codeword:

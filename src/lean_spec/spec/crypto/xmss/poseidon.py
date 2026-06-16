@@ -42,7 +42,7 @@ class PoseidonXmss(StrictBaseModel):
             self._engines[width] = Poseidon(params)
         return self._engines[width]
 
-    def compress(self, input_vec: list[Fp], width: int, output_length: int) -> list[Fp]:
+    def compress(self, input_elements: list[Fp], width: int, output_length: int) -> list[Fp]:
         """
         Poseidon in compression mode.
 
@@ -53,7 +53,7 @@ class PoseidonXmss(StrictBaseModel):
         Used for hash chains and Merkle interior nodes.
 
         Args:
-            input_vec: Field elements to hash.
+            input_elements: Field elements to hash.
             width: Permutation state width, either 16 or 24.
             output_length: Number of output field elements to return.
 
@@ -61,14 +61,14 @@ class PoseidonXmss(StrictBaseModel):
             Truncated digest of output_length field elements.
         """
         # The output cannot be longer than the input vector after padding.
-        if len(input_vec) < output_length:
+        if len(input_elements) < output_length:
             raise ValueError("Input vector is too short for requested output length.")
 
         # Select the cached engine matching the requested permutation width.
         engine = self._get_engine(width)
 
         # Zero-pad to the state width before applying the permutation.
-        padded_input = list(input_vec) + [Fp(value=0)] * (width - len(input_vec))
+        padded_input = list(input_elements) + [Fp(value=0)] * (width - len(input_elements))
 
         # Permute, then add the original padded input element-wise.
         permuted_state = engine.permute(padded_input)
@@ -97,12 +97,12 @@ class PoseidonXmss(StrictBaseModel):
 
         # Compress the decomposed vector through the width-24 engine.
         # Width 24 is the only mode used for sponge domain separation.
-        input_vec = int_to_base_p(packed_lengths, 24)
-        return self.compress(input_vec, 24, capacity_length)
+        input_elements = int_to_base_p(packed_lengths, 24)
+        return self.compress(input_elements, 24, capacity_length)
 
     def sponge(
         self,
-        input_vec: list[Fp],
+        input_elements: list[Fp],
         capacity_value: list[Fp],
         output_length: int,
         width: int,
@@ -115,7 +115,7 @@ class PoseidonXmss(StrictBaseModel):
         Phase 3: squeeze the rate slots until output_length elements are produced.
 
         Args:
-            input_vec: Variable-length input.
+            input_elements: Variable-length input.
             capacity_value: Domain-separating capacity initialization.
             output_length: Desired output length in field elements.
             width: Permutation state width.
@@ -131,8 +131,8 @@ class PoseidonXmss(StrictBaseModel):
         rate = width - len(capacity_value)
 
         # Zero-pad to a multiple of the rate so absorption iterates exact chunks.
-        num_extra = (rate - (len(input_vec) % rate)) % rate
-        padded_input = input_vec + [Fp(value=0)] * num_extra
+        num_extra = (rate - (len(input_elements) % rate)) % rate
+        padded_input = input_elements + [Fp(value=0)] * num_extra
 
         # Layout: capacity slots first, then rate slots.
         cap_length = len(capacity_value)
@@ -197,25 +197,25 @@ class PoseidonXmss(StrictBaseModel):
 
         if len(message_parts) == 1:
             # Hash chain step: width-16 compression of (digest || parameter || tweak).
-            input_vec = message_parts[0].elements + parameter.elements + encoded_tweak
-            digest = self.compress(input_vec, 16, config.HASH_LENGTH_FIELD_ELEMENTS)
+            input_elements = message_parts[0].elements + parameter.elements + encoded_tweak
+            digest = self.compress(input_elements, 16, config.HASH_LENGTH_FIELD_ELEMENTS)
 
         elif len(message_parts) == 2:
             # Merkle node: width-24 compression of (parameter || tweak || left || right).
-            input_vec = (
+            input_elements = (
                 parameter.elements
                 + encoded_tweak
                 + message_parts[0].elements
                 + message_parts[1].elements
             )
-            digest = self.compress(input_vec, 24, config.HASH_LENGTH_FIELD_ELEMENTS)
+            digest = self.compress(input_elements, 24, config.HASH_LENGTH_FIELD_ELEMENTS)
 
         else:
             # Merkle leaf: sponge mode over many concatenated digests.
             flattened_message = [
                 element for message_part in message_parts for element in message_part.elements
             ]
-            input_vec = parameter.elements + encoded_tweak + flattened_message
+            input_elements = parameter.elements + encoded_tweak + flattened_message
 
             # The domain separator binds the sponge to this hashing task shape.
             lengths = [
@@ -225,7 +225,9 @@ class PoseidonXmss(StrictBaseModel):
                 config.HASH_LENGTH_FIELD_ELEMENTS,
             ]
             capacity_value = self.safe_domain_separator(lengths, config.CAPACITY)
-            digest = self.sponge(input_vec, capacity_value, config.HASH_LENGTH_FIELD_ELEMENTS, 24)
+            digest = self.sponge(
+                input_elements, capacity_value, config.HASH_LENGTH_FIELD_ELEMENTS, 24
+            )
 
         return HashDigestVector(data=digest)
 

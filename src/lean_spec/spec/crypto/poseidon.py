@@ -1228,10 +1228,10 @@ _RAW_CONSTANTS_24: list[int] = [
 ]
 
 # For width 16 (needs (8 + 20) * 16 = 448 constants).
-ROUND_CONSTANTS_16: list[Fp] = [Fp(value=raw_constant) for raw_constant in _RAW_CONSTANTS_16]
+_ROUND_CONSTANTS_16: list[Fp] = [Fp(value=raw_constant) for raw_constant in _RAW_CONSTANTS_16]
 
 # For width 24 (needs (8 + 23) * 24 = 744 constants).
-ROUND_CONSTANTS_24: list[Fp] = [Fp(value=raw_constant) for raw_constant in _RAW_CONSTANTS_24]
+_ROUND_CONSTANTS_24: list[Fp] = [Fp(value=raw_constant) for raw_constant in _RAW_CONSTANTS_24]
 
 
 @njit(cache=True)
@@ -1506,7 +1506,7 @@ PARAMS_16 = PoseidonParams(
     rounds_f=8,
     rounds_p=20,
     mds_first_row=[Fp(value=row_entry) for row_entry in _MDS_FIRST_ROW_16],
-    round_constants=ROUND_CONSTANTS_16,
+    round_constants=_ROUND_CONSTANTS_16,
 )
 """Poseidon parameters for width-16 permutation (8 full rounds, 20 partial)."""
 
@@ -1515,6 +1515,6 @@ PARAMS_24 = PoseidonParams(
     rounds_f=8,
     rounds_p=23,
     mds_first_row=[Fp(value=row_entry) for row_entry in _MDS_FIRST_ROW_24],
-    round_constants=ROUND_CONSTANTS_24,
+    round_constants=_ROUND_CONSTANTS_24,
 )
 """Poseidon parameters for width-24 permutation (8 full rounds, 23 partial)."""

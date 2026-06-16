@@ -335,6 +335,15 @@ def test_signature_ssz_roundtrip(sample_signature: Signature) -> None:
     assert Signature.decode_bytes(sample_signature.encode_bytes()) == sample_signature
 
 
+def test_signature_hash_tracks_content_equality(sample_signature: Signature) -> None:
+    """The hash follows content, so an encode/decode round-trip dedups in a set."""
+    # A round-tripped signature is content-equal and so must hash identically.
+    round_tripped_signature = Signature.decode_bytes(sample_signature.encode_bytes())
+    assert hash(sample_signature) == hash(round_tripped_signature)
+    # Two content-equal signatures collapse to a single set member.
+    assert len({sample_signature, round_tripped_signature}) == 1
+
+
 def test_signature_encoded_size_matches_config(sample_signature: Signature) -> None:
     """The encoded signature length matches the advertised fixed length."""
     assert len(sample_signature.encode_bytes()) == TEST_CONFIG.SIGNATURE_LENGTH_BYTES

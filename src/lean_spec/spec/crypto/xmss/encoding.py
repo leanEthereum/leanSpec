@@ -24,7 +24,7 @@ https://eprint.iacr.org/2026/016.pdf
 
 The target-sum filter is the top-level acceptance test from the canonical Rust instantiation.
 
-# Why the decode can abort
+# Abort condition
 
 The decode turns each uniform field element into uniform base-BASE digits.
 Uniform output is what lets the security analysis model the hash as a random oracle.
@@ -148,9 +148,9 @@ def target_sum_encode(
     poseidon: PoseidonXmss,
     config: XmssConfig,
     parameter: Parameter,
-    message: Bytes32,
-    rho: Randomness,
     epoch: Uint64,
+    rho: Randomness,
+    message: Bytes32,
 ) -> list[int] | None:
     """
     Encode a message into a codeword if it meets the target sum.
@@ -161,9 +161,9 @@ def target_sum_encode(
         poseidon: Cached Poseidon engine.
         config: Active XMSS configuration.
         parameter: Public parameter for domain separation.
-        message: Message being signed.
-        rho: Per-attempt randomness.
         epoch: Current epoch.
+        rho: Per-attempt randomness.
+        message: Message being signed.
 
     Returns:
         Codeword on success, None when the attempt must be retried.

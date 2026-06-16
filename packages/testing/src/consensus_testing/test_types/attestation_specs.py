@@ -204,6 +204,19 @@ class AggregatedAttestationSpec(AttestationSpec):
         validator_indices = self.validator_indices
         signer_indices = self.signer_indices or self.validator_indices
 
+        # Path 0: Raw bit override.
+        #
+        # Use the bits verbatim with placeholder proof bytes.
+        # An honest aggregate can never carry zero participants, so this is the
+        # only way to feed the gossip path an adversarial empty-bit aggregate.
+        if self.aggregation_bits is not None:
+            placeholder = ByteList512KiB(data=b"\x00" * 32)
+            proof = SingleMessageAggregate(
+                participants=self.aggregation_bits,
+                proof=placeholder,
+            )
+            return SignedAggregatedAttestation(data=attestation_data, proof=proof)
+
         # Path 1: Invalid signature.
         #
         # Correct participant bitfield but zeroed-out proof bytes.

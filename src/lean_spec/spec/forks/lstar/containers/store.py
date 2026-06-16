@@ -37,7 +37,7 @@ class Store[StateT: Container, BlockT: Container](StrictBaseModel):
     """Root of the head block that fork choice currently selects."""
 
     safe_target: Bytes32
-    """Root of the block a validator is currently safe to attest to."""
+    """Root of the block a validator is safe to attest to."""
 
     latest_justified: Checkpoint
     """Highest-slot justified checkpoint observed so far."""

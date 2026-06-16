@@ -17,7 +17,16 @@ from consensus_testing.keys_cli import PINNED_KEY_SET_DIGESTS, download_keys
     context_settings={
         "ignore_unknown_options": True,
         "allow_extra_args": True,
-    }
+    },
+    epilog="""\
+\b
+Examples:
+    # Generate consensus fixtures
+    fill tests/consensus/devnet --fork=Lstar --clean -v
+\b
+    # Use specific XMSS scheme (overrides LEAN_ENV env var)
+    fill --fork=Lstar --scheme=prod --clean -v
+""",
 )
 @click.argument("pytest_args", nargs=-1, type=click.UNPROCESSED)
 @click.option(
@@ -65,16 +74,7 @@ def fill(
     crypto: str,
     check_determinism: bool,
 ) -> None:
-    """
-    Generate consensus test fixtures from test specifications.
-
-    Examples:
-        # Generate consensus fixtures
-        fill tests/consensus/devnet --fork=Lstar --clean -v
-
-        # Use specific XMSS scheme (overrides LEAN_ENV env var)
-        fill --fork=Lstar --scheme=prod --clean -v
-    """
+    """Generate consensus test fixtures from test specifications."""
     # The spec config reads this flag once, at import time.
     # The current process froze the old value when the package imported.
     # Only the pytest subprocess below starts fresh and sees this export.
@@ -151,6 +151,16 @@ def verify_fixture_determinism(config_path: Path, project_root: Path, fork: str)
 
     The mocked prover is forced so proof bytes stay deterministic across both runs.
     A single process pins each seed cleanly, so distribution is disabled.
+
+    This gate covers only hash-seed and iteration-order effects under the mocked prover.
+
+    The real prover emits randomized proof bytes by design.
+    Those proofs are intentionally outside this guarantee.
+    They never reproduce across two fills of identical inputs.
+
+    The non-proof fields of real-crypto vectors are not separately re-checked here.
+    Masking out exactly the randomized proof bytes would need a fragile per-container rule.
+    So no real-crypto diff is attempted.
     """
     consensus_tests = project_root / "tests" / "consensus"
     emitted_under_seed: list[Path] = []

@@ -77,11 +77,17 @@ class RejectionReason(StrEnum):
     ATTESTATION_TOO_FAR_IN_FUTURE = "ATTESTATION_TOO_FAR_IN_FUTURE"
     """The attestation slot is beyond the store's acceptance horizon."""
 
+    ATTESTATION_SLOT_BEFORE_HEAD = "ATTESTATION_SLOT_BEFORE_HEAD"
+    """The attestation slot precedes its head block's slot."""
+
     VALIDATOR_NOT_IN_STATE = "VALIDATOR_NOT_IN_STATE"
     """The referenced validator does not exist in the state registry."""
 
     VALIDATOR_INDEX_OUT_OF_RANGE = "VALIDATOR_INDEX_OUT_OF_RANGE"
     """The validator index does not address any registered validator."""
+
+    JUSTIFIED_SLOT_OUT_OF_RANGE = "JUSTIFIED_SLOT_OUT_OF_RANGE"
+    """A justification query named a slot beyond the tracked justification window."""
 
     # Cryptographic verification
     INVALID_SIGNATURE = "INVALID_SIGNATURE"

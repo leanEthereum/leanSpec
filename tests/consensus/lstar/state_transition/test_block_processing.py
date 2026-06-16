@@ -313,7 +313,7 @@ def test_block_with_wrong_slot(state_transition_test: StateTransitionTestFiller)
         post=None,
         expected_rejection=ExpectedRejection(
             reason=RejectionReason.BLOCK_SLOT_MISMATCH,
-            message_substring="Block slot mismatch",
+            exact_message="Block slot mismatch",
         ),
     )
 

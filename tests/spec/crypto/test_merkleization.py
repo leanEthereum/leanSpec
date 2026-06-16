@@ -438,27 +438,6 @@ def test_hash_tree_root_fp(integer_value: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "payload",
-    [
-        b"",
-        b"\x00",
-        b"\x01",
-        b"\xab",
-        b"\x00\x01\x02\x03",
-        b"\xff" * 31,
-        b"\xff" * 32,
-        b"\xff" * 33,
-    ],
-)
-def test_hash_tree_root_raw_bytes_like(payload: bytes) -> None:
-    """Raw bytes, bytearray, and memoryview hash identically."""
-    from_bytes = hash_tree_root(payload)
-    from_bytearray = hash_tree_root(bytearray(payload))
-    from_memoryview = hash_tree_root(memoryview(payload))
-    assert from_bytes == from_bytearray == from_memoryview
-
-
-@pytest.mark.parametrize(
     "payload, expected_root",
     [
         # Empty: zero chunks merkleizes to the all-zero leaf.

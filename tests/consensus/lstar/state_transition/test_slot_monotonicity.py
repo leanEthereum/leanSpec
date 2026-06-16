@@ -44,7 +44,7 @@ def test_process_slots_target_equal_to_state_slot_rejected(
         post=None,
         expected_rejection=ExpectedRejection(
             reason=RejectionReason.BLOCK_SLOT_NOT_IN_FUTURE,
-            message_substring="Target slot must be in the future",
+            exact_message="Target slot must be in the future",
         ),
     )
 
@@ -82,6 +82,6 @@ def test_block_at_parent_slot_rejected_when_slot_processing_skipped(
         post=None,
         expected_rejection=ExpectedRejection(
             reason=RejectionReason.BLOCK_OLDER_THAN_LATEST_HEADER,
-            message_substring="Block is older than latest header",
+            exact_message="Block is older than latest header",
         ),
     )

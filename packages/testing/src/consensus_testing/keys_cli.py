@@ -1,17 +1,4 @@
-"""
-CLI for generating or downloading the pre-generated XMSS test keys.
-
-Downloading Pre-generated Keys:
-
-    uv run keys --download --scheme test    # test scheme
-    uv run keys --download --scheme prod    # prod scheme
-
-Regenerating Keys:
-
-    uv run keys                   # defaults
-    uv run keys --count 20        # more validators
-    uv run keys --max-slot 200    # longer lifetime
-"""
+"""CLI for generating or downloading the pre-generated XMSS test keys."""
 
 from __future__ import annotations
 
@@ -256,7 +243,19 @@ def download_keys(scheme: str) -> None:
     print("Download complete!")
 
 
-@click.command()
+@click.command(
+    epilog="""\
+\b
+Downloading pre-generated keys:
+    uv run keys --download --scheme test    # test scheme
+    uv run keys --download --scheme prod    # prod scheme
+\b
+Regenerating keys:
+    uv run keys                   # defaults
+    uv run keys --count 20        # more validators
+    uv run keys --max-slot 200    # longer lifetime
+""",
+)
 @click.option(
     "--download",
     is_flag=True,

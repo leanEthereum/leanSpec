@@ -12,7 +12,19 @@ import pytest
     context_settings={
         "ignore_unknown_options": True,
         "allow_extra_args": True,
-    }
+    },
+    epilog="""\
+\b
+Examples:
+    # Run against external server
+    apitest http://localhost:5052
+\b
+    # Run with verbose output
+    apitest http://localhost:5052 -v
+\b
+    # Run specific test
+    apitest http://localhost:5052 -k test_health
+""",
 )
 @click.argument("server_url")
 @click.argument("pytest_args", nargs=-1, type=click.UNPROCESSED)
@@ -27,18 +39,8 @@ def apitest(
 
     SERVER_URL is the base URL of the API server (e.g., http://localhost:5052).
 
-    For testing the local leanSpec implementation, use `uv run pytest tests/api`
-    which automatically starts a local server.
-
-    Examples:
-        # Run against external server
-        apitest http://localhost:5052
-
-        # Run with verbose output
-        apitest http://localhost:5052 -v
-
-        # Run specific test
-        apitest http://localhost:5052 -k test_health
+    For testing the local leanSpec implementation, use the local pytest suite under
+    tests/api, which automatically starts a local server.
     """
     config_path = Path(__file__).parent / "pytest_ini_files" / "pytest-apitest.ini"
 

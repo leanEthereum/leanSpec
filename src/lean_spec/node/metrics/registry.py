@@ -374,19 +374,14 @@ throughout the codebase.
 """
 
 
-def get_metrics_output(registry: CollectorRegistry | None = None) -> bytes:
+def get_metrics_output() -> bytes:
     """
     Serialize all registered metrics into Prometheus text exposition format.
 
     Typically called by an HTTP handler to serve the `/metrics` endpoint.
     The output is ready to return as a response body.
 
-    Args:
-        registry: Prometheus collector registry to export. Falls back to
-            the global default registry when not provided.
-
     Returns:
         UTF-8 encoded bytes in Prometheus text exposition format.
     """
-    reg = registry or REGISTRY
-    return generate_latest(reg)
+    return generate_latest(REGISTRY)

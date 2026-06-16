@@ -342,13 +342,17 @@ class StateTransitionTest(BaseTestSpec):
         """
         # Compute max slot across all attestation specs for XMSS key lifetime.
         # XMSS keys require precomputation up to the highest slot used.
-        max_slot = max(spec.slot for spec in attestation_specs)
+        max_slot = max(attestation_spec.slot for attestation_spec in attestation_specs)
         key_manager = XmssKeyManager.shared(max_slot=max_slot)
         payloads: dict[AttestationData, set[SingleMessageAggregate]] = {}
 
-        for spec in attestation_specs:
-            attestation_data = spec.build_attestation_data(block_registry, state.latest_justified)
-            proof = key_manager.sign_and_aggregate(spec.validator_indices, attestation_data)
+        for attestation_spec in attestation_specs:
+            attestation_data = attestation_spec.build_attestation_data(
+                block_registry, state.latest_justified
+            )
+            proof = key_manager.sign_and_aggregate(
+                attestation_spec.validator_indices, attestation_data
+            )
             payloads.setdefault(attestation_data, set()).add(proof)
 
         return payloads

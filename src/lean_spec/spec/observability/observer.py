@@ -1,5 +1,5 @@
 """
-SpecObserver Protocol and its module-level singleton.
+Telemetry observer protocol and its process-wide singleton.
 
 Hook Points
 
@@ -9,11 +9,11 @@ function being observed, not to any particular caller.
 
 Contract
 
-Observers must not raise.
+An observer must not raise.
 A hook fires during a consensus-critical code path.
-Exceptions propagate and abort the operation.
-Clients are expected to swallow internal errors in their observer
-implementations (for example, a Prometheus backend outage).
+Any exception propagates and aborts the operation.
+Clients must swallow internal errors inside their own observer implementation.
+A metrics backend that goes down, for example, must not break the spec.
 """
 
 from __future__ import annotations
@@ -64,8 +64,8 @@ _observer: SpecObserver = _NullObserver()
 """
 Process-wide observer singleton.
 
-Starts as a _NullObserver so spec imports are side-effect-free.
-Replaced by the client at startup via set_observer.
+Starts as a discard-everything observer so spec imports stay side-effect-free.
+The client swaps in its own observer at startup.
 """
 
 
@@ -73,9 +73,8 @@ def set_observer(observer: SpecObserver) -> None:
     """
     Register the global observer.
 
-    Call once at client startup after any backend initialization
-    (for example, after metrics.init in the Prometheus case).
-    Repeat calls replace the previous observer.
+    Call once at client startup, after the metrics backend is ready.
+    A later call replaces the previous observer.
     """
     global _observer
     _observer = observer
@@ -87,18 +86,18 @@ def observe_state_transition() -> Iterator[None]:
     Time the wrapped state transition and publish the elapsed duration.
 
     Spec code wraps the body of a state transition in this block instead
-    of calling a stopwatch primitive directly. On clean exit the elapsed
-    wall time is published through the observer singleton.
+    of calling a stopwatch primitive directly.
+    On clean exit the elapsed wall time is published through the observer.
 
     Semantics
 
-    - Publishes state_transition_timed only when the body returns normally.
+    - The state-transition timing event fires only when the body returns normally.
     - If the body raises, no event is emitted and the exception propagates.
 
     Other-language ports
 
     This helper is Python sugar.
-    The portable contract is the state_transition_timed hook on SpecObserver.
+    The portable contract is the state-transition timing hook on the observer.
     Clients in other languages produce the same event through whatever
     scoped-timer idiom is natural in their language (RAII, defer, etc.).
     """
@@ -112,8 +111,9 @@ def observe_on_block() -> Iterator[None]:
     """
     Time the wrapped fork-choice block integration and publish the duration.
 
-    Semantics mirror observe_state_transition: publishes only on clean exit,
-    propagates exceptions without emitting an event.
+    Timing semantics match the state-transition timer.
+    The event fires only on clean exit.
+    An exception propagates without emitting an event.
     """
     start = time.perf_counter()
     yield
@@ -125,10 +125,11 @@ def observe_on_attestation() -> Iterator[None]:
     """
     Time the wrapped gossip-attestation validation and publish the duration.
 
-    Semantics mirror observe_state_transition: publishes only on clean exit,
-    propagates exceptions without emitting an event. The caller remains
-    responsible for classifying the outcome (valid vs invalid counters),
-    because that classification is a caller-side concern.
+    Timing semantics match the state-transition timer.
+    The event fires only on clean exit.
+    An exception propagates without emitting an event.
+    The caller still classifies the outcome as valid or invalid.
+    That classification is a caller-side concern.
     """
     start = time.perf_counter()
     yield

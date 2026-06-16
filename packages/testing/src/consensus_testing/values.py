@@ -59,6 +59,10 @@ def make_signed_attestation(
 
     Head and target share the target checkpoint.
     Source defaults to a zero checkpoint.
+
+    The output is structurally valid only, not guaranteed consistent with any chain.
+    The source, target, and head triple is never checked for realizability.
+    Keep this out of the real spec's attestation processing.
     """
     return SignedAttestation(
         validator_index=validator,

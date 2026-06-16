@@ -208,39 +208,19 @@ def hash_tree_root(value: object) -> Bytes32:
     raise TypeError(f"hash_tree_root: unsupported value type {type(value).__name__}")
 
 
-@hash_tree_root.register
-def _htr_uint(value: BaseUint) -> Bytes32:
-    return merkleize(_pack_bytes(value.encode_bytes()))
-
-
-@hash_tree_root.register
-def _htr_boolean(value: Boolean) -> Bytes32:
-    return merkleize(_pack_bytes(value.encode_bytes()))
-
-
-@hash_tree_root.register
-def _htr_fp(value: Fp) -> Bytes32:
+@hash_tree_root.register(BaseUint)
+@hash_tree_root.register(Boolean)
+@hash_tree_root.register(Fp)
+@hash_tree_root.register(BaseBytes)
+def _htr_packed_leaf(value: BaseUint | Boolean | Fp | BaseBytes) -> Bytes32:
+    # Each of these encodes to a fixed-width byte string with no length prefix.
+    # The root is the Merkle root of those bytes packed into 32-byte chunks.
     return merkleize(_pack_bytes(value.encode_bytes()))
 
 
 @hash_tree_root.register
 def _htr_bytes(value: bytes) -> Bytes32:
     return merkleize(_pack_bytes(value))
-
-
-@hash_tree_root.register
-def _htr_bytearray(value: bytearray) -> Bytes32:
-    return merkleize(_pack_bytes(bytes(value)))
-
-
-@hash_tree_root.register
-def _htr_memoryview(value: memoryview) -> Bytes32:
-    return merkleize(_pack_bytes(value.tobytes()))
-
-
-@hash_tree_root.register
-def _htr_bytevector(value: BaseBytes) -> Bytes32:
-    return merkleize(_pack_bytes(value.encode_bytes()))
 
 
 @hash_tree_root.register

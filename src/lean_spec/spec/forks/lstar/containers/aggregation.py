@@ -70,8 +70,7 @@ class SingleMessageAggregate(Container):
         The result names the union of every contributing validator.
         The prover compresses all contributions into one proof over the shared message.
 
-        # Why the index travels with each fresh signer
-
+        Each fresh entry carries its own validator index.
         A public key carries no validator index on its own.
         Pairing the index with each fresh entry lets the bitfield be derived, not passed in.
         An empty list of fresh signers simply contributes no indices.
@@ -193,11 +192,9 @@ class MultiMessageAggregate(Container):
         """
         Merge several single-message proofs over distinct messages into one.
 
-        # Why the public keys are passed in
-
-        - A merged proof stores no public keys.
-        - The prover needs them as external context to fold the components together.
-        - They cannot be recovered from the proofs, so the caller supplies them.
+        A merged proof stores no public keys.
+        The prover needs them as external context to fold the components together.
+        They cannot be recovered from the proofs, so the caller supplies them.
 
         Args:
             single_message_aggregates: The single-message proofs to merge,
@@ -265,11 +262,9 @@ class MultiMessageAggregate(Container):
         Splits this multi-message aggregate to extract the component
         bound to the given message.
 
-        # Why the layout and participants are passed in
-
-        - A merged proof stores neither the public keys nor the participant bitfields.
-        - The prover needs the original key layout to isolate one component.
-        - The caller supplies both, drawn from the block attestation this component binds.
+        A merged proof stores neither the public keys nor the participant bitfields.
+        The prover needs the original key layout to isolate one component.
+        The caller supplies both, drawn from the block attestation this component binds.
 
         Args:
             message: Message that selects the single-message aggregate component.
@@ -320,7 +315,8 @@ class MultiMessageAggregate(Container):
         # The message bindings
 
         Each component is checked against one message and slot supplied by the caller.
-        Without that binding the proof would accept attacker-chosen data resolving to the same keys.
+        Without that binding the proof would accept attacker-chosen data.
+        That data could resolve to the same keys.
         The parallel lists pin every component to the message it actually signed.
 
         Args:

@@ -1010,6 +1010,13 @@ class GossipsubBehavior:
                             # Incomplete varint -- wait for more data.
                             break
 
+                        # A declared length is attacker-controlled.
+                        # Without an upper bound, a peer can claim a huge frame
+                        # and force us to buffer reads forever without ever decoding.
+                        # Reject and disconnect before waiting for any of those bytes.
+                        if length > MAX_PAYLOAD_SIZE:
+                            raise ValueError(f"RPC frame too large: {length} > {MAX_PAYLOAD_SIZE}")
+
                         # Not enough bytes yet -- wait for the next read.
                         if len(buffer) < varint_size + length:
                             break

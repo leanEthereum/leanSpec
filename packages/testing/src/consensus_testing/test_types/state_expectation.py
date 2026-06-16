@@ -29,7 +29,7 @@ class StateExpectation(SelectiveCheck):
     making tests more focused and maintainable.
     """
 
-    _SCALAR_ACCESSORS: ClassVar[dict[str, Callable[["State"], Any]]] = {
+    _SCALAR_ACCESSORS: ClassVar[dict[str, Callable[[State], Any]]] = {
         "slot": lambda s: s.slot,
         "latest_justified_slot": lambda s: s.latest_justified.slot,
         "latest_justified_root": lambda s: s.latest_justified.root,
@@ -139,7 +139,7 @@ class StateExpectation(SelectiveCheck):
 
     def validate_against_state(
         self,
-        state: "State",
+        state: State,
         block_registry: dict[str, Block] | None = None,
     ) -> None:
         """

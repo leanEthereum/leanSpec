@@ -99,7 +99,7 @@ def test_attestation_source_on_same_slot_fork_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.SOURCE_NOT_ANCESTOR_OF_TARGET,
-                    message_substring="Source checkpoint must be ancestor of target",
+                    exact_message="Source checkpoint must be ancestor of target",
                 ),
             ),
         ],

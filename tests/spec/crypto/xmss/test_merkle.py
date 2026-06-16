@@ -94,8 +94,11 @@ def test_commit_open_verify_roundtrip(
 ) -> None:
     """A built tree opens and verifies every leaf for various shapes."""
     assert start_index + num_leaves <= (1 << depth)
+    # Verification binds the opening length to the configured log lifetime.
+    # Match the configured height to this tree's depth so every opening is well formed.
+    config_for_depth = PROD_CONFIG.model_copy(update={"LOG_LIFETIME": depth})
     _run_commit_open_verify_roundtrip(
-        POSEIDON, PROD_CONFIG, num_leaves, depth, start_index, leaf_parts_length
+        POSEIDON, config_for_depth, num_leaves, depth, start_index, leaf_parts_length
     )
 
 
@@ -365,19 +368,42 @@ def test_verify_path_rejects_excessive_depth_at_ssz_level() -> None:
         HashDigestList(data=[random_domain(PROD_CONFIG) for _ in range(33)])
 
 
-@pytest.mark.parametrize("position", [16, 100])
-def test_verify_path_rejects_position_exceeding_capacity(position: int) -> None:
-    """A position at or beyond two-to-the-depth fails without raising."""
-    siblings = [random_domain(PROD_CONFIG) for _ in range(4)]
+@pytest.mark.parametrize("sibling_count", [3, 5])
+def test_verify_path_rejects_opening_length_mismatch(sibling_count: int) -> None:
+    """An opening whose length differs from the configured log lifetime fails without raising."""
+    # A configured lifetime of two-to-the-four demands exactly four siblings per opening.
+    config_with_lifetime_sixteen = PROD_CONFIG.model_copy(update={"LOG_LIFETIME": 4})
+    siblings = [random_domain(config_with_lifetime_sixteen) for _ in range(sibling_count)]
     opening = HashTreeOpening(siblings=HashDigestList(data=siblings))
     assert (
         verify_path(
             poseidon=POSEIDON,
-            config=PROD_CONFIG,
-            parameter=random_parameter(PROD_CONFIG),
-            root=random_domain(PROD_CONFIG),
+            config=config_with_lifetime_sixteen,
+            parameter=random_parameter(config_with_lifetime_sixteen),
+            root=random_domain(config_with_lifetime_sixteen),
+            position=Uint64(0),
+            leaf_parts=[random_domain(config_with_lifetime_sixteen)],
+            opening=opening,
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize("position", [16, 100])
+def test_verify_path_rejects_position_exceeding_capacity(position: int) -> None:
+    """A position at or beyond the configured lifetime fails without raising."""
+    # A configured lifetime of two-to-the-four caps valid positions at fifteen.
+    config_with_lifetime_sixteen = PROD_CONFIG.model_copy(update={"LOG_LIFETIME": 4})
+    siblings = [random_domain(config_with_lifetime_sixteen) for _ in range(4)]
+    opening = HashTreeOpening(siblings=HashDigestList(data=siblings))
+    assert (
+        verify_path(
+            poseidon=POSEIDON,
+            config=config_with_lifetime_sixteen,
+            parameter=random_parameter(config_with_lifetime_sixteen),
+            root=random_domain(config_with_lifetime_sixteen),
             position=Uint64(position),
-            leaf_parts=[random_domain(PROD_CONFIG)],
+            leaf_parts=[random_domain(config_with_lifetime_sixteen)],
             opening=opening,
         )
         is False
@@ -385,16 +411,18 @@ def test_verify_path_rejects_position_exceeding_capacity(position: int) -> None:
 
 
 def test_verify_path_accepts_boundary_position_without_raising() -> None:
-    """The maximum valid position for the depth does not trip the bounds guard."""
-    siblings = [random_domain(PROD_CONFIG) for _ in range(4)]
+    """The maximum valid position for the configured lifetime does not trip the bounds guard."""
+    # A configured lifetime of two-to-the-four makes fifteen the last valid position.
+    config_with_lifetime_sixteen = PROD_CONFIG.model_copy(update={"LOG_LIFETIME": 4})
+    siblings = [random_domain(config_with_lifetime_sixteen) for _ in range(4)]
     opening = HashTreeOpening(siblings=HashDigestList(data=siblings))
     verification_result = verify_path(
         poseidon=POSEIDON,
-        config=PROD_CONFIG,
-        parameter=random_parameter(PROD_CONFIG),
-        root=random_domain(PROD_CONFIG),
+        config=config_with_lifetime_sixteen,
+        parameter=random_parameter(config_with_lifetime_sixteen),
+        root=random_domain(config_with_lifetime_sixteen),
         position=Uint64(15),
-        leaf_parts=[random_domain(PROD_CONFIG)],
+        leaf_parts=[random_domain(config_with_lifetime_sixteen)],
         opening=opening,
     )
     assert isinstance(verification_result, bool)

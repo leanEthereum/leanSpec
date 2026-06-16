@@ -226,7 +226,7 @@ class Node:
         # If the database contains valid state, resume from there.
         # Otherwise, fall through to genesis initialization.
         store = cls._try_load_store_from_database(
-            database, validator_index, config.genesis_time, config.time_fn, fork
+            database, validator_index, fork, config.genesis_time, config.time_fn
         )
 
         # An explicit anchor wins over genesis synthesis but loses to the database.
@@ -375,9 +375,9 @@ class Node:
     def _try_load_store_from_database(
         database: Database | None,
         validator_index: ValidatorIndex | None,
+        fork: ForkProtocol,
         genesis_time: Uint64 | None = None,
         time_fn: Callable[[], float] = time.time,
-        fork: ForkProtocol | None = None,
     ) -> Store | None:
         """
         Try to load forkchoice store from existing database state.
@@ -393,9 +393,9 @@ class Node:
         Args:
             database: Database to load from.
             validator_index: Validator index for the store instance.
+            fork: Fork specification for store construction.
             genesis_time: Unix timestamp of genesis (slot 0).
             time_fn: Wall-clock time source.
-            fork: Fork specification for store construction.
 
         Returns:
             Loaded Store or None if no valid state exists.
@@ -443,8 +443,7 @@ class Node:
         #
         # The store starts with just the head block and state.
         # Additional blocks can be loaded on demand or via sync.
-        store_cls = fork.store_class if fork is not None else Store
-        return store_cls(
+        return fork.store_class(
             time=Interval(store_time),
             config=head_state.config,
             head=head_root,

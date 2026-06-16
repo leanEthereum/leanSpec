@@ -27,7 +27,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Store,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Uint64
 
 
 class BlockSpec(CamelModel):
@@ -129,8 +129,10 @@ class BlockSpec(CamelModel):
     """
 
     def resolve_proposer_index(self, num_validators: int) -> ValidatorIndex:
-        """Return the proposer index, falling back to round-robin by slot."""
-        return self.proposer_index or ValidatorIndex(int(self.slot) % num_validators)
+        """Return the proposer index, falling back to the spec's round-robin schedule."""
+        return self.proposer_index or ValidatorIndex.proposer_for_slot(
+            self.slot, Uint64(num_validators)
+        )
 
     def resolve_parent_root(
         self,
@@ -464,7 +466,6 @@ class BlockSpec(CamelModel):
         store: Store,
         block_registry: dict[str, Block],
         key_manager: XmssKeyManager,
-        lean_env: str,
         deliver_unknown_parent: bool = False,
     ) -> tuple[SignedBlock, Store]:
         """
@@ -487,7 +488,6 @@ class BlockSpec(CamelModel):
             store: Fork choice store for head state lookup and gossip processing.
             block_registry: Labeled blocks for fork creation.
             key_manager: Key manager for signing.
-            lean_env: Signature scheme environment name ("test" or "prod").
             deliver_unknown_parent: When True and the parent state is absent,
                 build a structurally valid block against the anchor state with
                 its parent root overridden, instead of raising.

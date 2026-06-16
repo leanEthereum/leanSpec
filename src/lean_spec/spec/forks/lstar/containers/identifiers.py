@@ -7,7 +7,7 @@ from lean_spec.spec.ssz import SSZList, Uint64
 
 
 class SubnetId(Uint64):
-    """Subnet identifier (0-63) for attestation subnet partitioning."""
+    """Subnet identifier for attestation subnet partitioning."""
 
 
 class ValidatorIndex(Uint64):
