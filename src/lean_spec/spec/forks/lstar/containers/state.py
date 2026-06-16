@@ -72,47 +72,6 @@ class JustifiedSlots(BaseBitlist):
                 f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})",
             ) from exception
 
-    def with_justified(
-        self,
-        finalized_slot: Slot,
-        target_slot: Slot,
-        value: Boolean,
-    ) -> Self:
-        """
-        Return a new bitfield with the justification status updated.
-
-        Finalized slots are immutable history, so updating one is a no-op.
-
-        Args:
-            finalized_slot: The anchor point for the tracking window.
-            target_slot: The slot to update.
-            value: The new justification status.
-
-        Returns:
-            A new, updated instance.
-
-        Raises:
-            IndexError: If the target slot is active but outside the tracked range.
-        """
-        # A slot behind the finalized boundary has no tracked index.
-        # Finalized history cannot change, so return the bitfield unchanged.
-        if (relative_index := target_slot.justified_index_after(finalized_slot)) is None:
-            return self
-
-        # Writing past the tracked range indicates a logic error.
-        # The caller must extend the bitfield explicitly first.
-        if relative_index >= len(self):
-            raise IndexError(
-                f"Slot {target_slot} is outside the tracked range "
-                f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
-            )
-
-        # Clone the bits, flip the one at the target index, and wrap in a new instance.
-        updated_justification_bits = list(self.data)
-        updated_justification_bits[relative_index] = value
-
-        return type(self)(data=updated_justification_bits)
-
     def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> Self:
         """
         Extend the tracking capacity to cover a new target slot.
@@ -142,18 +101,6 @@ class JustifiedSlots(BaseBitlist):
         #
         # We extend the existing data with False values to bridge the gap.
         return type(self)(data=list(self.data) + [Boolean(False)] * gap_size)
-
-    def shift_window(self, delta: int) -> Self:
-        """
-        Advance the tracking window by dropping slots that became finalized.
-
-        A non-positive delta keeps the tracking window unchanged.
-        """
-        if delta <= 0:
-            return self
-
-        # Drop the leading entries that fell behind the finalized boundary.
-        return type(self)(data=self.data[delta:])
 
 
 class JustificationValidators(BaseBitlist):

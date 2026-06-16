@@ -46,6 +46,15 @@ class AttestationData(Container):
     source: Checkpoint
     """The checkpoint representing the source block as observed by the validator."""
 
+    def is_genesis_self_vote(self) -> bool:
+        """
+        Whether the vote anchors both source and target at slot 0.
+
+        Genesis self-votes cannot justify or finalize, but they carry
+        fork-choice signal, so selection treats them specially.
+        """
+        return self.source.slot == Slot(0) and self.target.slot == Slot(0)
+
     def lies_on_chain(self, historical_block_hashes: Sequence[Bytes32]) -> bool:
         """
         Check that every checkpoint points to a block on the given chain.
