@@ -40,10 +40,12 @@ from lean_spec.spec.forks.lstar.containers import (
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    MultiMessageAggregate,
+    SignedBlock,
     Validators,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Uint64
 
 GENESIS_TIME = Uint64(1704067200)
 
@@ -294,6 +296,37 @@ class TestOptionalServiceWiring:
         """API server is None when api_config is not set."""
         node = Node.from_genesis(node_config)
         assert node.api_server is None
+
+    def test_api_server_serves_finalized_signed_block(self, node_config: NodeConfig) -> None:
+        """The wired signed-block source returns the finalized block in an empty proof."""
+        config = dataclasses.replace(
+            node_config, api_config=ApiServerConfig(host="127.0.0.1", port=5052)
+        )
+        node = Node.from_genesis(config)
+        assert node.api_server is not None
+        assert node.api_server.signed_block_getter is not None
+
+        store = node.api_server.store
+        assert store is not None
+        finalized_root = store.latest_finalized.root
+
+        assert node.api_server.signed_block_getter(finalized_root) == SignedBlock(
+            block=store.blocks[finalized_root],
+            proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+        )
+
+    def test_api_server_signed_block_source_returns_none_for_unknown_root(
+        self, node_config: NodeConfig
+    ) -> None:
+        """The wired signed-block source returns None for a root the store does not hold."""
+        config = dataclasses.replace(
+            node_config, api_config=ApiServerConfig(host="127.0.0.1", port=5052)
+        )
+        node = Node.from_genesis(config)
+        assert node.api_server is not None
+        assert node.api_server.signed_block_getter is not None
+
+        assert node.api_server.signed_block_getter(Bytes32.zero()) is None
 
     def test_validator_service_created_when_registry_provided(
         self, node_with_validator: Node

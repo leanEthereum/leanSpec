@@ -44,7 +44,8 @@ from lean_spec.spec.forks import (
     Validators,
 )
 from lean_spec.spec.forks.lstar.config import ATTESTATION_COMMITTEE_COUNT
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate
+from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Uint64
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +311,21 @@ class Node:
         # Create API server if configured
         api_server: ApiServer | None = None
         if config.api_config is not None:
+
+            def signed_block_for_root(block_root: Bytes32) -> SignedBlock | None:
+                # The store and database retain only unsigned blocks.
+                # Wrap the looked-up block in an empty proof to serve the
+                # checkpoint-sync anchor pair.
+                # The receiving peer pairs the block with the finalized state
+                # and never verifies this proof, so an empty one suffices.
+                block = sync_service.store.blocks.get(block_root)
+                if block is None:
+                    return None
+                return SignedBlock(
+                    block=block,
+                    proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+                )
+
             # The admin API reads and mutates the sync service aggregator flag,
             # letting operators rotate the role at runtime without a restart.
             # Store getter captures sync_service to get the live store.
@@ -317,6 +333,7 @@ class Node:
                 config=config.api_config,
                 spec=fork,
                 store_getter=lambda: sync_service.store,
+                signed_block_getter=signed_block_for_root,
                 aggregator_role_control=sync_service,
             )
 
