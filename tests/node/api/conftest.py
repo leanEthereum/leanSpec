@@ -1,9 +1,10 @@
-"""
-Shared pytest fixtures for API server tests.
+"""Shared helpers for the API server tests."""
 
-Core fixtures inherited from parent conftest files.
-"""
+from dataclasses import dataclass
 
-# All fixtures are inherited from tests/conftest.py via pytest discovery.
-# This file exists to establish the conftest hierarchy and can be extended
-# with API-specific fixtures as needed.
+
+@dataclass(slots=True)
+class AggregatorRoleStub:
+    """Minimal stand-in exposing only the aggregator flag the endpoints touch."""
+
+    is_aggregator: bool = False

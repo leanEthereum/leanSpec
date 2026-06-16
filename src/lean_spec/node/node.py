@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from lean_spec.node.api import AggregatorController, ApiServer, ApiServerConfig
+from lean_spec.node.api import ApiServer, ApiServerConfig
 from lean_spec.node.chain import SlotClock
 from lean_spec.node.chain.service import ChainService
 from lean_spec.node.metrics import registry as metrics
@@ -128,10 +128,10 @@ class NodeConfig:
     When False (default):
     - The node runs in standard validator or passive mode
 
-    Seeds the initial value of the live aggregator flag on SyncService and
-    NetworkService. The flag can be toggled at runtime via the admin API
-    (see AggregatorController). Runtime toggles do not persist across
-    restarts and do not update the local ENR or subnet subscriptions.
+    Seeds the initial value of the live aggregator flag on the sync service.
+    The flag can be toggled at runtime via the admin API.
+    Runtime toggles do not persist across restarts.
+    They do not update the local ENR or subnet subscriptions.
     """
 
     anchor_store: Store | None = field(default=None)
@@ -299,7 +299,6 @@ class Node:
             sync_service=sync_service,
             event_source=config.event_source,
             network_name=config.network_name,
-            is_aggregator=config.is_aggregator,
         )
 
         # Wire up aggregated attestation publishing.
@@ -311,18 +310,14 @@ class Node:
         # Create API server if configured
         api_server: ApiServer | None = None
         if config.api_config is not None:
-            # Controller lets the admin API rotate the aggregator role at
-            # runtime when another aggregator becomes unhealthy.
-            aggregator_controller = AggregatorController(
-                sync_service=sync_service,
-                network_service=network_service,
-            )
-            # Store getter captures sync_service to get the live store
+            # The admin API reads and mutates the sync service aggregator flag,
+            # letting operators rotate the role at runtime without a restart.
+            # Store getter captures sync_service to get the live store.
             api_server = ApiServer(
                 config=config.api_config,
                 spec=fork,
                 store_getter=lambda: sync_service.store,
-                aggregator_controller=aggregator_controller,
+                aggregator_role_control=sync_service,
             )
 
         # Create validator service if registry provided.
@@ -467,10 +462,6 @@ class Node:
         """
         if install_signal_handlers:
             self._install_signal_handlers()
-
-        # Start API server if configured
-        if self.api_server is not None:
-            await self.api_server.start()
 
         # Run services concurrently.
         #

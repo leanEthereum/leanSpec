@@ -694,26 +694,19 @@ class TestRunWithOptionalServices:
     """Tests for run() with optional API and validator services."""
 
     async def test_run_with_api_server(self, node_config: NodeConfig) -> None:
-        """run() starts and runs the API server task when configured."""
+        """run() runs the API server task when configured."""
         config = dataclasses.replace(
             node_config, api_config=ApiServerConfig(host="127.0.0.1", port=0)
         )
         node = Node.from_genesis(config)
         assert node.api_server is not None
 
-        mock_start = AsyncMock()
         mock_run = AsyncMock()
 
         asyncio.get_running_loop().call_later(0.05, node.stop)
-        with (
-            patch.object(type(node.api_server), "start", mock_start),
-            patch.object(type(node.api_server), "run", mock_run),
-        ):
+        with patch.object(type(node.api_server), "run", mock_run):
             await node.run(install_signal_handlers=False)
 
-        # Both start() (called before TaskGroup) and run() (added to TaskGroup)
-        # must be awaited for the API server to function.
-        mock_start.assert_awaited_once()
         mock_run.assert_awaited_once()
 
     async def test_run_with_validator_service(self, node_with_validator: Node) -> None:

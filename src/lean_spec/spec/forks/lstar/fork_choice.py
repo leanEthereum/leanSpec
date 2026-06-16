@@ -10,7 +10,6 @@ from lean_spec.spec.forks.lstar._base import LstarSpecBase, LstarStore
 from lean_spec.spec.forks.lstar.config import (
     GOSSIP_DISPARITY_INTERVALS,
     INTERVALS_PER_SLOT,
-    MAX_ATTESTATIONS_DATA,
 )
 from lean_spec.spec.forks.lstar.containers import (
     AggregationError,
@@ -565,14 +564,15 @@ class ForkChoiceMixin(LstarSpecBase):
                     f"Sync parent chain before processing block at slot {block.slot}.",
                 )
 
-            # Bound the distinct votes the block may carry.
+            # Reject a block body that repeats the same vote data.
             #
             # Collapsing the votes to their distinct data exposes any repeat:
             #
             #     votes  ->  { vote A, vote B, vote B }  ->  distinct { vote A, vote B }
             #
             # A repeat (fewer distinct than total) is rejected as duplicate data.
-            # More distinct votes than the cap is rejected to bound import work.
+            # The transition itself bounds the distinct-data count.
+            # Only the wire-level duplicate prohibition lives here.
             aggregated_attestations = block.body.attestations
             attestation_data_set = {attestation.data for attestation in aggregated_attestations}
             if len(attestation_data_set) != len(aggregated_attestations):
@@ -580,12 +580,6 @@ class ForkChoiceMixin(LstarSpecBase):
                     RejectionReason.DUPLICATE_ATTESTATION_DATA,
                     "Block contains duplicate AttestationData entries; "
                     "each AttestationData must appear at most once",
-                )
-            if len(attestation_data_set) > int(MAX_ATTESTATIONS_DATA):
-                raise SpecRejectionError(
-                    RejectionReason.TOO_MANY_ATTESTATION_DATA,
-                    f"Block contains {len(attestation_data_set)} distinct AttestationData "
-                    f"entries; maximum is {MAX_ATTESTATIONS_DATA}",
                 )
 
             # Validate cryptographic signatures.

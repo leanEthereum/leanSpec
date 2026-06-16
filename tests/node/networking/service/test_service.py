@@ -490,27 +490,6 @@ class TestNetworkServiceInit:
         )
         assert svc.network_name == "0x00000000"
 
-    def test_default_is_aggregator(self, peer_id: PeerId) -> None:
-        """is_aggregator defaults to False."""
-        source = MockEventSource(events=[])
-        sync_service = create_mock_sync_service(peer_id)
-        svc = NetworkService(
-            sync_service=sync_service,
-            event_source=source,
-        )
-        assert svc.is_aggregator is False
-
-    def test_custom_is_aggregator(self, peer_id: PeerId) -> None:
-        """Constructor accepts is_aggregator."""
-        source = MockEventSource(events=[])
-        sync_service = create_mock_sync_service(peer_id)
-        svc = NetworkService(
-            sync_service=sync_service,
-            event_source=source,
-            is_aggregator=True,
-        )
-        assert svc.is_aggregator is True
-
 
 # Behavioral routing to the forkchoice store
 

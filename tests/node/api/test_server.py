@@ -1,50 +1,18 @@
-"""
-Tests for the API server implementation details.
-
-API contract tests (status codes, content types, response structure) are in
-tests/api/ and also run automatically with `uv run pytest`.
-
-These tests cover leanSpec-specific implementation details:
-- Configuration behavior
-- Store integration
-- Error handling when store not initialized
-"""
+"""Tests for the API server implementation: configuration, store wiring, and admin endpoints."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 
 import httpx
 
-from lean_spec.node.api import AggregatorController, ApiServer, ApiServerConfig
+from lean_spec.node.api import ApiServer, ApiServerConfig
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SignedBlock
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32
-
-
-@dataclass(slots=True)
-class _AggregatorStub:
-    """Minimal aggregator role holder for wiring AggregatorController in tests."""
-
-    is_aggregator: bool = field(default=False)
-
-
-def _make_test_controller(initial: bool = False) -> AggregatorController:
-    """
-    Build an AggregatorController backed by lightweight stubs.
-
-    Avoids pulling in the full SyncService / NetworkService dependency graph
-    for endpoint-level tests that only exercise the flag-toggle contract.
-    """
-    sync_stub = _AggregatorStub(is_aggregator=initial)
-    network_stub = _AggregatorStub(is_aggregator=initial)
-    return AggregatorController(
-        sync_service=sync_stub,  # type: ignore[arg-type]
-        network_service=network_stub,  # type: ignore[arg-type]
-    )
+from tests.node.api.conftest import AggregatorRoleStub
 
 
 class TestApiServerConfiguration:
@@ -102,6 +70,25 @@ class TestFinalizedStateEndpoint:
                 response = await client.get("http://127.0.0.1:15054/lean/v0/states/finalized")
 
                 assert response.status_code == 503
+                assert response.reason_phrase == "Store not initialized"
+
+        finally:
+            await server.aclose()
+
+    async def test_returns_404_when_finalized_state_missing(self, base_store: Store) -> None:
+        """Endpoint returns 404 when the finalized state is absent from the store."""
+        store_without_states = base_store.model_copy(update={"states": {}})
+        config = ApiServerConfig(port=15072)
+        server = ApiServer(config=config, store_getter=lambda: store_without_states)
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:15072/lean/v0/states/finalized")
+
+                assert response.status_code == 404
+                assert response.reason_phrase == "Finalized state not available"
 
         finally:
             await server.aclose()
@@ -143,14 +130,14 @@ class TestFinalizedBlockEndpoint:
 
     async def test_returns_503_without_signed_block_source(self, base_store: Store) -> None:
         """Endpoint returns 503 when no signed-block source is configured."""
-        config = ApiServerConfig(port=15072)
+        config = ApiServerConfig(port=15075)
         server = ApiServer(config=config, store_getter=lambda: base_store)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15072/lean/v0/blocks/finalized")
+                response = await client.get("http://127.0.0.1:15075/lean/v0/blocks/finalized")
 
                 assert response.status_code == 503
 
@@ -218,6 +205,7 @@ class TestJustifiedCheckpointEndpoint:
                 response = await client.get("http://127.0.0.1:15057/lean/v0/checkpoints/justified")
 
                 assert response.status_code == 503
+                assert response.reason_phrase == "Store not initialized"
 
         finally:
             await server.aclose()
@@ -238,6 +226,7 @@ class TestForkChoiceEndpoint:
                 response = await client.get("http://127.0.0.1:15058/lean/v0/fork_choice")
 
                 assert response.status_code == 503
+                assert response.reason_phrase == "Store not initialized"
 
         finally:
             await server.aclose()
@@ -289,12 +278,30 @@ class TestForkChoiceEndpoint:
         finally:
             await server.aclose()
 
+    async def test_validator_count_is_null_when_head_state_missing(self, base_store: Store) -> None:
+        """Fork choice reports a null validator count when the head post-state is absent."""
+        store_without_states = base_store.model_copy(update={"states": {}})
+        config = ApiServerConfig(port=15071)
+        server = ApiServer(config=config, store_getter=lambda: store_without_states)
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://127.0.0.1:15071/lean/v0/fork_choice")
+
+                assert response.status_code == 200
+                assert response.json()["validator_count"] is None
+
+        finally:
+            await server.aclose()
+
 
 class TestAggregatorAdminEndpoint:
     """Tests for the /lean/v0/admin/aggregator endpoint."""
 
-    async def test_status_returns_503_without_controller(self) -> None:
-        """GET returns 503 when no controller is wired."""
+    async def test_status_returns_503_without_aggregator_control(self) -> None:
+        """GET returns 503 when no aggregator role control is wired."""
         config = ApiServerConfig(port=15060)
         server = ApiServer(config=config)
 
@@ -305,15 +312,16 @@ class TestAggregatorAdminEndpoint:
                 response = await client.get("http://127.0.0.1:15060/lean/v0/admin/aggregator")
 
                 assert response.status_code == 503
+                assert response.reason_phrase == "Aggregator role control not available"
 
         finally:
             await server.aclose()
 
     async def test_status_returns_current_role(self) -> None:
-        """GET returns the current aggregator role from the controller."""
-        controller = _make_test_controller(initial=True)
+        """GET returns the current aggregator role from the sync service flag."""
+        aggregator_role_stub = AggregatorRoleStub(is_aggregator=True)
         config = ApiServerConfig(port=15061)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
@@ -330,9 +338,9 @@ class TestAggregatorAdminEndpoint:
 
     async def test_toggle_activates_role(self) -> None:
         """POST with enabled=true activates the aggregator role."""
-        controller = _make_test_controller(initial=False)
+        aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
         config = ApiServerConfig(port=15062)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
@@ -345,7 +353,7 @@ class TestAggregatorAdminEndpoint:
 
                 assert response.status_code == 200
                 assert response.json() == {"is_aggregator": True, "previous": False}
-                assert controller.is_enabled() is True
+                assert aggregator_role_stub.is_aggregator is True
 
                 # A follow-up GET sees the new value.
                 follow_up = await client.get("http://127.0.0.1:15062/lean/v0/admin/aggregator")
@@ -356,9 +364,9 @@ class TestAggregatorAdminEndpoint:
 
     async def test_toggle_deactivates_role(self) -> None:
         """POST with enabled=false deactivates the aggregator role."""
-        controller = _make_test_controller(initial=True)
+        aggregator_role_stub = AggregatorRoleStub(is_aggregator=True)
         config = ApiServerConfig(port=15063)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
@@ -371,16 +379,15 @@ class TestAggregatorAdminEndpoint:
 
                 assert response.status_code == 200
                 assert response.json() == {"is_aggregator": False, "previous": True}
-                assert controller.is_enabled() is False
+                assert aggregator_role_stub.is_aggregator is False
 
         finally:
             await server.aclose()
 
     async def test_toggle_rejects_missing_body(self) -> None:
         """POST with no body returns 400."""
-        controller = _make_test_controller()
         config = ApiServerConfig(port=15064)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
 
@@ -393,15 +400,15 @@ class TestAggregatorAdminEndpoint:
                 )
 
                 assert response.status_code == 400
+                assert response.reason_phrase == "Invalid JSON body"
 
         finally:
             await server.aclose()
 
     async def test_toggle_rejects_missing_field(self) -> None:
         """POST without 'enabled' field returns 400."""
-        controller = _make_test_controller()
         config = ApiServerConfig(port=15065)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
 
@@ -413,15 +420,16 @@ class TestAggregatorAdminEndpoint:
                 )
 
                 assert response.status_code == 400
+                assert response.reason_phrase == "Missing 'enabled' field in body"
 
         finally:
             await server.aclose()
 
     async def test_toggle_rejects_non_boolean(self) -> None:
         """POST with non-boolean 'enabled' returns 400 and does not change state."""
-        controller = _make_test_controller(initial=False)
+        aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
         config = ApiServerConfig(port=15066)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
@@ -433,7 +441,8 @@ class TestAggregatorAdminEndpoint:
                 )
 
                 assert response.status_code == 400
-                assert controller.is_enabled() is False
+                assert response.reason_phrase == "'enabled' must be a boolean"
+                assert aggregator_role_stub.is_aggregator is False
 
         finally:
             await server.aclose()
@@ -442,14 +451,14 @@ class TestAggregatorAdminEndpoint:
         """
         Multiple sequential POSTs converge to the last-writer value.
 
-        Posts must be issued one at a time (not via ``asyncio.gather``);
-        with concurrent requests the server-side arrival order is racy and
-        the last-writer-wins assertion becomes flaky on slower runners
-        (observed: Python 3.14 macOS).
+        Posts must be issued one at a time, never concurrently.
+        Concurrent requests arrive in a racy order.
+        The last-writer-wins assertion then goes flaky on slower runners.
+        Observed on Python 3.14 macOS.
         """
-        controller = _make_test_controller(initial=False)
+        aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
         config = ApiServerConfig(port=15067)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
@@ -463,16 +472,15 @@ class TestAggregatorAdminEndpoint:
                 ]
 
                 assert all(r.status_code == 200 for r in responses)
-                assert controller.is_enabled() is True
+                assert aggregator_role_stub.is_aggregator is True
 
         finally:
             await server.aclose()
 
     async def test_toggle_rejects_null_body(self) -> None:
         """POST with JSON null body returns 400."""
-        controller = _make_test_controller()
         config = ApiServerConfig(port=15068)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
 
@@ -485,15 +493,15 @@ class TestAggregatorAdminEndpoint:
                 )
 
                 assert response.status_code == 400
+                assert response.reason_phrase == "Missing 'enabled' field in body"
 
         finally:
             await server.aclose()
 
     async def test_toggle_rejects_array_body(self) -> None:
         """POST with JSON array body returns 400."""
-        controller = _make_test_controller()
         config = ApiServerConfig(port=15069)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
 
@@ -505,15 +513,16 @@ class TestAggregatorAdminEndpoint:
                 )
 
                 assert response.status_code == 400
+                assert response.reason_phrase == "Missing 'enabled' field in body"
 
         finally:
             await server.aclose()
 
     async def test_toggle_rejects_integer_enabled(self) -> None:
         """POST with integer 1 as enabled returns 400 (must be boolean)."""
-        controller = _make_test_controller(initial=False)
+        aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
         config = ApiServerConfig(port=15070)
-        server = ApiServer(config=config, aggregator_controller=controller)
+        server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
@@ -525,7 +534,8 @@ class TestAggregatorAdminEndpoint:
                 )
 
                 assert response.status_code == 400
-                assert controller.is_enabled() is False
+                assert response.reason_phrase == "'enabled' must be a boolean"
+                assert aggregator_role_stub.is_aggregator is False
 
         finally:
             await server.aclose()

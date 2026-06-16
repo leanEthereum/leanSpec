@@ -1,9 +1,4 @@
-"""
-Tests for the admin aggregator endpoint.
-
-The conformance server is started with a controller seeded to disabled,
-so tests exercise both the happy path and error cases.
-"""
+"""Tests for the admin aggregator endpoint."""
 
 from __future__ import annotations
 
@@ -14,7 +9,7 @@ class TestAggregatorStatus:
     """Tests for GET /lean/v0/admin/aggregator."""
 
     def test_returns_200(self, server_url: str) -> None:
-        """GET returns 200 when the controller is wired."""
+        """GET returns 200 when the sync service is wired."""
         response = httpx.get(f"{server_url}/lean/v0/admin/aggregator")
         assert response.status_code == 200
 

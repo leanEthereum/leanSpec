@@ -76,9 +76,6 @@ class NetworkService:
     network_name: str = field(default="0x00000000")
     """Network name for gossip topics (4-byte hex string)."""
 
-    is_aggregator: bool = field(default=False)
-    """Whether this node functions as an aggregator."""
-
     _running: bool = field(default=False, repr=False)
     """Whether the event loop is running."""
 

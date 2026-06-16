@@ -27,20 +27,8 @@ class TestFinalizedState:
         content_type = response.headers.get("content-type", "")
         assert "application/octet-stream" in content_type
 
-    def test_ssz_deserializes(self, server_url: str) -> None:
-        """Finalized state SSZ bytes deserialize to a valid State object."""
-        response = get_finalized_state(server_url)
-        state = State.decode_bytes(response.content)
-        assert state is not None
-
-    def test_has_valid_slot(self, server_url: str) -> None:
-        """Finalized state has a non-negative slot."""
-        response = get_finalized_state(server_url)
-        state = State.decode_bytes(response.content)
-        assert int(state.slot) >= 0
-
-    def test_has_validators(self, server_url: str) -> None:
-        """Finalized state has at least one validator."""
-        response = get_finalized_state(server_url)
-        state = State.decode_bytes(response.content)
-        assert len(state.validators) > 0
+    def test_finalized_state_is_genesis(self, server_url: str) -> None:
+        """Finalized state decodes to the genesis state: slot 0 with three validators."""
+        state = State.decode_bytes(get_finalized_state(server_url).content)
+        assert int(state.slot) == 0
+        assert len(state.validators) == 3

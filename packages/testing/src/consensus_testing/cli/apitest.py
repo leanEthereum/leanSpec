@@ -40,7 +40,7 @@ def apitest(
     SERVER_URL is the base URL of the API server (e.g., http://localhost:5052).
 
     For testing the local leanSpec implementation, use the local pytest suite under
-    tests/api, which automatically starts a local server.
+    tests/node/api/endpoints, which automatically starts a local server.
     """
     config_path = Path(__file__).parent / "pytest_ini_files" / "pytest-apitest.ini"
 
@@ -59,7 +59,7 @@ def apitest(
         str(config_path),
         f"--rootdir={project_root}",
         f"--server-url={server_url}",
-        "tests/api",
+        "tests/node/api/endpoints",
     ]
 
     args.extend(pytest_args)
