@@ -1,7 +1,7 @@
 """Lstar fork — proposer-side block building."""
 
 from collections import defaultdict
-from collections.abc import Sequence, Set as AbstractSet
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from enum import IntEnum
 
@@ -69,275 +69,6 @@ class _EntryScore:
 class BlockProductionMixin(LstarSpecBase):
     """Proposer-side block building for the lstar fork."""
 
-    def _candidate_passes_filters(
-        self,
-        attestation_data: AttestationData,
-        known_block_roots: AbstractSet[Bytes32],
-        extended_historical_block_hashes: Sequence[Bytes32],
-        projected_justified_slots: JustifiedSlots,
-        projected_finalized_slot: Slot,
-    ) -> bool:
-        """
-        Validate a candidate entry against the projected chain view.
-
-        Mirrors the vote-validity rules: head must be known, source must be
-        justified, source and target must match the candidate-block chain view,
-        target must be after source, target must not already be justified, and
-        target must be justifiable relative to the projected finalized slot.
-
-        The genesis self-vote (source and target both at slot 0) is exempt from
-        the target-after-source and target-already-justified checks.
-        The state transition drops it, but it carries fork-choice signal.
-
-        Chain-match runs before the justified-slot queries: it rejects checkpoints
-        whose slot is past the chain view, which keeps the bounded justification
-        queries from raising IndexError.
-        """
-        if attestation_data.head.root not in known_block_roots:
-            return False
-        if not attestation_data.lies_on_chain(extended_historical_block_hashes):
-            return False
-        if not projected_justified_slots.is_slot_justified(
-            projected_finalized_slot, attestation_data.source.slot
-        ):
-            return False
-
-        # Genesis self-votes are exempt from the remaining checks.
-        # The state transition drops them, but they carry fork-choice signal.
-        if not attestation_data.is_genesis_self_vote():
-            if attestation_data.target.slot <= attestation_data.source.slot:
-                return False
-            if projected_justified_slots.is_slot_justified(
-                projected_finalized_slot, attestation_data.target.slot
-            ):
-                return False
-            if not attestation_data.target.slot.is_justifiable_after(projected_finalized_slot):
-                return False
-        return True
-
-    def _score_candidate(
-        self,
-        attestation_data: AttestationData,
-        proofs: AbstractSet[SingleMessageAggregate],
-        votes_by_target_root: dict[Bytes32, set[ValidatorIndex]],
-        projected_finalized_slot: Slot,
-        validator_count: int,
-    ) -> tuple[_EntryScore, set[ValidatorIndex]] | None:
-        """
-        Score a single candidate entry under the current projected state.
-
-        Returns None if the entry adds zero validators relative to the running
-        voter set for its target root.
-        Otherwise returns the score and the new voters this entry contributes.
-        A genesis self-vote cannot justify or finalize and is always BUILD tier.
-        """
-        prior_voters = votes_by_target_root.get(attestation_data.target.root, set())
-
-        # New voters: participants across all proofs not already recorded for the target.
-        new_voters: set[ValidatorIndex] = set()
-        for proof in proofs:
-            for validator_index in proof.participants.to_validator_indices():
-                if validator_index not in prior_voters:
-                    new_voters.add(validator_index)
-        if not new_voters:
-            return None
-
-        # Threshold: total voters (prior plus new) crossing two-thirds.
-        total_voters = len(prior_voters) + len(new_voters)
-        crosses_two_thirds = 3 * total_voters >= 2 * validator_count
-
-        # 3SF-mini finalization requires no slot strictly between source and target
-        # to still be justifiable.
-        # Source and target must be consecutive justified checkpoints in the
-        # projected post-state.
-        #
-        # The source must lie strictly past the projected finalized boundary.
-        # A source at or behind the boundary is already final.
-        # It may still justify a newer target, but it must not re-finalize.
-        # This mirrors the state transition, which advances finalization only when
-        # the source slot is strictly greater than the finalized slot.
-        # Scanning from one past the source also keeps every queried slot strictly
-        # above the boundary, where justifiability is defined.
-        finalizes_source = (
-            crosses_two_thirds
-            and attestation_data.source.slot > projected_finalized_slot
-            and all(
-                not Slot(intermediate_slot).is_justifiable_after(projected_finalized_slot)
-                for intermediate_slot in range(
-                    int(attestation_data.source.slot) + 1, int(attestation_data.target.slot)
-                )
-            )
-        )
-
-        if attestation_data.is_genesis_self_vote() or not crosses_two_thirds:
-            tier = _Tier.BUILD
-        elif finalizes_source:
-            tier = _Tier.FINALIZE
-        else:
-            tier = _Tier.JUSTIFY
-
-        return (
-            _EntryScore(
-                tier=tier,
-                new_voter_count=len(new_voters),
-                target_slot=attestation_data.target.slot,
-                attestation_slot=attestation_data.slot,
-            ),
-            new_voters,
-        )
-
-    def _select_attestations(
-        self,
-        head_state: State,
-        slot: Slot,
-        parent_root: Bytes32,
-        known_block_roots: AbstractSet[Bytes32],
-        aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
-    ) -> list[tuple[AggregatedAttestation, SingleMessageAggregate]]:
-        """
-        Tiered greedy attestation selection for block proposal.
-
-        Each round scores remaining candidates against a projected post-state
-        and picks the best: finalize beats justify beats build.
-        Justification and finalization are projected incrementally so dependent
-        attestations become eligible on the next round without re-running the
-        state transition.
-        Stops at the data-entry cap or when no remaining candidate scores.
-        """
-        selected_attestations_with_proofs: list[
-            tuple[AggregatedAttestation, SingleMessageAggregate]
-        ] = []
-        if not aggregated_payloads:
-            return selected_attestations_with_proofs
-
-        # Assemble the chain as it will look once this block is applied.
-        #
-        # 1. History up to the parent.
-        # 2. The parent root at its own slot.
-        # 3. A zero hash for each slot skipped before this block.
-        #
-        # Precondition: the new slot must lie strictly after the parent slot.
-        # Without the guard, unsigned subtraction underflows and the empty-slot
-        # padding allocates an astronomically large list.
-        parent_slot = head_state.latest_block_header.slot
-        assert slot > parent_slot, f"Cannot build block at slot {slot} <= parent slot {parent_slot}"
-        num_empty_slots = int(slot - parent_slot - Slot(1))
-        extended_historical_block_hashes: list[Bytes32] = (
-            list(head_state.historical_block_hashes) + [parent_root] + [ZERO_HASH] * num_empty_slots
-        )
-        validator_count = len(head_state.validators)
-
-        # Projected post-state, updated incrementally as entries are selected.
-        finalized_slot = head_state.latest_finalized.slot
-        justified_slots = head_state.justified_slots.extend_to_slot(finalized_slot, slot - Slot(1))
-
-        # Seed the running voter map from the on-chain justification bitlist.
-        #
-        # The state stores one bit per tracked-root and validator pair.
-        # The bit at index (root_index * N + validator_index) means that
-        # validator voted for that tracked root, where N is the validator count.
-        # Seeding from these bits lets scoring count on-chain voters toward the
-        # two-thirds threshold.
-        votes_by_target_root: dict[Bytes32, set[ValidatorIndex]] = {}
-        for root_index, on_chain_target_root in enumerate(head_state.justifications_roots):
-            votes_by_target_root[on_chain_target_root] = {
-                ValidatorIndex(validator_index)
-                for validator_index in range(validator_count)
-                if head_state.justifications_validators[
-                    root_index * validator_count + validator_index
-                ]
-            }
-        processed_attestation_data: set[AttestationData] = set()
-
-        for _ in range(int(MAX_ATTESTATIONS_DATA)):
-            # Scan every remaining candidate and keep the best ordering key.
-            #
-            # Skips entries already processed, those failing the projected-chain
-            # filters, and those with zero new voters.
-            # A smaller ordering key wins.
-            best_candidate: tuple[AttestationData, _EntryScore, set[ValidatorIndex]] | None = None
-            best_candidate_key: tuple[int, int, int, int, bytes] | None = None
-            for candidate_data, proofs in aggregated_payloads.items():
-                if candidate_data in processed_attestation_data:
-                    continue
-                if not self._candidate_passes_filters(
-                    candidate_data,
-                    known_block_roots,
-                    extended_historical_block_hashes,
-                    justified_slots,
-                    finalized_slot,
-                ):
-                    continue
-                scored_candidate = self._score_candidate(
-                    candidate_data,
-                    proofs,
-                    votes_by_target_root,
-                    finalized_slot,
-                    validator_count,
-                )
-                if scored_candidate is None:
-                    continue
-                candidate_score, candidate_new_voters = scored_candidate
-
-                candidate_key = candidate_score.ordering_key(hash_tree_root(candidate_data))
-                if best_candidate_key is None or candidate_key < best_candidate_key:
-                    best_candidate = (candidate_data, candidate_score, candidate_new_voters)
-                    best_candidate_key = candidate_key
-
-            if best_candidate is None:
-                break
-            attestation_data, entry_score, new_voters = best_candidate
-            processed_attestation_data.add(attestation_data)
-
-            # Pack proofs that maximize new validator coverage for this entry.
-            selected_proofs, _ = select_proofs_for_coverage(aggregated_payloads[attestation_data])
-            for proof in selected_proofs:
-                selected_attestations_with_proofs.append(
-                    (
-                        self.aggregated_attestation_class(
-                            aggregation_bits=proof.participants,
-                            data=attestation_data,
-                        ),
-                        proof,
-                    )
-                )
-
-            target_root = attestation_data.target.root
-
-            # Project justification and finalization. Finalize implies justify.
-            if entry_score.tier <= _Tier.JUSTIFY:
-                justified_slots = justified_slots.extend_to_slot(
-                    finalized_slot, attestation_data.target.slot
-                )
-
-                # The justifiable filter and the extension above guarantee an
-                # in-range index, so mark the target justified directly.
-                target_justified_index = attestation_data.target.slot.justified_index_after(
-                    finalized_slot
-                )
-                assert target_justified_index is not None
-                updated_justified_bits = list(justified_slots.data)
-                updated_justified_bits[target_justified_index] = Boolean(True)
-                justified_slots = JustifiedSlots(data=updated_justified_bits)
-
-                # A justified target can no longer be a candidate target, so its
-                # voter bucket is irrelevant for further scoring.
-                votes_by_target_root.pop(target_root, None)
-            else:
-                # BUILD tier: the target stays a candidate, so record its new
-                # voters to push it toward the threshold on a later round.
-                votes_by_target_root.setdefault(target_root, set()).update(new_voters)
-            if entry_score.tier == _Tier.FINALIZE:
-                # The finalize tier requires a source strictly past the boundary,
-                # so the window always advances by at least one slot.
-                # Drop the leading bits that fell behind the new finalized boundary.
-                new_finalized_slot = attestation_data.source.slot
-                finalized_slot_advance = int(new_finalized_slot) - int(finalized_slot)
-                justified_slots = JustifiedSlots(data=justified_slots.data[finalized_slot_advance:])
-                finalized_slot = new_finalized_slot
-
-        return selected_attestations_with_proofs
-
     def build_block(
         self,
         state: State,
@@ -392,13 +123,221 @@ class BlockProductionMixin(LstarSpecBase):
         advanced_state = self.process_slots(state, slot)
 
         if aggregated_payloads:
-            selected_attestations_with_proofs = self._select_attestations(
-                state,
-                slot,
-                parent_root,
-                known_block_roots,
-                aggregated_payloads,
+            # Tiered greedy selection.
+            #
+            # Each round scores remaining candidates against a projected post-state
+            # and picks the best: finalize beats justify beats build.
+            # Justification and finalization are projected incrementally so dependent
+            # attestations become eligible on the next round without re-running the
+            # state transition.
+            # Selection stops at the data-entry cap or when no remaining candidate scores.
+            selected_attestations_with_proofs: list[
+                tuple[AggregatedAttestation, SingleMessageAggregate]
+            ] = []
+
+            # Assemble the chain as it will look once this block is applied.
+            #
+            # 1. History up to the parent.
+            # 2. The parent root at its own slot.
+            # 3. A zero hash for each slot skipped before this block.
+            #
+            # Precondition: the new slot must lie strictly after the parent slot.
+            # Without the guard, unsigned subtraction underflows and the empty-slot
+            # padding allocates an astronomically large list.
+            parent_slot = state.latest_block_header.slot
+            assert slot > parent_slot, (
+                f"Cannot build block at slot {slot} <= parent slot {parent_slot}"
             )
+            num_empty_slots = int(slot - parent_slot - Slot(1))
+            extended_historical_block_hashes: list[Bytes32] = (
+                list(state.historical_block_hashes) + [parent_root] + [ZERO_HASH] * num_empty_slots
+            )
+            validator_count = len(state.validators)
+
+            # Projected post-state, updated incrementally as entries are selected.
+            finalized_slot = state.latest_finalized.slot
+            justified_slots = state.justified_slots.extend_to_slot(finalized_slot, slot - Slot(1))
+
+            # Seed the running voter map from the on-chain justification bitlist.
+            #
+            # The state stores one bit per tracked-root and validator pair.
+            # The bit at index (root_index * N + validator_index) means that
+            # validator voted for that tracked root, where N is the validator count.
+            # Seeding from these bits lets scoring count on-chain voters toward the
+            # two-thirds threshold.
+            votes_by_target_root: dict[Bytes32, set[ValidatorIndex]] = {}
+            for root_index, on_chain_target_root in enumerate(state.justifications_roots):
+                votes_by_target_root[on_chain_target_root] = {
+                    ValidatorIndex(validator_index)
+                    for validator_index in range(validator_count)
+                    if state.justifications_validators[
+                        root_index * validator_count + validator_index
+                    ]
+                }
+            processed_attestation_data: set[AttestationData] = set()
+
+            for _ in range(int(MAX_ATTESTATIONS_DATA)):
+                # Scan every remaining candidate and keep the best ordering key.
+                #
+                # Skips entries already processed, those failing the projected-chain
+                # filters, and those with zero new voters.
+                # A smaller ordering key wins.
+                best_candidate: tuple[AttestationData, _EntryScore, set[ValidatorIndex]] | None = (
+                    None
+                )
+                best_candidate_key: tuple[int, int, int, int, bytes] | None = None
+                for candidate_data, proofs in aggregated_payloads.items():
+                    if candidate_data in processed_attestation_data:
+                        continue
+
+                    # Validate the candidate against the projected chain view.
+                    #
+                    # Mirrors the vote-validity rules: head must be known, source must be
+                    # justified, source and target must match the candidate-block chain view,
+                    # target must be after source, target must not already be justified, and
+                    # target must be justifiable relative to the projected finalized slot.
+                    #
+                    # Chain-match runs before the justified-slot queries: it rejects
+                    # checkpoints whose slot is past the chain view, which keeps the bounded
+                    # justification queries from raising IndexError.
+                    if candidate_data.head.root not in known_block_roots:
+                        continue
+                    if not candidate_data.lies_on_chain(extended_historical_block_hashes):
+                        continue
+                    if not justified_slots.is_slot_justified(
+                        finalized_slot, candidate_data.source.slot
+                    ):
+                        continue
+
+                    # Genesis self-votes (source and target both at slot 0) are exempt from
+                    # the target-after-source and target-already-justified checks.
+                    # The state transition drops them, but they carry fork-choice signal.
+                    if not candidate_data.is_genesis_self_vote():
+                        if candidate_data.target.slot <= candidate_data.source.slot:
+                            continue
+                        if justified_slots.is_slot_justified(
+                            finalized_slot, candidate_data.target.slot
+                        ):
+                            continue
+                        if not candidate_data.target.slot.is_justifiable_after(finalized_slot):
+                            continue
+
+                    # New voters: participants across all proofs not already recorded
+                    # for the target.
+                    prior_voters = votes_by_target_root.get(candidate_data.target.root, set())
+                    new_voters: set[ValidatorIndex] = set()
+                    for proof in proofs:
+                        for validator_index in proof.participants.to_validator_indices():
+                            if validator_index not in prior_voters:
+                                new_voters.add(validator_index)
+
+                    # An entry adding no validators cannot improve the target, so skip it.
+                    if not new_voters:
+                        continue
+
+                    # Threshold: total voters (prior plus new) crossing two-thirds.
+                    total_voters = len(prior_voters) + len(new_voters)
+                    crosses_two_thirds = 3 * total_voters >= 2 * validator_count
+
+                    # 3SF-mini finalization requires no slot strictly between source and
+                    # target to still be justifiable.
+                    # Source and target must be consecutive justified checkpoints in the
+                    # projected post-state.
+                    #
+                    # The source must lie strictly past the projected finalized boundary.
+                    # A source at or behind the boundary is already final.
+                    # It may still justify a newer target, but it must not re-finalize.
+                    # This mirrors the state transition, which advances finalization only
+                    # when the source slot is strictly greater than the finalized slot.
+                    # Scanning from one past the source also keeps every queried slot
+                    # strictly above the boundary, where justifiability is defined.
+                    finalizes_source = (
+                        crosses_two_thirds
+                        and candidate_data.source.slot > finalized_slot
+                        and all(
+                            not Slot(intermediate_slot).is_justifiable_after(finalized_slot)
+                            for intermediate_slot in range(
+                                int(candidate_data.source.slot) + 1,
+                                int(candidate_data.target.slot),
+                            )
+                        )
+                    )
+
+                    # A genesis self-vote cannot justify or finalize and is always BUILD tier.
+                    if candidate_data.is_genesis_self_vote() or not crosses_two_thirds:
+                        tier = _Tier.BUILD
+                    elif finalizes_source:
+                        tier = _Tier.FINALIZE
+                    else:
+                        tier = _Tier.JUSTIFY
+
+                    candidate_score = _EntryScore(
+                        tier=tier,
+                        new_voter_count=len(new_voters),
+                        target_slot=candidate_data.target.slot,
+                        attestation_slot=candidate_data.slot,
+                    )
+                    candidate_key = candidate_score.ordering_key(hash_tree_root(candidate_data))
+                    if best_candidate_key is None or candidate_key < best_candidate_key:
+                        best_candidate = (candidate_data, candidate_score, new_voters)
+                        best_candidate_key = candidate_key
+
+                if best_candidate is None:
+                    break
+                attestation_data, entry_score, selected_new_voters = best_candidate
+                processed_attestation_data.add(attestation_data)
+
+                # Pack proofs that maximize new validator coverage for this entry.
+                selected_proofs, _ = select_proofs_for_coverage(
+                    aggregated_payloads[attestation_data]
+                )
+                for proof in selected_proofs:
+                    selected_attestations_with_proofs.append(
+                        (
+                            self.aggregated_attestation_class(
+                                aggregation_bits=proof.participants,
+                                data=attestation_data,
+                            ),
+                            proof,
+                        )
+                    )
+
+                target_root = attestation_data.target.root
+
+                # Project justification and finalization. Finalize implies justify.
+                if entry_score.tier <= _Tier.JUSTIFY:
+                    justified_slots = justified_slots.extend_to_slot(
+                        finalized_slot, attestation_data.target.slot
+                    )
+
+                    # The justifiable filter and the extension above guarantee an
+                    # in-range index, so mark the target justified directly.
+                    target_justified_index = attestation_data.target.slot.justified_index_after(
+                        finalized_slot
+                    )
+                    assert target_justified_index is not None
+                    updated_justified_bits = list(justified_slots.data)
+                    updated_justified_bits[target_justified_index] = Boolean(True)
+                    justified_slots = JustifiedSlots(data=updated_justified_bits)
+
+                    # A justified target can no longer be a candidate target, so its
+                    # voter bucket is irrelevant for further scoring.
+                    votes_by_target_root.pop(target_root, None)
+                else:
+                    # BUILD tier: the target stays a candidate, so record its new
+                    # voters to push it toward the threshold on a later round.
+                    votes_by_target_root.setdefault(target_root, set()).update(selected_new_voters)
+                if entry_score.tier == _Tier.FINALIZE:
+                    # The finalize tier requires a source strictly past the boundary,
+                    # so the window always advances by at least one slot.
+                    # Drop the leading bits that fell behind the new finalized boundary.
+                    new_finalized_slot = attestation_data.source.slot
+                    finalized_slot_advance = int(new_finalized_slot) - int(finalized_slot)
+                    justified_slots = JustifiedSlots(
+                        data=justified_slots.data[finalized_slot_advance:]
+                    )
+                    finalized_slot = new_finalized_slot
+
             for attestation, proof in selected_attestations_with_proofs:
                 aggregated_attestations.append(attestation)
                 aggregated_signatures.append(proof)
