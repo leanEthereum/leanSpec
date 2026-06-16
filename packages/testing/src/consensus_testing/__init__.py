@@ -43,6 +43,8 @@ from consensus_testing.test_fixtures import (
     NetworkingCodecTest,
     PoseidonPermutationFixture,
     PoseidonPermutationTest,
+    ReaggregationFixture,
+    ReaggregationTest,
     RebindToAlternateHeadRoot,
     SetProposerIndex,
     SlotClockFixture,
@@ -144,6 +146,7 @@ SlotClockTestFiller = Callable[..., SlotClockFixture]
 JustifiabilityTestFiller = Callable[..., JustifiabilityFixture]
 PoseidonPermutationTestFiller = Callable[..., PoseidonPermutationFixture]
 SyncTestFiller = Callable[..., SyncFixture]
+ReaggregationTestFiller = Callable[..., ReaggregationFixture]
 
 __all__ = [
     "CachedMessage",
@@ -183,6 +186,8 @@ __all__ = [
     "FromSlot",
     "FromUnixTime",
     "TotalIntervals",
+    "ReaggregationFixture",
+    "ReaggregationTest",
     "VerifyCheckpoint",
     # Public API
     "AggregatedAttestationSpec",
@@ -278,4 +283,5 @@ __all__ = [
     "JustifiabilityTestFiller",
     "PoseidonPermutationTestFiller",
     "SyncTestFiller",
+    "ReaggregationTestFiller",
 ]
