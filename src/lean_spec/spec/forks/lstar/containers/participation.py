@@ -29,17 +29,17 @@ class AggregationBits(BaseBitlist):
         # Convert to native ints once for bounds checking and membership tests.
         #
         # This also deduplicates and lets any iterable be passed in.
-        ids = {int(i) for i in indices}
+        validator_indices = {int(index) for index in indices}
 
         # Require at least one validator for a valid aggregation.
-        if not ids:
+        if not validator_indices:
             raise SpecRejectionError(
                 RejectionReason.EMPTY_AGGREGATION_BITS,
                 "Aggregated attestation must reference at least one validator",
             )
 
         # Validate bounds: max index must be within registry limit.
-        if (max_id := max(ids)) >= cls.LIMIT:
+        if (highest_index := max(validator_indices)) >= cls.LIMIT:
             raise SpecRejectionError(
                 RejectionReason.VALIDATOR_INDEX_OUT_OF_RANGE,
                 "Validator index out of range for aggregation bits",
@@ -48,7 +48,7 @@ class AggregationBits(BaseBitlist):
         # Build bit list:
         # - True at positions present in indices,
         # - False elsewhere.
-        return cls(data=[Boolean(i in ids) for i in range(max_id + 1)])
+        return cls(data=[Boolean(index in validator_indices) for index in range(highest_index + 1)])
 
     def to_validator_indices(self) -> ValidatorIndices:
         """
@@ -61,7 +61,7 @@ class AggregationBits(BaseBitlist):
             SpecRejectionError: EMPTY_AGGREGATION_BITS if no bits are set.
         """
         # Extract indices where bit is set; fail if none found.
-        indices = [ValidatorIndex(i) for i, bit in enumerate(self.data) if bit]
+        indices = [ValidatorIndex(index) for index, bit in enumerate(self.data) if bit]
         if not indices:
             raise SpecRejectionError(
                 RejectionReason.EMPTY_AGGREGATION_BITS,

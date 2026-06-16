@@ -51,25 +51,26 @@ class Slot(Uint64):
         # Convert to int for pure arithmetic operations below.
         delta = int(self - finalized_slot)
 
-        # Compute the pronic discriminant and its integer square root once.
+        # Rule 1: The first N slots after finalization are always justifiable.
+        #
+        # Examples: delta = 0, 1, 2, 3, 4, 5
+        # Most justifiable slots fall here, so check it before any square root.
+        if delta <= IMMEDIATE_JUSTIFICATION_WINDOW:
+            return True
+
+        # Rule 2: Slots at perfect square distances are justifiable.
+        #
+        # Examples: delta = 1, 4, 9, 16, 25, 36, 49, 64, ...
+        # Check: integer square root squared equals delta
+        if math.isqrt(delta) ** 2 == delta:
+            return True
+
+        # Rule 3: Slots at pronic number distances are justifiable.
+        #
+        # Pronic numbers have the form n(n+1): 2, 6, 12, 20, 30, 42, 56, ...
+        # Mathematical insight: For pronic delta = n(n+1), we have:
+        #   4*delta + 1 = 4n(n+1) + 1 = (2n+1)^2
+        # Check: 4*delta+1 is an odd perfect square
         pronic_discriminant = 4 * delta + 1
         discriminant_root = math.isqrt(pronic_discriminant)
-
-        return (
-            # Rule 1: The first N slots after finalization are always justifiable.
-            #
-            # Examples: delta = 0, 1, 2, 3, 4, 5
-            delta <= IMMEDIATE_JUSTIFICATION_WINDOW
-            # Rule 2: Slots at perfect square distances are justifiable.
-            #
-            # Examples: delta = 1, 4, 9, 16, 25, 36, 49, 64, ...
-            # Check: integer square root squared equals delta
-            or math.isqrt(delta) ** 2 == delta
-            # Rule 3: Slots at pronic number distances are justifiable.
-            #
-            # Pronic numbers have the form n(n+1): 2, 6, 12, 20, 30, 42, 56, ...
-            # Mathematical insight: For pronic delta = n(n+1), we have:
-            #   4*delta + 1 = 4n(n+1) + 1 = (2n+1)^2
-            # Check: 4*delta+1 is an odd perfect square
-            or (discriminant_root**2 == pronic_discriminant and discriminant_root % 2 == 1)
-        )
+        return discriminant_root**2 == pronic_discriminant and discriminant_root % 2 == 1

@@ -1,7 +1,7 @@
 """Cryptographic constants and configuration presets for the XMSS spec."""
 
 import math
-from typing import Final
+from typing import Final, Self
 
 from pydantic import model_validator
 
@@ -14,9 +14,6 @@ from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET
 
 class XmssConfig(StrictBaseModel):
     """A model holding the configuration constants for an XMSS preset."""
-
-    MESSAGE_LENGTH: int
-    """The length in bytes for all messages to be signed."""
 
     LOG_LIFETIME: int
     """The base-2 logarithm of the scheme's maximum lifetime."""
@@ -60,7 +57,7 @@ class XmssConfig(StrictBaseModel):
     """The capacity of the Poseidon sponge, defining its security level."""
 
     @model_validator(mode="after")
-    def _validate_decomposition(self) -> "XmssConfig":
+    def _validate_decomposition(self) -> Self:
         """Verify that Q * BASE^Z == P - 1."""
         if self.Q * self.BASE**self.Z != P - 1:
             raise ValueError(f"Q * BASE^Z must equal P-1={P - 1}")
@@ -115,7 +112,6 @@ class XmssConfig(StrictBaseModel):
 
 
 PROD_CONFIG: Final = XmssConfig(
-    MESSAGE_LENGTH=32,
     LOG_LIFETIME=32,
     DIMENSION=46,
     BASE=8,
@@ -134,7 +130,6 @@ PROD_CONFIG: Final = XmssConfig(
 
 
 TEST_CONFIG: Final = XmssConfig(
-    MESSAGE_LENGTH=32,
     LOG_LIFETIME=8,
     DIMENSION=4,
     BASE=8,

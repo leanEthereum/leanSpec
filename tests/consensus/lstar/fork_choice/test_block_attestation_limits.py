@@ -14,7 +14,7 @@ from consensus_testing import (
 from lean_spec.spec.forks import RejectionReason, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.config import MAX_ATTESTATIONS_DATA
 
-pytestmark = [pytest.mark.valid_until("Lstar"), pytest.mark.order_sensitive]
+pytestmark = pytest.mark.valid_until("Lstar")
 
 
 def _justifiable_slots(n: int) -> list[Slot]:
@@ -156,7 +156,7 @@ def test_block_exceeding_maximum_attestations_is_rejected(
             valid=False,
             expected_rejection=ExpectedRejection(
                 reason=RejectionReason.TOO_MANY_ATTESTATION_DATA,
-                message_substring=(
+                exact_message=(
                     f"Block contains {n + 1} distinct AttestationData entries; "
                     f"maximum is {MAX_ATTESTATIONS_DATA}"
                 ),

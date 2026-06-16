@@ -63,7 +63,10 @@ def test_block_with_duplicate_aggregated_attestation_data_rejected(
                 valid=False,
                 expected_rejection=ExpectedRejection(
                     reason=RejectionReason.DUPLICATE_ATTESTATION_DATA,
-                    message_substring="Block contains duplicate AttestationData",
+                    exact_message=(
+                        "Block contains duplicate AttestationData entries; "
+                        "each AttestationData must appear at most once"
+                    ),
                 ),
             ),
         ],

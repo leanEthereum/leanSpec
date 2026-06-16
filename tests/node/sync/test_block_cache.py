@@ -118,29 +118,6 @@ class TestBlockCacheBasicOperations:
         assert pending.root in cache
         assert Bytes32(b"\xff" * 32) not in cache
 
-    def test_get_block(self, peer_id: PeerId) -> None:
-        """Getting a block by root returns the PendingBlock."""
-        cache = BlockCache()
-        block = make_signed_block(
-            slot=Slot(1),
-            proposer_index=ValidatorIndex(0),
-            parent_root=Bytes32.zero(),
-            state_root=Bytes32.zero(),
-        )
-
-        pending = cache.add(block, peer_id)
-        retrieved = cache.get(pending.root)
-
-        assert retrieved == pending
-
-    def test_get_nonexistent_block(self) -> None:
-        """Getting a nonexistent block returns None."""
-        cache = BlockCache()
-
-        cached_block = cache.get(Bytes32.zero())
-
-        assert cached_block is None
-
     def test_remove_block(self, peer_id: PeerId) -> None:
         """Removing a block returns it and removes from cache."""
         cache = BlockCache()
@@ -165,25 +142,6 @@ class TestBlockCacheBasicOperations:
         removed_block = cache.remove(Bytes32.zero())
 
         assert removed_block is None
-
-    def test_clear_cache(self, peer_id: PeerId) -> None:
-        """Clear removes all blocks from the cache."""
-        cache = BlockCache()
-        for i in range(5):
-            block = make_signed_block(
-                slot=Slot(i + 1),
-                proposer_index=ValidatorIndex(0),
-                parent_root=Bytes32(i.to_bytes(32, "big")),
-                state_root=Bytes32.zero(),
-            )
-            cache.add(block, peer_id)
-
-        assert len(cache) == 5
-
-        cache.clear()
-
-        assert len(cache) == 0
-        assert cache.orphan_count == 0
 
 
 class TestBlockCacheDeduplication:

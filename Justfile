@@ -93,10 +93,10 @@ fill-ci *args:
     uv run --group test fill --fork=Lstar --clean -n "${FILL_WORKERS:-auto}" --dist=worksteal "$@"
 
 # Standalone determinism audit: regenerate vectors twice under different hash seeds and diff.
-# The fill command already gates the order_sensitive subset on every run.
-# This recipe runs that audit on its own, or widens it past the marked subset.
-# Pass a path to cover the whole tree (for example tests/consensus) and catch a
-# filler that should be marked order_sensitive but is not.
+# Every fill run already does this over the whole consensus tree as its per-fill gate.
+# That gate covers all emitted vectors, with no opt-in marker or subset.
+# This recipe runs the same audit on its own, scoped to whatever target it is given.
+# Pass a path to point the audit at part of the tree (for example a single filler).
 # A difference means an emitted vector depends on set or dict iteration order,
 # which is hash-seeded and would break cross-client reproducibility.
 [group('tests')]
@@ -104,12 +104,12 @@ fill-determinism *args:
     #!/usr/bin/env bash
     set -euo pipefail
     target="{{args}}"
-    [ -z "$target" ] && target="tests/consensus -m order_sensitive"
+    [ -z "$target" ] && target="tests/consensus"
     first="$(mktemp -d)"
     second="$(mktemp -d)"
     trap 'rm -rf "$first" "$second"' EXIT
-    # Single process: the marked subset is small, so xdist worker startup would
-    # cost more than it saves, and one process pins the hash seed cleanly.
+    # Single process: one process pins the hash seed cleanly, which is what the
+    # audit needs, so the xdist worker fan-out is intentionally skipped here.
     # This recipe is itself the determinism check, so the per-fill gate is skipped.
     PYTHONHASHSEED=1 uv run --group test fill --fork=Lstar --clean --no-check-determinism -n 0 -o "$first" $target -q
     PYTHONHASHSEED=2 uv run --group test fill --fork=Lstar --clean --no-check-determinism -n 0 -o "$second" $target -q

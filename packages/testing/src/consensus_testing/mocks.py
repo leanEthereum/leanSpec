@@ -18,7 +18,13 @@ from lean_spec.node.sync.block_cache import BlockCache
 from lean_spec.node.sync.peer_manager import PeerManager
 from lean_spec.node.sync.service import SyncService
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
+from lean_spec.spec.forks import (
+    Checkpoint,
+    RejectionReason,
+    Slot,
+    SpecRejectionError,
+    ValidatorIndex,
+)
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.containers import (
     Block,
@@ -116,10 +122,9 @@ class MockEventSource:
 
 @dataclass
 class _MockBlock:
-    """Block stub carrying only the slot and parent root used in lookups."""
+    """Terminal genesis block stub carrying only the slot used in lookups."""
 
     slot: Slot = field(default_factory=lambda: Slot(0))
-    parent_root: Bytes32 = field(default_factory=Bytes32.zero)
 
 
 @dataclass
@@ -164,10 +169,15 @@ class MockForkchoiceStore:
     """Post-state of each block, keyed by root."""
 
     reject_attestation: Callable[[SignedAttestation], bool] | None = None
-    """When it returns true for an attestation, processing raises instead."""
+    """When it returns true for an attestation, processing raises a spec rejection."""
 
     reject_aggregated_attestation: Callable[[SignedAggregatedAttestation], bool] | None = None
-    """When it returns true for an aggregate, processing raises instead."""
+    """When it returns true for an aggregate, processing raises a spec rejection."""
+
+    rejection_reason: RejectionReason = RejectionReason.UNKNOWN_TARGET_BLOCK
+    """Reason carried by a triggered rejection.
+    The default names a missing block, which the sync service buffers for replay.
+    Set a permanent reason to exercise the logged-and-dropped path."""
 
     on_block_post_state: State | None = None
     """Post-state recorded for each processed block, when set."""
@@ -214,7 +224,7 @@ class MockForkchoiceStore:
     ) -> MockForkchoiceStore:
         """Record a gossip attestation, unless the reject predicate fires."""
         if self.reject_attestation is not None and self.reject_attestation(signed_attestation):
-            raise KeyError("simulated missing block")
+            raise SpecRejectionError(self.rejection_reason, "simulated rejection")
         self.received_attestations.append(signed_attestation)
         return self
 
@@ -227,7 +237,7 @@ class MockForkchoiceStore:
         if self.reject_aggregated_attestation is not None and self.reject_aggregated_attestation(
             signed_attestation
         ):
-            raise KeyError("simulated missing block")
+            raise SpecRejectionError(self.rejection_reason, "simulated rejection")
         self.received_aggregated_attestations.append(signed_attestation)
         return self
 

@@ -1,5 +1,6 @@
 """Lstar fork — proposer-side block building."""
 
+from collections import defaultdict
 from collections.abc import Set as AbstractSet
 
 from lean_spec.spec.crypto.merkleization import hash_tree_root
@@ -19,7 +20,6 @@ from lean_spec.spec.forks.lstar.containers import (
     State,
     ValidatorIndex,
 )
-from lean_spec.spec.forks.lstar.state_transition import attestation_data_matches_chain
 from lean_spec.spec.ssz import ZERO_HASH, Bytes32
 
 
@@ -146,9 +146,7 @@ class BlockProductionMixin(LstarSpecBase):
                     #
                     # This also rejects any checkpoint past the chain view.
                     # That keeps the bounded lookups below in range.
-                    if not attestation_data_matches_chain(
-                        attestation_data, extended_historical_block_hashes
-                    ):
+                    if not attestation_data.lies_on_chain(extended_historical_block_hashes):
                         continue
 
                     # A vote may only build from an already-justified source.
@@ -237,11 +235,13 @@ class BlockProductionMixin(LstarSpecBase):
 
             # Group every proof under the data it attests to.
             # Strict pairing guards against the two lists drifting out of sync.
-            signatures_by_attestation_data: dict[AttestationData, list[SingleMessageAggregate]] = {}
+            signatures_by_attestation_data: defaultdict[
+                AttestationData, list[SingleMessageAggregate]
+            ] = defaultdict(list)
             for attestation, signature in zip(
                 aggregated_attestations, aggregated_signatures, strict=True
             ):
-                signatures_by_attestation_data.setdefault(attestation.data, []).append(signature)
+                signatures_by_attestation_data[attestation.data].append(signature)
 
             # Rebuild the output lists, one entry per distinct data.
             aggregated_attestations = []

@@ -535,7 +535,8 @@ def test_attestation_target_selection_after_finality_has_moved(
     - justified stays at slot 7.
     - finalized stays at slot 1.
     - the safe target settles on block_7.
-    - the target pins to block_7 as the head extends.
+    - the target slot pins to slot 7 as the head extends.
+    - the target root pins to block_7 as the head extends.
     """
     fork_choice_test(
         steps=[
@@ -630,6 +631,7 @@ def test_attestation_target_selection_after_finality_has_moved(
                     safe_target_slot=Slot(7),
                     safe_target_root_label="block_7",
                     attestation_target_slot=Slot(7),
+                    attestation_target_root_label="block_7",
                 ),
             ),
             BlockStep(

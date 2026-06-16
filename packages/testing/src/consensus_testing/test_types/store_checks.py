@@ -83,7 +83,7 @@ class AttestationCheck(CamelModel):
     """
 
     def validate_attestation(
-        self, attestation: "AttestationData", location: str, step_index: int
+        self, attestation: AttestationData, location: str, step_index: int
     ) -> None:
         """Validate attestation properties."""
         for field_name in self.model_fields_set & _ATTESTATION_SLOT_ACCESSORS.keys():
@@ -211,6 +211,14 @@ class StoreChecks(SelectiveCheck):
     - The checkpoint root references an actual block at that slot
     """
 
+    attestation_target_root_label: str | None = None
+    """
+    Expected attestation target checkpoint root by label reference.
+
+    The framework resolves this label to a block root and compares it to the
+    root that the spec would attest to from the current store.
+    """
+
     attestation_checks: list[AttestationCheck] | None = None
     """Optional list of attestation content checks for specific validators."""
 
@@ -236,6 +244,15 @@ class StoreChecks(SelectiveCheck):
 
     Compares the exact set of target checkpoint slots keyed in the accepted
     aggregated proof map.
+    """
+
+    new_pool_proof_participants: dict[Slot, set[int]] | None = None
+    """
+    Expected union of participants across pending-pool proofs, keyed by target slot.
+
+    Compares the set of validator indices covered by every proof in the
+    pending aggregated proof map for each target slot.
+    Pins the coverage a fresh aggregation round produced in the pending pool.
     """
 
     block_attestation_count: int | None = None
@@ -295,11 +312,11 @@ class StoreChecks(SelectiveCheck):
 
     def validate_against_store(
         self,
-        store: "Store",
+        store: Store,
         step_index: int,
-        block_registry: dict[str, "Block"] | None = None,
-        filled_block: "Block | None" = None,
-        old_head: "Bytes32 | None" = None,
+        block_registry: dict[str, Block] | None = None,
+        filled_block: Block | None = None,
+        old_head: Bytes32 | None = None,
     ) -> None:
         """
         Validate these checks against actual Store state.
@@ -346,8 +363,10 @@ class StoreChecks(SelectiveCheck):
             _check("filled_block.root", hash_tree_root(filled_block), expected_filled_block_root)
 
         # Attestation target checkpoint (slot + root consistency)
-        if "attestation_target_slot" in fields:
+        if "attestation_target_slot" in fields or "attestation_target_root_label" in fields:
             attestation_target = LstarSpec().get_attestation_target(store)
+
+        if "attestation_target_slot" in fields:
             _check("attestation_target.slot", attestation_target.slot, self.attestation_target_slot)
 
             block_found = any(
@@ -367,6 +386,16 @@ class StoreChecks(SelectiveCheck):
                     f"Available blocks: {block_roots_at_target_slot}"
                 )
 
+        # Attestation target root pinned to a labeled block
+        if "attestation_target_root_label" in fields:
+            assert self.attestation_target_root_label is not None
+            expected_attestation_target_root = _resolve(self.attestation_target_root_label)
+            _check(
+                "attestation_target.root",
+                attestation_target.root,
+                expected_attestation_target_root,
+            )
+
         # Per-validator attestation content checks
         if "attestation_checks" in fields:
             assert self.attestation_checks is not None
@@ -378,9 +407,18 @@ class StoreChecks(SelectiveCheck):
                     payloads = store.latest_known_aggregated_payloads
                     label = "in latest_known"
 
-                extracted_attestations = LstarSpec().extract_attestations_from_aggregated_payloads(
-                    payloads
-                )
+                # Map each validator to its highest-slot vote across the raw pool.
+                #
+                # The checker inspects pool content before pruning, so no finality cutoff applies.
+                # On equal slots the first vote seen wins, matching the fork-choice rule.
+                extracted_attestations: dict[ValidatorIndex, AttestationData] = {}
+                for attestation_data, proofs in payloads.items():
+                    for proof in proofs:
+                        for participant_index in proof.participants.to_validator_indices():
+                            previous_vote = extracted_attestations.get(participant_index)
+                            if previous_vote is None or previous_vote.slot < attestation_data.slot:
+                                extracted_attestations[participant_index] = attestation_data
+
                 if attestation_check.validator not in extracted_attestations:
                     raise AssertionError(
                         f"Step {step_index}: validator {attestation_check.validator} not found "
@@ -398,6 +436,25 @@ class StoreChecks(SelectiveCheck):
             )
             expected_target_slots = sorted(getattr(self, field_name))
             _check(field_name, actual_target_slots, expected_target_slots)
+
+        # Participant union across pending-pool proofs, per target slot
+        if "new_pool_proof_participants" in fields:
+            assert self.new_pool_proof_participants is not None
+            participants_by_target_slot: dict[Slot, set[int]] = {}
+            for attestation_data, proofs in store.latest_new_aggregated_payloads.items():
+                target_slot = attestation_data.target.slot
+                participants = participants_by_target_slot.setdefault(target_slot, set())
+                for proof in proofs:
+                    participants.update(
+                        int(validator_index)
+                        for validator_index in proof.participants.to_validator_indices()
+                    )
+            for target_slot, expected_participants in self.new_pool_proof_participants.items():
+                _check(
+                    f"new_pool_proof_participants[{target_slot}]",
+                    participants_by_target_slot.get(target_slot, set()),
+                    expected_participants,
+                )
 
         # Block body attestation count
         if "block_attestation_count" in fields:
@@ -466,8 +523,8 @@ class StoreChecks(SelectiveCheck):
 
     @staticmethod
     def _validate_block_attestations(
-        expected_checks: list["AggregatedAttestationCheck"],
-        filled_block: "Block",
+        expected_checks: list[AggregatedAttestationCheck],
+        filled_block: Block,
         step_index: int,
     ) -> None:
         """Validate detailed attestation structure in the block body."""
@@ -521,8 +578,8 @@ class StoreChecks(SelectiveCheck):
     @staticmethod
     def _validate_lexicographic_head(
         fork_labels: list[str],
-        store: "Store",
-        block_registry: dict[str, "Block"],
+        store: Store,
+        block_registry: dict[str, Block],
         step_index: int,
     ) -> None:
         """Validate lexicographic tiebreaker behavior."""

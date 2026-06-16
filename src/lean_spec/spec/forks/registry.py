@@ -27,11 +27,11 @@ class ForkRegistry:
         if not forks:
             raise ValueError("ForkRegistry requires at least one fork")
 
-        versions = [f.VERSION for f in forks]
-        if any(a >= b for a, b in pairwise(versions)):
+        versions = [fork.VERSION for fork in forks]
+        if any(earlier >= later for earlier, later in pairwise(versions)):
             raise ValueError(f"Forks must be ordered by strictly increasing VERSION: {versions}")
 
-        names = [f.NAME for f in forks]
+        names = [fork.NAME for fork in forks]
         if len(set(names)) != len(names):
             raise ValueError(f"Fork names must be unique: {names}")
 

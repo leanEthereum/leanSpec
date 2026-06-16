@@ -387,3 +387,192 @@ def test_fork_above_finalized_wins_at_or_below_loses(
             ),
         ],
     )
+
+
+def test_losing_fork_higher_finalized_does_not_latch(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    A fork that finalizes a higher slot but loses head selection must not leave its
+    finalized checkpoint latched in the store.
+
+    Given
+    -----
+    - 8 validators; a slot needs 6 votes (2/3) to be justified.
+    - the chain:
+        genesis
+        - block_1(1) -> block_2(2) -> block_3(3)
+          - dead_4(4) -> dead_5(5) -> dead_6(6)
+          - heavy_7(7) -> heavy_8(8)
+    - block_2 includes V0..V5's votes for block_1.
+    - block_3 includes V0..V5's votes for block_2.
+    - the chain through block_3 justifies slot 2 and finalizes slot 1.
+    - the dead fork branches off block_3:
+        - dead_4 includes V0..V5's votes for block_3, finalizing slot 2.
+        - dead_5 includes V0..V5's votes for dead_4, finalizing slot 3.
+        - dead_6 includes V0..V5's votes for dead_5, finalizing slot 4.
+      so the dead fork reaches justified slot 5 and finalized slot 4 on dead_4.
+    - the heavy fork branches off block_3:
+        - heavy_8 includes V0..V5's votes for heavy_7, source block_2.
+        - those 6 votes justify heavy_7 at slot 7.
+        - slots 3, 4, 5, 6 between source block_2 and target heavy_7 are justifiable,
+          so the heavy fork finalizes nothing beyond slot 1.
+
+    When
+    ----
+    - the dead fork is built to justified slot 5 and finalized slot 4, then the
+      heavy fork justifies slot 7, the highest justified checkpoint in the store.
+
+    Then
+    ----
+    - the justified checkpoint moves to heavy_7 at slot 7, on the heavy fork.
+    - head moves onto the heavy fork at heavy_8.
+    - the finalized checkpoint tracks the canonical head heavy_8's state: slot 1 on
+      block_1. It must not stay at the dead fork's higher finalized slot 4 on dead_4,
+      which is not an ancestor of the head.
+
+    Reachability
+    ------------
+    - head selection starts from the justified root at heavy_7.
+    - the dead fork branches off block_3, below the justified root, so the forward
+      walk never reaches it and its finalized checkpoint cannot stay canonical.
+    """
+    fork_choice_test(
+        anchor_state=generate_pre_state(num_validators=8),
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(2),
+                    parent_label="block_1",
+                    label="block_2",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
+                            slot=Slot(2),
+                            target_slot=Slot(1),
+                            target_root_label="block_1",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(latest_justified_slot=Slot(1)),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(3),
+                    parent_label="block_2",
+                    label="block_3",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
+                            slot=Slot(3),
+                            target_slot=Slot(2),
+                            target_root_label="block_2",
+                            source_slot=Slot(1),
+                            source_root_label="block_1",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    latest_justified_slot=Slot(2),
+                    latest_finalized_slot=Slot(1),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(4),
+                    parent_label="block_3",
+                    label="dead_4",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
+                            slot=Slot(4),
+                            target_slot=Slot(3),
+                            target_root_label="block_3",
+                            source_slot=Slot(2),
+                            source_root_label="block_2",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    latest_justified_slot=Slot(3),
+                    latest_finalized_slot=Slot(2),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(5),
+                    parent_label="dead_4",
+                    label="dead_5",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
+                            slot=Slot(5),
+                            target_slot=Slot(4),
+                            target_root_label="dead_4",
+                            source_slot=Slot(3),
+                            source_root_label="block_3",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    latest_justified_slot=Slot(4),
+                    latest_finalized_slot=Slot(3),
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(6),
+                    parent_label="dead_5",
+                    label="dead_6",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
+                            slot=Slot(6),
+                            target_slot=Slot(5),
+                            target_root_label="dead_5",
+                            source_slot=Slot(4),
+                            source_root_label="dead_4",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_root_label="dead_6",
+                    latest_justified_slot=Slot(5),
+                    latest_finalized_slot=Slot(4),
+                    latest_finalized_root_label="dead_4",
+                ),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(7), parent_label="block_3", label="heavy_7"),
+                checks=StoreChecks(head_root_label="dead_6"),
+            ),
+            BlockStep(
+                block=BlockSpec(
+                    slot=Slot(8),
+                    parent_label="heavy_7",
+                    label="heavy_8",
+                    attestations=[
+                        AggregatedAttestationSpec(
+                            validator_indices=[ValidatorIndex(i) for i in range(6)],
+                            slot=Slot(8),
+                            target_slot=Slot(7),
+                            target_root_label="heavy_7",
+                            source_slot=Slot(2),
+                            source_root_label="block_2",
+                        ),
+                    ],
+                ),
+                checks=StoreChecks(
+                    head_root_label="heavy_8",
+                    latest_justified_slot=Slot(7),
+                    latest_justified_root_label="heavy_7",
+                    latest_finalized_slot=Slot(1),
+                    latest_finalized_root_label="block_1",
+                ),
+            ),
+        ],
+    )

@@ -61,6 +61,37 @@ def test_compress_rejects_output_longer_than_input() -> None:
     assert str(exception_info.value) == "Input vector is too short for requested output length."
 
 
+def test_compress_width_sixteen_matches_known_answer() -> None:
+    """Width-sixteen compression of the elements 0..7 matches the frozen reference digest."""
+    # Frozen output of the canonical KoalaBear permutation under the test configuration.
+    # A regression in the round constants, padding, or feed-forward addition breaks this.
+    assert POSEIDON.compress([Fp(value=i) for i in range(8)], 16, 8) == [
+        Fp(value=1322417907),
+        Fp(value=1303287496),
+        Fp(value=1541273089),
+        Fp(value=1618220094),
+        Fp(value=1711479283),
+        Fp(value=239494928),
+        Fp(value=1755981565),
+        Fp(value=1393953151),
+    ]
+
+
+def test_compress_width_twenty_four_matches_known_answer() -> None:
+    """Width-twenty-four compression of the elements 0..7 matches the frozen reference digest."""
+    # Frozen output of the canonical KoalaBear permutation under the test configuration.
+    assert POSEIDON.compress([Fp(value=i) for i in range(8)], 24, 8) == [
+        Fp(value=1114630880),
+        Fp(value=1895839298),
+        Fp(value=1019726674),
+        Fp(value=919764788),
+        Fp(value=323823531),
+        Fp(value=372774729),
+        Fp(value=1191983079),
+        Fp(value=70660318),
+    ]
+
+
 def test_safe_domain_separator_returns_capacity_length() -> None:
     """The domain separator returns a vector of the requested capacity length."""
     assert len(POSEIDON.safe_domain_separator([5, 2, 4, 8], 9)) == 9
@@ -71,10 +102,43 @@ def test_safe_domain_separator_distinguishes_shapes() -> None:
     assert POSEIDON.safe_domain_separator([1, 2], 9) != POSEIDON.safe_domain_separator([2, 1], 9)
 
 
+def test_safe_domain_separator_matches_known_answer() -> None:
+    """The capacity vector for the lengths 5, 2, 4, 8 matches the frozen reference value."""
+    # Frozen output: a change in the 32-bit packing or the base-P decomposition breaks this.
+    assert POSEIDON.safe_domain_separator([5, 2, 4, 8], 9) == [
+        Fp(value=627826400),
+        Fp(value=1244476188),
+        Fp(value=370678638),
+        Fp(value=978729783),
+        Fp(value=1996000804),
+        Fp(value=1380088873),
+        Fp(value=1753334201),
+        Fp(value=433326939),
+        Fp(value=1294775677),
+    ]
+
+
 def test_sponge_returns_requested_output_length() -> None:
     """The sponge returns exactly the requested number of output elements."""
     capacity = POSEIDON.safe_domain_separator([1, 2, 3, 4], 9)
     assert len(POSEIDON.sponge([Fp(value=1)] * 5, capacity, 8, 24)) == 8
+
+
+def test_sponge_matches_known_answer() -> None:
+    """The sponge over five ones with a fixed capacity matches the frozen reference digest."""
+    # Frozen output of absorbing five ones into the width-twenty-four sponge.
+    # A change in padding, absorption, or squeezing breaks this.
+    capacity = POSEIDON.safe_domain_separator([1, 2, 3, 4], 9)
+    assert POSEIDON.sponge([Fp(value=1)] * 5, capacity, 8, 24) == [
+        Fp(value=477552014),
+        Fp(value=972552740),
+        Fp(value=1695413639),
+        Fp(value=12018845),
+        Fp(value=1258639896),
+        Fp(value=1015276872),
+        Fp(value=1156253900),
+        Fp(value=190862312),
+    ]
 
 
 def test_sponge_squeezes_more_than_one_rate_block() -> None:
@@ -121,6 +185,33 @@ def test_tweak_hash_leaf_uses_sponge_mode() -> None:
         TEST_CONFIG, _parameter(), TreeTweak(level=0, index=Uint64(0)), leaf_digests
     )
     assert len(hashed_digest.data) == TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS
+
+
+def test_tweak_hash_chain_matches_known_answer() -> None:
+    """A chain tweak over one fixed digest matches the frozen reference digest."""
+    # Frozen output of width-sixteen compression over digest, parameter, and tweak.
+    # A change in the chain tweak packing or its prefix breaks this.
+    fixed_digest = HashDigestVector(
+        data=[Fp(value=i) for i in range(TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)]
+    )
+    hashed_digest = POSEIDON.tweak_hash(
+        TEST_CONFIG,
+        _parameter(),
+        ChainTweak(epoch=Uint64(0), chain_index=1, step=1),
+        [fixed_digest],
+    )
+    assert hashed_digest == HashDigestVector(
+        data=[
+            Fp(value=486628877),
+            Fp(value=1489818024),
+            Fp(value=465621198),
+            Fp(value=1039062572),
+            Fp(value=735121219),
+            Fp(value=2072497154),
+            Fp(value=800300299),
+            Fp(value=543601961),
+        ]
+    )
 
 
 def test_tweak_hash_chain_and_tree_tweaks_are_domain_separated() -> None:

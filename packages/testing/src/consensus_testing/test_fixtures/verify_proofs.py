@@ -251,7 +251,7 @@ class VerifySingleMessageProofsTest(BaseTestSpec):
         # Phase 3: self-verify and assert the outcome against the configured expectation.
         candidate = SingleMessageAggregate(participants=aggregation_bits, proof=proof)
         exception_raised: Exception | None = None
-        # Why this catch: the aggregation layer raises exactly one error type.
+        # The aggregation layer raises exactly one error type.
         # Anything else is a harness bug and propagates unswallowed.
         try:
             candidate.verify(public_keys, message, slot)
@@ -506,7 +506,7 @@ class VerifyMultiMessageProofsTest(BaseTestSpec):
 
         # Phase 4: self-verify and assert the outcome against the configured expectation.
         exception_raised: Exception | None = None
-        # Why this catch: the aggregation layer raises exactly one error type.
+        # The aggregation layer raises exactly one error type.
         # Anything else is a harness bug and propagates unswallowed.
         try:
             merged.verify(

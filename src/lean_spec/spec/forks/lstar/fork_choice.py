@@ -9,6 +9,7 @@ from lean_spec.spec.crypto.xmss.interface import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.forks.lstar._base import LstarSpecBase, LstarStore
 from lean_spec.spec.forks.lstar.config import (
     GOSSIP_DISPARITY_INTERVALS,
+    INTERVALS_PER_SLOT,
     MAX_ATTESTATIONS_DATA,
 )
 from lean_spec.spec.forks.lstar.containers import (
@@ -185,7 +186,8 @@ class ForkChoiceMixin(LstarSpecBase):
             3. The head must be at least as recent as source and target.
             4. Checkpoint slots must match the actual block slots.
             5. Source, target, and head must lie on one parent chain.
-            6. The vote's slot must have started locally (a small disparity margin is allowed).
+            6. The vote's slot cannot precede the slot of the head it claims to have seen.
+            7. The vote's slot must have started locally (a small disparity margin is allowed).
 
         Raises:
             SpecRejectionError: If the attestation fails any of the validation checks above.
@@ -259,6 +261,16 @@ class ForkChoiceMixin(LstarSpecBase):
                 "Target checkpoint must be ancestor of head",
             )
 
+        # Head Consistency Check
+        #
+        # A vote cannot have observed its head before that head existed.
+        # This lower bound also keeps the wire slot clear of the 2**64 overflow edge.
+        if attestation_data.slot < head_checkpoint.slot:
+            raise SpecRejectionError(
+                RejectionReason.ATTESTATION_SLOT_BEFORE_HEAD,
+                "Attestation slot precedes head",
+            )
+
         # Time Check
         #
         # Reject votes whose slot has not started, with a small clock-skew margin.
@@ -270,8 +282,12 @@ class ForkChoiceMixin(LstarSpecBase):
         #     interval 45  ->  admitted only by a whole-slot margin, a full slot early
         #
         # The early window lets an adversary pre-publish next-slot aggregates.
-        attestation_start_interval = Interval.from_slot(attestation_data.slot)
-        if attestation_start_interval > store.time + Interval(GOSSIP_DISPARITY_INTERVALS):
+        #
+        # Work in slot units, not intervals.
+        # Multiplying a near-2**64 wire slot into intervals would overflow and crash first.
+        admission_horizon_interval = int(store.time) + int(GOSSIP_DISPARITY_INTERVALS)
+        max_admissible_slot = admission_horizon_interval // int(INTERVALS_PER_SLOT)
+        if int(attestation_data.slot) > max_admissible_slot:
             raise SpecRejectionError(
                 RejectionReason.ATTESTATION_TOO_FAR_IN_FUTURE, "Attestation too far in future"
             )
@@ -322,6 +338,7 @@ class ForkChoiceMixin(LstarSpecBase):
             # - their slots are ordered source <= target <= head,
             # - each checkpoint slot matches its block's actual slot from the store,
             # - source, target, and head lie on one parent chain,
+            # - the vote's slot is not before the head block's slot,
             # - the vote's slot has already started locally with a small margin.
             self.validate_attestation(store, attestation_data)
 
@@ -428,6 +445,7 @@ class ForkChoiceMixin(LstarSpecBase):
         # - their slots are ordered source <= target <= head,
         # - each checkpoint slot matches its block's actual slot from the store,
         # - source, target, and head lie on one parent chain,
+        # - the vote's slot is not before the head block's slot,
         # - the vote's slot has already started locally with a small margin.
         self.validate_attestation(store, attestation_data)
 
@@ -578,7 +596,7 @@ class ForkChoiceMixin(LstarSpecBase):
             # Run the state transition from the parent state to this block's post-state.
             post_state = self.state_transition(parent_state, block)
 
-            # Advance the justified and finalized checkpoints from the post-state.
+            # Advance the justified checkpoint from the post-state.
             #
             # A candidate wins only when its slot is strictly higher than the store's.
             # On a slot tie the store keeps its checkpoint, avoiding a silent root swap:
@@ -586,7 +604,6 @@ class ForkChoiceMixin(LstarSpecBase):
             #     store slot 5, candidate slot 7  ->  take candidate
             #     store slot 5, candidate slot 5  ->  keep store
             latest_justified = store.latest_justified.advance_to(post_state.latest_justified)
-            latest_finalized = store.latest_finalized.advance_to(post_state.latest_finalized)
 
             # Seed each block-carried vote into the known pool with an empty proof set.
             #
@@ -607,7 +624,6 @@ class ForkChoiceMixin(LstarSpecBase):
                     "blocks": store.blocks | {block_root: block},
                     "states": store.states | {block_root: post_state},
                     "latest_justified": latest_justified,
-                    "latest_finalized": latest_finalized,
                     "latest_known_aggregated_payloads": new_known_aggregated_payloads,
                 }
             )
@@ -624,6 +640,7 @@ class ForkChoiceMixin(LstarSpecBase):
     def extract_attestations_from_aggregated_payloads(
         self,
         aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
+        latest_finalized_slot: Slot,
     ) -> dict[ValidatorIndex, AttestationData]:
         """
         Map each participating validator to the latest vote it cast.
@@ -631,8 +648,12 @@ class ForkChoiceMixin(LstarSpecBase):
         This is the LMD view fork choice runs on.
         On equal slots the first vote seen wins, since the slot comparison is strict.
 
+        A vote whose head sits at or below the finalized slot carries no fork-choice weight.
+        Such stale votes are skipped here, so callers pass their pool without pre-filtering.
+
         Args:
             aggregated_payloads: Proof sets keyed by the vote they cover.
+            latest_finalized_slot: Finalized cutoff; votes at or below it are skipped.
 
         Returns:
             Each validator mapped to its highest-slot vote.
@@ -641,6 +662,13 @@ class ForkChoiceMixin(LstarSpecBase):
 
         # Walk every vote, every proof for it, and every validator the proof covers.
         for attestation_data, proofs in aggregated_payloads.items():
+            # Skip votes whose head no longer outlives the finalized slot.
+            if attestation_data.head.slot <= latest_finalized_slot:
+                continue
+
+            # Every proof here shares one attestation data, so they share one slot.
+            # The strict slot comparison below never overwrites between them.
+            # Set iteration order is therefore non-consensus and safe to leave native.
             for proof in proofs:
                 for validator_index in proof.participants.to_validator_indices():
                     # Keep this vote only when it is newer than the one already stored.
@@ -701,11 +729,8 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         # Reduce the counted pool to each validator's latest still-relevant vote.
         latest_votes = self.extract_attestations_from_aggregated_payloads(
-            {
-                attestation_data: proofs
-                for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                if attestation_data.head.slot > store.latest_finalized.slot
-            }
+            store.latest_known_aggregated_payloads,
+            store.latest_finalized.slot,
         )
 
         # Credit every block on those votes' ancestor chains above finalization.
@@ -791,11 +816,8 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         # Reduce the counted pool to each validator's latest still-relevant vote.
         latest_votes = self.extract_attestations_from_aggregated_payloads(
-            {
-                attestation_data: proofs
-                for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                if attestation_data.head.slot > store.latest_finalized.slot
-            }
+            store.latest_known_aggregated_payloads,
+            store.latest_finalized.slot,
         )
 
         # Descend from the justified root to the heaviest leaf.
@@ -806,7 +828,24 @@ class ForkChoiceMixin(LstarSpecBase):
             start_root=store.latest_justified.root,
             attestations=latest_votes,
         )
-        return store.model_copy(update={"head": new_head})
+        # Invariant: the finalized checkpoint stays on the head's chain.
+        # Climb from the head to its ancestor at the finalized slot.
+        finalized_slot = store.states[new_head].latest_finalized.slot
+        finalized_root = new_head
+        while finalized_root in store.blocks and store.blocks[finalized_root].slot > finalized_slot:
+            parent_root = store.blocks[finalized_root].parent_root
+            if parent_root not in store.blocks:
+                break
+            finalized_root = parent_root
+
+        # A fresh checkpoint-sync anchor stores no block at that slot.
+        # Keep the trusted anchor there rather than emit an unresolved root.
+        if store.blocks[finalized_root].slot == finalized_slot:
+            latest_finalized = Checkpoint(root=finalized_root, slot=finalized_slot)
+        else:
+            latest_finalized = store.latest_finalized
+
+        return store.model_copy(update={"head": new_head, "latest_finalized": latest_finalized})
 
     def accept_new_attestations(self, store: LstarStore) -> LstarStore:
         """
@@ -864,11 +903,8 @@ class ForkChoiceMixin(LstarSpecBase):
 
         # Reduce the pending pool to each validator's latest still-relevant vote.
         latest_votes = self.extract_attestations_from_aggregated_payloads(
-            {
-                attestation_data: proofs
-                for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
-                if attestation_data.head.slot > store.latest_finalized.slot
-            }
+            store.latest_new_aggregated_payloads,
+            store.latest_finalized.slot,
         )
 
         # Descend from the justified root, taking only children that clear the threshold.

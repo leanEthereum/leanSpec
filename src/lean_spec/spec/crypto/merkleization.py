@@ -6,7 +6,7 @@ import math
 from collections.abc import Sequence
 from functools import singledispatch
 from hashlib import sha256
-from itertools import accumulate, repeat
+from itertools import accumulate, batched, repeat
 from typing import Final
 
 from lean_spec.spec.crypto.koalabear import Fp
@@ -120,15 +120,12 @@ def merkleize(chunks: Sequence[Bytes32], limit: int | None = None) -> Bytes32:
     subtree_size = 1
     while subtree_size < width:
         next_level: list[Bytes32] = []
-        i = 0
-        while i < len(level):
-            left = level[i]
-            i += 1
-            if i < len(level):
-                right = level[i]
-                i += 1
-            else:
-                right = _zero_tree_root(subtree_size)
+        # Each pair holds the left and right child of one parent node.
+        # An odd tail yields a length-one tuple.
+        # Its missing right sibling is the all-zero subtree of the current size.
+        for child_pair in batched(level, 2):
+            left = child_pair[0]
+            right = child_pair[1] if len(child_pair) == 2 else _zero_tree_root(subtree_size)
             next_level.append(Bytes32(sha256(left + right).digest()))
         level = next_level
         subtree_size *= 2
@@ -211,39 +208,19 @@ def hash_tree_root(value: object) -> Bytes32:
     raise TypeError(f"hash_tree_root: unsupported value type {type(value).__name__}")
 
 
-@hash_tree_root.register
-def _htr_uint(value: BaseUint) -> Bytes32:
-    return merkleize(_pack_bytes(value.encode_bytes()))
-
-
-@hash_tree_root.register
-def _htr_boolean(value: Boolean) -> Bytes32:
-    return merkleize(_pack_bytes(value.encode_bytes()))
-
-
-@hash_tree_root.register
-def _htr_fp(value: Fp) -> Bytes32:
+@hash_tree_root.register(BaseUint)
+@hash_tree_root.register(Boolean)
+@hash_tree_root.register(Fp)
+@hash_tree_root.register(BaseBytes)
+def _htr_packed_leaf(value: BaseUint | Boolean | Fp | BaseBytes) -> Bytes32:
+    # Each of these encodes to a fixed-width byte string with no length prefix.
+    # The root is the Merkle root of those bytes packed into 32-byte chunks.
     return merkleize(_pack_bytes(value.encode_bytes()))
 
 
 @hash_tree_root.register
 def _htr_bytes(value: bytes) -> Bytes32:
     return merkleize(_pack_bytes(value))
-
-
-@hash_tree_root.register
-def _htr_bytearray(value: bytearray) -> Bytes32:
-    return merkleize(_pack_bytes(bytes(value)))
-
-
-@hash_tree_root.register
-def _htr_memoryview(value: memoryview) -> Bytes32:
-    return merkleize(_pack_bytes(value.tobytes()))
-
-
-@hash_tree_root.register
-def _htr_bytevector(value: BaseBytes) -> Bytes32:
-    return merkleize(_pack_bytes(value.encode_bytes()))
 
 
 @hash_tree_root.register

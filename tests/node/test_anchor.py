@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from consensus_testing import make_genesis_block, make_genesis_state
+from consensus_testing import make_genesis_state, reconstruct_block_from_header
 from lean_spec.node.anchor import Anchor
 from lean_spec.node.genesis import GenesisConfig
 from lean_spec.node.sync.checkpoint_sync import CheckpointSyncError
@@ -21,7 +21,7 @@ from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 def _signed_genesis_block(state: State) -> SignedBlock:
     """Wrap the genesis block matching a state with an empty proof."""
     return SignedBlock(
-        block=make_genesis_block(state),
+        block=reconstruct_block_from_header(state),
         proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
     )
 

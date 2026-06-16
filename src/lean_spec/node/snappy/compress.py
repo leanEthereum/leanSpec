@@ -186,17 +186,17 @@ def _compress_block(block: bytes) -> bytes:
     output = bytearray()
 
     # - literal_start: where the current run of unmatched bytes began.
-    # - ip (input pointer): current position we're examining.
+    # - input_position: current position we're examining.
     literal_start = 0
-    ip = 0
+    input_position = 0
 
     # Main compression loop.
     #
     # We stop INPUT_MARGIN_BYTES before the end to avoid bounds checks
     # in the inner loop. The remaining bytes are emitted as literals.
-    while ip < len(block) - INPUT_MARGIN_BYTES:
+    while input_position < len(block) - INPUT_MARGIN_BYTES:
         # Step 1: Hash the 4 bytes at current position.
-        hash_value = _hash_4_bytes(block, ip, table_bits)
+        hash_value = _hash_4_bytes(block, input_position, table_bits)
 
         # Step 2: Look up the hash to find a potential match.
         match_pos = table[hash_value]
@@ -204,38 +204,38 @@ def _compress_block(block: bytes) -> bytes:
         # Step 3: Update hash table with current position.
         #
         # Must happen AFTER lookup to avoid matching ourselves.
-        table[hash_value] = ip
+        table[hash_value] = input_position
 
         # Step 4: Check if we found a real match.
         #
         # Two conditions:
         #   - match_pos >= 0: the slot wasn't empty
         #   - bytes actually match (hash collision check)
-        if match_pos >= 0 and _matches_at(block, match_pos, ip):
+        if match_pos >= 0 and _matches_at(block, match_pos, input_position):
             # Found a match!
 
             # First, emit any pending literals.
-            # These are bytes between literal_start and ip that we couldn't match.
-            if ip > literal_start:
-                output.extend(_emit_literal(block[literal_start:ip]))
+            # These are bytes between literal_start and input_position that we couldn't match.
+            if input_position > literal_start:
+                output.extend(_emit_literal(block[literal_start:input_position]))
 
             # Extend the match as far as possible.
             # We know 4 bytes match (from the hash), but maybe more do too.
-            match_length = _extend_match(block, match_pos, ip)
+            match_length = _extend_match(block, match_pos, input_position)
 
             # Emit the copy tag.
-            # "Go back (ip - match_pos) bytes, copy match_length bytes."
-            copy_offset = ip - match_pos
+            # "Go back (input_position - match_pos) bytes, copy match_length bytes."
+            copy_offset = input_position - match_pos
             output.extend(encode_copy_tag(match_length, copy_offset))
 
             # Advance past the matched region.
-            ip += match_length
-            literal_start = ip
+            input_position += match_length
+            literal_start = input_position
 
             # Optimization: populate hash table for skipped positions.
             # This helps find matches that start inside the region we just copied.
-            if match_length > 1 and ip < len(block) - INPUT_MARGIN_BYTES:
-                for skip_pos in range(ip - match_length + 1, ip - 1, 2):
+            if match_length > 1 and input_position < len(block) - INPUT_MARGIN_BYTES:
+                for skip_pos in range(input_position - match_length + 1, input_position - 1, 2):
                     if skip_pos >= 0:
                         skip_hash = _hash_4_bytes(block, skip_pos, table_bits)
                         table[skip_hash] = skip_pos
@@ -243,7 +243,7 @@ def _compress_block(block: bytes) -> bytes:
             # No match found.
             #
             # Move to the next byte. It will be part of the literal run.
-            ip += 1
+            input_position += 1
 
     # Emit remaining bytes as literal.
     #

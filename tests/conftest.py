@@ -11,9 +11,9 @@ if "LEAN_ENV" not in os.environ:
     os.environ["LEAN_ENV"] = "test"
 
 from consensus_testing import (  # noqa: E402
-    make_genesis_block,
     make_genesis_state,
     make_genesis_store,
+    reconstruct_block_from_header,
 )
 from consensus_testing.keys import XmssKeyManager  # noqa: E402
 from lean_spec.spec.forks import Slot  # noqa: E402
@@ -47,7 +47,7 @@ def genesis_state() -> State:
 @pytest.fixture
 def genesis_block(genesis_state: State) -> Block:
     """Genesis block matching the null-key genesis state."""
-    return make_genesis_block(genesis_state)
+    return reconstruct_block_from_header(genesis_state)
 
 
 @pytest.fixture

@@ -7,6 +7,7 @@ from lean_spec.spec.forks.lstar.containers.block import BlockHeader
 from lean_spec.spec.forks.lstar.containers.checkpoint import Checkpoint
 from lean_spec.spec.forks.lstar.containers.genesis import GenesisConfig
 from lean_spec.spec.forks.lstar.containers.validator import Validators
+from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
 from lean_spec.spec.forks.lstar.slot import Slot
 from lean_spec.spec.ssz import Boolean, Bytes32, Container, SSZList
 from lean_spec.spec.ssz.bitfields import BaseBitlist
@@ -45,7 +46,8 @@ class JustifiedSlots(BaseBitlist):
             True if the slot is justified or finalized, False otherwise.
 
         Raises:
-            IndexError: If the target slot is active but outside the tracked range.
+            SpecRejectionError: JUSTIFIED_SLOT_OUT_OF_RANGE if the target slot is active
+                but outside the tracked range.
         """
         # First, determine the position of the target relative to the anchor.
         #
@@ -59,13 +61,16 @@ class JustifiedSlots(BaseBitlist):
         # We assume the slot is within the tracked range.
         #
         # If the caller asks for a slot too far in the future, it indicates a logic error.
+        # Surface it as a domain rejection so the uniform rejection funnel catches it,
+        # rather than a bare index error escaping a block-processing path.
         try:
             return self[relative_index]
-        except IndexError as e:
-            raise IndexError(
+        except IndexError as exception:
+            raise SpecRejectionError(
+                RejectionReason.JUSTIFIED_SLOT_OUT_OF_RANGE,
                 f"Slot {target_slot} is outside the tracked range "
-                f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})"
-            ) from e
+                f"(finalized_boundary={finalized_slot}, tracked_length={len(self)})",
+            ) from exception
 
     def extend_to_slot(self, finalized_slot: Slot, target_slot: Slot) -> Self:
         """

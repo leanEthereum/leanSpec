@@ -68,7 +68,7 @@ class HashTreeLayer(Container):
         """
         Build a layer whose nodes can all be paired at the next level up.
 
-        # Why pad
+        # Padding
 
         The level above pairs nodes two at a time, then hashes each pair.
         - A run starting on an odd index lacks a left neighbor for its first node.
@@ -473,18 +473,18 @@ class HashSubTree(Container):
             raise ValueError(f"Position {position} out of bounds.")
 
         siblings: list[HashDigestVector] = []
-        pos = int(position)
+        current_position = int(position)
 
         # Stop one short of the root layer.
         # The root has no sibling.
         for layer in self.layers[:-1]:
             # The sibling sits at the position with the last bit flipped, then we
             # rebase by the layer's start_index because the layer is sparse.
-            sibling_index = (pos ^ 1) - int(layer.start_index)
+            sibling_index = (current_position ^ 1) - int(layer.start_index)
             if not (0 <= sibling_index < len(layer.nodes)):
                 raise ValueError(f"Sibling index {sibling_index} out of bounds.")
             siblings.append(layer.nodes[sibling_index])
-            pos //= 2
+            current_position //= 2
 
         return HashTreeOpening(siblings=HashDigestList(data=siblings))
 
@@ -561,7 +561,7 @@ def verify_path(
     The leaf is hashed, then folded with each sibling while climbing one level per step.
     The walk succeeds when the recomputed root equals the trusted root.
 
-    # Why return false instead of raising
+    # Failure handling
 
     The opening arrives inside an untrusted signature.
     A malformed opening must be a quiet verification failure, never a crash.
@@ -580,12 +580,12 @@ def verify_path(
         True when the path reconstructs the trusted root, false otherwise.
     """
     # Guard against malformed openings.
-    # The opening list caps at 32 entries.
-    # A depth greater than 32 would overflow the position bound check below.
-    depth = len(opening.siblings)
-    if depth > 32:
+    # The opening holds exactly one sibling per tree level.
+    # That count is the scheme height, equal to the configured log lifetime.
+    if len(opening.siblings) != config.LOG_LIFETIME:
         return False
-    if int(position) >= (1 << depth):
+    # The leaf position must fall inside the tree the configured lifetime spans.
+    if int(position) >= int(config.LIFETIME):
         return False
 
     # Phase 1: hash the leaf parts to derive the starting node.

@@ -248,6 +248,28 @@ class TestPeerManagerNetworkConsensus:
         finalized = manager.get_network_finalized_slot()
         assert finalized == Slot(100)
 
+    def test_get_network_finalized_slot_tie_prefers_higher_slot(
+        self, peer_id: PeerId, peer_id_2: PeerId, peer_id_3: PeerId
+    ) -> None:
+        """get_network_finalized_slot breaks an equal-count tie toward the higher slot."""
+        manager = PeerManager()
+
+        # Two peers report slot 100 and two report slot 200.
+        # The lower slot is inserted first, so insertion order would pick 100.
+        for pid, finalized_slot in [
+            (peer_id, 100),
+            (peer_id_2, 100),
+            (peer_id_3, 200),
+            (peer("peerD"), 200),
+        ]:
+            sync_peer = manager.add_peer(PeerInfo(peer_id=pid, state=ConnectionState.CONNECTED))
+            sync_peer.status = Status(
+                finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(finalized_slot)),
+                head=Checkpoint(root=Bytes32.zero(), slot=Slot(finalized_slot + 50)),
+            )
+
+        assert manager.get_network_finalized_slot() == Slot(200)
+
     def test_get_network_finalized_slot_none_without_status(
         self, connected_peer_info: PeerInfo
     ) -> None:

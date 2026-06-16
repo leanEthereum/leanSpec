@@ -19,29 +19,25 @@ class TimelineMixin(LstarSpecBase):
         has_proposal: bool,
         is_aggregator: bool = False,
     ) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
-        """
-        Advance store time by one interval and perform interval-specific actions.
-
-        Different actions are performed based on interval within slot:
-        - Interval 0: Process attestations if proposal exists
-        - Interval 1: Validator attesting period (no action)
-        - Interval 2: Aggregators create proofs & broadcast
-        - Interval 3: Update safe target (fast confirm)
-        - Interval 4: Process accumulated attestations
-        """
+        """Advance store time by one interval and perform interval-specific actions."""
         # Advance time by one interval
         store = store.model_copy(update={"time": store.time + Interval(1)})
         current_interval = Interval(int(store.time) % int(INTERVALS_PER_SLOT))
         new_aggregates: list[SignedAggregatedAttestation] = []
 
-        if current_interval == Interval(0) and has_proposal:
-            store = self.accept_new_attestations(store)
-        elif current_interval == Interval(2) and is_aggregator:
-            store, new_aggregates = self.aggregate(store)
-        elif current_interval == Interval(3):
-            store = self.update_safe_target(store)
-        elif current_interval == Interval(4):
-            store = self.accept_new_attestations(store)
+        match int(current_interval):
+            # Slot start: ingest pending attestations once the slot's proposal lands.
+            case 0 if has_proposal:
+                store = self.accept_new_attestations(store)
+            # Aggregators build proofs over the slot's attestations and broadcast them.
+            case 2 if is_aggregator:
+                store, new_aggregates = self.aggregate(store)
+            # Fast-confirmation point: advance the safe target from the latest votes.
+            case 3:
+                store = self.update_safe_target(store)
+            # Ingest the attestations that accumulated through the slot.
+            case 4:
+                store = self.accept_new_attestations(store)
 
         return store, new_aggregates
 
@@ -55,9 +51,7 @@ class TimelineMixin(LstarSpecBase):
         """
         Advance forkchoice store time to given interval count.
 
-        Ticks store forward interval by interval, performing appropriate
-        actions for each interval type. This method handles time progression
-        incrementally to ensure all interval-specific actions are performed.
+        Stepping one interval at a time runs every interval's action without skipping any.
         """
         all_new_aggregates: list[SignedAggregatedAttestation] = []
 

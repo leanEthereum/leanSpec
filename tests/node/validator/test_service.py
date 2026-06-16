@@ -28,6 +28,7 @@ from lean_spec.spec.forks.lstar.config import MILLISECONDS_PER_INTERVAL
 from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     Block,
+    Checkpoint,
     SignedAttestation,
     SignedBlock,
     SingleMessageAggregate,
@@ -381,10 +382,10 @@ class TestSignWithKey:
         assert stored.proposal_secret_key is advanced_proposal
         assert stored.attestation_secret_key is attestation_key
 
-    def test_returns_updated_entry_and_signature(
+    def test_returns_signature(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
-        """Return value is (updated ValidatorEntry, Signature) — both fields correct."""
+        """Return value is the signature produced by the scheme."""
         service, _, validator_entry, attestation_key, _ = self._setup(sync_service, key_manager)
         advanced = MagicMock(name="adv")
         mock_signature = MagicMock(name="ret_sig")
@@ -396,12 +397,11 @@ class TestSignWithKey:
             scheme.advance_preparation.return_value = advanced
             scheme.sign.return_value = mock_signature
 
-            returned_entry, returned_signature = service._sign_with_key(
+            returned_signature = service._sign_with_key(
                 validator_entry, Slot(2), MagicMock(), "attestation_secret_key"
             )
 
         assert returned_signature is mock_signature
-        assert returned_entry.attestation_secret_key is advanced
 
 
 class TestValidatorServiceBasic:
@@ -712,7 +712,7 @@ class TestValidatorServiceRun:
 
         block_slots: list[Slot] = []
 
-        async def mock_produce(self_inner, slot: Slot) -> None:
+        async def mock_produce(_self, slot: Slot) -> None:
             block_slots.append(slot)
             service.stop()
 
@@ -734,7 +734,7 @@ class TestValidatorServiceRun:
 
         attest_slots: list[Slot] = []
 
-        async def mock_attest(self_inner, slot: Slot) -> None:
+        async def mock_attest(_self, slot: Slot) -> None:
             attest_slots.append(slot)
             service.stop()
 
@@ -797,7 +797,7 @@ class TestValidatorServiceRun:
 
         attest_calls: list[Slot] = []
 
-        async def mock_attest(self_inner, slot: Slot) -> None:
+        async def mock_attest(_self, slot: Slot) -> None:
             attest_calls.append(slot)
 
         with (
@@ -825,7 +825,7 @@ class TestValidatorServiceRun:
         )
         service._attested_slots = {Slot(i) for i in range(6)}  # slots 0-5
 
-        async def mock_attest(self_inner, slot: Slot) -> None:
+        async def mock_attest(_self, slot: Slot) -> None:
             service.stop()
 
         with patch.object(ValidatorService, "_produce_attestations", mock_attest):
@@ -1113,6 +1113,106 @@ class TestValidatorServiceIntegration:
 
         body_attestations = signed_block.block.body.attestations
         assert len(body_attestations) > 0
+
+    async def test_produced_block_does_not_pin_a_higher_finalized(
+        self,
+        key_manager: XmssKeyManager,
+        real_sync_service: SyncService,
+        real_registry: ValidatorRegistry,
+        spec: LstarSpec,
+    ) -> None:
+        """
+        A produced block that finalizes a higher slot, while not yet the head, does not pin it.
+
+        Given
+        -----
+        - 6 validators; 4 votes (2/3) justify a slot.
+        - the chain genesis -> block_1 -> block_2.
+        - block_2 carries 4 votes for block_1, justifying slot 1.
+        - the pool carries 4 votes for block_2 with source slot 1.
+        - block production never advances its own head, so a produced block stays off the head.
+
+        When
+        ----
+        - the proposer produces block_3, whose post-state finalizes slot 1.
+
+        Then
+        ----
+        - the head stays at block_2 at slot 2.
+        - block_2's state finalized is the genesis boundary at slot 0.
+        - the store's finalized tracks that head state, not block_3's higher finalized.
+        - the counted attestation pool is left untouched, since the head did not finalize.
+        """
+        produced: list[SignedBlock] = []
+
+        async def capture(block: SignedBlock) -> None:
+            produced.append(block)
+
+        service = ValidatorService(
+            sync_service=real_sync_service,
+            clock=SlotClock(genesis_time=Uint64(0)),
+            registry=real_registry,
+            on_block=capture,
+        )
+
+        genesis_root = real_sync_service.store.head
+
+        def pool_votes(
+            att_slot: int, block_root: Bytes32, source_root: Bytes32, src_slot: int
+        ) -> None:
+            store = real_sync_service.store
+            data = AttestationData(
+                slot=Slot(att_slot),
+                head=Checkpoint(root=block_root, slot=Slot(att_slot)),
+                target=Checkpoint(root=block_root, slot=Slot(att_slot)),
+                source=Checkpoint(root=source_root, slot=Slot(src_slot)),
+            )
+            participants = [ValidatorIndex(i) for i in range(4)]
+            public_keys = [key_manager[v].attestation_keypair.public_key for v in participants]
+            sigs = [key_manager.sign_attestation_data(v, data) for v in participants]
+            proof = SingleMessageAggregate.aggregate(
+                children=[],
+                raw_xmss=list(zip(participants, public_keys, sigs, strict=True)),
+                message=hash_tree_root(data),
+                slot=data.slot,
+            )
+            real_sync_service.store = store.model_copy(
+                update={
+                    "latest_known_aggregated_payloads": {
+                        **store.latest_known_aggregated_payloads,
+                        data: {proof},
+                    }
+                }
+            )
+
+        # genesis -> block_1
+        await service._maybe_produce_block(Slot(1))
+        real_sync_service.store = spec.update_head(real_sync_service.store)
+        block_1_root = real_sync_service.store.head
+
+        # block_2 includes votes for block_1, justifying slot 1.
+        pool_votes(att_slot=1, block_root=block_1_root, source_root=genesis_root, src_slot=0)
+        await service._maybe_produce_block(Slot(2))
+        real_sync_service.store = spec.update_head(real_sync_service.store)
+        block_2_root = real_sync_service.store.head
+        assert real_sync_service.store.latest_justified.slot == Slot(1)
+
+        # Votes for block_2 with source slot 1; block_3 will finalize slot 1.
+        pool_votes(att_slot=2, block_root=block_2_root, source_root=block_1_root, src_slot=1)
+        pool_before = real_sync_service.store.latest_known_aggregated_payloads
+
+        await service._maybe_produce_block(Slot(3))
+        after = real_sync_service.store
+        block_3_root = hash_tree_root(produced[-1].block)
+
+        # block_3's own state did finalize slot 1 ...
+        assert after.states[block_3_root].latest_finalized.slot == Slot(1)
+        # ... but the head is still block_2, whose state finalized stays at genesis.
+        assert after.blocks[after.head].slot == Slot(2)
+        assert after.latest_finalized == after.states[after.head].latest_finalized
+        assert after.latest_finalized.slot == Slot(0)
+        # The counted pool is untouched: production neither pins finalized nor prunes.
+        assert after.latest_known_aggregated_payloads == pool_before
 
     async def test_multiple_slots_produce_different_attestations(
         self,

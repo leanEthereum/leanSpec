@@ -145,9 +145,7 @@ class QuicStreamAdapter:
 
         Flushes any buffered data before sending FIN.
         """
-        if self._write_buffer:
-            await self._stream.write(self._write_buffer)
-            self._write_buffer = b""
+        await self.drain()
         await self._stream.finish_write()
 
     async def negotiate_server(

@@ -101,7 +101,6 @@ from lean_spec.node.networking.transport.identity import IdentityKeypair
 from lean_spec.node.networking.transport.quic.connection import (
     QuicConnection,
     QuicConnectionManager,
-    is_quic_multiaddr,
 )
 from lean_spec.node.networking.transport.quic.stream import QuicStream
 from lean_spec.node.networking.transport.quic.stream_adapter import (
@@ -174,13 +173,6 @@ class LiveNetworkEventSource:
     """Client for req/resp protocol operations.
 
     Used for Status exchange and block/attestation requests.
-    """
-
-    quic_manager: QuicConnectionManager | None = None
-    """Underlying transport manager for QUIC connections.
-
-    Handles QUIC connections with libp2p-tls authentication.
-    Initialized lazily on first QUIC connection.
     """
 
     _events: asyncio.Queue[NetworkEvent] = field(default_factory=asyncio.Queue)
@@ -542,11 +534,7 @@ class LiveNetworkEventSource:
         self._stop_event.clear()
 
         try:
-            # Detect transport type and connect accordingly.
-            if is_quic_multiaddr(multiaddr):
-                connection = await self._dial_quic(multiaddr)
-            else:
-                connection = await self.connection_manager.connect(multiaddr)
+            connection = await self.connection_manager.connect(multiaddr)
 
             peer_id = connection.peer_id
 
@@ -579,74 +567,18 @@ class LiveNetworkEventSource:
             logger.warning("Failed to connect to %s: %s", multiaddr, exception)
             return None
 
-    async def _ensure_quic_manager(self) -> None:
-        """
-        Initialize QUIC manager lazily on first use.
-
-        Reuses the identity key from the connection manager for consistency.
-        This ensures the same peer ID is used across all connections.
-        Called automatically before any QUIC operation.
-        """
-        if self.quic_manager is None:
-            # Reuse the same identity key for consistent peer ID.
-            # Accesses internal field; no public API exists for this.
-            identity_key = self.connection_manager._identity_key
-            self.quic_manager = await QuicConnectionManager.create(identity_key)
-
-    async def _dial_quic(self, multiaddr: str) -> QuicConnection:
-        """
-        Connect to a peer using QUIC transport.
-
-        Ensures the QUIC manager is initialized before connecting.
-
-        Args:
-            multiaddr: QUIC address like "/ip4/127.0.0.1/udp/9000/quic-v1".
-
-        Returns:
-            Established QUIC connection.
-
-        Raises:
-            QuicTransportError: If connection fails.
-        """
-        await self._ensure_quic_manager()
-        assert self.quic_manager is not None
-        return await self.quic_manager.connect(multiaddr)
-
     async def listen(self, multiaddr: str) -> None:
         """
         Start listening for incoming connections.
 
-        Automatically detects transport type from multiaddr:
-
-        - QUIC: Routes to the QUIC listener
-        - Other: Delegates to the connection manager
+        Registers the connection callback for accepted connections.
 
         Args:
             multiaddr: Address to listen on (e.g., "/ip4/0.0.0.0/udp/9000/quic-v1").
         """
         self._stop_event.clear()
 
-        if is_quic_multiaddr(multiaddr):
-            await self._listen_quic(multiaddr)
-        else:
-            await self.connection_manager.listen(
-                multiaddr,
-                on_connection=self._handle_inbound_connection,
-            )
-
-    async def _listen_quic(self, multiaddr: str) -> None:
-        """
-        Listen for incoming QUIC connections.
-
-        Ensures the QUIC manager is initialized.
-        Registers the connection callback for accepted connections.
-
-        Args:
-            multiaddr: QUIC address to listen on.
-        """
-        await self._ensure_quic_manager()
-        assert self.quic_manager is not None
-        await self.quic_manager.listen(
+        await self.connection_manager.listen(
             multiaddr,
             on_connection=self._handle_inbound_connection,
         )
@@ -730,7 +662,6 @@ class LiveNetworkEventSource:
             peer_id: Peer identifier.
             connection: QuicConnection to use.
         """
-        # Why:
         # The dialing path and the inbound-stream handler can both reach this
         # method concurrently for the same peer.
         # The lock serialises the check-and-open so only one stream is opened.

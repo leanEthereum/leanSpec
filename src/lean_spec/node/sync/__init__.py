@@ -23,16 +23,14 @@ How It Works
 - When parents arrive, process waiting children
 """
 
-from __future__ import annotations
-
-__all__ = [
-    "SyncService",
-    "BlockCache",
-    "NetworkRequester",
-    "PeerManager",
-]
-
 from lean_spec.node.sync.backfill_sync import NetworkRequester
 from lean_spec.node.sync.block_cache import BlockCache
 from lean_spec.node.sync.peer_manager import PeerManager
 from lean_spec.node.sync.service import SyncService
+
+__all__ = [
+    "BlockCache",
+    "NetworkRequester",
+    "PeerManager",
+    "SyncService",
+]

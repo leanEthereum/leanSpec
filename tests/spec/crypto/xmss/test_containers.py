@@ -1,5 +1,6 @@
 """Behaviour tests for the XMSS containers."""
 
+import io
 import json
 
 import pytest
@@ -16,8 +17,12 @@ from lean_spec.spec.crypto.xmss.containers import (
     ValidatorKeyPair,
 )
 from lean_spec.spec.crypto.xmss.interface import TEST_SIGNATURE_SCHEME
+from lean_spec.spec.crypto.xmss.types import HashDigestList, HashTreeOpening
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz.exceptions import SSZSerializationError
+from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET
+from lean_spec.spec.ssz.uint import Uint32
 
 
 @pytest.fixture(scope="module")
@@ -330,6 +335,15 @@ def test_signature_ssz_roundtrip(sample_signature: Signature) -> None:
     assert Signature.decode_bytes(sample_signature.encode_bytes()) == sample_signature
 
 
+def test_signature_hash_tracks_content_equality(sample_signature: Signature) -> None:
+    """The hash follows content, so an encode/decode round-trip dedups in a set."""
+    # A round-tripped signature is content-equal and so must hash identically.
+    round_tripped_signature = Signature.decode_bytes(sample_signature.encode_bytes())
+    assert hash(sample_signature) == hash(round_tripped_signature)
+    # Two content-equal signatures collapse to a single set member.
+    assert len({sample_signature, round_tripped_signature}) == 1
+
+
 def test_signature_encoded_size_matches_config(sample_signature: Signature) -> None:
     """The encoded signature length matches the advertised fixed length."""
     assert len(sample_signature.encode_bytes()) == TEST_CONFIG.SIGNATURE_LENGTH_BYTES
@@ -345,3 +359,39 @@ def test_signature_decodes_from_json(sample_signature: Signature) -> None:
     """A signature decodes back from its JSON hex form."""
     encoded = "0x" + sample_signature.encode_bytes().hex()
     assert Signature.from_hex(encoded) == sample_signature
+
+
+def test_signature_rejects_too_few_hashes(sample_signature: Signature) -> None:
+    """Bytes whose released-hash list is one digest short fail to decode."""
+    # The hash list is the final field, so dropping the trailing digest leaves a
+    # well-formed payload that decodes to one fewer hash than the scheme dimension.
+    one_digest_bytes = TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS * P_BYTES
+    truncated = sample_signature.encode_bytes()[:-one_digest_bytes]
+    with pytest.raises(SSZSerializationError) as exception_info:
+        Signature.decode_bytes(truncated)
+    assert str(exception_info.value) == "Signature.hashes requires exactly 4 hashes, got 3"
+
+
+def test_signature_rejects_too_many_siblings(sample_signature: Signature) -> None:
+    """Bytes whose authentication path carries one extra sibling fail to decode."""
+    # Rebuild the path with one duplicated sibling, then reassemble the container
+    # bytes around it so the field offsets still point at the right payloads.
+    oversized_opening = HashTreeOpening(
+        siblings=HashDigestList(
+            data=tuple(sample_signature.path.siblings.data)
+            + (sample_signature.path.siblings.data[0],)
+        )
+    )
+    path_bytes = oversized_opening.encode_bytes()
+    randomness_bytes = sample_signature.rho.encode_bytes()
+    hashes_bytes = sample_signature.hashes.encode_bytes()
+    fixed_part_length = BYTES_PER_LENGTH_OFFSET + len(randomness_bytes) + BYTES_PER_LENGTH_OFFSET
+    stream = io.BytesIO()
+    Uint32(fixed_part_length).serialize(stream)
+    stream.write(randomness_bytes)
+    Uint32(fixed_part_length + len(path_bytes)).serialize(stream)
+    stream.write(path_bytes)
+    stream.write(hashes_bytes)
+    with pytest.raises(SSZSerializationError) as exception_info:
+        Signature.decode_bytes(stream.getvalue())
+    assert str(exception_info.value) == "Signature.path.siblings requires exactly 8 siblings, got 9"

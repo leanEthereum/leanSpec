@@ -108,7 +108,7 @@ def test_target_sum_encode_accepts_codeword_on_target_layer() -> None:
     # Attempt counter three lands the all-zero message on the target-sum layer.
     rho = Randomness(data=int_to_base_p(3, config.RAND_LENGTH_FIELD_ELEMENTS))
 
-    codeword = target_sum_encode(POSEIDON, config, parameter, Bytes32(b"\x00" * 32), rho, Uint64(0))
+    codeword = target_sum_encode(POSEIDON, config, parameter, Uint64(0), rho, Bytes32(b"\x00" * 32))
 
     # The digits sum to the target of six, landing on the accepted layer.
     assert codeword == [3, 0, 3, 0]
@@ -122,7 +122,7 @@ def test_target_sum_encode_rejects_codeword_off_target_layer() -> None:
     rho = Randomness(data=int_to_base_p(0, config.RAND_LENGTH_FIELD_ELEMENTS))
 
     assert (
-        target_sum_encode(POSEIDON, config, parameter, Bytes32(b"\x00" * 32), rho, Uint64(0))
+        target_sum_encode(POSEIDON, config, parameter, Uint64(0), rho, Bytes32(b"\x00" * 32))
         is None
     )
 
@@ -144,9 +144,9 @@ def test_target_sum_encode_propagates_aborting_decode_failure(
             POSEIDON,
             TEST_CONFIG,
             _parameter(),
-            Bytes32(b"\x00" * 32),
-            Randomness(data=int_to_base_p(0, TEST_CONFIG.RAND_LENGTH_FIELD_ELEMENTS)),
             Uint64(0),
+            Randomness(data=int_to_base_p(0, TEST_CONFIG.RAND_LENGTH_FIELD_ELEMENTS)),
+            Bytes32(b"\x00" * 32),
         )
         is None
     )

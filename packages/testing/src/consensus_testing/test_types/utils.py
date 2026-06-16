@@ -49,9 +49,8 @@ def resolve_checkpoint(
     Raises:
         ValueError: If label not found in registry.
     """
-    if (block := block_registry.get(label)) is None:
-        raise ValueError(f"label '{label}' not found - available: {list(block_registry.keys())}")
-    return Checkpoint(
-        root=hash_tree_root(block),
-        slot=block.slot if slot_override is None else slot_override,
-    )
+    root = resolve_block_root(label, block_registry)
+    # An explicit override wins; otherwise fall back to the labeled block's own slot.
+    if slot_override is not None:
+        return Checkpoint(root=root, slot=slot_override)
+    return Checkpoint(root=root, slot=block_registry[label].slot)

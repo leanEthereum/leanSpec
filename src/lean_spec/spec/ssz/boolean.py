@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import IO, Any, Self, override
+from typing import IO, Any, NoReturn, Self, override
 
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
@@ -164,7 +164,7 @@ class Boolean(int, SSZType):
             raise SSZSerializationError(f"Boolean: expected scope of 1, got {scope}")
         return cls.decode_bytes(stream.read(1))
 
-    def _no_arithmetic(self, other: Any) -> Self:
+    def _no_arithmetic(self, other: Any) -> NoReturn:
         """Reject arithmetic on Boolean — use bitwise & | ^ instead."""
         raise TypeError("Arithmetic operations are not supported for Boolean.")
 

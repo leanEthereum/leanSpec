@@ -16,7 +16,7 @@ from consensus_testing import (
     PeerConfiguration,
 )
 
-pytestmark = [pytest.mark.valid_until("Lstar"), pytest.mark.order_sensitive]
+pytestmark = pytest.mark.valid_until("Lstar")
 
 TOPIC = "test_topic"
 PARAMS = GossipsubMeshParameters(d=4, d_low=3, d_high=6, d_lazy=3)

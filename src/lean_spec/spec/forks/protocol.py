@@ -4,6 +4,8 @@ Fork protocol interface for leanSpec consensus.
 This module is deliberately agnostic of any individual devnet.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import Any, ClassVar, Protocol, Self
@@ -34,7 +36,7 @@ class SpecStateType(SpecSSZType, Protocol):
         ...
 
     @property
-    def config(self) -> "SpecSSZType":
+    def config(self) -> SpecSSZType:
         """Genesis configuration carried by the state."""
         ...
 
@@ -124,14 +126,6 @@ class ForkProtocol(ABC):
     block, attestation, and aggregation topics route compatibly.
     """
 
-    previous: ClassVar["type[ForkProtocol] | None"]
-    """
-    Predecessor fork in the upgrade chain, or None for the root fork.
-
-    Forms a linked chain that the registry can walk to derive ordering
-    and that upgrade_state can traverse for cross-fork state migrations.
-    """
-
     state_class: type[SpecStateType]
     """Concrete State container class owned by this fork."""
 
@@ -171,17 +165,3 @@ class ForkProtocol(ABC):
         validator_index: ValidatorIndex | None,
     ) -> SpecStoreType:
         """Construct a forkchoice store anchored at the given state and block."""
-
-    @abstractmethod
-    def upgrade_state(self, state: SpecStateType) -> SpecStateType:
-        """
-        Migrate state from the previous fork's shape into this fork's shape.
-
-        Every concrete fork must declare this explicitly. The root fork
-        (previous is None) returns the input unchanged. Later forks return a
-        state of their own shape derived from the predecessor's state.
-
-        Making this abstract is intentional: a silent no-op default would
-        hide missed migrations whenever a fork adds a field but forgets to
-        override.
-        """

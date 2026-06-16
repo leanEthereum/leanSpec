@@ -7,13 +7,16 @@ heartbeat cycle, and message publishing with subscription broadcast.
 
 from __future__ import annotations
 
+import logging
 import time
 
 import pytest
 
-from lean_spec.node.networking.config import PRUNE_BACKOFF
+from lean_spec.node.networking.config import MAX_PAYLOAD_SIZE, PRUNE_BACKOFF
 from lean_spec.node.networking.gossipsub.behavior import (
+    GOSSIP_RETRANSMISSION,
     IDONTWANT_SIZE_THRESHOLD,
+    MAX_IWANT_MESSAGE_IDS_PER_REQUEST,
     GossipsubMessageEvent,
     GossipsubPeerEvent,
 )
@@ -31,6 +34,8 @@ from lean_spec.node.networking.gossipsub.rpc import (
     SubOpts,
 )
 from lean_spec.node.networking.gossipsub.types import MessageId, Timestamp, TopicId
+from lean_spec.node.networking.varint import encode_varint
+from lean_spec.node.snappy import compress as snappy_compress
 from tests.node.networking.gossipsub.conftest import add_peer, make_behavior, make_peer
 
 
@@ -309,6 +314,53 @@ class TestHandleIWant:
 
         assert capture.sent == []
 
+    @pytest.mark.asyncio
+    async def test_iwant_unknown_peer_sends_nothing(self) -> None:
+        """IWANT from an untracked peer is silently ignored."""
+        behavior, capture = make_behavior()
+        message = GossipsubMessage(topic=b"topic", raw_data=b"payload")
+        behavior.message_cache.put(TopicId("topic"), message)
+
+        iwant = ControlIWant(message_ids=[bytes(message.id)])
+        await behavior._handle_iwant(make_peer("stranger"), iwant)
+
+        assert capture.sent == []
+
+    @pytest.mark.asyncio
+    async def test_iwant_serves_up_to_retransmission_limit_then_skips(self) -> None:
+        """One message is served GOSSIP_RETRANSMISSION times then skipped."""
+        behavior, capture = make_behavior()
+        peer_id = add_peer(behavior, "peer1")
+        message = GossipsubMessage(topic=b"topic", raw_data=b"payload")
+        behavior.message_cache.put(TopicId("topic"), message)
+
+        iwant = ControlIWant(message_ids=[bytes(message.id)])
+        for _ in range(GOSSIP_RETRANSMISSION + 2):
+            await behavior._handle_iwant(peer_id, iwant)
+
+        served_reply = (peer_id, RPC(publish=[Message(topic=TopicId("topic"), data=b"payload")]))
+        assert capture.sent == [served_reply] * GOSSIP_RETRANSMISSION
+
+    @pytest.mark.asyncio
+    async def test_iwant_caps_message_ids_per_request(self) -> None:
+        """Only the first MAX_IWANT_MESSAGE_IDS_PER_REQUEST IDs are processed."""
+        behavior, capture = make_behavior()
+        peer_id = add_peer(behavior, "peer1")
+
+        served_message = GossipsubMessage(topic=b"topic", raw_data=b"payload")
+        behavior.message_cache.put(TopicId("topic"), served_message)
+
+        # Pad the request past the cap with junk IDs, then place the cached ID
+        # one slot beyond the cap so the cap must drop it.
+        junk_ids = [bytes([byte_value] * 20) for byte_value in range(1, 5)]
+        padding_ids = junk_ids * (MAX_IWANT_MESSAGE_IDS_PER_REQUEST // len(junk_ids) + 1)
+        message_ids = padding_ids[:MAX_IWANT_MESSAGE_IDS_PER_REQUEST] + [bytes(served_message.id)]
+
+        iwant = ControlIWant(message_ids=message_ids)
+        await behavior._handle_iwant(peer_id, iwant)
+
+        assert capture.sent == []
+
 
 class TestHandleSubscription:
     """Tests for subscription change handling."""
@@ -393,8 +445,9 @@ class TestHandleMessage:
 
     @pytest.mark.asyncio
     async def test_message_event_emitted(self) -> None:
-        """Received message emits GossipsubMessageEvent."""
+        """Received message on a subscribed topic emits GossipsubMessageEvent."""
         behavior, _ = make_behavior()
+        behavior.subscribe(TopicId("topic"))
         peer_id = add_peer(behavior, "peer1")
 
         message = Message(topic=TopicId("topic"), data=b"payload")
@@ -420,22 +473,19 @@ class TestHandleMessage:
         assert behavior._event_queue.empty()
 
     @pytest.mark.asyncio
-    async def test_not_forwarded_when_not_subscribed(self) -> None:
-        """Message is not forwarded when we're not subscribed to the topic."""
+    async def test_dropped_when_not_subscribed(self) -> None:
+        """Message on a topic we don't subscribe to is dropped, not cached or enqueued."""
         behavior, capture = make_behavior()
         peer_id = add_peer(behavior, "peer1")
 
-        # Not subscribed to "topic"
         message = Message(topic=TopicId("topic"), data=b"data")
+        message_id = GossipsubMessage.compute_id(b"topic", b"data")
         await behavior._handle_message(peer_id, message)
 
         assert capture.sent == []
-        assert behavior._event_queue.get_nowait() == GossipsubMessageEvent(
-            peer_id=peer_id,
-            topic=TopicId("topic"),
-            data=b"data",
-            message_id=GossipsubMessage.compute_id(b"topic", b"data"),
-        )
+        assert behavior._event_queue.empty()
+        assert behavior.seen_cache.has(message_id) is False
+        assert behavior.message_cache.get(message_id) is None
 
     @pytest.mark.asyncio
     async def test_idontwant_sent_for_large_messages(self) -> None:
@@ -465,6 +515,26 @@ class TestHandleMessage:
                 ),
             ),
         ]
+
+    @pytest.mark.asyncio
+    async def test_oversized_decompressed_payload_rejected(self) -> None:
+        """A payload that decompresses past the wire limit is dropped before caching."""
+        behavior, capture = make_behavior()
+        topic = TopicId("test_topic")
+        behavior.subscribe(topic)
+        peer_id = add_peer(behavior, "peer1", {topic})
+
+        # Highly compressible bytes that expand one byte past the 10 MiB cap.
+        oversized_payload = b"\x00" * (MAX_PAYLOAD_SIZE + 1)
+        compressed_payload = snappy_compress(oversized_payload)
+        message = Message(topic=topic, data=compressed_payload)
+        message_id = GossipsubMessage.compute_id(topic.encode("utf-8"), oversized_payload)
+        await behavior._handle_message(peer_id, message)
+
+        assert capture.sent == []
+        assert behavior._event_queue.empty()
+        assert behavior.seen_cache.has(message_id) is False
+        assert behavior.message_cache.get(message_id) is None
 
     @pytest.mark.asyncio
     async def test_idontwant_not_sent_for_small_messages(self) -> None:
@@ -874,6 +944,19 @@ class TestHeartbeatIntegration:
         assert len(behavior._peers[pid].dont_want_ids) == 0
 
     @pytest.mark.asyncio
+    async def test_clears_iwant_served_counts(self) -> None:
+        """Heartbeat resets per-peer IWANT retransmission budgets."""
+        behavior, _ = make_behavior()
+        pid = add_peer(behavior, "peer1")
+        behavior._peers[pid].iwant_served_counts[MessageId(b"12345678901234567890")] = 3
+
+        assert len(behavior._peers[pid].iwant_served_counts) == 1
+
+        await behavior._heartbeat()
+
+        assert len(behavior._peers[pid].iwant_served_counts) == 0
+
+    @pytest.mark.asyncio
     async def test_gossip_includes_fanout_topics(self) -> None:
         """Heartbeat emits gossip for fanout topics, not just subscribed ones."""
         behavior, capture = make_behavior(d_lazy=2)
@@ -1097,3 +1180,47 @@ class TestBroadcastSubscription:
         assert sub_sends == [(p1, sub_rpc), (p2, sub_rpc)]
         assert {peer_id for peer_id, _ in prune_sends} == {p1, p2}
         assert all(rpc == prune_rpc for _, rpc in prune_sends)
+
+
+class TestReceiveLoop:
+    """Tests for the incoming-RPC framing loop."""
+
+    @pytest.mark.asyncio
+    async def test_oversized_declared_frame_disconnects_without_buffering(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An over-limit declared frame length disconnects the peer after one read."""
+        behavior, _ = make_behavior()
+        peer_id = add_peer(behavior, "peerA")
+
+        # A peer claims a frame one byte larger than the payload cap,
+        # but sends none of the promised bytes.
+        # A bounded loop must reject on the length alone, not wait for the bytes.
+        oversized_frame_prefix = encode_varint(MAX_PAYLOAD_SIZE + 1)
+
+        read_count = 0
+        handled_rpcs: list[RPC] = []
+
+        async def fake_read(n: int | None = None) -> bytes:
+            nonlocal read_count
+            read_count += 1
+            # Serve the oversized length prefix once, then empty on any later read.
+            return oversized_frame_prefix if read_count == 1 else b""
+
+        async def record_handled_rpc(_peer_id: object, rpc: RPC) -> None:
+            handled_rpcs.append(rpc)
+
+        behavior._handle_rpc = record_handled_rpc  # type: ignore[assignment]
+
+        fake_stream = type("FakeStream", (), {"read": staticmethod(fake_read)})()
+        with caplog.at_level(logging.WARNING):
+            await behavior._receive_loop(peer_id, fake_stream)
+
+        # Rejected on the declared length alone: a single read, no decode, peer gone.
+        assert read_count == 1
+        assert handled_rpcs == []
+        assert peer_id not in behavior._peers
+        assert caplog.messages == [
+            f"Error receiving from {peer_id}: "
+            f"RPC frame too large: {MAX_PAYLOAD_SIZE + 1} > {MAX_PAYLOAD_SIZE}"
+        ]

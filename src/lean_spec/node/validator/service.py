@@ -433,7 +433,7 @@ class ValidatorService:
 
         # Sign the block root with the proposal key.
         block_root = hash_tree_root(block)
-        _, proposer_signature = self._sign_with_key(
+        proposer_signature = self._sign_with_key(
             validator_entry,
             block.slot,
             block_root,
@@ -521,7 +521,7 @@ class ValidatorService:
             raise ValueError(f"No secret key for validator {validator_index}")
 
         # Sign the attestation data root with the attestation key.
-        _, signature = self._sign_with_key(
+        signature = self._sign_with_key(
             validator_entry,
             attestation_data.slot,
             hash_tree_root(attestation_data),
@@ -540,7 +540,7 @@ class ValidatorService:
         slot: Slot,
         message: Bytes32,
         key_field: Literal["attestation_secret_key", "proposal_secret_key"],
-    ) -> tuple[ValidatorEntry, Signature]:
+    ) -> Signature:
         """
         Prepare an XMSS key for the given slot, sign, and update the registry.
 
@@ -557,7 +557,7 @@ class ValidatorService:
             key_field: Which secret key field to use and advance.
 
         Returns:
-            Tuple of (updated entry, signature).
+            The signature over the message.
         """
         scheme = TARGET_SIGNATURE_SCHEME
         secret_key = getattr(validator_entry, key_field)
@@ -568,16 +568,21 @@ class ValidatorService:
 
         signature = scheme.sign(secret_key, slot, message)
 
-        updated_entry = ValidatorEntry(
-            index=validator_entry.index,
-            **{
-                "attestation_secret_key": validator_entry.attestation_secret_key,
-                "proposal_secret_key": validator_entry.proposal_secret_key,
-                key_field: secret_key,
-            },
-        )
+        # Carry over both secret keys, replacing only the one that was advanced.
+        if key_field == "attestation_secret_key":
+            updated_entry = ValidatorEntry(
+                index=validator_entry.index,
+                attestation_secret_key=secret_key,
+                proposal_secret_key=validator_entry.proposal_secret_key,
+            )
+        else:
+            updated_entry = ValidatorEntry(
+                index=validator_entry.index,
+                attestation_secret_key=validator_entry.attestation_secret_key,
+                proposal_secret_key=secret_key,
+            )
         self.registry.add(updated_entry)
-        return updated_entry, signature
+        return signature
 
     def _is_synced_for_duties(
         self,
@@ -609,18 +614,15 @@ class ValidatorService:
 
         # Saturate at zero lag when the head is ahead of wall clock.
         #
-        # Why:
-        #     Local clock drift is normal. Unconditional trust would let
-        #     a chain 100 slots in the future bypass every check.
+        # Local clock drift is normal.
+        # Unconditional trust would let a chain 100 slots in the future bypass every check.
         lag = 0 if head_slot >= slot else int(slot - head_slot)
 
         # Local stall evidence from the block map.
         #
-        # Why:
-        #     Only blocks with valid signatures enter the map, so the
-        #     freshest entry is an authenticated lower bound on the
-        #     network tip. A stale max here means the network is not
-        #     producing.
+        # Only blocks with valid signatures enter the map.
+        # So the freshest entry is an authenticated lower bound on the network tip.
+        # A stale max here means the network is not producing.
         max_seen_slot = max(
             (b.slot for b in store.blocks.values()),
             default=head_slot,

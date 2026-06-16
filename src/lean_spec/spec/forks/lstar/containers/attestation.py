@@ -23,11 +23,11 @@ class SignedAttestation(Attestation):
     """Validator attestation bundled with its signature."""
 
     signature: Signature
-    """Signature aggregation produced by the leanVM (SNARKs in the future)."""
+    """Signature over the attestation data, from the validator's attestation key."""
 
 
 class AggregatedAttestation(Container):
-    """Aggregated attestation consisting of participation bits and message."""
+    """Attestation shared by many validators, with a bitfield naming them."""
 
     aggregation_bits: AggregationBits
     """Bitfield indicating which validators participated in the aggregation."""

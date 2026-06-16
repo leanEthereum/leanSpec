@@ -150,17 +150,24 @@ class PeerManager:
         """
         Determine network consensus finalized slot.
 
-        Returns the mode (most common) finalized slot reported by connected peers.
+        Returns the most-reported finalized slot among connected peers.
+        Ties resolve to the higher slot, never to peer insertion order.
+        This decision is consensus-adjacent, so it stays deterministic.
         """
-        slots = (
+        reported_finalized_slots = Counter(
             peer.status.finalized.slot
             for peer in self.peers.values()
             if peer.status is not None and peer.is_connected()
         )
-        counter = Counter(slots)
-        if not counter:
+        if not reported_finalized_slots:
             return None
-        return counter.most_common(1)[0][0]
+        # Rank candidates by report count first, then by the slot itself.
+        # The higher slot wins an equal-count tie, so the result never depends
+        # on which peer connected first.
+        return max(
+            reported_finalized_slots,
+            key=lambda finalized_slot: (reported_finalized_slots[finalized_slot], finalized_slot),
+        )
 
     def on_request_success(self, peer_id: PeerId) -> None:
         """Record a successful request to a peer."""

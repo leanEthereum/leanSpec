@@ -29,6 +29,10 @@ class NullBackfillSync:
         """Record the call without performing any backfill."""
         self.fill_missing_calls.append(roots)
 
+    async def fill_gap_above_head(self, target_slot: Slot, head_slot: Slot) -> bool:
+        """Report no range fetch so routing falls back to root recursion."""
+        return target_slot > head_slot + Slot(1)
+
 
 def _null_backfill() -> BackfillSync:
     """Create a NullBackfillSync cast to BackfillSync for type safety."""
@@ -270,12 +274,12 @@ class TestDescendantProcessing:
 class TestErrorHandling:
     """Tests for error handling during block processing."""
 
-    async def test_processing_error_captured_in_result(
+    async def test_processing_error_reported_as_not_processed(
         self,
         genesis_block,
         peer_id: PeerId,
     ) -> None:
-        """Processing errors are captured in the result, not raised."""
+        """Processing errors are swallowed, reported as not processed, never raised."""
         genesis_root = hash_tree_root(genesis_block)
         store = cast(Store, MockForkchoiceStore())
         store.blocks[genesis_root] = genesis_block
@@ -300,7 +304,6 @@ class TestErrorHandling:
 
         assert head_sync_result == HeadSyncResult(
             processed=False,
-            error="State transition failed",
         )
         assert returned_store is store  # Original store returned on error
 
@@ -447,6 +450,17 @@ class _RecordingBackfill:
     async def fill_missing(self, roots: list[Bytes32]) -> None:
         """Record a root recursion request."""
         self.missing_calls.append(roots)
+
+    async def fill_gap_above_head(self, target_slot: Slot, head_slot: Slot) -> bool:
+        """Run the real gap arithmetic, recording the range fetch it would issue."""
+        if target_slot <= head_slot:
+            return False
+        gap_floor = head_slot + Slot(1)
+        gap_size = int(target_slot - gap_floor)
+        if gap_size <= 0:
+            return False
+        await self.fill_range(start_slot=gap_floor, count=Uint64(gap_size))
+        return True
 
 
 def _backfill() -> tuple[_RecordingBackfill, BackfillSync]:

@@ -10,7 +10,7 @@ References:
 
 from lean_multisig_py import setup_prover
 
-# Why: break the import cycle between the signature and fork containers.
+# Break the import cycle between the signature and fork containers.
 # The signature containers need the fork slot type, while the fork
 # aggregation containers import the signature containers back.
 # Loading the forks package first lets the cycle resolve from any entry point.

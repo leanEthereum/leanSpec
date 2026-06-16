@@ -1,8 +1,8 @@
 """Generalized XMSS containers."""
 
-from typing import override
+from typing import Self, override
 
-from pydantic import model_serializer
+from pydantic import model_serializer, model_validator
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
@@ -18,6 +18,7 @@ from lean_spec.spec.crypto.xmss.types import (
 from lean_spec.spec.forks.lstar.slot import Slot
 from lean_spec.spec.ssz import Uint64
 from lean_spec.spec.ssz.container import Container
+from lean_spec.spec.ssz.exceptions import SSZSerializationError
 
 
 class HexSerializedContainer(Container):
@@ -40,7 +41,29 @@ class PublicKey(HexSerializedContainer):
 
 
 class Signature(HexSerializedContainer):
-    """A single XMSS signature for one slot and message under one public key."""
+    """
+    A single XMSS signature for one slot and message under one public key.
+
+    # Fixed size on the wire
+
+    Two fields hold variable-length lists at the type level:
+
+    - the authentication path siblings,
+    - the released Winternitz chain hashes.
+
+    Yet every valid signature pins both lengths to scheme constants:
+
+    - one sibling per tree level, so exactly LOG_LIFETIME siblings,
+    - one released hash per chain, so exactly DIMENSION hashes.
+
+    The encoded byte length is therefore the same constant for every signature.
+
+    Inherited container decoding reads each list through an attacker-controlled
+    offset, so distinct byte strings of equal length could otherwise decode to
+    signatures whose lists hold the wrong number of digests.
+    A post-construction check rejects any signature off these two lengths,
+    so the fixed-size declaration holds and the SSZ root pins one encoding.
+    """
 
     path: HashTreeOpening
     """Authentication path from the one-time key up to the Merkle root."""
@@ -51,10 +74,29 @@ class Signature(HexSerializedContainer):
     hashes: HashDigestList
     """Released Winternitz chain hashes that form the one-time signature."""
 
+    @model_validator(mode="after")
+    def _check_list_lengths(self) -> Self:
+        """Pin the two variable-length lists to their scheme-constant counts."""
+        sibling_count = len(self.path.siblings)
+        if sibling_count != TARGET_CONFIG.LOG_LIFETIME:
+            raise SSZSerializationError(
+                f"Signature.path.siblings requires exactly {TARGET_CONFIG.LOG_LIFETIME} "
+                f"siblings, got {sibling_count}"
+            )
+
+        hash_count = len(self.hashes)
+        if hash_count != TARGET_CONFIG.DIMENSION:
+            raise SSZSerializationError(
+                f"Signature.hashes requires exactly {TARGET_CONFIG.DIMENSION} hashes, "
+                f"got {hash_count}"
+            )
+
+        return self
+
     @classmethod
     @override
     def is_fixed_size(cls) -> bool:
-        """Always fixed-size on the wire (see class docstring for why)."""
+        """Always fixed-size on the wire (see class docstring)."""
         return True
 
     @classmethod

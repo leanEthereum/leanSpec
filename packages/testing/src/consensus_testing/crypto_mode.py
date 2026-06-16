@@ -102,12 +102,36 @@ class AggregationProver:
 
         def make_verifier(real_verifier: Callable[..., None]) -> Callable[..., None]:
             def verify(*positional_args: object, **keyword_args: object) -> None:
+                # A placeholder proof is recognized by its sentinel prefix alone.
+                # Acceptance is then an unconditional no-op.
+                # The message, slot, and public keys go unchecked.
+                #
+                # This is deliberately weaker than recompute-and-compare.
+                # The placeholder is content-bound when the prover builds it.
+                # But the prover hashes inputs the verifier never receives.
+                #
+                # The single-message prover folds in the raw signatures.
+                # It also folds in the child proofs and the rate exponent.
+                # The verifier only sees the public keys, message, slot, and proof.
+                #
+                # Merging and splitting reshape a proof after the fact.
+                # Its bytes then match no single prover call the verifier could replay.
+                # So reconstructing the placeholder to compare it is infeasible.
+                #
+                # Invariant: this no-op acceptance stays sound only because every
+                # vector asserting proof validity or rejection carries the
+                # real_crypto marker and runs against the real prover, not the mock.
+                # A proof-rejection vector lacking that marker would silently pass
+                # here, even though a conforming client must reject it.
+                # Never add a proof-tamper vector under the mock; mark it real_crypto.
                 carries_placeholder = any(
                     isinstance(argument, bytes) and argument.startswith(MOCK_PROOF_PREFIX)
                     for argument in positional_args
                 )
                 if carries_placeholder:
                     return None
+                # A real proof can still arrive when a vector mixes real and mocked
+                # inputs, so fall through to the real verifier for those bytes.
                 return real_verifier(*positional_args, **keyword_args)
 
             return verify

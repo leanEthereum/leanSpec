@@ -15,28 +15,11 @@ from lean_spec.spec.forks.lstar.containers import (
     ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz import Uint64
 
 
 class ValidatorDutiesMixin(LstarSpecBase):
     """Validator duties for the lstar fork."""
-
-    def get_proposal_head(self, store: LstarStore, slot: Slot) -> tuple[LstarStore, Bytes32]:
-        """
-        Get the head for block proposal at given slot.
-
-        Ensures store is up-to-date and processes any pending attestations
-        before returning the canonical head. This guarantees the proposer
-        builds on the most recent view of the chain.
-        """
-        # Advance time to this slot's first interval
-        target_interval = Interval.from_slot(slot)
-        store, _ = self.on_tick(store, target_interval, True)
-
-        # Process any pending attestations before proposal
-        store = self.accept_new_attestations(store)
-
-        return store, store.head
 
     def get_attestation_target(self, store: LstarStore) -> Checkpoint:
         """
@@ -47,7 +30,7 @@ class ValidatorDutiesMixin(LstarSpecBase):
         The algorithm balances advancing the chain head against safety.
 
         The walk starts at the head and goes backward.
-        It takes up to JUSTIFICATION_LOOKBACK_SLOTS steps.
+        It takes up to the justification lookback bound steps.
         It stops once both the lower-bound slot and the justifiability rules are satisfied.
 
         The walk never crosses the finalized boundary.
@@ -56,7 +39,7 @@ class ValidatorDutiesMixin(LstarSpecBase):
         # Start from current head
         target_block_root = store.head
 
-        # Walk back toward the safe target, up to JUSTIFICATION_LOOKBACK_SLOTS steps.
+        # Walk back toward the safe target, up to the justification lookback bound steps.
         #
         # If the safe target is stale behind the finalized checkpoint, the finalized slot
         # becomes the lower bound.
@@ -140,18 +123,22 @@ class ValidatorDutiesMixin(LstarSpecBase):
         Returns the per-attestation single-message aggregate proofs unmerged. The validator
         service signs the block root with the proposal key, wraps that into
         a singleton single-message aggregate, and merges all of them into the block-level
-        multi-message aggregate proof carried by SignedBlock.proof.
+        proof carried by the signed block envelope.
 
         Raises:
             AssertionError: If validator is not the proposer for this slot,
                 or if the produced block fails to close a justified divergence
                 between the store and the head chain.
         """
-        # Retrieve parent block.
+        # Build on the freshest canonical head.
         #
-        # The proposal head reflects the latest chain view after processing
-        # all pending attestations. Building on stale state would orphan the block.
-        store, head_root = self.get_proposal_head(store, slot)
+        # Advance time to this slot's first interval, then fold in pending attestations.
+        # The proposal head then reflects the latest chain view.
+        # Building on stale state would orphan the block.
+        target_interval = Interval.from_slot(slot)
+        store, _ = self.on_tick(store, target_interval, True)
+        store = self.accept_new_attestations(store)
+        head_root = store.head
         head_state = store.states[head_root]
 
         # Verify proposer authorization.
@@ -199,29 +186,17 @@ class ValidatorDutiesMixin(LstarSpecBase):
         # Compute block hash for storage.
         block_hash = hash_tree_root(final_block)
 
-        # Update checkpoints from post-state.
-        #
-        # Locally produced blocks bypass normal block processing.
-        # Checkpoint advances must be propagated manually here.
-        #
-        # Tie semantics mirror the block-import path.
-        # A candidate needs a strictly higher slot to replace the store's view.
+        # A locally produced block skips the import path.
+        # Advance the justified checkpoint manually here.
+        # Leave the finalized checkpoint to head recomputation.
+        # Pinning it from this block's own state would strand it on a later reorg.
         latest_justified = store.latest_justified.advance_to(final_post_state.latest_justified)
-        latest_finalized = store.latest_finalized.advance_to(final_post_state.latest_finalized)
-
-        # Persist block and state.
-        previous_finalized_slot = store.latest_finalized.slot
         store = store.model_copy(
             update={
                 "blocks": store.blocks | {block_hash: final_block},
                 "states": store.states | {block_hash: final_post_state},
                 "latest_justified": latest_justified,
-                "latest_finalized": latest_finalized,
             }
         )
-
-        # Prune stale attestation data when finalization advances
-        if store.latest_finalized.slot > previous_finalized_slot:
-            store = self.prune_stale_attestation_data(store)
 
         return store, final_block, signatures

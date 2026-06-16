@@ -1489,7 +1489,7 @@ def test_same_block_multi_target_attestations_advance_to_highest_slot(
 
     Then
     ----
-    - slots 4, 6, and 9 are each justified.
+    - the justified-slots bitfield marks slots 4, 6, and 9 alone.
     - justified slot is 9, the highest target, not the last one processed.
     - finalized stays at slot 0.
     """
@@ -1547,5 +1547,18 @@ def test_same_block_multi_target_attestations_advance_to_highest_slot(
             slot=Slot(10),
             latest_justified_slot=Slot(9),
             latest_finalized_slot=Slot(0),
+            justified_slots=JustifiedSlots(
+                data=[
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(True),
+                    Boolean(False),
+                    Boolean(False),
+                    Boolean(True),
+                ]
+            ),
         ),
     )

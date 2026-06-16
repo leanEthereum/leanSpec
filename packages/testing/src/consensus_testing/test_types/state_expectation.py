@@ -13,6 +13,7 @@ from lean_spec.spec.forks.lstar.containers import (
     JustificationValidators,
     JustifiedSlots,
     State,
+    Validators,
 )
 from lean_spec.spec.ssz import Bytes32
 
@@ -26,22 +27,16 @@ class StateExpectation(SelectiveCheck):
 
     This allows test writers to specify only the fields they care about,
     making tests more focused and maintainable.
-
-    Example:
-        # Only validate slot and justified checkpoint
-        StateExpectation(
-            slot=Slot(10),
-            latest_justified_slot=Slot(8),
-        )
     """
 
-    _SCALAR_ACCESSORS: ClassVar[dict[str, Callable[["State"], Any]]] = {
+    _SCALAR_ACCESSORS: ClassVar[dict[str, Callable[[State], Any]]] = {
         "slot": lambda s: s.slot,
         "latest_justified_slot": lambda s: s.latest_justified.slot,
         "latest_justified_root": lambda s: s.latest_justified.root,
         "latest_finalized_slot": lambda s: s.latest_finalized.slot,
         "latest_finalized_root": lambda s: s.latest_finalized.root,
         "validator_count": lambda s: len(s.validators),
+        "validators": lambda s: s.validators,
         "config_genesis_time": lambda s: int(s.config.genesis_time),
         "latest_block_header_slot": lambda s: s.latest_block_header.slot,
         "latest_block_header_proposer_index": lambda s: int(s.latest_block_header.proposer_index),
@@ -92,6 +87,9 @@ class StateExpectation(SelectiveCheck):
     validator_count: int | None = None
     """Expected number of validators."""
 
+    validators: Validators | None = None
+    """Expected validator registry contents, entry for entry."""
+
     config_genesis_time: int | None = None
     """Expected genesis time in the config."""
 
@@ -141,7 +139,7 @@ class StateExpectation(SelectiveCheck):
 
     def validate_against_state(
         self,
-        state: "State",
+        state: State,
         block_registry: dict[str, Block] | None = None,
     ) -> None:
         """

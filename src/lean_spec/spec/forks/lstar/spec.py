@@ -20,7 +20,6 @@ from lean_spec.spec.forks.lstar.signatures import SignatureMixin
 from lean_spec.spec.forks.lstar.state_transition import StateTransitionMixin
 from lean_spec.spec.forks.lstar.timeline import TimelineMixin
 from lean_spec.spec.forks.lstar.validator_duties import ValidatorDutiesMixin
-from lean_spec.spec.forks.protocol import ForkProtocol
 
 __all__ = ["LstarSpec", "LstarStore"]
 
@@ -40,8 +39,6 @@ class LstarSpec(
     NAME: ClassVar[str] = "lstar"
     VERSION: ClassVar[int] = 4
     GOSSIP_DIGEST: ClassVar[str] = "12345678"
-
-    previous: ClassVar[type[ForkProtocol] | None] = None
 
     state_class: type[State] = State
     block_class: type[Block] = Block

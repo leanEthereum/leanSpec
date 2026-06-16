@@ -60,9 +60,8 @@ class StoreSnapshot(StrictBaseModel):
     Recorded by the framework after every step, including rejected ones.
     Clients must reproduce every field, not just authored checks.
 
-    Why explicit fields instead of an opaque digest:
-    a digest needs a spec-defined canonical store encoding.
-    Explicit fields are self-describing and language-neutral.
+    Explicit fields avoid needing a spec-defined canonical store encoding.
+    They are self-describing and language-neutral.
     """
 
     time: Interval
@@ -84,7 +83,7 @@ class StoreSnapshot(StrictBaseModel):
     """
     Every block root the store retains, ascending.
 
-    Why: pruning behavior stays invisible without the full membership.
+    Pruning behavior stays invisible without the full membership.
     An over- or under-pruning client must fail here.
     """
 
@@ -93,9 +92,9 @@ class StoreSnapshot(StrictBaseModel):
     Fork-choice weight per block above the finalized slot, ascending by root.
 
     Zero-weight blocks are included.
-    Why: two clients can agree on the head while holding divergent
-    weights, then split on the next attestation. The weights drive
-    head selection and must match exactly.
+    Two clients can agree on the head while holding divergent weights.
+    They then split on the next attestation.
+    The weights drive head selection and must match exactly.
     """
 
     attestation_signatures: list[AttestationPoolEntry]

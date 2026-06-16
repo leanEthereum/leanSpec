@@ -530,6 +530,11 @@ class EnrRoundtrip(StrictBaseModel):
                 else None
             ),
             is_aggregator=enr.is_aggregator,
+            # The accept/reject verdict is the canonical contract a client must reproduce.
+            # Both verdicts are a deterministic function of the record bytes alone.
+            # Structural validity reads the record fields.
+            # Signature validity is secp256k1 ECDSA verification over keccak256 of the content.
+            # Verification takes no time, nonce, or RNG input, so the emitted value is stable.
             signature_valid=enr.verify_signature(),
             is_valid=enr.is_valid(),
         )

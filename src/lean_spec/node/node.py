@@ -211,9 +211,6 @@ class Node:
                 block_class=config.fork.block_class,
             )
 
-        #
-        # If database contains valid state, resume from there.
-        # Otherwise, fall through to genesis initialization.
         validator_index = (
             config.validator_registry.primary_index() if config.validator_registry else None
         )
@@ -225,8 +222,11 @@ class Node:
             f"Only LstarSpec is supported at the composition root, got {type(config.fork).__name__}"
         )
         fork = config.fork
+
+        # If the database contains valid state, resume from there.
+        # Otherwise, fall through to genesis initialization.
         store = cls._try_load_store_from_database(
-            database, validator_index, config.genesis_time, config.time_fn, fork
+            database, validator_index, fork, config.genesis_time, config.time_fn
         )
 
         # An explicit anchor wins over genesis synthesis but loses to the database.
@@ -333,21 +333,21 @@ class Node:
         # Wire callbacks to publish produced blocks/attestations to the network.
         validator_service: ValidatorService | None = None
         if config.validator_registry is not None:
-            # These wrappers serve a dual purpose:
+            # These callbacks serve a dual purpose:
             #
             # 1. Publish to the network so peers receive the block/attestation.
             # 2. Process locally so the node's own store reflects what it produced.
             #
             # Without local processing, the node would not see its own produced
             # blocks/attestations in forkchoice until they arrived back via gossip.
-            async def publish_attestation_wrapper(attestation: SignedAttestation) -> None:
+            async def publish_and_process_attestation(attestation: SignedAttestation) -> None:
                 subnet_id = attestation.validator_index.compute_subnet_id(
                     ATTESTATION_COMMITTEE_COUNT
                 )
                 await network_service.publish_attestation(attestation, subnet_id)
                 await sync_service.on_gossip_attestation(attestation)
 
-            async def publish_block_wrapper(block: SignedBlock) -> None:
+            async def publish_and_process_block(block: SignedBlock) -> None:
                 await network_service.publish_block(block)
                 await sync_service.on_gossip_block(block, peer_id=None)
 
@@ -356,8 +356,8 @@ class Node:
                 clock=clock,
                 registry=config.validator_registry,
                 spec=fork,
-                on_block=publish_block_wrapper,
-                on_attestation=publish_attestation_wrapper,
+                on_block=publish_and_process_block,
+                on_attestation=publish_and_process_attestation,
             )
 
         return cls(
@@ -375,9 +375,9 @@ class Node:
     def _try_load_store_from_database(
         database: Database | None,
         validator_index: ValidatorIndex | None,
+        fork: ForkProtocol,
         genesis_time: Uint64 | None = None,
         time_fn: Callable[[], float] = time.time,
-        fork: ForkProtocol | None = None,
     ) -> Store | None:
         """
         Try to load forkchoice store from existing database state.
@@ -393,9 +393,9 @@ class Node:
         Args:
             database: Database to load from.
             validator_index: Validator index for the store instance.
+            fork: Fork specification for store construction.
             genesis_time: Unix timestamp of genesis (slot 0).
             time_fn: Wall-clock time source.
-            fork: Fork specification for store construction.
 
         Returns:
             Loaded Store or None if no valid state exists.
@@ -443,8 +443,7 @@ class Node:
         #
         # The store starts with just the head block and state.
         # Additional blocks can be loaded on demand or via sync.
-        store_cls = fork.store_class if fork is not None else Store
-        return store_cls(
+        return fork.store_class(
             time=Interval(store_time),
             config=head_state.config,
             head=head_root,
@@ -578,8 +577,3 @@ class Node:
         Signals the node to stop all services and exit.
         """
         self._shutdown.set()
-
-    @property
-    def is_running(self) -> bool:
-        """Check if node is currently running."""
-        return not self._shutdown.is_set()

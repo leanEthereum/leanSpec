@@ -6,9 +6,8 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from consensus_testing.genesis import generate_pre_state
+from consensus_testing.genesis import generate_pre_state, reconstruct_block_from_header
 from consensus_testing.keys import XmssKeyManager
-from consensus_testing.rejection import classify_rejection
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from consensus_testing.test_types import (
     AttestationStep,
@@ -23,7 +22,6 @@ from consensus_testing.test_types import (
     StoreSnapshot,
     TickStep,
 )
-from lean_spec.config import LEAN_ENV
 from lean_spec.node.chain.clock import SlotClock
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import (
@@ -34,10 +32,8 @@ from lean_spec.spec.forks import (
     ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.containers import (
-    AggregatedAttestations,
     AggregationError,
     Block,
-    BlockBody,
     SignedAggregatedAttestation,
     SignedAttestation,
     State,
@@ -144,13 +140,7 @@ class ForkChoiceTest(BaseTestSpec):
         #
         # The state already contains the block header.
         # We extract its fields to create a matching Block.
-        return Block(
-            slot=self.anchor_state.latest_block_header.slot,
-            proposer_index=self.anchor_state.latest_block_header.proposer_index,
-            parent_root=self.anchor_state.latest_block_header.parent_root,
-            state_root=hash_tree_root(self.anchor_state),
-            body=BlockBody(attestations=AggregatedAttestations(data=[])),
-        )
+        return reconstruct_block_from_header(self.anchor_state)
 
     def _resolved_max_slot(self) -> Slot:
         """
@@ -162,21 +152,16 @@ class ForkChoiceTest(BaseTestSpec):
         if self.max_slot is not None:
             return self.max_slot
 
-        max_slot_value = Slot(0)
-
         # Find the maximum slot across all block and attestation steps.
         #
         # XMSS signatures are slot-dependent.
         # Keys must be generated up to this slot before signing.
-        for step in self.steps:
-            if isinstance(step, BlockStep):
-                max_slot_value = max(max_slot_value, step.block.slot)
-            elif isinstance(step, AttestationStep):
-                max_slot_value = max(max_slot_value, step.attestation.slot)
-            elif isinstance(step, GossipAggregatedAttestationStep):
-                max_slot_value = max(max_slot_value, step.attestation.slot)
-
-        return max_slot_value
+        slots_needing_keys = (
+            step.block.slot if isinstance(step, BlockStep) else step.attestation.slot
+            for step in self.steps
+            if isinstance(step, (BlockStep, AttestationStep, GossipAggregatedAttestationStep))
+        )
+        return max(slots_needing_keys, default=Slot(0))
 
     def generate(self) -> ForkChoiceFixture:
         """
@@ -308,7 +293,6 @@ class ForkChoiceTest(BaseTestSpec):
                             store,
                             block_registry,
                             key_manager,
-                            LEAN_ENV,
                             deliver_unknown_parent=deliver_unknown_parent,
                         )
                         filled_block = signed_block.block
@@ -392,7 +376,11 @@ class ForkChoiceTest(BaseTestSpec):
                         f"failed unexpectedly: {exception}"
                     ) from exception
 
-                rejection_reason = self._classify_step_rejection(step, step_index, exception)
+                rejection_reason = self.check_rejection_against_expectation(
+                    step.expected_rejection,
+                    exception,
+                    f"Step {step_index} ({type(step).__name__})",
+                )
 
                 # The rejected call returned nothing, so the store is unchanged.
                 # Snapshot it anyway: clients must verify the no-op.
@@ -490,7 +478,7 @@ class ForkChoiceTest(BaseTestSpec):
             "steps must be empty when anchor_valid is False: "
             "Store.from_anchor is expected to fail before any step can run"
         )
-        # Why: a vector saying only "reject this anchor" lets a client
+        # A vector saying only "reject this anchor" lets a client
         # reject for the wrong reason and still pass.
         assert self.expected_rejection is not None, (
             "anchor_valid=False requires expected_rejection to be set"
@@ -502,55 +490,17 @@ class ForkChoiceTest(BaseTestSpec):
                 validator_index=ValidatorIndex(0),
             )
         except SpecRejectionError as exception:
-            expected_substring = self.expected_rejection.message_substring
-            if expected_substring is not None and expected_substring not in str(exception):
-                raise AssertionError(
-                    "Store.from_anchor failed with wrong error.\n"
-                    f"  Expected error containing: {expected_substring!r}\n"
-                    f"  Actual error: {exception!r}"
-                ) from exception
             # Emit the language-neutral reason clients assert against.
             return ForkChoiceFixture(
                 anchor_state=self.anchor_state,
                 anchor_block=anchor_block,
                 steps=[],
                 max_slot=max_slot,
-                rejection_reason=self.resolve_rejection_reason(exception),
+                rejection_reason=self.check_rejection_against_expectation(
+                    self.expected_rejection,
+                    exception,
+                    "Store.from_anchor",
+                ),
             )
 
         raise AssertionError("Store.from_anchor was expected to fail but succeeded")
-
-    @staticmethod
-    def _classify_step_rejection(
-        step: TickStep | BlockStep | AttestationStep | GossipAggregatedAttestationStep,
-        step_index: int,
-        exception: Exception,
-    ) -> RejectionReason:
-        """
-        Classify an expected step failure and check it against the authored expectation.
-
-        Returns:
-            The reason emitted into the filled step.
-
-        Raises:
-            AssertionError: If the failure contradicts the authored expectation.
-        """
-        # Verify the failure reason matches when specified.
-        expected_rejection = step.expected_rejection
-        if expected_rejection is not None:
-            expected_substring = expected_rejection.message_substring
-            if expected_substring is not None and expected_substring not in str(exception):
-                raise AssertionError(
-                    f"Step {step_index} ({type(step).__name__}) failed with wrong error.\n"
-                    f"  Expected error containing: {expected_substring!r}\n"
-                    f"  Actual error: {exception!r}"
-                ) from exception
-
-        # Emit the language-neutral reason clients assert against.
-        rejection_reason = classify_rejection(exception)
-        if expected_rejection is not None and rejection_reason is not expected_rejection.reason:
-            raise AssertionError(
-                f"Step {step_index} ({type(step).__name__}) rejection classified as "
-                f"{rejection_reason} but the test expects {expected_rejection.reason}"
-            )
-        return rejection_reason
