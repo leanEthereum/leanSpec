@@ -209,10 +209,17 @@ class BlockProductionMixin(LstarSpecBase):
                     ):
                         continue
 
-                    # Genesis self-votes (source and target both at slot 0) are exempt from
-                    # the target-after-source and target-already-justified checks.
+                    # A genesis self-vote anchors both source and target at slot 0.
+                    # It cannot justify or finalize, but it carries fork-choice signal,
+                    # so selection treats it specially.
+                    is_genesis_self_vote = candidate_data.source.slot == Slot(
+                        0
+                    ) and candidate_data.target.slot == Slot(0)
+
+                    # Genesis self-votes are exempt from the target-after-source and
+                    # target-already-justified checks.
                     # The state transition drops them, but they carry fork-choice signal.
-                    if not candidate_data.is_genesis_self_vote():
+                    if not is_genesis_self_vote:
                         if candidate_data.target.slot <= candidate_data.source.slot:
                             continue
                         if justified_slots.is_slot_justified(
@@ -264,7 +271,7 @@ class BlockProductionMixin(LstarSpecBase):
                     )
 
                     # A genesis self-vote cannot justify or finalize and is always BUILD tier.
-                    if candidate_data.is_genesis_self_vote() or not crosses_two_thirds:
+                    if is_genesis_self_vote or not crosses_two_thirds:
                         tier = _Tier.BUILD
                     elif finalizes_source:
                         tier = _Tier.FINALIZE
