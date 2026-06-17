@@ -61,6 +61,7 @@ _.validate_signatures_are_out_of_scope
 _._yaml_int_to_hex
 _._check_list_lengths
 _._reject_oversized_validator_set
+_._require_index_matches_position
 
 # Pydantic serializers, invoked by the model during serialization.
 _.serialize_value
