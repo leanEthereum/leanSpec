@@ -179,14 +179,7 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         Validate incoming attestation before processing.
 
-        Ensures the vote respects the basic laws of time and topology:
-            1. The blocks voted for must exist in our store.
-            2. A vote cannot span backwards in time (source > target).
-            3. The head must be at least as recent as source and target.
-            4. Checkpoint slots must match the actual block slots.
-            5. Source, target, and head must lie on one parent chain.
-            6. The vote's slot cannot precede the slot of the head it claims to have seen.
-            7. The vote's slot must have started locally (a small disparity margin is allowed).
+        Ensures the vote respects the basic laws of time and topology.
 
         Raises:
             SpecRejectionError: If the attestation fails any of the validation checks above.
@@ -350,22 +343,22 @@ class ForkChoiceMixin(LstarSpecBase):
             # Validation proved:
             # - the block is known,
             # - blocks are stored together with their post-state.
-            key_state = store.states.get(attestation_data.target.root)
-            assert key_state is not None, (
+            target_post_state = store.states.get(attestation_data.target.root)
+            assert target_post_state is not None, (
                 f"No state available to verify attestation signature for target block "
                 f"{attestation_data.target.root.hex()}"
             )
 
             # The validator index must fall inside that registry.
             # An out-of-range index names a validator the target state never knew.
-            if not validator_index.is_within_registry(Uint64(len(key_state.validators))):
+            if not validator_index.is_within_registry(Uint64(len(target_post_state.validators))):
                 raise SpecRejectionError(
                     RejectionReason.VALIDATOR_NOT_IN_STATE,
                     f"Validator {validator_index} not found in state "
                     f"{attestation_data.target.root.hex()}",
                 )
             public_key = PublicKey.decode_bytes(
-                key_state.validators[validator_index].attestation_public_key
+                target_post_state.validators[validator_index].attestation_public_key
             )
 
             # Verify the signature.
@@ -460,15 +453,15 @@ class ForkChoiceMixin(LstarSpecBase):
         # Validation proved:
         # - the block is known,
         # - blocks are stored together with their post-state.
-        key_state = store.states.get(attestation_data.target.root)
-        assert key_state is not None, (
+        target_post_state = store.states.get(attestation_data.target.root)
+        assert target_post_state is not None, (
             f"No state available to verify committee aggregation for target "
             f"{attestation_data.target.root.hex()}"
         )
 
         # Every participant must fall inside that registry.
         # An out-of-range index names a validator the target state never knew.
-        validators = key_state.validators
+        validators = target_post_state.validators
         for validator_index in validator_indices:
             if not validator_index.is_within_registry(Uint64(len(validators))):
                 raise SpecRejectionError(
@@ -528,12 +521,7 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         Process a new block and update the forkchoice state.
 
-        This method integrates a block into the forkchoice store by:
-
-        1. Validating the block's parent exists
-        2. Computing the post-state via the state transition function
-        3. Processing attestations included in the block body (on-chain)
-        4. Updating the forkchoice head
+        Integrates a block into the forkchoice store and recomputes the head.
 
         Raises:
             SpecRejectionError: UNKNOWN_PARENT_BLOCK if the parent state is not in the store.

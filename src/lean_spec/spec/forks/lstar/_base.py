@@ -22,7 +22,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.protocol import ForkProtocol
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz import Bytes32, Uint64
 
 LstarStore = Store[State, Block]
 """Concrete Store specialization owned by the lstar fork."""
@@ -40,6 +40,11 @@ class LstarSpecBase(ForkProtocol):
     attestation_data_class: type[AttestationData]
     aggregated_attestation_class: type[AggregatedAttestation]
     genesis_config_class: type[GenesisConfig]
+
+    @abstractmethod
+    def generate_genesis(self, genesis_time: Uint64, validators: Validators) -> State:
+        """Genesis-construction contract."""
+        ...
 
     @abstractmethod
     def process_slots(self, state: State, target_slot: Slot) -> State:

@@ -139,15 +139,15 @@ class GeneralizedXmssScheme(StrictBaseModel):
         ]
 
         # Phase 4: build every other bottom tree and remember only its root.
-        for i in range(start_bottom_tree_index + 2, end_bottom_tree_index):
-            tree = HashSubTree.from_prf_key(
+        for bottom_tree_index in range(start_bottom_tree_index + 2, end_bottom_tree_index):
+            bottom_tree = HashSubTree.from_prf_key(
                 poseidon=self.poseidon,
                 config=config,
                 prf_key=prf_key,
-                bottom_tree_index=Uint64(i),
+                bottom_tree_index=Uint64(bottom_tree_index),
                 parameter=parameter,
             )
-            bottom_tree_roots.append(tree.root())
+            bottom_tree_roots.append(bottom_tree.root())
 
         # Phase 5: assemble the top tree from all bottom-tree roots.
         top_tree = HashSubTree.new_top_tree(
@@ -351,7 +351,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             parameter=public_key.parameter,
             root=public_key.root,
             position=slot,
-            leaf_parts=chain_ends,
+            leaf_chain_ends=chain_ends,
             opening=signature.path,
         )
 

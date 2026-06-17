@@ -58,7 +58,7 @@ class JustifiedSlots(BaseBitlist):
 
         # Check the tracked bitfield for the slot's status.
         #
-        # We assume the slot is within the tracked range.
+        # The slot is expected within the tracked range.
         #
         # If the caller asks for a slot too far in the future, it indicates a logic error.
         # Surface it as a domain rejection so the uniform rejection funnel catches it,
