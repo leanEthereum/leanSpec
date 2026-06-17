@@ -22,11 +22,7 @@ FINALIZED_STATE_ENDPOINT: Final = "/lean/v0/states/finalized"
 """Beacon API path for the finalized state."""
 
 FINALIZED_BLOCK_ENDPOINT: Final = "/lean/v0/blocks/finalized"
-"""API endpoint for fetching the signed block matching the finalized state.
-
-Together with the state, this forms the anchor pair for store creation.
-Checkpoint sync requires the source to serve it.
-"""
+"""API endpoint for fetching the signed block matching the finalized state."""
 
 
 class CheckpointSyncError(Exception):
