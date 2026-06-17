@@ -75,23 +75,14 @@ class ValidatorDutiesMixin(LstarSpecBase):
         return Checkpoint(root=target_block_root, slot=target_block.slot)
 
     def produce_attestation_data(self, store: LstarStore, slot: Slot) -> AttestationData:
-        """
-        Produce attestation data for the given slot.
-
-        This method constructs an AttestationData object according to the lean protocol
-        specification. The attestation data represents the chain state view including
-        head, target, and source checkpoints.
-        """
-        # Get the head block the validator sees for this slot
+        """Attestation data for the given slot: head, target, and the latest justified source."""
         head_checkpoint = Checkpoint(
             root=store.head,
             slot=store.blocks[store.head].slot,
         )
 
-        # Calculate the target checkpoint for this attestation
         target_checkpoint = self.get_attestation_target(store)
 
-        # Construct attestation data
         return self.attestation_data_class(
             slot=slot,
             head=head_checkpoint,
@@ -126,9 +117,10 @@ class ValidatorDutiesMixin(LstarSpecBase):
         proof carried by the signed block envelope.
 
         Raises:
-            AssertionError: If validator is not the proposer for this slot,
-                or if the produced block fails to close a justified divergence
-                between the store and the head chain.
+            SpecRejectionError: WRONG_PROPOSER if the validator is not the
+                proposer for the target slot.
+            AssertionError: If the produced block fails to close a justified
+                divergence between the store and the head chain.
         """
         # Build on the freshest canonical head.
         #

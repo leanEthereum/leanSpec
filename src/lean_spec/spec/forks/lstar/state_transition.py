@@ -2,7 +2,6 @@
 
 from collections.abc import Iterable
 from itertools import batched
-from typing import Any
 
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks.lstar._base import LstarSpecBase
@@ -24,16 +23,14 @@ from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionErro
 from lean_spec.spec.observability import (
     observe_state_transition,
 )
-from lean_spec.spec.ssz import ZERO_HASH, Boolean, Bytes32, SSZList, Uint64
+from lean_spec.spec.ssz import ZERO_HASH, Boolean, Bytes32, Uint64
 
 
 class StateTransitionMixin(LstarSpecBase):
     """State transition function for the lstar fork."""
 
-    def generate_genesis(self, genesis_time: Uint64, validators: SSZList[Any]) -> State:
+    def generate_genesis(self, genesis_time: Uint64, validators: Validators) -> State:
         """Generate a genesis state with empty history and proper initial values."""
-        assert isinstance(validators, Validators)
-
         genesis_config = self.genesis_config_class(
             genesis_time=genesis_time,
         )
@@ -275,7 +272,8 @@ class StateTransitionMixin(LstarSpecBase):
                 continue
 
             # The target slot must be justifiable after the finalized slot.
-            # 3SF-mini admits only a structured set of distances; see the justifiable-slot rule.
+            # 3SF-mini admits a target only when its distance from the finalized slot
+            # sits within the immediate window, is a perfect square, or is a pronic number.
             if not target.slot.is_justifiable_after(finalized_slot):
                 continue
 

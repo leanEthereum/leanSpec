@@ -22,11 +22,10 @@ class Checkpoint(Container):
 
     def advance_to(self, candidate: "Checkpoint") -> "Checkpoint":
         """
-        Return the later of two checkpoints, keeping this one on a slot tie.
-
-        Forward-only progression for justified and finalized checkpoints.
+        The later of two checkpoints, keeping this one on a slot tie.
 
         The candidate replaces this checkpoint only when its slot is strictly higher.
+        This enforces forward-only progression for justified and finalized checkpoints.
         """
         return candidate if candidate.slot > self.slot else self
 

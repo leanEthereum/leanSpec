@@ -120,8 +120,9 @@ class HashTreeLayers(SSZList[HashTreeLayer]):
     """
     The layers of a subtree, ordered from the lowest layer up to the root.
 
-    A bottom tree and a top tree each cover half the depth.
-    The cap admits the full lifetime tree.
+    A resident bottom or top subtree spans half the depth.
+    It holds half-depth-plus-one layers, counting both the lowest layer and the root.
+    The cap is set higher, to the layer count of a full-lifetime tree.
     """
 
     LIMIT = TARGET_CONFIG.LOG_LIFETIME + 1
@@ -224,10 +225,10 @@ class HashSubTree(Container):
                 poseidon.tweak_hash(
                     config,
                     parameter,
-                    TreeTweak(level=level + 1, index=parent_start + Uint64(i)),
+                    TreeTweak(level=level + 1, index=parent_start + Uint64(pair_index)),
                     [left, right],
                 )
-                for i, (left, right) in enumerate(batched(current_layer.nodes, 2))
+                for pair_index, (left, right) in enumerate(batched(current_layer.nodes, 2))
             ]
             current_layer = HashTreeLayer.padded(config, parents, parent_start)
             layers.append(current_layer)
@@ -339,11 +340,11 @@ class HashSubTree(Container):
         # Phase 2: the top built layer is padded to a sibling pair.
         # The real root is the node at this tree's index, not always position zero.
         # An odd index leaves a random pad at position zero, so select by absolute index.
-        top = subtree.layers[-1]
-        root_index = int(bottom_tree_index - top.start_index)
+        top_layer = subtree.layers[-1]
+        root_index = int(bottom_tree_index - top_layer.start_index)
         root_layer = HashTreeLayer(
             start_index=bottom_tree_index,
-            nodes=HashDigestList(data=[top.nodes[root_index]]),
+            nodes=HashDigestList(data=[top_layer.nodes[root_index]]),
         )
         return cls(
             depth=Uint64(depth),
@@ -468,8 +469,12 @@ class HashSubTree(Container):
         if not self.layers:
             raise ValueError("Empty subtree.")
 
-        first = self.layers[0]
-        if not (first.start_index <= position < first.start_index + Uint64(len(first.nodes))):
+        leaf_layer = self.layers[0]
+        if not (
+            leaf_layer.start_index
+            <= position
+            < leaf_layer.start_index + Uint64(len(leaf_layer.nodes))
+        ):
             raise ValueError(f"Position {position} out of bounds.")
 
         siblings: list[HashDigestVector] = []
@@ -549,7 +554,7 @@ def verify_path(
     parameter: Parameter,
     root: HashDigestVector,
     position: Uint64,
-    leaf_parts: list[HashDigestVector],
+    leaf_chain_ends: list[HashDigestVector],
     opening: HashTreeOpening,
 ) -> bool:
     """
@@ -573,7 +578,7 @@ def verify_path(
         parameter: Public parameter for the hash function.
         root: Trusted root taken from the public key.
         position: Absolute index of the leaf being verified.
-        leaf_parts: Digests that constitute the original leaf.
+        leaf_chain_ends: Digests that constitute the original leaf.
         opening: Sibling path from leaf to root.
 
     Returns:
@@ -593,7 +598,7 @@ def verify_path(
         config,
         parameter,
         TreeTweak(level=0, index=Uint64(position)),
-        leaf_parts,
+        leaf_chain_ends,
     )
     current_position = int(position)
 

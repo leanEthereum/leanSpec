@@ -19,13 +19,29 @@ class TimelineMixin(LstarSpecBase):
         has_proposal: bool,
         is_aggregator: bool = False,
     ) -> tuple[LstarStore, list[SignedAggregatedAttestation]]:
-        """Advance store time by one interval and perform interval-specific actions."""
-        # Advance time by one interval
+        """
+        Advance store time by one interval and perform interval-specific actions.
+
+        Each slot is split into five intervals so consensus work runs at fixed points
+        relative to when a block arrives and votes spread across the network.
+
+        Timing of the action points within a slot:
+
+        - Interval 0: ingest the slot's pending votes once the proposal has landed.
+        - Interval 2: aggregators bundle the slot's votes into proofs and broadcast them.
+        - Interval 3: advance the safe target from the latest votes for fast confirmation.
+        - Interval 4: ingest the votes that accumulated through the rest of the slot.
+
+        Aggregation waits until interval 2 so a block proposed at the slot start has
+        time to propagate and gather votes before they are bundled.
+        Fast confirmation sits at interval 3, after aggregates exist, so the safe
+        target reflects the freshest votes the node has seen.
+        """
         store = store.model_copy(update={"time": store.time + Interval(1)})
-        current_interval = Interval(int(store.time) % int(INTERVALS_PER_SLOT))
+        interval_within_slot = int(store.time) % int(INTERVALS_PER_SLOT)
         new_aggregates: list[SignedAggregatedAttestation] = []
 
-        match int(current_interval):
+        match interval_within_slot:
             # Slot start: ingest pending attestations once the slot's proposal lands.
             case 0 if has_proposal:
                 store = self.accept_new_attestations(store)
@@ -55,13 +71,10 @@ class TimelineMixin(LstarSpecBase):
         """
         all_new_aggregates: list[SignedAggregatedAttestation] = []
 
-        # Tick forward one interval at a time
         while store.time < target_interval:
-            # Check if proposal should be signaled for next interval
             next_interval = Interval(int(store.time) + 1)
             should_signal_proposal = has_proposal and next_interval == target_interval
 
-            # Advance by one interval with appropriate signaling
             store, new_aggregates = self.tick_interval(store, should_signal_proposal, is_aggregator)
             all_new_aggregates.extend(new_aggregates)
 

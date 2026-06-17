@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, ClassVar, Protocol, Self
+from typing import ClassVar, Protocol, Self
 
 from lean_spec.spec.forks.lstar.containers import Checkpoint, Slot, ValidatorIndex
-from lean_spec.spec.ssz import Bytes32, SSZList, Uint64
+from lean_spec.spec.ssz import Bytes32
 
 
 class SpecSSZType(Protocol):
@@ -152,10 +152,6 @@ class ForkProtocol(ABC):
 
     genesis_config_class: type[SpecSSZType]
     """Concrete genesis configuration container class."""
-
-    @abstractmethod
-    def generate_genesis(self, genesis_time: Uint64, validators: SSZList[Any]) -> SpecStateType:
-        """Construct a genesis state for this fork."""
 
     @abstractmethod
     def create_store(

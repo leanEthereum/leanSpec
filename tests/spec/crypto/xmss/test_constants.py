@@ -52,6 +52,38 @@ def test_decomposition_validator_accepts_valid_product() -> None:
     assert config.Q * config.BASE**config.Z == P - 1
 
 
+def test_non_positive_field_is_rejected() -> None:
+    """A field constrained to be positive rejects a zero value at construction."""
+    kwargs = _valid_config_kwargs()
+    kwargs["DIMENSION"] = 0
+    with pytest.raises(ValueError) as exception_info:
+        XmssConfig(**kwargs)
+    assert str(exception_info.value) == (
+        "1 validation error for XmssConfig\n"
+        "DIMENSION\n"
+        "  Input should be greater than 0 "
+        "[type=greater_than, input_value=0, input_type=int]\n"
+        "    For further information visit "
+        "https://errors.pydantic.dev/2.12/v/greater_than"
+    )
+
+
+def test_odd_log_lifetime_is_rejected() -> None:
+    """An odd lifetime exponent cannot split into equal top and bottom trees."""
+    kwargs = _valid_config_kwargs()
+    kwargs["LOG_LIFETIME"] = 31
+    with pytest.raises(ValueError) as exception_info:
+        XmssConfig(**kwargs)
+    assert str(exception_info.value) == (
+        "1 validation error for XmssConfig\n"
+        "  Value error, LOG_LIFETIME must be even, got 31 "
+        "[type=value_error, input_value={'LOG_LIFETIME': 31, 'DIM...ENTS': 8, 'CAPACITY': 9}, "
+        "input_type=dict]\n"
+        "    For further information visit "
+        "https://errors.pydantic.dev/2.12/v/value_error"
+    )
+
+
 def test_target_config_is_test_config_under_test_env() -> None:
     """The active configuration under the test environment is the test preset."""
     assert TARGET_CONFIG is TEST_CONFIG

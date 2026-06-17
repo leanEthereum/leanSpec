@@ -76,13 +76,19 @@ class BlockProductionMixin(LstarSpecBase):
             The final block, its post-state, the included attestations,
             and the merged proof backing each one.
         """
-        aggregated_attestations: list[AggregatedAttestation] = []
-        aggregated_signatures: list[SingleMessageAggregate] = []
+        # Collapsed per-data output: one attestation and one merged proof per data.
+        # Empty when there are no payloads, so the block carries no attestations.
+        merged_attestations: list[AggregatedAttestation] = []
+        merged_signatures: list[SingleMessageAggregate] = []
 
         # Advance the pre-state to this block's slot once.
         advanced_state = self.process_slots(state, slot)
 
         if aggregated_payloads:
+            # Per-pass selection: may emit several proofs per data before collapsing.
+            aggregated_attestations: list[AggregatedAttestation] = []
+            aggregated_signatures: list[SingleMessageAggregate] = []
+
             # Anchor on the checkpoint this chain treats as justified.
             #
             # On genesis the parent is justified at slot 0 by header processing.
@@ -243,9 +249,7 @@ class BlockProductionMixin(LstarSpecBase):
             ):
                 signatures_by_attestation_data[attestation.data].append(signature)
 
-            # Rebuild the output lists, one entry per distinct data.
-            aggregated_attestations = []
-            aggregated_signatures = []
+            # Build the collapsed output lists, one entry per distinct data.
             for attestation_data, grouped_signatures in signatures_by_attestation_data.items():
                 if len(grouped_signatures) == 1:
                     # One proof already covers this data, so use it as-is.
@@ -273,8 +277,8 @@ class BlockProductionMixin(LstarSpecBase):
                         slot=attestation_data.slot,
                     )
 
-                aggregated_signatures.append(signature)
-                aggregated_attestations.append(
+                merged_signatures.append(signature)
+                merged_attestations.append(
                     self.aggregated_attestation_class(
                         aggregation_bits=signature.participants, data=attestation_data
                     )
@@ -287,7 +291,7 @@ class BlockProductionMixin(LstarSpecBase):
             parent_root=parent_root,
             state_root=Bytes32.zero(),
             body=self.block_body_class(
-                attestations=self.aggregated_attestations_class(data=aggregated_attestations),
+                attestations=self.aggregated_attestations_class(data=merged_attestations),
             ),
         )
 
@@ -298,4 +302,4 @@ class BlockProductionMixin(LstarSpecBase):
         post_state = self.process_block(advanced_state, final_block)
         final_block = final_block.model_copy(update={"state_root": hash_tree_root(post_state)})
 
-        return final_block, post_state, aggregated_attestations, aggregated_signatures
+        return final_block, post_state, merged_attestations, merged_signatures

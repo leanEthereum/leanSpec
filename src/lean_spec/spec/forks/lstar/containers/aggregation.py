@@ -20,7 +20,7 @@ from lean_spec.spec.forks.lstar.containers.participation import AggregationBits
 from lean_spec.spec.forks.lstar.slot import Slot
 from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Container
 
-LOG_INV_RATE: int = 1 if LEAN_ENV == "test" else 2
+LOG_INVERSE_RATE: int = 1 if LEAN_ENV == "test" else 2
 """
 Inverse-rate exponent forwarded to the SNARK backend.
 
@@ -59,8 +59,6 @@ class SingleMessageAggregate(Container):
     ) -> "SingleMessageAggregate":
         """
         Fold fresh signatures and child proofs into one single-message proof.
-
-        # Overview
 
         Two kinds of contribution merge into one proof.
 
@@ -112,12 +110,14 @@ class SingleMessageAggregate(Container):
                 raw_signatures_ssz,
                 bytes(message),
                 int(slot),
-                LOG_INV_RATE,
+                LOG_INVERSE_RATE,
                 children_bytes or None,
                 mode=LEAN_ENV,
             )
         except Exception as exception:
-            raise AggregationError(str(exception)) from exception
+            raise AggregationError(
+                f"single-message aggregate build failed: {exception}"
+            ) from exception
 
         return cls(
             participants=participants,
@@ -242,11 +242,11 @@ class MultiMessageAggregate(Container):
         try:
             _, multi_message_aggregate_wire = merge_many_single_message_proof(
                 single_message_aggregate_entries,
-                LOG_INV_RATE,
+                LOG_INVERSE_RATE,
                 mode=LEAN_ENV,
             )
         except Exception as exception:
-            raise AggregationError(str(exception)) from exception
+            raise AggregationError(f"multi-message merge failed: {exception}") from exception
 
         return cls(proof=ByteList512KiB(data=multi_message_aggregate_wire))
 
@@ -291,7 +291,7 @@ class MultiMessageAggregate(Container):
                 public_keys_per_component_ssz,
                 bytes(self.proof.data),
                 bytes(message),
-                LOG_INV_RATE,
+                LOG_INVERSE_RATE,
                 mode=LEAN_ENV,
             )
         except Exception as exception:
@@ -311,8 +311,6 @@ class MultiMessageAggregate(Container):
     ) -> None:
         """
         Verify this multi-message proof against its per-component bindings.
-
-        # The message bindings
 
         Each component is checked against one message and slot supplied by the caller.
         Without that binding the proof would accept attacker-chosen data.

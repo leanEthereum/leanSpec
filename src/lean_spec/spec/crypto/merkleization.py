@@ -212,19 +212,19 @@ def hash_tree_root(value: object) -> Bytes32:
 @hash_tree_root.register(Boolean)
 @hash_tree_root.register(Fp)
 @hash_tree_root.register(BaseBytes)
-def _htr_packed_leaf(value: BaseUint | Boolean | Fp | BaseBytes) -> Bytes32:
+def _hash_tree_root_packed_leaf(value: BaseUint | Boolean | Fp | BaseBytes) -> Bytes32:
     # Each of these encodes to a fixed-width byte string with no length prefix.
     # The root is the Merkle root of those bytes packed into 32-byte chunks.
     return merkleize(_pack_bytes(value.encode_bytes()))
 
 
 @hash_tree_root.register
-def _htr_bytes(value: bytes) -> Bytes32:
+def _hash_tree_root_bytes(value: bytes) -> Bytes32:
     return merkleize(_pack_bytes(value))
 
 
 @hash_tree_root.register
-def _htr_bytelist(value: BaseByteList) -> Bytes32:
+def _hash_tree_root_bytelist(value: BaseByteList) -> Bytes32:
     serialized_bytes = value.encode_bytes()
     limit_chunks = math.ceil(type(value).LIMIT / BYTES_PER_CHUNK)
     return mix_in_length(
@@ -233,13 +233,13 @@ def _htr_bytelist(value: BaseByteList) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_bitvector_base(value: BaseBitvector) -> Bytes32:
+def _hash_tree_root_bitvector_base(value: BaseBitvector) -> Bytes32:
     limit = math.ceil(type(value).LENGTH / BITS_PER_CHUNK)
     return merkleize(_pack_bits(value.data), limit=limit)
 
 
 @hash_tree_root.register
-def _htr_bitlist_base(value: BaseBitlist) -> Bytes32:
+def _hash_tree_root_bitlist_base(value: BaseBitlist) -> Bytes32:
     limit = math.ceil(type(value).LIMIT / BITS_PER_CHUNK)
     return mix_in_length(
         merkleize(_pack_bits(value.data), limit=limit),
@@ -248,12 +248,12 @@ def _htr_bitlist_base(value: BaseBitlist) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_vector(value: SSZVector) -> Bytes32:
+def _hash_tree_root_vector(value: SSZVector) -> Bytes32:
     cls = type(value)
-    element_t, length = cls.ELEMENT_TYPE, cls.LENGTH
-    if issubclass(element_t, (BaseUint, Boolean, Fp)):
+    element_type, length = cls.ELEMENT_TYPE, cls.LENGTH
+    if issubclass(element_type, (BaseUint, Boolean, Fp)):
         # Basic elements pack their serialized bytes into a single byte stream before chunking.
-        element_size = element_t.get_byte_length()
+        element_size = element_type.get_byte_length()
         limit_chunks = math.ceil(length * element_size / BYTES_PER_CHUNK)
         return merkleize(
             _pack_bytes(b"".join(e.encode_bytes() for e in value)),
@@ -264,11 +264,11 @@ def _htr_vector(value: SSZVector) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_list(value: SSZList) -> Bytes32:
+def _hash_tree_root_list(value: SSZList) -> Bytes32:
     cls = type(value)
-    element_t, limit = cls.ELEMENT_TYPE, cls.LIMIT
-    if issubclass(element_t, (BaseUint, Boolean, Fp)):
-        element_size = element_t.get_byte_length()
+    element_type, limit = cls.ELEMENT_TYPE, cls.LIMIT
+    if issubclass(element_type, (BaseUint, Boolean, Fp)):
+        element_size = element_type.get_byte_length()
         limit_chunks = math.ceil(limit * element_size / BYTES_PER_CHUNK)
         root = merkleize(
             _pack_bytes(b"".join(e.encode_bytes() for e in value)),
@@ -280,7 +280,7 @@ def _htr_list(value: SSZList) -> Bytes32:
 
 
 @hash_tree_root.register
-def _htr_container(value: Container) -> Bytes32:
+def _hash_tree_root_container(value: Container) -> Bytes32:
     # Pydantic preserves declaration order, which is the canonical SSZ field order.
     cls = type(value)
     return merkleize([hash_tree_root(getattr(value, name)) for name in cls.model_fields])

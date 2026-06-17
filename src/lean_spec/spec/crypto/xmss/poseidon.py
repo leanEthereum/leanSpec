@@ -72,7 +72,10 @@ class PoseidonXmss(StrictBaseModel):
 
         # Permute, then add the original padded input element-wise.
         permuted_state = engine.permute(padded_input)
-        final_state = [p + i for p, i in zip(permuted_state, padded_input, strict=True)]
+        final_state = [
+            permuted_element + input_element
+            for permuted_element, input_element in zip(permuted_state, padded_input, strict=True)
+        ]
 
         return final_state[:output_length]
 
@@ -131,25 +134,25 @@ class PoseidonXmss(StrictBaseModel):
         rate = width - len(capacity_value)
 
         # Zero-pad to a multiple of the rate so absorption iterates exact chunks.
-        num_extra = (rate - (len(input_elements) % rate)) % rate
-        padded_input = input_elements + [Fp(value=0)] * num_extra
+        num_padding_elements = (rate - (len(input_elements) % rate)) % rate
+        padded_input = input_elements + [Fp(value=0)] * num_padding_elements
 
         # Layout: capacity slots first, then rate slots.
-        cap_length = len(capacity_value)
+        capacity_length = len(capacity_value)
         state = [Fp(value=0)] * width
-        state[:cap_length] = capacity_value
+        state[:capacity_length] = capacity_value
 
         # Phase 2: absorb each chunk by overwriting the rate slots.
         #
         # Padding makes every chunk exactly rate wide, so the slice always matches.
         for chunk in batched(padded_input, rate):
-            state[cap_length : cap_length + rate] = chunk
+            state[capacity_length : capacity_length + rate] = chunk
             state = engine.permute(state)
 
         # Phase 3: squeeze rate slots, permuting until enough output is available.
         output: list[Fp] = []
         while len(output) < output_length:
-            output.extend(state[cap_length : cap_length + rate])
+            output.extend(state[capacity_length : capacity_length + rate])
             state = engine.permute(state)
 
         return output[:output_length]
@@ -159,7 +162,7 @@ class PoseidonXmss(StrictBaseModel):
         config: XmssConfig,
         parameter: Parameter,
         tweak: TreeTweak | ChainTweak,
-        message_parts: list[HashDigestVector],
+        message_digests: list[HashDigestVector],
     ) -> HashDigestVector:
         """
         Apply the tweakable hash to one or more digests.
@@ -174,7 +177,7 @@ class PoseidonXmss(StrictBaseModel):
             config: Active XMSS configuration.
             parameter: Public parameter that personalizes the hash.
             tweak: Position tweak for domain separation.
-            message_parts: Digests to hash together.
+            message_digests: Digests to hash together.
 
         Returns:
             A digest of HASH_LENGTH_FIELD_ELEMENTS field elements.
@@ -195,25 +198,25 @@ class PoseidonXmss(StrictBaseModel):
                 )
         encoded_tweak = int_to_base_p(packed_tweak, config.TWEAK_LENGTH_FIELD_ELEMENTS)
 
-        if len(message_parts) == 1:
+        if len(message_digests) == 1:
             # Hash chain step: width-16 compression of (digest || parameter || tweak).
-            input_elements = message_parts[0].elements + parameter.elements + encoded_tweak
+            input_elements = message_digests[0].elements + parameter.elements + encoded_tweak
             digest = self.compress(input_elements, 16, config.HASH_LENGTH_FIELD_ELEMENTS)
 
-        elif len(message_parts) == 2:
+        elif len(message_digests) == 2:
             # Merkle node: width-24 compression of (parameter || tweak || left || right).
             input_elements = (
                 parameter.elements
                 + encoded_tweak
-                + message_parts[0].elements
-                + message_parts[1].elements
+                + message_digests[0].elements
+                + message_digests[1].elements
             )
             digest = self.compress(input_elements, 24, config.HASH_LENGTH_FIELD_ELEMENTS)
 
         else:
             # Merkle leaf: sponge mode over many concatenated digests.
             flattened_message = [
-                element for message_part in message_parts for element in message_part.elements
+                element for message_digest in message_digests for element in message_digest.elements
             ]
             input_elements = parameter.elements + encoded_tweak + flattened_message
 

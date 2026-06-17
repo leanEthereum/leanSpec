@@ -142,9 +142,16 @@ class ForkChoiceMixin(LstarSpecBase):
         Drop attestation data whose head can no longer influence fork choice.
 
         Fork choice only ever descends from the latest finalized block.
-        A vote whose head sits at or below the finalized slot cannot name a descendant of it.
-        Such a vote carries no fork-choice weight.
-        Dropping it never changes the chosen chain.
+        A vote carries no fork-choice weight, and is dropped, when either holds:
+
+        - Its head sits at or below the finalized slot.
+        - Its head is not a descendant of the finalized block.
+
+        The first head is no later than the finalized block.
+        The second head is on a sibling branch the finalized block orphaned.
+        Neither head lies under the finalized block.
+        So neither credits any block the forward walk from the justified root can reach.
+        Dropping such a vote never changes the chosen chain.
 
         The same cutoff prunes all three attestation-keyed pools:
 
@@ -152,25 +159,35 @@ class ForkChoiceMixin(LstarSpecBase):
         - Pending aggregated proofs not yet counted.
         - Aggregated proofs already counted toward fork choice.
         """
-        # Keep only entries whose attested head sits strictly above the finalized slot.
+
+        # An entry survives only when its head still lives under the finalized block.
         #
+        # The slot guard rejects heads at or below the finalized slot cheaply.
+        # The ancestry guard then rejects heads on a finalized-orphaned sibling branch.
+        # Such heads sit above the finalized slot yet never descend from the finalized block.
         # Every pool shares the same vote key, so one staleness test filters all three.
+        def head_lives_under_finalized(attestation_data: AttestationData) -> bool:
+            head = attestation_data.head
+            return head.slot > store.latest_finalized.slot and self._checkpoint_is_ancestor(
+                store, store.latest_finalized, head
+            )
+
         return store.model_copy(
             update={
                 "attestation_signatures": {
                     attestation_data: signatures
                     for attestation_data, signatures in store.attestation_signatures.items()
-                    if attestation_data.head.slot > store.latest_finalized.slot
+                    if head_lives_under_finalized(attestation_data)
                 },
                 "latest_new_aggregated_payloads": {
                     attestation_data: proofs
                     for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
-                    if attestation_data.head.slot > store.latest_finalized.slot
+                    if head_lives_under_finalized(attestation_data)
                 },
                 "latest_known_aggregated_payloads": {
                     attestation_data: proofs
                     for attestation_data, proofs in store.latest_known_aggregated_payloads.items()
-                    if attestation_data.head.slot > store.latest_finalized.slot
+                    if head_lives_under_finalized(attestation_data)
                 },
             }
         )
@@ -179,14 +196,7 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         Validate incoming attestation before processing.
 
-        Ensures the vote respects the basic laws of time and topology:
-            1. The blocks voted for must exist in our store.
-            2. A vote cannot span backwards in time (source > target).
-            3. The head must be at least as recent as source and target.
-            4. Checkpoint slots must match the actual block slots.
-            5. Source, target, and head must lie on one parent chain.
-            6. The vote's slot cannot precede the slot of the head it claims to have seen.
-            7. The vote's slot must have started locally (a small disparity margin is allowed).
+        Ensures the vote respects the basic laws of time and topology.
 
         Raises:
             SpecRejectionError: If the attestation fails any of the validation checks above.
@@ -350,22 +360,22 @@ class ForkChoiceMixin(LstarSpecBase):
             # Validation proved:
             # - the block is known,
             # - blocks are stored together with their post-state.
-            key_state = store.states.get(attestation_data.target.root)
-            assert key_state is not None, (
+            target_post_state = store.states.get(attestation_data.target.root)
+            assert target_post_state is not None, (
                 f"No state available to verify attestation signature for target block "
                 f"{attestation_data.target.root.hex()}"
             )
 
             # The validator index must fall inside that registry.
             # An out-of-range index names a validator the target state never knew.
-            if not validator_index.is_within_registry(Uint64(len(key_state.validators))):
+            if not validator_index.is_within_registry(Uint64(len(target_post_state.validators))):
                 raise SpecRejectionError(
                     RejectionReason.VALIDATOR_NOT_IN_STATE,
                     f"Validator {validator_index} not found in state "
                     f"{attestation_data.target.root.hex()}",
                 )
             public_key = PublicKey.decode_bytes(
-                key_state.validators[validator_index].attestation_public_key
+                target_post_state.validators[validator_index].attestation_public_key
             )
 
             # Verify the signature.
@@ -460,15 +470,15 @@ class ForkChoiceMixin(LstarSpecBase):
         # Validation proved:
         # - the block is known,
         # - blocks are stored together with their post-state.
-        key_state = store.states.get(attestation_data.target.root)
-        assert key_state is not None, (
+        target_post_state = store.states.get(attestation_data.target.root)
+        assert target_post_state is not None, (
             f"No state available to verify committee aggregation for target "
             f"{attestation_data.target.root.hex()}"
         )
 
         # Every participant must fall inside that registry.
         # An out-of-range index names a validator the target state never knew.
-        validators = key_state.validators
+        validators = target_post_state.validators
         for validator_index in validator_indices:
             if not validator_index.is_within_registry(Uint64(len(validators))):
                 raise SpecRejectionError(
@@ -528,12 +538,7 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         Process a new block and update the forkchoice state.
 
-        This method integrates a block into the forkchoice store by:
-
-        1. Validating the block's parent exists
-        2. Computing the post-state via the state transition function
-        3. Processing attestations included in the block body (on-chain)
-        4. Updating the forkchoice head
+        Integrates a block into the forkchoice store and recomputes the head.
 
         Raises:
             SpecRejectionError: UNKNOWN_PARENT_BLOCK if the parent state is not in the store.
@@ -631,7 +636,7 @@ class ForkChoiceMixin(LstarSpecBase):
 
             return store
 
-    def extract_attestations_from_aggregated_payloads(
+    def _extract_attestations_from_aggregated_payloads(
         self,
         aggregated_payloads: dict[AttestationData, set[SingleMessageAggregate]],
         latest_finalized_slot: Slot,
@@ -640,7 +645,8 @@ class ForkChoiceMixin(LstarSpecBase):
         Map each participating validator to the latest vote it cast.
 
         This is the LMD view fork choice runs on.
-        On equal slots the first vote seen wins, since the slot comparison is strict.
+        Two votes share a slot only across distinct attestation data, never within one data.
+        On such an equal-slot tie the strict comparison keeps the first distinct data inserted.
 
         A vote whose head sits at or below the finalized slot carries no fork-choice weight.
         Such stale votes are skipped here, so callers pass their pool without pre-filtering.
@@ -722,26 +728,24 @@ class ForkChoiceMixin(LstarSpecBase):
             Each block root mapped to its accumulated vote weight.
         """
         # Reduce the counted pool to each validator's latest still-relevant vote.
-        latest_votes = self.extract_attestations_from_aggregated_payloads(
+        latest_votes = self._extract_attestations_from_aggregated_payloads(
             store.latest_known_aggregated_payloads,
             store.latest_finalized.slot,
         )
 
         # Credit every block on those votes' ancestor chains above finalization.
         #
-        # Return a plain dict so callers read missing blocks as absent, not zero.
-        weights = self._accumulate_ancestor_weights(
-            store, latest_votes, store.latest_finalized.slot
-        )
-
-        return dict(weights)
+        # Every caller reads this map with a default of zero for absent blocks.
+        # The shared accumulator already returns a default-zero mapping.
+        # So returning it directly is observably identical to copying it first.
+        return self._accumulate_ancestor_weights(store, latest_votes, store.latest_finalized.slot)
 
     def _compute_lmd_ghost_head(
         self,
         store: LstarStore,
         start_root: Bytes32,
         attestations: dict[ValidatorIndex, AttestationData],
-        min_score: int = 0,
+        min_score: int | None = None,
     ) -> Bytes32:
         """
         Walk the block tree according to the LMD GHOST rule.
@@ -778,7 +782,7 @@ class ForkChoiceMixin(LstarSpecBase):
 
         for root, block in store.blocks.items():
             # Prune low-weight branches early when a threshold is set.
-            if min_score > 0 and weights[root] < min_score:
+            if min_score is not None and weights[root] < min_score:
                 continue
 
             children_map[block.parent_root].append(root)
@@ -809,7 +813,7 @@ class ForkChoiceMixin(LstarSpecBase):
             The store with its head set to the chosen block.
         """
         # Reduce the counted pool to each validator's latest still-relevant vote.
-        latest_votes = self.extract_attestations_from_aggregated_payloads(
+        latest_votes = self._extract_attestations_from_aggregated_payloads(
             store.latest_known_aggregated_payloads,
             store.latest_finalized.slot,
         )
@@ -863,7 +867,7 @@ class ForkChoiceMixin(LstarSpecBase):
         merged_aggregated_payloads = {
             attestation_data: known_payloads.get(attestation_data, set())
             | new_payloads.get(attestation_data, set())
-            for attestation_data in {**known_payloads, **new_payloads}
+            for attestation_data in dict.fromkeys((*known_payloads, *new_payloads))
         }
 
         # Promote into the counted pool and clear the pending one.
@@ -896,7 +900,7 @@ class ForkChoiceMixin(LstarSpecBase):
         min_target_score = math.ceil(num_validators * 2 / 3)
 
         # Reduce the pending pool to each validator's latest still-relevant vote.
-        latest_votes = self.extract_attestations_from_aggregated_payloads(
+        latest_votes = self._extract_attestations_from_aggregated_payloads(
             store.latest_new_aggregated_payloads,
             store.latest_finalized.slot,
         )

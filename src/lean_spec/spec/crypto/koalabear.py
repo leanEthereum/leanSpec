@@ -42,10 +42,12 @@ class Fp(int, SSZType):
         """
         Create a field element.
 
-        Args:
-            value: The value to wrap. Must be in the range [0, P).
+        The constructor reduces the integer modulo P.
+        Any integer is accepted, including negatives and values at or above P.
+        The Pydantic validation path is stricter and requires the value already in [0, P).
 
-            Negative values will be normalized to the range [0, P).
+        Args:
+            value: The integer to wrap, reduced modulo P into the range [0, P).
 
         Raises:
             SSZTypeError: If value is not an integer.

@@ -30,12 +30,12 @@ def _run_commit_open_verify_roundtrip(
     num_leaves: int,
     depth: int,
     start_index: int,
-    leaf_parts_length: int,
+    leaf_chain_ends_length: int,
 ) -> None:
     """Build a tree, then open and verify every active leaf against its root."""
     parameter = random_parameter(config)
     leaves: list[list[HashDigestVector]] = [
-        [random_domain(config) for _ in range(leaf_parts_length)] for _ in range(num_leaves)
+        [random_domain(config) for _ in range(leaf_chain_ends_length)] for _ in range(num_leaves)
     ]
 
     leaf_hashes: list[HashDigestVector] = [
@@ -43,9 +43,9 @@ def _run_commit_open_verify_roundtrip(
             config,
             parameter,
             TreeTweak(level=0, index=Uint64(start_index + i)),
-            leaf_parts,
+            leaf_chain_ends,
         )
-        for i, leaf_parts in enumerate(leaves)
+        for i, leaf_chain_ends in enumerate(leaves)
     ]
 
     tree = HashSubTree.new(
@@ -59,7 +59,7 @@ def _run_commit_open_verify_roundtrip(
     )
     root = tree.root()
 
-    for i, leaf_parts in enumerate(leaves):
+    for i, leaf_chain_ends in enumerate(leaves):
         position = Uint64(start_index + i)
         opening = tree.path(position)
         assert verify_path(
@@ -68,13 +68,13 @@ def _run_commit_open_verify_roundtrip(
             parameter=parameter,
             root=root,
             position=position,
-            leaf_parts=leaf_parts,
+            leaf_chain_ends=leaf_chain_ends,
             opening=opening,
         )
 
 
 @pytest.mark.parametrize(
-    "num_leaves, depth, start_index, leaf_parts_length",
+    "num_leaves, depth, start_index, leaf_chain_ends_length",
     [
         pytest.param(16, 4, 0, 3, id="Full tree (depth 4)", marks=pytest.mark.slow),
         pytest.param(12, 5, 0, 5, id="Half tree, left-aligned (depth 5)", marks=pytest.mark.slow),
@@ -90,7 +90,7 @@ def test_commit_open_verify_roundtrip(
     num_leaves: int,
     depth: int,
     start_index: int,
-    leaf_parts_length: int,
+    leaf_chain_ends_length: int,
 ) -> None:
     """A built tree opens and verifies every leaf for various shapes."""
     assert start_index + num_leaves <= (1 << depth)
@@ -98,7 +98,7 @@ def test_commit_open_verify_roundtrip(
     # Match the configured height to this tree's depth so every opening is well formed.
     config_for_depth = PROD_CONFIG.model_copy(update={"LOG_LIFETIME": depth})
     _run_commit_open_verify_roundtrip(
-        POSEIDON, config_for_depth, num_leaves, depth, start_index, leaf_parts_length
+        POSEIDON, config_for_depth, num_leaves, depth, start_index, leaf_chain_ends_length
     )
 
 
@@ -382,7 +382,7 @@ def test_verify_path_rejects_opening_length_mismatch(sibling_count: int) -> None
             parameter=random_parameter(config_with_lifetime_sixteen),
             root=random_domain(config_with_lifetime_sixteen),
             position=Uint64(0),
-            leaf_parts=[random_domain(config_with_lifetime_sixteen)],
+            leaf_chain_ends=[random_domain(config_with_lifetime_sixteen)],
             opening=opening,
         )
         is False
@@ -403,7 +403,7 @@ def test_verify_path_rejects_position_exceeding_capacity(position: int) -> None:
             parameter=random_parameter(config_with_lifetime_sixteen),
             root=random_domain(config_with_lifetime_sixteen),
             position=Uint64(position),
-            leaf_parts=[random_domain(config_with_lifetime_sixteen)],
+            leaf_chain_ends=[random_domain(config_with_lifetime_sixteen)],
             opening=opening,
         )
         is False
@@ -422,7 +422,7 @@ def test_verify_path_accepts_boundary_position_without_raising() -> None:
         parameter=random_parameter(config_with_lifetime_sixteen),
         root=random_domain(config_with_lifetime_sixteen),
         position=Uint64(15),
-        leaf_parts=[random_domain(config_with_lifetime_sixteen)],
+        leaf_chain_ends=[random_domain(config_with_lifetime_sixteen)],
         opening=opening,
     )
     assert isinstance(verification_result, bool)

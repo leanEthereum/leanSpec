@@ -1,5 +1,7 @@
 """Slot primitive shared by the consensus and crypto layers."""
 
+from __future__ import annotations
+
 import math
 from typing import Final
 
@@ -12,7 +14,7 @@ IMMEDIATE_JUSTIFICATION_WINDOW: Final = 5
 class Slot(Uint64):
     """A slot number, as a 64-bit unsigned integer."""
 
-    def justified_index_after(self, finalized_slot: "Slot") -> int | None:
+    def justified_index_after(self, finalized_slot: Slot) -> int | None:
         """
         Return the relative bitfield index for justification tracking.
 
@@ -25,9 +27,9 @@ class Slot(Uint64):
         # Slot (finalized_slot + 1) maps to index 0.
         return int(self - finalized_slot) - 1
 
-    def is_justifiable_after(self, finalized_slot: "Slot") -> bool:
+    def is_justifiable_after(self, finalized_slot: Slot) -> bool:
         """
-        Checks if this slot is a valid candidate for justification after a given finalized slot.
+        Whether this slot is a valid justification candidate after a given finalized slot.
 
         According to the 3SF-mini specification, a slot is justifiable if its
         distance (delta) from the last finalized slot is:
@@ -60,7 +62,8 @@ class Slot(Uint64):
 
         # Rule 2: Slots at perfect square distances are justifiable.
         #
-        # Examples: delta = 1, 4, 9, 16, 25, 36, 49, 64, ...
+        # Smaller squares 1 and 4 already returned under Rule 1.
+        # First square that reaches here is 9: delta = 9, 16, 25, 36, 49, 64, ...
         # Check: integer square root squared equals delta
         if math.isqrt(delta) ** 2 == delta:
             return True
@@ -68,6 +71,8 @@ class Slot(Uint64):
         # Rule 3: Slots at pronic number distances are justifiable.
         #
         # Pronic numbers have the form n(n+1): 2, 6, 12, 20, 30, 42, 56, ...
+        # The smallest pronic 2 already returned under Rule 1.
+        # First pronic that reaches here is 6: delta = 6, 12, 20, 30, 42, 56, ...
         # Mathematical insight: For pronic delta = n(n+1), we have:
         #   4*delta + 1 = 4n(n+1) + 1 = (2n+1)^2
         # Check: 4*delta+1 is an odd perfect square
