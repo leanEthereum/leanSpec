@@ -1,5 +1,7 @@
 """Reaggregation test fixture format."""
 
+from __future__ import annotations
+
 from typing import ClassVar
 
 from consensus_testing.keys import XmssKeyManager
@@ -18,13 +20,13 @@ from lean_spec.spec.forks.lstar.containers import (
 from lean_spec.spec.ssz import Bytes32
 
 ATTESTATION_SLOT: Slot = Slot(1)
-"""Slot number that the attestation is signed for."""
+"""Attestation slot, one before the block that carries it."""
 
 BLOCK_SLOT: Slot = Slot(2)
-"""Slot number that the block is built for."""
+"""Block slot, one after the attestation it carries."""
 
 PROPOSER_INDEX: ValidatorIndex = ValidatorIndex(0)
-"""Validator ID that signs the block."""
+"""Validator index that signs the block."""
 
 CHAIN_ROOT: Bytes32 = Bytes32(b"\x11" * 32)
 """Head and target root the attestation votes for."""
@@ -37,13 +39,7 @@ PARENT_ROOT: Bytes32 = Bytes32(b"\xaa" * 32)
 
 
 class ReaggregationFixture(BaseConsensusFixture):
-    """
-    Emitted vector for proof re-aggregation.
-
-    JSON output: blockProof, publicKeysPerMessage, attestationMessage,
-    attestationSlot, blockAttesters, localAttesters, combinedAttesters,
-    reaggregatedProof, valid.
-    """
+    """Emitted vector for proof re-aggregation."""
 
     block_proof: str
     """The block's multi-message proof that gets split, as hex."""
@@ -58,51 +54,34 @@ class ReaggregationFixture(BaseConsensusFixture):
     """Slot of the split attestation."""
 
     block_attesters: list[int]
-    """List of validator IDs whose signed attestations came in the block."""
+    """Validator indices whose signed attestations came in the block."""
 
     local_attesters: list[int]
-    """List of validator IDs whose signed attestations are in the node's local pool."""
+    """Validator indices whose signed attestations are in the node's local pool."""
 
     combined_attesters: list[int]
-    """List of validator IDs from the block's and the local copy's attestations."""
+    """Validator indices covered by the re-aggregated proof, the block and local union."""
 
     reaggregated_proof: str
     """The re-aggregated single-message proof bytes, as hex."""
 
-    valid: bool
-    """Whether the re-aggregated proof verifies against the combined attesters' keys."""
-
 
 class ReaggregationTest(BaseTestSpec):
     """
-    Take one attestation's proof out of a block, then merge it with the node's own copy.
+    Split one attestation's proof out of a block, then merge it with the local partial.
 
-    Test structure:
-
-    1. Read the block proof and the public key layout.
-    2. Split the block proof by providing the attestation message and the block
-       attesters' validator IDs, to recover the single-message attestation proof.
-    3. Verify the recovered proof against the block attesters' public keys at
-       the attestation slot.
-    4. Re-aggregate the recovered proof with the node's local copy of the same
-       attestations to produce a new merged proof.
-    5. Verify the re-aggregated proof against the combined attesters' public
-       keys at the attestation slot, expecting the valid flag.
-
-    Rather than matching the reference proof bytes, which are not deterministic,
-    verify each re-aggregated proof against the expected attestation data and
-    attesters' public keys. Then, confirm that the same attestation data and
-    public keys are also valid for the reference proof bytes.
+    The reference proof bytes are not deterministic.
+    Each vector is checked by verifying against the expected attesters' keys, not by byte match.
     """
 
     format_name: ClassVar[str] = "reaggregation_test"
     description: ClassVar[str] = "Tests aggregate proof split and merge clients must reproduce"
 
     block_attesters: list[ValidatorIndex]
-    """List of validator IDs whose signed attestations were aggregated into the block."""
+    """Validator indices whose signed attestations were aggregated into the block."""
 
     local_attesters: list[ValidatorIndex] = []
-    """List of validator IDs whose signed attestations are in the node's local pool."""
+    """Validator indices whose signed attestations are in the node's local pool."""
 
     def generate(self) -> ReaggregationFixture:
         """Build the merged proof, split the attestation out, merge it, and verify."""
@@ -173,6 +152,10 @@ class ReaggregationTest(BaseTestSpec):
             participants=block_bits,
         )
 
+        # The split output must verify on its own against the block attesters' keys.
+        # A later merge could otherwise mask a malformed recovered component.
+        recovered_proof.verify(attestation_keys, attestation_message, attestation_data.slot)
+
         # Phase 4: merge the recovered proof with the local partial.
         if self.local_attesters:
             local_partial = key_manager.sign_and_aggregate(
@@ -184,7 +167,7 @@ class ReaggregationTest(BaseTestSpec):
                 key_manager.get_public_keys(validator_index)[0]
                 for validator_index in self.local_attesters
             ]
-            combined = SingleMessageAggregate.aggregate(
+            reaggregated_proof = SingleMessageAggregate.aggregate(
                 children=[
                     (recovered_proof, attestation_keys),
                     (local_partial, local_keys),
@@ -194,14 +177,21 @@ class ReaggregationTest(BaseTestSpec):
                 slot=attestation_data.slot,
             )
         else:
-            combined = recovered_proof
+            reaggregated_proof = recovered_proof
 
-        # Phase 5: verify the re-aggregated proof against the union public keys.
-        combined_indices = list(combined.participants.to_validator_indices())
-        combined.verify(
+        # Phase 5: the merged proof must cover exactly the union of block and local attesters.
+        combined_attester_indices = list(reaggregated_proof.participants.to_validator_indices())
+        expected_attester_indices = sorted({*self.block_attesters, *self.local_attesters})
+        assert combined_attester_indices == expected_attester_indices, (
+            f"re-aggregated proof covers {combined_attester_indices}, "
+            f"expected the union {expected_attester_indices}"
+        )
+
+        # The merged proof must verify against the union attesters' keys.
+        reaggregated_proof.verify(
             [
                 key_manager.get_public_keys(validator_index)[0]
-                for validator_index in combined_indices
+                for validator_index in combined_attester_indices
             ],
             attestation_message,
             attestation_data.slot,
@@ -217,7 +207,8 @@ class ReaggregationTest(BaseTestSpec):
             attestation_slot=int(attestation_data.slot),
             block_attesters=[int(validator_index) for validator_index in self.block_attesters],
             local_attesters=[int(validator_index) for validator_index in self.local_attesters],
-            combined_attesters=[int(validator_index) for validator_index in combined_indices],
-            reaggregated_proof="0x" + bytes(combined.proof.data).hex(),
-            valid=True,
+            combined_attesters=[
+                int(validator_index) for validator_index in combined_attester_indices
+            ],
+            reaggregated_proof="0x" + bytes(reaggregated_proof.proof.data).hex(),
         )

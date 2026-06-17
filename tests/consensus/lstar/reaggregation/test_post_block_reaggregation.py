@@ -1,4 +1,4 @@
-"""Proof re-aggregation vectors: Split an attestation out of a block proof, fold with the pool."""
+"""Re-aggregation vectors: split an attestation out of a block proof, fold with the local pool."""
 
 import pytest
 
@@ -55,6 +55,7 @@ def test_split_then_merge_with_overlapping_local_partial(
     Then
     ----
     - the recovered proof covers V0, V1, V2.
+    - the recovered proof verifies.
     - the local partial covers V1, V2, V3.
     - the re-aggregated proof covers V0, V1, V2, V3.
     - the re-aggregated proof verifies.
@@ -85,6 +86,7 @@ def test_split_then_merge_with_disjoint_local_partial(
     Then
     ----
     - the recovered proof covers V0, V1.
+    - the recovered proof verifies.
     - the local partial covers V2, V3.
     - the re-aggregated proof covers V0, V1, V2, V3.
     - the re-aggregated proof verifies.
@@ -92,4 +94,62 @@ def test_split_then_merge_with_disjoint_local_partial(
     reaggregation_test(
         block_attesters=[ValidatorIndex(0), ValidatorIndex(1)],
         local_attesters=[ValidatorIndex(2), ValidatorIndex(3)],
+    )
+
+
+def test_split_single_validator_block(
+    reaggregation_test: ReaggregationTestFiller,
+) -> None:
+    """
+    A single-validator block attestation is recovered from the block proof and used as-is.
+
+    Given
+    -----
+    - a block proof carrying an attestation signed by V0.
+    - no local partial for that attestation.
+
+    When
+    ----
+    - the block proof is split by the attestation message.
+
+    Then
+    ----
+    - the recovered proof covers V0.
+    - no local partial merges in.
+    - the recovered proof verifies.
+    """
+    reaggregation_test(
+        block_attesters=[ValidatorIndex(0)],
+        local_attesters=[],
+    )
+
+
+def test_split_then_merge_when_local_covers_a_superset(
+    reaggregation_test: ReaggregationTestFiller,
+) -> None:
+    """
+    A recovered proof merges with a local partial that already covers it, yielding the local set.
+
+    Given
+    -----
+    - a block proof carrying an attestation signed by V0, V1.
+    - a local partial for the same attestation signed by V0, V1, V2.
+    - the local partial already covers every block attester.
+
+    When
+    ----
+    - the block proof is split by the attestation message.
+    - the recovered proof merges with the local partial.
+
+    Then
+    ----
+    - the recovered proof covers V0, V1.
+    - the recovered proof verifies.
+    - the local partial covers V0, V1, V2.
+    - the re-aggregated proof covers V0, V1, V2.
+    - the re-aggregated proof verifies.
+    """
+    reaggregation_test(
+        block_attesters=[ValidatorIndex(0), ValidatorIndex(1)],
+        local_attesters=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
     )

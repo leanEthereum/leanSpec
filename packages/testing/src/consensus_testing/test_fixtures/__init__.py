@@ -97,13 +97,13 @@ from consensus_testing.test_fixtures.verify_signatures import (
 )
 
 FIXTURE_FORMATS: tuple[type[BaseTestSpec], ...] = (
-    ReaggregationTest,
     ApiEndpointTest,
     ForkChoiceTest,
     GossipsubHandlerTest,
     JustifiabilityTest,
     NetworkingCodecTest,
     PoseidonPermutationTest,
+    ReaggregationTest,
     SlotClockTest,
     SSZTest,
     StateTransitionTest,
