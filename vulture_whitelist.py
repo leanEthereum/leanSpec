@@ -15,14 +15,14 @@
 
 # Single-dispatch handlers for the hash_tree_root generic function.
 # Dispatched by argument type, so they have no direct call site.
-_htr_packed_leaf
-_htr_bytes
-_htr_bytelist
-_htr_bitvector_base
-_htr_bitlist_base
-_htr_vector
-_htr_list
-_htr_container
+_hash_tree_root_packed_leaf
+_hash_tree_root_bytes
+_hash_tree_root_bytelist
+_hash_tree_root_bitvector_base
+_hash_tree_root_bitlist_base
+_hash_tree_root_vector
+_hash_tree_root_list
+_hash_tree_root_container
 
 # Magic methods invoked by the interpreter.
 # Flagged only because they are defined as overloaded functions or as an
