@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from consensus_testing.keys import create_dummy_signature
 from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestations,
     AttestationData,
@@ -20,6 +23,37 @@ TEST_VALIDATOR_INDEX = ValidatorIndex(0)
 """Validator index a node owns by default in unit tests."""
 
 
+def signed_block_with_empty_proof(block: Block) -> SignedBlock:
+    """
+    Wrap an unsigned block in an empty proof.
+
+    The fork-choice store retains only unsigned blocks.
+    A genesis or anchor block that no proposer ever signed carries an empty proof.
+    """
+    return SignedBlock(
+        block=block,
+        proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+    )
+
+
+def store_backed_signed_block_getter(
+    store: Store,
+) -> Callable[[Bytes32], SignedBlock | None]:
+    """
+    Build a signed-block lookup over a store's unsigned blocks.
+
+    Returns None for an unknown root, mirroring a node that lacks the block.
+    """
+
+    def signed_block_for(root: Bytes32) -> SignedBlock | None:
+        block = store.blocks.get(root)
+        if block is None:
+            return None
+        return signed_block_with_empty_proof(block)
+
+    return signed_block_for
+
+
 def make_signed_block(
     slot: Slot,
     proposer_index: ValidatorIndex,
@@ -27,15 +61,14 @@ def make_signed_block(
     state_root: Bytes32,
 ) -> SignedBlock:
     """Build a signed block with an empty proof for structural tests."""
-    return SignedBlock(
-        block=Block(
+    return signed_block_with_empty_proof(
+        Block(
             slot=slot,
             proposer_index=proposer_index,
             parent_root=parent_root,
             state_root=state_root,
             body=BlockBody(attestations=AggregatedAttestations(data=[])),
-        ),
-        proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
+        )
     )
 
 

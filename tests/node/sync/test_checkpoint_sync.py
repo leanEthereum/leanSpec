@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from consensus_testing import store_backed_signed_block_getter
 from lean_spec.node.api import ApiServer, ApiServerConfig
 from lean_spec.node.sync.checkpoint_sync import (
     FINALIZED_BLOCK_ENDPOINT,
@@ -17,10 +18,9 @@ from lean_spec.node.sync.checkpoint_sync import (
     verify_checkpoint_state,
 )
 from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, SignedBlock, Slot
+from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, Slot
 from lean_spec.spec.forks.lstar import State, Store
-from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate, Validators
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32
+from lean_spec.spec.forks.lstar.containers import Validators
 
 
 class _MockTransport(httpx.AsyncBaseTransport):
@@ -270,7 +270,10 @@ class TestFetchFinalizedBlock:
             pytest.raises(CheckpointSyncError) as exception_info,
         ):
             await fetch_finalized_block("http://example.com")
-        assert str(exception_info.value).startswith("Failed to fetch signed block: ")
+        assert (
+            str(exception_info.value) == "Failed to fetch signed block: "
+            "SignedBlock: first offset 1663106815 != fixed-part end 8"
+        )
 
 
 class TestCheckpointSyncClientServerIntegration:
@@ -278,13 +281,13 @@ class TestCheckpointSyncClientServerIntegration:
 
     async def test_client_fetches_and_deserializes_state(self, base_store: Store) -> None:
         """Client successfully fetches and deserializes state from server."""
-        config = ApiServerConfig(port=15058)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, store_getter=lambda: base_store)
 
         await server.start()
 
         try:
-            state = await fetch_finalized_state("http://127.0.0.1:15058", State)
+            state = await fetch_finalized_state(f"http://127.0.0.1:{server.bound_port}", State)
 
             assert state is not None
             assert state.slot == Slot(0)
@@ -297,27 +300,17 @@ class TestCheckpointSyncClientServerIntegration:
 
     async def test_client_fetches_and_deserializes_block(self, base_store: Store) -> None:
         """Client fetches the finalized block the server's signed-block source provides."""
-
-        def signed_block_for(root: Bytes32) -> SignedBlock | None:
-            block = base_store.blocks.get(root)
-            if block is None:
-                return None
-            return SignedBlock(
-                block=block,
-                proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
-            )
-
-        config = ApiServerConfig(port=15075)
+        config = ApiServerConfig(port=0)
         server = ApiServer(
             config=config,
             store_getter=lambda: base_store,
-            signed_block_getter=signed_block_for,
+            signed_block_getter=store_backed_signed_block_getter(base_store),
         )
 
         await server.start()
 
         try:
-            signed_block = await fetch_finalized_block("http://127.0.0.1:15075")
+            signed_block = await fetch_finalized_block(f"http://127.0.0.1:{server.bound_port}")
 
             assert hash_tree_root(signed_block.block) == base_store.latest_finalized.root
 
@@ -326,14 +319,18 @@ class TestCheckpointSyncClientServerIntegration:
 
     async def test_block_fetch_raises_when_source_unconfigured(self, base_store: Store) -> None:
         """A server without a signed-block source yields the 503 error path."""
-        config = ApiServerConfig(port=15076)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, store_getter=lambda: base_store)
 
         await server.start()
 
         try:
-            with pytest.raises(CheckpointSyncError, match="HTTP error 503"):
-                await fetch_finalized_block("http://127.0.0.1:15076")
+            with pytest.raises(CheckpointSyncError) as exception_info:
+                await fetch_finalized_block(f"http://127.0.0.1:{server.bound_port}")
+            assert (
+                str(exception_info.value)
+                == "HTTP error 503: 503: Signed block source not configured"
+            )
 
         finally:
             await server.aclose()

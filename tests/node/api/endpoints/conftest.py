@@ -8,15 +8,9 @@ from typing import Generator
 import httpx
 import pytest
 
-from consensus_testing import make_genesis_store
+from consensus_testing import make_genesis_store, store_backed_signed_block_getter
 from lean_spec.node.api import ApiServer, ApiServerConfig
-from lean_spec.spec.forks import SignedBlock
-from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32
 from tests.node.api.conftest import AggregatorRoleStub
-
-DEFAULT_PORT = 15099
-"""Port for the auto-started local server."""
 
 
 class _ServerThread(threading.Thread):
@@ -53,23 +47,11 @@ class _ServerThread(threading.Thread):
         """Create the API server with a test store and aggregator flag holder."""
         store = make_genesis_store(num_validators=3, observer=True, genesis_time=int(time.time()))
 
-        def signed_block_for(root: Bytes32) -> SignedBlock | None:
-            # The store retains only unsigned blocks.
-            # Wrap the anchor block with an empty proof, like a node
-            # serving a genesis anchor that no proposer ever signed.
-            block = store.blocks.get(root)
-            if block is None:
-                return None
-            return SignedBlock(
-                block=block,
-                proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
-            )
-
         config = ApiServerConfig(host="127.0.0.1", port=self.port)
         return ApiServer(
             config=config,
             store_getter=lambda: store,
-            signed_block_getter=signed_block_for,
+            signed_block_getter=store_backed_signed_block_getter(store),
             aggregator_role_control=AggregatorRoleStub(),
         )
 
@@ -128,14 +110,18 @@ def server_url(request: pytest.FixtureRequest) -> Generator[str, None, None]:
     if external_url:
         yield external_url
     else:
-        server_thread = _ServerThread(DEFAULT_PORT)
+        # Bind to port 0 so the OS assigns a free port.
+        # This avoids collisions with other tests under parallel runs.
+        server_thread = _ServerThread(0)
         server_thread.start()
         server_thread.ready.wait(timeout=10.0)
 
-        if server_thread.error:
+        if server_thread.error or server_thread.server is None:
             pytest.fail(f"Failed to start local server: {server_thread.error}")
 
-        url = f"http://127.0.0.1:{DEFAULT_PORT}"
+        started_server = server_thread.server
+        assert started_server is not None
+        url = f"http://127.0.0.1:{started_server.bound_port}"
 
         if not _wait_for_server(url):
             server_thread.stop()

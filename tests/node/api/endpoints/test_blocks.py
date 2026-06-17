@@ -2,7 +2,7 @@
 
 import httpx
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
+from consensus_testing import reconstruct_block_from_header, signed_block_with_empty_proof
 from lean_spec.spec.forks import SignedBlock
 from lean_spec.spec.forks.lstar import State
 
@@ -29,18 +29,13 @@ class TestFinalizedBlock:
         content_type = response.headers.get("content-type", "")
         assert "application/octet-stream" in content_type
 
-    def test_ssz_deserializes(self, server_url: str) -> None:
-        """Finalized block SSZ bytes deserialize to a valid SignedBlock object."""
-        response = get_finalized_block(server_url)
-        signed_block = SignedBlock.decode_bytes(response.content)
-        assert signed_block is not None
-
-    def test_state_root_matches_finalized_state(self, server_url: str) -> None:
+    def test_served_block_matches_block_rebuilt_from_finalized_state(self, server_url: str) -> None:
         """
-        Returned block's state root equals the finalized state's hash tree root.
+        Served signed block equals the block rebuilt from the finalized state.
 
-        Store creation from a checkpoint asserts exactly this.
-        If it fails, the (state, signed block) pair cannot bootstrap a store.
+        The endpoint serves the genesis anchor wrapped in an empty proof.
+        Rebuilding the block from the finalized state header reproduces it exactly.
+        A full-object match proves the (state, signed block) pair can bootstrap a store.
         """
         block_response = get_finalized_block(server_url)
         signed_block = SignedBlock.decode_bytes(block_response.content)
@@ -51,4 +46,4 @@ class TestFinalizedBlock:
         )
         state = State.decode_bytes(state_response.content)
 
-        assert signed_block.block.state_root == hash_tree_root(state)
+        assert signed_block == signed_block_with_empty_proof(reconstruct_block_from_header(state))

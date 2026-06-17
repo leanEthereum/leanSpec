@@ -95,6 +95,9 @@ class Anchor(StrictBaseModel):
         Raises:
             CheckpointSyncError: For every failure mode covering transport,
                 structural verification, and genesis-time mismatch.
+                Also raised when the fetched block and state do not pair.
+                That case is retryable: the source advanced finalization
+                between the two requests.
         """
         # The block comes first: it is small, so an incapable source fails
         # fast before the multi-megabyte state download starts.

@@ -61,6 +61,19 @@ class ApiServer:
         """Get the current Store instance."""
         return self.store_getter() if self.store_getter else None
 
+    @property
+    def bound_port(self) -> int:
+        """
+        TCP port the running server actually listens on.
+
+        Resolves the OS-assigned port when the configuration requested port 0.
+        """
+        if self._runner is None:
+            raise RuntimeError("API server is not running")
+        # The runner exposes one socket address per listening site.
+        # The port is the second element of the first address.
+        return int(self._runner.addresses[0][1])
+
     async def start(self) -> None:
         """Start the API server in the background."""
         app = web.Application()
@@ -96,7 +109,7 @@ class ApiServer:
         self._site = web.TCPSite(self._runner, self.config.host, self.config.port)
         await self._site.start()
 
-        logger.info("API server listening on %s:%d", self.config.host, self.config.port)
+        logger.info("API server listening on %s:%d", self.config.host, self.bound_port)
 
     async def run(self) -> None:
         """Run the API server until it is asked to stop."""

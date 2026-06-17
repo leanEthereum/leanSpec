@@ -6,24 +6,24 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from consensus_testing import make_genesis_state, reconstruct_block_from_header
+from consensus_testing import (
+    make_genesis_state,
+    reconstruct_block_from_header,
+    signed_block_with_empty_proof,
+)
 from lean_spec.node.anchor import Anchor
 from lean_spec.node.genesis import GenesisConfig
 from lean_spec.node.sync.checkpoint_sync import CheckpointSyncError
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SignedBlock, Slot
 from lean_spec.spec.forks.lstar import State
-from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32
+from lean_spec.spec.ssz import Bytes32
 
 
 def _signed_genesis_block(state: State) -> SignedBlock:
     """Wrap the genesis block matching a state with an empty proof."""
-    return SignedBlock(
-        block=reconstruct_block_from_header(state),
-        proof=MultiMessageAggregate(proof=ByteList512KiB(data=b"")),
-    )
+    return signed_block_with_empty_proof(reconstruct_block_from_header(state))
 
 
 class TestAnchorFromGenesis:
@@ -190,6 +190,8 @@ class TestAnchorFromCheckpoint:
         # The anchor is keyed by the fetched block's root, so the store's
         # finalized checkpoint matches the root the network agrees on.
         assert anchor.store.latest_finalized.root == hash_tree_root(signed_block.block)
+        # The fetched block, not a synthetic placeholder, is the one stored.
+        assert hash_tree_root(signed_block.block) in anchor.store.blocks
 
     async def test_block_state_pairing_mismatch_raises(self) -> None:
         """A block not matching the fetched state raises instead of falling back."""
@@ -212,7 +214,7 @@ class TestAnchorFromCheckpoint:
                 new_callable=AsyncMock,
                 return_value=mismatched_block,
             ),
-            pytest.raises(CheckpointSyncError, match="mismatch"),
+            pytest.raises(CheckpointSyncError) as exception_info,
         ):
             await Anchor.from_checkpoint(
                 url="http://localhost:5052",
@@ -220,3 +222,6 @@ class TestAnchorFromCheckpoint:
                 fork=LstarSpec(),
                 validator_index=None,
             )
+        assert str(exception_info.value) == (
+            "anchor block / state mismatch; source advanced finalization between requests, retry"
+        )
