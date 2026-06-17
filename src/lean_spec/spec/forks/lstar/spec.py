@@ -4,7 +4,21 @@ from typing import ClassVar
 
 from lean_spec.spec.forks.lstar._base import LstarSpecBase, LstarStore
 from lean_spec.spec.forks.lstar.aggregation import AggregationMixin
+
+# Proposer block-building strategy.
+# Two interchangeable algorithms share the build-block contract.
+# Exactly one is composed into the fork; swap the active import to switch.
+#
+# - The default round-based fixed-point selection.
+# - A tiered greedy scorer that ranks finalize over justify over build.
+#
+# Switching changes the two block-production test vectors, so regenerate after a swap:
+# uv run fill --fork=lstar --clean -n auto
 from lean_spec.spec.forks.lstar.block_production import BlockProductionMixin
+
+# from lean_spec.spec.forks.lstar.block_production_tiered import (
+#     TieredBlockProductionMixin as BlockProductionMixin,
+# )
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
