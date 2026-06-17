@@ -1,27 +1,25 @@
 """
-Validator registry for managing validator keys.
+Validator key loading.
 
-Loads validator keys from YAML configuration files compatible with ream and zeam.
+Two YAML files describe the keys.
 
-The registry supports two YAML files:
+- validators.yaml maps each node to the validator indices it controls:
 
-1. **validators.yaml** - Maps node IDs to validator indices:
+    lean_spec_0:
+    - 0
+    - 1
+    lean_spec_1:
+    - 2
 
-       lean_spec_0:
-       - 0
-       - 1
-       lean_spec_1:
-       - 2
+- validator-keys-manifest.yaml lists each validator's key metadata and file paths:
 
-2. **validator-keys-manifest.yaml** - Contains key metadata and file paths:
-
-       key_scheme: SIGTopLevelTargetSumLifetime32Dim64Base8
-       hash_function: Poseidon
-       num_validators: 3
-       validators:
-       - index: 0
-         public_key_hex: 0xe2a03c...
-         private_key_file: validator_0_secret_key.ssz
+    key_scheme: SIGTopLevelTargetSumLifetime32Dim64Base8
+    hash_function: Poseidon
+    num_validators: 3
+    validators:
+    - index: 0
+      public_key_hex: 0xe2a03c...
+      private_key_file: validator_0_secret_key.ssz
 """
 
 from __future__ import annotations
@@ -38,9 +36,6 @@ from lean_spec.spec.forks import ValidatorIndex, ValidatorIndices
 from lean_spec.spec.ssz import Bytes52
 
 logger = logging.getLogger(__name__)
-
-type NodeValidatorMapping = dict[str, list[int]]
-"""Mapping from node identifier to list of validator indices."""
 
 
 class ValidatorManifestEntry(BaseModel):
@@ -63,12 +58,7 @@ class ValidatorManifestEntry(BaseModel):
 
 
 class ValidatorManifest(BaseModel):
-    """
-    Key metadata from validator-keys-manifest.yaml.
-
-    Contains cryptographic scheme info and validator key paths.
-    This format matches ream's manifest structure.
-    """
+    """Key metadata for every validator, matching the ream manifest format."""
 
     key_scheme: str
     """Signature scheme identifier (e.g., SIGTopLevelTargetSumLifetime32Dim64Base8)."""
@@ -96,36 +86,9 @@ class ValidatorManifest(BaseModel):
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> ValidatorManifest:
-        """
-        Load manifest from YAML file.
-
-        Args:
-            path: Path to validator-keys-manifest.yaml.
-
-        Returns:
-            Validated ValidatorManifest instance.
-        """
+        """Load and validate a manifest from a YAML file."""
         with path.open() as f:
             return cls.model_validate(yaml.safe_load(f))
-
-
-def load_node_validator_mapping(path: Path) -> NodeValidatorMapping:
-    """
-    Load node-to-validator index mapping from validators.yaml.
-
-    Maps node identifiers to lists of validator indices they control.
-
-    Args:
-        path: Path to validators.yaml.
-
-    Returns:
-        Mapping from node ID to list of validator indices.
-        Empty dict if file is empty.
-    """
-    with path.open() as yaml_file:
-        parsed_yaml = yaml.safe_load(yaml_file)
-    # YAML returns None for empty file
-    return parsed_yaml or {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,9 +96,8 @@ class ValidatorEntry:
     """
     A single validator's key material.
 
-    Holds the index and both secret keys needed for signing.
-    Attestation and proposal keys are separate to allow independent
-    OTS signing within the same slot.
+    Attestation and proposal keys are separate.
+    This lets one validator sign both within the same slot without OTS conflict.
     """
 
     index: ValidatorIndex
@@ -150,38 +112,17 @@ class ValidatorEntry:
 
 @dataclass(slots=True)
 class ValidatorRegistry:
-    """
-    Registry of validator keys controlled by this node.
-
-    The registry holds secret keys for validators assigned to this node.
-    It provides lookup by validator index for signing operations.
-    """
+    """Signing keys for the validators this node controls."""
 
     _validators: dict[ValidatorIndex, ValidatorEntry] = field(default_factory=dict)
     """Map from validator index to entry."""
 
     def add(self, entry: ValidatorEntry) -> None:
-        """
-        Add or replace a validator entry in the registry.
-
-        Replaces any existing entry with the same index.
-        Used to persist updated key state after signing.
-
-        Args:
-            entry: Validator entry to add.
-        """
+        """Add a validator entry, replacing any existing entry with the same index."""
         self._validators[entry.index] = entry
 
     def get(self, index: ValidatorIndex) -> ValidatorEntry | None:
-        """
-        Get validator entry by index.
-
-        Args:
-            index: Validator index to look up.
-
-        Returns:
-            Validator entry if found, None otherwise.
-        """
+        """Return the validator entry for an index, or None if not controlled."""
         return self._validators.get(index)
 
     def __contains__(self, index: ValidatorIndex) -> bool:
@@ -189,24 +130,15 @@ class ValidatorRegistry:
         return index in self._validators
 
     def indices(self) -> ValidatorIndices:
-        """
-        Get all validator indices we control.
-
-        Returns:
-            ValidatorIndices collection.
-        """
+        """Return every validator index this node controls."""
         return ValidatorIndices(data=list(self._validators.keys()))
 
     def primary_index(self) -> ValidatorIndex | None:
         """
-        Get the primary validator index for store-level identity.
+        The store-level identity for this node, or None if it controls no validators.
 
-        Returns the first validator index in the registry.
-        With ATTESTATION_COMMITTEE_COUNT = 1, all validators share subnet 0,
-        so a single ID suffices for store-level operations.
-
-        Returns:
-            First validator index, or None if registry is empty.
+        Every validator shares the single attestation subnet.
+        So the first controlled index suffices for store-level operations.
         """
         if not self._validators:
             return None
@@ -219,24 +151,13 @@ class ValidatorRegistry:
     @classmethod
     def from_keys_directory(cls, node_id: str, base_directory: Path | str) -> ValidatorRegistry:
         """
-        Load a validator registry from the ream/zeam keystore layout.
+        Load a registry from the ream/zeam keystore layout.
 
-        Two files relative to the base directory:
+        Reads validators.yaml and hash-sig-keys/validator-keys-manifest.yaml,
+        both relative to the base directory.
 
-        - validators.yaml: maps each node to its validator indices.
-        - hash-sig-keys/validator-keys-manifest.yaml: lists each validator's
-          key metadata and SSZ file path.
-
-        Args:
-            node_id: Identifier looked up in the node-to-validator mapping.
-            base_directory: Directory containing the two layout files.
-
-        Returns:
-            Registry populated with the keys assigned to the node.
-
-        Raises:
-            FileNotFoundError: If the manifest file is missing.
-                A missing validators mapping is allowed and yields an empty registry.
+        A missing manifest raises FileNotFoundError.
+        A missing validators mapping is allowed and yields an empty registry.
         """
         base = Path(base_directory)
         manifest_path = base / "hash-sig-keys" / "validator-keys-manifest.yaml"
@@ -255,28 +176,13 @@ class ValidatorRegistry:
         validators_path: Path | str,
         manifest_path: Path | str,
     ) -> ValidatorRegistry:
-        """
-        Load validator registry from YAML configuration files.
-
-        Loading process:
-
-        1. Read validators.yaml to find indices assigned to this node
-        2. Read manifest to get key file paths
-        3. Load secret keys from SSZ files
-
-        Args:
-            node_id: Identifier for this node in validators.yaml.
-            validators_path: Path to validators.yaml.
-            manifest_path: Path to validator-keys-manifest.yaml.
-
-        Returns:
-            Registry populated with validator keys for this node.
-        """
+        """Load a registry for one node from its validators.yaml and manifest files."""
         validators_path = Path(validators_path)
         manifest_path = Path(manifest_path)
 
-        # Load node-to-validator mapping.
-        node_mapping = load_node_validator_mapping(validators_path)
+        # Read the node-to-validator mapping; an empty file parses to None.
+        with validators_path.open() as validators_file:
+            node_mapping = yaml.safe_load(validators_file) or {}
 
         # Get indices assigned to this node.
         assigned_indices = node_mapping.get(node_id, [])
@@ -308,7 +214,7 @@ class ValidatorRegistry:
                 )
                 continue
 
-            # Load attestation secret key from SSZ file.
+            # Decode the attestation key from its SSZ file.
             attestation_key_path = manifest_directory / manifest_entry.attestation_private_key_file
             try:
                 attestation_secret_key = SecretKey.decode_bytes(attestation_key_path.read_bytes())
@@ -321,7 +227,7 @@ class ValidatorRegistry:
                     f"Failed to load attestation key for validator {validator_index}: {exception}"
                 ) from exception
 
-            # Load proposal secret key from SSZ file.
+            # Decode the proposal key from its SSZ file.
             proposal_key_path = manifest_directory / manifest_entry.proposal_private_key_file
             try:
                 proposal_secret_key = SecretKey.decode_bytes(proposal_key_path.read_bytes())

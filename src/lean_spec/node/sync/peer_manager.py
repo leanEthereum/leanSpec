@@ -1,8 +1,4 @@
-"""
-Peer manager for sync operations.
-
-Tracks peer chain status and selects peers for block requests.
-"""
+"""Tracks peer chain status and selects peers for block download requests."""
 
 from __future__ import annotations
 
@@ -18,142 +14,134 @@ from lean_spec.node.sync.config import MAX_CONCURRENT_REQUESTS
 from lean_spec.spec.forks import Slot
 
 INITIAL_PEER_SCORE: Final = 100
-"""Starting score for newly added peers."""
+"""Starting score, mid-range so a new peer competes without dominating."""
 
 MIN_PEER_SCORE: Final = 0
-"""Minimum peer score (floor)."""
+"""Score floor."""
 
 MAX_PEER_SCORE: Final = 200
-"""Maximum peer score (ceiling)."""
+"""Score ceiling."""
 
 SCORE_SUCCESS_BONUS: Final = 10
-"""Score increase for a successful request."""
+"""Reward per successful request."""
 
 SCORE_FAILURE_PENALTY: Final = 20
-"""Score decrease for a failed request."""
+"""
+Penalty per failed request.
+
+Double the success reward, so a failing peer loses weight faster than it earns it.
+"""
 
 
 @dataclass(slots=True)
 class SyncPeer:
-    """
-    Peer information for sync operations.
-
-    Wraps PeerInfo with sync-specific state: chain status and request tracking.
-    """
+    """Sync-specific state for one peer: chain status and request tracking."""
 
     info: PeerInfo
-    """Base peer information from the networking layer."""
+    """Underlying record from the networking layer."""
 
     status: Status | None = None
-    """Chain status from the last Status message exchange."""
+    """Chain status from the last status exchange, or None if never exchanged."""
 
     requests_in_flight: int = 0
-    """Number of active requests to this peer."""
+    """Count of requests sent but not yet completed."""
 
     score: int = INITIAL_PEER_SCORE
-    """Peer reputation score. Higher means more reliable."""
+    """Reputation score; higher means more reliable."""
 
     @property
     def peer_id(self) -> PeerId:
-        """Get the peer's ID."""
+        """The peer's identifier."""
         return self.info.peer_id
 
     def is_connected(self) -> bool:
-        """Check if peer is currently connected."""
+        """Whether the peer is currently connected."""
         return self.info.is_connected()
 
     def is_available(self) -> bool:
-        """Check if peer can accept new requests."""
+        """Whether the peer is connected and below its in-flight request limit."""
         return self.is_connected() and self.requests_in_flight < MAX_CONCURRENT_REQUESTS
 
     def has_slot(self, slot: Slot) -> bool:
-        """Check if peer likely has data for given slot."""
+        """Whether the peer's last-reported head reaches the given slot."""
         return self.status is not None and self.status.head.slot >= slot
 
     def on_request_start(self) -> None:
-        """Mark that a request has been sent to this peer."""
+        """Record that a request was sent."""
         self.requests_in_flight += 1
 
-    def on_request_complete(self) -> None:
-        """Mark that a request has completed."""
+    def record_success(self) -> None:
+        """Release the in-flight slot and reward the peer for a completed request."""
         self.requests_in_flight = max(0, self.requests_in_flight - 1)
+        self.score = min(self.score + SCORE_SUCCESS_BONUS, MAX_PEER_SCORE)
+
+    def record_failure(self) -> None:
+        """Release the in-flight slot and penalize the peer for a failed request."""
+        self.requests_in_flight = max(0, self.requests_in_flight - 1)
+        self.score = max(self.score - SCORE_FAILURE_PENALTY, MIN_PEER_SCORE)
 
 
 @dataclass(slots=True)
 class PeerManager:
-    """
-    Manages peers for sync operations.
-
-    Tracks peer chain status and provides peer selection for block requests.
-    """
+    """Tracks sync peers and selects among them for block requests."""
 
     peers: dict[PeerId, SyncPeer] = field(default_factory=dict)
-    """Mapping of peer ID to SyncPeer. Public so callers can iterate or look up directly."""
+    """Tracked peers, keyed by identifier."""
 
     def __len__(self) -> int:
-        """Return the number of tracked peers."""
+        """Number of tracked peers."""
         return len(self.peers)
 
     def __contains__(self, peer_id: PeerId) -> bool:
-        """Check if a peer is being tracked."""
+        """Whether the peer is tracked."""
         return peer_id in self.peers
 
     def add_peer(self, peer_info: PeerInfo) -> SyncPeer:
-        """Register a new peer or update existing."""
-        if peer_info.peer_id in self.peers:
-            self.peers[peer_info.peer_id].info = peer_info
-            return self.peers[peer_info.peer_id]
+        """Register a new peer, or refresh the networking record of an existing one."""
+        existing_peer = self.peers.get(peer_info.peer_id)
+        if existing_peer is not None:
+            existing_peer.info = peer_info
+            return existing_peer
 
         sync_peer = SyncPeer(info=peer_info)
         self.peers[peer_info.peer_id] = sync_peer
         return sync_peer
 
     def remove_peer(self, peer_id: PeerId) -> SyncPeer | None:
-        """Remove a peer from tracking."""
+        """Stop tracking a peer, returning its state if it was present."""
         return self.peers.pop(peer_id, None)
 
     def update_status(self, peer_id: PeerId, status: Status) -> None:
-        """Update a peer's chain status."""
+        """Store a peer's latest chain status, unvalidated and used only for routing."""
         peer = self.peers.get(peer_id)
         if peer is not None:
             peer.status = status
 
     def select_peer_for_request(self, min_slot: Slot | None = None) -> SyncPeer | None:
         """
-        Select an available peer for a request using weighted random selection.
-
-        Peers with higher scores are more likely to be selected. This avoids
-        concentrating all load on one peer and naturally prefers reliable peers.
+        Pick an available peer at random, weighted by score to favor reliable peers.
 
         Args:
-            min_slot: Optional minimum slot the peer must have.
+            min_slot: If set, only peers whose head reaches this slot are considered.
 
         Returns:
-            An available SyncPeer, or None if no suitable peer exists.
+            A selected peer, or None if none are available.
         """
-        candidates: list[SyncPeer] = []
-        for peer in self.peers.values():
-            if not peer.is_available():
-                continue
-            if min_slot is not None and not peer.has_slot(min_slot):
-                continue
-            candidates.append(peer)
-
+        candidates = [
+            peer
+            for peer in self.peers.values()
+            if peer.is_available() and (min_slot is None or peer.has_slot(min_slot))
+        ]
         if not candidates:
             return None
 
-        # Weight by score. A score of 0 still gets weight 1 to avoid exclusion.
+        # Floor every weight at 1 so a zero-score peer still has a chance.
+        # Without this floor a single failure could exclude a peer forever.
         weights = [max(peer.score, 1) for peer in candidates]
         return random.choices(candidates, weights=weights, k=1)[0]
 
     def get_network_finalized_slot(self) -> Slot | None:
-        """
-        Determine network consensus finalized slot.
-
-        Returns the most-reported finalized slot among connected peers.
-        Ties resolve to the higher slot, never to peer insertion order.
-        This decision is consensus-adjacent, so it stays deterministic.
-        """
+        """Estimated sync target: the finalized slot most peers claim, not verified finality."""
         reported_finalized_slots = Counter(
             peer.status.finalized.slot
             for peer in self.peers.values()
@@ -161,24 +149,21 @@ class PeerManager:
         )
         if not reported_finalized_slots:
             return None
-        # Rank candidates by report count first, then by the slot itself.
-        # The higher slot wins an equal-count tie, so the result never depends
-        # on which peer connected first.
+        # Rank by report count first, then by the slot value.
+        # The higher slot wins an equal-count tie, keeping the result insertion-order independent.
         return max(
             reported_finalized_slots,
             key=lambda finalized_slot: (reported_finalized_slots[finalized_slot], finalized_slot),
         )
 
     def on_request_success(self, peer_id: PeerId) -> None:
-        """Record a successful request to a peer."""
+        """Close out a request as successful and raise the peer's score."""
         peer = self.peers.get(peer_id)
         if peer is not None:
-            peer.on_request_complete()
-            peer.score = min(peer.score + SCORE_SUCCESS_BONUS, MAX_PEER_SCORE)
+            peer.record_success()
 
     def on_request_failure(self, peer_id: PeerId) -> None:
-        """Record a failed request to a peer."""
+        """Close out a request as failed and lower the peer's score."""
         peer = self.peers.get(peer_id)
         if peer is not None:
-            peer.on_request_complete()
-            peer.score = max(peer.score - SCORE_FAILURE_PENALTY, MIN_PEER_SCORE)
+            peer.record_failure()

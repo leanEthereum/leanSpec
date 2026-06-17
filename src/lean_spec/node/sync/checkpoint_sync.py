@@ -1,20 +1,4 @@
-"""
-Checkpoint sync client for downloading finalized state from another node.
-
-Checkpoint sync enables fast startup by skipping historical block processing.
-Instead of replaying every block from genesis, a node downloads a recent
-finalized state and starts from there.
-
-Trust model:
-
-- The operator trusts the checkpoint source to provide valid finalized state
-- This trust is acceptable because finalized state has 2/3 validator support
-- The alternative (genesis sync) may take hours or days on mainnet
-
-The trade-off is trustlessness for speed. Most operators accept this because
-they already trust their checkpoint source (often their own infrastructure
-or a well-known provider).
-"""
+"""Checkpoint sync: download a recent finalized state instead of replaying from genesis."""
 
 from __future__ import annotations
 
@@ -23,16 +7,19 @@ from typing import Final
 
 import httpx
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, SignedBlock, State
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT: Final = 60.0
-"""HTTP request timeout in seconds. Large states may take time to transfer."""
+"""
+Seconds allowed per request.
+
+Finalized state runs tens of megabytes, so the transfer needs a wide window.
+"""
 
 FINALIZED_STATE_ENDPOINT: Final = "/lean/v0/states/finalized"
-"""API endpoint for fetching finalized state. Follows Beacon API conventions."""
+"""Beacon API path for the finalized state."""
 
 FINALIZED_BLOCK_ENDPOINT: Final = "/lean/v0/blocks/finalized"
 """API endpoint for fetching the signed block matching the finalized state.
@@ -44,69 +31,59 @@ Checkpoint sync requires the source to serve it.
 
 class CheckpointSyncError(Exception):
     """
-    Error during checkpoint sync.
+    Checkpoint state could not be fetched or failed validation.
 
-    Raised when the checkpoint state cannot be fetched or is invalid.
-    Callers should handle this by aborting startup (not falling back).
+    Startup aborts on this error rather than falling back to genesis sync.
     """
 
 
 async def fetch_finalized_state(url: str, state_class: type[State]) -> State:
     """
-    Fetch finalized state from a node via checkpoint sync.
-
-    Downloads the state as SSZ binary and deserializes it. SSZ format is
-    preferred over JSON because state objects are large (tens of MB) and
-    SSZ is more compact and faster to parse.
+    Download and decode finalized state from a node.
 
     Args:
-        url: Base URL of the node API (e.g., "http://localhost:5052").
-        state_class: State class used to decode SSZ bytes.
+        url: Base URL of the node API.
+        state_class: State class used to decode the SSZ bytes.
 
     Returns:
-        The finalized State object.
+        The decoded finalized state.
 
     Raises:
-        CheckpointSyncError: If the request fails or state is invalid.
+        CheckpointSyncError: The request failed or the bytes did not decode.
     """
     base_url = url.rstrip("/")
     full_url = f"{base_url}{FINALIZED_STATE_ENDPOINT}"
 
     logger.info("Fetching finalized state from %s", full_url)
 
-    # Request SSZ binary format.
-    #
-    # The Accept header tells the server we want raw bytes, not JSON.
-    # This is faster to transfer and parse than JSON encoding.
+    # Ask for raw SSZ bytes rather than JSON.
     headers = {"Accept": "application/octet-stream"}
 
     try:
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             response = await client.get(full_url, headers=headers)
             response.raise_for_status()
-
-            ssz_data = response.content
-            logger.info("Downloaded %d bytes of SSZ state data", len(ssz_data))
-
-            # Deserialize from SSZ bytes.
-            #
-            # This validates the byte stream matches the expected schema.
-            # Malformed data will raise an exception here.
-            state = state_class.decode_bytes(ssz_data)
-            logger.info("Deserialized state at slot %s", state.slot)
-
-            return state
-
-    except httpx.RequestError as exception:
-        raise CheckpointSyncError(
-            f"Network error while connecting to {exception.request.url}: {exception}"
-        ) from exception
+            ssz_bytes = response.content
     except httpx.HTTPStatusError as exception:
         raise CheckpointSyncError(
             f"HTTP error {exception.response.status_code}: {exception.response.text[:200]}"
         ) from exception
+    except httpx.RequestError as exception:
+        raise CheckpointSyncError(
+            f"Network error while connecting to {exception.request.url}: {exception}"
+        ) from exception
+
+    logger.info("Downloaded %d bytes of SSZ state data", len(ssz_bytes))
+
+    # SSZ decode validates the byte stream against the schema.
+    # A truncated download or a JSON body fails here.
+    try:
+        state = state_class.decode_bytes(ssz_bytes)
     except Exception as exception:
-        raise CheckpointSyncError(f"Failed to fetch state: {exception}") from exception
+        raise CheckpointSyncError(f"Corrupt checkpoint state payload: {exception}") from exception
+
+    logger.info("Deserialized state at slot %s", state.slot)
+    return state
 
 
 async def fetch_finalized_block(url: str) -> SignedBlock:
@@ -161,51 +138,28 @@ async def fetch_finalized_block(url: str) -> SignedBlock:
 
 def verify_checkpoint_state(state: State) -> bool:
     """
-    Verify that a checkpoint state is structurally valid.
-
-    This is defense-in-depth validation. We trust the checkpoint source,
-    but still verify basic invariants before using the state. These checks
-    catch corrupted downloads or misconfigured servers.
-
-    The checks are intentionally minimal:
-
-    - Slot is non-negative (sanity check)
-    - Validators exist (empty state is useless)
-    - Validator count within limits (prevents DoS)
-
-    We do NOT verify cryptographic proofs here. That would require
-    the full block history, defeating the purpose of checkpoint sync.
+    Check structural invariants on a downloaded checkpoint state.
 
     Args:
-        state: The state to verify.
+        state: The state to check.
 
     Returns:
-        True if valid, False otherwise.
+        True when every invariant holds, False otherwise.
     """
-    try:
-        # A state with no validators cannot produce blocks.
-        validator_count = len(state.validators)
-        if validator_count == 0:
-            logger.error("Invalid state: no validators")
-            return False
-
-        # Guard against oversized states that could exhaust memory.
-        if validator_count > int(VALIDATOR_REGISTRY_LIMIT):
-            logger.error(
-                "Invalid state: validator count %d exceeds registry limit %s",
-                validator_count,
-                VALIDATOR_REGISTRY_LIMIT,
-            )
-            return False
-
-        # Compute state root to verify SSZ deserialization worked correctly.
-        #
-        # If the data was corrupted, hashing will likely fail or produce
-        # an unexpected result. We log the root for debugging.
-        state_root = hash_tree_root(state)
-        logger.info("Checkpoint state verified: slot=%s, root=%s...", state.slot, state_root)
-        return True
-
-    except Exception as exception:
-        logger.error("State verification failed: %s", exception)
+    # A state with no validators cannot drive fork choice or produce blocks.
+    validator_count = len(state.validators)
+    if validator_count == 0:
+        logger.error("Invalid checkpoint state: no validators")
         return False
+
+    # Bound an attacker-supplied blob against the registry capacity.
+    if validator_count > int(VALIDATOR_REGISTRY_LIMIT):
+        logger.error(
+            "Invalid checkpoint state: validator count %d exceeds registry limit %s",
+            validator_count,
+            VALIDATOR_REGISTRY_LIMIT,
+        )
+        return False
+
+    logger.info("Checkpoint state verified at slot %s", state.slot)
+    return True

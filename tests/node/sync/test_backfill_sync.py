@@ -10,6 +10,7 @@ from consensus_testing import MockNetworkRequester, make_signed_block
 from lean_spec.node.networking import PeerId
 from lean_spec.node.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.node.networking.peer import PeerInfo
+from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.networking.types import ConnectionState
 from lean_spec.node.sync.backfill_sync import BackfillSync
 from lean_spec.node.sync.block_cache import BlockCache, PendingBlock
@@ -21,7 +22,7 @@ from lean_spec.node.sync.peer_manager import (
     PeerManager,
     SyncPeer,
 )
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.ssz import Bytes32, Uint64
 
 
@@ -62,9 +63,18 @@ def store_view() -> FakeStoreView:
 def backfill_system(
     peer_id: PeerId, network: MockNetworkRequester, store_view: FakeStoreView
 ) -> BackfillSync:
-    """Provide a complete BackfillSync with connected peer and StoreView."""
+    """Provide a complete BackfillSync with a connected, range-authoritative peer."""
     manager = PeerManager()
     manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))
+    # A status makes the peer authoritative for the slot ranges these tests fetch,
+    # so an empty range reply still counts as covering the range.
+    manager.update_status(
+        peer_id,
+        Status(
+            finalized=Checkpoint(root=Bytes32.zero(), slot=Slot(0)),
+            head=Checkpoint(root=Bytes32.zero(), slot=Slot(10_000)),
+        ),
+    )
     return BackfillSync(
         peer_manager=manager,
         block_cache=BlockCache(),
@@ -114,8 +124,8 @@ class TestBackfillChainResolution:
         """
         Backfill recursively fetches missing parents up the chain.
 
-        No store view is supplied, so backfill resolves missing parents purely
-        by root recursion (the gap-detection path requires a view).
+        The store view holds no roots and sits far above these slots, so backfill
+        resolves missing parents purely by root recursion with no gap range fills.
         """
         manager = PeerManager()
         manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))
@@ -123,6 +133,7 @@ class TestBackfillChainResolution:
             peer_manager=manager,
             block_cache=BlockCache(),
             network=network,
+            store_view=FakeStoreView(head=Slot(1000)),
         )
 
         grandparent = make_signed_block(
@@ -253,6 +264,7 @@ class TestBatchingAndPeerManagement:
             peer_manager=manager,
             block_cache=BlockCache(),
             network=network,
+            store_view=FakeStoreView(),
         )
 
         await backfill.fill_missing([Bytes32(b"\x01" * 32)])
@@ -290,6 +302,7 @@ class TestRequestTracking:
             peer_manager=manager,
             block_cache=BlockCache(),
             network=network,
+            store_view=FakeStoreView(),
         )
 
         # Request a root the network doesn't have (returns empty).
@@ -338,6 +351,7 @@ class TestRequestTracking:
             peer_manager=manager,
             block_cache=BlockCache(),
             network=network,
+            store_view=FakeStoreView(head=Slot(1000)),
         )
 
         block = make_signed_block(
@@ -482,8 +496,8 @@ class TestBackfillOptimizations:
 
         await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
 
-        # Watermark unchanged: a future call covering the same range can retry.
-        assert backfill_system._max_range_slot == Slot(0)
+        # Watermark unset: a future call covering the same range can retry.
+        assert backfill_system._max_range_slot is None
         # The peer recorded a failure (score decreased).
         peer = backfill_system.peer_manager.peers.get(peer_id)
         assert peer is not None
@@ -493,3 +507,30 @@ class TestBackfillOptimizations:
         network.should_fail = False
         await backfill_system.fill_range(start_slot=Slot(1), count=Uint64(10))
         assert backfill_system._max_range_slot == Slot(10)
+
+    async def test_empty_range_from_unclaiming_peer_is_retryable(
+        self,
+        peer_id: PeerId,
+        network: MockNetworkRequester,
+    ) -> None:
+        """An empty reply from a peer that does not claim the range leaves it retryable."""
+        manager = PeerManager()
+        # No status: the peer does not claim any slot range.
+        manager.add_peer(PeerInfo(peer_id=peer_id, state=ConnectionState.CONNECTED))
+        backfill = BackfillSync(
+            peer_manager=manager,
+            block_cache=BlockCache(),
+            network=network,
+            store_view=FakeStoreView(),
+        )
+
+        # The network has no blocks for this range, so it replies empty.
+        await backfill.fill_range(start_slot=Slot(1), count=Uint64(10))
+        assert backfill._max_range_slot is None
+
+        # A second call re-requests the same range rather than skipping it.
+        await backfill.fill_range(start_slot=Slot(1), count=Uint64(10))
+        assert network.range_request_log == [
+            (peer_id, Slot(1), Uint64(10)),
+            (peer_id, Slot(1), Uint64(10)),
+        ]

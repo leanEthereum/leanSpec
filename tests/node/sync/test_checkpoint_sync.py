@@ -87,23 +87,6 @@ class TestStateVerification:
         is_valid_checkpoint = verify_checkpoint_state(mock_state)
         assert is_valid_checkpoint is False
 
-    async def test_exception_during_hash_tree_root_returns_false(
-        self, genesis_state: State
-    ) -> None:
-        """
-        Verification never crashes the caller on unexpected hashing errors.
-
-        Any exception from the state root computation is caught and treated
-        as a verification failure so startup can abort cleanly.
-        """
-        with patch(
-            "lean_spec.node.sync.checkpoint_sync.hash_tree_root",
-            side_effect=RuntimeError("hash error"),
-        ):
-            is_valid_checkpoint = verify_checkpoint_state(genesis_state)
-
-        assert is_valid_checkpoint is False
-
 
 class TestFetchFinalizedState:
     """
@@ -187,7 +170,9 @@ class TestFetchFinalizedState:
             pytest.raises(CheckpointSyncError) as exception_info,
         ):
             await fetch_finalized_state("http://example.com", State)
-        assert str(exception_info.value) == "Failed to fetch state: Slot: expected 8 bytes, got 2"
+        assert str(exception_info.value) == (
+            "Corrupt checkpoint state payload: Slot: expected 8 bytes, got 2"
+        )
 
     async def test_trailing_slash_stripped_from_url(self) -> None:
         """

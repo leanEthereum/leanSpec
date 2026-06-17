@@ -14,7 +14,6 @@ from lean_spec.node.validator.registry import (
     ValidatorEntry,
     ValidatorManifest,
     ValidatorManifestEntry,
-    load_node_validator_mapping,
 )
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.ssz import Bytes52
@@ -181,28 +180,6 @@ class TestValidatorManifest:
                 proposal_private_key_file="prop_key_1.ssz",
             ),
         ]
-
-
-class TestLoadNodeValidatorMapping:
-    """Tests for loading node-to-validator index mapping from YAML."""
-
-    def test_normal_loading_multiple_nodes(self, tmp_path: Path) -> None:
-        """Multiple node entries are loaded into the correct structure."""
-        validators_file = tmp_path / "validators.yaml"
-        validators_file.write_text(yaml.dump({"node_0": [0, 1], "node_1": [2, 3], "node_2": [4]}))
-
-        mapping = load_node_validator_mapping(validators_file)
-
-        assert mapping == {"node_0": [0, 1], "node_1": [2, 3], "node_2": [4]}
-
-    def test_empty_file_returns_empty_dict(self, tmp_path: Path) -> None:
-        """An empty YAML file (parses to None) returns an empty dict."""
-        validators_file = tmp_path / "validators.yaml"
-        validators_file.write_text("")
-
-        mapping = load_node_validator_mapping(validators_file)
-
-        assert mapping == {}
 
 
 class TestValidatorRegistry:

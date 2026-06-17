@@ -1,52 +1,11 @@
-"""
-Head synchronization via gossip.
-
-Once a node is close to the chain head, it primarily receives new blocks via
-gossip rather than explicit requests. HeadSync manages this event-driven mode
-of operation.
-
-How It Works
-
-1. **Gossip arrives**: A new block is received via gossip subscription
-2. **Check parent**: Does the parent exist in our Store?
-3. **If yes**: Process immediately and check for cached descendants
-4. **If no**: Cache the block and trigger backfill for the parent
-
-This is more efficient than polling because:
-- Blocks arrive as soon as they are produced
-- No wasted requests for non-existent blocks
-- Natural handling of out-of-order arrivals
-
-Descendant Processing
-
-When a parent block arrives (either via gossip or backfill), there may be
-cached children waiting for it:
-
-1. Process the newly arrived block
-2. Check the cache for blocks whose parent is this block
-3. Process those children (recursively)
-4. Continue until no more descendants are found
-
-This ensures that chains of blocks are processed efficiently once their
-common ancestor arrives.
-
-Error Handling
-
-Block processing can fail for various reasons:
-
-- Invalid signatures
-- State transition failures
-- Inconsistent state roots
-
-HeadSync reports these failures to the PeerManager for scoring but does not
-crash. A single invalid block should not halt synchronization.
-"""
+"""Head synchronization via gossip: process blocks whose parent is known, cache the rest."""
 
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.sync.backfill_sync import BackfillSync
@@ -59,50 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
-class HeadSyncResult:
-    """
-    Result of processing a gossip block.
-
-    The SyncService only branches on the processed flag.
-    """
-
-    processed: bool
-    """True if the block was immediately integrated into the Store."""
-
-
-@dataclass(slots=True)
 class HeadSync:
-    """
-    Event-driven head following via gossip.
-
-    HeadSync is the reactive component of the sync service. It processes
-    blocks as they arrive from gossip, integrating them into the Store when
-    possible or caching them for later processing.
-
-    How It Works
-
-    When a gossip block arrives:
-
-    1. **Check Store**: Is the parent already in our Store?
-       - Yes: Process immediately
-       - No: Cache the block and trigger backfill
-
-    2. **If processed**: Check cache for descendants
-       - Process any cached blocks whose parent is now known
-       - Repeat recursively
-
-    3. **Return result**: Report what happened for state machine decisions
-
-    Integration
-
-    HeadSync receives blocks but does not own the Store. The SyncService must:
-
-    - Forward gossip blocks when they arrive
-    - Apply the returned Store updates
-    - Use the result to update sync state
-
-    This separation ensures the Store remains the single source of truth.
-    """
+    """Event-driven head follower: integrates gossip blocks or caches them for later."""
 
     block_cache: BlockCache
     """Cache for blocks awaiting parent resolution."""
@@ -111,268 +28,91 @@ class HeadSync:
     """Backfill syncer for fetching missing parents."""
 
     process_block: Callable[[Store, SignedBlock], Store]
-    """
-    Function to process a block into the Store.
-
-    This is injected to allow flexibility in block processing.
-
-    The default implementation uses the store's block processing, but tests can inject mocks.
-
-    Signature: (store, block) -> new_store
-    Raises: Exception on validation failure
-    """
-
-    _processing: set[Bytes32] = field(default_factory=set)
-    """Blocks currently being processed (to avoid reentrant processing)."""
+    """Integrates a block into the store and returns the new store."""
 
     async def on_gossip_block(
         self,
         block: SignedBlock,
         peer_id: PeerId | None,
         store: Store,
-    ) -> tuple[HeadSyncResult, Store]:
+    ) -> Store | None:
         """
         Handle a block received via gossip.
-
-        This is the main entry point for gossip blocks. It determines whether
-        the block can be processed immediately or must be cached.
 
         Args:
             block: The signed block received via gossip.
             peer_id: The peer that sent the block.
-            store: Current forkchoice store.
+            store: Current fork-choice store.
 
         Returns:
-            Tuple of (result describing what happened, updated store).
-            The store is unchanged if the block was cached.
+            The updated store, or None if the block was cached instead of processed.
         """
         block_inner = block.block
         block_root = hash_tree_root(block_inner)
-        parent_root = block_inner.parent_root
-        slot = block_inner.slot
 
-        logger.debug(
-            "on_gossip_block: slot=%s root=%s parent=%s",
-            slot,
-            block_root.hex(),
-            parent_root.hex(),
-        )
-
-        # Skip if already processing (reentrant call).
-        if block_root in self._processing:
-            logger.debug("on_gossip_block: skipping - already processing")
-            return HeadSyncResult(
-                processed=False,
-            ), store
-
-        # Skip if already in store (duplicate).
+        # Skip a duplicate already in the store.
         if block_root in store.blocks:
-            logger.debug("on_gossip_block: skipping - already in store")
-            return HeadSyncResult(
-                processed=False,
-            ), store
+            return None
 
-        # Check if parent exists in store.
-        if parent_root in store.blocks:
-            # Parent known. Process immediately.
-            logger.debug("on_gossip_block: parent found, processing")
-            return await self._process_block_with_descendants(
-                block=block,
-                store=store,
+        # Parent missing: cache the block, backfill the gap, and leave the store untouched.
+        if block_inner.parent_root not in store.blocks:
+            # Reject blocks at or below the finalized slot.
+            #
+            # Such a block cannot be canonical.
+            # It is most likely stale or replayed gossip from a misbehaving peer.
+            # Dropping it here also stops the gap math below from underflowing.
+            finalized_slot = store.latest_finalized.slot
+            if block_inner.slot <= finalized_slot:
+                logger.debug(
+                    "Ignoring gossip block at slot %s: at or below finalized (%s)",
+                    block_inner.slot,
+                    finalized_slot,
+                )
+                return None
+
+            cached_block = self.block_cache.add(block=block, peer=peer_id)
+            self.block_cache.mark_orphan(cached_block.root)
+
+            # A multi-slot gap above head is fetched as one contiguous range.
+            # A smaller gap, or alt-fork gossip at or below head, recurses by parent root instead.
+            head_slot = store.blocks[store.head].slot
+            range_fetched = await self.backfill.fill_gap_above_head(
+                target_slot=block_inner.slot,
+                head_slot=head_slot,
             )
+            if not range_fetched:
+                await self.backfill.fill_missing([block_inner.parent_root])
+            return None
 
-        # Parent unknown. Cache and trigger backfill.
-        logger.debug(
-            "on_gossip_block: parent NOT found, caching. store has %d blocks",
-            len(store.blocks),
-        )
-        return await self._cache_and_backfill(
-            block=block,
-            peer_id=peer_id,
-            store=store,
-        )
-
-    async def _process_block_with_descendants(
-        self,
-        block: SignedBlock,
-        store: Store,
-    ) -> tuple[HeadSyncResult, Store]:
-        """
-        Process a block and any cached descendants.
-
-        When a block is processed, there may be cached blocks waiting for it.
-        This method implements the recursive descendant processing pattern.
-
-        Args:
-            block: Block to process.
-            store: Current store.
-
-        Returns:
-            Result and updated store.
-        """
-        block_root = hash_tree_root(block.block)
-        slot = block.block.slot
-        self._processing.add(block_root)
-
+        # Parent known: process the block. A failure leaves the store untouched.
         try:
-            # Process the main block.
-            try:
-                logger.debug("_process_block: calling process_block for slot %s", slot)
-                store = self.process_block(store, block)
-                logger.debug(
-                    "_process_block_with_descendants: SUCCESS for slot %s, store now has %d blocks",
-                    slot,
-                    len(store.blocks),
-                )
-            except Exception as exception:
-                logger.debug(
-                    "_process_block_with_descendants: FAILED for slot %s: %s",
-                    slot,
-                    exception,
-                )
-                return HeadSyncResult(
-                    processed=False,
-                ), store
-
-            # Process cached descendants.
-            _, store = await self._process_cached_descendants(
-                parent_root=block_root,
-                store=store,
+            store = self.process_block(store, block)
+        except Exception as exception:
+            logger.debug(
+                "Gossip block processing failed at slot %s: %s", block_inner.slot, exception
             )
+            return None
+        self.block_cache.remove(block_root)
 
-            return HeadSyncResult(
-                processed=True,
-            ), store
-
-        finally:
-            self._processing.discard(block_root)
-
-    async def _process_cached_descendants(
-        self,
-        parent_root: Bytes32,
-        store: Store,
-    ) -> tuple[int, Store]:
-        """
-        Process any cached blocks that descend from the given parent.
-
-        Processing pattern:
-        - Find children in cache whose parent is `parent_root`
-        - Process each child
-        - Recursively process their descendants
-        - Remove processed blocks from cache
-
-        Args:
-            parent_root: Root of the parent block just processed.
-            store: Current store (may be updated during processing).
-
-        Returns:
-            Tuple of (descendants successfully processed, updated store).
-        """
-        processed_count = 0
-
-        # Get children from cache.
-        children = self.block_cache.get_children(parent_root)
-
-        for child in children:
-            child_root = child.root
-
-            # Skip if already processing or in store.
-            if child_root in self._processing:
-                continue
-            if child_root in store.blocks:
-                self.block_cache.remove(child_root)
-                continue
-
-            self._processing.add(child_root)
-
-            try:
-                # Process the child block.
+        # Drain the chain of cached descendants this block unlocks, oldest slot first.
+        # A deque keeps this iterative, so a long chain cannot exhaust the stack.
+        unlocked_parents: deque[Bytes32] = deque([block_root])
+        while unlocked_parents:
+            for child in self.block_cache.get_children(unlocked_parents.popleft()):
+                # A child may already have landed via another path.
+                if child.root in store.blocks:
+                    self.block_cache.remove(child.root)
+                    continue
                 try:
                     store = self.process_block(store, child.block)
-                    processed_count += 1
-
-                    # Remove from cache after successful processing.
-                    self.block_cache.remove(child_root)
-
-                    # Recursively process this child's descendants.
-                    descendant_count, store = await self._process_cached_descendants(
-                        parent_root=child_root,
-                        store=store,
-                    )
-                    processed_count += descendant_count
-
                 except Exception as exception:
-                    # Processing failed. Leave in cache for retry or discard.
-                    # Do not cascade the error; continue with other children.
-                    logger.debug("Failed to process cached descendant: %s", exception)
+                    # One bad block must not abort its siblings; drop it and keep draining.
+                    # The failure is deterministic, so it would not succeed on retry.
+                    logger.debug(
+                        "Gossip block processing failed at slot %s: %s", child.slot, exception
+                    )
+                    continue
+                self.block_cache.remove(child.root)
+                unlocked_parents.append(child.root)
 
-            finally:
-                self._processing.discard(child_root)
-
-        return processed_count, store
-
-    async def _cache_and_backfill(
-        self,
-        block: SignedBlock,
-        peer_id: PeerId | None,
-        store: Store,
-    ) -> tuple[HeadSyncResult, Store]:
-        """
-        Cache a block and trigger backfill for its parent.
-
-        Called when a block's parent is not in the store. The block is
-        cached and backfill is initiated to fetch the missing parent.
-
-        Args:
-            block: Block to cache.
-            peer_id: Peer that sent the block.
-            store: Current store (unchanged).
-
-        Returns:
-            Result indicating the block was cached, and unchanged store.
-        """
-        block_inner = block.block
-        parent_root = block_inner.parent_root
-
-        # Reject blocks at or below the finalized slot.
-        #
-        # Anything at or below finalized cannot be canonical and is most likely
-        # a stale or replayed gossip from a misbehaving peer. Dropping it here
-        # also prevents the gap math below from underflowing.
-        finalized_slot = store.latest_finalized.slot
-        if block_inner.slot <= finalized_slot:
-            logger.debug(
-                "Ignoring gossip block at slot %s: at or below finalized (%s)",
-                block_inner.slot,
-                finalized_slot,
-            )
-            return HeadSyncResult(
-                processed=False,
-            ), store
-
-        # Add to cache.
-        pending = self.block_cache.add(block=block, peer=peer_id)
-
-        # Mark as orphan.
-        self.block_cache.mark_orphan(pending.root)
-
-        # Trigger backfill for the missing parent(s).
-        #
-        # When the new block sits several slots above the current head, fetch
-        # the gap as a contiguous range rather than recursing parent-by-parent.
-        #
-        # An empty gap means either a single-slot gap above head (direct parent
-        # missing) or alt-fork gossip at a slot at or below head.
-        # Both share an ancestor with the canonical chain, so recurse by parent
-        # root only; a range request would just refetch known slots.
-        head_slot = store.blocks[store.head].slot
-        range_fetched = await self.backfill.fill_gap_above_head(
-            target_slot=block_inner.slot,
-            head_slot=head_slot,
-        )
-        if not range_fetched:
-            await self.backfill.fill_missing([parent_root])
-
-        return HeadSyncResult(
-            processed=False,
-        ), store
+        return store

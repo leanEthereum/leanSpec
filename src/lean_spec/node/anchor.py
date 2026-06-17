@@ -125,13 +125,12 @@ class Anchor(StrictBaseModel):
 
         # The protocol return type is structural, but only one concrete store ships.
         store = cast(Store, fork.create_store(state, signed_block.block, validator_index))
-        head_slot = store.blocks[store.head].slot
 
         return cls(
             validators=state.validators,
             store=store,
             initial_status=Status(
                 finalized=store.latest_finalized,
-                head=Checkpoint(root=store.head, slot=head_slot),
+                head=Checkpoint(root=store.head, slot=store.blocks[store.head].slot),
             ),
         )

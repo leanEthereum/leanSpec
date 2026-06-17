@@ -1,41 +1,12 @@
-"""
-Validator service for producing blocks and attestations.
-
-The Validator Problem
----------------------
-Ethereum consensus requires active participation from validators.
-
-At specific intervals within each slot, validators must:
-- Interval 0: Propose blocks (if scheduled)
-- Interval 1: Create attestations (broadcast to subnet topics only)
-
-This service drives validator duties by monitoring the slot clock
-and triggering production at the appropriate intervals.
-
-Dual-Key Signing Design
-------------------------
-Each validator has two XMSS key pairs:
-
-- **Proposal key**: Signs the block root (hash_tree_root(block)) during proposal
-- **Attestation key**: Signs gossip attestations for aggregation
-
-Proposers produce two signatures per slot:
-
-1. Interval 0: Proposer signature over the block root (proposal key)
-2. Interval 1: Gossip attestation like all other validators (attestation key)
-
-These use independent keys, so OTS constraints do not conflict.
-The proposer's attestation is not special — it flows through the normal
-gossip/aggregation pipeline and gets included in a future block.
-"""
+"""Validator duty execution off the slot clock."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass, field, replace
+from typing import Final, Literal
 
 from lean_spec.node.chain.clock import SlotClock
 from lean_spec.node.sync import SyncService
@@ -49,7 +20,6 @@ from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.crypto.xmss.containers import PublicKey, Signature
 from lean_spec.spec.forks import (
-    AttestationData,
     Block,
     Interval,
     LstarSpec,
@@ -67,6 +37,9 @@ type BlockPublisher = Callable[[SignedBlock], Awaitable[None]]
 """Callback for publishing signed blocks."""
 type AttestationPublisher = Callable[[SignedAttestation], Awaitable[None]]
 """Callback for publishing produced attestations."""
+
+ATTESTED_SLOT_RETENTION: Final[int] = 4
+"""Slots of attestation dedup history to keep; older slots can no longer be attested."""
 
 
 @dataclass(slots=True)
@@ -88,19 +61,13 @@ class ValidatorService:
     """Registry of validators we control."""
 
     spec: LstarSpec = field(default_factory=LstarSpec)
-    """Fork spec driving consensus methods. Default lets tests skip wiring."""
+    """Fork spec driving consensus methods."""
 
     on_block: BlockPublisher | None = field(default=None)
-    """Callback invoked when a block is produced.
-
-    Defaults to None so tests and offline runs do not need a publisher wired.
-    """
+    """Callback to publish a produced block, or None in tests and offline runs."""
 
     on_attestation: AttestationPublisher | None = field(default=None)
-    """Callback invoked when an attestation is produced.
-
-    Defaults to None so tests and offline runs do not need a publisher wired.
-    """
+    """Callback to publish a produced attestation, or None in tests and offline runs."""
 
     _running: bool = field(default=False, repr=False)
     """Whether the service is running."""
@@ -119,17 +86,10 @@ class ValidatorService:
 
     async def run(self) -> None:
         """
-        Main loop - check duties every interval.
+        Check and run duties once per interval until stopped.
 
-        The loop:
-        1. Sleeps until the next interval boundary
-        2. Checks current interval within the slot
-        3. Triggers appropriate duties
-        4. Repeats until stopped
-
-        NOTE: We track the last handled interval to avoid skipping intervals.
-        If duty processing takes time and we end up in a new interval, we
-        handle that interval immediately instead of sleeping past it.
+        Track the last handled interval so a slow duty does not skip one.
+        If processing spills into a new interval, handle it at once rather than sleeping past it.
         """
         self._running = True
         last_handled_total_interval: Interval | None = None
@@ -147,7 +107,7 @@ class ValidatorService:
                 await self.clock.sleep_until_next_interval()
                 total_interval = self.clock.total_intervals()
 
-            # Skip if we have no validators to manage.
+            # Nothing to do without validators to manage.
             if len(self.registry) == 0:
                 last_handled_total_interval = total_interval
                 continue
@@ -160,77 +120,29 @@ class ValidatorService:
             slot = self.clock.current_slot()
             interval = self.clock.current_interval()
 
-            my_indices = list(self.registry.indices())
-            logger.debug(
-                "ValidatorService: slot=%d interval=%d total_interval=%d my_indices=%s",
-                slot,
-                interval,
-                total_interval,
-                my_indices,
-            )
-
             if interval == Interval(0):
-                # Block production interval.
-                #
-                # Check if any of our validators is the proposer.
-                logger.debug("ValidatorService: checking block production for slot %d", slot)
                 if self._is_synced_for_duties(slot, "block"):
                     await self._maybe_produce_block(slot)
-                logger.debug("ValidatorService: done block production check for slot %d", slot)
-
-                # Re-fetch interval after block production.
-                #
-                # Block production can take time (signing, network calls, etc.).
-                # If we've moved past interval 0, we should check attestation production
-                # in this same iteration rather than sleeping and missing it.
+                # Block production can outlast interval 0.
+                # Re-read so a slow proposal still attests this slot.
                 interval = self.clock.current_interval()
 
-            # Attestation check - produce if we haven't attested for this slot yet.
-            #
-            # Non-proposers attest at interval 1. Proposers bundle their attestation
-            # in the block (interval 0). But if we missed interval 1 due to timing,
-            # we should still attest as soon as we can within the same slot.
-            #
-            # We track attested slots to prevent duplicate attestations.
-            logger.debug(
-                "ValidatorService: attestation check interval=%d slot=%d attested=%s",
-                interval,
-                slot,
-                slot in self._attested_slots,
-            )
-            # Decide whether this iteration owes an attestation.
-            #
-            # Two conditions:
-            #
-            # - Interval has reached the attestation slot (>= 1).
-            # - This slot has not already been attested.
-            #
-            # Why split eligibility from the sync gate: the skip counter
-            # must only tick on real misses, never on wrong-interval
-            # iterations.
-            needs_attestation = interval >= Interval(1) and slot not in self._attested_slots
-            if needs_attestation:
-                logger.debug(
-                    "ValidatorService: producing attestations for slot %d (interval %d)",
-                    slot,
-                    interval,
-                )
-                # Apply the sync gate.
-                #
-                # Invariant: a gated slot stays out of the attested set.
-                # If the node catches up before the slot ends, the next
-                # iteration retries the duty.
-                if self._is_synced_for_duties(slot, "attestation"):
-                    await self._produce_attestations(slot)
-                    logger.debug("ValidatorService: done producing attestations for slot %d", slot)
-                    self._attested_slots.add(slot)
+            # Attest once per slot. A gated slot stays unattested and retries on a later pass.
+            if (
+                interval >= Interval(1)
+                and slot not in self._attested_slots
+                and self._is_synced_for_duties(slot, "attestation")
+            ):
+                await self._produce_attestations(slot)
+                self._attested_slots.add(slot)
 
-                    # Prune old entries to bound memory.
-                    #
-                    # Keep only slots at or after (current slot - 4).
-                    # Older slots are no longer attestable.
-                    prune_threshold = Slot(max(0, int(slot) - 4))
-                    self._attested_slots = {s for s in self._attested_slots if s >= prune_threshold}
+                # Drop slots too old to attest again, bounding memory.
+                prune_threshold = Slot(max(0, int(slot) - ATTESTED_SLOT_RETENTION))
+                self._attested_slots = {
+                    attested_slot
+                    for attested_slot in self._attested_slots
+                    if attested_slot >= prune_threshold
+                }
 
             # Intervals 2-4 have no additional validator duties.
 
@@ -239,24 +151,9 @@ class ValidatorService:
             # Use the current total interval, not the one from loop start.
             # This prevents re-handling intervals we've already covered.
             last_handled_total_interval = self.clock.total_intervals()
-            logger.debug(
-                "ValidatorService: end of iteration, last_handled=%d, sleeping...",
-                last_handled_total_interval,
-            )
 
     async def _maybe_produce_block(self, slot: Slot) -> None:
-        """
-        Produce a block if we are the proposer for this slot.
-
-        Checks the proposer schedule against our validator registry.
-        If one of our validators should propose, produces and emits the block.
-
-        The proposer signs the block root with the proposal key.
-        Attestation happens separately at interval 1 using the attestation key.
-
-        Args:
-            slot: Current slot number.
-        """
+        """Produce and emit a block if one of our validators is this slot's proposer."""
         store = self.sync_service.store
         head_state = store.states.get(store.head)
         if head_state is None:
@@ -268,89 +165,67 @@ class ValidatorService:
             logger.debug("Block production: no validators in state for slot %d", slot)
             return
 
-        my_indices = list(self.registry.indices())
+        # Only one validator proposes per slot; act only if it is one of ours.
         expected_proposer = ValidatorIndex.proposer_for_slot(slot, num_validators)
         logger.debug(
             "Block production check: slot=%d num_validators=%d expected_proposer=%d my_indices=%s",
             slot,
             num_validators,
             expected_proposer,
-            my_indices,
+            list(self.registry.indices()),
         )
+        if expected_proposer not in self.registry:
+            return
+        validator_index = expected_proposer
 
-        # Check each validator we control.
-        #
-        # Only one validator can be the proposer per slot.
-        for validator_index in self.registry.indices():
-            if validator_index != ValidatorIndex.proposer_for_slot(slot, num_validators):
-                continue
+        try:
+            new_store, block, signatures = self.spec.produce_block_with_signatures(
+                store,
+                slot=slot,
+                validator_index=validator_index,
+            )
 
-            # We are the proposer for this slot.
-            try:
-                new_store, block, signatures = self.spec.produce_block_with_signatures(
-                    store,
-                    slot=slot,
-                    validator_index=validator_index,
-                )
+            # Diagnostic: log parent details so we can verify interop tests.
+            parent_block = store.blocks.get(block.parent_root)
+            parent_slot = parent_block.slot if parent_block else "UNKNOWN"
+            parent_proposer = parent_block.proposer_index if parent_block else "?"
+            logger.info(
+                "Produced block slot=%d proposer=%d parent_root=%s "
+                "parent_slot=%s parent_proposer=%s",
+                slot,
+                validator_index,
+                block.parent_root.hex()[:16],
+                parent_slot,
+                parent_proposer,
+            )
 
-                # Diagnostic: log parent details so we can verify interop tests.
-                parent_block = store.blocks.get(block.parent_root)
-                parent_slot = parent_block.slot if parent_block else "UNKNOWN"
-                parent_proposer = parent_block.proposer_index if parent_block else "?"
-                logger.info(
-                    "Produced block slot=%d proposer=%d parent_root=%s "
-                    "parent_slot=%s parent_proposer=%s",
-                    slot,
-                    validator_index,
-                    block.parent_root.hex()[:16],
-                    parent_slot,
-                    parent_proposer,
-                )
+            self.sync_service.store = new_store
 
-                self.sync_service.store = new_store
+            # Sign the block root, then merge that signature with the attestation proofs.
+            signed_block = self._sign_block(block, validator_index, signatures)
 
-                # Sign the block: proposer_signature covers the block root,
-                # and is merged with attestation proofs into one block proof.
-                signed_block = self._sign_block(block, validator_index, signatures)
+            self._blocks_produced += 1
 
-                self._blocks_produced += 1
+            if self.on_block is not None:
+                await self.on_block(signed_block)
 
-                # Emit the block for network propagation.
-                if self.on_block is not None:
-                    await self.on_block(signed_block)
-
-            except AssertionError as exception:
-                # Proposer validation failed.
-                #
-                # This can happen during slot boundary transitions.
-                # Block production is skipped; attestation still happens at interval 1.
-                logger.debug(
-                    "Block production skipped for validator %d at slot %d: %s",
-                    validator_index,
-                    slot,
-                    exception,
-                )
-
-            # Only one proposer per slot.
-            break
+        except AssertionError as exception:
+            # Slot-boundary races can fail proposer validation.
+            # Skip block production; the attestation at interval 1 still happens.
+            logger.debug(
+                "Block production skipped for validator %d at slot %d: %s",
+                validator_index,
+                slot,
+                exception,
+            )
 
     async def _produce_attestations(self, slot: Slot) -> None:
-        """
-        Produce gossip attestations for all validators we control.
-
-        Every validator gossips an attestation signed with the attestation key.
-        Proposers also attest here — their block envelope carries a separate
-        proposal-key signature, so there is no conflict with OTS constraints.
-
-        Args:
-            slot: Current slot number.
-        """
-        # Wait briefly for the current slot's block to arrive via gossip.
+        """Produce and gossip an attestation for every validator we control."""
+        # Wait briefly for this slot's block before attesting.
         #
-        # At interval 1 (800ms after slot start), the slot's block may not
-        # have arrived yet from the proposer node (production + gossip + verification
-        # can exceed 800ms on slow machines). Without the block, attestations
-        # would reference an old head, causing safe_target to stall.
+        # Production and gossip can exceed interval 1 on slow machines.
+        #
+        # Without it, attestations reference an old head and stall the safe target.
         store = self.sync_service.store
         current_slot_has_block = any(block.slot == slot for block in store.blocks.values())
         if not current_slot_has_block:
@@ -360,7 +235,7 @@ class ValidatorService:
                 if any(block.slot == slot for block in store.blocks.values()):
                     break
 
-        # Ensure we are attesting to the latest known head
+        # Attest to the latest known head.
         self.sync_service.store = self.spec.update_head(self.sync_service.store)
         store = self.sync_service.store
 
@@ -369,17 +244,27 @@ class ValidatorService:
             return
 
         for validator_index in self.registry.indices():
+            validator_entry = self.registry.get(validator_index)
+            if validator_entry is None:
+                raise ValueError(f"No secret key for validator {validator_index}")
+
             attestation_data = self.spec.produce_attestation_data(store, slot)
-            signed_attestation = self._sign_attestation(attestation_data, validator_index)
+            signed_attestation = SignedAttestation(
+                validator_index=validator_index,
+                data=attestation_data,
+                signature=self._sign_with_key(
+                    validator_entry,
+                    attestation_data.slot,
+                    hash_tree_root(attestation_data),
+                    "attestation_secret_key",
+                ),
+            )
 
             self._attestations_produced += 1
 
-            # Process attestation locally before publishing.
-            #
-            # Gossipsub does not deliver messages back to the sender.
-            # Without local processing, the aggregator node never sees its own
-            # validator's attestation in attestation_signatures, reducing the
-            # aggregation count below the 2/3 safe-target threshold.
+            # Process locally before publishing: gossip does not echo to the sender.
+            # Otherwise an aggregator never counts its own validator's attestation,
+            # dropping the aggregation below the 2/3 safe-target threshold.
             is_aggregator_role = (
                 self.sync_service.store.validator_index is not None
                 and self.sync_service.is_aggregator
@@ -399,7 +284,6 @@ class ValidatorService:
                     exc_info=True,
                 )
 
-            # Emit the attestation for network propagation.
             if self.on_attestation is not None:
                 await self.on_attestation(signed_attestation)
 
@@ -410,22 +294,10 @@ class ValidatorService:
         attestation_proofs: list[SingleMessageAggregate],
     ) -> SignedBlock:
         """
-        Sign a block and wrap it for publishing.
+        Sign a block and wrap it with its merged proof for publishing.
 
-        Signs the block root with the proposer's proposal key.
-        Wraps the signature into a singleton single-message aggregate proof.
-        Merges that with the per-attestation single-message aggregate proofs
-        into a single multi-message aggregate proof.
-        The merged proof is stored on the block envelope.
-
-        Args:
-            block: The block to sign.
-            validator_index: Index of the proposing validator.
-            attestation_proofs: Per-AttestationData single-message aggregate proofs included in
-                the block body, parallel to block.body.attestations.
-
-        Returns:
-            Signed block ready for publishing.
+        The proposer signature and the attestation proofs merge into one block proof.
+        The attestation proofs run parallel to the block body's attestations.
         """
         validator_entry = self.registry.get(validator_index)
         if validator_entry is None:
@@ -465,18 +337,14 @@ class ValidatorService:
             slot=block.slot,
         )
 
-        # Merge the per-attestation proofs and the proposer single-message aggregate into one
-        # multi-message aggregate proof. Order matters: verify_signatures expects the proposer
-        # entry to be last, parallel to block.body.attestations + 1.
-        # The public_key lookup below indexes the active validator set, so each
-        # participant must fall within it.
-        # A stale partial aggregate would otherwise blow up deep inside
-        # the aggregator with an opaque KeyError.
+        # Collect the public keys for each proof, in the same order as the proofs.
         num_validators = Uint64(len(validators))
         public_keys_per_aggregate: list[list[PublicKey]] = []
         for attestation_proof in attestation_proofs:
             participant_public_keys: list[PublicKey] = []
             for validator_index in attestation_proof.participants.to_validator_indices():
+                # Every participant must index the active validator set.
+                # A stale entry would otherwise fail deep inside the aggregator.
                 if not validator_index.is_within_registry(num_validators):
                     raise ValueError(
                         f"Attestation proof references validator {validator_index}; "
@@ -486,6 +354,8 @@ class ValidatorService:
                     PublicKey.decode_bytes(validators[validator_index].attestation_public_key)
                 )
             public_keys_per_aggregate.append(participant_public_keys)
+
+        # The proposer goes last, parallel to the proposer aggregate appended below.
         public_keys_per_aggregate.append([proposer_public_key])
 
         merged_block_proof = MultiMessageAggregate.aggregate(
@@ -498,42 +368,6 @@ class ValidatorService:
             proof=merged_block_proof,
         )
 
-    def _sign_attestation(
-        self,
-        attestation_data: AttestationData,
-        validator_index: ValidatorIndex,
-    ) -> SignedAttestation:
-        """
-        Sign an attestation for publishing.
-
-        Signs the attestation data root with the validator's attestation key.
-
-        Args:
-            attestation_data: The attestation data to sign.
-            validator_index: Index of the attesting validator.
-
-        Returns:
-            Signed attestation ready for publishing.
-        """
-        # Get the secret key for this validator.
-        validator_entry = self.registry.get(validator_index)
-        if validator_entry is None:
-            raise ValueError(f"No secret key for validator {validator_index}")
-
-        # Sign the attestation data root with the attestation key.
-        signature = self._sign_with_key(
-            validator_entry,
-            attestation_data.slot,
-            hash_tree_root(attestation_data),
-            "attestation_secret_key",
-        )
-
-        return SignedAttestation(
-            validator_index=validator_index,
-            data=attestation_data,
-            signature=signature,
-        )
-
     def _sign_with_key(
         self,
         validator_entry: ValidatorEntry,
@@ -542,22 +376,10 @@ class ValidatorService:
         key_field: Literal["attestation_secret_key", "proposal_secret_key"],
     ) -> Signature:
         """
-        Prepare an XMSS key for the given slot, sign, and update the registry.
+        Advance the chosen XMSS key to the slot, sign, and persist the advanced key.
 
-        Handles the full lifecycle:
-
-        1. Advance the key until the slot is within its prepared interval
-        2. Sign the message
-        3. Persist the updated key state in the registry
-
-        Args:
-            validator_entry: Validator entry containing the secret keys.
-            slot: The slot to sign for.
-            message: The message bytes to sign.
-            key_field: Which secret key field to use and advance.
-
-        Returns:
-            The signature over the message.
+        XMSS keys are stateful one-time signatures, so each signature consumes key state.
+        The advanced key is written back so the next slot does not reuse it.
         """
         scheme = TARGET_SIGNATURE_SCHEME
         secret_key = getattr(validator_entry, key_field)
@@ -569,19 +391,7 @@ class ValidatorService:
         signature = scheme.sign(secret_key, slot, message)
 
         # Carry over both secret keys, replacing only the one that was advanced.
-        if key_field == "attestation_secret_key":
-            updated_entry = ValidatorEntry(
-                index=validator_entry.index,
-                attestation_secret_key=secret_key,
-                proposal_secret_key=validator_entry.proposal_secret_key,
-            )
-        else:
-            updated_entry = ValidatorEntry(
-                index=validator_entry.index,
-                attestation_secret_key=validator_entry.attestation_secret_key,
-                proposal_secret_key=secret_key,
-            )
-        self.registry.add(updated_entry)
+        self.registry.add(replace(validator_entry, **{key_field: secret_key}))
         return signature
 
     def _is_synced_for_duties(
@@ -590,18 +400,11 @@ class ValidatorService:
         duty: Literal["block", "attestation"],
     ) -> bool:
         """
-        Decide whether duties may run for the given slot.
+        Decide whether duties may run for this slot.
 
-        Combines local lag and local-store stall evidence with
-        hysteresis. Returns False only when the local view is stale
-        relative to a network that is otherwise making progress.
-
-        Args:
-            slot: Wall-clock slot for which a duty would run.
-            duty: Tag for the transition log.
-
-        Returns:
-            True when duties should run, False to silence them.
+        Weighs local lag against local-store stall evidence, with hysteresis.
+        Returns False only when the local view is stale while the network still progresses.
+        The duty argument only labels the transition log.
         """
         store = self.sync_service.store
         head_block = store.blocks.get(store.head)
@@ -681,17 +484,12 @@ class ValidatorService:
         return allow
 
     def stop(self) -> None:
-        """
-        Stop the service.
-
-        Sets the running flag to False, causing the main loop to exit
-        after completing its current sleep cycle.
-        """
+        """Signal the run loop to exit after its current sleep cycle."""
         self._running = False
 
     @property
     def is_running(self) -> bool:
-        """Check if the service is currently running."""
+        """Whether the service is currently running."""
         return self._running
 
     @property

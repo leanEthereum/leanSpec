@@ -46,13 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 class UnknownAttestationBlockError(Exception):
-    """
-    An attestation references a source, target, or head block the store has not seen.
-
-    A later block can still supply the missing block.
-    The sync service buffers the attestation and replays it after the next block.
-    This is the only attestation rejection worth retrying, so it carries its own type.
-    """
+    """An attestation references a source, target, or head block the store has not seen yet."""
 
 
 BUFFERABLE_REJECTION_REASONS: frozenset[RejectionReason] = frozenset(
@@ -96,11 +90,7 @@ class SyncService:
     publish_aggregated_attestation: (
         Callable[[SignedAggregatedAttestation], Coroutine[None, None, None]] | None
     ) = field(default=None)
-    """Async callback for publishing aggregated attestations to the network.
-
-    Defaults to None so tests and offline runs do not need a publisher wired.
-    Assign after construction once NetworkService is built.
-    """
+    """Async callback for publishing aggregated attestations, or None when no publisher is wired."""
 
     state: SyncState = field(default=SyncState.IDLE)
     """Current sync state. Defaults to IDLE, awaiting peer status."""
@@ -140,41 +130,27 @@ class SyncService:
     """
 
     _pending_block_aggregates: list[SignedAggregatedAttestation] = field(default_factory=list)
-    """Combined aggregates recovered from processed blocks.
-
-    Every processed block is deconstructed during block processing, which
-    queues its combined aggregates when this node is in the aggregator
-    role. The gossip umbrella drains and publishes them after the store
-    is updated.
-    """
+    """Aggregates recovered from processed blocks, queued for the aggregator to publish."""
 
     def __post_init__(self) -> None:
         """Wire sub-components and apply the genesis-start state hint."""
-        self._init_components()
-
-        # Genesis validators already hold the full genesis state.
-        #
-        # They process gossip blocks immediately without a peer status exchange.
-        if self.genesis_start:
-            self.state = SyncState.SYNCING
-
-    def _init_components(self) -> None:
-        """Wire the backfill and head-sync sub-components."""
-        # Backfill reads the store through self.
-        #
-        # So, the live reference is observed as we reassign store after each block.
+        # Backfill reads the store through self, so it sees each post-block reassignment.
         self._backfill = BackfillSync(
             peer_manager=self.peer_manager,
             block_cache=self.block_cache,
             network=self.network,
             store_view=self,
         )
-
         self._head_sync = HeadSync(
             block_cache=self.block_cache,
             backfill=self._backfill,
             process_block=self.process_block,
         )
+
+        # Genesis validators already hold the full genesis state.
+        # They process gossip blocks immediately without a peer status exchange.
+        if self.genesis_start:
+            self.state = SyncState.SYNCING
 
     def process_block(self, store: Store, block: SignedBlock) -> Store:
         """Apply a block to the store, emit telemetry, and persist when wired up."""
@@ -228,15 +204,8 @@ class SyncService:
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
 
-        # Deconstruct every processed block, regardless of how it arrived.
-        #
-        # Gossip, head-sync, and backfilled descendants all funnel through
-        # here. Recovering the per-attestation proofs from the merged block
-        # proof and writing them into the pool is what gives a catching-up
-        # node block-imported attestation weight in fork choice.
-        # Non-aggregators do the work for their local pool only and never
-        # republish, so the gossip queue is only fed when this node is in
-        # the aggregator role.
+        # Recover per-attestation proofs from every processed block.
+        # Queue them for publishing only when this node is an aggregator.
         new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
         if self.is_aggregator:
             self._pending_block_aggregates.extend(aggregates)
@@ -300,18 +269,9 @@ class SyncService:
             self.database.put_justified_checkpoint(store.latest_justified)
             self.database.put_finalized_checkpoint(store.latest_finalized)
 
-            # Prune historical data below the finalized boundary.
-            #
-            # Finalized blocks can never be reverted.
-            # Keeping pre-finalized data on disk wastes space for no consensus value.
-            #
-            # **Why the slot > 0 guard:**
-            # - Genesis is the only finalized slot at startup.
-            # - Pruning before genesis would remove the chain's anchor block.
-            #
-            # **Why the finalized root stays in keep_roots:**
-            # - The finalized block is the new on-disk anchor after pruning.
-            # - Removing it would orphan the database from the chain it tracks.
+            # Prune data below the finalized boundary, which can never revert.
+            # The slot > 0 guard spares genesis, the startup anchor block.
+            # Keep the finalized root: it becomes the new on-disk anchor after pruning.
             if store.latest_finalized.slot > Slot(0):
                 self.database.prune_before_slot(
                     store.latest_finalized.slot,
@@ -371,16 +331,15 @@ class SyncService:
             raise RuntimeError("HeadSync not initialized")
 
         # Head-sync either processes the block now or caches it pending backfill.
-        gossip_block_outcome, new_store = await self._head_sync.on_gossip_block(
+        new_store = await self._head_sync.on_gossip_block(
             block=block,
             peer_id=peer_id,
             store=self.store,
         )
 
-        # Only update our store if the block was actually processed.
-        #
-        # A block may be cached instead of processed if its parent is unknown.
-        if gossip_block_outcome.processed:
+        # None means the block was cached pending an unknown parent.
+        # The processed path never awaits, so no clock tick can change the store before write-back.
+        if new_store is not None:
             block_root = hash_tree_root(block.block)
             logger.info(
                 "Block processed slot=%s root=%s from peer %s",
@@ -391,7 +350,13 @@ class SyncService:
             self.store = new_store
             # A new block may unlock attestations buffered earlier; retry them.
             self._replay_pending_attestations()
-            await self._publish_pending_block_aggregates()
+
+            # Publish aggregates recovered from this block, or drop them when no publisher is wired.
+            block_aggregates = self._pending_block_aggregates
+            self._pending_block_aggregates = []
+            if self.publish_aggregated_attestation is not None:
+                for signed_attestation in block_aggregates:
+                    await self.publish_aggregated_attestation(signed_attestation)
 
         # Gossip may deliver the final block needed to reach finalized.
         await self._check_sync_complete()
@@ -584,49 +549,19 @@ class SyncService:
         store: Store,
         block: SignedBlock,
     ) -> tuple[Store, list[SignedAggregatedAttestation]]:
-        """
-        Recover per-attestation proofs from a processed block.
-
-        On block import we already trust the block-attestation participant
-        bitfields via spec on_block signature verification. The block carries
-        one merged multi-message aggregate proof binding every attestation in its body.
-
-        For each block attestation that covers validators not already held
-        in the given store:
-
-        1. Extract that data's single-message aggregate proof
-           out of the block's multi-message aggregate proof.
-        2. Merge it with all local partial single-message aggregate proofs for the same data
-           into one single-message aggregate proof whose participant bits are the union.
-        3. Write the combined proof into the pending pool.
-
-        If the data was never seen locally, the extracted single-message aggregate is used
-        as-is.
-
-        Runs for every node, including non-validators, so the per-attestation
-        proofs reach the local pool and contribute fork-choice weight after
-        the next acceptance tick. Publishing is left to the caller and only
-        the aggregator role should drain the returned list onto gossip.
-
-        Returns:
-            The store (possibly unchanged if no recovery was needed) and
-            the combined aggregates produced by this call.
-        """
-        block_attestations = list(block.block.body.attestations)
+        """Recover each block attestation's proof and fold it into the local pool."""
+        block_attestations = block.block.body.attestations
         if not block_attestations:
             return store, []
 
-        # The multi-message aggregate proof was built against the parent state's validator set.
-        # Without it we cannot resolve the public_key layout the proof was bound to.
+        # Resolving the proof's keys needs the parent state's validator set.
         parent_state = store.states.get(block.block.parent_root)
         if parent_state is None:
             return store, []
         validators = parent_state.validators
 
-        # Build the per-message public_key layout once.
-        # The layout is invariant per block: one entry per body attestation
-        # in order, then the proposer entry. Hoisted out of the per-att loop
-        # to avoid quadratic work when many block attestations need splitting.
+        # Per-message key layout: one entry per body attestation, then the proposer.
+        # Built once to avoid quadratic work across the splits below.
         public_keys_per_message: list[list[PublicKey]] = []
         for attestation in block_attestations:
             public_keys_per_message.append(
@@ -639,17 +574,13 @@ class SyncService:
             [PublicKey.decode_bytes(validators[block.block.proposer_index].proposal_public_key)]
         )
 
-        # Index local partial single-message aggregate proofs by AttestationData root. Equivalent
-        # AttestationData instances from different code paths may not share a
-        # dict key, so match on the hash tree root instead.
+        # Index local partials by data root.
+        # Equal data from different code paths may not share a dict key.
         local_proofs_by_root: dict[Bytes32, list[SingleMessageAggregate]] = {}
         for attestation_data, proofs in store.latest_new_aggregated_payloads.items():
             local_proofs_by_root.setdefault(hash_tree_root(attestation_data), []).extend(proofs)
 
-        # Working copy of the pending pool.
-        # The combined proof is retained locally so the block-sourced
-        # aggregate survives without depending on gossip loopback. Shallow
-        # copy the dict and its inner sets to preserve store immutability.
+        # Working copy: shallow-copy the dict and its sets to keep the store immutable.
         new_payloads: dict[AttestationData, set[SingleMessageAggregate]] = {
             pending_data: set(pending_proofs)
             for pending_data, pending_proofs in store.latest_new_aggregated_payloads.items()
@@ -659,9 +590,7 @@ class SyncService:
         for attestation in block_attestations:
             attestation_data = attestation.data
 
-            # Only spend a split on attestations that can still move
-            # justification forward. A target at or behind the store's
-            # justified checkpoint cannot, so skip it.
+            # Skip targets at or behind justified, which can no longer advance justification.
             if attestation_data.target.slot <= store.latest_justified.slot:
                 continue
 
@@ -673,14 +602,12 @@ class SyncService:
             for proof in local_proofs:
                 local_union |= set(proof.participants.to_validator_indices())
 
-            # Only act when the block covers validators we do not already
-            # hold. An empty local_union also covers data never seen locally.
+            # Act only when the block adds validators not already held.
             if not (block_participants - local_union):
                 continue
 
             try:
-                # The split takes the bits from the block attestation this
-                # component binds, since the Rust binding does not return them.
+                # The split does not return the bits, so pass the block attestation's own.
                 block_single_message_aggregate = block.proof.split_by_message(
                     message=data_root,
                     public_keys_per_message=public_keys_per_message,
@@ -688,16 +615,8 @@ class SyncService:
                 )
 
                 if local_proofs:
-                    # The local proofs arrive in set-iteration order.
-                    # That order is not stable across nodes.
-                    # Folding them stays order-invariant for consensus.
-                    #
-                    # The merged participant bitfield is positional and ascending.
-                    # It names the same validators regardless of child order.
-                    #
-                    # Folding may emit byte-distinct proofs across orderings.
-                    # Every ordering verifies against that same canonical key set.
-                    # No consensus rule compares these re-merged proofs by bytes.
+                    # Folding is order-invariant: the merged bitfield is positional and ascending.
+                    # Byte-distinct proofs across orderings all verify against the same key set.
                     combined = SingleMessageAggregate.aggregate(
                         children=[
                             (
@@ -716,16 +635,13 @@ class SyncService:
                         slot=attestation_data.slot,
                     )
                 else:
-                    # Data unseen locally: nothing to merge, use as-is.
                     combined = block_single_message_aggregate
             except (AggregationError, AssertionError, KeyError, ValueError) as exception:
                 logger.debug("Post-block re-aggregation failed for %s: %s", data_root, exception)
                 continue
 
-            # The combined proof is a superset of every local partial that
-            # fed it, so those partials are now redundant. Drop them from
-            # the pool (across any data key sharing this root) and keep only
-            # the higher-coverage proof.
+            # The combined proof subsumes every local partial that fed it.
+            # Drop those now-redundant partials sharing this data root.
             if local_proofs:
                 superseded = set(local_proofs)
                 for key in list(new_payloads):
@@ -744,25 +660,6 @@ class SyncService:
             store = store.model_copy(update={"latest_new_aggregated_payloads": new_payloads})
 
         return store, aggregates
-
-    async def _publish_pending_block_aggregates(self) -> None:
-        """
-        Gossip the aggregates recovered from processed blocks.
-
-        Every processed block is deconstructed in the block wrapper, which
-        writes the recovered proofs into the store and queues the combined
-        aggregates here when this node acts as an aggregator. This drains
-        that queue onto the network.
-        """
-        if not self._pending_block_aggregates:
-            return
-        pending = self._pending_block_aggregates
-        self._pending_block_aggregates = []
-        # No publisher wired (tests, offline runs): drop the drained aggregates.
-        if self.publish_aggregated_attestation is None:
-            return
-        for signed_attestation in pending:
-            await self.publish_aggregated_attestation(signed_attestation)
 
     async def _check_sync_complete(self) -> None:
         """Move to SYNCED once head has reached finalized and no orphans remain."""

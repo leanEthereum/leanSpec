@@ -1,6 +1,7 @@
 """Lstar fork — state transition."""
 
 from collections.abc import Iterable
+from itertools import batched
 from typing import Any
 
 from lean_spec.spec.crypto.merkleization import hash_tree_root
@@ -33,12 +34,10 @@ class StateTransitionMixin(LstarSpecBase):
         """Generate a genesis state with empty history and proper initial values."""
         assert isinstance(validators, Validators)
 
-        # Configure the genesis state.
         genesis_config = self.genesis_config_class(
             genesis_time=genesis_time,
         )
 
-        # Build the genesis block header for the state.
         genesis_header = self.block_header_class(
             slot=Slot(0),
             proposer_index=ValidatorIndex(0),
@@ -49,7 +48,6 @@ class StateTransitionMixin(LstarSpecBase):
             ),
         )
 
-        # Assemble and return the full genesis state.
         return self.state_class(
             config=genesis_config,
             slot=Slot(0),
@@ -73,19 +71,17 @@ class StateTransitionMixin(LstarSpecBase):
         Raises:
             SpecRejectionError: BLOCK_SLOT_NOT_IN_FUTURE if target_slot is not in the future.
         """
-        # The target must be strictly greater than the current slot.
         if state.slot >= target_slot:
             raise SpecRejectionError(
                 RejectionReason.BLOCK_SLOT_NOT_IN_FUTURE, "Target slot must be in the future"
             )
 
-        # Step through each missing slot.
         while state.slot < target_slot:
-            # Cache the pre-block state root into the latest header, then bump the slot.
+            # Cache the pre-block state root into the latest header, then advance the slot.
             #
-            # Invariant: the header's state root is empty only for the first empty
-            # slot after a block, so this caching happens at most once per block.
-            # Later empty slots in a run find a populated root and reuse it.
+            # Invariant: the header's state root is empty only on the first empty slot
+            # after a block, so this fills it at most once per block.
+            # Later empty slots reuse the populated root.
             needs_state_root = state.latest_block_header.state_root == Bytes32.zero()
             cached_state_root = (
                 hash_tree_root(state) if needs_state_root else state.latest_block_header.state_root
@@ -100,7 +96,6 @@ class StateTransitionMixin(LstarSpecBase):
                 }
             )
 
-        # Reached the target slot. Return the advanced state.
         return state
 
     def process_block_header(self, state: State, block: Block) -> State:
@@ -111,109 +106,61 @@ class StateTransitionMixin(LstarSpecBase):
             SpecRejectionError: If any header check fails (slot mismatch, block older
                 than the latest header, wrong proposer, or parent root mismatch).
         """
-        # Validation
-        #
-        # - Retrieve the header of the previous block (the parent).
-        # - Compute the parent root hash.
         parent_header = state.latest_block_header
         parent_root = hash_tree_root(parent_header)
 
-        # Consensus checks
-
-        # Verify the block corresponds to the current state slot.
-        #
-        # To move to this slot, we have processed any intermediate slots before.
+        # The block must sit at the slot the state was advanced to.
         if block.slot != state.slot:
             raise SpecRejectionError(RejectionReason.BLOCK_SLOT_MISMATCH, "Block slot mismatch")
 
-        # The block must be newer than the current latest header.
+        # The block must be newer than the latest header.
         if block.slot <= parent_header.slot:
             raise SpecRejectionError(
                 RejectionReason.BLOCK_OLDER_THAN_LATEST_HEADER, "Block is older than latest header"
             )
 
-        # Verify the block proposer.
-        #
-        # Ensures the block was proposed by the assigned validator for this round.
+        # The block must come from the validator assigned to this slot.
         if block.proposer_index != ValidatorIndex.proposer_for_slot(
             slot=state.slot,
             num_validators=Uint64(len(state.validators)),
         ):
             raise SpecRejectionError(RejectionReason.WRONG_PROPOSER, "Incorrect block proposer")
 
-        # Verify the chain link.
-        #
-        # The block must cryptographically point to the known parent.
+        # The block must point at the known parent.
         if block.parent_root != parent_root:
             raise SpecRejectionError(
                 RejectionReason.PARENT_ROOT_MISMATCH, "Block parent root mismatch"
             )
 
-        # Checkpoint Updates
-
-        # Detect if we are transitioning from the genesis block.
-        #
-        # This flag is True only when processing the very first block of the chain.
-        # This means the parent is the Genesis block (Slot 0).
-        is_genesis_parent = parent_header.slot == Slot(0)
-
-        # Update the consensus checkpoints.
-        #
-        # This logic acts as the trust anchor for the chain:
-        #
-        # - If the parent is the Genesis block: It cannot receive votes as it
-        #   precedes the start of the chain. Therefore, we explicitly force it
-        #   to be Justified and Finalized immediately.
-        #
-        # - For all other blocks: We retain the existing checkpoints. Future
-        #   updates rely entirely on validator attestations which are processed
-        #   later in the block body.
-        if is_genesis_parent:
+        # Genesis is the chain's anchor, justified and finalized by definition.
+        # So the first block forces its parent to both.
+        # Every later block keeps its checkpoints, which only attestations move.
+        if parent_header.slot == Slot(0):
             new_latest_justified = Checkpoint(slot=Slot(0), root=parent_root)
             new_latest_finalized = Checkpoint(slot=Slot(0), root=parent_root)
         else:
             new_latest_justified = state.latest_justified
             new_latest_finalized = state.latest_finalized
 
-        # Historical Data Management
-
-        # Calculate the gap between the parent and the current block.
-        #
-        # If slots were skipped (missed proposals), we must record them.
-        #
-        # Formula: (Current - Parent - 1). Adjacent blocks have a gap of 0.
+        # Slots skipped since the parent from missed proposals.
+        # Adjacent blocks skip none, giving zero.
         num_empty_slots = int(block.slot - parent_header.slot - Slot(1))
 
-        # Update the list of historical block roots.
-        #
-        # Structure: [Existing history] + [Parent root] + [Zero hash for gaps]
+        # Record the parent root, then a zero hash for each skipped slot.
         new_historical_block_hashes = (
             state.historical_block_hashes + [parent_root] + [ZERO_HASH] * num_empty_slots
         )
 
-        # Update the list of justified slot flags.
-        #
-        # IMPORTANT: This list is stored relative to the finalized boundary.
-        #
-        # The first entry corresponds to the slot immediately following the
-        # latest finalized checkpoint.
-        #
-        # Here, we extend the storage capacity to ensure the range from the
-        # finalized boundary up to the last materialized slot is fully tracked
-        # and addressable. The current block's slot is not materialized until
-        # its header is fully processed, so we stop at slot (block.slot - 1).
+        # The justified-slot flags are stored relative to the finalized boundary.
+        # The current slot is not materialized until its header finishes, so stop one short.
         last_materialized_slot = block.slot - Slot(1)
         new_justified_slots = state.justified_slots.extend_to_slot(
             new_latest_finalized.slot,
             last_materialized_slot,
         )
 
-        # Construct the new latest block header.
-        #
-        # The new header object represents the tip of the chain.
-        #
-        # Leave state root empty.
-        # It is not computed until the block body is fully processed or the next slot begins.
+        # Build the new tip header.
+        # Leave its state root empty until the body is processed or the next slot begins.
         new_latest_block_header = self.block_header_class(
             slot=block.slot,
             proposer_index=block.proposer_index,
@@ -222,7 +169,6 @@ class StateTransitionMixin(LstarSpecBase):
             state_root=Bytes32.zero(),
         )
 
-        # Apply all calculated updates atomically in one new state.
         return state.model_copy(
             update={
                 "latest_justified": new_latest_justified,
@@ -240,9 +186,7 @@ class StateTransitionMixin(LstarSpecBase):
         Raises:
             SpecRejectionError: If header validation fails.
         """
-        # First process the block header.
         state = self.process_block_header(state, block)
-
         return self.process_attestations(state, block.body.attestations)
 
     def process_attestations(
@@ -261,18 +205,10 @@ class StateTransitionMixin(LstarSpecBase):
             SpecRejectionError: VALIDATOR_INDEX_OUT_OF_RANGE if a set bit points
                 outside the validator registry.
         """
-        # Bound the distinct votes the block may carry.
-        #
-        # The cap belongs to the transition itself, not to any one caller.
-        # Both the state transition and block-production trial blocks rely on it.
-        #
-        # Each distinct attestation data builds a tally sized to the validator set.
-        # An unbounded count of them amplifies import work.
-        # The SSZ list limit sits far above the consensus cap, so it cannot substitute.
-        #
-        # Only the distinct count is bounded, not the total.
+        # Cap the distinct attestation data a block may carry.
+        # Each distinct data builds a tally sized to the validator set, so the count drives work.
+        # Only distinct data is bounded, not total attestations.
         # Split aggregates for one target share their data and count once.
-        # Re-marking a voter from a repeated entry is idempotent, so it stays valid.
         aggregated_attestations = tuple(attestations)
         distinct_attestation_data = {attestation.data for attestation in aggregated_attestations}
         if len(distinct_attestation_data) > int(MAX_ATTESTATIONS_DATA):
@@ -282,166 +218,94 @@ class StateTransitionMixin(LstarSpecBase):
                 f"entries; maximum is {MAX_ATTESTATIONS_DATA}",
             )
 
-        # Reconstruct the vote-tracking structure
+        # Unpack the SSZ vote tracking into a root -> per-validator vote map.
+        # The state holds one flat vote list segmented by tracked root, each segment N flags long:
         #
-        # The state stores justification data in a compact SSZ layout:
+        #     roots:  [root_0,  root_1,  ...]
+        #     votes:  [<--N-->][<--N-->] ...
         #
-        #   - A list of block roots that are currently being tracked.
-        #   - One long flat list containing validator vote flags.
-        #
-        # For each tracked block, there is a consecutive segment of vote flags.
-        # Every segment has the same length: the number of validators.
-        #
-        # Conceptually, we want to recover a more natural view:
-        #
-        #   "For each block root, here is the list of votes from all validators."
-        #
-        # We rebuild this intuitive structure by slicing the flat vote list back
-        # into its individual segments. Each slice corresponds to one tracked block.
-        #
-        # This gives us a mapping:
-        #
-        #       (block root) → [vote flags for validators 0..N-1]
-        #
-        # which makes the rest of the logic easier to express and understand.
+        # Slicing per segment recovers a vote list per root.
         assert not any(root == ZERO_HASH for root in state.justifications_roots), (
             "zero hash is not allowed in justifications roots"
         )
+        validator_count = len(state.validators)
         justifications = {
-            root: state.justifications_validators[
-                i * len(state.validators) : (i + 1) * len(state.validators)
-            ]
-            for i, root in enumerate(state.justifications_roots)
+            root: list(validator_votes)
+            for root, validator_votes in zip(
+                state.justifications_roots,
+                batched(state.justifications_validators.data, validator_count),
+                strict=True,
+            )
         }
 
-        # Track state changes to be applied at the end
+        # Accumulate changes locally, then apply them in one copy at the end.
         latest_justified = state.latest_justified
         latest_finalized = state.latest_finalized
         finalized_slot = latest_finalized.slot
         justified_slots = state.justified_slots
 
-        # Map roots to their latest slot for pruning.
-        #
-        # Votes for zero hash are ignored, so we only need the most recent slot
-        # where a root appears to decide whether it is still unfinalized.
+        # Map each unfinalized root to its slot, used later to prune finalized roots.
         start_slot = int(finalized_slot) + 1
         root_to_slot: dict[Bytes32, Slot] = {
             root: Slot(i)
             for i, root in enumerate(state.historical_block_hashes[start_slot:], start=start_slot)
         }
 
-        # Process each attestation independently.
-        #
-        # Every attestation is a claim:
-        # "I vote to extend the chain from SOURCE to TARGET."
-        #
-        # The rules below filter out invalid or irrelevant votes.
+        # Each attestation votes to extend the chain from a source to a target.
+        # The filters below drop invalid or irrelevant votes.
         for attestation in aggregated_attestations:
             source = attestation.data.source
             target = attestation.data.target
 
-            # Check that the source is already trusted.
-            #
-            # A vote may only originate from a point in history that is already justified.
-            # A source that lacks existing justification cannot be used to anchor a new vote.
+            # A vote may only anchor on an already-justified source.
             if not justified_slots.is_slot_justified(finalized_slot, source.slot):
                 continue
 
-            # Ignore votes for targets that have already reached consensus.
-            #
-            # If a block is already justified, additional votes do not change anything.
-            # We simply skip them.
+            # An already-justified target gains nothing from more votes.
             if justified_slots.is_slot_justified(finalized_slot, target.slot):
                 continue
 
-            # Ensure the vote refers to blocks that actually exist on our chain.
-            #
-            # The attestation must match our canonical chain.
-            # Both the source root and target root must equal the recorded block roots.
-            # The recorded roots are the ones stored for those slots in history.
-            #
-            # This prevents votes about unknown or conflicting forks.
-            # It also rejects zero-hash source or target roots.
+            # Both roots must match the canonical chain.
+            # This also rejects zero-hash source or target roots.
             if not attestation.data.lies_on_chain(state.historical_block_hashes.data):
                 continue
 
-            # Ensure time flows forward.
-            #
-            # A target must always lie strictly after its source slot.
-            # Otherwise the vote makes no chronological sense.
+            # The target must lie strictly after the source.
             if target.slot <= source.slot:
                 continue
 
-            # Ensure the target falls on a slot that can be justified after the finalized one.
-            #
-            # In 3SF-mini, justification does not advance freely through time.
-            #
-            # Only certain positions beyond the finalized slot are allowed to
-            # receive new votes. These positions form a small, structured set:
-            #
-            #   - the immediate steps right after finalization,
-            #   - the square-number distances,
-            #   - and the pronic-number distances.
-            #
-            # Any target outside this pattern is not eligible for justification,
-            # so votes for it are simply ignored.
+            # The target slot must be justifiable after the finalized slot.
+            # 3SF-mini admits only a structured set of distances; see the justifiable-slot rule.
             if not target.slot.is_justifiable_after(finalized_slot):
                 continue
 
-            # Resolve the participating validators from the aggregation bits.
-            #
-            # An aggregation with no set bits names no voter at all.
-            # Such an attestation is malformed and rejects the whole block.
             voting_validator_indices = attestation.aggregation_bits.to_validator_indices()
 
-            # Reject set bits that point outside the validator registry.
-            #
-            # The tally below holds one flag per registered validator.
-            # A vote from a nonexistent validator has no flag to set,
-            # so the whole block is invalid.
-            # Trailing unset bits beyond the registry are harmless padding.
-            #
-            # Signature verification normally rejects such a bit first.
-            # This guards the unsigned path, which has no signature stage.
+            # A bit outside the registry has no flag in the tally, so reject the block.
+            # This guards the unsigned path, where no signature stage catches it first.
             for validator_index in voting_validator_indices:
-                if not validator_index.is_within_registry(Uint64(len(state.validators))):
+                if not validator_index.is_within_registry(Uint64(validator_count)):
                     raise SpecRejectionError(
                         RejectionReason.VALIDATOR_INDEX_OUT_OF_RANGE,
                         "Attestation aggregation bits reference a validator outside the registry",
                     )
 
-            # Record the vote.
-            #
-            # If this is the first vote for the target block, create a fresh tally sheet:
-            # - one boolean per validator, all initially False.
+            # Start a fresh all-False tally on the first vote for this target.
             if target.root not in justifications:
-                justifications[target.root] = [Boolean(False)] * len(state.validators)
+                justifications[target.root] = [Boolean(False)] * validator_count
 
-            # Mark that each validator in this aggregation has voted for the target.
-            #
-            # A vote is a boolean flag set to True.
-            # Re-marking an existing voter is idempotent, so no guard is needed.
+            # Mark each voter; re-marking is idempotent, so no guard is needed.
             for validator_index in voting_validator_indices:
                 justifications[target.root][validator_index] = Boolean(True)
 
-            # Check whether the vote count crosses the supermajority threshold.
-            #
-            # A block becomes justified when at least two-thirds of validators
-            # have voted for it.
-            #
-            # We compare integers to avoid floating-point division:
-            #
-            # 3 * (number of votes) ≥ 2 * (total validators)
+            # Threshold: justified once two-thirds of validators vote for the target.
+            # Compare as integers to avoid floating-point division: 3 * votes >= 2 * total.
             count = sum(bool(justified) for justified in justifications[target.root])
 
-            if 3 * count >= (2 * len(state.validators)):
-                # The block becomes justified
-                #
-                # The chain now considers this block part of its safe head.
-                # Only advance the checkpoint forward.
-                # Attestations within a block can resolve in any order, and
-                # an earlier target processed after a later one must not
-                # drag latest_justified backwards.
+            if 3 * count >= (2 * validator_count):
+                # Only advance the justified checkpoint forward.
+                # Targets within a block can resolve out of order, so an earlier
+                # target seen after a later one must not drag the checkpoint back.
                 if target.slot > latest_justified.slot:
                     latest_justified = target
 
@@ -454,23 +318,11 @@ class StateTransitionMixin(LstarSpecBase):
                 updated_justified_bits[justified_index] = Boolean(True)
                 justified_slots = JustifiedSlots(data=updated_justified_bits)
 
-                # There is no longer any need to track individual votes for this block.
+                # The target is justified; its individual votes no longer matter.
                 del justifications[target.root]
 
-                # Consider whether finalization can advance
-                #
-                # Finalization requires a continuous chain of trust from the
-                # previously finalized checkpoint up to the new justified point.
-                #
-                # Finalization advances only when the source lies past the old finalized point.
-                # A source at or behind that boundary is already final.
-                # Such a source may still justify a newer target, but it must not re-finalize.
-                # When the source is newer and every slot in between is justifiable
-                # relative to that old finalized point, the source checkpoint becomes finalized.
-                #
-                # In short:
-                #
-                #     If there is no break in the chain, advance finalization.
+                # Finalize the source when no justifiable slot sits between it and the target.
+                # The source must also lie past the old finalized slot, or it is already final.
                 if source.slot > finalized_slot and not any(
                     Slot(slot).is_justifiable_after(finalized_slot)
                     for slot in range(source.slot + Slot(1), target.slot)
@@ -479,13 +331,9 @@ class StateTransitionMixin(LstarSpecBase):
                     latest_finalized = source
                     finalized_slot = latest_finalized.slot
 
-                    # Rebase/prune justification tracking across the new finalized boundary.
-                    #
-                    # The state stores justified slot flags starting at (finalized_slot + 1),
-                    # so when finalization advances by `delta`, we drop the first `delta` bits.
-                    #
-                    # We also prune any pending justifications whose latest slot
-                    # is now finalized (latest <= finalized_slot).
+                    # Rebase tracking onto the new finalized boundary.
+                    # The flags start at one past the finalized slot, so drop the first delta bits.
+                    # Also drop any pending justifications now at or below the finalized slot.
                     delta = int(finalized_slot - old_finalized_slot)
                     if delta > 0:
                         justified_slots = JustifiedSlots(data=justified_slots.data[delta:])
@@ -498,21 +346,10 @@ class StateTransitionMixin(LstarSpecBase):
                             if root_to_slot[root] > finalized_slot
                         }
 
-        # Convert the vote structure back into SSZ format
-        #
-        # Internally, we used a mapping:
-        #
-        #       block root → list of votes
-        #
-        # SSZ requires:
-        #
-        #   - a sorted list of block roots
-        #   - a single flat list of votes (all roots concatenated in sorted order)
-        #
-        # Sorting ensures that every node produces identical state representation.
+        # Re-pack the vote map into the flat SSZ layout, roots first.
+        # Sorting the roots makes the state representation deterministic across nodes.
         sorted_roots = sorted(justifications.keys())
 
-        # Construct and return the updated state.
         return state.model_copy(
             update={
                 "justifications_roots": JustificationRoots(data=sorted_roots),
@@ -540,13 +377,10 @@ class StateTransitionMixin(LstarSpecBase):
                 if the block's state root does not match the computed post-state root.
         """
         with observe_state_transition():
-            # First, process any intermediate slots.
             advanced = self.process_slots(state, block.slot)
-
-            # Process the block itself.
             new_state = self.process_block(advanced, block)
 
-            # Validate that the block's state root matches the computed state
+            # The block must commit to the post-state it actually produces.
             computed_state_root = hash_tree_root(new_state)
             if block.state_root != computed_state_root:
                 raise SpecRejectionError(

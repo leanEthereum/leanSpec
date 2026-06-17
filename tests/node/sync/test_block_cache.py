@@ -224,31 +224,6 @@ class TestBlockCacheOrphanTracking:
 
         assert cache.orphan_count == 0
 
-    def test_unmark_orphan(self, peer_id: PeerId) -> None:
-        """Unmarking an orphan removes it from the orphan set."""
-        cache = BlockCache()
-        block = make_signed_block(
-            slot=Slot(1),
-            proposer_index=ValidatorIndex(0),
-            parent_root=Bytes32.zero(),
-            state_root=Bytes32.zero(),
-        )
-
-        pending = cache.add(block, peer_id)
-        cache.mark_orphan(pending.root)
-        cache.unmark_orphan(pending.root)
-
-        assert cache.orphan_count == 0
-
-    def test_unmark_orphan_nonexistent_does_nothing(self) -> None:
-        """Unmarking a nonexistent orphan does nothing."""
-        cache = BlockCache()
-
-        # Should not raise
-        cache.unmark_orphan(Bytes32.zero())
-
-        assert cache.orphan_count == 0
-
     def test_remove_clears_orphan_status(self, peer_id: PeerId) -> None:
         """Removing a block also removes its orphan status."""
         cache = BlockCache()
@@ -462,6 +437,42 @@ class TestBlockCacheCapacityManagement:
 
         # The original orphan should be evicted
         assert pending.root not in cache
+
+    def test_eviction_remarks_orphaned_children(self, peer_id: PeerId) -> None:
+        """Evicting a parent re-marks its still-cached children as orphans."""
+        cache = BlockCache()
+
+        # Parent (oldest), then a child whose parent is that block, so the child is not an orphan.
+        parent = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32(b"\xaa" * 32),
+            state_root=Bytes32.zero(),
+        )
+        parent_pending = cache.add(parent, peer_id)
+        child = make_signed_block(
+            slot=Slot(2),
+            proposer_index=ValidatorIndex(0),
+            parent_root=parent_pending.root,
+            state_root=Bytes32(b"\x02" * 32),
+        )
+        child_pending = cache.add(child, peer_id)
+        assert cache.orphan_count == 0
+
+        # Add fillers until exactly one eviction fires, removing the oldest (the parent).
+        for i in range(MAX_CACHED_BLOCKS - 1):
+            filler = make_signed_block(
+                slot=Slot(1000 + i),
+                proposer_index=ValidatorIndex(0),
+                parent_root=Bytes32((1000 + i).to_bytes(32, "big")),
+                state_root=Bytes32((2000 + i).to_bytes(32, "big")),
+            )
+            cache.add(filler, peer_id)
+
+        # The parent was evicted; the child remains but is now an orphan again.
+        assert parent_pending.root not in cache
+        assert child_pending.root in cache
+        assert cache.orphan_count == 1
 
 
 class TestBlockCacheBackfillDepth:

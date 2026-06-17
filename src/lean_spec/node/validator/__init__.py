@@ -1,18 +1,9 @@
 """
-Validator service module for producing blocks and attestations.
+Validator key management and duty execution.
 
 Validators are the active participants in Ethereum consensus.
-This module provides:
-
-- A registry that manages validator secret keys for signing
-- A service that drives duty execution based on the slot clock
-
-Lifecycle:
-
-1. Load validator keys from YAML configuration
-2. Start the service to monitor slot intervals
-3. At interval 0, produce blocks if scheduled
-4. At interval 1, produce attestations for non-proposers
+A registry holds the signing keys this node controls.
+A service runs each validator's duties off the slot clock.
 """
 
 from lean_spec.node.validator.registry import ValidatorRegistry

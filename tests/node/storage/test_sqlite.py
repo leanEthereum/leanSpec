@@ -517,6 +517,53 @@ class TestPruning:
         with db.batch_write():
             assert db.prune_before_slot(Slot(100), keep_roots=frozenset()) == 0
 
+    def test_prune_removes_orphaned_state_root_index(
+        self, db: SQLiteDatabase, genesis_state: State
+    ) -> None:
+        """Pruning a block also removes its state-root index entry."""
+        block = Block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=hash_tree_root(genesis_state),
+            body=BlockBody(attestations=AggregatedAttestations(data=[])),
+        )
+        block_root = hash_tree_root(block)
+        state_root = Bytes32(b"\x0d" * 32)
+
+        with db.batch_write():
+            db.put_block(block, block_root)
+            db.put_block_root_by_state_root(state_root, block_root)
+
+        with db.batch_write():
+            db.prune_before_slot(Slot(3), keep_roots=frozenset())
+
+        assert db.get_block(block_root) is None
+        assert db.get_block_root_by_state_root(state_root) is None
+
+    def test_prune_keeps_slot_index_for_kept_root(
+        self, db: SQLiteDatabase, genesis_state: State
+    ) -> None:
+        """A kept root below the prune slot retains its slot index entry."""
+        block = Block(
+            slot=Slot(0),
+            proposer_index=ValidatorIndex(0),
+            parent_root=Bytes32.zero(),
+            state_root=hash_tree_root(genesis_state),
+            body=BlockBody(attestations=AggregatedAttestations(data=[])),
+        )
+        block_root = hash_tree_root(block)
+
+        with db.batch_write():
+            db.put_block(block, block_root)
+            db.put_block_root_by_slot(block.slot, block_root)
+
+        with db.batch_write():
+            db.prune_before_slot(Slot(3), keep_roots=frozenset({block_root}))
+
+        assert db.get_block(block_root) == block
+        assert db.get_block_root_by_slot(Slot(0)) == block_root
+
 
 class TestLifecycle:
     """Tests for database lifecycle management."""

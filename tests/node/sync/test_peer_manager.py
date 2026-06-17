@@ -9,6 +9,7 @@ from lean_spec.node.networking.types import ConnectionState
 from lean_spec.node.sync.config import MAX_CONCURRENT_REQUESTS
 from lean_spec.node.sync.peer_manager import (
     INITIAL_PEER_SCORE,
+    MAX_PEER_SCORE,
     MIN_PEER_SCORE,
     SCORE_FAILURE_PENALTY,
     SCORE_SUCCESS_BONUS,
@@ -85,18 +86,39 @@ class TestSyncPeer:
         sync_peer.on_request_start()
         assert sync_peer == SyncPeer(info=connected_peer_info, requests_in_flight=1)
 
-    def test_on_request_complete(self, connected_peer_info: PeerInfo) -> None:
-        """on_request_complete decrements requests_in_flight."""
+    def test_record_success(self, connected_peer_info: PeerInfo) -> None:
+        """record_success decrements in-flight and raises the score."""
         sync_peer = SyncPeer(info=connected_peer_info)
         sync_peer.requests_in_flight = 2
-        sync_peer.on_request_complete()
-        assert sync_peer == SyncPeer(info=connected_peer_info, requests_in_flight=1)
+        sync_peer.record_success()
+        assert sync_peer == SyncPeer(
+            info=connected_peer_info,
+            requests_in_flight=1,
+            score=INITIAL_PEER_SCORE + SCORE_SUCCESS_BONUS,
+        )
 
-    def test_on_request_complete_does_not_go_negative(self, connected_peer_info: PeerInfo) -> None:
-        """on_request_complete does not let in_flight go negative."""
+    def test_record_success_caps_at_maximum(self, connected_peer_info: PeerInfo) -> None:
+        """record_success does not raise the score above the ceiling."""
+        sync_peer = SyncPeer(info=connected_peer_info, score=MAX_PEER_SCORE)
+        sync_peer.record_success()
+        assert sync_peer == SyncPeer(info=connected_peer_info, score=MAX_PEER_SCORE)
+
+    def test_record_failure(self, connected_peer_info: PeerInfo) -> None:
+        """record_failure decrements in-flight and lowers the score."""
         sync_peer = SyncPeer(info=connected_peer_info)
-        sync_peer.on_request_complete()
-        assert sync_peer == SyncPeer(info=connected_peer_info)
+        sync_peer.requests_in_flight = 2
+        sync_peer.record_failure()
+        assert sync_peer == SyncPeer(
+            info=connected_peer_info,
+            requests_in_flight=1,
+            score=INITIAL_PEER_SCORE - SCORE_FAILURE_PENALTY,
+        )
+
+    def test_record_failure_does_not_go_negative(self, connected_peer_info: PeerInfo) -> None:
+        """record_failure does not let in-flight go negative or score below the floor."""
+        sync_peer = SyncPeer(info=connected_peer_info, score=MIN_PEER_SCORE)
+        sync_peer.record_failure()
+        assert sync_peer == SyncPeer(info=connected_peer_info, score=MIN_PEER_SCORE)
 
 
 class TestPeerManagerBasicOperations:

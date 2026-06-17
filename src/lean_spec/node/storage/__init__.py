@@ -1,9 +1,4 @@
-"""
-Storage module for persistent block and state storage.
-
-Provides database abstraction for consensus data persistence.
-Uses SQLite for simplicity and correctness.
-"""
+"""Persistent storage for consensus blocks, states, and checkpoints."""
 
 from lean_spec.node.storage.database import Database
 from lean_spec.node.storage.exceptions import (

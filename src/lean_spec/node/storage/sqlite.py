@@ -1,19 +1,10 @@
 """
-SQLite database implementation for consensus data storage.
+SQLite-backed persistent storage for consensus data.
 
-This module provides persistent storage for Ethereum consensus data:
-
-- Blocks and states indexed by their SSZ root hash
-- Checkpoints for tracking justification and finalization
-- Attestations indexed by validator
-- Slot-to-root mappings for historical queries
-- State root to block root index for checkpoint sync
-
-All data is stored as SSZ-encoded bytes in BLOB columns.
-The SSZ format ensures deterministic serialization across implementations.
-
-Writes are not auto-committed. Callers must use batch_write() for multi-write
-atomicity or commit() for single-write durability.
+All values are stored as SSZ-encoded bytes in BLOB columns.
+Writes do not persist on their own.
+Every write must run inside a batch-write block, which commits atomically on
+exit and rolls back on error.
 """
 
 from __future__ import annotations
@@ -56,15 +47,10 @@ from lean_spec.spec.ssz import Bytes32, Uint64
 
 class SQLiteDatabase:
     """
-    SQLite implementation of the Database protocol.
+    SQLite-backed implementation of the storage interface.
 
-    Stores consensus data in a single SQLite file.
-    Thread-safe through SQLite's built-in locking.
-
-    Data is stored as SSZ-encoded bytes.
-    Deserialization happens on read.
-
-    Writes are buffered until explicitly committed via commit() or batch_write().
+    All access must come from a single writer on the node's event-loop thread.
+    A shared connection with buffered writes is not safe for concurrent writers.
     """
 
     def __init__(
@@ -73,33 +59,19 @@ class SQLiteDatabase:
         state_class: type[SpecStateType],
         block_class: type[SpecBlockType],
     ) -> None:
-        """
-        Initialize SQLite database.
-
-        Creates database file and tables if they don't exist.
-
-        Args:
-            path: Path to SQLite database file.
-                  Use ":memory:" for in-memory database.
-            state_class: State class used to decode SSZ bytes.
-            block_class: Block class used to decode SSZ bytes.
-        """
+        """Open the database file (or ":memory:") and create tables if absent."""
         self._path = Path(path) if isinstance(path, str) else path
         self._state_class = state_class
         self._block_class = block_class
 
-        # SQLite handles concurrent access through file-level locking.
-        #
-        # The check_same_thread=False flag allows multiple threads to share
-        # this connection. SQLite serializes writes internally.
+        # Disable the per-thread guard so a reader on another thread does not raise.
+        # This grants no synchronization: writes must still come from one thread.
         self._connection = sqlite3.connect(
             str(self._path),
             check_same_thread=False,
         )
 
-        # Row factory enables dict-like access: row["column_name"].
-        #
-        # This makes the code more readable than tuple indexing.
+        # Row factory enables access by column name: row["column_name"].
         self._connection.row_factory = sqlite3.Row
 
         self._init_schema()
@@ -108,28 +80,15 @@ class SQLiteDatabase:
         """Create tables if they don't exist."""
         cursor = self._connection.cursor()
 
-        # Block and state tables use root hash as primary key.
-        #
-        # This matches how consensus clients identify data: by SSZ merkle root.
-        # The slot index enables efficient range queries for historical data.
         cursor.execute(BLOCKS_CREATE_TABLE)
         cursor.execute(BLOCKS_CREATE_INDEX)
         cursor.execute(STATES_CREATE_TABLE)
         cursor.execute(STATES_CREATE_INDEX)
 
-        # Checkpoints use a key-value pattern for singleton values.
-        #
-        # Only one justified and one finalized checkpoint exist at any time.
+        # Checkpoints are singletons, so a small key-value table suffices.
         cursor.execute(CHECKPOINTS_CREATE_TABLE)
 
-        # Slot index maps slot numbers to block roots.
-        #
-        # Enables queries like "what block was at slot N?"
         cursor.execute(SLOT_INDEX_CREATE_TABLE)
-
-        # State root index maps state roots to block roots.
-        #
-        # Needed for checkpoint sync and API endpoints that query by state root.
         cursor.execute(STATE_ROOT_INDEX_CREATE_TABLE)
 
         self._connection.commit()
@@ -140,11 +99,6 @@ class SQLiteDatabase:
         """Retrieve a block by its root hash."""
         try:
             cursor = self._connection.cursor()
-
-            # Query by root hash, the canonical identifier in consensus.
-            #
-            # The root is the SSZ merkle root of the block.
-            # This 32-byte hash uniquely identifies the block content.
             cursor.execute(
                 f"SELECT data FROM {BLOCKS_TABLE_NAME} WHERE root = ?",
                 (bytes(root),),
@@ -167,12 +121,6 @@ class SQLiteDatabase:
         """Store a block with its root hash."""
         try:
             cursor = self._connection.cursor()
-
-            # INSERT OR REPLACE handles both new blocks and updates.
-            #
-            # While blocks should be immutable (same root = same content),
-            # this pattern simplifies the code without correctness issues.
-            # The slot column enables efficient historical range queries.
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {BLOCKS_TABLE_NAME} (root, slot, data)
@@ -186,11 +134,6 @@ class SQLiteDatabase:
             ) from exception
 
     # State Operations
-
-    #
-    # States are the full beacon chain state at a given slot.
-    # They are large (~2MB+) and expensive to compute from scratch.
-    # Storing states enables fast re-initialization and historical queries.
 
     def get_state(self, root: Bytes32) -> SpecStateType | None:
         """Retrieve a state by its associated block root."""
@@ -220,11 +163,6 @@ class SQLiteDatabase:
         """Store a state indexed by its associated block root."""
         try:
             cursor = self._connection.cursor()
-
-            # States should be stored at epoch boundaries for efficient access.
-            #
-            # Clients typically store one state per epoch to balance
-            # storage costs against replay costs for intermediate slots.
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {STATES_TABLE_NAME} (root, slot, data)
@@ -239,20 +177,10 @@ class SQLiteDatabase:
 
     # Checkpoint Operations
 
-    #
-    # Checkpoints mark finality progress in the consensus protocol.
-    # Justified checkpoints have 2/3 validator support.
-    # Finalized checkpoints are irreversible - blocks before them never reorg.
-
     def get_justified_checkpoint(self) -> Checkpoint | None:
         """Retrieve the latest justified checkpoint."""
         try:
             cursor = self._connection.cursor()
-
-            # Justified checkpoint: has received 2/3 attestation weight.
-            #
-            # This checkpoint may still be reverted if a competing
-            # checkpoint gains more support. Not yet final.
             cursor.execute(
                 f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
                 (CHECKPOINTS_KEY_JUSTIFIED,),
@@ -293,11 +221,6 @@ class SQLiteDatabase:
         """Retrieve the latest finalized checkpoint."""
         try:
             cursor = self._connection.cursor()
-
-            # Finalized checkpoint: irreversible under normal operation.
-            #
-            # Once finalized, all blocks in the checkpoint's chain are permanent.
-            # Reorging past finality requires 1/3 validators to be slashed.
             cursor.execute(
                 f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
                 (CHECKPOINTS_KEY_FINALIZED,),
@@ -336,19 +259,10 @@ class SQLiteDatabase:
 
     # Head Tracking
 
-    #
-    # The head is the tip of the canonical chain as determined by fork choice.
-    # This is a singleton value that changes as new blocks arrive.
-
     def get_head_root(self) -> Bytes32 | None:
         """Retrieve the current head block root."""
         try:
             cursor = self._connection.cursor()
-
-            # The head root identifies the current best block.
-            #
-            # Fork choice updates this after processing each new block.
-            # Stored in the checkpoints table as a special singleton key.
             cursor.execute(
                 f"SELECT data FROM {CHECKPOINTS_TABLE_NAME} WHERE key = ?",
                 (CHECKPOINTS_KEY_HEAD,),
@@ -379,20 +293,10 @@ class SQLiteDatabase:
 
     # Slot Index Operations
 
-    #
-    # Slots are time intervals.
-    # This index maps slot numbers to blocks, enabling historical queries.
-    # Note: not every slot has a block (missed slots happen).
-
     def get_block_root_by_slot(self, slot: Slot) -> Bytes32 | None:
         """Retrieve block root for a specific slot."""
         try:
             cursor = self._connection.cursor()
-
-            # Returns the canonical block at this slot.
-            #
-            # A slot may have no block (proposer missed their turn).
-            # A slot may have had multiple competing blocks (only one is canonical).
             cursor.execute(
                 f"SELECT root FROM {SLOT_INDEX_TABLE_NAME} WHERE slot = ?",
                 (int(slot),),
@@ -411,11 +315,6 @@ class SQLiteDatabase:
         """Index a block root by its slot."""
         try:
             cursor = self._connection.cursor()
-
-            # Updates as the canonical chain changes.
-            #
-            # During reorgs, the same slot may point to different blocks
-            # at different times. This always reflects the current canonical chain.
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO {SLOT_INDEX_TABLE_NAME} (slot, root)
@@ -429,11 +328,6 @@ class SQLiteDatabase:
             ) from exception
 
     # State Root Index Operations
-
-    #
-    # Maps state roots to block roots.
-    # Both ream (Rust) and zeam (Zig) maintain this index.
-    # Needed for checkpoint sync and API endpoints that query by state root.
 
     def get_block_root_by_state_root(self, state_root: Bytes32) -> Bytes32 | None:
         """Look up the block root associated with a state root."""
@@ -471,10 +365,6 @@ class SQLiteDatabase:
 
     # Genesis Time
 
-    #
-    # Storing genesis time in the database enables self-contained restarts.
-    # Without it, the node needs external configuration to know when genesis was.
-
     def get_genesis_time(self) -> Uint64 | None:
         """Retrieve the stored genesis time."""
         try:
@@ -490,7 +380,7 @@ class SQLiteDatabase:
         if row is None:
             return None
 
-        # Genesis time is stored as 8-byte little-endian integer.
+        # Genesis time is stored as an 8-byte little-endian integer.
         return Uint64(int.from_bytes(row["data"], byteorder="little"))
 
     def put_genesis_time(self, genesis_time: Uint64) -> None:
@@ -512,10 +402,9 @@ class SQLiteDatabase:
     @contextmanager
     def batch_write(self) -> Generator[None]:
         """
-        Context manager for atomic multi-write operations.
+        Group writes into one atomic transaction.
 
-        All writes within the block are committed atomically on exit.
-        Rolls back on exception to prevent partial writes.
+        Commits on clean exit, rolls back on any exception.
         """
         try:
             yield
@@ -532,34 +421,22 @@ class SQLiteDatabase:
 
     # Pruning
 
-    #
-    # When finalization advances, blocks/states before the finalized slot
-    # can be removed. Both ream (Rust) and zeam (Zig) implement pruning.
-
     def prune_before_slot(self, slot: Slot, keep_roots: frozenset[Bytes32]) -> int:
         """
-        Remove blocks and states with slots strictly before the given slot.
+        Remove blocks and states with slots strictly below the given slot.
 
-        Preserves entries whose roots are in keep_roots (e.g., the finalized block).
-        Cleans up associated slot index entries.
-
-        Args:
-            slot: Prune entries with slots strictly below this value.
-            keep_roots: Roots to preserve regardless of slot.
-
-        Returns:
-            Total number of entries pruned across all tables.
+        Roots in the keep set survive regardless of slot.
+        Associated slot-index and state-root-index entries are removed with them.
+        Returns the total number of rows removed.
         """
         try:
             cursor = self._connection.cursor()
             total_pruned = 0
 
-            # Build the exclusion set for parameterized queries.
             keep_root_bytes = [bytes(root) for root in keep_roots]
             placeholders = ",".join("?" for _ in keep_root_bytes)
 
             def prune_table_below_slot(table_name: str) -> int:
-                # Delete rows below the threshold, preserving kept roots.
                 # An empty keep set omits the NOT IN clause to avoid invalid empty parentheses.
                 if keep_root_bytes:
                     cursor.execute(
@@ -573,14 +450,19 @@ class SQLiteDatabase:
                     )
                 return cursor.rowcount
 
-            # Blocks and states share the same root and slot columns, so prune both identically.
+            # Blocks, states, and the slot index all carry root and slot columns,
+            # so the same keep-aware delete prunes each of them.
             total_pruned += prune_table_below_slot(BLOCKS_TABLE_NAME)
             total_pruned += prune_table_below_slot(STATES_TABLE_NAME)
+            total_pruned += prune_table_below_slot(SLOT_INDEX_TABLE_NAME)
 
-            # Prune slot index entries below the threshold.
+            # The state root index has no slot column, so drop the entries that
+            # now point at blocks no longer present.
             cursor.execute(
-                f"DELETE FROM {SLOT_INDEX_TABLE_NAME} WHERE slot < ?",
-                (int(slot),),
+                f"""
+                DELETE FROM {STATE_ROOT_INDEX_TABLE_NAME}
+                WHERE block_root NOT IN (SELECT root FROM {BLOCKS_TABLE_NAME})
+                """
             )
             total_pruned += cursor.rowcount
 
@@ -591,10 +473,6 @@ class SQLiteDatabase:
             ) from exception
 
     # Lifecycle
-
-    #
-    # SQLite connections should be explicitly closed when done.
-    # The context manager pattern ensures cleanup even on exceptions.
 
     def close(self) -> None:
         """Close database connection."""

@@ -11,7 +11,7 @@ from consensus_testing import MockForkchoiceStore, make_signed_block
 from lean_spec.node.networking import PeerId
 from lean_spec.node.sync.backfill_sync import BackfillSync
 from lean_spec.node.sync.block_cache import BlockCache
-from lean_spec.node.sync.head_sync import HeadSync, HeadSyncResult
+from lean_spec.node.sync.head_sync import HeadSync
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
@@ -81,11 +81,9 @@ class TestGossipBlockProcessing:
         )
         block_root = hash_tree_root(block.block)
 
-        head_sync_result, new_store = await head_sync.on_gossip_block(block, peer_id, store)
+        new_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=True,
-        )
+        assert new_store is not None
         assert block_root in processed_blocks
 
     async def test_block_with_unknown_parent_cached_and_triggers_backfill(
@@ -111,11 +109,9 @@ class TestGossipBlockProcessing:
         )
         block_root = hash_tree_root(block.block)
 
-        head_sync_result, _ = await head_sync.on_gossip_block(block, peer_id, store)
+        result_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
+        assert result_store is None
         assert block_root in head_sync.block_cache
         assert head_sync.block_cache.orphan_count == 1
         assert backfill.fill_missing_calls == [[unknown_parent]]
@@ -151,11 +147,9 @@ class TestGossipBlockProcessing:
             process_block=should_not_be_called,
         )
 
-        head_sync_result, _ = await head_sync.on_gossip_block(block, peer_id, store)
+        result_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
+        assert result_store is None
         assert call_count == 0
 
 
@@ -210,11 +204,9 @@ class TestDescendantProcessing:
         )
 
         # Process parent - should trigger child processing
-        head_sync_result, _ = await head_sync.on_gossip_block(parent, peer_id, store)
+        new_store = await head_sync.on_gossip_block(parent, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=True,
-        )
+        assert new_store is not None
         assert processing_order == [parent_root, child_root]
         assert child_root not in block_cache  # Removed after processing
 
@@ -263,11 +255,9 @@ class TestDescendantProcessing:
         )
 
         # Process first block - should cascade to all descendants
-        head_sync_result, _ = await head_sync.on_gossip_block(blocks[0], peer_id, store)
+        new_store = await head_sync.on_gossip_block(blocks[0], peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=True,
-        )
+        assert new_store is not None
         assert processing_order == [1, 2, 3, 4]
 
 
@@ -300,12 +290,9 @@ class TestErrorHandling:
             state_root=Bytes32.zero(),
         )
 
-        head_sync_result, returned_store = await head_sync.on_gossip_block(block, peer_id, store)
+        returned_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
-        assert returned_store is store  # Original store returned on error
+        assert returned_store is None
 
 
 class TestStorePropagation:
@@ -364,58 +351,10 @@ class TestStorePropagation:
             process_block=track_processing,
         )
 
-        head_sync_result, new_store = await head_sync.on_gossip_block(parent, peer_id, store)
+        new_store = await head_sync.on_gossip_block(parent, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=True,
-        )
+        assert new_store is not None
         assert {parent_root, child1_root, child2_root} <= set(new_store.blocks.keys())
-
-
-class TestReentrantGuard:
-    """Tests for reentrant processing guard."""
-
-    async def test_reentrant_call_returns_not_processed(
-        self,
-        genesis_block,
-        peer_id: PeerId,
-    ) -> None:
-        """Block already in _processing returns processed=False."""
-        genesis_root = hash_tree_root(genesis_block)
-        store = cast(Store, MockForkchoiceStore())
-        store.blocks[genesis_root] = genesis_block
-
-        call_count = 0
-
-        def should_not_be_called(s: Any, b: SignedBlock) -> Any:
-            nonlocal call_count
-            call_count += 1
-            return s
-
-        head_sync = HeadSync(
-            block_cache=BlockCache(),
-            backfill=_null_backfill(),
-            process_block=should_not_be_called,
-        )
-
-        block = make_signed_block(
-            slot=Slot(1),
-            proposer_index=ValidatorIndex(0),
-            parent_root=genesis_root,
-            state_root=Bytes32.zero(),
-        )
-        block_root = hash_tree_root(block.block)
-
-        # Simulate reentrant call by pre-adding to _processing.
-        head_sync._processing.add(block_root)
-
-        head_sync_result, returned_store = await head_sync.on_gossip_block(block, peer_id, store)
-
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
-        assert returned_store is store
-        assert call_count == 0
 
 
 # Backfill routing decisions on gossip blocks.
@@ -533,12 +472,9 @@ class TestRejectionBelowFinalized:
         block = _gossip_block(slot=10, parent_root=unknown_parent, state_seed=1)
         block_root = hash_tree_root(block.block)
 
-        head_sync_result, returned_store = await head_sync.on_gossip_block(block, peer_id, store)
+        returned_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
-        assert returned_store is store
+        assert returned_store is None
         assert recorder.range_calls == []
         assert recorder.missing_calls == []
         assert block_root not in head_sync.block_cache
@@ -553,12 +489,9 @@ class TestRejectionBelowFinalized:
         block = _gossip_block(slot=5, parent_root=unknown_parent, state_seed=1)
         block_root = hash_tree_root(block.block)
 
-        head_sync_result, returned_store = await head_sync.on_gossip_block(block, peer_id, store)
+        returned_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
-        assert returned_store is store
+        assert returned_store is None
         assert recorder.range_calls == []
         assert recorder.missing_calls == []
         assert block_root not in head_sync.block_cache
@@ -577,11 +510,9 @@ class TestBackfillRoutingAboveHead:
         block = _gossip_block(slot=11, parent_root=unknown_parent, state_seed=1)
         block_root = hash_tree_root(block.block)
 
-        head_sync_result, _ = await head_sync.on_gossip_block(block, peer_id, store)
+        result_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
+        assert result_store is None
         assert recorder.range_calls == []
         assert recorder.missing_calls == [[unknown_parent]]
         assert block_root in head_sync.block_cache
@@ -596,11 +527,9 @@ class TestBackfillRoutingAboveHead:
         block = _gossip_block(slot=100, parent_root=unknown_parent, state_seed=1)
         block_root = hash_tree_root(block.block)
 
-        head_sync_result, _ = await head_sync.on_gossip_block(block, peer_id, store)
+        result_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
+        assert result_store is None
         # gap_floor = head+1 = 21, gap_size = 100 - 21 = 79.
         assert recorder.range_calls == [(Slot(21), Uint64(79))]
         assert recorder.missing_calls == []
@@ -622,11 +551,9 @@ class TestAltForkRoutingAtOrBelowHead:
         block = _gossip_block(slot=15, parent_root=unknown_parent, state_seed=1)
         block_root = hash_tree_root(block.block)
 
-        head_sync_result, _ = await head_sync.on_gossip_block(block, peer_id, store)
+        result_store = await head_sync.on_gossip_block(block, peer_id, store)
 
-        assert head_sync_result == HeadSyncResult(
-            processed=False,
-        )
+        assert result_store is None
         assert recorder.range_calls == []
         assert recorder.missing_calls == [[unknown_parent]]
         assert block_root in head_sync.block_cache

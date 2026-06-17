@@ -1,9 +1,4 @@
-"""
-Abstract database interface for consensus data storage.
-
-Defines the Protocol that all database implementations must follow.
-Uses structural subtyping for flexibility.
-"""
+"""Abstract database interface for consensus data storage."""
 
 from __future__ import annotations
 
@@ -21,147 +16,71 @@ from lean_spec.spec.ssz import Bytes32, Uint64
 
 class Database(Protocol):
     """
-    Protocol for consensus data storage.
+    Storage interface for consensus data.
 
-    All database implementations must provide these methods.
-    Uses structural subtyping - any class with matching methods satisfies the protocol.
-
-    Storage Organization
-    --------------------
-    - Blocks: Indexed by block root hash
-    - States: Indexed by associated block root hash (not state root)
-    - Checkpoints: Justified and finalized tracking
-    - State root index: Maps state roots to block roots
+    States are keyed by their associated block root, not their state root.
     """
 
     # Block Operations
 
     def get_block(self, root: Bytes32) -> SpecBlockType | None:
-        """
-        Retrieve a block by its root hash.
-
-        Args:
-            root: SSZ hash tree root of the block.
-
-        Returns:
-            Block if found, None otherwise.
-        """
+        """Retrieve a block by its root hash."""
         ...
 
     def put_block(self, block: SpecBlockType, root: Bytes32) -> None:
         """
-        Store a block with its root hash.
+        Store a block under its root hash.
 
-        Args:
-            block: Block to store.
-            root: Pre-computed root hash (avoids recomputation).
+        The caller passes the precomputed root to avoid recomputing it.
         """
         ...
 
     # State Operations
 
     def get_state(self, root: Bytes32) -> SpecStateType | None:
-        """
-        Retrieve a state by its associated block root.
-
-        Args:
-            root: Block root hash associated with this state.
-
-        Returns:
-            State if found, None otherwise.
-        """
+        """Retrieve a state by its associated block root."""
         ...
 
     def put_state(self, state: SpecStateType, root: Bytes32) -> None:
-        """
-        Store a state indexed by its associated block root.
-
-        Args:
-            state: State to store.
-            root: Block root hash associated with this state.
-        """
+        """Store a state under its associated block root."""
         ...
 
     # Checkpoint Operations
 
     def get_justified_checkpoint(self) -> Checkpoint | None:
-        """
-        Retrieve the latest justified checkpoint.
-
-        Returns:
-            Latest justified checkpoint, or None if not set.
-        """
+        """Retrieve the latest justified checkpoint, or None if unset."""
         ...
 
     def put_justified_checkpoint(self, checkpoint: Checkpoint) -> None:
-        """
-        Store the latest justified checkpoint.
-
-        Args:
-            checkpoint: New justified checkpoint.
-        """
+        """Store the latest justified checkpoint."""
         ...
 
     def get_finalized_checkpoint(self) -> Checkpoint | None:
-        """
-        Retrieve the latest finalized checkpoint.
-
-        Returns:
-            Latest finalized checkpoint, or None if not set.
-        """
+        """Retrieve the latest finalized checkpoint, or None if unset."""
         ...
 
     def put_finalized_checkpoint(self, checkpoint: Checkpoint) -> None:
-        """
-        Store the latest finalized checkpoint.
-
-        Args:
-            checkpoint: New finalized checkpoint.
-        """
+        """Store the latest finalized checkpoint."""
         ...
 
     # Head Tracking
 
     def get_head_root(self) -> Bytes32 | None:
-        """
-        Retrieve the current head block root.
-
-        Returns:
-            Head block root, or None if not set.
-        """
+        """Retrieve the current head block root, or None if unset."""
         ...
 
     def put_head_root(self, root: Bytes32) -> None:
-        """
-        Store the current head block root.
-
-        Args:
-            root: New head block root.
-        """
+        """Store the current head block root."""
         ...
 
     # Slot Index Operations
 
     def get_block_root_by_slot(self, slot: Slot) -> Bytes32 | None:
-        """
-        Retrieve block root for a specific slot.
-
-        Args:
-            slot: Slot number to look up.
-
-        Returns:
-            Block root at that slot, or None if no block.
-        """
+        """Retrieve the canonical block root at a slot, or None if none."""
         ...
 
     def put_block_root_by_slot(self, slot: Slot, root: Bytes32) -> None:
-        """
-        Index a block root by its slot.
-
-        Args:
-            slot: Slot of the block.
-            root: Root hash of the block.
-        """
+        """Index a block root by its slot."""
         ...
 
     # State Root Index Operations
@@ -170,46 +89,26 @@ class Database(Protocol):
         """
         Look up the block root associated with a state root.
 
-        Needed for checkpoint sync and API endpoints that query by state root.
-
-        Args:
-            state_root: SSZ hash tree root of the state.
-
-        Returns:
-            Associated block root, or None if not indexed.
+        Needed for checkpoint sync and queries that key on state root.
         """
         ...
 
     def put_block_root_by_state_root(self, state_root: Bytes32, block_root: Bytes32) -> None:
-        """
-        Index a block root by the state root it produced.
-
-        Args:
-            state_root: SSZ hash tree root of the post-state.
-            block_root: Root of the block that produced this state.
-        """
+        """Index a block root by the state root it produced."""
         ...
 
     # Genesis Time
 
     def get_genesis_time(self) -> Uint64 | None:
         """
-        Retrieve the stored genesis time.
+        Retrieve the stored genesis time, or None if unset.
 
-        Enables self-contained restarts without external genesis config.
-
-        Returns:
-            Genesis time as Unix timestamp, or None if not set.
+        Persisting it lets the node restart without external genesis config.
         """
         ...
 
     def put_genesis_time(self, genesis_time: Uint64) -> None:
-        """
-        Store genesis time for future restarts.
-
-        Args:
-            genesis_time: Unix timestamp of genesis (slot 0).
-        """
+        """Store the genesis time as a Unix timestamp."""
         ...
 
     # Transaction Control
@@ -217,10 +116,9 @@ class Database(Protocol):
     @contextmanager
     def batch_write(self) -> Generator[None]:
         """
-        Context manager for atomic multi-write operations.
+        Group writes into one atomic transaction.
 
-        All writes within the block are committed atomically on exit.
-        Rolls back on exception to prevent partial writes.
+        Commits on clean exit, rolls back on any exception.
         """
         ...
 
@@ -228,17 +126,11 @@ class Database(Protocol):
 
     def prune_before_slot(self, slot: Slot, keep_roots: frozenset[Bytes32]) -> int:
         """
-        Remove blocks and states with slots strictly before the given slot.
+        Remove blocks and states with slots strictly below the given slot.
 
-        Preserves entries whose roots are in keep_roots (e.g., the finalized block).
-        Cleans up associated slot index entries.
-
-        Args:
-            slot: Prune entries with slots strictly below this value.
-            keep_roots: Roots to preserve regardless of slot.
-
-        Returns:
-            Total number of entries pruned across all tables.
+        Roots in the keep set survive regardless of slot.
+        Associated slot-index and state-root-index entries are removed with them.
+        Returns the total number of rows removed.
         """
         ...
 

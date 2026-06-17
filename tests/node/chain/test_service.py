@@ -233,8 +233,8 @@ class TestStartupTick:
     @pytest.mark.parametrize(
         ("intervals_elapsed", "expected_interval", "expected_tick_times"),
         [
-            # Before genesis: nothing ticks, the caller waits.
-            (-0.5, None, []),
+            # Before genesis: nothing ticks, the anchor interval is reported.
+            (-0.5, Interval(0), []),
             # Exactly at genesis: the store already sits at the anchor.
             (0.0, Interval(0), []),
             # One slot in: five ticks, no skip.
@@ -246,10 +246,10 @@ class TestStartupTick:
     async def test_catches_store_up_to_wall_clock(
         self,
         intervals_elapsed: float,
-        expected_interval: Interval | None,
+        expected_interval: Interval,
         expected_tick_times: list[int],
     ) -> None:
-        """Startup ticks the store to the current interval, or reports waiting if pre-genesis."""
+        """Startup ticks the store to the current interval and returns it."""
         spec = ProbeSpec()
         now = 1000 + intervals_elapsed * INTERVAL_SECONDS
         service = make_service(spec, time_fn=lambda: now)
