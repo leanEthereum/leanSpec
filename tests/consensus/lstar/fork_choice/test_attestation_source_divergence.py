@@ -11,8 +11,16 @@ from consensus_testing import (
     StoreChecks,
 )
 from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks.lstar.block_production_tiered import TieredBlockProductionMixin
+from lean_spec.spec.forks.lstar.spec import LstarSpec
 
 pytestmark = pytest.mark.valid_until("Lstar")
+
+# The proposer strategy wired into the fork decides how the divergent block body below
+# is filled.
+# The default fixed-point builder keeps a vote even when it adds no new voters.
+# The tiered builder drops such a redundant vote.
+TIERED_BLOCK_PRODUCTION_ACTIVE = issubclass(LstarSpec, TieredBlockProductionMixin)
 
 
 def test_justified_divergence_self_heals_in_next_block(
@@ -44,7 +52,23 @@ def test_justified_divergence_self_heals_in_next_block(
     - block_5 pulls the slot-1 votes from the pool and includes them.
     - the head chain justifies slot 1, matching the node.
     - finalized stays at slot 0.
+    - the included vote count depends on the wired proposer strategy.
+    - the default builder also keeps V0's redundant slot-2 vote.
+    - the tiered builder drops it, since it adds no new voters.
     """
+    # Only the block body diverges by strategy; head, justified, and finalized match.
+    if TIERED_BLOCK_PRODUCTION_ACTIVE:
+        block_5_attestation_count = 1
+        block_5_attestations = [
+            AggregatedAttestationCheck(participants={1, 2, 3}, target_slot=Slot(1)),
+        ]
+    else:
+        block_5_attestation_count = 2
+        block_5_attestations = [
+            AggregatedAttestationCheck(participants={1, 2, 3}, target_slot=Slot(1)),
+            AggregatedAttestationCheck(participants={0}, target_slot=Slot(2)),
+        ]
+
     fork_choice_test(
         steps=[
             BlockStep(
@@ -103,17 +127,8 @@ def test_justified_divergence_self_heals_in_next_block(
                     head_root_label="block_5",
                     latest_justified_slot=Slot(1),
                     latest_justified_root_label="common",
-                    block_attestation_count=2,
-                    block_attestations=[
-                        AggregatedAttestationCheck(
-                            participants={1, 2, 3},
-                            target_slot=Slot(1),
-                        ),
-                        AggregatedAttestationCheck(
-                            participants={0},
-                            target_slot=Slot(2),
-                        ),
-                    ],
+                    block_attestation_count=block_5_attestation_count,
+                    block_attestations=block_5_attestations,
                 ),
             ),
         ],

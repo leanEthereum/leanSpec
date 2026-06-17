@@ -188,12 +188,14 @@ def test_produce_block_enforces_max_attestations_data_limit(
 
     Given
     -----
-    - 3 attesting validators.
     - the chain:
-        genesis -> block_1(1) -> ... -> one block past the limit
-    - one vote per target block arrives by gossip.
+        genesis -> block_1(1) -> ... -> the highest justifiable target slot
+    - one vote from V0 per justifiable target slot arrives by gossip.
     - each vote names a different target.
     - this yields one more distinct attestation data entry than the limit allows.
+    - only justifiable targets are used, so every entry is a real candidate.
+    - a single voter never reaches the supermajority (2/3).
+    - no entry justifies its target, so the cap alone bounds the count.
 
     When
     ----
@@ -201,8 +203,8 @@ def test_produce_block_enforces_max_attestations_data_limit(
 
     Then
     ----
-    - the builder sorts entries by target slot and stops at the limit.
-    - the entries with the highest target slots are dropped.
+    - entries are ordered by target slot.
+    - the entry with the highest target slot is dropped.
     - the produced block holds exactly the maximum number of votes.
 
     Timing
@@ -212,32 +214,43 @@ def test_produce_block_enforces_max_attestations_data_limit(
     - a tick to the next slot start moves the votes into the known pool.
     """
     limit = int(MAX_ATTESTATIONS_DATA)
-    num_target_blocks = limit + 1
-    block_production_slot = num_target_blocks + 1
-    validators = [ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)]
 
-    aggregate_interval = num_target_blocks * int(INTERVALS_PER_SLOT) + 2
+    # The first limit + 1 slots that are justifiable after genesis.
+    # One more than the cap, so exactly one candidate must be dropped.
+    target_slots: list[int] = []
+    candidate_slot = 1
+    while len(target_slots) < limit + 1:
+        if Slot(candidate_slot).is_justifiable_after(Slot(0)):
+            target_slots.append(candidate_slot)
+        candidate_slot += 1
+
+    # Build a contiguous chain up to the highest target slot, then produce one
+    # slot later. Every target block must exist on-chain to be a valid target.
+    chain_length = target_slots[-1]
+    block_production_slot = chain_length + 1
+
+    aggregate_interval = chain_length * int(INTERVALS_PER_SLOT) + 2
     aggregate_time = math.ceil(aggregate_interval * int(MILLISECONDS_PER_INTERVAL) / 1000)
     next_slot_time = block_production_slot * int(SECONDS_PER_SLOT)
 
     chain_steps: list[BlockStep] = [
         BlockStep(
             block=BlockSpec(slot=Slot(n), label=f"block_{n}"),
-            checks=(StoreChecks(head_slot=Slot(n)) if n == 1 or n == num_target_blocks else None),
+            checks=(StoreChecks(head_slot=Slot(n)) if n == 1 or n == chain_length else None),
         )
-        for n in range(1, num_target_blocks + 1)
+        for n in range(1, chain_length + 1)
     ]
 
     attestation_steps: list[GossipAggregatedAttestationStep] = [
         GossipAggregatedAttestationStep(
             attestation=AggregatedAttestationSpec(
-                validator_indices=validators,
-                slot=Slot(num_target_blocks),
+                validator_indices=[ValidatorIndex(0)],
+                slot=Slot(chain_length),
                 target_slot=Slot(n),
                 target_root_label=f"block_{n}",
             ),
         )
-        for n in range(1, num_target_blocks + 1)
+        for n in target_slots
     ]
 
     fork_choice_test(
