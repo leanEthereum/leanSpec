@@ -43,11 +43,6 @@ def test_justified_divergence_self_heals_in_next_block(
     - block_5 pulls the slot-1 votes from the pool and includes them.
     - the head chain justifies slot 1, matching the node.
     - finalized stays at slot 0.
-
-    The justified slot is the strategy-independent witness of the self-heal.
-    Reaching slot 1 is only possible once block_5 incorporates the slot-1 votes,
-    so the block body is not asserted directly: its exact composition is a
-    proposer-strategy choice, not a consensus outcome.
     """
     fork_choice_test(
         steps=[
