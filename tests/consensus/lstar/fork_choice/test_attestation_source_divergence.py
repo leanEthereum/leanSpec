@@ -42,6 +42,9 @@ def test_justified_divergence_self_heals_in_next_block(
     Then
     ----
     - block_5 pulls the slot-1 votes from the pool and includes them.
+    - V0's slot-2 vote is already recorded on the head chain.
+    - that vote adds no new voters, so the builder omits it.
+    - the block body holds 1 aggregated vote.
     - the head chain justifies slot 1, matching the node.
     - finalized stays at slot 0.
     """
@@ -103,15 +106,11 @@ def test_justified_divergence_self_heals_in_next_block(
                     head_root_label="block_5",
                     latest_justified_slot=Slot(1),
                     latest_justified_root_label="common",
-                    block_attestation_count=2,
+                    block_attestation_count=1,
                     block_attestations=[
                         AggregatedAttestationCheck(
                             participants={1, 2, 3},
                             target_slot=Slot(1),
-                        ),
-                        AggregatedAttestationCheck(
-                            participants={0},
-                            target_slot=Slot(2),
                         ),
                     ],
                 ),
