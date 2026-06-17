@@ -42,14 +42,7 @@ class ApiServer:
     """Callable that returns the current Store instance."""
 
     signed_block_getter: Callable[[Bytes32], SignedBlock | None] | None = None
-    """
-    Optional callable returning the signed block for a block root.
-
-    The fork-choice store retains only unsigned blocks, so serving the
-    checkpoint-sync anchor block needs a separate signed-block source.
-    The embedding node injects one here.
-    When absent, the finalized block endpoint returns 503.
-    """
+    """Optional callable returning the signed block for a block root."""
 
     aggregator_role_control: AggregatorRoleControl | None = None
     """Optional runtime accessor for the node's aggregator role."""

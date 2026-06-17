@@ -32,12 +32,7 @@ class ApiContext:
     """Holder of the aggregator flag, or None when aggregator control is unwired."""
 
     signed_block_getter: Callable[[Bytes32], SignedBlock | None] | None
-    """
-    Callable returning the signed block for a block root, or None when unwired.
-
-    The fork-choice store retains only unsigned blocks.
-    Serving the checkpoint-sync anchor block needs a separate signed-block source.
-    """
+    """Callable returning the signed block for a block root, or None when unwired."""
 
     def require_store(self) -> Store:
         """

@@ -133,14 +133,6 @@ class ApiHandlers:
         """
         Return the finalized signed block as SSZ bytes.
 
-        Together with the finalized state endpoint, this gives a
-        checkpoint-syncing peer the (state, signed block) anchor pair.
-        External consumers bootstrap their fork-choice store from this pair.
-
-        The fork-choice store holds only unsigned blocks.
-        Serving a signed block therefore needs a separate signed-block source.
-        Nodes without such a source answer with 503.
-
         Raises:
             HTTPNotFound: The source has no block for the finalized root.
             HTTPInternalServerError: Encoding the signed block failed.

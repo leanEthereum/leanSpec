@@ -86,13 +86,8 @@ async def fetch_finalized_block(url: str) -> SignedBlock:
     """
     Fetch the signed block matching the finalized state via checkpoint sync.
 
-    The returned block carries the real body, so its hash tree root equals
-    the finalized root the rest of the network agrees on.
-    The caller must verify the block's state root against the fetched state
-    before pairing them into a store.
-
     Args:
-        url: Base URL of the node API (e.g., "http://localhost:5052").
+        url: Base URL of the node API.
 
     Returns:
         The finalized signed block.
