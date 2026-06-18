@@ -27,6 +27,9 @@ from consensus_testing.test_fixtures import (
     ClearFirstAttestationBits,
     CorruptProof,
     DropMessageBinding,
+    DutyGateDecision,
+    DutyGateInitialState,
+    DutyGateStep,
     ExpectedRejection,
     FixtureInfo,
     ForkChoiceFixture,
@@ -56,6 +59,8 @@ from consensus_testing.test_fixtures import (
     SwapParticipantPublicKey,
     SyncFixture,
     SyncTest,
+    ValidatorDutyGateFixture,
+    ValidatorDutyGateTest,
     VerifyMultiMessageProofsFixture,
     VerifyMultiMessageProofsTest,
     VerifySignaturesFixture,
@@ -147,6 +152,7 @@ JustifiabilityTestFiller = Callable[..., JustifiabilityFixture]
 PoseidonPermutationTestFiller = Callable[..., PoseidonPermutationFixture]
 SyncTestFiller = Callable[..., SyncFixture]
 ReaggregationTestFiller = Callable[..., ReaggregationFixture]
+ValidatorDutyGateTestFiller = Callable[..., ValidatorDutyGateFixture]
 
 __all__ = [
     "CachedMessage",
@@ -257,6 +263,11 @@ __all__ = [
     "PoseidonPermutationTest",
     "SyncFixture",
     "SyncTest",
+    "DutyGateInitialState",
+    "DutyGateStep",
+    "DutyGateDecision",
+    "ValidatorDutyGateFixture",
+    "ValidatorDutyGateTest",
     # Test types
     "BaseForkChoiceStep",
     "TickStep",
@@ -284,4 +295,5 @@ __all__ = [
     "PoseidonPermutationTestFiller",
     "SyncTestFiller",
     "ReaggregationTestFiller",
+    "ValidatorDutyGateTestFiller",
 ]

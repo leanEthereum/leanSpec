@@ -74,6 +74,13 @@ from consensus_testing.test_fixtures.state_transition import (
     StateTransitionTest,
 )
 from consensus_testing.test_fixtures.sync import SyncFixture, SyncTest, VerifyCheckpoint
+from consensus_testing.test_fixtures.validator_duty_gate import (
+    DutyGateDecision,
+    DutyGateInitialState,
+    DutyGateStep,
+    ValidatorDutyGateFixture,
+    ValidatorDutyGateTest,
+)
 from consensus_testing.test_fixtures.verify_proofs import (
     DropMessageBinding,
     IncrementEmittedSlot,
@@ -108,6 +115,7 @@ FIXTURE_FORMATS: tuple[type[BaseTestSpec], ...] = (
     SSZTest,
     StateTransitionTest,
     SyncTest,
+    ValidatorDutyGateTest,
     VerifyMultiMessageProofsTest,
     VerifySignaturesTest,
     VerifySingleMessageProofsTest,
@@ -199,4 +207,9 @@ __all__ = [
     "PoseidonPermutationTest",
     "SyncFixture",
     "SyncTest",
+    "DutyGateInitialState",
+    "DutyGateStep",
+    "DutyGateDecision",
+    "ValidatorDutyGateFixture",
+    "ValidatorDutyGateTest",
 ]

@@ -59,6 +59,7 @@ _.validate_state_length
 _.validate_target
 _.validate_rejection_is_declared
 _.validate_signatures_are_out_of_scope
+_.validate_max_seen_at_or_above_head
 _._yaml_int_to_hex
 _._check_list_lengths
 _._reject_oversized_validator_set
