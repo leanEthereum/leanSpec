@@ -52,8 +52,18 @@ class _EntryScore:
     Tiered score for a candidate attestation data entry during block building.
 
     Lower tier wins.
-    Within a tier, more new voters wins, then a smaller target slot, then a
-    smaller attestation slot, then the entry's data root for determinism.
+    The remaining order depends on the tier.
+
+    The finalize and justify tiers already cross the threshold on their target.
+    So they rank a larger target slot first, then a larger attestation slot,
+    then more new voters, then the entry's data root for determinism.
+    Pushing the justified slot as far forward as possible shortens recovery
+    from a justification or finalization stall.
+
+    The build tier only adds marginal voters toward the threshold.
+    So coverage matters more than reaching for a distant slot.
+    It ranks more new voters first, then a larger target slot, then a larger
+    attestation slot, then the entry's data root for determinism.
     """
 
     tier: _Tier
@@ -63,11 +73,22 @@ class _EntryScore:
 
     def ordering_key(self, data_root: Bytes32) -> tuple[int, int, int, int, bytes]:
         """Sort key where the smallest tuple is the best candidate."""
+        larger_target_slot = -int(self.target_slot)
+        larger_attestation_slot = -int(self.attestation_slot)
+        more_new_voters = -self.new_voter_count
+        if self.tier is _Tier.BUILD:
+            return (
+                int(self.tier),
+                more_new_voters,
+                larger_target_slot,
+                larger_attestation_slot,
+                bytes(data_root),
+            )
         return (
             int(self.tier),
-            -self.new_voter_count,
-            int(self.target_slot),
-            int(self.attestation_slot),
+            larger_target_slot,
+            larger_attestation_slot,
+            more_new_voters,
             bytes(data_root),
         )
 

@@ -203,8 +203,8 @@ def test_produce_block_enforces_max_attestations_data_limit(
 
     Then
     ----
-    - entries are ordered by target slot.
-    - the entry with the highest target slot is dropped.
+    - entries are ordered by descending target slot.
+    - the entry with the lowest target slot is dropped.
     - the produced block holds exactly the maximum number of votes.
 
     Timing
