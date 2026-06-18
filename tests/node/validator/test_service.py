@@ -937,7 +937,7 @@ class TestValidatorServiceIntegration:
         The attestation must reference:
         - head: the current chain head
         - target: the attestation target based on forkchoice
-        - source: the latest justified checkpoint
+        - source: the head chain's justified checkpoint
         """
         attestations_produced: list[SignedAttestation] = []
 
@@ -955,7 +955,9 @@ class TestValidatorServiceIntegration:
 
         store = real_sync_service.store
         expected_head_root = store.head
-        expected_source = store.latest_justified
+        # The head is the genesis anchor, whose state carries the zero-root justified placeholder.
+        # The produced source normalizes that placeholder to the real genesis root.
+        expected_source = Checkpoint(root=store.head, slot=Slot(0))
 
         for signed_attestation in attestations_produced:
             attestation_data = signed_attestation.data

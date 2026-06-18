@@ -15,7 +15,7 @@ from lean_spec.spec.forks.lstar.containers import (
     ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
-from lean_spec.spec.ssz import Uint64
+from lean_spec.spec.ssz import Bytes32, Uint64
 
 
 class ValidatorDutiesMixin(LstarSpecBase):
@@ -83,11 +83,20 @@ class ValidatorDutiesMixin(LstarSpecBase):
 
         target_checkpoint = self.get_attestation_target(store)
 
+        # Source the vote from the head chain's own justified checkpoint.
+        # The store can advance its justified from a minority fork the head never extended.
+        # Voting with the head's justified keeps the source on the chain the vote extends.
+        justified_source = store.states[store.head].latest_justified
+
+        # Replace the placeholder genesis root with the real one.
+        if justified_source.root == Bytes32.zero():
+            justified_source = Checkpoint(root=store.head, slot=justified_source.slot)
+
         return self.attestation_data_class(
             slot=slot,
             head=head_checkpoint,
             target=target_checkpoint,
-            source=store.latest_justified,
+            source=justified_source,
         )
 
     def produce_block_with_signatures(
