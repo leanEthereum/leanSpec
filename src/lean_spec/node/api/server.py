@@ -11,7 +11,8 @@ from aiohttp import web
 
 from lean_spec.node.api.context import AggregatorRoleControl, ApiContext
 from lean_spec.node.api.handlers import ApiHandlers
-from lean_spec.spec.forks import LstarSpec, Store
+from lean_spec.spec.forks import LstarSpec, SignedBlock, Store
+from lean_spec.spec.ssz import Bytes32
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,9 @@ class ApiServer:
     store_getter: Callable[[], Store | None] | None = None
     """Callable that returns the current Store instance."""
 
+    signed_block_getter: Callable[[Bytes32], SignedBlock | None] | None = None
+    """Optional callable returning the signed block for a block root."""
+
     aggregator_role_control: AggregatorRoleControl | None = None
     """Optional runtime accessor for the node's aggregator role."""
 
@@ -57,6 +61,19 @@ class ApiServer:
         """Get the current Store instance."""
         return self.store_getter() if self.store_getter else None
 
+    @property
+    def bound_port(self) -> int:
+        """
+        TCP port the running server actually listens on.
+
+        Resolves the OS-assigned port when the configuration requested port 0.
+        """
+        if self._runner is None:
+            raise RuntimeError("API server is not running")
+        # The runner exposes one socket address per listening site.
+        # The port is the second element of the first address.
+        return int(self._runner.addresses[0][1])
+
     async def start(self) -> None:
         """Start the API server in the background."""
         app = web.Application()
@@ -67,6 +84,7 @@ class ApiServer:
             spec=self.spec,
             store_getter=self.store_getter,
             aggregator_role_control=self.aggregator_role_control,
+            signed_block_getter=self.signed_block_getter,
         )
         handlers = ApiHandlers(context)
 
@@ -76,6 +94,7 @@ class ApiServer:
             [
                 web.get("/lean/v0/health", handlers.health),
                 web.get("/lean/v0/states/finalized", handlers.finalized_state),
+                web.get("/lean/v0/blocks/finalized", handlers.finalized_block),
                 web.get("/lean/v0/checkpoints/justified", handlers.justified_checkpoint),
                 web.get("/lean/v0/fork_choice", handlers.fork_choice),
                 web.get("/metrics", handlers.metrics),
@@ -90,7 +109,7 @@ class ApiServer:
         self._site = web.TCPSite(self._runner, self.config.host, self.config.port)
         await self._site.start()
 
-        logger.info("API server listening on %s:%d", self.config.host, self.config.port)
+        logger.info("API server listening on %s:%d", self.config.host, self.bound_port)
 
     async def run(self) -> None:
         """Run the API server until it is asked to stop."""

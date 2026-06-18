@@ -8,12 +8,9 @@ from typing import Generator
 import httpx
 import pytest
 
-from consensus_testing import make_genesis_store
+from consensus_testing import make_genesis_store, store_backed_signed_block_getter
 from lean_spec.node.api import ApiServer, ApiServerConfig
 from tests.node.api.conftest import AggregatorRoleStub
-
-DEFAULT_PORT = 15099
-"""Port for the auto-started local server."""
 
 
 class _ServerThread(threading.Thread):
@@ -54,6 +51,7 @@ class _ServerThread(threading.Thread):
         return ApiServer(
             config=config,
             store_getter=lambda: store,
+            signed_block_getter=store_backed_signed_block_getter(store),
             aggregator_role_control=AggregatorRoleStub(),
         )
 
@@ -112,14 +110,18 @@ def server_url(request: pytest.FixtureRequest) -> Generator[str, None, None]:
     if external_url:
         yield external_url
     else:
-        server_thread = _ServerThread(DEFAULT_PORT)
+        # Bind to port 0 so the OS assigns a free port.
+        # This avoids collisions with other tests under parallel runs.
+        server_thread = _ServerThread(0)
         server_thread.start()
         server_thread.ready.wait(timeout=10.0)
 
-        if server_thread.error:
+        if server_thread.error or server_thread.server is None:
             pytest.fail(f"Failed to start local server: {server_thread.error}")
 
-        url = f"http://127.0.0.1:{DEFAULT_PORT}"
+        started_server = server_thread.server
+        assert started_server is not None
+        url = f"http://127.0.0.1:{started_server.bound_port}"
 
         if not _wait_for_server(url):
             server_thread.stop()

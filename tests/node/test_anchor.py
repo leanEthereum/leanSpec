@@ -6,13 +6,24 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from consensus_testing import make_genesis_state
+from consensus_testing import (
+    make_genesis_state,
+    reconstruct_block_from_header,
+    signed_block_with_empty_proof,
+)
 from lean_spec.node.anchor import Anchor
 from lean_spec.node.genesis import GenesisConfig
 from lean_spec.node.sync.checkpoint_sync import CheckpointSyncError
-from lean_spec.spec.forks import Slot
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import SignedBlock, Slot
+from lean_spec.spec.forks.lstar import State
 from lean_spec.spec.forks.lstar.spec import LstarSpec
 from lean_spec.spec.ssz import Bytes32
+
+
+def _signed_genesis_block(state: State) -> SignedBlock:
+    """Wrap the genesis block matching a state with an empty proof."""
+    return signed_block_with_empty_proof(reconstruct_block_from_header(state))
 
 
 class TestAnchorFromGenesis:
@@ -44,6 +55,11 @@ class TestAnchorFromCheckpoint:
 
         with (
             patch(
+                "lean_spec.node.anchor.fetch_finalized_block",
+                new_callable=AsyncMock,
+                return_value=_signed_genesis_block(checkpoint_state),
+            ),
+            patch(
                 "lean_spec.node.anchor.fetch_finalized_state",
                 new_callable=AsyncMock,
                 return_value=checkpoint_state,
@@ -67,6 +83,11 @@ class TestAnchorFromCheckpoint:
 
         with (
             patch(
+                "lean_spec.node.anchor.fetch_finalized_block",
+                new_callable=AsyncMock,
+                return_value=_signed_genesis_block(checkpoint_state),
+            ),
+            patch(
                 "lean_spec.node.anchor.fetch_finalized_state",
                 new_callable=AsyncMock,
                 return_value=checkpoint_state,
@@ -85,13 +106,41 @@ class TestAnchorFromCheckpoint:
             )
         assert str(exception_info.value) == ("checkpoint state failed structural verification")
 
-    async def test_network_error_propagates(self) -> None:
-        """Network errors surface as CheckpointSyncError."""
+    async def test_block_fetch_failure_propagates(self) -> None:
+        """A source that cannot serve the finalized block aborts checkpoint sync."""
         local_genesis = GenesisConfig.model_validate(
             {"GENESIS_TIME": 1000, "GENESIS_VALIDATORS": []}
         )
 
         with (
+            patch(
+                "lean_spec.node.anchor.fetch_finalized_block",
+                new_callable=AsyncMock,
+                side_effect=CheckpointSyncError("HTTP error 503: no signed block source"),
+            ),
+            pytest.raises(CheckpointSyncError) as exception_info,
+        ):
+            await Anchor.from_checkpoint(
+                url="http://localhost:5052",
+                genesis=local_genesis,
+                fork=LstarSpec(),
+                validator_index=None,
+            )
+        assert str(exception_info.value) == "HTTP error 503: no signed block source"
+
+    async def test_state_fetch_failure_propagates(self) -> None:
+        """Network errors on the state fetch surface as CheckpointSyncError."""
+        checkpoint_state = make_genesis_state(num_validators=3, genesis_time=1000)
+        local_genesis = GenesisConfig.model_validate(
+            {"GENESIS_TIME": 1000, "GENESIS_VALIDATORS": []}
+        )
+
+        with (
+            patch(
+                "lean_spec.node.anchor.fetch_finalized_block",
+                new_callable=AsyncMock,
+                return_value=_signed_genesis_block(checkpoint_state),
+            ),
             patch(
                 "lean_spec.node.anchor.fetch_finalized_state",
                 new_callable=AsyncMock,
@@ -111,14 +160,22 @@ class TestAnchorFromCheckpoint:
         """Successful checkpoint sync produces a populated anchor."""
         genesis_time = 1000
         checkpoint_state = make_genesis_state(num_validators=3, genesis_time=genesis_time)
+        signed_block = _signed_genesis_block(checkpoint_state)
         local_genesis = GenesisConfig.model_validate(
             {"GENESIS_TIME": genesis_time, "GENESIS_VALIDATORS": []}
         )
 
-        with patch(
-            "lean_spec.node.anchor.fetch_finalized_state",
-            new_callable=AsyncMock,
-            return_value=checkpoint_state,
+        with (
+            patch(
+                "lean_spec.node.anchor.fetch_finalized_state",
+                new_callable=AsyncMock,
+                return_value=checkpoint_state,
+            ),
+            patch(
+                "lean_spec.node.anchor.fetch_finalized_block",
+                new_callable=AsyncMock,
+                return_value=signed_block,
+            ),
         ):
             anchor = await Anchor.from_checkpoint(
                 url="http://localhost:5052",
@@ -130,3 +187,41 @@ class TestAnchorFromCheckpoint:
         assert anchor.store is not None
         assert anchor.validators == checkpoint_state.validators
         assert anchor.initial_status.finalized == anchor.store.latest_finalized
+        # The anchor is keyed by the fetched block's root, so the store's
+        # finalized checkpoint matches the root the network agrees on.
+        assert anchor.store.latest_finalized.root == hash_tree_root(signed_block.block)
+        # The fetched block, not a synthetic placeholder, is the one stored.
+        assert hash_tree_root(signed_block.block) in anchor.store.blocks
+
+    async def test_block_state_pairing_mismatch_raises(self) -> None:
+        """A block not matching the fetched state raises instead of falling back."""
+        genesis_time = 1000
+        checkpoint_state = make_genesis_state(num_validators=3, genesis_time=genesis_time)
+        other_state = make_genesis_state(num_validators=4, genesis_time=genesis_time)
+        mismatched_block = _signed_genesis_block(other_state)
+        local_genesis = GenesisConfig.model_validate(
+            {"GENESIS_TIME": genesis_time, "GENESIS_VALIDATORS": []}
+        )
+
+        with (
+            patch(
+                "lean_spec.node.anchor.fetch_finalized_state",
+                new_callable=AsyncMock,
+                return_value=checkpoint_state,
+            ),
+            patch(
+                "lean_spec.node.anchor.fetch_finalized_block",
+                new_callable=AsyncMock,
+                return_value=mismatched_block,
+            ),
+            pytest.raises(CheckpointSyncError) as exception_info,
+        ):
+            await Anchor.from_checkpoint(
+                url="http://localhost:5052",
+                genesis=local_genesis,
+                fork=LstarSpec(),
+                validator_index=None,
+            )
+        assert str(exception_info.value) == (
+            "anchor block / state mismatch; source advanced finalization between requests, retry"
+        )

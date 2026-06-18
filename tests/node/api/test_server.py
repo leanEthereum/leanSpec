@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import httpx
 
+from consensus_testing import store_backed_signed_block_getter
 from lean_spec.node.api import ApiServer, ApiServerConfig
+from lean_spec.spec.crypto.merkleization import hash_tree_root
+from lean_spec.spec.forks import SignedBlock
 from lean_spec.spec.forks.lstar import Store
 from tests.node.api.conftest import AggregatorRoleStub
 
@@ -54,14 +57,16 @@ class TestFinalizedStateEndpoint:
 
     async def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
-        config = ApiServerConfig(port=15054)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15054/lean/v0/states/finalized")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/states/finalized"
+                )
 
                 assert response.status_code == 503
                 assert response.reason_phrase == "Store not initialized"
@@ -72,17 +77,108 @@ class TestFinalizedStateEndpoint:
     async def test_returns_404_when_finalized_state_missing(self, base_store: Store) -> None:
         """Endpoint returns 404 when the finalized state is absent from the store."""
         store_without_states = base_store.model_copy(update={"states": {}})
-        config = ApiServerConfig(port=15072)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, store_getter=lambda: store_without_states)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15072/lean/v0/states/finalized")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/states/finalized"
+                )
 
                 assert response.status_code == 404
                 assert response.reason_phrase == "Finalized state not available"
+
+        finally:
+            await server.aclose()
+
+
+class TestFinalizedBlockEndpoint:
+    """Tests for the /lean/v0/blocks/finalized endpoint."""
+
+    async def test_returns_503_when_store_not_initialized(self) -> None:
+        """Endpoint returns 503 Service Unavailable when store is not set."""
+        config = ApiServerConfig(port=0)
+        server = ApiServer(config=config)
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/blocks/finalized"
+                )
+
+                assert response.status_code == 503
+
+        finally:
+            await server.aclose()
+
+    async def test_returns_503_without_signed_block_source(self, base_store: Store) -> None:
+        """Endpoint returns 503 when no signed-block source is configured."""
+        config = ApiServerConfig(port=0)
+        server = ApiServer(config=config, store_getter=lambda: base_store)
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/blocks/finalized"
+                )
+
+                assert response.status_code == 503
+
+        finally:
+            await server.aclose()
+
+    async def test_returns_404_when_block_unavailable(self, base_store: Store) -> None:
+        """Endpoint returns 404 when the source has no block for the finalized root."""
+        config = ApiServerConfig(port=0)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=lambda root: None,
+        )
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/blocks/finalized"
+                )
+
+                assert response.status_code == 404
+
+        finally:
+            await server.aclose()
+
+    async def test_returns_finalized_anchor_block(self, base_store: Store) -> None:
+        """Endpoint serves the signed block matching the finalized checkpoint root."""
+        config = ApiServerConfig(port=0)
+        server = ApiServer(
+            config=config,
+            store_getter=lambda: base_store,
+            signed_block_getter=store_backed_signed_block_getter(base_store),
+        )
+
+        await server.start()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/blocks/finalized"
+                )
+
+                assert response.status_code == 200
+                assert "application/octet-stream" in response.headers["content-type"]
+
+                signed_block = SignedBlock.decode_bytes(response.content)
+
+                assert hash_tree_root(signed_block.block) == base_store.latest_finalized.root
 
         finally:
             await server.aclose()
@@ -93,14 +189,16 @@ class TestJustifiedCheckpointEndpoint:
 
     async def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
-        config = ApiServerConfig(port=15057)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15057/lean/v0/checkpoints/justified")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/checkpoints/justified"
+                )
 
                 assert response.status_code == 503
                 assert response.reason_phrase == "Store not initialized"
@@ -114,14 +212,16 @@ class TestForkChoiceEndpoint:
 
     async def test_returns_503_when_store_not_initialized(self) -> None:
         """Endpoint returns 503 Service Unavailable when store is not set."""
-        config = ApiServerConfig(port=15058)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15058/lean/v0/fork_choice")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/fork_choice"
+                )
 
                 assert response.status_code == 503
                 assert response.reason_phrase == "Store not initialized"
@@ -131,14 +231,16 @@ class TestForkChoiceEndpoint:
 
     async def test_returns_200_with_initialized_store(self, base_store: Store) -> None:
         """Endpoint returns 200 with fork choice tree when store is initialized."""
-        config = ApiServerConfig(port=15059)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, store_getter=lambda: base_store)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15059/lean/v0/fork_choice")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/fork_choice"
+                )
 
                 assert response.status_code == 200
                 assert response.headers["content-type"] == "application/json"
@@ -179,14 +281,16 @@ class TestForkChoiceEndpoint:
     async def test_validator_count_is_null_when_head_state_missing(self, base_store: Store) -> None:
         """Fork choice reports a null validator count when the head post-state is absent."""
         store_without_states = base_store.model_copy(update={"states": {}})
-        config = ApiServerConfig(port=15071)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, store_getter=lambda: store_without_states)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15071/lean/v0/fork_choice")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/fork_choice"
+                )
 
                 assert response.status_code == 200
                 assert response.json()["validator_count"] is None
@@ -200,14 +304,16 @@ class TestAggregatorAdminEndpoint:
 
     async def test_status_returns_503_without_aggregator_control(self) -> None:
         """GET returns 503 when no aggregator role control is wired."""
-        config = ApiServerConfig(port=15060)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15060/lean/v0/admin/aggregator")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator"
+                )
 
                 assert response.status_code == 503
                 assert response.reason_phrase == "Aggregator role control not available"
@@ -218,14 +324,16 @@ class TestAggregatorAdminEndpoint:
     async def test_status_returns_current_role(self) -> None:
         """GET returns the current aggregator role from the sync service flag."""
         aggregator_role_stub = AggregatorRoleStub(is_aggregator=True)
-        config = ApiServerConfig(port=15061)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://127.0.0.1:15061/lean/v0/admin/aggregator")
+                response = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator"
+                )
 
                 assert response.status_code == 200
                 assert response.headers["content-type"] == "application/json"
@@ -237,7 +345,7 @@ class TestAggregatorAdminEndpoint:
     async def test_toggle_activates_role(self) -> None:
         """POST with enabled=true activates the aggregator role."""
         aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
-        config = ApiServerConfig(port=15062)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
@@ -245,7 +353,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15062/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     json={"enabled": True},
                 )
 
@@ -254,7 +362,9 @@ class TestAggregatorAdminEndpoint:
                 assert aggregator_role_stub.is_aggregator is True
 
                 # A follow-up GET sees the new value.
-                follow_up = await client.get("http://127.0.0.1:15062/lean/v0/admin/aggregator")
+                follow_up = await client.get(
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator"
+                )
                 assert follow_up.json() == {"is_aggregator": True}
 
         finally:
@@ -263,7 +373,7 @@ class TestAggregatorAdminEndpoint:
     async def test_toggle_deactivates_role(self) -> None:
         """POST with enabled=false deactivates the aggregator role."""
         aggregator_role_stub = AggregatorRoleStub(is_aggregator=True)
-        config = ApiServerConfig(port=15063)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
@@ -271,7 +381,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15063/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     json={"enabled": False},
                 )
 
@@ -284,7 +394,7 @@ class TestAggregatorAdminEndpoint:
 
     async def test_toggle_rejects_missing_body(self) -> None:
         """POST with no body returns 400."""
-        config = ApiServerConfig(port=15064)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
@@ -292,7 +402,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15064/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     content=b"",
                     headers={"Content-Type": "application/json"},
                 )
@@ -305,7 +415,7 @@ class TestAggregatorAdminEndpoint:
 
     async def test_toggle_rejects_missing_field(self) -> None:
         """POST without 'enabled' field returns 400."""
-        config = ApiServerConfig(port=15065)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
@@ -313,7 +423,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15065/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     json={},
                 )
 
@@ -326,7 +436,7 @@ class TestAggregatorAdminEndpoint:
     async def test_toggle_rejects_non_boolean(self) -> None:
         """POST with non-boolean 'enabled' returns 400 and does not change state."""
         aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
-        config = ApiServerConfig(port=15066)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
@@ -334,7 +444,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15066/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     json={"enabled": "yes"},
                 )
 
@@ -355,14 +465,14 @@ class TestAggregatorAdminEndpoint:
         Observed on Python 3.14 macOS.
         """
         aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
-        config = ApiServerConfig(port=15067)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
 
         try:
             async with httpx.AsyncClient() as client:
-                url = "http://127.0.0.1:15067/lean/v0/admin/aggregator"
+                url = f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator"
                 responses = [
                     await client.post(url, json={"enabled": True}),
                     await client.post(url, json={"enabled": False}),
@@ -377,7 +487,7 @@ class TestAggregatorAdminEndpoint:
 
     async def test_toggle_rejects_null_body(self) -> None:
         """POST with JSON null body returns 400."""
-        config = ApiServerConfig(port=15068)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
@@ -385,7 +495,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15068/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     content=b"null",
                     headers={"Content-Type": "application/json"},
                 )
@@ -398,7 +508,7 @@ class TestAggregatorAdminEndpoint:
 
     async def test_toggle_rejects_array_body(self) -> None:
         """POST with JSON array body returns 400."""
-        config = ApiServerConfig(port=15069)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=AggregatorRoleStub())
 
         await server.start()
@@ -406,7 +516,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15069/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     json=[True],
                 )
 
@@ -419,7 +529,7 @@ class TestAggregatorAdminEndpoint:
     async def test_toggle_rejects_integer_enabled(self) -> None:
         """POST with integer 1 as enabled returns 400 (must be boolean)."""
         aggregator_role_stub = AggregatorRoleStub(is_aggregator=False)
-        config = ApiServerConfig(port=15070)
+        config = ApiServerConfig(port=0)
         server = ApiServer(config=config, aggregator_role_control=aggregator_role_stub)
 
         await server.start()
@@ -427,7 +537,7 @@ class TestAggregatorAdminEndpoint:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://127.0.0.1:15070/lean/v0/admin/aggregator",
+                    f"http://127.0.0.1:{server.bound_port}/lean/v0/admin/aggregator",
                     json={"enabled": 1},
                 )
 

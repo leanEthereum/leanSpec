@@ -32,11 +32,7 @@ class ChainTweak(NamedTuple):
     """Index of the chain within the one-time signature."""
 
     step: int
-    """
-    - Step number along the chain.
-    - Steps are 1-indexed.
-    - Step zero is the chain start.
-    """
+    """Step number along the chain, 1-indexed; step zero is the chain start."""
 
 
 NODE_LIST_LIMIT: Final = 2 * TARGET_CONFIG.LEAVES_PER_BOTTOM_TREE

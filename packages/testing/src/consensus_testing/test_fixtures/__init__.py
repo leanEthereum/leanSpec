@@ -58,6 +58,7 @@ from consensus_testing.test_fixtures.poseidon_permutation import (
     PoseidonPermutationFixture,
     PoseidonPermutationTest,
 )
+from consensus_testing.test_fixtures.reaggregation import ReaggregationFixture, ReaggregationTest
 from consensus_testing.test_fixtures.slot_clock import (
     CurrentInterval,
     CurrentSlot,
@@ -102,6 +103,7 @@ FIXTURE_FORMATS: tuple[type[BaseTestSpec], ...] = (
     JustifiabilityTest,
     NetworkingCodecTest,
     PoseidonPermutationTest,
+    ReaggregationTest,
     SlotClockTest,
     SSZTest,
     StateTransitionTest,
@@ -156,6 +158,8 @@ __all__ = [
     "FromUnixTime",
     "TotalIntervals",
     "VerifyCheckpoint",
+    "ReaggregationFixture",
+    "ReaggregationTest",
     "FIXTURE_FORMATS",
     "BaseConsensusFixture",
     "BaseTestSpec",

@@ -287,8 +287,11 @@ class GeneralizedXmssScheme(StrictBaseModel):
         Phase 1: bound-check the slot.
         Phase 1 rejects without raising on bad input.
         Phase 2: recompute the codeword using the randomness carried by the signature.
-        Phase 3: complete each Winternitz chain from the released hash to its endpoint.
-        Phase 4: rebuild the Merkle root from the chain endpoints and the opening.
+        Phase 3: reject a wrong number of released hashes or path siblings.
+        These list lengths arrive from the wire with only an upper bound.
+        An exact-length check rejects the malformed signature before the per-chain loop.
+        Phase 4: complete each Winternitz chain from the released hash to its endpoint.
+        Phase 5: rebuild the Merkle root from the chain endpoints and the opening.
 
         Args:
             public_key: Public key.
@@ -315,6 +318,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         if codeword is None:
             return False
 
+        # Phase 3: reject malformed list lengths before iterating over them.
         # The released chain count is recovered from the wire with only an upper bound.
         # An attacker can send fewer than one hash per chain.
         # Reject the malformed length here so the per-chain loop never indexes out of range.
@@ -327,7 +331,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
         if len(signature.path.siblings) != config.LOG_LIFETIME:
             return False
 
-        # Phase 3: finish each chain from the released hash to its endpoint.
+        # Phase 4: finish each chain from the released hash to its endpoint.
         chain_ends: list[HashDigestVector] = []
         for chain_index, digit in enumerate(codeword):
             # The signature provides the digest after digit steps along the chain.
@@ -344,7 +348,7 @@ class GeneralizedXmssScheme(StrictBaseModel):
             )
             chain_ends.append(end_digest)
 
-        # Phase 4: rebuild and compare against the trusted root.
+        # Phase 5: rebuild and compare against the trusted root.
         return verify_path(
             poseidon=self.poseidon,
             config=config,

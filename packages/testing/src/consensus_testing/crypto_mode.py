@@ -1,12 +1,4 @@
-"""
-Mock the Rust aggregation prover at the FFI boundary, from the test layer.
-
-Most vectors do not test proofs, yet building one costs a recursive SNARK merge.
-
-Mocking lets the fast scheme skip that work while leaving the spec untouched.
-
-Vectors whose purpose is proof validity opt back in with the real_crypto marker.
-"""
+"""Mock the Rust aggregation prover at the FFI boundary, from the test layer."""
 
 import hashlib
 from collections.abc import Callable, Iterator
@@ -52,87 +44,39 @@ class AggregationProver:
         """Return the process-wide crypto mode."""
         return cls._mode
 
-    @staticmethod
-    def _placeholder_proof(positional_args: tuple[object, ...]) -> bytes:
-        """
-        Build a deterministic placeholder proof bound to a call's inputs.
-
-        Length framing keeps distinct inputs distinct.
-
-        So two different blocks never share proof bytes by accident.
-        """
-        digest = hashlib.sha256()
-        stack: list[object] = [positional_args]
-        while stack:
-            value = stack.pop()
-            if isinstance(value, bool):
-                digest.update(b"b\x01" if value else b"b\x00")
-            elif isinstance(value, int):
-                encoded = str(value).encode()
-                digest.update(b"i" + len(encoded).to_bytes(8, "big") + encoded)
-            elif isinstance(value, bytes):
-                digest.update(b"y" + len(value).to_bytes(8, "big") + value)
-            elif isinstance(value, (list, tuple)):
-                digest.update(b"s" + len(value).to_bytes(8, "big"))
-                stack.extend(reversed(value))
-            elif value is None:
-                digest.update(b"n")
-            else:
-                raise TypeError(f"unmockable prover argument of type {type(value).__name__}")
-        return MOCK_PROOF_PREFIX + digest.digest()
-
     @classmethod
     @contextmanager
     def mocked(cls) -> Iterator[None]:
         """
         Swap the Rust prover bindings on the spec module for in-process stubs.
 
-        - Provers return a placeholder proof;
+        - Provers return a placeholder proof.
         - Verifiers accept that placeholder.
-
-        The spec's own structural checks still run; only the Rust call is skipped.
-        A real proof reaching the mocked verifier falls through to the real one.
         """
         originals = {
             name: getattr(aggregation, name) for name in (*cls._prover_names, *cls._verifier_names)
         }
 
-        def prove(*positional_args: object, **_keyword_args: object) -> tuple[None, bytes]:
-            return None, cls._placeholder_proof(positional_args)
+        def prove(
+            *positional_arguments: object, **_keyword_arguments: object
+        ) -> tuple[None, bytes]:
+            # Distinct inputs hash to distinct bytes, so two blocks never collide.
+            fingerprint = repr(positional_arguments).encode()
+            return None, MOCK_PROOF_PREFIX + hashlib.sha256(fingerprint).digest()
 
         def make_verifier(real_verifier: Callable[..., None]) -> Callable[..., None]:
-            def verify(*positional_args: object, **keyword_args: object) -> None:
-                # A placeholder proof is recognized by its sentinel prefix alone.
-                # Acceptance is then an unconditional no-op.
-                # The message, slot, and public keys go unchecked.
-                #
-                # This is deliberately weaker than recompute-and-compare.
-                # The placeholder is content-bound when the prover builds it.
-                # But the prover hashes inputs the verifier never receives.
-                #
-                # The single-message prover folds in the raw signatures.
-                # It also folds in the child proofs and the rate exponent.
-                # The verifier only sees the public keys, message, slot, and proof.
-                #
-                # Merging and splitting reshape a proof after the fact.
-                # Its bytes then match no single prover call the verifier could replay.
-                # So reconstructing the placeholder to compare it is infeasible.
-                #
-                # Invariant: this no-op acceptance stays sound only because every
-                # vector asserting proof validity or rejection carries the
-                # real_crypto marker and runs against the real prover, not the mock.
-                # A proof-rejection vector lacking that marker would silently pass
-                # here, even though a conforming client must reject it.
-                # Never add a proof-tamper vector under the mock; mark it real_crypto.
+            def verify(*positional_arguments: object, **keyword_arguments: object) -> None:
+                # Accept any sentinel-prefixed placeholder unchecked.
+                # Invariant: sound only because proof vectors carry the real-crypto marker.
                 carries_placeholder = any(
                     isinstance(argument, bytes) and argument.startswith(MOCK_PROOF_PREFIX)
-                    for argument in positional_args
+                    for argument in positional_arguments
                 )
                 if carries_placeholder:
                     return None
-                # A real proof can still arrive when a vector mixes real and mocked
-                # inputs, so fall through to the real verifier for those bytes.
-                return real_verifier(*positional_args, **keyword_args)
+                # A vector mixing real and mocked inputs can still pass real bytes.
+                # Fall through to the real verifier for those.
+                return real_verifier(*positional_arguments, **keyword_arguments)
 
             return verify
 

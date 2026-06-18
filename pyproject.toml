@@ -146,6 +146,9 @@ fail_under = 90
 # The whitelist names the indirectly-used symbols vulture cannot see; listing
 # them explicitly keeps the ignores tight instead of relying on wide globs.
 paths = ["src", "packages", "tests", "vulture_whitelist.py"]
+# Skip build artifacts under packages, which duplicate the real source and would
+# otherwise report every package symbol twice.
+exclude = ["*/build/*"]
 # Show the largest unused blocks first; they are the highest-value removals.
 sort_by_size = true
 

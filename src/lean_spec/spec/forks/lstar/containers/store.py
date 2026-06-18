@@ -43,7 +43,12 @@ class Store[StateT: Container, BlockT: Container](StrictBaseModel):
     """Highest-slot justified checkpoint observed so far."""
 
     latest_finalized: Checkpoint
-    """Highest-slot finalized checkpoint observed so far."""
+    """
+    Finalization as seen from the canonical head, not irreversible economic finality.
+
+    This tracks the head chain's view and is reorg-mutable.
+    A reorg onto a fork that finalized a lower slot lowers this value.
+    """
 
     blocks: dict[Bytes32, BlockT] = Field(default_factory=dict)
     """

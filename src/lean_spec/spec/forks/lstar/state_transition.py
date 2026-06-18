@@ -272,7 +272,8 @@ class StateTransitionMixin(LstarSpecBase):
                 continue
 
             # The target slot must be justifiable after the finalized slot.
-            # 3SF-mini admits only a structured set of distances; see the justifiable-slot rule.
+            # 3SF-mini admits a target only when its distance from the finalized slot
+            # sits within the immediate window, is a perfect square, or is a pronic number.
             if not target.slot.is_justifiable_after(finalized_slot):
                 continue
 

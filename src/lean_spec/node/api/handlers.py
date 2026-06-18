@@ -129,6 +129,30 @@ class ApiHandlers:
 
         return web.Response(body=ssz_bytes, content_type="application/octet-stream")
 
+    async def finalized_block(self, request: web.Request) -> web.Response:
+        """
+        Return the finalized signed block as SSZ bytes.
+
+        Raises:
+            HTTPNotFound: The source has no block for the finalized root.
+            HTTPInternalServerError: Encoding the signed block failed.
+        """
+        store = self.context.require_store()
+        signed_block_getter = self.context.require_signed_block_getter()
+
+        signed_block = signed_block_getter(store.latest_finalized.root)
+        if signed_block is None:
+            raise web.HTTPNotFound(reason="Finalized signed block not available")
+
+        # Encoding a full block is CPU-heavy, so run it off the event loop.
+        try:
+            ssz_bytes = await asyncio.to_thread(signed_block.encode_bytes)
+        except Exception as exception:
+            logger.error("Failed to encode signed block: %s", exception)
+            raise web.HTTPInternalServerError(reason="Encoding failed") from exception
+
+        return web.Response(body=ssz_bytes, content_type="application/octet-stream")
+
     async def aggregator_status(self, request: web.Request) -> web.Response:
         """Report whether the node is acting as an aggregator."""
         aggregator_role_control = self.context.require_aggregator_role_control()

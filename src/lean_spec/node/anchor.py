@@ -5,7 +5,7 @@ The forkchoice store starts at a trusted block plus its matching state.
 Two sources land on the same return shape:
 
 - Genesis: synthesise the store from the genesis validator set.
-- Checkpoint: fetch a finalized state from a peer and build the store from it.
+- Checkpoint: fetch a finalized block and state from a peer and build the store.
 
 Once the store exists the protocol cannot tell the two sources apart.
 """
@@ -19,14 +19,12 @@ from lean_spec.node.genesis import GenesisConfig
 from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.sync.checkpoint_sync import (
     CheckpointSyncError,
+    fetch_finalized_block,
     fetch_finalized_state,
     verify_checkpoint_state,
 )
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import (
-    AggregatedAttestations,
-    Block,
-    BlockBody,
     Checkpoint,
     ForkProtocol,
     Slot,
@@ -81,10 +79,12 @@ class Anchor(StrictBaseModel):
         validator_index: ValidatorIndex | None,
     ) -> Anchor:
         """
-        Build an anchor by fetching a finalized state from a peer.
+        Build an anchor by fetching a finalized block and state from a peer.
 
         The fetched state replaces the genesis validator set.
         Deposits and exits since genesis are already baked into it.
+        The fetched block anchors the store at the same finalized root the
+        network agrees on; a source that cannot serve it cannot be used.
 
         Args:
             url: HTTP endpoint of the node serving the checkpoint state.
@@ -95,7 +95,14 @@ class Anchor(StrictBaseModel):
         Raises:
             CheckpointSyncError: For every failure mode covering transport,
                 structural verification, and genesis-time mismatch.
+                Also raised when the fetched block and state do not pair.
+                That case is retryable: the source advanced finalization
+                between the two requests.
         """
+        # The block comes first: it is small, so an incapable source fails
+        # fast before the multi-megabyte state download starts.
+        signed_block = await fetch_finalized_block(url)
+
         state = await fetch_finalized_state(url, fork.state_class)
 
         # Catches a corrupt download before it contaminates the forkchoice store.
@@ -110,24 +117,17 @@ class Anchor(StrictBaseModel):
                 f"local={genesis.genesis_time}"
             )
 
-        # Reconstruct the anchor block from the header embedded in the state.
-        # A header stored before its post-state root carries a zero placeholder;
-        # in that case we recompute the root from the state itself.
-        # Fork choice only needs identity and lineage, so the body is left empty.
-        header = state.latest_block_header
-        state_root = (
-            header.state_root if header.state_root != Bytes32.zero() else hash_tree_root(state)
-        )
-        anchor_block = Block(
-            slot=header.slot,
-            proposer_index=header.proposer_index,
-            parent_root=header.parent_root,
-            state_root=state_root,
-            body=BlockBody(attestations=AggregatedAttestations(data=[])),
-        )
+        # Both fetches read the snapshot at the finalized root.
+        # A pairing mismatch means finalization advanced between the two
+        # requests; refetching is the fix.
+        if signed_block.block.state_root != hash_tree_root(state):
+            raise CheckpointSyncError(
+                "anchor block / state mismatch; "
+                "source advanced finalization between requests, retry"
+            )
 
         # The protocol return type is structural, but only one concrete store ships.
-        store = cast(Store, fork.create_store(state, anchor_block, validator_index))
+        store = cast(Store, fork.create_store(state, signed_block.block, validator_index))
 
         return cls(
             validators=state.validators,

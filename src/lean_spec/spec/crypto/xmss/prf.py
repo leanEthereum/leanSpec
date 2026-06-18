@@ -74,6 +74,10 @@ class PRFKey(BaseBytes):
         #     domain_sep || 0x00 || key || epoch (4 bytes) || chain_index (8 bytes)
         #
         # The 0x00 byte separates chain-start derivation from randomness derivation.
+        #
+        # The epoch is bounded by the key lifetime, which fits in four bytes for every
+        # supported configuration (LOG_LIFETIME <= 32).
+        # A config beyond that bound would overflow this fixed-width packing.
         input_data = (
             PRF_DOMAIN_SEP
             + PRF_DOMAIN_SEP_DOMAIN_ELEMENT
@@ -128,6 +132,10 @@ class PRFKey(BaseBytes):
         # Layout:
         #
         #     domain_sep || 0x01 || key || epoch || message || counter
+        #
+        # The epoch is bounded by the key lifetime, which fits in four bytes for every
+        # supported configuration (LOG_LIFETIME <= 32).
+        # A config beyond that bound would overflow this fixed-width packing.
         input_data = (
             PRF_DOMAIN_SEP
             + PRF_DOMAIN_SEP_RANDOMNESS

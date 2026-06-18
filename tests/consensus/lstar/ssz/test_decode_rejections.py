@@ -5,8 +5,9 @@ from typing import ClassVar
 import pytest
 
 from consensus_testing import ExpectedRejection, SSZTestFiller
-from lean_spec.spec.forks import RejectionReason
-from lean_spec.spec.ssz import BaseBitlist, BaseBitvector, Boolean, Bytes4, Uint32
+from lean_spec.spec.forks import RejectionReason, ValidatorIndex
+from lean_spec.spec.forks.lstar.containers import Validator, Validators
+from lean_spec.spec.ssz import BaseBitlist, BaseBitvector, Boolean, Bytes4, Bytes52, Uint32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -176,4 +177,45 @@ def test_uint32_decode_rejects_wrong_byte_length(ssz_test: SSZTestFiller) -> Non
         value=Uint32(0),
         raw_bytes="0x010203",
         expected_rejection=ExpectedRejection(reason=RejectionReason.DECODE_ERROR),
+    )
+
+
+def test_validators_decode_rejects_index_mismatched_with_position(ssz_test: SSZTestFiller) -> None:
+    """
+    Decoding a registry whose stored index disagrees with its position is rejected.
+
+    Given
+    -----
+    - a registry of two validators packed back to back.
+    - the validator at position 0 stores index 0.
+    - the validator at position 1 stores index 5.
+
+    When
+    ----
+    - the input is decoded into the registry type.
+
+    Then
+    ----
+    - decoding is rejected.
+    - the reason is that the stored index must equal the list position.
+    """
+    ssz_test(
+        type_name="Validators",
+        value=Validators(
+            data=[
+                Validator(
+                    attestation_public_key=Bytes52.zero(),
+                    proposal_public_key=Bytes52.zero(),
+                    index=ValidatorIndex(0),
+                )
+            ]
+        ),
+        raw_bytes=("0x" + "00" * 112 + "00" * 104 + "0500000000000000"),
+        expected_rejection=ExpectedRejection(
+            reason=RejectionReason.DECODE_ERROR,
+            exact_message=(
+                "validator at position 1 has index 5, "
+                "but the registry index must equal the list position"
+            ),
+        ),
     )

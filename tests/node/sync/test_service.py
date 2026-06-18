@@ -863,7 +863,7 @@ class TestReplayPendingAttestationsPlain:
 #
 # Only the decision/gate paths are exercised here.
 # These tests check when the split runs, not the cryptographic split itself.
-# The split-extract-merge round-trip is covered by the aggregation container tests.
+# The cryptographic split and merge are covered by the aggregation consensus vectors.
 
 # Round-robin proposer is slot % num_validators with four validators.
 NUM_VALIDATORS = 4

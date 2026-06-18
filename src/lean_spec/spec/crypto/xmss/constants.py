@@ -3,7 +3,7 @@
 import math
 from typing import Final, Self
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.config import LEAN_ENV
@@ -15,52 +15,59 @@ from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET
 class XmssConfig(StrictBaseModel):
     """A model holding the configuration constants for an XMSS preset."""
 
-    LOG_LIFETIME: int
-    """The base-2 logarithm of the scheme's maximum lifetime."""
+    LOG_LIFETIME: int = Field(gt=0)
+    """Base-2 logarithm of the scheme's maximum lifetime, the Merkle tree height."""
 
-    DIMENSION: int
-    """The total number of hash chains, v."""
+    DIMENSION: int = Field(gt=0)
+    """Number of hash chains per signature, v.
+    Security-derived: it sets how many codeword chunks a signature commits to."""
 
-    BASE: int
-    """The alphabet size for the digits of the encoded message."""
+    BASE: int = Field(gt=0)
+    """Alphabet size for the digits of the encoded message, the Winternitz parameter."""
 
-    Z: int
+    Z: int = Field(gt=0)
     """Number of base-BASE digits extracted from each field element."""
 
-    Q: int
-    """Quotient such that Q * BASE^Z == P - 1."""
+    Q: int = Field(gt=0)
+    """Quotient fixing the digit decomposition, constrained by Q * BASE^Z == P - 1."""
 
-    TARGET_SUM: int
-    """The required sum of all codeword chunks for a signature to be valid."""
+    TARGET_SUM: int = Field(gt=0)
+    """Required sum of all codeword chunks for a signature to be valid.
+    Security-derived: it tunes the forgery resistance of the encoding."""
 
-    MAX_TRIES: int
-    """How often one should try at most to resample a random value."""
+    MAX_TRIES: int = Field(gt=0)
+    """Maximum resampling attempts when searching for a codeword that meets the target sum.
+    Performance knob: a higher cap trades signing time for fewer hard failures."""
 
-    PARAMETER_LENGTH: int
-    """The length of the public parameter P.
+    PARAMETER_LENGTH: int = Field(gt=0)
+    """Length of the public parameter P, in field elements."""
 
-    It is used to specialize the hash function."""
+    TWEAK_LENGTH_FIELD_ELEMENTS: int = Field(gt=0)
+    """Length of a domain-separating tweak, in field elements."""
 
-    TWEAK_LENGTH_FIELD_ELEMENTS: int
-    """The length of a domain-separating tweak."""
+    MESSAGE_LENGTH_FIELD_ELEMENTS: int = Field(gt=0)
+    """Length of a message after being encoded into field elements."""
 
-    MESSAGE_LENGTH_FIELD_ELEMENTS: int
-    """The length of a message after being encoded into field elements."""
+    RAND_LENGTH_FIELD_ELEMENTS: int = Field(gt=0)
+    """Length of the randomness rho used during message encoding, in field elements."""
 
-    RAND_LENGTH_FIELD_ELEMENTS: int
-    """The length of the randomness rho used during message encoding."""
+    HASH_LENGTH_FIELD_ELEMENTS: int = Field(gt=0)
+    """Output length of the main tweakable hash function, in field elements.
+    Security-derived: it sets the collision resistance of every digest."""
 
-    HASH_LENGTH_FIELD_ELEMENTS: int
-    """The output length of the main tweakable hash function."""
-
-    CAPACITY: int
-    """The capacity of the Poseidon sponge, defining its security level."""
+    CAPACITY: int = Field(gt=0)
+    """Capacity of the Poseidon sponge, in field elements.
+    Security-derived: the capacity sets the sponge's security level."""
 
     @model_validator(mode="after")
     def _validate_decomposition(self) -> Self:
-        """Verify that Q * BASE^Z == P - 1."""
+        """Verify that Q * BASE^Z == P - 1 and that LOG_LIFETIME is even."""
         if self.Q * self.BASE**self.Z != P - 1:
             raise ValueError(f"Q * BASE^Z must equal P-1={P - 1}")
+        # The key splits into a top tree and bottom trees.
+        # Each covers LOG_LIFETIME / 2 levels, so the lifetime exponent must be even.
+        if self.LOG_LIFETIME % 2 != 0:
+            raise ValueError(f"LOG_LIFETIME must be even, got {self.LOG_LIFETIME}")
         return self
 
     @property

@@ -43,6 +43,8 @@ from consensus_testing.test_fixtures import (
     NetworkingCodecTest,
     PoseidonPermutationFixture,
     PoseidonPermutationTest,
+    ReaggregationFixture,
+    ReaggregationTest,
     RebindToAlternateHeadRoot,
     SetProposerIndex,
     SlotClockFixture,
@@ -129,6 +131,8 @@ from consensus_testing.values import (
     make_signed_block,
     make_test_block,
     make_test_status,
+    signed_block_with_empty_proof,
+    store_backed_signed_block_getter,
 )
 
 StateTransitionTestFiller = Callable[..., StateTransitionFixture]
@@ -144,6 +148,7 @@ SlotClockTestFiller = Callable[..., SlotClockFixture]
 JustifiabilityTestFiller = Callable[..., JustifiabilityFixture]
 PoseidonPermutationTestFiller = Callable[..., PoseidonPermutationFixture]
 SyncTestFiller = Callable[..., SyncFixture]
+ReaggregationTestFiller = Callable[..., ReaggregationFixture]
 
 __all__ = [
     "CachedMessage",
@@ -183,6 +188,8 @@ __all__ = [
     "FromSlot",
     "FromUnixTime",
     "TotalIntervals",
+    "ReaggregationFixture",
+    "ReaggregationTest",
     "VerifyCheckpoint",
     # Public API
     "AggregatedAttestationSpec",
@@ -202,6 +209,8 @@ __all__ = [
     "make_signed_block",
     "make_test_block",
     "make_test_status",
+    "signed_block_with_empty_proof",
+    "store_backed_signed_block_getter",
     # Unit-test fakes
     "MockEventSource",
     "MockForkchoiceStore",
@@ -278,4 +287,5 @@ __all__ = [
     "JustifiabilityTestFiller",
     "PoseidonPermutationTestFiller",
     "SyncTestFiller",
+    "ReaggregationTestFiller",
 ]

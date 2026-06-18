@@ -8,7 +8,8 @@ from typing import Protocol
 
 from aiohttp import web
 
-from lean_spec.spec.forks import LstarSpec, Store
+from lean_spec.spec.forks import LstarSpec, SignedBlock, Store
+from lean_spec.spec.ssz import Bytes32
 
 
 class AggregatorRoleControl(Protocol):
@@ -30,6 +31,9 @@ class ApiContext:
     aggregator_role_control: AggregatorRoleControl | None
     """Holder of the aggregator flag, or None when aggregator control is unwired."""
 
+    signed_block_getter: Callable[[Bytes32], SignedBlock | None] | None
+    """Callable returning the signed block for a block root, or None when unwired."""
+
     def require_store(self) -> Store:
         """
         Return the live store, or raise 503 when the node has no store yet.
@@ -46,3 +50,9 @@ class ApiContext:
         if self.aggregator_role_control is None:
             raise web.HTTPServiceUnavailable(reason="Aggregator role control not available")
         return self.aggregator_role_control
+
+    def require_signed_block_getter(self) -> Callable[[Bytes32], SignedBlock | None]:
+        """Return the signed-block source, or raise 503 when it is unwired."""
+        if self.signed_block_getter is None:
+            raise web.HTTPServiceUnavailable(reason="Signed block source not configured")
+        return self.signed_block_getter

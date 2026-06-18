@@ -115,7 +115,9 @@ class SingleMessageAggregate(Container):
                 mode=LEAN_ENV,
             )
         except Exception as exception:
-            raise AggregationError(str(exception)) from exception
+            raise AggregationError(
+                f"single-message aggregate build failed: {exception}"
+            ) from exception
 
         return cls(
             participants=participants,
@@ -244,7 +246,7 @@ class MultiMessageAggregate(Container):
                 mode=LEAN_ENV,
             )
         except Exception as exception:
-            raise AggregationError(str(exception)) from exception
+            raise AggregationError(f"multi-message merge failed: {exception}") from exception
 
         return cls(proof=ByteList512KiB(data=multi_message_aggregate_wire))
 

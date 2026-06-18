@@ -120,8 +120,9 @@ class HashTreeLayers(SSZList[HashTreeLayer]):
     """
     The layers of a subtree, ordered from the lowest layer up to the root.
 
-    A bottom tree and a top tree each cover half the depth.
-    The cap admits the full lifetime tree.
+    A resident bottom or top subtree spans half the depth.
+    It holds half-depth-plus-one layers, counting both the lowest layer and the root.
+    The cap is set higher, to the layer count of a full-lifetime tree.
     """
 
     LIMIT = TARGET_CONFIG.LOG_LIFETIME + 1

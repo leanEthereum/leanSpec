@@ -15,14 +15,14 @@
 
 # Single-dispatch handlers for the hash_tree_root generic function.
 # Dispatched by argument type, so they have no direct call site.
-_htr_packed_leaf
-_htr_bytes
-_htr_bytelist
-_htr_bitvector_base
-_htr_bitlist_base
-_htr_vector
-_htr_list
-_htr_container
+_hash_tree_root_packed_leaf
+_hash_tree_root_bytes
+_hash_tree_root_bytelist
+_hash_tree_root_bitvector_base
+_hash_tree_root_bitlist_base
+_hash_tree_root_vector
+_hash_tree_root_list
+_hash_tree_root_container
 
 # Magic methods invoked by the interpreter.
 # Flagged only because they are defined as overloaded functions or as an
@@ -54,6 +54,7 @@ _._coerce_and_validate
 _._accept_hex_string
 _._validate_byte_list_data
 _._validate_decomposition
+_._require_index_matches_position
 _.validate_state_length
 _.validate_target
 _.validate_rejection_is_declared
@@ -61,16 +62,13 @@ _.validate_signatures_are_out_of_scope
 _._yaml_int_to_hex
 _._check_list_lengths
 _._reject_oversized_validator_set
+_._require_index_matches_position
 
 # Pydantic serializers, invoked by the model during serialization.
 _.serialize_value
 _.serialize_block
 _._serialize_data
 _._serialize_as_hex
-
-# Fork-upgrade protocol method, invoked polymorphically on a fork transition.
-# A single-fork tree has no transition yet, so there is no call site.
-_.upgrade_state
 
 # Alternative proposer block-building strategy for the lstar fork.
 # A fork composes exactly one block-production mixin; this one is selected by
@@ -162,6 +160,8 @@ participant_sets
 block_weights
 known_aggregated_payloads
 is_justifiable
+combined_attesters
+reaggregated_proof
 
 # SSZ container and model field names declared inside unit tests.
 # Serialized by the SSZ codec or set through pydantic, never read by attribute.
@@ -172,10 +172,6 @@ y
 first_name
 slot_number
 _.slot_number
-
-# Access tier recorded on every route entry to document the route, not yet
-# read back by the registration path.
-is_admin
 
 # Attribute assignment in slotted-class tests that proves new attributes are
 # rejected; the assignment is the action under test, never read back.
