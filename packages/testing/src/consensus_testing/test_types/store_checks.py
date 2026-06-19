@@ -62,14 +62,22 @@ class AttestationCheck(CamelModel):
     source_slot: Slot | None = None
     """Expected source checkpoint slot."""
 
+    source_root_label: str | None = None
+    """Expected source checkpoint root, named by label and resolved to a root."""
+
     target_slot: Slot | None = None
     """Expected target checkpoint slot."""
 
-    location: Literal["new", "known"]
-    """Which pool the attestation should sit in, the pending or the accepted pool."""
+    location: Literal["new", "known", "signatures"]
+    """Which pool the attestation should sit in: the pending pool, the accepted pool, or the raw
+    per-validator signature pool."""
 
     def validate_attestation(
-        self, attestation: AttestationData, location: str, step_index: int
+        self,
+        attestation: AttestationData,
+        location: str,
+        step_index: int,
+        expected_source_root: Bytes32 | None = None,
     ) -> None:
         """Validate attestation properties."""
         for field_name in self.model_fields_set & _ATTESTATION_SLOT_ACCESSORS.keys():
@@ -80,6 +88,13 @@ class AttestationCheck(CamelModel):
                     f"Step {step_index}: validator {self.validator} {location} "
                     f"{field_name} = {actual_slot}, expected {expected_slot}"
                 )
+
+        if expected_source_root is not None and attestation.source.root != expected_source_root:
+            raise AssertionError(
+                f"Step {step_index}: validator {self.validator} {location} "
+                f"source root = 0x{attestation.source.root.hex()}, "
+                f"expected 0x{expected_source_root.hex()}"
+            )
 
 
 class StoreChecks(SelectiveCheck):
@@ -293,32 +308,53 @@ class StoreChecks(SelectiveCheck):
         if "attestation_checks" in fields:
             assert self.attestation_checks is not None
             for attestation_check in self.attestation_checks:
-                if attestation_check.location == "new":
-                    payloads = store.latest_new_aggregated_payloads
-                    label = "in latest_new"
-                else:
-                    payloads = store.latest_known_aggregated_payloads
-                    label = "in latest_known"
-
-                # Map each validator to its highest-slot vote across the raw pool.
+                # Map each validator to its highest-slot vote in the named pool.
                 #
                 # The checker inspects pool content before pruning, so no finality cutoff applies.
                 # On equal slots the first vote seen wins, matching the fork-choice rule.
                 extracted_attestations: dict[ValidatorIndex, AttestationData] = {}
-                for attestation_data, proofs in payloads.items():
-                    for proof in proofs:
-                        for participant_index in proof.participants.to_validator_indices():
-                            previous_vote = extracted_attestations.get(participant_index)
+                if attestation_check.location == "signatures":
+                    # The raw signature pool groups one entry per validator under each vote.
+                    label = "in attestation_signatures"
+                    for attestation_data, entries in store.attestation_signatures.items():
+                        for signature_entry in entries:
+                            voter_index = signature_entry.validator_index
+                            previous_vote = extracted_attestations.get(voter_index)
                             if previous_vote is None or previous_vote.slot < attestation_data.slot:
-                                extracted_attestations[participant_index] = attestation_data
+                                extracted_attestations[voter_index] = attestation_data
+                else:
+                    # The aggregated pools group proofs covering many validators under each vote.
+                    if attestation_check.location == "new":
+                        payloads = store.latest_new_aggregated_payloads
+                        label = "in latest_new"
+                    else:
+                        payloads = store.latest_known_aggregated_payloads
+                        label = "in latest_known"
+                    for attestation_data, proofs in payloads.items():
+                        for proof in proofs:
+                            for participant_index in proof.participants.to_validator_indices():
+                                previous_vote = extracted_attestations.get(participant_index)
+                                if (
+                                    previous_vote is None
+                                    or previous_vote.slot < attestation_data.slot
+                                ):
+                                    extracted_attestations[participant_index] = attestation_data
 
                 if attestation_check.validator not in extracted_attestations:
                     raise AssertionError(
                         f"Step {step_index}: validator {attestation_check.validator} not found "
-                        f"{label}_aggregated_payloads"
+                        f"{label}"
                     )
+                expected_source_root = (
+                    _resolve(attestation_check.source_root_label)
+                    if attestation_check.source_root_label is not None
+                    else None
+                )
                 attestation_check.validate_attestation(
-                    extracted_attestations[attestation_check.validator], label, step_index
+                    extracted_attestations[attestation_check.validator],
+                    label,
+                    step_index,
+                    expected_source_root,
                 )
 
         # Target slots keyed in each attestation pool
