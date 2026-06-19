@@ -92,6 +92,9 @@ class ValidatorDutiesMixin(LstarSpecBase):
         if justified_source.root == Bytes32.zero():
             justified_source = Checkpoint(root=store.head, slot=justified_source.slot)
 
+        # Sanity check: the source must be after target.
+        assert justified_source.slot <= target_checkpoint.slot
+
         return self.attestation_data_class(
             slot=slot,
             head=head_checkpoint,
