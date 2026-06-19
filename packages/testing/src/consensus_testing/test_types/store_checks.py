@@ -326,10 +326,10 @@ class StoreChecks(SelectiveCheck):
                     # The aggregated pools group proofs covering many validators under each vote.
                     if attestation_check.location == "new":
                         payloads = store.latest_new_aggregated_payloads
-                        label = "in latest_new"
+                        label = "in latest_new_aggregated_payloads"
                     else:
                         payloads = store.latest_known_aggregated_payloads
-                        label = "in latest_known"
+                        label = "in latest_known_aggregated_payloads"
                     for attestation_data, proofs in payloads.items():
                         for proof in proofs:
                             for participant_index in proof.participants.to_validator_indices():
