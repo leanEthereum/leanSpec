@@ -75,7 +75,7 @@ class ValidatorDutiesMixin(LstarSpecBase):
         return Checkpoint(root=target_block_root, slot=target_block.slot)
 
     def produce_attestation_data(self, store: LstarStore, slot: Slot) -> AttestationData:
-        """Attestation data for the given slot: head, target, and the latest justified source."""
+        """Attestation data for the given slot: head, target, and the head's justified source."""
         head_checkpoint = Checkpoint(
             root=store.head,
             slot=store.blocks[store.head].slot,
