@@ -148,6 +148,10 @@ class BlockProductionMixin(LstarSpecBase):
                     if attestation_data.head.root not in known_block_roots:
                         continue
 
+                    # Skip votes whose source slot is not the current justified checkpoint.
+                    if attestation_data.source.slot != current_justified_checkpoint.slot:
+                        continue
+
                     # Reject votes that do not match this chain.
                     #
                     # This also rejects any checkpoint past the chain view.

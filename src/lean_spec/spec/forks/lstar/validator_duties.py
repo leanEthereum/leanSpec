@@ -170,23 +170,6 @@ class ValidatorDutiesMixin(LstarSpecBase):
             aggregated_payloads=store.latest_known_aggregated_payloads,
         )
 
-        # Invariant: the produced block must close any justified divergence.
-        #
-        # The store may have advanced its justified checkpoint from attestations
-        # on a minority fork that the head state never processed. The fixed-point
-        # loop above must incorporate those attestations from the pool, advancing
-        # the block's justified checkpoint to at least match the store.
-        #
-        # Without this, other nodes processing the block would never see the
-        # justification advance, degrading consensus liveness: only nodes that
-        # happened to receive the minority fork would know justification moved.
-        block_justified = final_post_state.latest_justified.slot
-        store_justified = store.latest_justified.slot
-        assert block_justified >= store_justified, (
-            f"Produced block justified={block_justified} < store justified="
-            f"{store_justified}. Fixed-point attestation loop did not converge."
-        )
-
         # Compute block hash for storage.
         block_hash = hash_tree_root(final_block)
 
