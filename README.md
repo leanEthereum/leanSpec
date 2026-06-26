@@ -83,21 +83,18 @@ just test
 ```
 ├── src/
 │   └── lean_spec/                      # Main specifications
-│      ├── __init__.py
-│      └── subspecs/                       # Sub-specifications
-│          ├── poseidon1/
-│          │   ├── __init__.py
-│          │   ├── permutation.py
-│          │   └── constants.py
-│          ├── ...
-│          └── ...
+│       ├── cli/                        # Command-line entry points
+│       ├── node/                       # Node implementation (chain, networking, sync, validator, ...)
+│       └── spec/                       # Protocol specifications
+│           ├── crypto/                 # Cryptographic subspecs (poseidon, koalabear, xmss, ...)
+│           ├── forks/                  # Fork specifications (tested via consensus vectors)
+│           ├── ssz/                    # SSZ serialization
+│           └── observability/          # Observability spec
 ├── tests/                              # Test suite
-|   ├── consensus/                      # Tests for consensus
-|   |   └── devnet/                     # Tests for devnet
-|   |       ├── fc/                     # Tests for fork-choice
-|   |       └── state_transition/       # Tests for stf
-│   └── lean_spec/                      # Tests for main specs
-│       └── subspecs/                   # Tests for subspecs
+│   ├── consensus/                      # Consensus test vectors
+│   │   └── lstar/                      # e.g. fork_choice, state_transition, ssz, ...
+│   ├── spec/                           # Unit tests mirroring src/lean_spec/spec/
+│   └── node/                           # Unit tests mirroring src/lean_spec/node/
 ├── docs/                               # Documentation
 └── pyproject.toml                      # Project configuration
 ```

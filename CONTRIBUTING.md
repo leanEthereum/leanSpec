@@ -27,13 +27,15 @@
 
 ## Adding New Subspecifications
 
-New subspecs belong in `src/lean_spec/subspecs/`. Follow the pattern of existing subspecs like `poseidon1`:
+Cryptographic subspecs live under `src/lean_spec/spec/crypto/`. Follow the pattern of an existing one like the `xmss` package:
 
 ```bash
-mkdir -p src/lean_spec/subspecs/my_new_subspec
-touch src/lean_spec/subspecs/my_new_subspec/__init__.py
-mkdir -p tests/subspecs/my_new_subspec
+mkdir -p src/lean_spec/spec/crypto/my_new_subspec
+touch src/lean_spec/spec/crypto/my_new_subspec/__init__.py
+mkdir -p tests/spec/crypto/my_new_subspec
 ```
+
+Tests mirror the source layout one-to-one (see `tests/spec/crypto/xmss/`).
 
 ## Testing
 
