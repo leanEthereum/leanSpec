@@ -70,6 +70,11 @@ _.serialize_block
 _._serialize_data
 _._serialize_as_hex
 
+# Alternative proposer block-building strategy for the lstar fork.
+# A fork composes exactly one block-production mixin; this one is selected by
+# swapping a single import in the fork facade, so by default it has no call site.
+TieredBlockProductionMixin
+
 # Signature parameters mandated by external protocols we cannot rename.
 # The pydantic core-schema hook, the pytest session-finish hook, and the
 # prometheus metric stub interface.
