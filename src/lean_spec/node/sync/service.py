@@ -204,10 +204,12 @@ class SyncService:
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
 
-        # Recover per-attestation proofs from every processed block.
-        # Queue them for publishing only when this node is an aggregator.
-        new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
-        if self.is_aggregator:
+        # Aggregators recover per-attestation proofs from each processed block,
+        # then re-broadcast them. Non-aggregators rely on the gossip path instead.
+        # Skip while syncing: historical blocks flood this path and the justified
+        # anchor is still moving, so recovered votes would not match a live head.
+        if self.is_aggregator and self.state == SyncState.SYNCED:
+            new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
             self._pending_block_aggregates.extend(aggregates)
 
         # Write-through persistence: synchronous and optional.
@@ -587,11 +589,16 @@ class SyncService:
         }
         aggregates: list[SignedAggregatedAttestation] = []
 
+        # Block building anchors every packed vote on the head state's justified
+        # checkpoint as its source, so only votes with that source are worth recovering.
+        # Read it from the passed store, which the head-sync drain advances per block.
+        head_state_justified_checkpoint = store.states[store.head].latest_justified
+
         for attestation in block_attestations:
             attestation_data = attestation.data
 
-            # Skip targets at or behind justified, which can no longer advance justification.
-            if attestation_data.target.slot <= store.latest_justified.slot:
+            # A vote with any other source is never selected into a block.
+            if attestation_data.source != head_state_justified_checkpoint:
                 continue
 
             data_root = hash_tree_root(attestation_data)

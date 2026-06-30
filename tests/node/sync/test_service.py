@@ -857,12 +857,11 @@ class TestReplayPendingAttestationsPlain:
 #
 # Deconstruction only runs for an attestation when:
 #
-# - its target is ahead of the store's justified checkpoint, so the proof
-#   can still help move justification, and
+# - its source is the store's current justified checkpoint, so a future block
+#   build could anchor on it and pack the vote, and
 # - it adds at least one participant the node does not already hold.
 #
-# Only the decision/gate paths are exercised here.
-# These tests check when the split runs, not the cryptographic split itself.
+# These tests check when the split runs, plus one positive path that runs it.
 # The cryptographic split and merge are covered by the aggregation consensus vectors.
 
 # Round-robin proposer is slot % num_validators with four validators.
@@ -923,26 +922,63 @@ def _service(peer_id: PeerId):
     return create_mock_sync_service(peer_id)
 
 
-def test_skips_when_target_not_ahead_of_justified(
+def test_skips_when_source_not_current_justified(
     peer_id: PeerId, key_manager: XmssKeyManager
 ) -> None:
     """
-    Target at or behind the justified checkpoint -> no aggregates.
+    Source other than the head state's justified checkpoint -> no aggregates.
 
-    The block's attestation cannot move justification, so the expensive
-    split is never attempted and the store is returned unchanged.
+    Block building anchors every packed vote on the head state's justified
+    checkpoint as its source, so a vote with a different source is never
+    selected. The expensive split is skipped and the store is unchanged.
     """
-    chain_store, signed_block, attestation_data = _setup(
+    chain_store, signed_block, _ = _setup(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
     )
-    # Justified now sits at the attestation's target slot.
-    store = chain_store.model_copy(update={"latest_justified": attestation_data.target})
+    # The attestation's source is the genesis justified checkpoint.
+    # Shift the head state's justified to the slot-1 block so the source no longer matches.
+    head_root = chain_store.head
+    head_state = chain_store.states[head_root]
+    shifted_state = head_state.model_copy(
+        update={"latest_justified": Checkpoint(root=head_root, slot=CHAIN_SLOT)}
+    )
+    store = chain_store.model_copy(
+        update={"states": {**chain_store.states, head_root: shifted_state}}
+    )
     service = _service(peer_id)
 
     new_store, aggregates = service._deconstruct_block_into_store(store, signed_block)
 
     assert aggregates == []
     assert new_store is store
+
+
+def test_splits_when_source_is_current_justified(
+    peer_id: PeerId, key_manager: XmssKeyManager
+) -> None:
+    """
+    Source is the head state's justified checkpoint and the block adds a voter -> split runs.
+
+    The attestation sources at the genesis justified checkpoint, which the
+    head state still carries. With no locally held proof, the block adds new
+    participants, so the proof is split and folded into the pending pool.
+    """
+    block_participants = [ValidatorIndex(1), ValidatorIndex(2)]
+    chain_store, signed_block, attestation_data = _setup(
+        key_manager, block_participants=block_participants
+    )
+    service = _service(peer_id)
+
+    new_store, aggregates = service._deconstruct_block_into_store(chain_store, signed_block)
+
+    # One aggregate emerges, carrying the block's vote and exactly its voters.
+    assert len(aggregates) == 1
+    assert aggregates[0].data == attestation_data
+    assert set(aggregates[0].proof.participants.to_validator_indices()) == set(block_participants)
+
+    # The pending pool now holds that one combined proof under the vote.
+    pending_proofs = new_store.latest_new_aggregated_payloads[attestation_data]
+    assert pending_proofs == {aggregates[0].proof}
 
 
 def test_skips_when_block_adds_no_new_validators(
