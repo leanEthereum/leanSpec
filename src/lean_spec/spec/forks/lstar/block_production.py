@@ -123,8 +123,11 @@ class BlockProductionMixin(LstarSpecBase):
             processed_attestation_data: set[AttestationData] = set()
 
             # Order candidates by target slot, once.
+            # The canonical root breaks target-slot ties so every node builds the same block.
+            # It also makes the truncation cutoff content-derived, never arrival-order derived.
             candidates_in_target_slot_order = sorted(
-                aggregated_payloads.items(), key=lambda item: item[0].target.slot
+                aggregated_payloads.items(),
+                key=lambda item: (item[0].target.slot, hash_tree_root(item[0])),
             )
 
             # Fixed-point selection.

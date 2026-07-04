@@ -246,7 +246,7 @@ def test_same_slot_equivocating_attesters_count_once(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
     """
-    An equivocating validator is counted once, on the fork it first voted.
+    An equivocating validator is counted once, on the canonical-root fork.
 
     Given
     -----
@@ -258,7 +258,8 @@ def test_same_slot_equivocating_attesters_count_once(
     - one vote at slot 3 targets fork_a from V0, V1, V2.
     - one vote at slot 3 targets fork_b from V0, V1, V3, V4.
     - V0 and V1 equivocate by voting on both forks at the same slot.
-    - fork_a is gossiped first, so V0 and V1's first votes stick to it.
+    - the two votes tie on slot, so the larger attestation-data root wins.
+    - the fork_b vote carries the larger root.
 
     When
     ----
@@ -266,10 +267,10 @@ def test_same_slot_equivocating_attesters_count_once(
 
     Then
     ----
-    - V0 and V1 count once, toward fork_a.
-    - fork_a has effective weight 3 from V0, V1, V2.
-    - fork_b has effective weight 2 from V3, V4.
-    - head stays on fork_a.
+    - V0 and V1 count once, toward fork_b.
+    - fork_b has effective weight 4 from V0, V1, V3, V4.
+    - fork_a has effective weight 1 from V2.
+    - head is fork_b.
     - no slot is justified by the below-threshold votes.
     """
     fork_choice_test(
@@ -316,8 +317,8 @@ def test_same_slot_equivocating_attesters_count_once(
             TickStep(
                 time=16,
                 checks=StoreChecks(
-                    head_slot=Slot(2),
-                    head_root_label="fork_a",
+                    head_slot=Slot(3),
+                    head_root_label="fork_b",
                     latest_justified_slot=Slot(0),
                     latest_finalized_slot=Slot(0),
                     latest_known_aggregated_target_slots=[Slot(2), Slot(3)],
@@ -326,13 +327,13 @@ def test_same_slot_equivocating_attesters_count_once(
                             validator=ValidatorIndex(0),
                             location="known",
                             attestation_slot=Slot(3),
-                            target_slot=Slot(2),
+                            target_slot=Slot(3),
                         ),
                         AttestationCheck(
                             validator=ValidatorIndex(1),
                             location="known",
                             attestation_slot=Slot(3),
-                            target_slot=Slot(2),
+                            target_slot=Slot(3),
                         ),
                         AttestationCheck(
                             validator=ValidatorIndex(2),
@@ -351,6 +352,178 @@ def test_same_slot_equivocating_attesters_count_once(
                             location="known",
                             attestation_slot=Slot(3),
                             target_slot=Slot(3),
+                        ),
+                    ],
+                ),
+            ),
+        ],
+    )
+
+
+def test_equivocation_head_independent_of_arrival_order_a_then_b(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Head ignores arrival order: fork_a arriving first still picks the canonical-root fork.
+
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> common(1)
+        - fork_a(2)
+        - fork_b(3)
+    - one vote at slot 3 targets fork_a from V0, V1.
+    - one vote at slot 3 targets fork_b from V0, V2.
+    - V0 equivocates by voting on both forks at the same slot.
+    - V1 backs fork_a alone; V2 backs fork_b alone.
+    - without V0 the two forks tie one-to-one, so V0's vote decides the head.
+    - the two votes tie on slot, so the larger attestation-data root wins.
+    - the fork_a vote carries the larger root.
+
+    When
+    ----
+    - the fork_a vote arrives first, then the fork_b vote.
+
+    Then
+    ----
+    - V0 counts once, toward the larger-root fork.
+    - the larger-root fork has effective weight 2.
+    - the smaller-root fork has effective weight 1.
+    - head is fork_a.
+    - no slot is justified by the below-threshold votes.
+    """
+    fork_choice_test(
+        anchor_state=build_genesis_state(num_validators=6),
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="common"),
+                checks=StoreChecks(head_slot=Slot(1), head_root_label="common"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="common", label="fork_a"),
+                checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), parent_label="common", label="fork_b"),
+                checks=StoreChecks(lexicographic_head_among=["fork_a", "fork_b"]),
+            ),
+            TickStep(interval=18),
+            GossipAggregatedAttestationStep(
+                attestation=AggregatedAttestationSpec(
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1)],
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="fork_a",
+                ),
+            ),
+            GossipAggregatedAttestationStep(
+                attestation=AggregatedAttestationSpec(
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(2)],
+                    slot=Slot(3),
+                    target_slot=Slot(3),
+                    target_root_label="fork_b",
+                ),
+            ),
+            TickStep(
+                time=16,
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    head_root_label="fork_a",
+                    latest_justified_slot=Slot(0),
+                    latest_finalized_slot=Slot(0),
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(0),
+                            location="known",
+                            attestation_slot=Slot(3),
+                            target_slot=Slot(2),
+                        ),
+                    ],
+                ),
+            ),
+        ],
+    )
+
+
+def test_equivocation_head_independent_of_arrival_order_b_then_a(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Head ignores arrival order: fork_b arriving first still picks the canonical-root fork.
+
+    Given
+    -----
+    - 6 validators; a slot needs 4 votes (2/3) to be justified.
+    - the chain:
+        genesis -> common(1)
+        - fork_a(2)
+        - fork_b(3)
+    - one vote at slot 3 targets fork_a from V0, V1.
+    - one vote at slot 3 targets fork_b from V0, V2.
+    - V0 equivocates by voting on both forks at the same slot.
+    - V1 backs fork_a alone; V2 backs fork_b alone.
+    - without V0 the two forks tie one-to-one, so V0's vote decides the head.
+    - the two votes tie on slot, so the larger attestation-data root wins.
+    - the fork_a vote carries the larger root.
+
+    When
+    ----
+    - the fork_b vote arrives first, then the fork_a vote.
+
+    Then
+    ----
+    - V0 counts once, toward the larger-root fork.
+    - the larger-root fork has effective weight 2.
+    - the smaller-root fork has effective weight 1.
+    - head is fork_a, matching the opposite arrival order.
+    - no slot is justified by the below-threshold votes.
+    """
+    fork_choice_test(
+        anchor_state=build_genesis_state(num_validators=6),
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="common"),
+                checks=StoreChecks(head_slot=Slot(1), head_root_label="common"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), parent_label="common", label="fork_a"),
+                checks=StoreChecks(head_slot=Slot(2), head_root_label="fork_a"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(3), parent_label="common", label="fork_b"),
+                checks=StoreChecks(lexicographic_head_among=["fork_a", "fork_b"]),
+            ),
+            TickStep(interval=18),
+            GossipAggregatedAttestationStep(
+                attestation=AggregatedAttestationSpec(
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(2)],
+                    slot=Slot(3),
+                    target_slot=Slot(3),
+                    target_root_label="fork_b",
+                ),
+            ),
+            GossipAggregatedAttestationStep(
+                attestation=AggregatedAttestationSpec(
+                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1)],
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="fork_a",
+                ),
+            ),
+            TickStep(
+                time=16,
+                checks=StoreChecks(
+                    head_slot=Slot(2),
+                    head_root_label="fork_a",
+                    latest_justified_slot=Slot(0),
+                    latest_finalized_slot=Slot(0),
+                    attestation_checks=[
+                        AttestationCheck(
+                            validator=ValidatorIndex(0),
+                            location="known",
+                            attestation_slot=Slot(3),
+                            target_slot=Slot(2),
                         ),
                     ],
                 ),

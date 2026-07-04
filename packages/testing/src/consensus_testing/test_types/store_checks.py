@@ -307,11 +307,19 @@ class StoreChecks(SelectiveCheck):
         # Per-validator attestation content checks
         if "attestation_checks" in fields:
             assert self.attestation_checks is not None
+
+            # Vote ordering key mirroring the fork-choice rule.
+            #
+            # A higher slot wins.
+            # An equal-slot tie breaks toward the larger canonical attestation-data root.
+            # This makes the extracted winner independent of arrival or insertion order.
+            def _canonical_precedence(vote: AttestationData) -> tuple[Slot, Bytes32]:
+                return (vote.slot, hash_tree_root(vote))
+
             for attestation_check in self.attestation_checks:
-                # Map each validator to its highest-slot vote in the named pool.
+                # Map each validator to its winning vote in the named pool.
                 #
                 # The checker inspects pool content before pruning, so no finality cutoff applies.
-                # On equal slots the first vote seen wins, matching the fork-choice rule.
                 extracted_attestations: dict[ValidatorIndex, AttestationData] = {}
                 if attestation_check.location == "signatures":
                     # The raw signature pool groups one entry per validator under each vote.
@@ -320,7 +328,9 @@ class StoreChecks(SelectiveCheck):
                         for signature_entry in entries:
                             voter_index = signature_entry.validator_index
                             previous_vote = extracted_attestations.get(voter_index)
-                            if previous_vote is None or previous_vote.slot < attestation_data.slot:
+                            if previous_vote is None or _canonical_precedence(
+                                previous_vote
+                            ) < _canonical_precedence(attestation_data):
                                 extracted_attestations[voter_index] = attestation_data
                 else:
                     # The aggregated pools group proofs covering many validators under each vote.
@@ -334,10 +344,9 @@ class StoreChecks(SelectiveCheck):
                         for proof in proofs:
                             for participant_index in proof.participants.to_validator_indices():
                                 previous_vote = extracted_attestations.get(participant_index)
-                                if (
-                                    previous_vote is None
-                                    or previous_vote.slot < attestation_data.slot
-                                ):
+                                if previous_vote is None or _canonical_precedence(
+                                    previous_vote
+                                ) < _canonical_precedence(attestation_data):
                                     extracted_attestations[participant_index] = attestation_data
 
                 if attestation_check.validator not in extracted_attestations:

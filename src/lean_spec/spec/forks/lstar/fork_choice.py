@@ -645,8 +645,9 @@ class ForkChoiceMixin(LstarSpecBase):
         Map each participating validator to the latest vote it cast.
 
         This is the LMD view fork choice runs on.
-        Two votes share a slot only across distinct attestation data, never within one data.
-        On such an equal-slot tie the strict comparison keeps the first distinct data inserted.
+        An equivocator can cast two distinct votes at one slot.
+        An equal-slot tie breaks toward the larger canonical attestation-data root.
+        The result is therefore independent of arrival or insertion order.
 
         A vote whose head sits at or below the finalized slot carries no fork-choice weight.
         Such stale votes are skipped here, so callers pass their pool without pre-filtering.
@@ -660,20 +661,29 @@ class ForkChoiceMixin(LstarSpecBase):
         """
         latest_vote_by_validator: dict[ValidatorIndex, AttestationData] = {}
 
-        # Walk every vote, every proof for it, and every validator the proof covers.
-        for attestation_data, proofs in aggregated_payloads.items():
-            # Skip votes whose head no longer outlives the finalized slot.
+        # Process votes newest-first, breaking an equal-slot tie toward the larger canonical root.
+        # This is the same rule the block tiebreak applies to block roots.
+        # The sort key runs hash_tree_root once per distinct vote, never per validator.
+        votes_by_canonical_precedence = sorted(
+            aggregated_payloads.items(),
+            key=lambda vote_and_proofs: (
+                vote_and_proofs[0].slot,
+                hash_tree_root(vote_and_proofs[0]),
+            ),
+            reverse=True,
+        )
+
+        for attestation_data, proofs in votes_by_canonical_precedence:
+            # A vote whose head sits at or below the finalized slot carries no weight.
             if attestation_data.head.slot <= latest_finalized_slot:
                 continue
-
-            # Every proof here shares one attestation data, so they share one slot.
-            # The strict slot comparison below never overwrites between them.
+            # Every proof here carries the identical attestation data.
+            # Whichever proof the loop visits, the stored vote is the same.
             # Set iteration order is therefore non-consensus and safe to leave native.
             for proof in proofs:
                 for validator_index in proof.participants.to_validator_indices():
-                    # Keep this vote only when it is newer than the one already stored.
-                    previous_vote = latest_vote_by_validator.get(validator_index)
-                    if previous_vote is None or previous_vote.slot < attestation_data.slot:
+                    # Descending order means the first vote seen for a validator is its winner.
+                    if validator_index not in latest_vote_by_validator:
                         latest_vote_by_validator[validator_index] = attestation_data
 
         return latest_vote_by_validator
