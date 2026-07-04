@@ -114,11 +114,15 @@ class RejectionReason(StrEnum):
     """The input bytes cannot be decoded into the expected structure."""
 
 
-class SpecRejectionError(AssertionError):
+class SpecError(Exception):
+    """Base class for every error the spec raises."""
+
+
+class SpecRejectionError(SpecError):
     """
     A rejection carrying its language-neutral reason.
 
-    Subclassing the assertion error keeps existing rejection handlers working.
+    Clients match on the reason code, not the Python base class.
     """
 
     def __init__(self, reason: RejectionReason, message: str) -> None:
@@ -126,7 +130,7 @@ class SpecRejectionError(AssertionError):
         Bind the rejection to its reason.
 
         Args:
-            reason: Language-neutral reason clients assert against.
+            reason: Language-neutral reason clients match against.
             message: Human-readable explanation for logs and debugging.
         """
         super().__init__(message)

@@ -337,7 +337,8 @@ class StateTransitionMixin(LstarSpecBase):
                 if target.slot > latest_justified.slot:
                     latest_justified = target
 
-                # The justifiable filter above guarantees an in-range index.
+                # Invariant: the already-justified skip drops targets at or below finalized.
+                # So the index is in range; the assert guards an internal fact, not a rejection.
                 justified_index = target.slot.justified_index_after(finalized_slot)
                 assert justified_index is not None
 
@@ -365,13 +366,12 @@ class StateTransitionMixin(LstarSpecBase):
                     delta = int(finalized_slot - old_finalized_slot)
                     if delta > 0:
                         justified_slots = JustifiedSlots(data=justified_slots.data[delta:])
-                        assert all(root in root_to_slot for root in justifications), (
-                            "Justification root missing from root_to_slot"
-                        )
+                        # A root absent from the slot map is off-chain and cannot justify.
+                        # Drop such a tally, do not track or reject it.
                         justifications = {
                             root: votes
                             for root, votes in justifications.items()
-                            if root_to_slot[root] > finalized_slot
+                            if root in root_to_slot and root_to_slot[root] > finalized_slot
                         }
 
         # Re-pack the vote map into the flat SSZ layout, roots first.

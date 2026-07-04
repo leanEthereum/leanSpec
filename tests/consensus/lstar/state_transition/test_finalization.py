@@ -12,12 +12,16 @@ from consensus_testing import (
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
+    BlockHeader,
+    Checkpoint,
+    HistoricalBlockHashes,
     JustificationRoots,
     JustificationValidators,
     JustifiedSlots,
+    State,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Boolean
+from lean_spec.spec.ssz import Boolean, Bytes32, Uint64
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -1372,5 +1376,102 @@ def test_rebased_finalization_prunes_stale_votes_and_preserves_future_votes(
                     Boolean(False),
                 ]
             ),
+        ),
+    )
+
+
+def test_finalization_rebase_drops_off_chain_pending_tally(
+    state_transition_test: StateTransitionTestFiller,
+) -> None:
+    """
+    Finalization drops a pending tally whose root is off the canonical chain.
+
+    Given
+    -----
+    - 4 validators; a slot needs 3 votes (2/3) to be justified.
+    - a hand-built pre-state at slot 3 over the chain:
+        genesis(0) -> block_1(1) -> block_2(2) -> block_3(3)
+    - slot 1 is justified, rooted at block_1.
+    - finalized is slot 0, rooted at the genesis anchor.
+    - a phantom root carries a pending tally.
+    - the phantom root appears nowhere in the chain history.
+    - the phantom tally holds V0 alone of 4.
+    - block_4 carries V0, V1, V2's vote from block_1 to block_2.
+
+    When
+    ----
+    - the chain processes block_4 on top of the pre-state.
+
+    Then
+    ----
+    - the state slot is 4.
+    - block_4's supermajority justifies slot 2.
+    - justified slot is 2, rooted at block_2.
+    - the adjacent source slot 1 finalizes.
+    - finalized slot is 1, rooted at block_1.
+    - the justified-slots bitfield is [True, False] relative to slot 1.
+    - the off-chain phantom root is dropped from the pending roots.
+    - the phantom tally is dropped from the pending voters.
+    """
+    genesis = build_genesis_state()
+
+    genesis_anchor_root = Bytes32(b"\x11" * 32)
+    block_1_root = Bytes32(b"\x22" * 32)
+    block_2_root = Bytes32(b"\x33" * 32)
+    phantom_justification_root = Bytes32(b"\xff" * 32)
+
+    pre = State(
+        config=genesis.config,
+        slot=Slot(3),
+        latest_block_header=BlockHeader(
+            slot=Slot(3),
+            proposer_index=ValidatorIndex.proposer_for_slot(Slot(3), Uint64(4)),
+            parent_root=block_2_root,
+            state_root=Bytes32.zero(),
+            body_root=genesis.latest_block_header.body_root,
+        ),
+        latest_justified=Checkpoint(root=block_1_root, slot=Slot(1)),
+        latest_finalized=Checkpoint(root=genesis_anchor_root, slot=Slot(0)),
+        historical_block_hashes=HistoricalBlockHashes(
+            data=[genesis_anchor_root, block_1_root, block_2_root]
+        ),
+        justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False)]),
+        validators=genesis.validators,
+        justifications_roots=JustificationRoots(data=[phantom_justification_root]),
+        justifications_validators=JustificationValidators(
+            data=[Boolean(True), Boolean(False), Boolean(False), Boolean(False)]
+        ),
+    )
+
+    state_transition_test(
+        pre=pre,
+        blocks=[
+            BlockSpec(
+                slot=Slot(4),
+                forced_attestations=[
+                    AggregatedAttestationSpec(
+                        validator_indices=[
+                            ValidatorIndex(0),
+                            ValidatorIndex(1),
+                            ValidatorIndex(2),
+                        ],
+                        slot=Slot(4),
+                        source_slot=Slot(1),
+                        source_root=block_1_root,
+                        target_slot=Slot(2),
+                        target_root=block_2_root,
+                    ),
+                ],
+            ),
+        ],
+        post=StateExpectation(
+            slot=Slot(4),
+            latest_justified_slot=Slot(2),
+            latest_justified_root=block_2_root,
+            latest_finalized_slot=Slot(1),
+            latest_finalized_root=block_1_root,
+            justified_slots=JustifiedSlots(data=[Boolean(True), Boolean(False)]),
+            justifications_roots=JustificationRoots(data=[]),
+            justifications_validators=JustificationValidators(data=[]),
         ),
     )
