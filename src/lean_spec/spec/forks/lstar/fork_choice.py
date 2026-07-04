@@ -100,6 +100,8 @@ class ForkChoiceMixin(LstarSpecBase):
             SpecRejectionError: ANCHOR_STATE_ROOT_MISMATCH if the anchor block's
                 state root does not match the hash of the state.
         """
+        # Internal type guards: the anchor is always the concrete fork state and block.
+        # These narrow the generic protocol types; they are never a client rejection path.
         assert isinstance(state, State)
         assert isinstance(anchor_block, Block)
 

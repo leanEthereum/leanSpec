@@ -26,6 +26,7 @@ from lean_spec.spec.forks import (
     SignedAttestation,
     SignedBlock,
     Slot,
+    SpecRejectionError,
     ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate, SingleMessageAggregate
@@ -209,8 +210,8 @@ class ValidatorService:
             if self.on_block is not None:
                 await self.on_block(signed_block)
 
-        except AssertionError as exception:
-            # Slot-boundary races can fail proposer validation.
+        except SpecRejectionError as exception:
+            # Slot-boundary races can fail proposer validation with a rejection.
             # Skip block production; the attestation at interval 1 still happens.
             logger.debug(
                 "Block production skipped for validator %d at slot %d: %s",

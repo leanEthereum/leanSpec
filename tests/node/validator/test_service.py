@@ -22,7 +22,7 @@ from lean_spec.node.validator.constants import SYNC_LAG_THRESHOLD
 from lean_spec.node.validator.registry import ValidatorEntry
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
-from lean_spec.spec.forks import Slot, ValidatorIndex
+from lean_spec.spec.forks import RejectionReason, Slot, SpecRejectionError, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.config import MILLISECONDS_PER_INTERVAL
 from lean_spec.spec.forks.lstar.containers import (
@@ -395,13 +395,13 @@ class TestMaybeProduceBlock:
 
         assert blocks == []
 
-    async def test_assertion_error_is_logged_and_skipped(
+    async def test_rejection_is_logged_and_skipped(
         self,
         sync_service: SyncService,
         real_registry: ValidatorRegistry,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Store AssertionError during block production is caught; no block emitted."""
+        """A proposer-validation rejection during block production is caught; no block emitted."""
         blocks: list[SignedBlock] = []
 
         service = ValidatorService(
@@ -414,7 +414,9 @@ class TestMaybeProduceBlock:
         with patch.object(
             service.spec,
             "produce_block_with_signatures",
-            side_effect=AssertionError("mismatch"),
+            side_effect=SpecRejectionError(
+                RejectionReason.WRONG_PROPOSER, "not the scheduled proposer"
+            ),
         ):
             # Slot 0: proposer is validator 0 (0 % 8 = 0), which is in the registry.
             await service._maybe_produce_block(Slot(0))
