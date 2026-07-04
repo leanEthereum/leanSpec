@@ -599,7 +599,13 @@ class SSZList[T: SSZType](_SSZSequence[T]):
                 f"{cls.__name__}: scope {scope} too small for variable-size list"
             )
         first_offset = int(Uint32.deserialize(stream, BYTES_PER_LENGTH_OFFSET))
-        if first_offset > scope or first_offset % BYTES_PER_LENGTH_OFFSET != 0:
+        # A non-empty variable-size list carries at least one offset word before any body.
+        # A zero first offset is contradictory: it means zero elements yet one full-scope element.
+        if (
+            first_offset < BYTES_PER_LENGTH_OFFSET
+            or first_offset > scope
+            or first_offset % BYTES_PER_LENGTH_OFFSET != 0
+        ):
             raise SSZSerializationError(f"{cls.__name__}: invalid offset {first_offset}")
         num_elements = first_offset // BYTES_PER_LENGTH_OFFSET
         if num_elements > cls.LIMIT:
