@@ -418,14 +418,9 @@ class BlockSpec(CamelModel):
             parent_state, block_registry, key_manager
         )
 
-        # Seed the aggregator's signature pool directly from the already-signed votes.
-        # A proposer includes attestations it collected earlier, not fresh gossip.
-        # The real block-import path never gossip-validates block-carried attestations.
-        # It verifies their proofs and runs the state transition instead.
-        # Routing these votes through the gossip admission guard would wrongly reject a
-        # legitimately-includable vote whose head no longer descends from the finalized block.
-        # Each vote here was signed by the builder itself, so it is valid by construction.
-        # Existing pool entries are preserved, mirroring how gossip merges into the pool.
+        # The real block-import path does not gossip-validate block-carried attestations.
+        # So seed the signature pool directly instead of routing through the gossip admission guard.
+        # That guard would wrongly reject a legitimately-includable vote whose head is now stale.
         grouped_signatures: dict[AttestationData, set[AttestationSignatureEntry]] = {
             existing_data: set(existing_signatures)
             for existing_data, existing_signatures in store.attestation_signatures.items()
