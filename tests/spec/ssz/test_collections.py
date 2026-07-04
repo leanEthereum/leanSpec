@@ -850,6 +850,12 @@ class TestSSZListSerialization:
             VariableContainerList2.decode_bytes(b"\x05\x00\x00\x00\x00\x00\x00\x00")
         assert str(exception_info.value) == "VariableContainerList2: invalid offset 5"
 
+    def test_variable_size_list_rejects_zero_first_offset(self) -> None:
+        """A zero first offset is contradictory and rejected before building the boundary list."""
+        with pytest.raises(SSZSerializationError) as exception_info:
+            VariableContainerList2.decode_bytes(bytes.fromhex("00000000aabbccdd"))
+        assert str(exception_info.value) == "VariableContainerList2: invalid offset 0"
+
     def test_variable_size_list_rejects_count_beyond_limit(self) -> None:
         """A first offset that implies more than LIMIT elements is rejected."""
         # Layout:
