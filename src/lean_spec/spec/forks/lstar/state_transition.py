@@ -197,8 +197,15 @@ class StateTransitionMixin(LstarSpecBase):
         Raises:
             SpecRejectionError: TOO_MANY_ATTESTATION_DATA if the distinct data
                 count exceeds the per-block cap.
-            SpecRejectionError: EMPTY_AGGREGATION_BITS if an attestation that passes
-                the vote filters has no set bits.
+            SpecRejectionError: EMPTY_VALIDATOR_REGISTRY if the state holds no
+                validators to segment the vote tracking against.
+            SpecRejectionError: JUSTIFICATION_VOTES_LENGTH_MISMATCH if the flat
+                vote list length is not the tracked-root count times the
+                validator count.
+            SpecRejectionError: ZERO_HASH_JUSTIFICATION_ROOT if a tracked
+                justification root is the zero hash.
+            SpecRejectionError: EMPTY_AGGREGATION_BITS if an attestation that
+                passes the vote filters has no set bits.
             SpecRejectionError: VALIDATOR_INDEX_OUT_OF_RANGE if a set bit points
                 outside the validator registry.
         """
@@ -222,10 +229,33 @@ class StateTransitionMixin(LstarSpecBase):
         #     votes:  [<--N-->][<--N-->] ...
         #
         # Slicing per segment recovers a vote list per root.
-        assert not any(root == ZERO_HASH for root in state.justifications_roots), (
-            "zero hash is not allowed in justifications roots"
-        )
         validator_count = len(state.validators)
+
+        # An empty registry leaves no segment width, so the flat layout cannot be recovered.
+        # The header stage already guards this, but the unpack below relies on it directly.
+        if validator_count == 0:
+            raise SpecRejectionError(
+                RejectionReason.EMPTY_VALIDATOR_REGISTRY,
+                "State holds no validators to segment justification votes against",
+            )
+
+        # The flat vote list must hold exactly one full validator segment per tracked root.
+        # A mismatched length means the segments no longer line up with the roots.
+        expected_vote_count = len(state.justifications_roots) * validator_count
+        if len(state.justifications_validators) != expected_vote_count:
+            raise SpecRejectionError(
+                RejectionReason.JUSTIFICATION_VOTES_LENGTH_MISMATCH,
+                "Justification vote list length does not equal tracked-root count times "
+                "validator count",
+            )
+
+        # The zero hash marks a skipped slot, never a real block, so it cannot track votes.
+        if any(root == ZERO_HASH for root in state.justifications_roots):
+            raise SpecRejectionError(
+                RejectionReason.ZERO_HASH_JUSTIFICATION_ROOT,
+                "Tracked justification roots contain the zero hash",
+            )
+
         justifications = {
             root: list(validator_votes)
             for root, validator_votes in zip(

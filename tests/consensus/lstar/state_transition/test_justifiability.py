@@ -707,3 +707,49 @@ def test_nonzero_finalized_delta_12(
     - the candidate is justifiable.
     """
     justifiability_test(slot=512, finalized_slot=500)
+
+
+def test_slot_one_before_finalized_not_justifiable(
+    justifiability_test: JustifiabilityTestFiller,
+) -> None:
+    """
+    A slot one before the finalized slot is not justifiable.
+
+    Given
+    -----
+    - the finalized slot is 10.
+    - the candidate slot is 9.
+    - the delta is -1, before the finalized boundary.
+
+    When
+    ----
+    - the candidate is checked for justifiability.
+
+    Then
+    ----
+    - the candidate is not justifiable.
+    """
+    justifiability_test(slot=9, finalized_slot=10)
+
+
+def test_slot_far_before_finalized_not_justifiable(
+    justifiability_test: JustifiabilityTestFiller,
+) -> None:
+    """
+    A slot far before the finalized slot is not justifiable.
+
+    Given
+    -----
+    - the finalized slot is 100.
+    - the candidate slot is 90.
+    - the delta is -10, well before the finalized boundary.
+
+    When
+    ----
+    - the candidate is checked for justifiability.
+
+    Then
+    ----
+    - the candidate is not justifiable.
+    """
+    justifiability_test(slot=90, finalized_slot=100)
