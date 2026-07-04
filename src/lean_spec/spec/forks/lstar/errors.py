@@ -89,6 +89,12 @@ class RejectionReason(StrEnum):
     JUSTIFIED_SLOT_OUT_OF_RANGE = "JUSTIFIED_SLOT_OUT_OF_RANGE"
     """A justification query named a slot beyond the tracked justification window."""
 
+    ZERO_HASH_JUSTIFICATION_ROOT = "ZERO_HASH_JUSTIFICATION_ROOT"
+    """A tracked justification root is the zero hash, which is not a valid root."""
+
+    JUSTIFICATION_VOTES_LENGTH_MISMATCH = "JUSTIFICATION_VOTES_LENGTH_MISMATCH"
+    """The flat vote list length is not the tracked-root count times the validator count."""
+
     # Cryptographic verification
     INVALID_SIGNATURE = "INVALID_SIGNATURE"
     """An attestation signature or aggregate proof fails cryptographic verification."""

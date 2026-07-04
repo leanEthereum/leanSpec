@@ -41,13 +41,12 @@ class Slot(Uint64):
             finalized_slot: The last slot that was finalized.
 
         Returns:
-            True if the slot is justifiable, False otherwise.
-
-        Raises:
-            AssertionError: If this slot is earlier than the finalized slot.
+            True if the slot is a justification candidate.
+            False otherwise, including any slot before the finalized slot.
         """
-        # Ensure the candidate slot is not before the finalized slot.
-        assert self >= finalized_slot, "Candidate slot must not be before finalized slot"
+        # A slot before the finalized boundary is already settled, never a future candidate.
+        if self < finalized_slot:
+            return False
 
         # Calculate the distance in slots from the last finalized slot.
         # Convert to int for pure arithmetic operations below.
