@@ -142,6 +142,8 @@ class ForkChoiceMixin(LstarSpecBase):
         Drop attestation data whose head can no longer influence fork choice.
 
         Fork choice only ever descends from the latest finalized block.
+        This is sound only because the finalized checkpoint is re-derived from the head each update.
+        Pruning against a finalized checkpoint that drifted off the head chain would be unsound.
         A vote carries no fork-choice weight, and is dropped, when either holds:
 
         - Its head sits at or below the finalized slot.
@@ -197,9 +199,13 @@ class ForkChoiceMixin(LstarSpecBase):
         Validate incoming attestation before processing.
 
         Ensures the vote respects the basic laws of time and topology.
+        The head must also descend from the finalized block.
+        Fork choice only descends from the finalized block, so an orphaned head carries no weight.
+        Rejecting it here stops a stale vote from re-entering after pruning drops it.
 
         Raises:
             SpecRejectionError: If the attestation fails any of the validation checks above.
+            SpecRejectionError: HEAD_NOT_DESCENDANT_OF_FINALIZED when the head is off finalized.
         """
         source_checkpoint = attestation_data.source
         target_checkpoint = attestation_data.target
@@ -268,6 +274,13 @@ class ForkChoiceMixin(LstarSpecBase):
             raise SpecRejectionError(
                 RejectionReason.TARGET_NOT_ANCESTOR_OF_HEAD,
                 "Target checkpoint must be ancestor of head",
+            )
+
+        # Fork choice only ever descends from the finalized block.
+        if not self._checkpoint_is_ancestor(store, store.latest_finalized, head_checkpoint):
+            raise SpecRejectionError(
+                RejectionReason.HEAD_NOT_DESCENDANT_OF_FINALIZED,
+                "Head checkpoint must descend from the finalized block",
             )
 
         # Head Consistency Check

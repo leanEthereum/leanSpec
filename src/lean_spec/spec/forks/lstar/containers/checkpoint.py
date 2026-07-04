@@ -26,6 +26,10 @@ class Checkpoint(Container):
 
         The candidate replaces this checkpoint only when its slot is strictly higher.
         This enforces forward-only progression for justified and finalized checkpoints.
+
+        Selection is by slot only.
+        It does not verify that the candidate's block descends from this one.
+        For justified and finalized checkpoints that ancestry is a separate store invariant.
         """
         return candidate if candidate.slot > self.slot else self
 

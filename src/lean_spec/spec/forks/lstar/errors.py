@@ -74,6 +74,9 @@ class RejectionReason(StrEnum):
     TARGET_NOT_ANCESTOR_OF_HEAD = "TARGET_NOT_ANCESTOR_OF_HEAD"
     """The attestation target checkpoint is not an ancestor of its head."""
 
+    HEAD_NOT_DESCENDANT_OF_FINALIZED = "HEAD_NOT_DESCENDANT_OF_FINALIZED"
+    """The attestation head checkpoint does not descend from the finalized block."""
+
     ATTESTATION_TOO_FAR_IN_FUTURE = "ATTESTATION_TOO_FAR_IN_FUTURE"
     """The attestation slot is beyond the store's acceptance horizon."""
 
