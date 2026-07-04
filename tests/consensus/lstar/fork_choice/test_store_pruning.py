@@ -195,9 +195,10 @@ def test_finalization_prunes_stale_attestation_signatures(
         genesis(0) -> block_1(1) -> block_2(2) -> block_3(3) -> block_4(4) -> block_5(5)
     - block_2, block_3, block_4 each carry 6 votes, finalizing up to slot 2.
     - block_5 carries no votes and does not advance finalization.
-    - the raw signature pool holds votes for targets 1 through 5.
-    - the new aggregate pool holds votes for targets 1 through 5.
-    - the known aggregate pool holds votes for targets 1 through 5.
+    - each seeded vote heads a canonical block descending from the finalized block at slot 2.
+    - the raw signature pool holds votes for targets 2 through 5.
+    - the new aggregate pool holds votes for targets 2 through 5.
+    - the known aggregate pool holds votes for targets 2 through 5.
 
     When
     ----
@@ -206,10 +207,10 @@ def test_finalization_prunes_stale_attestation_signatures(
     Then
     ----
     - finalized advances to slot 3.
-    - votes targeting slots 1, 2, 3 are pruned from all three pools.
+    - votes targeting slots 2, 3 are pruned from all three pools.
     - votes targeting slots 4, 5 survive in all three pools.
     """
-    all_targets = [Slot(i) for i in range(1, 6)]
+    all_targets = [Slot(i) for i in range(2, 6)]
 
     fork_choice_test(
         anchor_state=build_genesis_state(num_validators=8),
@@ -295,16 +296,6 @@ def test_finalization_prunes_stale_attestation_signatures(
                 attestation=AggregatedAttestationSpec(
                     validator_indices=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
                     slot=Slot(5),
-                    target_slot=Slot(1),
-                    target_root_label="block_1",
-                    source_root_label="genesis",
-                    source_slot=Slot(0),
-                ),
-            ),
-            GossipAggregatedAttestationStep(
-                attestation=AggregatedAttestationSpec(
-                    validator_indices=[ValidatorIndex(0), ValidatorIndex(1), ValidatorIndex(2)],
-                    slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                     source_root_label="block_1",
@@ -354,16 +345,6 @@ def test_finalization_prunes_stale_attestation_signatures(
                 attestation=AggregatedAttestationSpec(
                     validator_indices=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
                     slot=Slot(5),
-                    target_slot=Slot(1),
-                    target_root_label="block_1",
-                    source_root_label="genesis",
-                    source_slot=Slot(0),
-                ),
-            ),
-            GossipAggregatedAttestationStep(
-                attestation=AggregatedAttestationSpec(
-                    validator_indices=[ValidatorIndex(3), ValidatorIndex(4), ValidatorIndex(5)],
-                    slot=Slot(5),
                     target_slot=Slot(2),
                     target_root_label="block_2",
                     source_root_label="block_1",
@@ -399,17 +380,6 @@ def test_finalization_prunes_stale_attestation_signatures(
                     source_root_label="block_3",
                     source_slot=Slot(3),
                 ),
-            ),
-            AttestationStep(
-                attestation=GossipAttestationSpec(
-                    validator_index=ValidatorIndex(6),
-                    slot=Slot(5),
-                    target_slot=Slot(1),
-                    target_root_label="block_1",
-                    source_root_label="genesis",
-                    source_slot=Slot(0),
-                ),
-                is_aggregator=True,
             ),
             AttestationStep(
                 attestation=GossipAttestationSpec(

@@ -40,14 +40,14 @@ class Store[StateT: Container, BlockT: Container](StrictBaseModel):
     """Root of the block a validator is safe to attest to."""
 
     latest_justified: Checkpoint
-    """Highest-slot justified checkpoint observed so far."""
+    """Highest-slot justified checkpoint observed so far; the head walk starts here."""
 
     latest_finalized: Checkpoint
     """
     Finalization as seen from the canonical head, not irreversible economic finality.
 
-    This tracks the head chain's view and is reorg-mutable.
-    A reorg onto a fork that finalized a lower slot lowers this value.
+    Re-derived from the head each update, so it is reorg-mutable and can lower on a reorg.
+    Always an ancestor of the head, never monotone, never a safety guarantee.
     """
 
     blocks: dict[Bytes32, BlockT] = Field(default_factory=dict)

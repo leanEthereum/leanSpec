@@ -11,16 +11,16 @@ from consensus_testing.test_types.attestation_specs import AggregatedAttestation
 from lean_spec.base import CamelModel
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.containers import PublicKey, Signature
-from lean_spec.spec.forks import AggregationBits, Interval, Slot, ValidatorIndex
+from lean_spec.spec.forks import AggregationBits, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
     Attestation,
     AttestationData,
+    AttestationSignatureEntry,
     Block,
     BlockBody,
     MultiMessageAggregate,
-    SignedAttestation,
     SignedBlock,
     SingleMessageAggregate,
     State,
@@ -418,16 +418,18 @@ class BlockSpec(CamelModel):
             parent_state, block_registry, key_manager
         )
 
-        # In-body attestations carry the block's slot.
-        # The store's time check rejects votes whose slot has not yet started locally,
-        # so advance the local clock first.
-        block_slot_interval = Interval.from_slot(self.slot)
-        if store.time < block_slot_interval:
-            store, _ = spec.on_tick(
-                store, block_slot_interval, has_proposal=True, is_aggregator=True
-            )
-
-        # Gossip valid signatures so they run through the spec's verification path.
+        # Seed the aggregator's signature pool directly from the already-signed votes.
+        # A proposer includes attestations it collected earlier, not fresh gossip.
+        # The real block-import path never gossip-validates block-carried attestations.
+        # It verifies their proofs and runs the state transition instead.
+        # Routing these votes through the gossip admission guard would wrongly reject a
+        # legitimately-includable vote whose head no longer descends from the finalized block.
+        # Each vote here was signed by the builder itself, so it is valid by construction.
+        # Existing pool entries are preserved, mirroring how gossip merges into the pool.
+        grouped_signatures: dict[AttestationData, set[AttestationSignatureEntry]] = {
+            existing_data: set(existing_signatures)
+            for existing_data, existing_signatures in store.attestation_signatures.items()
+        }
         for attestation in valid_attestations:
             signatures_for_data = attestation_signatures.get(attestation.data)
             if (
@@ -435,18 +437,13 @@ class BlockSpec(CamelModel):
                 or (signature := signatures_for_data.get(attestation.validator_index)) is None
             ):
                 continue
-            store = spec.on_gossip_attestation(
-                store,
-                SignedAttestation(
-                    validator_index=attestation.validator_index,
-                    data=attestation.data,
-                    signature=signature,
-                ),
-                is_aggregator=True,
+            grouped_signatures.setdefault(attestation.data, set()).add(
+                AttestationSignatureEntry(attestation.validator_index, signature)
             )
+        store = store.model_copy(update={"attestation_signatures": grouped_signatures})
 
-        # Aggregate gossip signatures into known payloads on the local clone.
-        # Gossip pools mutate here, but the caller's gossip view must not be consumed.
+        # Aggregate the pooled signatures into known payloads on the local clone.
+        # The pools mutate here, but the caller's signature pool must not be consumed.
         # Only the freshly aggregated payloads propagate back.
         aggregation_store, _ = spec.aggregate(store)
         merged_store = spec.accept_new_attestations(aggregation_store)
