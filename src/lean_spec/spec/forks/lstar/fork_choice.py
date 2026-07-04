@@ -9,6 +9,7 @@ from lean_spec.spec.crypto.xmss.interface import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.forks.lstar._base import LstarSpecBase, LstarStore
 from lean_spec.spec.forks.lstar.config import (
     GOSSIP_DISPARITY_INTERVALS,
+    HISTORICAL_ROOTS_LIMIT,
     INTERVALS_PER_SLOT,
 )
 from lean_spec.spec.forks.lstar.containers import (
@@ -542,6 +543,8 @@ class ForkChoiceMixin(LstarSpecBase):
 
         Raises:
             SpecRejectionError: UNKNOWN_PARENT_BLOCK if the parent state is not in the store.
+            SpecRejectionError: BLOCK_SLOT_GAP_TOO_LARGE if the slot runs too far beyond the parent.
+            SpecRejectionError: BLOCK_TOO_FAR_IN_FUTURE if the slot is past the future horizon.
             SpecRejectionError: DUPLICATE_ATTESTATION_DATA if the block repeats an AttestationData.
             SpecRejectionError: TOO_MANY_ATTESTATION_DATA if the block exceeds the data cap.
         """
@@ -567,6 +570,21 @@ class ForkChoiceMixin(LstarSpecBase):
                     RejectionReason.UNKNOWN_PARENT_BLOCK,
                     f"Parent state not found (root={block.parent_root.hex()}). "
                     f"Sync parent chain before processing block at slot {block.slot}.",
+                )
+
+            # The empty-slot loop in the transition runs once per slot from the parent to the block.
+            #
+            # A block far beyond its parent, or far in the future, would spin that loop unboundedly.
+            if int(block.slot) - int(parent_state.slot) > int(HISTORICAL_ROOTS_LIMIT):
+                raise SpecRejectionError(
+                    RejectionReason.BLOCK_SLOT_GAP_TOO_LARGE,
+                    "Block slot is too far beyond its parent",
+                )
+            current_slot = int(store.time) // int(INTERVALS_PER_SLOT)
+            if int(block.slot) > current_slot + 1:
+                raise SpecRejectionError(
+                    RejectionReason.BLOCK_TOO_FAR_IN_FUTURE,
+                    "Block too far in future",
                 )
 
             # Reject a block body that repeats the same vote data.
