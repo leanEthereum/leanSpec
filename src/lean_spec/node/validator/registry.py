@@ -214,6 +214,17 @@ class ValidatorRegistry:
                 )
                 continue
 
+            # The attestation and proposal keys must be distinct.
+            # A validator signs a proposal and an attestation in the same slot.
+            # The signature scheme is a stateful one-time signature.
+            # Sharing one key across both roles reuses one-time state and breaks it.
+            # Compare the public keys so the secret bytes stay untouched.
+            if manifest_entry.attestation_public_key_hex == manifest_entry.proposal_public_key_hex:
+                raise ValueError(
+                    "Attestation and proposal keys must differ for validator "
+                    f"{validator_index}, but the manifest assigns the same key to both"
+                )
+
             # Decode the attestation key from its SSZ file.
             attestation_key_path = manifest_directory / manifest_entry.attestation_private_key_file
             try:
