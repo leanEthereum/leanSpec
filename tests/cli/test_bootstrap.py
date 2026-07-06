@@ -118,6 +118,7 @@ def validator_keys_directory(tmp_path: Path) -> Path:
 
     # Manifest carries one validator with placeholder public keys.
     # The loader does not verify the public_keys against the secret keys here.
+    # The two keys still differ, as the loader requires distinct signing roles.
     manifest = hash_signature_directory / "validator-keys-manifest.yaml"
     manifest.write_text(
         "key_scheme: SIGTopLevelTargetSumLifetime32Dim64Base8\n"
@@ -130,7 +131,7 @@ def validator_keys_directory(tmp_path: Path) -> Path:
         "validators:\n"
         "  - index: 0\n"
         f"    attestation_public_key_hex: '0x{'00' * 52}'\n"
-        f"    proposal_public_key_hex: '0x{'00' * 52}'\n"
+        f"    proposal_public_key_hex: '0x{'00' * 51}ee'\n"
         "    attestation_private_key_file: att_key_0.ssz\n"
         "    proposal_private_key_file: prop_key_0.ssz\n"
     )

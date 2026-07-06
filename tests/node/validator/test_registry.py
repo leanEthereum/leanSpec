@@ -60,11 +60,14 @@ def _minimal_manifest_dict(
 
 
 def _manifest_entry_dict(index: int, suffix: str = "") -> dict[str, object]:
-    """Return a manifest entry dict for a validator at the given index."""
+    """Return a manifest entry dict for a validator at the given index.
+
+    The attestation and proposal public keys differ, as the loader requires.
+    """
     return {
         "index": index,
         "attestation_public_key_hex": "0x" + f"{index:02d}" * 52,
-        "proposal_public_key_hex": "0x" + f"{index:02d}" * 52,
+        "proposal_public_key_hex": "0x" + f"{index:02d}" * 51 + "ee",
         "attestation_private_key_file": f"att_key_{index}{suffix}.ssz",
         "proposal_private_key_file": f"prop_key_{index}{suffix}.ssz",
     }
@@ -168,14 +171,14 @@ class TestValidatorManifest:
             ValidatorManifestEntry(
                 index=ValidatorIndex(0),
                 attestation_public_key_hex=Bytes52("0x" + "00" * 52),
-                proposal_public_key_hex=Bytes52("0x" + "00" * 52),
+                proposal_public_key_hex=Bytes52("0x" + "00" * 51 + "ee"),
                 attestation_private_key_file="att_key_0.ssz",
                 proposal_private_key_file="prop_key_0.ssz",
             ),
             ValidatorManifestEntry(
                 index=ValidatorIndex(1),
                 attestation_public_key_hex=Bytes52("0x" + "01" * 52),
-                proposal_public_key_hex=Bytes52("0x" + "01" * 52),
+                proposal_public_key_hex=Bytes52("0x" + "01" * 51 + "ee"),
                 attestation_private_key_file="att_key_1.ssz",
                 proposal_private_key_file="prop_key_1.ssz",
             ),
@@ -504,6 +507,34 @@ class TestValidatorRegistryFromYaml:
             )
         assert str(exception_info.value) == (
             "Failed to load proposal key for validator 0: PRFKey: expected 32 bytes, got 13"
+        )
+
+    def test_same_key_for_both_roles_raises(self, tmp_path: Path) -> None:
+        """A manifest assigning one key to both roles is rejected before any file is read."""
+        validators_file = tmp_path / "validators.yaml"
+        validators_file.write_text(yaml.dump({"node_0": [0]}))
+
+        same_key_entry = {
+            "index": 0,
+            "attestation_public_key_hex": "0x" + "cd" * 52,
+            "proposal_public_key_hex": "0x" + "cd" * 52,
+            "attestation_private_key_file": "att_key_0.ssz",
+            "proposal_private_key_file": "prop_key_0.ssz",
+        }
+        manifest_file = tmp_path / "manifest.yaml"
+        _write_manifest(manifest_file, [same_key_entry])
+
+        # No key files are written on purpose.
+        # The check must fire before any decode is attempted.
+        with pytest.raises(ValueError) as exception_info:
+            ValidatorRegistry.from_yaml(
+                node_id="node_0",
+                validators_path=validators_file,
+                manifest_path=manifest_file,
+            )
+        assert str(exception_info.value) == (
+            "Attestation and proposal keys must differ for validator 0, "
+            "but the manifest assigns the same key to both"
         )
 
     def test_only_assigned_node_keys_are_loaded(self, tmp_path: Path, km: XmssKeyManager) -> None:
