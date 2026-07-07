@@ -35,6 +35,7 @@ from lean_spec.spec.forks import (
     Slot,
     SpecRejectionError,
     Store,
+    ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.containers import (
     AggregationError,
@@ -204,10 +205,13 @@ class SyncService:
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
 
-        # Aggregators recover per-attestation proofs from each processed block,
-        # then re-broadcast them. Non-aggregators rely on the gossip path instead.
-        # Skip while syncing: historical blocks flood this path and the justified
-        # anchor is still moving, so recovered votes would not match a live head.
+        # Aggregators recover per-attestation proofs from each processed block.
+        # They queue the recovered proofs for re-broadcast.
+        # Non-aggregators rely on the gossip path instead.
+        # The recovery is skipped while syncing.
+        # Historical blocks flood this path during sync.
+        # The justified anchor is still moving during sync.
+        # Recovered votes would then not match a live head.
         if self.is_aggregator and self.state == SyncState.SYNCED:
             new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
             self._pending_block_aggregates.extend(aggregates)
@@ -589,10 +593,18 @@ class SyncService:
         }
         aggregates: list[SignedAggregatedAttestation] = []
 
-        # Block building anchors every packed vote on the head state's justified
-        # checkpoint as its source, so only votes with that source are worth recovering.
-        # Read it from the passed store, which the head-sync drain advances per block.
-        head_state_justified_checkpoint = store.states[store.head].latest_justified
+        # A future block built on this head can only pack votes whose source
+        # is this head's justified checkpoint.
+        # A vote with an older source can no longer advance justification.
+        # Such a vote is intentionally dropped.
+        # A vote with a newer or unrelated source could never have been anchored on this chain.
+        # Only votes matching this head's justified checkpoint are worth recovering.
+        # Read this checkpoint from the passed store,
+        # which holds the post-state of the block just imported.
+        head_state = store.states.get(store.head)
+        if head_state is None:
+            return store, []
+        head_state_justified_checkpoint = head_state.latest_justified
 
         for attestation in block_attestations:
             attestation_data = attestation.data
@@ -605,7 +617,7 @@ class SyncService:
             block_participants = set(attestation.aggregation_bits.to_validator_indices())
 
             local_proofs = local_proofs_by_root.get(data_root, [])
-            local_union: set = set()
+            local_union: set[ValidatorIndex] = set()
             for proof in local_proofs:
                 local_union |= set(proof.participants.to_validator_indices())
 

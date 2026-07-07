@@ -850,18 +850,25 @@ class TestReplayPendingAttestationsPlain:
 
 # Post-block single-message aggregate deconstruction.
 #
-# Exercises the deconstruction core: for every processed block (gossip,
-# head-sync, or backfilled), the merged multi-message aggregate proof is split
-# into per-attestation single-message aggregate proofs, merged with locally held
-# partials, and written into the pending pool, replacing the partials it subsumes.
+# The split breaks a block's merged multi-message aggregate proof into
+# per-attestation single-message aggregate proofs.
+# Each recovered proof is merged with the locally held partials.
+# The merged proof is written into the pending pool.
+# It replaces the partials it subsumes.
+#
+# In production the split runs only for an aggregator's blocks.
+# It runs only once the node is synced.
+# Blocks drained during head-sync catch-up and backfill happen while syncing.
+# Those blocks never trigger the split.
 #
 # Deconstruction only runs for an attestation when:
 #
-# - its source is the store's current justified checkpoint, so a future block
+# - its source is the head state's justified checkpoint, so a future block
 #   build could anchor on it and pack the vote, and
 # - it adds at least one participant the node does not already hold.
 #
-# These tests check when the split runs, plus one positive path that runs it.
+# Most of these tests drive the core split directly.
+# The gate tests drive the block-import path to check the synced-aggregator gate.
 # The cryptographic split and merge are covered by the aggregation consensus vectors.
 
 # Round-robin proposer is slot % num_validators with four validators.
@@ -922,15 +929,39 @@ def _service(peer_id: PeerId):
     return create_mock_sync_service(peer_id)
 
 
+def _expected_recovered_aggregate(
+    store: Store,
+    signed_block: SignedBlock,
+    attestation_data: AttestationData,
+) -> SignedAggregatedAttestation:
+    """The aggregate recovered from a block whose single vote has no local partial."""
+    block_attestation = signed_block.block.body.attestations[0]
+    validators = store.states[signed_block.block.parent_root].validators
+    public_keys_per_message = [
+        [
+            PublicKey.decode_bytes(validators[validator_index].attestation_public_key)
+            for validator_index in block_attestation.aggregation_bits.to_validator_indices()
+        ],
+        [PublicKey.decode_bytes(validators[signed_block.block.proposer_index].proposal_public_key)],
+    ]
+    combined_proof = signed_block.proof.split_by_message(
+        message=hash_tree_root(attestation_data),
+        public_keys_per_message=public_keys_per_message,
+        participants=block_attestation.aggregation_bits,
+    )
+    return SignedAggregatedAttestation(data=attestation_data, proof=combined_proof)
+
+
 def test_skips_when_source_not_current_justified(
     peer_id: PeerId, key_manager: XmssKeyManager
 ) -> None:
     """
     Source other than the head state's justified checkpoint -> no aggregates.
 
-    Block building anchors every packed vote on the head state's justified
-    checkpoint as its source, so a vote with a different source is never
-    selected. The expensive split is skipped and the store is unchanged.
+    A future block on this head packs only votes sourced at this head's justified checkpoint.
+    A vote with a different source could never be selected into such a block.
+    The expensive split is skipped.
+    The store is unchanged.
     """
     chain_store, signed_block, _ = _setup(
         key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
@@ -959,9 +990,9 @@ def test_splits_when_source_is_current_justified(
     """
     Source is the head state's justified checkpoint and the block adds a voter -> split runs.
 
-    The attestation sources at the genesis justified checkpoint, which the
-    head state still carries. With no locally held proof, the block adds new
-    participants, so the proof is split and folded into the pending pool.
+    The attestation sources at the genesis justified checkpoint, which the head state still carries.
+    With no locally held proof, the block adds new participants.
+    The proof is split and folded into the pending pool.
     """
     block_participants = [ValidatorIndex(1), ValidatorIndex(2)]
     chain_store, signed_block, attestation_data = _setup(
@@ -971,14 +1002,15 @@ def test_splits_when_source_is_current_justified(
 
     new_store, aggregates = service._deconstruct_block_into_store(chain_store, signed_block)
 
+    # Rebuild the exact proof the split yields, the same way processing does.
+    expected_aggregate = _expected_recovered_aggregate(chain_store, signed_block, attestation_data)
+
     # One aggregate emerges, carrying the block's vote and exactly its voters.
-    assert len(aggregates) == 1
-    assert aggregates[0].data == attestation_data
-    assert set(aggregates[0].proof.participants.to_validator_indices()) == set(block_participants)
+    assert aggregates == [expected_aggregate]
 
     # The pending pool now holds that one combined proof under the vote.
     pending_proofs = new_store.latest_new_aggregated_payloads[attestation_data]
-    assert pending_proofs == {aggregates[0].proof}
+    assert pending_proofs == {expected_aggregate.proof}
 
 
 def test_skips_when_block_adds_no_new_validators(
@@ -1022,3 +1054,63 @@ def test_noop_when_parent_state_missing(peer_id: PeerId, key_manager: XmssKeyMan
 
     assert aggregates == []
     assert new_store is store
+
+
+def _gate_setup(
+    peer_id: PeerId,
+    key_manager: XmssKeyManager,
+    *,
+    is_aggregator: bool,
+    state: SyncState,
+) -> tuple[SyncService, Store, SignedBlock, AttestationData]:
+    """Wire a real-spec service and a slot-2 block whose single vote is recoverable."""
+    spec = LstarSpec()
+    chain_store, signed_block, attestation_data = _setup(
+        key_manager, block_participants=[ValidatorIndex(1), ValidatorIndex(2)]
+    )
+    # The block builds at slot 2, so the store must be ticked there to accept it.
+    ticked_store, _ = spec.on_tick(chain_store, Interval.from_slot(BLOCK_SLOT), has_proposal=True)
+    service = create_mock_sync_service(peer_id, is_aggregator=is_aggregator)
+    service.spec = spec
+    service.state = state
+    return service, ticked_store, signed_block, attestation_data
+
+
+def test_process_block_recovers_aggregates_for_synced_aggregator(
+    peer_id: PeerId, key_manager: XmssKeyManager
+) -> None:
+    """Aggregator in SYNCED state runs deconstruction and queues the recovered aggregate."""
+    service, ticked_store, signed_block, attestation_data = _gate_setup(
+        peer_id, key_manager, is_aggregator=True, state=SyncState.SYNCED
+    )
+
+    new_store = service.process_block(ticked_store, signed_block)
+
+    expected_aggregate = _expected_recovered_aggregate(new_store, signed_block, attestation_data)
+    assert service._pending_block_aggregates == [expected_aggregate]
+
+
+def test_process_block_skips_deconstruction_for_syncing_aggregator(
+    peer_id: PeerId, key_manager: XmssKeyManager
+) -> None:
+    """Aggregator still SYNCING skips deconstruction, leaving no queued aggregates."""
+    service, ticked_store, signed_block, _ = _gate_setup(
+        peer_id, key_manager, is_aggregator=True, state=SyncState.SYNCING
+    )
+
+    service.process_block(ticked_store, signed_block)
+
+    assert service._pending_block_aggregates == []
+
+
+def test_process_block_skips_deconstruction_for_synced_non_aggregator(
+    peer_id: PeerId, key_manager: XmssKeyManager
+) -> None:
+    """A non-aggregator in SYNCED state skips deconstruction, leaving no queued aggregates."""
+    service, ticked_store, signed_block, _ = _gate_setup(
+        peer_id, key_manager, is_aggregator=False, state=SyncState.SYNCED
+    )
+
+    service.process_block(ticked_store, signed_block)
+
+    assert service._pending_block_aggregates == []
