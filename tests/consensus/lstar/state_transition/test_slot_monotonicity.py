@@ -39,7 +39,11 @@ def test_process_slots_target_equal_to_state_slot_rejected(
     state_transition_test(
         pre=pre_state,
         blocks=[
-            BlockSpec(slot=Slot(1)),
+            BlockSpec(
+                slot=Slot(1),
+                skip_slot_processing=True,
+                check_state_transition=True,
+            ),
         ],
         post=None,
         expected_rejection=ExpectedRejection(

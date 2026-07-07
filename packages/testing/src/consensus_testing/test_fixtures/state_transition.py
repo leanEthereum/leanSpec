@@ -116,7 +116,7 @@ class StateTransitionTest(BaseTestSpec):
 
                 if cached_state is not None:
                     state = cached_state
-                elif block_spec.skip_slot_processing:
+                elif block_spec.skip_slot_processing and not block_spec.check_state_transition:
                     state = spec.process_block(state, block)
                 else:
                     state = spec.state_transition(state, block=block)
