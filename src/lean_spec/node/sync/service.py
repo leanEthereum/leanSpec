@@ -35,6 +35,7 @@ from lean_spec.spec.forks import (
     Slot,
     SpecRejectionError,
     Store,
+    ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.containers import (
     AggregationError,
@@ -204,10 +205,15 @@ class SyncService:
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
 
-        # Recover per-attestation proofs from every processed block.
-        # Queue them for publishing only when this node is an aggregator.
-        new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
-        if self.is_aggregator:
+        # Aggregators recover per-attestation proofs from each processed block.
+        # They queue the recovered proofs for re-broadcast.
+        # Non-aggregators rely on the gossip path instead.
+        # The recovery is skipped while syncing.
+        # Historical blocks flood this path during sync.
+        # The justified anchor is still moving during sync.
+        # Recovered votes would then not match a live head.
+        if self.is_aggregator and self.state == SyncState.SYNCED:
+            new_store, aggregates = self._deconstruct_block_into_store(new_store, block)
             self._pending_block_aggregates.extend(aggregates)
 
         # Write-through persistence: synchronous and optional.
@@ -587,18 +593,31 @@ class SyncService:
         }
         aggregates: list[SignedAggregatedAttestation] = []
 
+        # A future block built on this head can only pack votes whose source
+        # is this head's justified checkpoint.
+        # A vote with an older source can no longer advance justification.
+        # Such a vote is intentionally dropped.
+        # A vote with a newer or unrelated source could never have been anchored on this chain.
+        # Only votes matching this head's justified checkpoint are worth recovering.
+        # Read this checkpoint from the passed store,
+        # which holds the post-state of the block just imported.
+        head_state = store.states.get(store.head)
+        if head_state is None:
+            return store, []
+        head_state_justified_checkpoint = head_state.latest_justified
+
         for attestation in block_attestations:
             attestation_data = attestation.data
 
-            # Skip targets at or behind justified, which can no longer advance justification.
-            if attestation_data.target.slot <= store.latest_justified.slot:
+            # A vote with any other source is never selected into a block.
+            if attestation_data.source != head_state_justified_checkpoint:
                 continue
 
             data_root = hash_tree_root(attestation_data)
             block_participants = set(attestation.aggregation_bits.to_validator_indices())
 
             local_proofs = local_proofs_by_root.get(data_root, [])
-            local_union: set = set()
+            local_union: set[ValidatorIndex] = set()
             for proof in local_proofs:
                 local_union |= set(proof.participants.to_validator_indices())
 

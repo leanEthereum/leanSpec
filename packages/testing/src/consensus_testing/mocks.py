@@ -321,6 +321,7 @@ def create_mock_sync_service(
     *,
     database: Database | None = None,
     genesis_start: bool = False,
+    is_aggregator: bool = False,
 ) -> SyncService:
     """Build a sync service backed by a fake store, spec, and network."""
     peer_manager = PeerManager()
@@ -338,4 +339,5 @@ def create_mock_sync_service(
         spec=cast(LstarSpec, forkchoice_double),
         database=database,
         genesis_start=genesis_start,
+        is_aggregator=is_aggregator,
     )
