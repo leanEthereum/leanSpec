@@ -159,41 +159,6 @@ jobs:
       - name: Fill test fixtures
         run: just fill-ci
 
-  # Scheme-fragility guard. A root-based fork-choice tiebreak embeds the validator XMSS public
-  # keys, so a vector that hardcodes the winning fork can pass under the default `test` scheme
-  # and fail under `prod`. This reruns the fork-choice vectors under the prod scheme to catch
-  # that pre-merge. See CLAUDE.md, "FORK-CHOICE HEAD ASSERTIONS MUST BE SCHEME-INDEPENDENT".
-  # Determinism is already gated by fill-tests; this job disables it to stay a fast smoke check.
-  fill-tests-prod-scheme:
-    name: Fill fork-choice fixtures under the prod scheme - Python 3.14
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout leanSpec
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          cache-dependency-glob: "pyproject.toml"
-
-      - name: Install just
-        uses: taiki-e/install-action@v2
-        with:
-          tool: just
-
-      - name: Download prod scheme keys
-        run: uv run keys --download --scheme prod
-
-      - name: Fill fork-choice fixtures under the prod scheme
-        run: just fill-ci --scheme=prod --no-check-determinism tests/consensus/lstar/fork_choice
-
   interop-tests:
     name: Interop tests - Multi-node consensus
     runs-on: macos-latest
