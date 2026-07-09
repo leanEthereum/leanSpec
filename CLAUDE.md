@@ -128,3 +128,21 @@ subspecifications that the Lean Ethereum protocol relies on.
     one-to-one: if an assertion changes, the matching docstring line changes with it.
   - Do not weaken a docstring into vagueness to avoid updating it; describe the new behavior
     precisely, as the doc-writer rules require.
+- **CRITICAL - FORK-CHOICE HEAD ASSERTIONS MUST BE SCHEME-INDEPENDENT**: This is a STRICT
+  requirement. A fork-choice head assertion (`head_slot`, `head_root_label`, or any check that
+  pins which block is head) must NOT depend on the signature scheme. Block and attestation-data
+  roots embed the genesis state root, which embeds the validator XMSS public keys, so a
+  root-based tiebreak winner can flip between the `test` and `prod` schemes. A vector that
+  hardcodes the winning fork passes under one scheme and fails under the other; this has shipped
+  twice (PR #916, PR #1181).
+  - Never pin the winner of a weight tie or an equal-slot equivocation tie to a hardcoded fork
+    label or slot. Assert the scheme-independent facts instead.
+  - For a weight tie between equal-weight forks, use `lexicographic_head_among` (head = highest
+    block root, computed from the store).
+  - For an equal-slot equivocation tie, use `canonical_equivocation_head_among` (head = fork
+    whose attestation carries the largest attestation-data root, computed from the store).
+  - When a tie is incidental to the scenario, prefer asserting the genuine behavior at a later
+    step where a single child or unambiguous weight removes the tie, rather than asserting the
+    head at the tie step.
+  - The identity of the winning fork may legitimately differ across schemes; what must hold is
+    that all nodes with identical store contents pick the identical head.

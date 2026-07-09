@@ -214,6 +214,18 @@ class StoreChecks(SelectiveCheck):
     All listed forks must have equal attestation weight, and the head carries the highest root.
     """
 
+    canonical_equivocation_head_among: list[str] | None = None
+    """Fork labels in an equal-slot equivocation tie, head on the largest attestation-data root.
+
+    Each listed fork must be targeted by at least one attestation in the store's accepted
+    aggregated pool. The fork whose attestation carries the largest canonical hash_tree_root
+    absorbs each equivocator's single counted vote, so the head must sit at that fork.
+
+    The roots are read from the store, so the assertion holds under any signature scheme;
+    it never pins which fork wins. The winner is a pure function of store contents, exactly as
+    the fork-choice latest-vote extraction computes it.
+    """
+
     reorg_depth: int | None = None
     """Expected count of blocks from the old head back to its common ancestor with the new head."""
 
@@ -437,6 +449,18 @@ class StoreChecks(SelectiveCheck):
                 self.lexicographic_head_among, store, block_registry, step_index
             )
 
+        # Equal-slot equivocation tiebreak: head sits on the largest attestation-data root.
+        if "canonical_equivocation_head_among" in fields:
+            if block_registry is None:
+                raise ValueError(
+                    f"Step {step_index}: canonical_equivocation_head_among specified "
+                    f"but block_registry not provided"
+                )
+            assert self.canonical_equivocation_head_among is not None
+            StoreChecks._validate_canonical_equivocation_head(
+                self.canonical_equivocation_head_among, store, block_registry, step_index
+            )
+
         # Reorg depth
         if "reorg_depth" in fields:
             if old_head is None:
@@ -576,4 +600,82 @@ class StoreChecks(SelectiveCheck):
                 f"All competing forks (equal weight={weights[0]}):\n{fork_info}\n"
                 f"When forks have equal weight, the fork with the lexicographically "
                 f"highest root should be selected as head."
+            )
+
+    @staticmethod
+    def _validate_canonical_equivocation_head(
+        fork_labels: list[str],
+        store: Store,
+        block_registry: dict[str, Block],
+        step_index: int,
+    ) -> None:
+        """
+        Validate the equal-slot equivocation tiebreak.
+
+        Each listed fork must be targeted by at least one attestation in the store's accepted
+        aggregated pool. The fork whose attestation carries the largest canonical
+        ``hash_tree_root`` absorbs each equivocator's single counted vote, so the head must sit
+        at that fork. The comparison key is identical to the one the fork-choice latest-vote
+        extraction sorts on, so the winner derived here is the fork that wins in the spec.
+
+        The roots are read from the store rather than hardcoded, which keeps the assertion
+        independent of the signature scheme: a block root embeds the genesis state root, which
+        embeds the validator XMSS public keys, so the identity of the winning fork can flip
+        between schemes. What is invariant is that the head tracks the largest root present.
+        """
+        if len(fork_labels) < 2:
+            raise ValueError(
+                f"Step {step_index}: canonical_equivocation_head_among requires at least 2 forks "
+                f"to test the equivocation tiebreak, got {len(fork_labels)}: {fork_labels}"
+            )
+
+        # Resolve each fork label to its block root.
+        fork_roots: dict[str, Bytes32] = {}
+        for label in fork_labels:
+            if label not in block_registry:
+                raise ValueError(
+                    f"Step {step_index}: canonical_equivocation_head_among label '{label}' "
+                    f"not found in block registry. Available: {list(block_registry.keys())}"
+                )
+            fork_roots[label] = hash_tree_root(block_registry[label])
+
+        # For each fork, take the largest canonical attestation-data root among the attestations
+        # targeting it. This is the same key the latest-vote extraction sorts on, so the fork with
+        # the maximum value here is the one each equivocator's weight lands on.
+        attestation_root_by_label: dict[str, Bytes32] = {}
+        for label, fork_root in fork_roots.items():
+            targeting_data_roots = [
+                hash_tree_root(attestation_data)
+                for attestation_data in store.latest_known_aggregated_payloads
+                if attestation_data.target.root == fork_root
+            ]
+            if not targeting_data_roots:
+                raise AssertionError(
+                    f"Step {step_index}: canonical_equivocation_head_among fork '{label}' "
+                    f"(block_root=0x{fork_root.hex()}) has no attestation targeting it in the "
+                    f"accepted aggregated pool."
+                )
+            attestation_root_by_label[label] = max(targeting_data_roots)
+
+        winning_label = max(
+            attestation_root_by_label, key=lambda label: attestation_root_by_label[label]
+        )
+        expected_head_root = fork_roots[winning_label]
+
+        if store.head != expected_head_root:
+            actual_label = next(
+                (label for label, root in fork_roots.items() if root == store.head),
+                "unknown",
+            )
+            fork_info = "\n".join(
+                f"  {label}: block_root=0x{fork_roots[label].hex()} "
+                f"attestation_data_root=0x{attestation_root_by_label[label].hex()}"
+                for label in sorted(fork_roots)
+            )
+            raise AssertionError(
+                f"Step {step_index}: canonical equivocation tiebreak failed.\n"
+                f"The head must be the fork with the largest attestation-data root.\n"
+                f"Expected head: '{winning_label}' (0x{expected_head_root.hex()})\n"
+                f"Actual head:   '{actual_label}' (0x{store.head.hex()})\n"
+                f"Competing forks:\n{fork_info}\n"
             )

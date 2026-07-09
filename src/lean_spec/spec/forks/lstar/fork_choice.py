@@ -682,6 +682,14 @@ class ForkChoiceMixin(LstarSpecBase):
         An equal-slot tie breaks toward the larger canonical attestation-data root.
         The result is therefore independent of arrival or insertion order.
 
+        What is guaranteed is agreement: any two nodes with identical store contents map every
+        validator to the identical vote, and so select the identical head. The identity of the
+        winning fork is not stable across configurations: an attestation-data root embeds its
+        target block root, which embeds the genesis state root, which embeds the validator XMSS
+        public keys, so the larger root (and thus the equivocator's landing fork) can flip between
+        signature schemes. Tests must assert the head against the largest root present in the
+        store, never against a hardcoded fork label.
+
         A vote whose head sits at or below the finalized slot carries no fork-choice weight.
         Such stale votes are skipped here, so callers pass their pool without pre-filtering.
 
