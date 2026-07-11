@@ -217,13 +217,9 @@ class StoreChecks(SelectiveCheck):
     canonical_equivocation_head_among: list[str] | None = None
     """Fork labels in an equal-slot equivocation tie, head on the largest attestation-data root.
 
-    Each listed fork must be targeted by at least one attestation in the store's accepted
-    aggregated pool. The fork whose attestation carries the largest canonical hash_tree_root
-    absorbs each equivocator's single counted vote, so the head must sit at that fork.
-
-    The roots are read from the store, so the assertion holds under any signature scheme;
-    it never pins which fork wins. The winner is a pure function of store contents, exactly as
-    the fork-choice latest-vote extraction computes it.
+    Each listed fork must be targeted by an attestation in the accepted pool; the head must be
+    the fork whose attestation carries the largest hash_tree_root. Scheme-independent (roots are
+    read from the store).
     """
 
     reorg_depth: int | None = None
@@ -609,20 +605,7 @@ class StoreChecks(SelectiveCheck):
         block_registry: dict[str, Block],
         step_index: int,
     ) -> None:
-        """
-        Validate the equal-slot equivocation tiebreak.
-
-        Each listed fork must be targeted by at least one attestation in the store's accepted
-        aggregated pool. The fork whose attestation carries the largest canonical
-        ``hash_tree_root`` absorbs each equivocator's single counted vote, so the head must sit
-        at that fork. The comparison key is identical to the one the fork-choice latest-vote
-        extraction sorts on, so the winner derived here is the fork that wins in the spec.
-
-        The roots are read from the store rather than hardcoded, which keeps the assertion
-        independent of the signature scheme: a block root embeds the genesis state root, which
-        embeds the validator XMSS public keys, so the identity of the winning fork can flip
-        between schemes. What is invariant is that the head tracks the largest root present.
-        """
+        """Validate the equal-slot equivocation tiebreak."""
         if len(fork_labels) < 2:
             raise ValueError(
                 f"Step {step_index}: canonical_equivocation_head_among requires at least 2 forks "
@@ -639,9 +622,7 @@ class StoreChecks(SelectiveCheck):
                 )
             fork_roots[label] = hash_tree_root(block_registry[label])
 
-        # For each fork, take the largest canonical attestation-data root among the attestations
-        # targeting it. This is the same key the latest-vote extraction sorts on, so the fork with
-        # the maximum value here is the one each equivocator's weight lands on.
+        # Largest attestation-data root per fork — the key latest-vote extraction sorts on.
         attestation_root_by_label: dict[str, Bytes32] = {}
         for label, fork_root in fork_roots.items():
             targeting_data_roots = [
