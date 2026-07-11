@@ -128,3 +128,11 @@ subspecifications that the Lean Ethereum protocol relies on.
     one-to-one: if an assertion changes, the matching docstring line changes with it.
   - Do not weaken a docstring into vagueness to avoid updating it; describe the new behavior
     precisely, as the doc-writer rules require.
+- **CRITICAL - FORK-CHOICE HEAD ASSERTIONS MUST BE SCHEME-INDEPENDENT**: A head assertion that
+  pins the winner of a root-based tiebreak (`head_slot`, `head_root_label`) is scheme-fragile —
+  roots embed validator keys, so the winner can flip between `test` and `prod` (shipped in #916,
+  #1181). Assert the invariant, not the winner.
+  - Equal-weight tie → `lexicographic_head_among` (highest block root, from the store).
+  - Equal-slot equivocation tie → `canonical_equivocation_head_among` (largest attestation-data
+    root, from the store).
+  - If the tie is incidental, assert the head at a later step where it is unambiguous.
