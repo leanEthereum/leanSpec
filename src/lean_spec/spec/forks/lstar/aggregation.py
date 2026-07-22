@@ -156,9 +156,19 @@ class AggregationMixin(LstarSpecBase):
                 if signature_entry.validator_index not in covered_validators
             ]
 
-            # Aggregation needs fresh material: one raw signature, or two child proofs to merge.
-            # A lone child proof is already valid, so there is nothing to do.
-            if not raw_signatures and len(child_proofs) < 2:
+            # Aggregation is only worthwhile with at least two pieces of evidence to combine.
+            #
+            # The prover's cost is roughly constant in input size, so the trivial cases
+            # would pay the full proving price for a proof that adds no consensus value:
+            #
+            #   - No raw signatures and no child proofs: nothing to aggregate.
+            #   - A lone child proof: already a valid proof, so there is nothing to do.
+            #   - A lone raw signature: its vote is already on the gossip topic, and a
+            #     single-validator proof cannot move quorum, so peers learn nothing new.
+            #
+            # A skipped signature stays in the raw pool below, feeding a later round
+            # once more evidence for the same attestation data shows up.
+            if len(raw_signatures) + len(child_proofs) < 2:
                 continue
 
             # Phase 3: Aggregate.

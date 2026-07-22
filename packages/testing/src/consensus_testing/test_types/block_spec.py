@@ -446,6 +446,46 @@ class BlockSpec(CamelModel):
         aggregation_store, _ = spec.aggregate(store)
         merged_store = spec.accept_new_attestations(aggregation_store)
 
+        # The aggregation round skips a lone raw signature as not worth a proving run.
+        # A proposer may still package that vote: a single-signature proof is valid on
+        # the wire, exactly like the proposal component built in _sign_block.
+        # Scenario fillers rely on such votes to give forks precise weights, so build
+        # the skipped proofs directly and merge them into the known payload pool.
+        for attestation_data, signature_entries in merged_store.attestation_signatures.items():
+            skipped_signature_inputs = [
+                (
+                    signature_entry.validator_index,
+                    PublicKey.decode_bytes(
+                        bytes(
+                            parent_state.validators[
+                                signature_entry.validator_index
+                            ].attestation_public_key
+                        )
+                    ),
+                    signature_entry.signature,
+                )
+                for signature_entry in sorted(
+                    signature_entries,
+                    key=lambda signature_entry: signature_entry.validator_index,
+                )
+            ]
+            skipped_signature_proof = SingleMessageAggregate.aggregate(
+                children=[],
+                raw_xmss=skipped_signature_inputs,
+                message=hash_tree_root(attestation_data),
+                slot=attestation_data.slot,
+            )
+            merged_known_payloads = {
+                known_data: set(known_proofs)
+                for known_data, known_proofs in (
+                    merged_store.latest_known_aggregated_payloads.items()
+                )
+            }
+            merged_known_payloads.setdefault(attestation_data, set()).add(skipped_signature_proof)
+            merged_store = merged_store.model_copy(
+                update={"latest_known_aggregated_payloads": merged_known_payloads}
+            )
+
         final_block, _, _, block_proofs = spec.build_block(
             parent_state,
             slot=self.slot,

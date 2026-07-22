@@ -121,6 +121,69 @@ def test_interval_0_acceptance_with_proposal_recomputes_head(
     )
 
 
+def test_interval_2_aggregator_skips_single_raw_signature(
+    fork_choice_test: ForkChoiceTestFiller,
+) -> None:
+    """
+    Interval 2 leaves a lone raw signature unaggregated.
+
+    Given
+    -----
+    - 4 validators.
+    - the chain:
+        block_1(1) -> block_2(2)
+    - only V0 gossips a raw signature for block_2, kept in the raw signature pool.
+    - the new aggregate pool starts empty.
+
+    When
+    ----
+    - time crosses slot 3 interval 2, the aggregator action.
+
+    Then
+    ----
+    - a single-validator aggregate carries no information the raw signature
+      does not already carry, so the aggregator builds nothing.
+    - the new aggregate pool stays empty.
+    - the raw signature pool keeps the lone signature for a future round.
+    """
+    fork_choice_test(
+        anchor_state=build_genesis_state(num_validators=4),
+        steps=[
+            BlockStep(
+                block=BlockSpec(slot=Slot(1), label="block_1"),
+                checks=StoreChecks(head_slot=Slot(1), head_root_label="block_1"),
+            ),
+            BlockStep(
+                block=BlockSpec(slot=Slot(2), label="block_2"),
+                checks=StoreChecks(head_slot=Slot(2), head_root_label="block_2"),
+            ),
+            TickStep(interval=14),
+            AttestationStep(
+                attestation=GossipAttestationSpec(
+                    validator_index=ValidatorIndex(0),
+                    slot=Slot(3),
+                    target_slot=Slot(2),
+                    target_root_label="block_2",
+                    source_root_label="genesis",
+                    source_slot=Slot(0),
+                ),
+                is_aggregator=True,
+                checks=StoreChecks(
+                    attestation_signature_target_slots=[Slot(2)],
+                    latest_new_aggregated_target_slots=[],
+                ),
+            ),
+            TickStep(
+                interval=17,
+                checks=StoreChecks(
+                    attestation_signature_target_slots=[Slot(2)],
+                    latest_new_aggregated_target_slots=[],
+                ),
+            ),
+        ],
+    )
+
+
 def test_interval_2_aggregator_aggregates_raw_signatures(
     fork_choice_test: ForkChoiceTestFiller,
 ) -> None:
