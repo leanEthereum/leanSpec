@@ -136,3 +136,38 @@ subspecifications that the Lean Ethereum protocol relies on.
   - Equal-slot equivocation tie → `canonical_equivocation_head_among` (largest attestation-data
     root, from the store).
   - If the tie is incidental, assert the head at a later step where it is unambiguous.
+
+## Writing Style & Structural Constraints for Documentation
+
+Applies to comments in code and in other documentation files. Also, when writing in github issues and PRs.
+
+### Sentence Construction (Hard Enforcement)
+
+- **No contrastive negation or antithesis.** Never use patterns like "It's not about X, it's about Y" or "X, not Y, not Z." State the positive reality directly and cleanly, without defensive framing.
+
+### Punctuation & Sentence Structure
+
+- **No em-dashes for subphrases.** Never use em-dashes (—) or hyphens (-, --) to set off parenthetical thoughts, interruptions, or subphrases.
+- **Use commas instead.** Set off descriptive tangents or subphrases with commas (apposition).
+  - Bad: "The strategy—though risky—yielded massive results."
+  - Good: "The strategy, though risky, yielded massive results."
+- **Keep sentences clean.** If a subphrase needs more than two commas to execute, split it into two distinct, clean sentences instead of one complex sentence.
+
+### Structural Rhythm & Voice
+
+- **Vary sentence length.** Alternate between short, punchy sentences (under 5 words) and longer, flowing ones. Never write three sentences of similar length in a row.
+- **No statement-explanation loops.** Do not state a fact or opinion and then spend the next sentence explaining, justifying, or restating it in other words. Every sentence must introduce new information or advance the point.
+- **Active voice.** Write in the active voice. Avoid clinical, detached, or overly academic prose.
+
+### Banned Formatting & Bookends
+
+- **No filler openers.** Skip introductions like "Sure, here is..." or "Let's dive in." Start directly with the first relevant sentence.
+- **No summary closers.** Do not write a concluding summary paragraph or use phrases like "In conclusion," "Ultimately," "In essence," or "At the end of the day." Stop writing when the content ends.
+
+### Banned AI Vocabulary
+
+Never use the following. Replace them with simple, plain English alternatives.
+
+- **Verbs / transitions:** delve, utilize, leverage, facilitate, maximize, embrace, foster, emphasize, furthermore, moreover, additionally.
+- **Nouns / metaphors:** tapestry, landscape, realm, arena, symphony, testament, beacon, journey, roadmap, game-changer, paradigm shift.
+- **Adjectives:** robust, seamless, cutting-edge, innovative, multifaceted, crucial, pivotal, deep dive.
