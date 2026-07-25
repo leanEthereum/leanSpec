@@ -18,7 +18,9 @@ from consensus_testing import (
     make_signed_block,
 )
 from consensus_testing.keys import XmssKeyManager
+from lean_spec.node.chain.clock import SlotClock
 from lean_spec.node.networking import PeerId
+from lean_spec.node.networking.config import MIN_SLOTS_FOR_BLOCK_REQUESTS
 from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.storage.database import Database
 from lean_spec.node.sync.config import MAX_PENDING_ATTESTATIONS
@@ -34,6 +36,7 @@ from lean_spec.spec.forks import (
     ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar import Store
+from lean_spec.spec.forks.lstar.config import SECONDS_PER_SLOT
 from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     MultiMessageAggregate,
@@ -43,7 +46,7 @@ from lean_spec.spec.forks.lstar.containers import (
     SingleMessageAggregate,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz import Bytes32, Uint64
 
 
 def make_store_with_attestation_data(
@@ -663,6 +666,103 @@ class TestBlockPersistence:
                 kwargs=MappingProxyType({"keep_roots": frozenset({block_root})}),
             ),
         ]
+
+
+class TestSignedBlockServing:
+    """Tests for signed-block retention and the inbound serving lookups."""
+
+    def test_process_block_retains_signed_block_for_root(self, peer_id: PeerId) -> None:
+        """A processed block is retrievable by its root with the proof intact."""
+        service = create_mock_sync_service(peer_id)
+        genesis_root = service.store.head
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, block)
+
+        block_root = hash_tree_root(block.block)
+        assert service.signed_block_for_root(block_root) == block
+
+    def test_signed_block_for_root_returns_none_for_unknown_root(self, peer_id: PeerId) -> None:
+        """An unknown root yields no block."""
+        service = create_mock_sync_service(peer_id)
+
+        assert service.signed_block_for_root(Bytes32(b"\x2a" * 32)) is None
+
+    def test_signed_block_by_slot_returns_canonical_block(self, peer_id: PeerId) -> None:
+        """The canonical block at a filled slot is served with the proof intact."""
+        service = create_mock_sync_service(peer_id)
+        genesis_root = service.store.head
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, block)
+
+        assert service.signed_block_by_slot(Slot(1)) == block
+
+    def test_signed_block_by_slot_returns_none_for_empty_slot(self, peer_id: PeerId) -> None:
+        """A slot the canonical chain skipped yields no block."""
+        service = create_mock_sync_service(peer_id)
+        genesis_root = service.store.head
+        block = make_signed_block(
+            slot=Slot(2),
+            proposer_index=ValidatorIndex(0),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, block)
+
+        assert service.signed_block_by_slot(Slot(1)) is None
+
+    def test_signed_block_by_slot_returns_none_above_head(self, peer_id: PeerId) -> None:
+        """A slot above the head yields no block."""
+        service = create_mock_sync_service(peer_id)
+        genesis_root = service.store.head
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, block)
+
+        assert service.signed_block_by_slot(Slot(5)) is None
+
+    def test_retained_blocks_pruned_below_serving_window(self, peer_id: PeerId) -> None:
+        """A retained block below the sliding history window is dropped."""
+        service = create_mock_sync_service(peer_id)
+        # Clock far past genesis: current slot 3610 puts the window floor at slot 10.
+        current_slot_past_window = MIN_SLOTS_FOR_BLOCK_REQUESTS + 10
+        service.clock = SlotClock(
+            genesis_time=Uint64(0),
+            time_fn=lambda: float(current_slot_past_window * int(SECONDS_PER_SLOT)),
+        )
+        genesis_root = service.store.head
+        block_below_window = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, block_below_window)
+        block_inside_window = make_signed_block(
+            slot=Slot(current_slot_past_window),
+            proposer_index=ValidatorIndex(0),
+            parent_root=hash_tree_root(block_below_window.block),
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, block_inside_window)
+
+        below_window_root = hash_tree_root(block_below_window.block)
+        inside_window_root = hash_tree_root(block_inside_window.block)
+        assert service.signed_block_for_root(below_window_root) is None
+        assert service.signed_block_for_root(inside_window_root) == block_inside_window
 
 
 class TestPublishAggregatedAttestation:

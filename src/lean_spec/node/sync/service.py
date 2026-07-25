@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from lean_spec.node.chain.clock import SlotClock
 from lean_spec.node.metrics import registry as metrics
+from lean_spec.node.networking.config import MIN_SLOTS_FOR_BLOCK_REQUESTS
 from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.storage import Database
@@ -133,6 +134,21 @@ class SyncService:
     _pending_block_aggregates: list[SignedAggregatedAttestation] = field(default_factory=list)
     """Aggregates recovered from processed blocks, queued for the aggregator to publish."""
 
+    _signed_blocks_for_serving: dict[Bytes32, SignedBlock] = field(default_factory=dict)
+    """
+    Signed blocks retained to serve inbound block requests, keyed by block root.
+
+    The forkchoice store keeps unsigned blocks only.
+    A served block must carry its original proof.
+    The requesting peer verifies that proof on import.
+
+    Bounded by the serving history window.
+    Blocks below the window can never be served again, so they are pruned.
+
+    In-memory only: after a restart the node serves nothing
+    until new blocks arrive.
+    """
+
     def __post_init__(self) -> None:
         """Wire sub-components and apply the genesis-start state hint."""
         # Backfill reads the store through self, so it sees each post-block reassignment.
@@ -204,6 +220,13 @@ class SyncService:
         #
         # We only count blocks that pass validation and update the store.
         self._blocks_processed += 1
+
+        # Retain the signed block so peers can request it back.
+        #
+        # The store keeps only the unsigned block, which cannot be served:
+        # the requesting peer verifies the proof when importing the block.
+        self._signed_blocks_for_serving[hash_tree_root(block.block)] = block
+        self._prune_signed_blocks_below_serving_window()
 
         # Aggregators recover per-attestation proofs from each processed block.
         # They queue the recovered proofs for re-broadcast.
@@ -283,6 +306,42 @@ class SyncService:
                     store.latest_finalized.slot,
                     keep_roots=frozenset({store.latest_finalized.root}),
                 )
+
+    def _prune_signed_blocks_below_serving_window(self) -> None:
+        """Drop retained signed blocks that fell out of the serving history window."""
+        # The responder refuses range requests below the sliding window floor.
+        # A block below the floor can never be served again, so retaining it is waste.
+        current_slot = self.clock.current_slot()
+        if current_slot < Slot(MIN_SLOTS_FOR_BLOCK_REQUESTS):
+            return
+        window_floor = current_slot - Slot(MIN_SLOTS_FOR_BLOCK_REQUESTS)
+        self._signed_blocks_for_serving = {
+            block_root: signed_block
+            for block_root, signed_block in self._signed_blocks_for_serving.items()
+            if signed_block.block.slot >= window_floor
+        }
+
+    def signed_block_for_root(self, block_root: Bytes32) -> SignedBlock | None:
+        """Return the retained signed block for a root, or None when not retained."""
+        return self._signed_blocks_for_serving.get(block_root)
+
+    def signed_block_by_slot(self, slot: Slot) -> SignedBlock | None:
+        """
+        Return the retained signed block on the canonical chain at a slot.
+
+        Walks parent links from the head until the slot is reached.
+
+        Returns None for an empty slot, a slot above the head, and a canonical
+        block whose signed form was never retained.
+        """
+        block_root = self.store.head
+        block = self.store.blocks.get(block_root)
+        while block is not None and block.slot > slot:
+            block_root = block.parent_root
+            block = self.store.blocks.get(block_root)
+        if block is None or block.slot != slot:
+            return None
+        return self._signed_blocks_for_serving.get(block_root)
 
     def has_root(self, root: Bytes32) -> bool:
         """Return True if the block root is present in the current store."""
