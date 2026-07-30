@@ -81,6 +81,7 @@ from lean_spec.node.networking.gossipsub.topic import GossipTopic, TopicKind
 from lean_spec.node.networking.gossipsub.types import TopicId
 from lean_spec.node.networking.reqresp.handler import (
     REQRESP_PROTOCOL_IDS,
+    AsyncBlockBySlotLookup,
     AsyncBlockLookup,
     CurrentSlotLookup,
     ReqRespServer,
@@ -320,6 +321,18 @@ class LiveNetworkEventSource:
         """
         self._reqresp_handler.block_lookup = lookup
 
+    def set_block_by_slot_lookup(self, lookup: AsyncBlockBySlotLookup) -> None:
+        """
+        Set the callback for looking up canonical blocks by slot.
+
+        Used by the inbound ReqResp handler to serve BlocksByRange requests.
+
+        Args:
+            lookup: Async function that takes a Slot and returns the
+                canonical SignedBlock if available, None otherwise.
+        """
+        self._reqresp_handler.block_by_slot_lookup = lookup
+
     def set_current_slot_lookup(self, lookup: CurrentSlotLookup) -> None:
         """
         Set the callback returning the node's current slot.
@@ -367,6 +380,8 @@ class LiveNetworkEventSource:
         *,
         status: Status,
         current_slot_lookup: CurrentSlotLookup,
+        block_lookup: AsyncBlockLookup,
+        block_by_slot_lookup: AsyncBlockBySlotLookup,
         listen_address: str | None,
         bootnode_multiaddrs: Sequence[str],
     ) -> None:
@@ -376,7 +391,7 @@ class LiveNetworkEventSource:
         Five steps, each a precondition for the next:
 
         1. Set the Status the responder serves.
-        2. Wire the current-slot lookup the range queries depend on.
+        2. Wire the block and current-slot lookups the responder depends on.
         3. Dial bootnodes best-effort, since a peerless honest node remains valid.
         4. Bind the listener with a short bind-error probe window.
         5. Start gossipsub last so the heartbeat reaches reachable peers only.
@@ -384,16 +399,20 @@ class LiveNetworkEventSource:
         Args:
             status: Initial finalized and head checkpoints the responder serves.
             current_slot_lookup: Wall-clock-to-slot callback for range bounds.
+            block_lookup: Callback serving signed blocks by root.
+            block_by_slot_lookup: Callback serving canonical signed blocks by slot.
             listen_address: Multiaddr to bind for inbound connections, or None for dial-only.
             bootnode_multiaddrs: Pre-resolved outbound peers.
 
         Raises:
             OSError: If the listener fails to bind within the probe window.
         """
-        # Status and current-slot lookup must be set before the responder serves.
-        # Without them, range queries return SERVER_ERROR.
+        # Status and lookups must be set before the responder serves.
+        # Without them, block and range queries return SERVER_ERROR.
         self.set_status(status)
         self.set_current_slot_lookup(current_slot_lookup)
+        self.set_block_lookup(block_lookup)
+        self.set_block_by_slot_lookup(block_by_slot_lookup)
 
         # Dial and listen each clear the stop event internally.
         # Clearing it here covers the no-bootnodes, no-listen case.

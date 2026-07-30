@@ -146,6 +146,26 @@ class TestLiveNetworkEventSourceSetBlockLookup:
         assert es._reqresp_handler.block_lookup is mock_lookup
 
 
+class TestLiveNetworkEventSourceSetBlockBySlotLookup:
+    """
+    Canonical block-by-slot lookup callback registration.
+
+    The req/resp handler needs a callback to retrieve canonical blocks
+    by slot when peers send BlocksByRange requests.
+    """
+
+    def test_set_block_by_slot_lookup_propagates_to_handler(self) -> None:
+        """Sets the block-by-slot lookup callback on the reqresp handler."""
+        es = _make_event_source()
+
+        async def mock_lookup(slot: Slot) -> SignedBlock | None:
+            return None
+
+        es.set_block_by_slot_lookup(mock_lookup)
+
+        assert es._reqresp_handler.block_by_slot_lookup is mock_lookup
+
+
 class TestLiveNetworkEventSourceSubscribeGossipTopic:
     """
     Gossip topic subscription delegation to the gossipsub behavior.

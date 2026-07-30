@@ -22,9 +22,10 @@ from lean_spec.node.metrics import PrometheusObserver, registry as metrics
 from lean_spec.node.networking.client import LiveNetworkEventSource
 from lean_spec.node.networking.gossipsub import GossipTopic
 from lean_spec.node.node import Node, NodeConfig
-from lean_spec.spec.forks import SubnetId
+from lean_spec.spec.forks import SignedBlock, Slot, SubnetId
 from lean_spec.spec.forks.lstar.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.spec.observability import set_observer
+from lean_spec.spec.ssz import Bytes32
 
 logger = logging.getLogger(__name__)
 
@@ -105,10 +106,23 @@ async def run_node(boot: NodeBootstrap) -> None:
 
     logger.info("Node initialized, peer_id=%s", event_source.connection_manager.peer_id)
 
+    # Inbound block serving reads the sync service's retained signed blocks.
+    #
+    # The requesting peer verifies each served block's proof on import,
+    # so the lookups return the retained signed blocks, never store blocks
+    # rewrapped with an empty proof.
+    async def signed_block_for_root(block_root: Bytes32) -> SignedBlock | None:
+        return node.sync_service.signed_block_for_root(block_root)
+
+    async def signed_block_by_slot(slot: Slot) -> SignedBlock | None:
+        return node.sync_service.signed_block_by_slot(slot)
+
     # Bring the listener and outbound dialer online in the spec-required order.
     await event_source.start_serving(
         status=anchor.initial_status,
         current_slot_lookup=node.clock.current_slot,
+        block_lookup=signed_block_for_root,
+        block_by_slot_lookup=signed_block_by_slot,
         listen_address=boot.listen_address,
         bootnode_multiaddrs=boot.bootnode_multiaddrs,
     )
