@@ -82,8 +82,8 @@ class ValidatorService:
     _attested_slots: set[Slot] = field(default_factory=set, repr=False)
     """Slots for which we've already produced attestations (prevents duplicates)."""
 
-    _duty_gate_closed: bool = field(default=False, repr=False)
-    """Hysteresis flag. True while signing is silenced."""
+    _attestation_gate_closed: bool = field(default=False, repr=False)
+    """Hysteresis flag. True while attestation signing is silenced."""
 
     async def run(self) -> None:
         """
@@ -122,8 +122,7 @@ class ValidatorService:
             interval = self.clock.current_interval()
 
             if interval == Interval(0):
-                if self._is_synced_for_duties(slot, "block"):
-                    await self._maybe_produce_block(slot)
+                await self._maybe_produce_block(slot)
                 # Block production can outlast interval 0.
                 # Re-read so a slow proposal still attests this slot.
                 interval = self.clock.current_interval()
@@ -132,7 +131,7 @@ class ValidatorService:
             if (
                 interval >= Interval(1)
                 and slot not in self._attested_slots
-                and self._is_synced_for_duties(slot, "attestation")
+                and self._is_synced_for_attestations(slot)
             ):
                 await self._produce_attestations(slot)
                 self._attested_slots.add(slot)
@@ -395,17 +394,12 @@ class ValidatorService:
         self.registry.add(replace(validator_entry, **{key_field: secret_key}))
         return signature
 
-    def _is_synced_for_duties(
-        self,
-        slot: Slot,
-        duty: Literal["block", "attestation"],
-    ) -> bool:
+    def _is_synced_for_attestations(self, slot: Slot) -> bool:
         """
-        Decide whether duties may run for this slot.
+        Decide whether attestations may run for this slot.
 
         Weighs local lag against local-store stall evidence, with hysteresis.
         Returns False only when the local view is stale while the network still progresses.
-        The duty argument only labels the transition log.
         """
         store = self.sync_service.store
         head_block = store.blocks.get(store.head)
@@ -441,27 +435,25 @@ class ValidatorService:
         # - Gate open: close as soon as lag crosses 4.
         if network_stalling:
             allow = True
-            if self._duty_gate_closed:
-                self._duty_gate_closed = False
+            if self._attestation_gate_closed:
+                self._attestation_gate_closed = False
                 logger.info(
-                    "Validator duty gate reopened: network stall detected. "
-                    "duty=%s slot=%d head_slot=%d lag=%d max_seen_slot=%d network_lag=%d",
-                    duty,
+                    "Validator attestation gate reopened: network stall detected. "
+                    "slot=%d head_slot=%d lag=%d max_seen_slot=%d network_lag=%d",
                     int(slot),
                     int(head_slot),
                     lag,
                     int(max_seen_slot),
                     network_lag,
                 )
-        elif self._duty_gate_closed:
+        elif self._attestation_gate_closed:
             # Hysteresis: reopen only well below the threshold.
             allow = lag <= SYNC_LAG_THRESHOLD - HYSTERESIS_BAND
             if allow:
-                self._duty_gate_closed = False
+                self._attestation_gate_closed = False
                 logger.info(
-                    "Validator duty gate reopened: local view caught up. "
-                    "duty=%s slot=%d head_slot=%d lag=%d",
-                    duty,
+                    "Validator attestation gate reopened: local view caught up. "
+                    "slot=%d head_slot=%d lag=%d",
                     int(slot),
                     int(head_slot),
                     lag,
@@ -470,11 +462,10 @@ class ValidatorService:
             # Open gate: close once the local threshold is crossed.
             allow = lag <= SYNC_LAG_THRESHOLD
             if not allow:
-                self._duty_gate_closed = True
+                self._attestation_gate_closed = True
                 logger.info(
-                    "Validator duty gate closed: local view is stale. "
-                    "duty=%s slot=%d head_slot=%d lag=%d max_seen_slot=%d network_lag=%d",
-                    duty,
+                    "Validator attestation gate closed: local view is stale. "
+                    "slot=%d head_slot=%d lag=%d max_seen_slot=%d network_lag=%d",
                     int(slot),
                     int(head_slot),
                     lag,
