@@ -12,7 +12,12 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
 from lean_spec.node.chain.clock import SlotClock
-from lean_spec.node.metrics import registry as metrics
+from lean_spec.node.metrics import (
+    observe_aggregate_arrival,
+    observe_attestation_arrival,
+    observe_block_arrival,
+    registry as metrics,
+)
 from lean_spec.node.networking.config import MIN_SLOTS_FOR_BLOCK_REQUESTS
 from lean_spec.node.networking.reqresp.message import Status
 from lean_spec.node.networking.transport.peer_id import PeerId
@@ -392,6 +397,18 @@ class SyncService:
             self.state.name,
         )
 
+        # Stamp arrival before import, so the sample carries network timing
+        # rather than network timing plus however long this node took to
+        # validate and apply the block. Invalid blocks therefore count too,
+        # unlike the valid/invalid counters, which is the intent: a block that
+        # arrives late and then fails validation still arrived late.
+        #
+        # A missing peer means this node produced the block (see
+        # `publish_and_process_block` in node.py), and its own build latency is
+        # not gossip timing.
+        if peer_id is not None:
+            observe_block_arrival(self.clock, block.block.slot)
+
         if self._head_sync is None:
             raise RuntimeError("HeadSync not initialized")
 
@@ -445,6 +462,12 @@ class SyncService:
             slot,
             validator_index,
         )
+
+        # Peer-received votes only. This node's own attestations arrive here
+        # through `publish_and_process_attestation` with no peer, moments after
+        # signing, and would bunch in the first bucket.
+        if peer_id is not None:
+            observe_attestation_arrival(self.clock, slot)
 
         # Aggregator role requires both an active validator and operator opt-in.
         is_aggregator_role = self.store.validator_index is not None and self.is_aggregator
@@ -501,6 +524,12 @@ class SyncService:
             peer_str,
             slot,
         )
+
+        # Peer-received aggregates only, matching the other two handlers. Today
+        # every caller supplies a peer, but this handler accepts None, and an
+        # aggregate this node built would report proving cost, not gossip.
+        if peer_id is not None:
+            observe_aggregate_arrival(self.clock)
 
         # The store:
         # - verifies the aggregated signature,

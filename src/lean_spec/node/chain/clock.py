@@ -25,7 +25,7 @@ class SlotClock:
     time_fn: Callable[[], float] = wall_time
     """Time source function (injectable for testing)."""
 
-    def _milliseconds_since_genesis(self) -> Uint64:
+    def milliseconds_since_genesis(self) -> Uint64:
         """Milliseconds elapsed since genesis (0 if before genesis)."""
         now_ms = int(self.time_fn() * 1000)
         genesis_ms = int(self.genesis_time) * 1000
@@ -35,16 +35,16 @@ class SlotClock:
 
     def current_slot(self) -> Slot:
         """Get the current slot number (0 if before genesis)."""
-        return Slot(self._milliseconds_since_genesis() // MILLISECONDS_PER_SLOT)
+        return Slot(self.milliseconds_since_genesis() // MILLISECONDS_PER_SLOT)
 
     def current_interval(self) -> Interval:
         """Get the current interval within the slot (0-4)."""
-        milliseconds_into_slot = self._milliseconds_since_genesis() % MILLISECONDS_PER_SLOT
+        milliseconds_into_slot = self.milliseconds_since_genesis() % MILLISECONDS_PER_SLOT
         return Interval(milliseconds_into_slot // MILLISECONDS_PER_INTERVAL)
 
     def total_intervals(self) -> Interval:
         """Get total intervals elapsed since genesis."""
-        return Interval(self._milliseconds_since_genesis() // MILLISECONDS_PER_INTERVAL)
+        return Interval(self.milliseconds_since_genesis() // MILLISECONDS_PER_INTERVAL)
 
     def current_time(self) -> Uint64:
         """Get current wall-clock time as Uint64 (Unix timestamp in seconds)."""
@@ -66,7 +66,7 @@ class SlotClock:
 
         # Position within the current interval, off the shared millisecond
         # time-base that every other accessor on this clock uses.
-        milliseconds_into_interval = int(self._milliseconds_since_genesis()) % int(
+        milliseconds_into_interval = int(self.milliseconds_since_genesis()) % int(
             MILLISECONDS_PER_INTERVAL
         )
 
