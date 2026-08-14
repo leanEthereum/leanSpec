@@ -44,7 +44,7 @@ plugins:
             members_order: source
             separate_signature: true
             filters: ["!^_"]
-            docstring_section_style: google
+            docstring_style: google
 
 markdown_extensions:
   - admonition
@@ -59,7 +59,67 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-
+  - Reference:
+    - Overview: reference/index.md
+    - crypto:
+        - Overview: reference/crypto/index.md
+        - koalabear: reference/crypto/koalabear.md
+        - merkleization: reference/crypto/merkleization.md
+        - poseidon: reference/crypto/poseidon.md
+        - xmss:
+            - Overview: reference/crypto/xmss/index.md
+            - constants: reference/crypto/xmss/constants.md
+            - containers: reference/crypto/xmss/containers.md
+            - encoding: reference/crypto/xmss/encoding.md
+            - field: reference/crypto/xmss/field.md
+            - interface: reference/crypto/xmss/interface.md
+            - merkle: reference/crypto/xmss/merkle.md
+            - poseidon: reference/crypto/xmss/poseidon.md
+            - prf: reference/crypto/xmss/prf.md
+            - types: reference/crypto/xmss/types.md
+    - forks:
+        - Overview: reference/forks/index.md
+        - lstar:
+            - Overview: reference/forks/lstar/index.md
+            - aggregation: reference/forks/lstar/aggregation.md
+            - block_production: reference/forks/lstar/block_production.md
+            - config: reference/forks/lstar/config.md
+            - containers:
+                - Overview: reference/forks/lstar/containers/index.md
+                - aggregation: reference/forks/lstar/containers/aggregation.md
+                - attestation: reference/forks/lstar/containers/attestation.md
+                - block: reference/forks/lstar/containers/block.md
+                - checkpoint: reference/forks/lstar/containers/checkpoint.md
+                - genesis: reference/forks/lstar/containers/genesis.md
+                - identifiers: reference/forks/lstar/containers/identifiers.md
+                - interval: reference/forks/lstar/containers/interval.md
+                - participation: reference/forks/lstar/containers/participation.md
+                - state: reference/forks/lstar/containers/state.md
+                - store: reference/forks/lstar/containers/store.md
+                - validator: reference/forks/lstar/containers/validator.md
+            - errors: reference/forks/lstar/errors.md
+            - fork_choice: reference/forks/lstar/fork_choice.md
+            - signatures: reference/forks/lstar/signatures.md
+            - slot: reference/forks/lstar/slot.md
+            - spec: reference/forks/lstar/spec.md
+            - state_transition: reference/forks/lstar/state_transition.md
+            - timeline: reference/forks/lstar/timeline.md
+            - validator_duties: reference/forks/lstar/validator_duties.md
+        - protocol: reference/forks/protocol.md
+        - registry: reference/forks/registry.md
+    - observability:
+        - Overview: reference/observability/index.md
+        - observer: reference/observability/observer.md
+    - ssz:
+        - Overview: reference/ssz/index.md
+        - bitfields: reference/ssz/bitfields.md
+        - boolean: reference/ssz/boolean.md
+        - byte_arrays: reference/ssz/byte_arrays.md
+        - collections: reference/ssz/collections.md
+        - container: reference/ssz/container.md
+        - exceptions: reference/ssz/exceptions.md
+        - ssz_base: reference/ssz/ssz_base.md
+        - uint: reference/ssz/uint.md
 extra:
   social:
     - icon: fontawesome/brands/github
