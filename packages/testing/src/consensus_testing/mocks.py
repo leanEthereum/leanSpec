@@ -181,6 +181,9 @@ class MockForkchoiceStore:
     advance_finalized_on_block: bool = False
     """Whether processing a block advances the finalized checkpoint to it."""
 
+    advance_head_on_block: bool = True
+    """Whether processing a block moves the head to it; False imports a side branch."""
+
     received_attestations: list[SignedAttestation] = field(default_factory=list)
     """Attestations accepted so far, in arrival order."""
 
@@ -197,10 +200,11 @@ class MockForkchoiceStore:
         """Record a block as the new head and apply the configured side effects."""
         root = hash_tree_root(signed_block.block)
         self.blocks[root] = signed_block.block
-        self.head = root
-        # No real safe-target rule here, so the head doubles as it.
-        self.safe_target = root
-        self.head_slot = signed_block.block.slot
+        if self.advance_head_on_block:
+            self.head = root
+            # No real safe-target rule here, so the head doubles as it.
+            self.safe_target = root
+            self.head_slot = signed_block.block.slot
         if self.on_block_post_state is not None:
             self.states[root] = self.on_block_post_state
         if self.advance_justified_on_block:
@@ -255,6 +259,7 @@ class RecordingSyncDatabase:
     def __init__(self) -> None:
         """Start with an empty call log."""
         self.calls: list[RecordedCall] = []
+        self.head_root: Bytes32 | None = None
 
     def _record(self, name: str, *args: object, **kwargs: object) -> None:
         self.calls.append(RecordedCall(name=name, args=args, kwargs=MappingProxyType(dict(kwargs))))
@@ -297,6 +302,14 @@ class RecordingSyncDatabase:
     def put_block_root_by_slot(self, slot: object, root: object) -> None:
         """Record a slot to block-root index write."""
         self._record("put_block_root_by_slot", slot, root)
+
+    def delete_block_root_by_slot(self, slot: object) -> None:
+        """Record a slot-index deletion."""
+        self._record("delete_block_root_by_slot", slot)
+
+    def get_head_root(self) -> Bytes32 | None:
+        """Return the seeded head root; reads are not part of the recorded write contract."""
+        return self.head_root
 
     def put_head_root(self, root: object) -> None:
         """Record a head-root write."""

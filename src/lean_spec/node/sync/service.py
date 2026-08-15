@@ -149,8 +149,20 @@ class SyncService:
     until new blocks arrive.
     """
 
+    _persisted_head_root: Bytes32 | None = field(default=None)
+    """
+    Head root the database last committed, or None when untracked.
+
+    The slot-index update diffs the store's head against this to find the
+    slots whose canonical block changed.
+    """
+
     def __post_init__(self) -> None:
         """Wire sub-components and apply the genesis-start state hint."""
+        # Seed the persisted-head tracker from disk so a restarted node
+        # diffs its slot index against the chain the database last saw.
+        if self.database is not None:
+            self._persisted_head_root = self.database.get_head_root()
         # Backfill reads the store through self, so it sees each post-block reassignment.
         self._backfill = BackfillSync(
             peer_manager=self.peer_manager,
@@ -293,7 +305,12 @@ class SyncService:
             # On restart these tell us where the chain ended last session.
             #
             # The node can resume forkchoice without re-deriving from scratch.
-            self.database.put_block_root_by_slot(block.slot, block_root)
+            #
+            # The slot index tracks the canonical chain, not the import stream:
+            # a block that did not move the head sits on a side branch (its
+            # parent was already known, so it cannot be a head ancestor) and
+            # must not displace the canonical entry at its slot.
+            self._reindex_canonical_slots(store)
             self.database.put_head_root(store.head)
             self.database.put_justified_checkpoint(store.latest_justified)
             self.database.put_finalized_checkpoint(store.latest_finalized)
@@ -306,6 +323,53 @@ class SyncService:
                     store.latest_finalized.slot,
                     keep_roots=frozenset({store.latest_finalized.root}),
                 )
+
+        # The tracker mirrors the database, so it moves only after a commit.
+        self._persisted_head_root = store.head
+
+    def _reindex_canonical_slots(self, store: Store) -> None:
+        """
+        Align the persisted slot index with the store's canonical chain.
+
+        Walks the old and new head branches down to their fork point: slots
+        on the new branch are (re)written, slots only the old branch filled
+        are deleted. A no-op when the head did not move.
+
+        Runs inside the caller's batch, so the index and the head pointer
+        commit together.
+        """
+        # Bytes32 rejects comparison against None, so the None case is explicit.
+        if self.database is None or (
+            self._persisted_head_root is not None and store.head == self._persisted_head_root
+        ):
+            return
+
+        new_entries: dict[Slot, Bytes32] = {}
+        stale_slots: set[Slot] = set()
+        new_root = store.head
+        old_root = self._persisted_head_root
+
+        # Lower the higher tip one parent link at a time until the branches
+        # meet (or leave the store, e.g. an untracked previous head).
+        while old_root is None or new_root != old_root:
+            new_block = store.blocks.get(new_root)
+            old_block = None if old_root is None else store.blocks.get(old_root)
+            if new_block is not None and (old_block is None or new_block.slot >= old_block.slot):
+                new_entries[new_block.slot] = new_root
+                new_root = new_block.parent_root
+            elif old_block is not None:
+                stale_slots.add(old_block.slot)
+                old_root = old_block.parent_root
+            else:
+                break
+
+        for slot in sorted(new_entries):
+            self.database.put_block_root_by_slot(slot, new_entries[slot])
+
+        # A slot the new branch refilled keeps its fresh entry; only slots
+        # left empty by the reorg lose theirs.
+        for slot in sorted(stale_slots - new_entries.keys()):
+            self.database.delete_block_root_by_slot(slot)
 
     def _prune_signed_blocks_below_serving_window(self) -> None:
         """Drop retained signed blocks that fell out of the serving history window."""

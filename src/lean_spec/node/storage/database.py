@@ -83,6 +83,14 @@ class Database(Protocol):
         """Index a block root by its slot."""
         ...
 
+    def delete_block_root_by_slot(self, slot: Slot) -> None:
+        """
+        Remove the slot-index entry at a slot, if present.
+
+        Needed when a reorg leaves a formerly canonical slot empty.
+        """
+        ...
+
     # State Root Index Operations
 
     def get_block_root_by_state_root(self, state_root: Bytes32) -> Bytes32 | None:
