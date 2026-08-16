@@ -169,6 +169,27 @@ class TestSlotIndex:
             db.put_block_root_by_slot(slot, root_b)
         assert db.get_block_root_by_slot(slot) == root_b
 
+    def test_delete_block_root_by_slot(self, db: SQLiteDatabase) -> None:
+        """Deleting a slot entry removes it while other slots survive."""
+        root_a = Bytes32(b"\x0b" * 32)
+        root_b = Bytes32(b"\x0c" * 32)
+        with db.batch_write():
+            db.put_block_root_by_slot(Slot(1), root_a)
+            db.put_block_root_by_slot(Slot(2), root_b)
+
+        with db.batch_write():
+            db.delete_block_root_by_slot(Slot(1))
+
+        assert db.get_block_root_by_slot(Slot(1)) is None
+        assert db.get_block_root_by_slot(Slot(2)) == root_b
+
+    def test_delete_nonexistent_slot_is_noop(self, db: SQLiteDatabase) -> None:
+        """Deleting an absent slot entry succeeds without effect."""
+        with db.batch_write():
+            db.delete_block_root_by_slot(Slot(999))
+
+        assert db.get_block_root_by_slot(Slot(999)) is None
+
 
 class TestStateRootIndex:
     """Tests for state root to block root index."""

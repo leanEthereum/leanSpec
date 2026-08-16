@@ -568,6 +568,8 @@ class TestBlockPersistence:
     ) -> None:
         """No put_state when the store has no post-state for the block root."""
         db = RecordingSyncDatabase()
+        # The persisted head matches the mock genesis, as after a real genesis write.
+        db.head_root = Bytes32.zero()
         service = create_mock_sync_service(
             peer_id,
             database=cast(Database, db),
@@ -612,6 +614,8 @@ class TestBlockPersistence:
     ) -> None:
         """Post-state indexing and pruning run when finalization is past genesis."""
         db = RecordingSyncDatabase()
+        # The persisted head matches the mock genesis, as after a real genesis write.
+        db.head_root = Bytes32.zero()
         service = create_mock_sync_service(
             peer_id,
             database=cast(Database, db),
@@ -666,6 +670,99 @@ class TestBlockPersistence:
                 kwargs=MappingProxyType({"keep_roots": frozenset({block_root})}),
             ),
         ]
+
+    def test_persist_skips_slot_index_for_side_branch_block(
+        self,
+        peer_id: PeerId,
+    ) -> None:
+        """A block that does not move the head leaves the slot index untouched."""
+        db = RecordingSyncDatabase()
+        db.head_root = Bytes32.zero()
+        service = create_mock_sync_service(
+            peer_id,
+            database=cast(Database, db),
+        )
+        mock_store = cast(MockForkchoiceStore, service.store)
+        mock_store.advance_head_on_block = False
+        service.state = SyncState.SYNCING
+        genesis_root = service.store.head
+        block = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, block)
+
+        inner = db.calls_inside_batch()
+        call_names = [call.name for call in inner]
+        assert "put_block_root_by_slot" not in call_names
+        assert "delete_block_root_by_slot" not in call_names
+        # The unchanged head pointer is still persisted with the block.
+        empty: MappingProxyType[str, object] = MappingProxyType({})
+        assert RecordedCall(name="put_head_root", args=(Bytes32.zero(),), kwargs=empty) in inner
+
+    def test_persist_reindexes_slot_index_on_reorg(
+        self,
+        peer_id: PeerId,
+    ) -> None:
+        """A head switch rewrites differing slots and deletes vacated ones."""
+        db = RecordingSyncDatabase()
+        genesis_root = Bytes32.zero()
+
+        # Old branch genesis <- B1 (slot 1) <- B2 (slot 2) is the persisted canonical chain.
+        b1 = make_signed_block(
+            slot=Slot(1),
+            proposer_index=ValidatorIndex(0),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        b1_root = hash_tree_root(b1.block)
+        b2 = make_signed_block(
+            slot=Slot(2),
+            proposer_index=ValidatorIndex(0),
+            parent_root=b1_root,
+            state_root=Bytes32.zero(),
+        )
+        b2_root = hash_tree_root(b2.block)
+        # Seed before service creation: the tracker reads the head at wiring time.
+        db.head_root = b2_root
+
+        service = create_mock_sync_service(
+            peer_id,
+            database=cast(Database, db),
+        )
+        mock_store = cast(MockForkchoiceStore, service.store)
+        service.state = SyncState.SYNCING
+        mock_store.blocks[b1_root] = b1.block
+        mock_store.blocks[b2_root] = b2.block
+        mock_store.head = b2_root
+
+        # Importing C2 (slot 2, child of genesis) reorgs the head onto the new branch.
+        c2 = make_signed_block(
+            slot=Slot(2),
+            proposer_index=ValidatorIndex(1),
+            parent_root=genesis_root,
+            state_root=Bytes32.zero(),
+        )
+        service.store = service.process_block(service.store, c2)
+        c2_root = hash_tree_root(c2.block)
+
+        inner = db.calls_inside_batch()
+        empty: MappingProxyType[str, object] = MappingProxyType({})
+        # Slot 2 is rewritten to the new branch; slot 1 has no canonical block anymore.
+        assert (
+            RecordedCall(name="put_block_root_by_slot", args=(Slot(2), c2_root), kwargs=empty)
+            in inner
+        )
+        assert (
+            RecordedCall(name="delete_block_root_by_slot", args=(Slot(1),), kwargs=empty) in inner
+        )
+        # The refilled slot is never deleted.
+        assert (
+            RecordedCall(name="delete_block_root_by_slot", args=(Slot(2),), kwargs=empty)
+            not in inner
+        )
 
 
 class TestSignedBlockServing:

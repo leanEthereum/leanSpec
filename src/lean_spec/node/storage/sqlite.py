@@ -327,6 +327,19 @@ class SQLiteDatabase:
                 f"Failed to write slot index for slot {slot}: {exception}"
             ) from exception
 
+    def delete_block_root_by_slot(self, slot: Slot) -> None:
+        """Remove the slot-index entry at a slot, if present."""
+        try:
+            cursor = self._connection.cursor()
+            cursor.execute(
+                f"DELETE FROM {SLOT_INDEX_TABLE_NAME} WHERE slot = ?",
+                (int(slot),),
+            )
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to delete slot index for slot {slot}: {exception}"
+            ) from exception
+
     # State Root Index Operations
 
     def get_block_root_by_state_root(self, state_root: Bytes32) -> Bytes32 | None:
