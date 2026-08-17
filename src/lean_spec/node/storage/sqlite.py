@@ -29,6 +29,8 @@ from lean_spec.node.storage.namespaces import (
     CHECKPOINTS_KEY_HEAD,
     CHECKPOINTS_KEY_JUSTIFIED,
     CHECKPOINTS_TABLE_NAME,
+    SIGNING_RECORDS_CREATE_TABLE,
+    SIGNING_RECORDS_TABLE_NAME,
     SLOT_INDEX_CREATE_TABLE,
     SLOT_INDEX_TABLE_NAME,
     STATE_ROOT_INDEX_CREATE_TABLE,
@@ -37,7 +39,7 @@ from lean_spec.node.storage.namespaces import (
     STATES_CREATE_TABLE,
     STATES_TABLE_NAME,
 )
-from lean_spec.spec.forks import Checkpoint, Slot
+from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.protocol import (
     SpecBlockType,
     SpecStateType,
@@ -90,6 +92,8 @@ class SQLiteDatabase:
 
         cursor.execute(SLOT_INDEX_CREATE_TABLE)
         cursor.execute(STATE_ROOT_INDEX_CREATE_TABLE)
+
+        cursor.execute(SIGNING_RECORDS_CREATE_TABLE)
 
         self._connection.commit()
 
@@ -409,6 +413,53 @@ class SQLiteDatabase:
             )
         except sqlite3.Error as exception:
             raise StorageWriteError(f"Failed to write genesis time: {exception}") from exception
+
+    # Signing Records
+
+    def get_last_signed_slot(self, validator_index: ValidatorIndex, key_role: str) -> Slot | None:
+        """Retrieve the highest slot one of a validator's keys has signed."""
+        try:
+            cursor = self._connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT last_signed_slot FROM {SIGNING_RECORDS_TABLE_NAME}
+                WHERE validator_index = ? AND key_role = ?
+                """,
+                (int(validator_index), key_role),
+            )
+            row = cursor.fetchone()
+        except sqlite3.Error as exception:
+            raise StorageReadError(
+                f"Failed to read signing record for validator {validator_index} "
+                f"{key_role} key: {exception}"
+            ) from exception
+
+        if row is None:
+            return None
+        return Slot(row["last_signed_slot"])
+
+    def put_last_signed_slot(
+        self,
+        validator_index: ValidatorIndex,
+        key_role: str,
+        slot: Slot,
+    ) -> None:
+        """Record the highest slot one of a validator's keys has signed."""
+        try:
+            cursor = self._connection.cursor()
+            cursor.execute(
+                f"""
+                INSERT OR REPLACE INTO {SIGNING_RECORDS_TABLE_NAME}
+                (validator_index, key_role, last_signed_slot)
+                VALUES (?, ?, ?)
+                """,
+                (int(validator_index), key_role, int(slot)),
+            )
+        except sqlite3.Error as exception:
+            raise StorageWriteError(
+                f"Failed to write signing record for validator {validator_index} "
+                f"{key_role} key at slot {slot}: {exception}"
+            ) from exception
 
     # Transaction Control
 
