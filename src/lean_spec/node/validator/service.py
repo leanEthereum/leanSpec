@@ -16,6 +16,11 @@ from lean_spec.node.validator.constants import (
     SYNC_LAG_THRESHOLD,
 )
 from lean_spec.node.validator.registry import ValidatorEntry, ValidatorRegistry
+from lean_spec.node.validator.signing_protection import (
+    SigningProtection,
+    SigningProtectionError,
+    SigningRole,
+)
 from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.crypto.xmss.containers import PublicKey, Signature
@@ -41,6 +46,12 @@ type AttestationPublisher = Callable[[SignedAttestation], Awaitable[None]]
 
 ATTESTED_SLOT_RETENTION: Final[int] = 4
 """Slots of attestation dedup history to keep; older slots can no longer be attested."""
+
+SIGNING_ROLE_BY_KEY_FIELD: Final[dict[str, SigningRole]] = {
+    "attestation_secret_key": "attestation",
+    "proposal_secret_key": "proposal",
+}
+"""Maps a registry key field to the role name signing records are stored under."""
 
 
 @dataclass(slots=True)
@@ -70,6 +81,9 @@ class ValidatorService:
     on_attestation: AttestationPublisher | None = field(default=None)
     """Callback to publish a produced attestation, or None in tests and offline runs."""
 
+    signing_protection: SigningProtection = field(default_factory=SigningProtection)
+    """Guard against spending one key twice in a slot. Adopts the node database if it has none."""
+
     _running: bool = field(default=False, repr=False)
     """Whether the service is running."""
 
@@ -85,6 +99,11 @@ class ValidatorService:
     _duty_gate_closed: bool = field(default=False, repr=False)
     """Hysteresis flag. True while signing is silenced."""
 
+    def __post_init__(self) -> None:
+        """Point signing protection at the node database unless it already has a store."""
+        if self.signing_protection.database is None:
+            self.signing_protection.database = self.sync_service.database
+
     async def run(self) -> None:
         """
         Check and run duties once per interval until stopped.
@@ -94,6 +113,13 @@ class ValidatorService:
         """
         self._running = True
         last_handled_total_interval: Interval | None = None
+
+        if not self.signing_protection.is_durable:
+            logger.warning(
+                "Signing protection is not durable: no database is configured. "
+                "A restart or a backward clock step within a slot can sign it twice "
+                "and expose one-time key material."
+            )
 
         while self._running:
             # Get current total interval count (not just within-slot).
@@ -219,6 +245,14 @@ class ValidatorService:
                 slot,
                 exception,
             )
+        except SigningProtectionError as exception:
+            # The proposal key already spent this slot; signing again would expose it.
+            logger.warning(
+                "Block production skipped for validator %d at slot %d: %s",
+                validator_index,
+                slot,
+                exception,
+            )
 
     async def _produce_attestations(self, slot: Slot) -> None:
         """Produce and gossip an attestation for every validator we control."""
@@ -250,15 +284,27 @@ class ValidatorService:
                 raise ValueError(f"No secret key for validator {validator_index}")
 
             attestation_data = self.spec.produce_attestation_data(store, slot)
-            signed_attestation = SignedAttestation(
-                validator_index=validator_index,
-                data=attestation_data,
-                signature=self._sign_with_key(
+            try:
+                attestation_signature = self._sign_with_key(
                     validator_entry,
                     attestation_data.slot,
                     hash_tree_root(attestation_data),
                     "attestation_secret_key",
-                ),
+                )
+            except SigningProtectionError as exception:
+                # One validator's spent key must not silence the others.
+                logger.warning(
+                    "Attestation skipped for validator %d at slot %d: %s",
+                    validator_index,
+                    slot,
+                    exception,
+                )
+                continue
+
+            signed_attestation = SignedAttestation(
+                validator_index=validator_index,
+                data=attestation_data,
+                signature=attestation_signature,
             )
 
             self._attestations_produced += 1
@@ -381,7 +427,18 @@ class ValidatorService:
 
         XMSS keys are stateful one-time signatures, so each signature consumes key state.
         The advanced key is written back so the next slot does not reuse it.
+
+        Raises SigningProtectionError when this key already signed the slot, which
+        keeps a restart or a backward clock step from opening the one-time key.
         """
+        # Claim the slot first: a record without a signature costs a duty,
+        # a signature without a record costs the key.
+        self.signing_protection.reserve(
+            validator_entry.index,
+            SIGNING_ROLE_BY_KEY_FIELD[key_field],
+            slot,
+        )
+
         scheme = TARGET_SIGNATURE_SCHEME
         secret_key = getattr(validator_entry, key_field)
 

@@ -6,7 +6,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Protocol
 
-from lean_spec.spec.forks import Checkpoint, Slot
+from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.protocol import (
     SpecBlockType,
     SpecStateType,
@@ -109,6 +109,26 @@ class Database(Protocol):
 
     def put_genesis_time(self, genesis_time: Uint64) -> None:
         """Store the genesis time as a Unix timestamp."""
+        ...
+
+    # Signing Records
+
+    def get_last_signed_slot(self, validator_index: ValidatorIndex, key_role: str) -> Slot | None:
+        """
+        Retrieve the highest slot one of a validator's keys has signed.
+
+        Returns None when that key has not signed yet.
+        The key role separates a validator's attestation key from its proposal key.
+        """
+        ...
+
+    def put_last_signed_slot(
+        self,
+        validator_index: ValidatorIndex,
+        key_role: str,
+        slot: Slot,
+    ) -> None:
+        """Record the highest slot one of a validator's keys has signed."""
         ...
 
     # Transaction Control

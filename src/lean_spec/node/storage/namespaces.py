@@ -77,3 +77,20 @@ STATE_ROOT_INDEX_CREATE_TABLE: Final = """
         block_root BLOB NOT NULL
     )
 """
+
+# Signing records: the highest slot each validator key has signed.
+#
+# The signature scheme is a stateful one-time signature keyed by slot, so these
+# rows are what stops a restart from consuming one slot twice.
+# They are never pruned: dropping a row re-opens the key it protects.
+
+SIGNING_RECORDS_TABLE_NAME: Final = "signing_records"
+
+SIGNING_RECORDS_CREATE_TABLE: Final = """
+    CREATE TABLE IF NOT EXISTS signing_records (
+        validator_index INTEGER NOT NULL,
+        key_role TEXT NOT NULL,
+        last_signed_slot INTEGER NOT NULL,
+        PRIMARY KEY (validator_index, key_role)
+    )
+"""
