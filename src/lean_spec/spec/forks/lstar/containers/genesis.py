@@ -1,6 +1,8 @@
 """Chain configuration committed into the consensus state."""
 
-from lean_spec.spec.ssz import Container, Uint64
+from ssz import Uint64
+
+from lean_spec.spec.ssz_types import Container
 
 
 class GenesisConfig(Container):

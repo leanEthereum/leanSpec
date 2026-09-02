@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ssz import Uint64, hash_tree_root
 
 from consensus_testing import (
     TEST_VALIDATOR_INDEX,
@@ -20,7 +21,6 @@ from lean_spec.node.sync.service import SyncService
 from lean_spec.node.validator import ValidatorRegistry, ValidatorService
 from lean_spec.node.validator.constants import SYNC_LAG_THRESHOLD
 from lean_spec.node.validator.registry import ValidatorEntry
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.forks import RejectionReason, Slot, SpecRejectionError, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
@@ -34,7 +34,7 @@ from lean_spec.spec.forks.lstar.containers import (
     SingleMessageAggregate,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 # Patch target for the XMSS scheme reference inside service.py.
 _SCHEME = "lean_spec.node.validator.service.TARGET_SIGNATURE_SCHEME"

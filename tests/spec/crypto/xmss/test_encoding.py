@@ -1,6 +1,7 @@
 """Tests for the message-to-codeword encoding pipeline."""
 
 import pytest
+from ssz import Uint64
 
 from lean_spec.spec.crypto.koalabear import Fp, P
 from lean_spec.spec.crypto.xmss import encoding
@@ -15,7 +16,7 @@ from lean_spec.spec.crypto.xmss.encoding import (
 from lean_spec.spec.crypto.xmss.field import int_to_base_p, random_field_elements
 from lean_spec.spec.crypto.xmss.poseidon import POSEIDON
 from lean_spec.spec.crypto.xmss.types import Parameter, Randomness
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def _parameter() -> Parameter:

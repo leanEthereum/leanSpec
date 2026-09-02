@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 from pydantic import ValidationError
+from ssz import SSZValueError
 
 from consensus_testing.keys import XmssKeyManager
 from lean_spec.node.validator import ValidatorRegistry
@@ -16,8 +17,7 @@ from lean_spec.node.validator.registry import (
     ValidatorManifestEntry,
 )
 from lean_spec.spec.forks import Slot, ValidatorIndex
-from lean_spec.spec.ssz import Bytes52
-from lean_spec.spec.ssz.exceptions import SSZValueError
+from lean_spec.spec.ssz_types import Bytes52
 
 
 def registry_state(registry: ValidatorRegistry) -> dict[ValidatorIndex, tuple[object, object]]:
@@ -483,7 +483,8 @@ class TestValidatorRegistryFromYaml:
                 manifest_path=manifest_file,
             )
         assert str(exception_info.value) == (
-            "Failed to load attestation key for validator 0: PRFKey: expected 32 bytes, got 13"
+            "Failed to load attestation key for validator 0: "
+            "prf_key: PRFKey needs 32 bytes, the input holds 13"
         )
 
     def test_corrupt_proposal_key_file_raises(self, tmp_path: Path, km: XmssKeyManager) -> None:
@@ -506,7 +507,8 @@ class TestValidatorRegistryFromYaml:
                 manifest_path=manifest_file,
             )
         assert str(exception_info.value) == (
-            "Failed to load proposal key for validator 0: PRFKey: expected 32 bytes, got 13"
+            "Failed to load proposal key for validator 0: "
+            "prf_key: PRFKey needs 32 bytes, the input holds 13"
         )
 
     def test_same_key_for_both_roles_raises(self, tmp_path: Path) -> None:

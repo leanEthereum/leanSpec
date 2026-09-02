@@ -1,6 +1,7 @@
 """State Transition: Justification"""
 
 import pytest
+from ssz import ZERO_ROOT, Boolean
 
 from consensus_testing import (
     AggregatedAttestationSpec,
@@ -15,7 +16,7 @@ from lean_spec.spec.forks.lstar.containers import (
     JustificationValidators,
     JustifiedSlots,
 )
-from lean_spec.spec.ssz import ZERO_HASH, Boolean, Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -1257,7 +1258,7 @@ def test_attestation_with_zero_hash_source_root_is_skipped(
                         slot=Slot(2),
                         target_slot=Slot(1),
                         target_root_label="block_1",
-                        source_root=ZERO_HASH,
+                        source_root=ZERO_ROOT,
                     ),
                     AggregatedAttestationSpec(
                         validator_indices=[
@@ -1332,7 +1333,7 @@ def test_attestation_with_zero_hash_target_root_is_skipped(
                         ],
                         slot=Slot(2),
                         target_slot=Slot(1),
-                        target_root=ZERO_HASH,
+                        target_root=ZERO_ROOT,
                     ),
                     AggregatedAttestationSpec(
                         validator_indices=[

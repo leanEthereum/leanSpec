@@ -2,6 +2,8 @@
 
 from typing import Any, ClassVar
 
+from ssz import Uint64
+
 from consensus_testing.genesis import build_anchor
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from consensus_testing.test_fixtures.hex_codec import to_hex
@@ -10,7 +12,6 @@ from lean_spec.node.metrics.registry import registry as metrics_registry
 from lean_spec.spec.forks import Slot
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Uint64
 
 REQUIRED_METRIC_NAMES = [
     "lean_node_info",

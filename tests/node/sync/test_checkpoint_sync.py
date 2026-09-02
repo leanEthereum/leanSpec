@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from ssz import hash_tree_root
 
 from consensus_testing import store_backed_signed_block_getter
 from lean_spec.node.api import ApiServer, ApiServerConfig
@@ -17,7 +18,6 @@ from lean_spec.node.sync.checkpoint_sync import (
     fetch_finalized_state,
     verify_checkpoint_state,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, Slot
 from lean_spec.spec.forks.lstar import State, Store
 from lean_spec.spec.forks.lstar.containers import Validators
@@ -76,7 +76,7 @@ class TestStateVerification:
 
     async def test_state_exceeding_validator_limit_fails(self) -> None:
         """State with more validators than VALIDATOR_REGISTRY_LIMIT fails."""
-        # Use a mock because SSZList enforces LIMIT at construction time,
+        # Use a mock because List enforces LIMIT at construction time,
         # preventing creation of a real State with too many validators.
         mock_state = MagicMock()
         mock_state.slot = Slot(0)
@@ -171,7 +171,7 @@ class TestFetchFinalizedState:
         ):
             await fetch_finalized_state("http://example.com", State)
         assert str(exception_info.value) == (
-            "Corrupt checkpoint state payload: Slot: expected 8 bytes, got 2"
+            "Corrupt checkpoint state payload: slot: Slot needs 8 bytes, the input holds 2"
         )
 
     async def test_trailing_slash_stripped_from_url(self) -> None:
@@ -272,7 +272,7 @@ class TestFetchFinalizedBlock:
             await fetch_finalized_block("http://example.com")
         assert (
             str(exception_info.value) == "Failed to fetch signed block: "
-            "SignedBlock: first offset 1663106815 != fixed-part end 8"
+            "the first offset is 1663106815, and the fixed part ends at 8"
         )
 
 

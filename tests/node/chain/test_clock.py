@@ -5,11 +5,11 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from ssz import Uint64
 
 from lean_spec.node.chain import SlotClock
 from lean_spec.spec.forks import Interval, Slot
 from lean_spec.spec.forks.lstar.config import INTERVALS_PER_SLOT
-from lean_spec.spec.ssz import Uint64
 
 
 def clock_at(genesis_seconds: int, now_seconds: float) -> SlotClock:

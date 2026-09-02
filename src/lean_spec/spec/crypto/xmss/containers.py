@@ -3,6 +3,7 @@
 from typing import Self, override
 
 from pydantic import model_serializer, model_validator
+from ssz import Uint64
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
@@ -16,9 +17,7 @@ from lean_spec.spec.crypto.xmss.types import (
     Randomness,
 )
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.container import Container
-from lean_spec.spec.ssz.exceptions import SSZSerializationError
+from lean_spec.spec.ssz_types import Container, ContainerInvariantError
 
 
 class HexSerializedContainer(Container):
@@ -79,14 +78,14 @@ class Signature(HexSerializedContainer):
         """Pin the two variable-length lists to their scheme-constant counts."""
         sibling_count = len(self.path.siblings)
         if sibling_count != TARGET_CONFIG.LOG_LIFETIME:
-            raise SSZSerializationError(
+            raise ContainerInvariantError(
                 f"Signature.path.siblings requires exactly {TARGET_CONFIG.LOG_LIFETIME} "
                 f"siblings, got {sibling_count}"
             )
 
         hash_count = len(self.hashes)
         if hash_count != TARGET_CONFIG.DIMENSION:
-            raise SSZSerializationError(
+            raise ContainerInvariantError(
                 f"Signature.hashes requires exactly {TARGET_CONFIG.DIMENSION} hashes, "
                 f"got {hash_count}"
             )
@@ -95,14 +94,8 @@ class Signature(HexSerializedContainer):
 
     @classmethod
     @override
-    def is_fixed_size(cls) -> bool:
-        """Always fixed-size on the wire (see class docstring)."""
-        return True
-
-    @classmethod
-    @override
-    def get_byte_length(cls) -> int:
-        """Fixed byte length of an SSZ-encoded signature."""
+    def fixed_size(cls) -> int:
+        """The one byte length every signature encodes to (see class docstring)."""
         return TARGET_CONFIG.SIGNATURE_LENGTH_BYTES
 
     def __hash__(self) -> int:

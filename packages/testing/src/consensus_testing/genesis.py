@@ -1,7 +1,8 @@
 """Consensus layer genesis state, block, and anchor construction for tests."""
 
+from ssz import Uint64, hash_tree_root
+
 from consensus_testing.keys import XmssKeyManager
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Interval, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.containers import (
@@ -16,7 +17,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes52, Uint64
+from lean_spec.spec.ssz_types import Bytes52
 
 
 def build_genesis_state(

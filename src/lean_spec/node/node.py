@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from ssz import Uint64, hash_tree_root
+
 from lean_spec.node.api import ApiServer, ApiServerConfig
 from lean_spec.node.chain import SlotClock
 from lean_spec.node.chain.service import ChainService
@@ -28,7 +30,6 @@ from lean_spec.node.networking.client.event_source import EventSource
 from lean_spec.node.storage import Database, SQLiteDatabase
 from lean_spec.node.sync import BlockCache, NetworkRequester, PeerManager, SyncService
 from lean_spec.node.validator import ValidatorRegistry, ValidatorService
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import (
     AggregatedAttestations,
     Block,
@@ -45,7 +46,7 @@ from lean_spec.spec.forks import (
 )
 from lean_spec.spec.forks.lstar.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Uint64
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32
 
 logger = logging.getLogger(__name__)
 

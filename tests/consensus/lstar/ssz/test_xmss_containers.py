@@ -1,6 +1,7 @@
 """SSZ conformance tests for XMSS containers."""
 
 import pytest
+from ssz import Boolean, Uint64
 
 from consensus_testing import SSZTestFiller
 from consensus_testing.keys import XmssKeyManager, create_dummy_signature
@@ -19,7 +20,7 @@ from lean_spec.spec.forks.lstar.containers import (
     MultiMessageAggregate,
     SingleMessageAggregate,
 )
-from lean_spec.spec.ssz import Boolean, ByteList512KiB, Bytes32, Uint64
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

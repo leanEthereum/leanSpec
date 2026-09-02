@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import ClassVar
 
 from pydantic import Field
+from ssz import Boolean, hash_tree_root
 
 from consensus_testing.genesis import build_genesis_state
 from consensus_testing.keys import XmssKeyManager
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from consensus_testing.test_types import BlockSpec
 from lean_spec.base import StrictBaseModel
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import (
     AggregationBits,
     Checkpoint,
@@ -28,7 +28,7 @@ from lean_spec.spec.forks.lstar.containers import (
     State,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Boolean, ByteList512KiB, Bytes32
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32
 
 
 class SetProposerIndex(StrictBaseModel):

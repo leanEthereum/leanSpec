@@ -6,7 +6,7 @@ from lean_spec.spec.forks.lstar.containers.aggregation import SingleMessageAggre
 from lean_spec.spec.forks.lstar.containers.checkpoint import AttestationData
 from lean_spec.spec.forks.lstar.containers.identifiers import ValidatorIndex
 from lean_spec.spec.forks.lstar.containers.participation import AggregationBits
-from lean_spec.spec.ssz import Container, SSZList
+from lean_spec.spec.ssz_types import Container, List
 
 
 class Attestation(Container):
@@ -50,7 +50,7 @@ class SignedAggregatedAttestation(Container):
     """Aggregated single-message proof covering all participating validators."""
 
 
-class AggregatedAttestations(SSZList[AggregatedAttestation]):
+class AggregatedAttestations(List[AggregatedAttestation]):
     """List of aggregated attestations included in a block."""
 
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

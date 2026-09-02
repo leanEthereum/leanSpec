@@ -1,12 +1,14 @@
 """Tests for the SHAKE128-based pseudorandom function (PRF)."""
 
+from ssz import Uint64
+
 from lean_spec.spec.crypto.koalabear import Fp, P
 from lean_spec.spec.crypto.xmss.constants import (
     PRF_KEY_LENGTH,
     TEST_CONFIG,
 )
 from lean_spec.spec.crypto.xmss.prf import PRFKey
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def test_key_gen_is_random() -> None:

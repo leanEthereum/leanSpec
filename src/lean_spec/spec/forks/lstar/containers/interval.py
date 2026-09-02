@@ -1,8 +1,9 @@
 """Interval time unit for the Lean consensus specification."""
 
+from ssz import Uint64
+
 from lean_spec.spec.forks.lstar.config import INTERVALS_PER_SLOT
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import Uint64
 
 
 class Interval(Uint64):

@@ -1,7 +1,8 @@
 """Canonical store snapshot emitted after every fork choice step."""
 
+from ssz import hash_tree_root
+
 from lean_spec.base import StrictBaseModel
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Interval
 from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
@@ -10,7 +11,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Store,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class BlockWeightEntry(StrictBaseModel):

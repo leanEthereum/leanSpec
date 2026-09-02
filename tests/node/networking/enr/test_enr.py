@@ -20,12 +20,13 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
     Prehashed,
     decode_dss_signature,
 )
+from ssz import SSZValueError, Uint64
 
 from lean_spec.node.networking.enr import ENR, keys
 from lean_spec.node.networking.enr.enr import ENR_PREFIX
 from lean_spec.node.networking.enr.rlp import RLPItem, encode_rlp
 from lean_spec.node.networking.types import Port, SeqNumber
-from lean_spec.spec.ssz import Bytes4, Bytes64, SSZValueError, Uint64
+from lean_spec.spec.ssz_types import Bytes4, Bytes64
 
 # From: https://eips.ethereum.org/EIPS/eip-778
 #
@@ -453,7 +454,7 @@ class TestValidationMethods:
                 seq=SeqNumber(1),
                 pairs={keys.ID: b"v4", keys.SECP256K1: b"\x02" + b"\x00" * 32},
             )
-        assert str(exception_info.value) == "Bytes64 requires exactly 64 bytes, got 63"
+        assert str(exception_info.value) == "Bytes64 holds exactly 64 bytes, got 63"
 
 
 class TestMultiaddrGeneration:

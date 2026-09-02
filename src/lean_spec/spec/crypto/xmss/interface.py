@@ -1,5 +1,7 @@
 """Public interface for the Generalized XMSS signature scheme."""
 
+from ssz import Uint64
+
 from lean_spec.base import StrictBaseModel
 from lean_spec.config import LEAN_ENV
 from lean_spec.spec.crypto.xmss.constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
@@ -11,7 +13,7 @@ from lean_spec.spec.crypto.xmss.poseidon import POSEIDON, PoseidonXmss
 from lean_spec.spec.crypto.xmss.prf import PRFKey
 from lean_spec.spec.crypto.xmss.types import HashDigestList, HashDigestVector
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def _expand_activation_time(

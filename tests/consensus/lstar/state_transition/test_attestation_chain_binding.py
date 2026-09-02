@@ -1,6 +1,7 @@
 """State Transition: Attestation Chain Binding"""
 
 import pytest
+from ssz import ZERO_ROOT
 
 from consensus_testing import (
     AggregatedAttestationSpec,
@@ -13,7 +14,7 @@ from lean_spec.spec.forks.lstar.containers import (
     JustificationRoots,
     JustificationValidators,
 )
-from lean_spec.spec.ssz import ZERO_HASH, Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -61,7 +62,7 @@ def test_vote_with_zero_hash_head_root_is_skipped(
                         slot=Slot(2),
                         target_slot=Slot(1),
                         target_root_label="block_1",
-                        head_root=ZERO_HASH,
+                        head_root=ZERO_ROOT,
                         head_slot=Slot(1),
                     ),
                 ],

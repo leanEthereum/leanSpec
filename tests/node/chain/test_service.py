@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from unittest.mock import patch
 
 import pytest
+from ssz import Boolean, Uint64
 
 from consensus_testing import build_genesis_store
 from lean_spec.node.chain import SlotClock
@@ -20,7 +21,7 @@ from lean_spec.spec.forks.lstar.containers import (
     SingleMessageAggregate,
     Store,
 )
-from lean_spec.spec.ssz import Boolean, ByteList512KiB, Bytes32, Uint64
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32
 
 # One interval lasts this many wall-clock seconds.
 #

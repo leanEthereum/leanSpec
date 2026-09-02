@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 
+from ssz import hash_tree_root
+
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.sync.config import MAX_CACHED_BLOCKS
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SignedBlock, Slot
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 @dataclass(frozen=True, slots=True)

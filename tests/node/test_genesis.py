@@ -7,10 +7,11 @@ import tempfile
 import pytest
 import yaml
 from pydantic import ValidationError
+from ssz import Uint64
 
 from lean_spec.node.genesis import GenesisConfig
 from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, ValidatorIndex
-from lean_spec.spec.ssz import Bytes52, SSZValueError, Uint64
+from lean_spec.spec.ssz_types import Bytes52
 
 
 def _load(content: str) -> GenesisConfig:
@@ -170,7 +171,7 @@ class TestGenesisConfigValidation:
                 ],
             }
         )
-        with pytest.raises(SSZValueError):
+        with pytest.raises(ValidationError):
             _load(yaml_content)
 
     def test_missing_genesis_time_raises_error(self) -> None:

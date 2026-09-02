@@ -1,6 +1,8 @@
 """Tests for the base SSZ types of the XMSS signature scheme."""
 
 import pytest
+from pydantic import ValidationError
+from ssz import Uint64
 
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.xmss.constants import TEST_CONFIG
@@ -15,8 +17,6 @@ from lean_spec.spec.crypto.xmss.types import (
     Randomness,
     TreeTweak,
 )
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.exceptions import SSZValueError
 
 
 def test_tree_tweak_fields() -> None:
@@ -42,12 +42,12 @@ def test_hash_digest_vector_length_is_digest_length() -> None:
 def test_hash_digest_vector_accepts_exact_length() -> None:
     """A digest vector of the configured length validates."""
     digest_elements = [Fp(value=i) for i in range(TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS)]
-    assert HashDigestVector(data=digest_elements).data == tuple(digest_elements)
+    assert list(HashDigestVector(data=digest_elements)) == digest_elements
 
 
 def test_hash_digest_vector_rejects_wrong_length() -> None:
     """A digest vector of the wrong length fails validation."""
-    with pytest.raises(SSZValueError):
+    with pytest.raises(ValidationError):
         HashDigestVector(data=[Fp(value=0)] * (TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS + 1))
 
 
@@ -75,7 +75,7 @@ def test_hash_digest_list_accepts_limit_entries() -> None:
 def test_hash_digest_list_rejects_over_limit() -> None:
     """A digest list one entry past the cap fails validation."""
     nodes = [random_domain(TEST_CONFIG) for _ in range(NODE_LIST_LIMIT + 1)]
-    with pytest.raises(SSZValueError):
+    with pytest.raises(ValidationError):
         HashDigestList(data=nodes)
 
 

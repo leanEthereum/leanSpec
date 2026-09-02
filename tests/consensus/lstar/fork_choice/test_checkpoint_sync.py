@@ -1,6 +1,7 @@
 """Checkpoint sync (non-genesis anchor) tests."""
 
 import pytest
+from ssz import hash_tree_root
 
 from consensus_testing import (
     AggregatedAttestationSpec,
@@ -12,10 +13,9 @@ from consensus_testing import (
     TickStep,
     build_anchor,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Interval, RejectionReason, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.config import INTERVALS_PER_SLOT, SECONDS_PER_SLOT
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

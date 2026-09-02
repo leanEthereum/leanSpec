@@ -1,6 +1,7 @@
 """State Transition: Justification Accounting"""
 
 import pytest
+from ssz import Boolean
 
 from consensus_testing import (
     AggregatedAttestationSpec,
@@ -14,7 +15,7 @@ from lean_spec.spec.forks.lstar.containers import (
     JustificationValidators,
     JustifiedSlots,
 )
-from lean_spec.spec.ssz import Boolean, Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

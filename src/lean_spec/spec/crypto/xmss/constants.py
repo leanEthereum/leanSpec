@@ -4,12 +4,11 @@ import math
 from typing import Final, Self
 
 from pydantic import Field, model_validator
+from ssz import BYTES_PER_LENGTH_OFFSET, Uint64
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.config import LEAN_ENV
 from lean_spec.spec.crypto.koalabear import P_BYTES, P
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET
 
 
 class XmssConfig(StrictBaseModel):

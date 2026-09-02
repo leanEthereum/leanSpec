@@ -1,6 +1,7 @@
 """Tests for the Poseidon hash engine wrapper used by the XMSS scheme."""
 
 import pytest
+from ssz import Uint64
 
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.xmss.constants import TEST_CONFIG
@@ -12,7 +13,6 @@ from lean_spec.spec.crypto.xmss.types import (
     Parameter,
     TreeTweak,
 )
-from lean_spec.spec.ssz import Uint64
 
 
 def _parameter() -> Parameter:

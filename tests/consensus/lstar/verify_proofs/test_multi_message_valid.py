@@ -5,7 +5,7 @@ import pytest
 from consensus_testing import VerifyMultiMessageProofsTestFiller
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import AttestationData
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = [pytest.mark.valid_until("Lstar"), pytest.mark.real_crypto]
 

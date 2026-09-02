@@ -12,9 +12,10 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import ClassVar, Literal
 
+from ssz import hash_tree_root
+
 from lean_spec.config import LEAN_ENV
 from lean_spec.spec.crypto.koalabear import Fp
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
 from lean_spec.spec.crypto.xmss.containers import (
     PublicKey,
@@ -39,7 +40,7 @@ from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     SingleMessageAggregate,
 )
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 KeyRole = Literal["attestation", "proposal"]
 """Discriminator for which signing role's key to load from a validator key pair."""

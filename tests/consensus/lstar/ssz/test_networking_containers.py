@@ -9,7 +9,7 @@ from lean_spec.node.networking.reqresp.message import (
     Status,
 )
 from lean_spec.spec.forks import Checkpoint, Slot
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

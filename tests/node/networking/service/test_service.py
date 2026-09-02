@@ -8,6 +8,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from ssz import hash_tree_root
 
 from consensus_testing import (
     MockEventSource,
@@ -33,14 +34,13 @@ from lean_spec.node.networking.service.events import (
 from lean_spec.node.networking.types import ConnectionState
 from lean_spec.node.snappy import compress
 from lean_spec.node.sync.states import SyncState
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Slot, SubnetId, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AttestationData,
     SignedAggregatedAttestation,
     SignedAttestation,
 )
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 FORK_DIGEST = "0x12345678"
 

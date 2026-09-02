@@ -1,6 +1,7 @@
 """End-to-end tests for the Generalized XMSS signature scheme and its helpers."""
 
 import pytest
+from ssz import Uint64
 
 from lean_spec.spec.crypto.xmss import interface
 from lean_spec.spec.crypto.xmss.encoding import target_sum_encode
@@ -11,7 +12,7 @@ from lean_spec.spec.crypto.xmss.interface import (
 )
 from lean_spec.spec.crypto.xmss.types import HashDigestList
 from lean_spec.spec.forks import Slot
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def _test_correctness_roundtrip(

@@ -64,6 +64,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Final
 
+from ssz import Uint64
+
 from lean_spec.node.networking.config import (
     MAX_ERROR_MESSAGE_SIZE,
     MAX_PAYLOAD_SIZE,
@@ -84,7 +86,7 @@ from lean_spec.node.networking.types import ProtocolId
 from lean_spec.node.networking.varint import VarintError, decode_varint
 from lean_spec.node.snappy import SnappyDecompressionError, frame_decompress
 from lean_spec.spec.forks import SignedBlock, Slot
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 logger = logging.getLogger(__name__)
 

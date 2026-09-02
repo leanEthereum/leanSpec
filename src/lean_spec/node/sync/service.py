@@ -11,6 +11,8 @@ from collections import deque
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
+from ssz import hash_tree_root
+
 from lean_spec.node.chain.clock import SlotClock
 from lean_spec.node.metrics import registry as metrics
 from lean_spec.node.networking.config import MIN_SLOTS_FOR_BLOCK_REQUESTS
@@ -23,7 +25,6 @@ from lean_spec.node.sync.config import MAX_PENDING_ATTESTATIONS
 from lean_spec.node.sync.head_sync import HeadSync
 from lean_spec.node.sync.peer_manager import PeerManager
 from lean_spec.node.sync.states import SyncState
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks import (
     AttestationData,
@@ -42,7 +43,7 @@ from lean_spec.spec.forks.lstar.containers import (
     AggregationError,
     SingleMessageAggregate,
 )
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 logger = logging.getLogger(__name__)
 

@@ -2,6 +2,8 @@
 
 from typing import Self
 
+from ssz import Boolean
+
 from lean_spec.spec.forks.lstar.config import HISTORICAL_ROOTS_LIMIT, VALIDATOR_REGISTRY_LIMIT
 from lean_spec.spec.forks.lstar.containers.block import BlockHeader
 from lean_spec.spec.forks.lstar.containers.checkpoint import Checkpoint
@@ -9,23 +11,22 @@ from lean_spec.spec.forks.lstar.containers.genesis import GenesisConfig
 from lean_spec.spec.forks.lstar.containers.validator import Validators
 from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import Boolean, Bytes32, Container, SSZList
-from lean_spec.spec.ssz.bitfields import BaseBitlist
+from lean_spec.spec.ssz_types import BitList, Bytes32, Container, List
 
 
-class HistoricalBlockHashes(SSZList[Bytes32]):
+class HistoricalBlockHashes(List[Bytes32]):
     """List of historical block root hashes up to historical roots limit."""
 
     LIMIT = int(HISTORICAL_ROOTS_LIMIT)
 
 
-class JustificationRoots(SSZList[Bytes32]):
+class JustificationRoots(List[Bytes32]):
     """List of justified block roots up to historical roots limit."""
 
     LIMIT = int(HISTORICAL_ROOTS_LIMIT)
 
 
-class JustifiedSlots(BaseBitlist):
+class JustifiedSlots(BitList):
     """Bitlist tracking justified slots up to historical roots limit."""
 
     LIMIT = int(HISTORICAL_ROOTS_LIMIT)
@@ -103,7 +104,7 @@ class JustifiedSlots(BaseBitlist):
         return type(self)(data=list(self.data) + [Boolean(False)] * gap_size)
 
 
-class JustificationValidators(BaseBitlist):
+class JustificationValidators(BitList):
     """Per-root validator vote bitfields, concatenated into one flat bitlist."""
 
     LIMIT = int(HISTORICAL_ROOTS_LIMIT) * int(VALIDATOR_REGISTRY_LIMIT)

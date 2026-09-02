@@ -24,7 +24,7 @@ from lean_spec.node.networking.transport.quic.connection import (
 )
 from lean_spec.spec.forks import Checkpoint, Slot
 from lean_spec.spec.forks.lstar.containers import SignedBlock
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 FORK_DIGEST = "0xaabbccdd"
 

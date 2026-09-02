@@ -15,6 +15,7 @@ from functools import partial
 from pathlib import Path
 
 import click
+from ssz import Uint64
 
 from consensus_testing.keys import (
     LEAN_ENV_TO_SCHEMES,
@@ -24,7 +25,6 @@ from consensus_testing.keys import (
 from lean_spec.spec.crypto.xmss.containers import ValidatorKeyPair
 from lean_spec.spec.crypto.xmss.interface import GeneralizedXmssScheme
 from lean_spec.spec.forks import Slot
-from lean_spec.spec.ssz import Uint64
 
 KEY_DOWNLOAD_URLS = {
     "test": "https://github.com/leanEthereum/leansig-test-keys/releases/download/latest/test_scheme.tar.gz",

@@ -17,12 +17,12 @@ See: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-in
 
 from typing import ClassVar, Final
 
+from ssz import Boolean, Uint64
+
 from lean_spec.base import StrictBaseModel
 from lean_spec.node.networking.types import ForkDigest, Version
 from lean_spec.spec.forks import SubnetId
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.bitfields import BaseBitvector
-from lean_spec.spec.ssz.boolean import Boolean
+from lean_spec.spec.ssz_types import BitVector
 
 FAR_FUTURE_EPOCH: Final = Uint64(2**64 - 1)
 """Sentinel value indicating no scheduled fork."""
@@ -45,7 +45,7 @@ class Eth2Data(StrictBaseModel):
     """Epoch when next fork activates. FAR_FUTURE_EPOCH if none scheduled."""
 
 
-class AttestationSubnets(BaseBitvector):
+class AttestationSubnets(BitVector):
     """
     Attestation subnet subscriptions (ENR `attnets` key).
 

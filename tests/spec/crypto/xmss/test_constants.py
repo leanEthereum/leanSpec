@@ -17,6 +17,7 @@ The security analysis follows the framework of [DKKW25c] Section 6.
 import math
 
 import pytest
+from ssz import BYTES_PER_LENGTH_OFFSET, Uint64
 
 from lean_spec.spec.crypto.koalabear import P_BYTES, P
 from lean_spec.spec.crypto.xmss.constants import (
@@ -25,8 +26,6 @@ from lean_spec.spec.crypto.xmss.constants import (
     TEST_CONFIG,
     XmssConfig,
 )
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET
 
 
 def _valid_config_kwargs() -> dict[str, int]:

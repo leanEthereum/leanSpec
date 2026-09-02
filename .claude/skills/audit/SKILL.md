@@ -85,7 +85,6 @@ orchestrator sharded the tree only so the work parallelizes.
 2. **Shard.** Split the in-scope tree into coherent subsystems so agents run in parallel.
    The natural shards:
    - `src/lean_spec/spec/crypto/` (XMSS, hashing, signatures, aggregation)
-   - `src/lean_spec/spec/ssz/`
    - `src/lean_spec/spec/forks/` (state transition, fork choice, containers, validator
      duties, aggregation)
    - `src/lean_spec/node/networking/` (gossipsub, reqresp, quic, discovery)

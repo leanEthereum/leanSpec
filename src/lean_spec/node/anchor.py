@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import cast
 
+from ssz import hash_tree_root
+
 from lean_spec.base import StrictBaseModel
 from lean_spec.node.genesis import GenesisConfig
 from lean_spec.node.networking.reqresp.message import Status
@@ -23,7 +25,6 @@ from lean_spec.node.sync.checkpoint_sync import (
     fetch_finalized_state,
     verify_checkpoint_state,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import (
     Checkpoint,
     ForkProtocol,
@@ -32,7 +33,7 @@ from lean_spec.spec.forks import (
     ValidatorIndex,
     Validators,
 )
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class Anchor(StrictBaseModel):

@@ -1,6 +1,7 @@
 """State Transition: Skipped Slot History"""
 
 import pytest
+from ssz import ZERO_ROOT, Uint64, hash_tree_root
 
 from consensus_testing import (
     BlockSpec,
@@ -8,11 +9,9 @@ from consensus_testing import (
     StateTransitionTestFiller,
     build_genesis_state,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import HistoricalBlockHashes
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import ZERO_HASH, Uint64
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -52,7 +51,7 @@ def test_multi_slot_gap_materializes_zero_hash_history(
         slot=Slot(1),
         proposer_index=ValidatorIndex.proposer_for_slot(Slot(1), Uint64(len(pre.validators))),
         parent_root=anchor_root,
-        state_root=ZERO_HASH,
+        state_root=ZERO_ROOT,
         body=spec.block_body_class(attestations=spec.aggregated_attestations_class(data=[])),
     )
     state_after_block_1 = spec.process_block(anchor_state, block_1)
@@ -68,7 +67,7 @@ def test_multi_slot_gap_materializes_zero_hash_history(
         post=StateExpectation(
             slot=Slot(4),
             historical_block_hashes=HistoricalBlockHashes(
-                data=[anchor_root, parent_root, ZERO_HASH, ZERO_HASH]
+                data=[anchor_root, parent_root, ZERO_ROOT, ZERO_ROOT]
             ),
         ),
     )

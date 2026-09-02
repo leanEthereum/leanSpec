@@ -7,6 +7,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from ssz import Uint64, hash_tree_root
 
 from lean_spec.node.storage import (
     SQLiteDatabase,
@@ -14,7 +15,6 @@ from lean_spec.node.storage import (
     StorageReadError,
     StorageWriteError,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import State
 from lean_spec.spec.forks.lstar.containers import (
@@ -22,7 +22,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Block,
     BlockBody,
 )
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 @pytest.fixture
@@ -354,7 +354,8 @@ class TestErrorPaths:
         with pytest.raises(StorageCorruptionError) as exception_info:
             db.get_block(root)
         assert str(exception_info.value) == (
-            f"Corrupt block data for root {root.hex()}: ValidatorIndex: expected 8 bytes, got 5"
+            f"Corrupt block data for root {root.hex()}: "
+            "proposer_index: ValidatorIndex needs 8 bytes, the input holds 5"
         )
 
     def test_corrupt_state_data_raises_corruption_error(self, db: SQLiteDatabase) -> None:
@@ -371,7 +372,8 @@ class TestErrorPaths:
         with pytest.raises(StorageCorruptionError) as exception_info:
             db.get_state(root)
         assert str(exception_info.value) == (
-            f"Corrupt state data for block root {root.hex()}: Slot: expected 8 bytes, got 5"
+            f"Corrupt state data for block root {root.hex()}: "
+            "slot: Slot needs 8 bytes, the input holds 5"
         )
 
     def test_corrupt_checkpoint_data_raises_corruption_error(self, db: SQLiteDatabase) -> None:
@@ -386,7 +388,7 @@ class TestErrorPaths:
         with pytest.raises(StorageCorruptionError) as exception_info:
             db.get_justified_checkpoint()
         assert str(exception_info.value) == (
-            "Corrupt justified checkpoint data: Bytes32: expected 32 bytes, got 13"
+            "Corrupt justified checkpoint data: root: Root needs 32 bytes, the input holds 13"
         )
 
     def test_read_after_close_raises(self, db: SQLiteDatabase) -> None:

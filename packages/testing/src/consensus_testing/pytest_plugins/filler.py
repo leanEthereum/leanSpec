@@ -20,7 +20,7 @@ from consensus_testing.test_fixtures import (
     ProofSetting,
 )
 from lean_spec.spec.forks import Slot, ValidatorIndex
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class FixtureCollector:

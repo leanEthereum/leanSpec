@@ -3,14 +3,15 @@
 from collections.abc import Callable
 from typing import Any, ClassVar, Literal
 
+from ssz import ZERO_ROOT, hash_tree_root
+
 from consensus_testing.test_types.selective_check import SelectiveCheck
 from consensus_testing.test_types.utils import resolve_block_root
 from lean_spec.base import CamelModel
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Interval, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import AttestationData, Block, Store
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import ZERO_HASH, Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 _ATTESTATION_SLOT_ACCESSORS: dict[str, Callable[[AttestationData], Slot]] = {
     "attestation_slot": lambda attestation: attestation.slot,
@@ -28,7 +29,7 @@ def _ancestor_set(blocks: dict[Bytes32, Block], head: Bytes32) -> set[Bytes32]:
     while root in blocks:
         seen.add(root)
         parent = blocks[root].parent_root
-        if parent == ZERO_HASH:
+        if parent == ZERO_ROOT:
             break
         root = parent
     return seen

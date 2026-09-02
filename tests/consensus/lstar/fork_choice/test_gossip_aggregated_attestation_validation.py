@@ -14,7 +14,7 @@ from consensus_testing import (
 )
 from lean_spec.spec.forks import Interval, RejectionReason, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.config import GOSSIP_DISPARITY_INTERVALS
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

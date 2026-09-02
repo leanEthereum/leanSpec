@@ -9,13 +9,10 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from ssz import SSZTypeError, SSZValueError, hash_tree_root
 
 from lean_spec.spec.crypto.koalabear import Fp, P
-from lean_spec.spec.ssz.exceptions import (
-    SSZSerializationError,
-    SSZTypeError,
-    SSZValueError,
-)
+from lean_spec.spec.ssz_types import Bytes32, Vector
 
 
 def test_constants() -> None:
@@ -83,17 +80,17 @@ def test_ssz_deserialize_wrong_scope() -> None:
     """Test deserialize error when scope doesn't match P_BYTES."""
     encoded_bytes = b"\x2a\x00\x00\x00"
     stream = io.BytesIO(encoded_bytes)
-    with pytest.raises(SSZSerializationError) as exception_info:
+    with pytest.raises(SSZValueError) as exception_info:
         Fp.deserialize(stream, 3)
-    assert str(exception_info.value) == "Expected 4 bytes for Fp, got 3"
+    assert str(exception_info.value) == "Fp spans 4 bytes, and the budget is 3"
 
 
 def test_ssz_deserialize_short_data() -> None:
     """Test deserialize error when stream has insufficient data."""
     stream = io.BytesIO(b"\x01\x02\x03")  # Only 3 bytes
-    with pytest.raises(SSZSerializationError) as exception_info:
+    with pytest.raises(SSZValueError) as exception_info:
         Fp.deserialize(stream, 4)
-    assert str(exception_info.value) == "Expected 4 bytes for Fp, got 3"
+    assert str(exception_info.value) == "Fp needs 4 bytes, the input holds 3"
 
 
 def test_ssz_deserialize_exceeds_modulus() -> None:
@@ -104,7 +101,7 @@ def test_ssz_deserialize_exceeds_modulus() -> None:
     stream = io.BytesIO(invalid_data)
     with pytest.raises(SSZValueError) as exception_info:
         Fp.deserialize(stream, 4)
-    assert str(exception_info.value) == f"Value {P} exceeds field modulus {P}"
+    assert str(exception_info.value) == f"{P} is out of range for Fp [0, {P - 1}]"
 
 
 def test_ssz_encode_decode_bytes() -> None:
@@ -169,7 +166,7 @@ def test_new_rejects_non_int_inputs(bad_value: Any, type_name: str) -> None:
     """Constructing Fp with a non-int input raises SSZTypeError naming the offending type."""
     with pytest.raises(SSZTypeError) as exception_info:
         Fp(bad_value)
-    assert str(exception_info.value) == f"Field value must be an integer, got {type_name}"
+    assert str(exception_info.value) == f"expected int, got {type_name}"
 
 
 @pytest.mark.parametrize(
@@ -320,9 +317,9 @@ def test_encode_decode_bytes_round_trip_at_p_minus_one() -> None:
 
 def test_decode_bytes_rejects_oversized_input() -> None:
     """A five-byte buffer is rejected because the scope guard fires before any read."""
-    with pytest.raises(SSZSerializationError) as exception_info:
+    with pytest.raises(SSZValueError) as exception_info:
         Fp.decode_bytes(b"\x00\x00\x00\x00\x01")
-    assert str(exception_info.value) == "Expected 4 bytes for Fp, got 5"
+    assert str(exception_info.value) == "Fp needs 4 bytes, the input holds 5"
 
 
 class _PydanticModelWithFp(BaseModel):
@@ -358,3 +355,29 @@ def test_pydantic_json_serialization_drops_subtype_to_plain_int() -> None:
     serialized = model.model_dump(mode="json")
     assert serialized == {"x": 99}
     assert json.loads(model.model_dump_json()) == {"x": 99}
+
+
+@pytest.mark.parametrize(
+    "integer_value",
+    [
+        0,
+        1,
+        42,
+        (1 << 31) - 2**24,  # Largest residue under the KoalaBear modulus.
+    ],
+)
+def test_hash_tree_root_fp(integer_value: int) -> None:
+    """KoalaBear field elements hash as their four-byte little-endian encoding."""
+    padded_encoding = integer_value.to_bytes(4, "little").ljust(32, b"\x00")
+    assert hash_tree_root(Fp(integer_value)) == Bytes32(padded_encoding)
+
+
+def test_hash_tree_root_packs_a_vector_of_field_elements() -> None:
+    """Riding on the 32-bit unsigned integer packs eight elements to a leaf, not one each."""
+
+    class EightElements(Vector[Fp]):
+        LENGTH = 8
+
+    elements = [Fp(index) for index in range(8)]
+    packed_chunk = b"".join(index.to_bytes(4, "little") for index in range(8))
+    assert hash_tree_root(EightElements(data=elements)) == Bytes32(packed_chunk)

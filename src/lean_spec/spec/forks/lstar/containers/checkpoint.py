@@ -7,8 +7,10 @@ An attestation's content is three checkpoints: source, target, and head.
 
 from collections.abc import Sequence
 
+from ssz import ZERO_ROOT
+
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import ZERO_HASH, Bytes32, Container
+from lean_spec.spec.ssz_types import Bytes32, Container
 
 
 class Checkpoint(Container):
@@ -67,9 +69,9 @@ class AttestationData(Container):
         # Empty slots carry the zero hash on the chain.
         # A vote whose recorded root equals the zero hash is meaningless.
         if (
-            self.source.root == ZERO_HASH
-            or self.target.root == ZERO_HASH
-            or self.head.root == ZERO_HASH
+            self.source.root == ZERO_ROOT
+            or self.target.root == ZERO_ROOT
+            or self.head.root == ZERO_ROOT
         ):
             return False
 
