@@ -48,12 +48,14 @@ The value P - 1 falls outside every group.
 The decode rejects it, a rare event near 4.7e-10 that barely affects signing.
 """
 
+from ssz import Uint64
+
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.xmss.constants import TWEAK_PREFIX_MESSAGE, XmssConfig
 from lean_spec.spec.crypto.xmss.field import int_to_base_p
 from lean_spec.spec.crypto.xmss.poseidon import PoseidonXmss
 from lean_spec.spec.crypto.xmss.types import Parameter, Randomness
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def encode_message(config: XmssConfig, message: Bytes32) -> list[Fp]:

@@ -3,7 +3,8 @@
 from collections import defaultdict
 from collections.abc import Set as AbstractSet
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
+from ssz import ZERO_ROOT, hash_tree_root
+
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks.lstar._base import LstarSpecBase
 from lean_spec.spec.forks.lstar.aggregation import select_proofs_for_coverage
@@ -20,7 +21,7 @@ from lean_spec.spec.forks.lstar.containers import (
     State,
     ValidatorIndex,
 )
-from lean_spec.spec.ssz import ZERO_HASH, Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class BlockProductionMixin(LstarSpecBase):
@@ -117,7 +118,7 @@ class BlockProductionMixin(LstarSpecBase):
             # Source and target roots are validated against this view.
             num_empty_slots = int(slot - state.latest_block_header.slot - Slot(1))
             extended_historical_block_hashes: list[Bytes32] = (
-                list(state.historical_block_hashes) + [parent_root] + [ZERO_HASH] * num_empty_slots
+                list(state.historical_block_hashes) + [parent_root] + [ZERO_ROOT] * num_empty_slots
             )
 
             processed_attestation_data: set[AttestationData] = set()

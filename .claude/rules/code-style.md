@@ -24,13 +24,13 @@ paths:
 Bad:
 ```python
 def process(data):
-    from lean_spec.spec.crypto.merkleization import hash_tree_root
+    from ssz import hash_tree_root
     return hash_tree_root(data)
 ```
 
 Good:
 ```python
-from lean_spec.spec.crypto.merkleization import hash_tree_root
+from ssz import hash_tree_root
 
 def process(data):
     return hash_tree_root(data)

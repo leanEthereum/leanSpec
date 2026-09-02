@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import pytest
+from ssz import Uint64
 
 from consensus_testing import MockNetworkRequester, make_signed_block
 from lean_spec.node.networking import PeerId
@@ -23,7 +24,7 @@ from lean_spec.node.sync.peer_manager import (
     SyncPeer,
 )
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 @dataclass
@@ -445,7 +446,7 @@ class TestBackfillOptimizations:
         # First call fetches root_100 by root.
         # That returns block_100; its parent (block_50) is unknown, triggering
         # the gap path: range fetch (head+1=50, count=100-50=50) covers block_50.
-        # block_50's parent is ZERO_HASH which IS in the store, so recursion stops.
+        # block_50's parent is ZERO_ROOT which IS in the store, so recursion stops.
         assert network.root_request_log == [(peer_id, [root_100])]
         assert network.range_request_log == [(peer_id, Slot(50), Uint64(50))]
 

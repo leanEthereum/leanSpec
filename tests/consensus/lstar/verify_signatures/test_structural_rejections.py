@@ -1,6 +1,7 @@
 """Signature verification rejects merged proofs that break structural invariants."""
 
 import pytest
+from ssz import hash_tree_root
 
 from consensus_testing import (
     AggregatedAttestationSpec,
@@ -14,7 +15,6 @@ from consensus_testing import (
     build_anchor,
     build_genesis_state,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import RejectionReason, Slot, ValidatorIndex
 
 pytestmark = [pytest.mark.valid_until("Lstar"), pytest.mark.real_crypto]

@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from lean_spec.node.networking.transport.peer_id import KeyType, PeerId, PublicKeyProtobuf
-from lean_spec.spec.ssz import Bytes33
+from lean_spec.spec.ssz_types import Bytes33
 
 __all__ = [
     "IdentityKeypair",

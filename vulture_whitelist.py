@@ -13,22 +13,12 @@
 # unseen by vulture. Genuinely dead code must stay out of this file so vulture
 # keeps reporting it. Prefer fixing the dead code over silencing it here.
 
-# Single-dispatch handlers for the hash_tree_root generic function.
-# Dispatched by argument type, so they have no direct call site.
-_hash_tree_root_packed_leaf
-_hash_tree_root_bytes
-_hash_tree_root_bytelist
-_hash_tree_root_bitvector_base
-_hash_tree_root_bitlist_base
-_hash_tree_root_vector
-_hash_tree_root_list
-_hash_tree_root_container
-
 # Magic methods invoked by the interpreter.
 # Flagged only because they are defined as overloaded functions or as an
 # attribute rather than a plain method, which the built-in dunder filter misses.
 __pow__
 __repr__
+__le__
 _.__len__
 
 # pytest hooks, discovered by name from the plugin and conftest modules.
@@ -54,6 +44,7 @@ _._coerce_and_validate
 _._accept_hex_string
 _._validate_byte_list_data
 _._validate_decomposition
+_._check_index_matches_position
 _._require_index_matches_position
 _.validate_state_length
 _.validate_target
@@ -62,6 +53,7 @@ _.validate_signatures_are_out_of_scope
 _._yaml_int_to_hex
 _._check_list_lengths
 _._reject_oversized_validator_set
+_._check_index_matches_position
 _._require_index_matches_position
 
 # Pydantic serializers, invoked by the model during serialization.
@@ -158,6 +150,11 @@ is_justifiable
 combined_attesters
 reaggregated_proof
 
+# SSZ type parameters and overrides read through the SSZ base rather than by name.
+# The base decides mutability and byte width from these, so no call site names them.
+MUTABLE
+_.fixed_size
+
 # SSZ container and model field names declared inside unit tests.
 # Serialized by the SSZ codec or set through pydantic, never read by attribute.
 A
@@ -165,6 +162,7 @@ B
 C
 y
 first_name
+previous
 slot_number
 _.slot_number
 

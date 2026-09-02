@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from ssz import SSZValueError, Uint16, Uint64
 
 from lean_spec.node.networking.types import (
     ConnectionState,
@@ -16,7 +17,7 @@ from lean_spec.node.networking.types import (
     SeqNumber,
     Version,
 )
-from lean_spec.spec.ssz import Bytes4, Bytes32, SSZValueError, Uint16, Uint64
+from lean_spec.spec.ssz_types import Bytes4, Bytes32
 
 
 class TestConnectionState:
@@ -52,7 +53,7 @@ class TestDomainType:
         """A byte count other than four is rejected with the full length message."""
         with pytest.raises(SSZValueError) as exception_info:
             DomainType(b"\x00" * 5)
-        assert str(exception_info.value) == "DomainType requires exactly 4 bytes, got 5"
+        assert str(exception_info.value) == "DomainType holds exactly 4 bytes, got 5"
 
     def test_encode_decode_roundtrip(self) -> None:
         """SSZ encoding then decoding reproduces the original value."""
@@ -73,7 +74,7 @@ class TestNodeId:
         """A byte count other than thirty-two is rejected with the full length message."""
         with pytest.raises(SSZValueError) as exception_info:
             NodeId(b"\x00" * 31)
-        assert str(exception_info.value) == "NodeId requires exactly 32 bytes, got 31"
+        assert str(exception_info.value) == "NodeId holds exactly 32 bytes, got 31"
 
     def test_encode_decode_roundtrip(self) -> None:
         """SSZ encoding then decoding reproduces the original value."""
@@ -94,11 +95,16 @@ class TestForkDigest:
         """A byte count other than four is rejected with the full length message."""
         with pytest.raises(SSZValueError) as exception_info:
             ForkDigest(b"\x00" * 3)
-        assert str(exception_info.value) == "ForkDigest requires exactly 4 bytes, got 3"
+        assert str(exception_info.value) == "ForkDigest holds exactly 4 bytes, got 3"
 
-    def test_hash_distinguishes_from_other_bytes4_newtype(self) -> None:
-        """Equal bytes in a sibling four-byte newtype hash differently from a ForkDigest."""
-        assert hash(ForkDigest(b"\x12\x34\x56\x78")) != hash(Version(b"\x12\x34\x56\x78"))
+    def test_refuses_comparison_with_another_bytes4_newtype(self) -> None:
+        """Equal bytes in a sibling four-byte newtype refuse to compare with a ForkDigest."""
+        with pytest.raises(TypeError) as exception_info:
+            bool(ForkDigest(b"\x12\x34\x56\x78") == Version(b"\x12\x34\x56\x78"))
+        assert (
+            str(exception_info.value)
+            == "Unsupported operand type(s) for ==: 'ForkDigest' and 'Version'"
+        )
 
 
 class TestVersion:
@@ -114,7 +120,7 @@ class TestVersion:
         """A byte count other than four is rejected with the full length message."""
         with pytest.raises(SSZValueError) as exception_info:
             Version(b"\x00" * 8)
-        assert str(exception_info.value) == "Version requires exactly 4 bytes, got 8"
+        assert str(exception_info.value) == "Version holds exactly 4 bytes, got 8"
 
     def test_repr_names_the_newtype(self) -> None:
         """The official representation labels the value with its own type name."""
@@ -140,7 +146,7 @@ class TestSeqNumber:
             SeqNumber(2**64)
         assert (
             str(exception_info.value)
-            == "18446744073709551616 out of range for SeqNumber [0, 18446744073709551615]"
+            == "18446744073709551616 is out of range for SeqNumber [0, 18446744073709551615]"
         )
 
     def test_equality_rejects_a_different_uint_newtype(self) -> None:
@@ -170,15 +176,11 @@ class TestPort:
         """A port past the sixteen-bit ceiling is rejected with the full range message."""
         with pytest.raises(SSZValueError) as exception_info:
             Port(65536)
-        assert str(exception_info.value) == "65536 out of range for Port [0, 65535]"
+        assert str(exception_info.value) == "65536 is out of range for Port [0, 65535]"
 
-    def test_equality_rejects_the_plain_uint16_base(self) -> None:
-        """Comparing against the unwrapped base integer raises with the full operand message."""
-        with pytest.raises(TypeError) as exception_info:
-            bool(Port(9000) == Uint16(9000))
-        assert (
-            str(exception_info.value) == "Unsupported operand type(s) for ==: 'Port' and 'Uint16'"
-        )
+    def test_equality_admits_the_plain_uint16_base(self) -> None:
+        """A port compares equal to the same number spelled in the type it narrows."""
+        assert Port(9000) == Uint16(9000)
 
 
 class TestProtocolId:

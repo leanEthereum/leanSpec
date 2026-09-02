@@ -1,6 +1,8 @@
 """Tests for the sparse Merkle subtree implementation."""
 
 import pytest
+from pydantic import ValidationError
+from ssz import Uint64
 
 from lean_spec.spec.crypto.xmss.constants import PROD_CONFIG, TEST_CONFIG, XmssConfig
 from lean_spec.spec.crypto.xmss.field import random_domain, random_parameter
@@ -20,8 +22,6 @@ from lean_spec.spec.crypto.xmss.types import (
     Parameter,
     TreeTweak,
 )
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.exceptions import SSZValueError
 
 
 def _run_commit_open_verify_roundtrip(
@@ -364,7 +364,7 @@ def test_verify_path_rejects_excessive_depth_at_ssz_level() -> None:
     The defensive depth guard inside verification cannot be reached through a
     well-formed opening, since the digest list rejects more than its limit.
     """
-    with pytest.raises(SSZValueError):
+    with pytest.raises(ValidationError):
         HashDigestList(data=[random_domain(PROD_CONFIG) for _ in range(33)])
 
 

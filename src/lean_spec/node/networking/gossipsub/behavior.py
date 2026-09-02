@@ -64,6 +64,8 @@ from dataclasses import dataclass, field
 from itertools import count
 from typing import ClassVar, Final, cast
 
+from ssz import Uint16
+
 from lean_spec.node.networking.config import (
     MAX_PAYLOAD_SIZE,
     MESSAGE_DOMAIN_INVALID_SNAPPY,
@@ -90,7 +92,6 @@ from lean_spec.node.networking.transport import PeerId
 from lean_spec.node.networking.transport.quic.stream_adapter import QuicStreamAdapter
 from lean_spec.node.networking.varint import decode_varint, encode_varint
 from lean_spec.node.snappy import decompress as snappy_raw_decompress
-from lean_spec.spec.ssz import Uint16
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,7 @@
 """SSZ conformance tests for consensus containers."""
 
 import pytest
+from ssz import Boolean, Uint64
 
 from consensus_testing import SSZTestFiller
 from consensus_testing.keys import create_dummy_signature
@@ -27,7 +28,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validator,
     Validators,
 )
-from lean_spec.spec.ssz import Boolean, ByteList512KiB, Bytes32, Bytes52, Uint64
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32, Bytes52
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

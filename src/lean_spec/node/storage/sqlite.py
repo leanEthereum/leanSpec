@@ -14,6 +14,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from ssz import Uint64
+
 from lean_spec.node.storage.exceptions import (
     StorageCorruptionError,
     StorageReadError,
@@ -42,7 +44,7 @@ from lean_spec.spec.forks.protocol import (
     SpecBlockType,
     SpecStateType,
 )
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class SQLiteDatabase:

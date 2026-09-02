@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from ssz import hash_tree_root
+
 from consensus_testing.keys import XmssKeyManager
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from consensus_testing.test_fixtures.hex_codec import to_hex
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import AggregationBits, Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
@@ -18,7 +19,7 @@ from lean_spec.spec.forks.lstar.containers import (
     MultiMessageAggregate,
     SingleMessageAggregate,
 )
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 ATTESTATION_SLOT: Slot = Slot(1)
 """Attestation slot, one before the block that carries it."""

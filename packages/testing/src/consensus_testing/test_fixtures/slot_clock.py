@@ -4,6 +4,7 @@ import math
 from typing import Annotated, ClassVar, Literal
 
 from pydantic import AfterValidator, Field
+from ssz import Uint64
 
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from lean_spec.base import StrictBaseModel
@@ -14,7 +15,6 @@ from lean_spec.spec.forks.lstar.config import (
     MILLISECONDS_PER_INTERVAL,
     SECONDS_PER_SLOT,
 )
-from lean_spec.spec.ssz import Uint64
 
 
 def _reject_non_integral_timestamp(timestamp: float) -> float:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from ssz import Uint64, hash_tree_root
 
 from consensus_testing import (
     build_genesis_state,
@@ -14,11 +15,10 @@ from consensus_testing import (
 from lean_spec.node.anchor import Anchor
 from lean_spec.node.genesis import GenesisConfig
 from lean_spec.node.sync.checkpoint_sync import CheckpointSyncError
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SignedBlock, Slot
 from lean_spec.spec.forks.lstar import State
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def _signed_genesis_block(state: State) -> SignedBlock:

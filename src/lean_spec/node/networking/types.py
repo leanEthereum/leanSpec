@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from enum import IntEnum, auto
 
-from lean_spec.spec.ssz import Bytes4, Bytes32, Uint16, Uint64
+from ssz import Uint16, Uint64
+
+from lean_spec.spec.ssz_types import Bytes4, Bytes32
 
 
 class DomainType(Bytes4):

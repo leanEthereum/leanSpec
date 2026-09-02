@@ -7,12 +7,13 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ssz import hash_tree_root
+
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.sync.backfill_sync import BackfillSync
 from lean_spec.node.sync.block_cache import BlockCache
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SignedBlock, Store
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 logger = logging.getLogger(__name__)
 

@@ -5,6 +5,7 @@ import json
 
 import pytest
 from pydantic import ValidationError
+from ssz import BYTES_PER_LENGTH_OFFSET, Uint32, Uint64
 
 from consensus_testing.keys import XmssKeyManager
 from lean_spec.spec.crypto.koalabear import P_BYTES
@@ -19,10 +20,7 @@ from lean_spec.spec.crypto.xmss.containers import (
 from lean_spec.spec.crypto.xmss.interface import TEST_SIGNATURE_SCHEME
 from lean_spec.spec.crypto.xmss.types import HashDigestList, HashTreeOpening
 from lean_spec.spec.forks import Slot, ValidatorIndex
-from lean_spec.spec.ssz import Bytes32, Uint64
-from lean_spec.spec.ssz.exceptions import SSZSerializationError
-from lean_spec.spec.ssz.ssz_base import BYTES_PER_LENGTH_OFFSET
-from lean_spec.spec.ssz.uint import Uint32
+from lean_spec.spec.ssz_types import Bytes32, ContainerInvariantError
 
 
 @pytest.fixture(scope="module")
@@ -259,8 +257,8 @@ def test_keypair_rejects_invalid_public_key_hex(keypair_a: KeyPair) -> None:
     with pytest.raises(
         ValidationError,
         match=r"(?s)^1 validation error for KeyPair\npublic_key\n"
-        r"  Value error, invalid PublicKey hex: "
-        r"Value 4022250974 exceeds field modulus 2130706433 .*\Z",
+        r"  Value error, root\[0\]: "
+        r"4022250974 is out of range for Fp \[0, 2130706432\] .*\Z",
     ):
         KeyPair.model_validate(
             {
@@ -275,7 +273,7 @@ def test_keypair_rejects_invalid_secret_key_hex(keypair_a: KeyPair) -> None:
     with pytest.raises(
         ValidationError,
         match=r"(?s)^1 validation error for KeyPair\nsecret_key\n"
-        r"  Value error, invalid SecretKey hex: PRFKey: expected 32 bytes, got 4 .*\Z",
+        r"  Value error, prf_key: PRFKey needs 32 bytes, the input holds 4 .*\Z",
     ):
         KeyPair.model_validate(
             {
@@ -367,7 +365,7 @@ def test_signature_rejects_too_few_hashes(sample_signature: Signature) -> None:
     # well-formed payload that decodes to one fewer hash than the scheme dimension.
     one_digest_bytes = TEST_CONFIG.HASH_LENGTH_FIELD_ELEMENTS * P_BYTES
     truncated = sample_signature.encode_bytes()[:-one_digest_bytes]
-    with pytest.raises(SSZSerializationError) as exception_info:
+    with pytest.raises(ContainerInvariantError) as exception_info:
         Signature.decode_bytes(truncated)
     assert str(exception_info.value) == "Signature.hashes requires exactly 4 hashes, got 3"
 
@@ -392,6 +390,6 @@ def test_signature_rejects_too_many_siblings(sample_signature: Signature) -> Non
     Uint32(fixed_part_length + len(path_bytes)).serialize(stream)
     stream.write(path_bytes)
     stream.write(hashes_bytes)
-    with pytest.raises(SSZSerializationError) as exception_info:
+    with pytest.raises(ContainerInvariantError) as exception_info:
         Signature.decode_bytes(stream.getvalue())
     assert str(exception_info.value) == "Signature.path.siblings requires exactly 8 siblings, got 9"

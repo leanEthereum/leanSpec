@@ -1,6 +1,7 @@
 """Lstar fork — attestation aggregation."""
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
+from ssz import hash_tree_root
+
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks.lstar._base import LstarSpecBase, LstarStore
 from lean_spec.spec.forks.lstar.containers import (

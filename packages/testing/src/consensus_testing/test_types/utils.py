@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
+from ssz import hash_tree_root
+
 from lean_spec.spec.forks import Checkpoint, Slot
 from lean_spec.spec.forks.lstar.containers import Block
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def resolve_block_root(

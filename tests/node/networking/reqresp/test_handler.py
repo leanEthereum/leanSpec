@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 import pytest
+from ssz import SSZValueError, Uint64, hash_tree_root
 
 from consensus_testing import make_test_block, make_test_status
 from lean_spec.node.networking.config import (
@@ -37,11 +38,9 @@ from lean_spec.node.networking.reqresp.message import (
 from lean_spec.node.networking.types import ProtocolId
 from lean_spec.node.networking.varint import encode_varint
 from lean_spec.node.snappy import frame_compress
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Slot
 from lean_spec.spec.forks.lstar.containers import SignedBlock
-from lean_spec.spec.ssz import Bytes32, Uint64
-from lean_spec.spec.ssz.exceptions import SSZSerializationError
+from lean_spec.spec.ssz_types import Bytes32
 
 
 @dataclass
@@ -1393,23 +1392,23 @@ class TestBlocksByRangeRequestMalformedPayloads:
     def test_truncated_payload_rejected(self) -> None:
         """Payload shorter than 16 bytes is rejected."""
         truncated = b"\x01" * 15  # 15 bytes, need 16
-        with pytest.raises(SSZSerializationError):
+        with pytest.raises(SSZValueError):
             BlocksByRangeRequest.decode_bytes(truncated)
 
     def test_empty_payload_rejected(self) -> None:
         """Zero-length payload is rejected."""
-        with pytest.raises(SSZSerializationError):
+        with pytest.raises(SSZValueError):
             BlocksByRangeRequest.decode_bytes(b"")
 
     def test_single_byte_rejected(self) -> None:
         """Single byte payload is rejected."""
-        with pytest.raises(SSZSerializationError):
+        with pytest.raises(SSZValueError):
             BlocksByRangeRequest.decode_bytes(b"\x00")
 
     def test_eight_byte_payload_rejected(self) -> None:
         """8 bytes (half-payload, single field) is rejected."""
         partial = (100).to_bytes(8, "little")
-        with pytest.raises(SSZSerializationError):
+        with pytest.raises(SSZValueError):
             BlocksByRangeRequest.decode_bytes(partial)
 
 

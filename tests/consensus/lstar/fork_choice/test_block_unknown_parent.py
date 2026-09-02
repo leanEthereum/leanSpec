@@ -10,7 +10,7 @@ from consensus_testing import (
     StoreChecks,
 )
 from lean_spec.spec.forks import RejectionReason, Slot
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

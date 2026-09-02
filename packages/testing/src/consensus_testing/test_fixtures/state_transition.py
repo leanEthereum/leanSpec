@@ -3,12 +3,12 @@
 from typing import ClassVar
 
 from pydantic import Field, model_validator
+from ssz import hash_tree_root
 
 from consensus_testing.genesis import build_genesis_state
 from consensus_testing.keys import XmssKeyManager
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from consensus_testing.test_types import AggregatedAttestationSpec, BlockSpec, StateExpectation
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SpecRejectionError
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
@@ -20,7 +20,7 @@ from lean_spec.spec.forks.lstar.containers import (
     State,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class StateTransitionFixture(BaseConsensusFixture):

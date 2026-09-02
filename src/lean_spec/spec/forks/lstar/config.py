@@ -2,7 +2,7 @@
 
 from typing import Final
 
-from lean_spec.spec.ssz import Uint8, Uint64
+from ssz import Uint8, Uint64
 
 __all__ = [
     "ATTESTATION_COMMITTEE_COUNT",

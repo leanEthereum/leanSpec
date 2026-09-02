@@ -6,6 +6,7 @@ from types import MappingProxyType
 from typing import cast
 
 import pytest
+from ssz import Uint64, hash_tree_root
 
 from consensus_testing import (
     MockForkchoiceStore,
@@ -26,7 +27,6 @@ from lean_spec.node.storage.database import Database
 from lean_spec.node.sync.config import MAX_PENDING_ATTESTATIONS
 from lean_spec.node.sync.service import SyncService
 from lean_spec.node.sync.states import SyncState
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks import (
     Checkpoint,
@@ -46,7 +46,7 @@ from lean_spec.spec.forks.lstar.containers import (
     SingleMessageAggregate,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 def make_store_with_attestation_data(

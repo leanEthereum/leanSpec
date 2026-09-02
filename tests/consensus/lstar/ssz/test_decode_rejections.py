@@ -3,22 +3,23 @@
 from typing import ClassVar
 
 import pytest
+from ssz import Boolean, Uint32
 
 from consensus_testing import ExpectedRejection, SSZTestFiller
 from lean_spec.spec.forks import RejectionReason, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import Validator, Validators
-from lean_spec.spec.ssz import BaseBitlist, BaseBitvector, Boolean, Bytes4, Bytes52, Uint32
+from lean_spec.spec.ssz_types import BitList, BitVector, Bytes4, Bytes52
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
 
-class DecodeBitlist8(BaseBitlist):
+class DecodeBitlist8(BitList):
     """Bitlist with an 8-bit limit, used to exercise bitlist-decode rejections."""
 
     LIMIT: ClassVar[int] = 8
 
 
-class DecodeBitvector16(BaseBitvector):
+class DecodeBitvector16(BitVector):
     """Fixed-width 16-bit bitvector, used to exercise fixed-width length checks."""
 
     LENGTH: ClassVar[int] = 16

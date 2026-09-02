@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from ssz import hash_tree_root
+
 from consensus_testing import make_signed_block
 from lean_spec.node.networking import PeerId
 from lean_spec.node.sync.block_cache import BlockCache, PendingBlock
 from lean_spec.node.sync.config import MAX_CACHED_BLOCKS
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Slot, ValidatorIndex
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class TestPendingBlock:

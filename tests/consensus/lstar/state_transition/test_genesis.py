@@ -1,6 +1,7 @@
 """State Transition: Genesis State"""
 
 import pytest
+from ssz import Uint64, hash_tree_root
 
 from consensus_testing import (
     AggregatedAttestationSpec,
@@ -9,7 +10,6 @@ from consensus_testing import (
     StateTransitionTestFiller,
     build_genesis_state,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import VALIDATOR_REGISTRY_LIMIT, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestations,
@@ -23,7 +23,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes32, Bytes52, Uint64
+from lean_spec.spec.ssz_types import Bytes32, Bytes52
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

@@ -3,6 +3,8 @@
 from abc import abstractmethod
 from collections.abc import Set as AbstractSet
 
+from ssz import Uint64
+
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestation,
     AggregatedAttestations,
@@ -22,7 +24,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.protocol import ForkProtocol
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 LstarStore = Store[State, Block]
 """Concrete Store specialization owned by the lstar fork."""

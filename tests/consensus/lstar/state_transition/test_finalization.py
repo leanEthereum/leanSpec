@@ -1,6 +1,7 @@
 """State Transition: Finalization"""
 
 import pytest
+from ssz import Boolean, Uint64, hash_tree_root
 
 from consensus_testing import (
     AggregatedAttestationSpec,
@@ -9,7 +10,6 @@ from consensus_testing import (
     StateTransitionTestFiller,
     build_genesis_state,
 )
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     BlockHeader,
@@ -21,7 +21,7 @@ from lean_spec.spec.forks.lstar.containers import (
     State,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Boolean, Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

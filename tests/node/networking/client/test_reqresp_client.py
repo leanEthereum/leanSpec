@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 import pytest
+from ssz import Uint64, hash_tree_root
 
 from consensus_testing import make_test_block, make_test_status
 from lean_spec.node.networking.client.reqresp_client import (
@@ -25,7 +26,6 @@ from lean_spec.node.networking.reqresp.message import (
     Status,
 )
 from lean_spec.node.networking.transport import PeerId
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar.containers import (
     AggregatedAttestations,
@@ -34,7 +34,7 @@ from lean_spec.spec.forks.lstar.containers import (
     MultiMessageAggregate,
     SignedBlock,
 )
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Uint64
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32
 
 
 @dataclass

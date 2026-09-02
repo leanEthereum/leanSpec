@@ -5,11 +5,12 @@ import os
 from itertools import batched
 from typing import Final, Self
 
+from ssz import ByteVector, Uint64
+
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.xmss.constants import PRF_KEY_LENGTH, XmssConfig
 from lean_spec.spec.crypto.xmss.types import HashDigestVector, Randomness
-from lean_spec.spec.ssz import Bytes16, Bytes32, Uint64
-from lean_spec.spec.ssz.byte_arrays import BaseBytes
+from lean_spec.spec.ssz_types import Bytes16, Bytes32
 
 PRF_DOMAIN_SEP: Final = Bytes16(b"\xae\xae\x22\xff\x00\x01\xfa\xff\x21\xaf\x12\x00\x01\x11\xff\x00")
 """
@@ -32,7 +33,7 @@ SHAKE128 bytes consumed per output field element.
 """
 
 
-class PRFKey(BaseBytes):
+class PRFKey(ByteVector):
     """
     The PRF master secret key.
 

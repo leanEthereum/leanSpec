@@ -1,6 +1,7 @@
 """State Transition: justification vote-list layout guard"""
 
 import pytest
+from ssz import Boolean
 
 from consensus_testing import (
     BlockSpec,
@@ -10,7 +11,7 @@ from consensus_testing import (
 )
 from lean_spec.spec.forks import RejectionReason, Slot
 from lean_spec.spec.forks.lstar.containers import JustificationRoots, JustificationValidators
-from lean_spec.spec.ssz import Boolean, Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 pytestmark = pytest.mark.valid_until("Lstar")
 

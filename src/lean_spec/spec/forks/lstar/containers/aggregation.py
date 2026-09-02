@@ -18,7 +18,7 @@ from lean_spec.spec.crypto.xmss.containers import PublicKey, Signature
 from lean_spec.spec.forks.lstar.containers.identifiers import ValidatorIndex
 from lean_spec.spec.forks.lstar.containers.participation import AggregationBits
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Container
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32, Container
 
 LOG_INVERSE_RATE: int = 1 if LEAN_ENV == "test" else 2
 """

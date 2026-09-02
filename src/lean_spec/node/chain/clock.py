@@ -7,12 +7,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from time import time as wall_time
 
+from ssz import Uint64
+
 from lean_spec.spec.forks import Interval, Slot
 from lean_spec.spec.forks.lstar.config import (
     MILLISECONDS_PER_INTERVAL,
     MILLISECONDS_PER_SLOT,
 )
-from lean_spec.spec.ssz import Uint64
 
 
 @dataclass(frozen=True, slots=True)

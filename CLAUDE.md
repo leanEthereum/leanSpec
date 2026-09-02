@@ -96,7 +96,7 @@ subspecifications that the Lean Ethereum protocol relies on.
   - A test file must never test a type that lives in a different source module. For example, tests
     for `SlotClock` (in `node/chain/clock.py`) belong in `tests/node/chain/test_clock.py`,
     never in an unrelated test module.
-  - This mirroring covers non-fork modules only (`node/`, `spec/crypto/`, `spec/ssz/`, etc.). The
+  - This mirroring covers non-fork modules only (`node/`, `spec/crypto/`, etc.). The
     fork specs under `src/lean_spec/spec/forks/` are exempt — see the forks-are-vectors rule below.
 - **CRITICAL - FORKS ARE TESTED BY VECTORS, NOT PYTESTS**: This is a STRICT requirement. The fork
   specs under `src/lean_spec/spec/forks/` are tested exclusively through consensus test vectors

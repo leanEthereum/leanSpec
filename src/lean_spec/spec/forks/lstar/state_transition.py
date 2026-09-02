@@ -3,7 +3,8 @@
 from collections.abc import Iterable
 from itertools import batched
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
+from ssz import ZERO_ROOT, Boolean, Uint64, hash_tree_root
+
 from lean_spec.spec.forks.lstar._base import LstarSpecBase
 from lean_spec.spec.forks.lstar.config import MAX_ATTESTATIONS_DATA
 from lean_spec.spec.forks.lstar.containers import (
@@ -23,7 +24,7 @@ from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionErro
 from lean_spec.spec.observability import (
     observe_state_transition,
 )
-from lean_spec.spec.ssz import ZERO_HASH, Boolean, Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class StateTransitionMixin(LstarSpecBase):
@@ -145,7 +146,7 @@ class StateTransitionMixin(LstarSpecBase):
 
         # Record the parent root, then a zero hash for each skipped slot.
         new_historical_block_hashes = (
-            state.historical_block_hashes + [parent_root] + [ZERO_HASH] * num_empty_slots
+            state.historical_block_hashes + [parent_root] + [ZERO_ROOT] * num_empty_slots
         )
 
         # The justified-slot flags are stored relative to the finalized boundary.
@@ -250,7 +251,7 @@ class StateTransitionMixin(LstarSpecBase):
             )
 
         # The zero hash marks a skipped slot, never a real block, so it cannot track votes.
-        if any(root == ZERO_HASH for root in state.justifications_roots):
+        if any(root == ZERO_ROOT for root in state.justifications_roots):
             raise SpecRejectionError(
                 RejectionReason.ZERO_HASH_JUSTIFICATION_ROOT,
                 "Tracked justification roots contain the zero hash",

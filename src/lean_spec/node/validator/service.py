@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Final, Literal
 
+from ssz import Uint64, hash_tree_root
+
 from lean_spec.node.chain.clock import SlotClock
 from lean_spec.node.sync import SyncService
 from lean_spec.node.validator.constants import (
@@ -16,7 +18,6 @@ from lean_spec.node.validator.constants import (
     SYNC_LAG_THRESHOLD,
 )
 from lean_spec.node.validator.registry import ValidatorEntry, ValidatorRegistry
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
 from lean_spec.spec.crypto.xmss.containers import PublicKey, Signature
 from lean_spec.spec.forks import (
@@ -30,7 +31,7 @@ from lean_spec.spec.forks import (
     ValidatorIndex,
 )
 from lean_spec.spec.forks.lstar.containers import MultiMessageAggregate, SingleMessageAggregate
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 logger = logging.getLogger(__name__)
 

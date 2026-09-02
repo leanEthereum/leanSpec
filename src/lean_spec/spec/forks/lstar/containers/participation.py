@@ -2,14 +2,15 @@
 
 from collections.abc import Iterable
 
+from ssz import Boolean
+
 from lean_spec.spec.forks.lstar.config import VALIDATOR_REGISTRY_LIMIT
 from lean_spec.spec.forks.lstar.containers.identifiers import ValidatorIndex, ValidatorIndices
 from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
-from lean_spec.spec.ssz import Boolean
-from lean_spec.spec.ssz.bitfields import BaseBitlist
+from lean_spec.spec.ssz_types import BitList
 
 
-class AggregationBits(BaseBitlist):
+class AggregationBits(BitList):
     """Bitlist representing validator participation in an attestation or signature."""
 
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

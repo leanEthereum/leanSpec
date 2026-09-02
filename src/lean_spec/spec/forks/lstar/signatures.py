@@ -1,6 +1,7 @@
 """Lstar fork — block signature verification."""
 
-from lean_spec.spec.crypto.merkleization import hash_tree_root
+from ssz import Uint64, hash_tree_root
+
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks.lstar._base import LstarSpecBase
 from lean_spec.spec.forks.lstar.containers import (
@@ -10,7 +11,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class SignatureMixin(LstarSpecBase):

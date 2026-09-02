@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass, field
 from typing import cast
 
+from ssz import Uint64
+
 from lean_spec.node.networking import PeerId
 from lean_spec.node.networking.client import LiveNetworkEventSource
 from lean_spec.node.networking.gossipsub.types import TopicId
@@ -27,7 +29,7 @@ from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.spec.forks.lstar.containers import Validator, Validators
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import Bytes52, Uint64
+from lean_spec.spec.ssz_types import Bytes52
 from tests.interop.helpers.diagnostics import PipelineDiagnostics
 from tests.interop.helpers.port_allocator import PortAllocator
 

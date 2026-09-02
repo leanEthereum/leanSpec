@@ -15,7 +15,7 @@ from lean_spec.spec.forks.lstar.containers import (
     State,
     Validators,
 )
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class StateExpectation(SelectiveCheck):

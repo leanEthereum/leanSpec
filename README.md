@@ -88,7 +88,7 @@ just test
 │       └── spec/                       # Protocol specifications
 │           ├── crypto/                 # Cryptographic subspecs (poseidon, koalabear, xmss, ...)
 │           ├── forks/                  # Fork specifications (tested via consensus vectors)
-│           ├── ssz/                    # SSZ serialization
+│           ├── ssz_types.py            # The SSZ shapes leanSpec declares itself
 │           └── observability/          # Observability spec
 ├── tests/                              # Test suite
 │   ├── consensus/                      # Consensus test vectors

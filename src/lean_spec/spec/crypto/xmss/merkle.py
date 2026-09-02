@@ -29,6 +29,8 @@ Each layer records the absolute index of its first node, keeping positions in fu
 from itertools import batched
 from typing import Self
 
+from ssz import Uint64
+
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG, XmssConfig
 from lean_spec.spec.crypto.xmss.field import random_domain
 from lean_spec.spec.crypto.xmss.poseidon import PoseidonXmss
@@ -40,9 +42,7 @@ from lean_spec.spec.crypto.xmss.types import (
     Parameter,
     TreeTweak,
 )
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.collections import SSZList
-from lean_spec.spec.ssz.container import Container
+from lean_spec.spec.ssz_types import Container, List
 
 
 class HashTreeLayer(Container):
@@ -116,7 +116,7 @@ class HashTreeLayer(Container):
         )
 
 
-class HashTreeLayers(SSZList[HashTreeLayer]):
+class HashTreeLayers(List[HashTreeLayer]):
     """
     The layers of a subtree, ordered from the lowest layer up to the root.
 

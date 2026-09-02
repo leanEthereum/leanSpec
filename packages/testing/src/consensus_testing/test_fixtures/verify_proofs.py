@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from ssz import hash_tree_root
+
 from consensus_testing.keys import XmssKeyManager
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from lean_spec.base import StrictBaseModel
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.crypto.xmss.containers import PublicKey
 from lean_spec.spec.forks import (
     AggregationBits,
@@ -21,7 +22,7 @@ from lean_spec.spec.forks.lstar.containers import (
     MultiMessageAggregate,
     SingleMessageAggregate,
 )
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32
 
 ALTERNATE_HEAD_ROOT: Bytes32 = Bytes32(b"\xee" * 32)
 """Sentinel head root used by the rebind tamper to bind one component off-target."""

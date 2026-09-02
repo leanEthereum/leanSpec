@@ -25,7 +25,7 @@ from lean_spec.node.node import Node, NodeConfig
 from lean_spec.spec.forks import SignedBlock, Slot, SubnetId
 from lean_spec.spec.forks.lstar.config import ATTESTATION_COMMITTEE_COUNT
 from lean_spec.spec.observability import set_observer
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 logger = logging.getLogger(__name__)
 

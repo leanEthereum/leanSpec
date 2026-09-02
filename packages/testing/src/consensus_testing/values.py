@@ -17,7 +17,7 @@ from lean_spec.spec.forks.lstar.containers import (
     SignedAttestation,
     SignedBlock,
 )
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32
 
 TEST_VALIDATOR_INDEX = ValidatorIndex(0)
 """Validator index a node owns by default in unit tests."""

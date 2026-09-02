@@ -8,6 +8,7 @@ import signal
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
+from ssz import Uint64, hash_tree_root
 
 from consensus_testing import (
     MockEventSource,
@@ -20,7 +21,6 @@ from lean_spec.node.node import Node, NodeConfig
 from lean_spec.node.storage.sqlite import SQLiteDatabase
 from lean_spec.node.validator import ValidatorRegistry
 from lean_spec.node.validator.registry import ValidatorEntry
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import Checkpoint, Interval, Slot, ValidatorIndex
 from lean_spec.spec.forks.lstar import State
 from lean_spec.spec.forks.lstar.config import (
@@ -45,7 +45,7 @@ from lean_spec.spec.forks.lstar.containers import (
     Validators,
 )
 from lean_spec.spec.forks.lstar.spec import LstarSpec
-from lean_spec.spec.ssz import ByteList512KiB, Bytes32, Bytes52, Uint64
+from lean_spec.spec.ssz_types import ByteList512KiB, Bytes32, Bytes52
 
 GENESIS_TIME = Uint64(1704067200)
 

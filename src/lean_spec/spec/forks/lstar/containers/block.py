@@ -4,7 +4,7 @@ from lean_spec.spec.forks.lstar.containers.aggregation import MultiMessageAggreg
 from lean_spec.spec.forks.lstar.containers.attestation import AggregatedAttestations
 from lean_spec.spec.forks.lstar.containers.identifiers import ValidatorIndex
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import Bytes32, Container
+from lean_spec.spec.ssz_types import Bytes32, Container
 
 
 class BlockBody(Container):

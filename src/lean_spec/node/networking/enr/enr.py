@@ -49,6 +49,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
     Prehashed,
     encode_dss_signature,
 )
+from ssz import Uint64
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.node.networking.enr import keys
@@ -63,7 +64,7 @@ from lean_spec.node.networking.types import (
     SeqNumber,
     Version,
 )
-from lean_spec.spec.ssz import Bytes33, Bytes64, Uint64
+from lean_spec.spec.ssz_types import Bytes33, Bytes64
 
 ENR_PREFIX: Final = "enr:"
 """Text prefix for ENR strings."""

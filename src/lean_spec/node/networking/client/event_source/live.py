@@ -61,6 +61,8 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from ssz import SSZValueError
+
 from lean_spec.node.networking.client.event_source.gossip import GossipHandler
 from lean_spec.node.networking.client.event_source.protocol import (
     SUPPORTED_PROTOCOLS,
@@ -110,7 +112,6 @@ from lean_spec.node.networking.transport.quic.stream_adapter import (
 )
 from lean_spec.node.networking.types import ProtocolId
 from lean_spec.spec.forks import SignedAggregatedAttestation, SignedAttestation, SignedBlock
-from lean_spec.spec.ssz.exceptions import SSZSerializationError
 
 logger = logging.getLogger(__name__)
 
@@ -491,7 +492,7 @@ class LiveNetworkEventSource:
                     case TopicKind.AGGREGATED_ATTESTATION:
                         aggregate = SignedAggregatedAttestation.decode_bytes(event.data)
                         await self._emit_gossip_aggregated_attestation(aggregate, event.peer_id)
-            except SSZSerializationError as exception:
+            except SSZValueError as exception:
                 raise GossipMessageError(f"SSZ decode failed: {exception}") from exception
 
             logger.debug("Processed gossipsub message %s from %s", topic.kind.value, event.peer_id)

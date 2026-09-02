@@ -7,13 +7,15 @@ from dataclasses import dataclass, field
 from itertools import batched
 from typing import Protocol
 
+from ssz import Uint64
+
 from lean_spec.node.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.node.networking.transport.peer_id import PeerId
 from lean_spec.node.sync.block_cache import BlockCache
 from lean_spec.node.sync.config import MAX_BACKFILL_DEPTH
 from lean_spec.node.sync.peer_manager import PeerManager
 from lean_spec.spec.forks import SignedBlock, Slot
-from lean_spec.spec.ssz import Bytes32, Uint64
+from lean_spec.spec.ssz_types import Bytes32
 
 logger = logging.getLogger(__name__)
 

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import httpx
+from ssz import hash_tree_root
 
 from consensus_testing import store_backed_signed_block_getter
 from lean_spec.node.api import ApiServer, ApiServerConfig
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import SignedBlock
 from lean_spec.spec.forks.lstar import Store
 from tests.node.api.conftest import AggregatorRoleStub

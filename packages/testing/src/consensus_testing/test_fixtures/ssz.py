@@ -2,15 +2,13 @@
 
 from typing import Any, ClassVar
 
-from pydantic import field_serializer
+from pydantic import ValidationError, field_serializer
+from ssz import Boolean, SSZError, SSZType, hash_tree_root
 
 from consensus_testing.test_fixtures.base import BaseConsensusFixture, BaseTestSpec
 from consensus_testing.test_fixtures.hex_codec import from_hex, to_hex
 from lean_spec.base import CamelModel
-from lean_spec.spec.crypto.koalabear import Fp
-from lean_spec.spec.crypto.merkleization import hash_tree_root
-from lean_spec.spec.ssz.boolean import Boolean
-from lean_spec.spec.ssz.ssz_base import SSZType
+from lean_spec.spec.ssz_types import ContainerInvariantError
 
 
 class SSZFixture(BaseConsensusFixture):
@@ -43,8 +41,6 @@ class SSZFixture(BaseConsensusFixture):
             return to_hex(ssz_value)
         if isinstance(ssz_value, int):
             return str(ssz_value)
-        if isinstance(ssz_value, Fp):
-            return str(ssz_value.value)
         return str(ssz_value)
 
 
@@ -104,7 +100,8 @@ class SSZTest(BaseTestSpec):
         exception_raised: Exception | None = None
         try:
             decoder.decode_bytes(raw)
-        except Exception as exception:
+        except (SSZError, ValidationError, ContainerInvariantError) as exception:
+            # Anything else is a bug in the filler, not an input every client must reject.
             exception_raised = exception
 
         return SSZFixture(

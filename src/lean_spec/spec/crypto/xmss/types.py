@@ -2,11 +2,11 @@
 
 from typing import Final, NamedTuple
 
+from ssz import Uint64
+
 from lean_spec.spec.crypto.koalabear import Fp
 from lean_spec.spec.crypto.xmss.constants import TARGET_CONFIG
-from lean_spec.spec.ssz import Uint64
-from lean_spec.spec.ssz.collections import SSZList, SSZVector
-from lean_spec.spec.ssz.container import Container
+from lean_spec.spec.ssz_types import Container, List, Vector
 
 
 class TreeTweak(NamedTuple):
@@ -45,7 +45,7 @@ Maximum number of nodes a sparse Merkle tree layer can hold.
 """
 
 
-class HashDigestVector(SSZVector[Fp]):
+class HashDigestVector(Vector[Fp]):
     """
     A single hash digest as a fixed-size vector of field elements.
 
@@ -56,13 +56,13 @@ class HashDigestVector(SSZVector[Fp]):
     """One Poseidon digest, measured in field elements."""
 
 
-class HashDigestList(SSZList[HashDigestVector]):
+class HashDigestList(List[HashDigestVector]):
     """Variable-length list of hash digests."""
 
     LIMIT = NODE_LIST_LIMIT
 
 
-class Parameter(SSZVector[Fp]):
+class Parameter(Vector[Fp]):
     """
     The public parameter P.
 
@@ -74,7 +74,7 @@ class Parameter(SSZVector[Fp]):
     LENGTH = TARGET_CONFIG.PARAMETER_LENGTH
 
 
-class Randomness(SSZVector[Fp]):
+class Randomness(Vector[Fp]):
     """
     Fresh randomness mixed into the message hash during signing.
 

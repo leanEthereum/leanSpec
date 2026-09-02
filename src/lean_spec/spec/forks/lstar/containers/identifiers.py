@@ -1,9 +1,11 @@
 """Scalar identifiers naming validators, subnets, and the registry index space."""
 
+from ssz import Uint64
+
 from lean_spec.spec.forks.lstar.config import VALIDATOR_REGISTRY_LIMIT
 from lean_spec.spec.forks.lstar.errors import RejectionReason, SpecRejectionError
 from lean_spec.spec.forks.lstar.slot import Slot
-from lean_spec.spec.ssz import SSZList, Uint64
+from lean_spec.spec.ssz_types import List
 
 
 class SubnetId(Uint64):
@@ -49,7 +51,7 @@ class ValidatorIndex(Uint64):
         return SubnetId(int(self) % int(num_committees))
 
 
-class ValidatorIndices(SSZList[ValidatorIndex]):
+class ValidatorIndices(List[ValidatorIndex]):
     """List of validator indices up to the registry limit."""
 
     LIMIT = int(VALIDATOR_REGISTRY_LIMIT)

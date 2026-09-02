@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lean_spec.spec.ssz import Bytes20
+from lean_spec.spec.ssz_types import Bytes20
 
 
 class MessageId(Bytes20):

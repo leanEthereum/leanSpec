@@ -17,7 +17,7 @@ The fork specs under `src/lean_spec/spec/forks/` are tested EXCLUSIVELY through 
 
 - There is NO `tests/spec/forks/` tree, and you must never create one.
 - For ANY fork behavior — fork choice, state transition, block production, validator duties, aggregation, the containers, slot/interval math, the fork registry or protocol — write or update a consensus test-vector fixture (`state_transition`, `fork_choice`, `ssz`, `slot_clock`, `verify_signatures`, etc.), never a pytest.
-- Mirrored pytest unit tests apply only to NON-fork modules (`node/`, `spec/crypto/`, `spec/ssz/`, and similar).
+- Mirrored pytest unit tests apply only to NON-fork modules (`node/`, `spec/crypto/`, and similar).
 - If asked to "add tests" for a fork container or function (for example a new container under `spec/forks/lstar/containers/`), produce a consensus vector fixture, not a pytest under `tests/`.
 
 ## Auto-Invoke Skills

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
+from ssz import Uint64
 
 from lean_spec.node.networking.config import MAX_REQUEST_BLOCKS
 from lean_spec.node.networking.reqresp.message import (
@@ -16,8 +18,7 @@ from lean_spec.node.networking.reqresp.message import (
 )
 from lean_spec.node.networking.types import ProtocolId
 from lean_spec.spec.forks import Checkpoint, Slot
-from lean_spec.spec.ssz import Bytes32, Uint64
-from lean_spec.spec.ssz.exceptions import SSZValueError
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class TestProtocolIdentifiers:
@@ -81,10 +82,12 @@ class TestRequestedBlockRoots:
 
     def test_rejects_list_over_limit(self) -> None:
         """A list one element over the limit is rejected with the full message."""
-        with pytest.raises(SSZValueError) as exception_info:
+        with pytest.raises(ValidationError) as exception_info:
             RequestedBlockRoots(data=[Bytes32(b"\x00" * 32)] * (MAX_REQUEST_BLOCKS + 1))
-        assert str(exception_info.value) == (
-            f"RequestedBlockRoots exceeds limit of {MAX_REQUEST_BLOCKS}, "
+        # A field validator wraps the refusal, so the assertion reads the original it carries.
+        [validation_error] = exception_info.value.errors()
+        assert str(validation_error["ctx"]["error"]) == (
+            f"RequestedBlockRoots holds at most {MAX_REQUEST_BLOCKS} elements, "
             f"got {MAX_REQUEST_BLOCKS + 1}"
         )
 

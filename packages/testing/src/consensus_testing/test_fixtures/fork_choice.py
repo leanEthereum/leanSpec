@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from pydantic import Field
+from ssz import hash_tree_root
 
 from consensus_testing.genesis import build_genesis_state, reconstruct_block_from_header
 from consensus_testing.keys import XmssKeyManager
@@ -23,7 +24,6 @@ from consensus_testing.test_types import (
     TickStep,
 )
 from lean_spec.node.chain.clock import SlotClock
-from lean_spec.spec.crypto.merkleization import hash_tree_root
 from lean_spec.spec.forks import (
     Interval,
     RejectionReason,

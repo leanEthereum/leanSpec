@@ -11,7 +11,7 @@ from lean_spec.spec.forks.lstar.containers.checkpoint import AttestationData, Ch
 from lean_spec.spec.forks.lstar.containers.genesis import GenesisConfig
 from lean_spec.spec.forks.lstar.containers.identifiers import ValidatorIndex
 from lean_spec.spec.forks.lstar.containers.interval import Interval
-from lean_spec.spec.ssz import Bytes32, Container
+from lean_spec.spec.ssz_types import Bytes32, Container
 
 
 class AttestationSignatureEntry(NamedTuple):

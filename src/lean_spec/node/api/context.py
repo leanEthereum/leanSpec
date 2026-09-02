@@ -9,7 +9,7 @@ from typing import Protocol
 from aiohttp import web
 
 from lean_spec.spec.forks import LstarSpec, SignedBlock, Store
-from lean_spec.spec.ssz import Bytes32
+from lean_spec.spec.ssz_types import Bytes32
 
 
 class AggregatorRoleControl(Protocol):

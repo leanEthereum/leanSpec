@@ -1,6 +1,7 @@
 """State Transition: zero-hash justification root guard"""
 
 import pytest
+from ssz import ZERO_ROOT, Boolean
 
 from consensus_testing import (
     BlockSpec,
@@ -10,7 +11,6 @@ from consensus_testing import (
 )
 from lean_spec.spec.forks import RejectionReason, Slot
 from lean_spec.spec.forks.lstar.containers import JustificationRoots, JustificationValidators
-from lean_spec.spec.ssz import ZERO_HASH, Boolean
 
 pytestmark = pytest.mark.valid_until("Lstar")
 
@@ -42,7 +42,7 @@ def test_zero_hash_tracked_justification_root_rejects_block(
     state_transition_test(
         pre=build_genesis_state(num_validators=4).model_copy(
             update={
-                "justifications_roots": JustificationRoots(data=[ZERO_HASH]),
+                "justifications_roots": JustificationRoots(data=[ZERO_ROOT]),
                 "justifications_validators": JustificationValidators(
                     data=[Boolean(False), Boolean(False), Boolean(False), Boolean(False)]
                 ),

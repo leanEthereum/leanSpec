@@ -1,17 +1,11 @@
 """Core definition of the KoalaBear prime field Fp."""
 
 import math
-from typing import IO, Any, Final, NoReturn, Self, override
+from typing import IO, Any, Final, NoReturn, Self, cast, override
 
 from pydantic.annotated_handlers import GetCoreSchemaHandler
 from pydantic_core import core_schema
-
-from lean_spec.spec.ssz import SSZType
-from lean_spec.spec.ssz.exceptions import (
-    SSZSerializationError,
-    SSZTypeError,
-    SSZValueError,
-)
+from ssz import SSZTypeError, SSZValueError, TypeFault, Uint32, ValueFault
 
 P: Final = 2**31 - 2**24 + 1
 """
@@ -27,18 +21,21 @@ The prime spans 31 bits, so a field element fits in 4 bytes.
 """
 
 
-class Fp(int, SSZType):
+class Fp(Uint32):
     """
     An element in the KoalaBear prime field F_p.
 
     This is an SSZ-serializable type.
 
     Each field element is represented as a 4-byte little-endian unsigned integer.
+    The prime spans 31 bits, so the field rides on the 32-bit unsigned integer.
+    That inheritance is what packs a sequence of elements into shared chunks.
+    A type outside the unsigned integers would take a 32-byte leaf per element instead.
     """
 
     __slots__ = ()
 
-    def __new__(cls, value: int) -> Self:
+    def __new__(cls, value: int = 0) -> Self:
         """
         Create a field element.
 
@@ -53,10 +50,10 @@ class Fp(int, SSZType):
             SSZTypeError: If value is not an integer.
         """
         if not isinstance(value, int) or isinstance(value, bool):
-            raise SSZTypeError(f"Field value must be an integer, got {type(value).__name__}")
+            raise SSZTypeError(TypeFault.WRONG_TYPE, expected="int", got=type(value).__name__)
 
         # Normalize to [0, P) - handles negative values correctly
-        return super().__new__(cls, value % P)
+        return super().__new__(cls, int(value) % P)
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -79,38 +76,34 @@ class Fp(int, SSZType):
         )
 
     @classmethod
-    @override
-    def is_fixed_size(cls) -> bool:
-        """Fp elements are fixed-size (4 bytes)."""
-        return True
+    def _require_canonical_residue(cls, decoded_integer: int) -> None:
+        """
+        Refuse a non-canonical residue, since four bytes span more than the field holds.
+
+        Raises:
+            SSZValueError: If the decoded integer is at or above the modulus.
+        """
+        if decoded_integer >= P:
+            raise SSZValueError(
+                ValueFault.RANGE, value=decoded_integer, type=cls.__name__, max=P - 1
+            )
 
     @classmethod
     @override
-    def get_byte_length(cls) -> int:
-        """Get the byte length of an Fp element."""
-        return P_BYTES
-
-    @override
-    def serialize(self, stream: IO[bytes]) -> int:
-        """Serialize the field element to a binary stream."""
-        stream.write(int(self).to_bytes(P_BYTES, byteorder="little"))
-        return P_BYTES
+    def decode_bytes(cls, data: bytes) -> Self:
+        """Decode a field element from little-endian bytes."""
+        # A type checker reads the inherited classmethod as returning the class it is written on.
+        element = cast(Self, super().decode_bytes(data))
+        cls._require_canonical_residue(int(element))
+        return element
 
     @classmethod
     @override
     def deserialize(cls, stream: IO[bytes], scope: int) -> Self:
         """Deserialize a field element from a binary stream."""
-        if scope != P_BYTES:
-            raise SSZSerializationError(f"Expected {P_BYTES} bytes for Fp, got {scope}")
-        serialized_bytes = stream.read(P_BYTES)
-        if len(serialized_bytes) != P_BYTES:
-            raise SSZSerializationError(
-                f"Expected {P_BYTES} bytes for Fp, got {len(serialized_bytes)}"
-            )
-        decoded_integer = int.from_bytes(serialized_bytes, byteorder="little")
-        if decoded_integer >= P:
-            raise SSZValueError(f"Value {decoded_integer} exceeds field modulus {P}")
-        return cls(decoded_integer)
+        element = cast(Self, super().deserialize(stream, scope))
+        cls._require_canonical_residue(int(element))
+        return element
 
     def _reject(self, other: Any, op_symbol: str) -> NoReturn:
         """Raise a consistent TypeError for a non-Fp operand."""

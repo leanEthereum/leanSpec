@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 from pydantic import Field, field_validator
+from ssz import Uint64
 
 from lean_spec.base import StrictBaseModel
 from lean_spec.spec.forks import (
@@ -15,7 +16,7 @@ from lean_spec.spec.forks import (
     ValidatorIndex,
     Validators,
 )
-from lean_spec.spec.ssz import Bytes52, Uint64
+from lean_spec.spec.ssz_types import Bytes52
 
 
 class GenesisValidatorEntry(StrictBaseModel):
