@@ -1315,7 +1315,7 @@ def _replace_head_at_slot(sync_service: SyncService, head_slot: Slot) -> None:
 
     Why
     ---
-    The duty gate reads both the head block and the freshest block in
+    The attestation gate reads both the head block and the freshest block in
     the map. A helper that broke the key-equals-root invariant would
     mask real bugs.
     """
@@ -1358,7 +1358,7 @@ def _add_block_at_slot(sync_service: SyncService, slot: Slot) -> Bytes32:
 
 def _build_gate_service(sync_service: SyncService) -> ValidatorService:
     """
-    Build a service for gate-only tests with an empty registry.
+    Build a service for attestation gate tests with an empty registry.
 
     The gate logic never consults the registry, so emptying it keeps
     the focus on the predicate under test.
@@ -1372,17 +1372,17 @@ def _build_gate_service(sync_service: SyncService) -> ValidatorService:
 
 class TestSyncLagGate:
     """
-    Sync-lag duty gate.
+    Sync-lag attestation gate.
 
     Decision matrix
     ---------------
-    - Lag at or under threshold: duties run.
-    - Lag over threshold, fresh blocks locally: duties skip.
-    - Lag over threshold, no fresh blocks: duties run (network stall).
+    - Lag at or under threshold: attestations run.
+    - Lag over threshold, fresh blocks locally: attestations skip.
+    - Lag over threshold, no fresh blocks: attestations run (network stall).
     - Once closed, the gate reopens only after lag drops past the band.
     """
 
-    def test_lag_within_threshold_allows_duties(self, sync_service: SyncService) -> None:
+    def test_lag_within_threshold_allows_attestations(self, sync_service: SyncService) -> None:
         """Lag 0..threshold leaves the gate open."""
 
         # Head at slot 10, wall clock sweeps 10..14 (lag 0..4).
@@ -1391,7 +1391,7 @@ class TestSyncLagGate:
 
         # Every lag in the inclusive range must pass.
         for lag in range(SYNC_LAG_THRESHOLD + 1):
-            assert service._is_synced_for_duties(Slot(10 + lag), "block")
+            assert service._is_synced_for_attestations(Slot(10 + lag))
 
     def test_lag_over_threshold_with_fresh_local_block_gates(
         self, sync_service: SyncService
@@ -1406,7 +1406,7 @@ class TestSyncLagGate:
         _add_block_at_slot(sync_service, Slot(20))
         service = _build_gate_service(sync_service)
 
-        assert not service._is_synced_for_duties(Slot(20), "block")
+        assert not service._is_synced_for_attestations(Slot(20))
 
     def test_clock_skew_saturates_to_zero_lag(self, sync_service: SyncService) -> None:
         """Head ahead of wall clock saturates to zero lag, not unlimited trust."""
@@ -1416,7 +1416,7 @@ class TestSyncLagGate:
         _replace_head_at_slot(sync_service, Slot(20))
         service = _build_gate_service(sync_service)
 
-        assert service._is_synced_for_duties(Slot(15), "block")
+        assert service._is_synced_for_attestations(Slot(15))
 
     def test_no_extra_blocks_treats_isolation_as_network_stall(
         self, sync_service: SyncService
@@ -1428,9 +1428,9 @@ class TestSyncLagGate:
         _replace_head_at_slot(sync_service, Slot(0))
         service = _build_gate_service(sync_service)
 
-        assert service._is_synced_for_duties(Slot(100), "block")
+        assert service._is_synced_for_attestations(Slot(100))
 
-    def test_network_wide_stall_keeps_duties_live(self, sync_service: SyncService) -> None:
+    def test_network_wide_stall_keeps_attestations_live(self, sync_service: SyncService) -> None:
         """All locally-known blocks stale: gate stays open."""
 
         # Head at slot 0, wall clock at slot 50, no fresh blocks.
@@ -1439,7 +1439,7 @@ class TestSyncLagGate:
         _replace_head_at_slot(sync_service, Slot(0))
         service = _build_gate_service(sync_service)
 
-        assert service._is_synced_for_duties(Slot(50), "block")
+        assert service._is_synced_for_attestations(Slot(50))
 
     def test_boundary_lag_equal_threshold_allowed(self, sync_service: SyncService) -> None:
         """Lag exactly at the threshold (4) leaves the gate open."""
@@ -1450,7 +1450,7 @@ class TestSyncLagGate:
         _add_block_at_slot(sync_service, Slot(14))
         service = _build_gate_service(sync_service)
 
-        assert service._is_synced_for_duties(Slot(10 + SYNC_LAG_THRESHOLD), "block")
+        assert service._is_synced_for_attestations(Slot(10 + SYNC_LAG_THRESHOLD))
 
     def test_boundary_lag_one_over_threshold_gated(self, sync_service: SyncService) -> None:
         """Lag of threshold + 1 closes the gate."""
@@ -1460,7 +1460,7 @@ class TestSyncLagGate:
         _add_block_at_slot(sync_service, Slot(15))
         service = _build_gate_service(sync_service)
 
-        assert not service._is_synced_for_duties(Slot(10 + SYNC_LAG_THRESHOLD + 1), "block")
+        assert not service._is_synced_for_attestations(Slot(10 + SYNC_LAG_THRESHOLD + 1))
 
     def test_hysteresis_prevents_flap(self, sync_service: SyncService) -> None:
         """
@@ -1481,57 +1481,63 @@ class TestSyncLagGate:
         service = _build_gate_service(sync_service)
 
         # Lag = 5: gate closes.
-        assert not service._is_synced_for_duties(Slot(15), "block")
+        assert not service._is_synced_for_attestations(Slot(15))
 
         # Lag = 4: stays closed because the band requires lag <= 2.
         _replace_head_at_slot(sync_service, Slot(11))
         _add_block_at_slot(sync_service, Slot(20))
-        assert not service._is_synced_for_duties(Slot(15), "block")
+        assert not service._is_synced_for_attestations(Slot(15))
 
         # Lag back to 5: still closed, no flap event.
         _replace_head_at_slot(sync_service, Slot(10))
         _add_block_at_slot(sync_service, Slot(20))
-        assert not service._is_synced_for_duties(Slot(15), "block")
+        assert not service._is_synced_for_attestations(Slot(15))
 
         # Lag = 2: at or below the 4 - 2 band, gate reopens.
         _replace_head_at_slot(sync_service, Slot(13))
         _add_block_at_slot(sync_service, Slot(20))
-        assert service._is_synced_for_duties(Slot(15), "block")
+        assert service._is_synced_for_attestations(Slot(15))
 
-    async def test_run_loop_skips_block_production_when_gated(
+    async def test_run_loop_allows_block_production_during_sync_lag(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
-        """Closed gate at interval 0 skips block production."""
+        """Sync lag at interval 0 still permits block production."""
 
-        # Wall clock at slot 10 interval 0, head stuck at slot 0.
-        # Fresh local block at slot 10 makes the lag local, not network-wide.
+        # Fixture state: five missed proposals leave the head at slot 0.
+        current_slot = Slot(SYNC_LAG_THRESHOLD + 1)
         _replace_head_at_slot(sync_service, Slot(0))
-        _add_block_at_slot(sync_service, Slot(10))
-        clock = SlotClock(genesis_time=Uint64(0), time_fn=lambda: _interval_time(10, 0))
+        clock = SlotClock(
+            genesis_time=Uint64(0),
+            time_fn=lambda: _interval_time(int(current_slot), 0),
+        )
         service = ValidatorService(
             sync_service=sync_service,
             clock=clock,
             registry=_make_registry(key_manager, 0),
         )
 
-        block_calls: list[Slot] = []
+        proposed_slots: list[Slot] = []
 
-        async def mock_block(_self, slot: Slot) -> None:
-            block_calls.append(slot)
+        async def capture_block_production(_self, slot: Slot) -> None:
+            proposed_slots.append(slot)
+            service.stop()
 
-        async def stop_on_sleep(_d: float) -> None:
+        async def stop_on_sleep(_duration: float) -> None:
             service.stop()
 
         with (
-            patch.object(ValidatorService, "_maybe_produce_block", mock_block),
+            patch.object(
+                ValidatorService,
+                "_maybe_produce_block",
+                capture_block_production,
+            ),
             patch("asyncio.sleep", new=stop_on_sleep),
         ):
             await service.run()
 
-        # Block path bypassed.
-        assert block_calls == []
+        assert proposed_slots == [current_slot]
 
-    async def test_run_loop_skips_attestation_when_gated(
+    async def test_run_loop_skips_attestation_during_sync_lag(
         self, sync_service: SyncService, key_manager: XmssKeyManager
     ) -> None:
         """
@@ -1572,7 +1578,7 @@ class TestSyncLagGate:
         assert attest_calls == []
         assert Slot(10) not in service._attested_slots
 
-    def test_gate_logs_only_on_transition(
+    def test_attestation_gate_logs_only_on_transition(
         self, sync_service: SyncService, caplog: pytest.LogCaptureFixture
     ) -> None:
         """
@@ -1580,7 +1586,6 @@ class TestSyncLagGate:
 
         Fields recorded
         ---------------
-        - duty
         - slot
         - head_slot
         - lag
@@ -1595,19 +1600,20 @@ class TestSyncLagGate:
 
         with caplog.at_level("INFO"):
             # Two consecutive queries: only the first is a transition.
-            first = service._is_synced_for_duties(Slot(20), "block")
-            second = service._is_synced_for_duties(Slot(20), "block")
+            first = service._is_synced_for_attestations(Slot(20))
+            second = service._is_synced_for_attestations(Slot(20))
 
         assert first is False
         assert second is False
 
         # Exactly one closure record, with the expected fields.
         transition_records = [
-            r.getMessage() for r in caplog.records if "duty gate closed" in r.getMessage()
+            record.getMessage()
+            for record in caplog.records
+            if "attestation gate closed" in record.getMessage()
         ]
         assert len(transition_records) == 1
         message = transition_records[0]
-        assert "duty=block" in message
         assert "slot=20" in message
         assert "head_slot=3" in message
         assert "lag=17" in message
