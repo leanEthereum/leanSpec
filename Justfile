@@ -130,6 +130,11 @@ apitest server_url *args:
 interop *args:
     uv run --group test pytest tests/interop/ -v --no-cov --timeout=120 -x --tb=short --log-cli-level=INFO "$@"
 
+# Generate reference pages and navigation from spec docstrings
+[group('docs')]
+docs-generate:
+    uv run python tools/generate_docs.py
+
 # Build documentation site with mkdocs
 [group('docs')]
 docs *args:
