@@ -45,6 +45,26 @@ STATE_TRANSITION_BUCKETS = (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4)
 REORG_DEPTH_BUCKETS = (1, 2, 3, 5, 7, 10, 20, 30, 50, 100)
 """Block count. Reorg depths above 10 are rare and signal network issues."""
 
+GOSSIP_ARRIVAL_DELAY_BUCKETS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.2, 1.6, 2.4, 4, 8, 16)
+"""
+Seconds. The upper half sits on interval and slot multiples, so 0.8, 1.6, 2.4
+and 4 answer a timing question directly: did the message make its own
+interval, the next one, its own slot? Below 0.8 the edges halve instead, to
+resolve a healthy population that all lands inside one interval.
+"""
+
+GOSSIP_ARRIVAL_POSITIONS = ("before", "inside", "after")
+"""Every arrival position reachable from a signed delta."""
+
+GOSSIP_ARRIVAL_POSITIONS_NON_NEGATIVE = ("inside", "after")
+"""
+Positions reachable when the anchor cannot follow the arrival.
+
+Aggregates anchor to the latest aggregation boundary at or before the
+arrival, so their delta never goes negative. Exporting `before` there would
+create a series that can never move.
+"""
+
 # Section labels for attestation aggregate coverage gauges. These match the
 # names printed in slot/report logs: timely, late, block, combined,
 # aggregate_start_new, proposal_payloads, proposal_gossip, and proposal_combined.
@@ -169,6 +189,20 @@ class MetricsRegistry:
     # Network
     lean_connected_peers: Gauge | _NoOpMetric = _NOOP
     """Current number of active peer connections."""
+
+    # Gossip arrival timing
+    lean_gossip_block_arrival_delay_seconds: Histogram | _NoOpMetric = _NOOP
+    """Absolute distance from a gossip block's arrival to its due interval."""
+    lean_gossip_attestation_arrival_delay_seconds: Histogram | _NoOpMetric = _NOOP
+    """Absolute distance from a gossip attestation's arrival to its due interval."""
+    lean_gossip_aggregation_arrival_delay_seconds: Histogram | _NoOpMetric = _NOOP
+    """Distance from a gossip aggregate's arrival to the latest aggregation boundary."""
+    lean_gossip_block_arrival_total: Counter | _NoOpMetric = _NOOP
+    """Gossip blocks counted by arrival position."""
+    lean_gossip_attestation_arrival_total: Counter | _NoOpMetric = _NOOP
+    """Gossip attestations counted by arrival position."""
+    lean_gossip_aggregation_arrival_total: Counter | _NoOpMetric = _NOOP
+    """Gossip aggregates counted by arrival position."""
 
     def init(
         self,
@@ -349,6 +383,67 @@ class MetricsRegistry:
             registry=reg,
         )
         self.lean_connected_peers.set(0)
+
+        # Gossip arrival timing (leanMetrics: Gossip Arrival Metrics)
+        #
+        # The histograms carry the absolute distance, so an early arrival and a
+        # late one of the same size share a bucket. The counters' `position`
+        # label is what separates them.
+        self.lean_gossip_block_arrival_delay_seconds = Histogram(
+            "lean_gossip_block_arrival_delay_seconds",
+            (
+                "Absolute delay between a gossip block's arrival and the start "
+                "of the interval it was due in."
+            ),
+            buckets=GOSSIP_ARRIVAL_DELAY_BUCKETS,
+            registry=reg,
+        )
+        self.lean_gossip_attestation_arrival_delay_seconds = Histogram(
+            "lean_gossip_attestation_arrival_delay_seconds",
+            (
+                "Absolute delay between a gossip attestation's arrival and the "
+                "start of the interval it was due in."
+            ),
+            buckets=GOSSIP_ARRIVAL_DELAY_BUCKETS,
+            registry=reg,
+        )
+        self.lean_gossip_aggregation_arrival_delay_seconds = Histogram(
+            "lean_gossip_aggregation_arrival_delay_seconds",
+            (
+                "Delay between a gossip aggregate's arrival and the most recent "
+                "aggregation-interval boundary at or before it."
+            ),
+            buckets=GOSSIP_ARRIVAL_DELAY_BUCKETS,
+            registry=reg,
+        )
+        self.lean_gossip_block_arrival_total = Counter(
+            "lean_gossip_block_arrival_total",
+            "Gossip blocks by arrival position relative to the interval they were due in.",
+            ["position"],
+            registry=reg,
+        )
+        self.lean_gossip_attestation_arrival_total = Counter(
+            "lean_gossip_attestation_arrival_total",
+            "Gossip attestations by arrival position relative to the interval they were due in.",
+            ["position"],
+            registry=reg,
+        )
+        self.lean_gossip_aggregation_arrival_total = Counter(
+            "lean_gossip_aggregation_arrival_total",
+            (
+                "Gossip aggregates by arrival position relative to the most "
+                "recent aggregation-interval boundary."
+            ),
+            ["position"],
+            registry=reg,
+        )
+        # Create every reachable series up front so a dashboard renders a flat
+        # zero instead of a gap before the first message of that kind lands.
+        for position in GOSSIP_ARRIVAL_POSITIONS:
+            self.lean_gossip_block_arrival_total.labels(position=position).inc(0)
+            self.lean_gossip_attestation_arrival_total.labels(position=position).inc(0)
+        for position in GOSSIP_ARRIVAL_POSITIONS_NON_NEGATIVE:
+            self.lean_gossip_aggregation_arrival_total.labels(position=position).inc(0)
 
         self._initialized = True
 
