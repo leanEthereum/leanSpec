@@ -93,8 +93,13 @@ class ValidatorDutiesMixin(LstarSpecBase):
         if justified_source.root == Bytes32.zero():
             justified_source = Checkpoint(root=store.head, slot=justified_source.slot)
 
-        # Sanity check: the source must be older or equal to the target.
-        assert justified_source.slot <= target_checkpoint.slot
+        # The target walk is bounded by the safe target and the finalized checkpoint, not by
+        # the justified one. On a sparse chain the justifiability walk can therefore land
+        # behind the head's justified checkpoint, and a vote with its source after its target
+        # is one no peer admits. Vote for the justified checkpoint itself in that case: it is
+        # on the head chain, it is justifiable, and the vote keeps its weight in fork choice.
+        if justified_source.slot > target_checkpoint.slot:
+            target_checkpoint = justified_source
 
         return self.attestation_data_class(
             slot=slot,
