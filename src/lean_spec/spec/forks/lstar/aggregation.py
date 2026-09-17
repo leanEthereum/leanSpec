@@ -193,9 +193,9 @@ class AggregationMixin(LstarSpecBase):
             )
             new_aggregates.append(SignedAggregatedAttestation(data=attestation_data, proof=proof))
 
-        # Replace the new-payload pool with this round's proofs, keyed by attestation data.
-        # Future rounds reuse these as building blocks.
-        new_aggregated_payloads = {
+        # This round's proofs, keyed by attestation data.
+        # Each one subsumes the children it was built from, so it replaces them.
+        aggregated_payloads = {
             signed_attestation.data: {signed_attestation.proof}
             for signed_attestation in new_aggregates
         }
@@ -204,8 +204,26 @@ class AggregationMixin(LstarSpecBase):
         remaining_attestation_signatures = {
             attestation_data: signatures
             for attestation_data, signatures in store.attestation_signatures.items()
-            if attestation_data not in new_aggregated_payloads
+            if attestation_data not in aggregated_payloads
         }
+
+        # Votes the loop skipped keep the proofs they already had.
+        #
+        # Skipping builds no replacement, so a pool rebuilt from this round's
+        # proofs alone would drop them. These proofs are pending, not yet
+        # promoted, and a vote whose gossip signatures were already absorbed
+        # has no other copy left. Dropping one loses its validators' votes.
+        #
+        # Example, where vote A got a fresh proof and vote B was skipped:
+        #
+        #   pending before  ->  { A: {P_a}, B: {P_b} }
+        #   this round      ->  { A: {P_a'} }
+        #   pending after   ->  { B: {P_b}, A: {P_a'} }
+        new_aggregated_payloads = {
+            attestation_data: proofs
+            for attestation_data, proofs in store.latest_new_aggregated_payloads.items()
+            if attestation_data not in aggregated_payloads
+        } | aggregated_payloads
 
         return store.model_copy(
             update={
