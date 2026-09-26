@@ -38,6 +38,17 @@ class StateTransitionFixture(BaseConsensusFixture):
     post_state_root: Bytes32 | None = None
     """Hash tree root of the full post-state, so two clients cannot pass with divergent state."""
 
+    skip_slot_processing: list[bool] | None = None
+    """
+    Per block, whether the runner must skip slot processing before processing that block.
+
+    Most tests advance slots for every block, and there the field is absent. It is emitted
+    only by the tests that deliberately leave the state behind the block's slot, because
+    that is the state they are testing the rejection of. A runner that calls the whole state
+    transition for such a block advances the slot first and never reaches the mismatch, so
+    without this the fixture cannot be reproduced from its own contents.
+    """
+
 
 class StateTransitionTest(BaseTestSpec):
     """
@@ -140,12 +151,18 @@ class StateTransitionTest(BaseTestSpec):
         if self.post is not None and actual_post_state is not None:
             self.post.validate_against_state(actual_post_state, block_registry=block_registry)
 
+        # Emitted only when some block needs it, so the ordinary fixture is unchanged.
+        skip_slot_processing = [block_spec.skip_slot_processing for block_spec in self.blocks]
+        if not any(skip_slot_processing):
+            skip_slot_processing = None
+
         return StateTransitionFixture(
             pre=self.pre,
             blocks=filled_blocks,
             post=self.post,
             post_state_root=post_state_root,
             rejection_reason=rejection_reason,
+            skip_slot_processing=skip_slot_processing,
         )
 
     def _build_block_from_spec(
