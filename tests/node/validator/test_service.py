@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,7 +23,7 @@ from lean_spec.node.sync.service import SyncService
 from lean_spec.node.validator import ValidatorRegistry, ValidatorService
 from lean_spec.node.validator.constants import SYNC_LAG_THRESHOLD
 from lean_spec.node.validator.registry import ValidatorEntry
-from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME
+from lean_spec.spec.crypto.xmss import TARGET_SIGNATURE_SCHEME, SecretKey
 from lean_spec.spec.forks import RejectionReason, Slot, SpecRejectionError, ValidatorIndex
 from lean_spec.spec.forks.lstar import Store
 from lean_spec.spec.forks.lstar.config import MILLISECONDS_PER_INTERVAL
@@ -196,7 +198,8 @@ class TestSignWithKey:
         mock_signature = MagicMock(name="sig")
 
         with patch(_SCHEME) as scheme:
-            scheme.get_prepared_interval.return_value = [3]
+            scheme.get_activation_interval.return_value = range(100)
+            scheme.get_prepared_interval.return_value = range(4)
             scheme.sign.return_value = mock_signature
 
             service._sign_with_key(validator_entry, Slot(3), MagicMock(), "attestation_secret_key")
@@ -213,8 +216,9 @@ class TestSignWithKey:
         mock_signature = MagicMock(name="sig")
 
         with patch(_SCHEME) as scheme:
+            scheme.get_activation_interval.return_value = range(100)
             scheme.get_prepared_interval.side_effect = (
-                lambda key: [] if key is attestation_key else [5]
+                lambda key: range(5) if key is attestation_key else range(5, 7)
             )
             scheme.advance_preparation.return_value = advanced
             scheme.sign.return_value = mock_signature
@@ -235,7 +239,16 @@ class TestSignWithKey:
         mock_signature = MagicMock(name="sig")
 
         with patch(_SCHEME) as scheme:
-            scheme.get_prepared_interval.side_effect = lambda key: [7] if key is key_v3 else []
+            scheme.get_activation_interval.return_value = range(100)
+            scheme.get_prepared_interval.side_effect = lambda key: (
+                range(6, 8)
+                if key is key_v3
+                else range(4, 6)
+                if key is key_v2
+                else range(2, 4)
+                if key is key_v1
+                else range(0, 2)
+            )
             scheme.advance_preparation.side_effect = [key_v1, key_v2, key_v3]
             scheme.sign.return_value = mock_signature
 
@@ -254,8 +267,9 @@ class TestSignWithKey:
         advanced = MagicMock(name="advanced_att")
 
         with patch(_SCHEME) as scheme:
+            scheme.get_activation_interval.return_value = range(100)
             scheme.get_prepared_interval.side_effect = (
-                lambda key: [] if key is attestation_key else [4]
+                lambda key: range(4) if key is attestation_key else range(4, 6)
             )
             scheme.advance_preparation.return_value = advanced
             scheme.sign.return_value = MagicMock()
@@ -276,8 +290,9 @@ class TestSignWithKey:
         advanced_attestation = MagicMock(name="new_att")
 
         with patch(_SCHEME) as scheme:
+            scheme.get_activation_interval.return_value = range(100)
             scheme.get_prepared_interval.side_effect = (
-                lambda key: [] if key is attestation_key else [1]
+                lambda key: range(1) if key is attestation_key else range(1, 3)
             )
             scheme.advance_preparation.return_value = advanced_attestation
             scheme.sign.return_value = MagicMock()
@@ -299,8 +314,9 @@ class TestSignWithKey:
         advanced_proposal = MagicMock(name="new_prop")
 
         with patch(_SCHEME) as scheme:
+            scheme.get_activation_interval.return_value = range(100)
             scheme.get_prepared_interval.side_effect = (
-                lambda key: [] if key is proposal_key else [1]
+                lambda key: range(1) if key is proposal_key else range(1, 3)
             )
             scheme.advance_preparation.return_value = advanced_proposal
             scheme.sign.return_value = MagicMock()
@@ -321,8 +337,9 @@ class TestSignWithKey:
         mock_signature = MagicMock(name="ret_sig")
 
         with patch(_SCHEME) as scheme:
+            scheme.get_activation_interval.return_value = range(100)
             scheme.get_prepared_interval.side_effect = (
-                lambda key: [] if key is attestation_key else [2]
+                lambda key: range(2) if key is attestation_key else range(2, 4)
             )
             scheme.advance_preparation.return_value = advanced
             scheme.sign.return_value = mock_signature
@@ -332,6 +349,194 @@ class TestSignWithKey:
             )
 
         assert returned_signature is mock_signature
+
+
+class TestPreparationProgress:
+    """Terminating preparation with preserved eligible signing."""
+
+    @pytest.mark.parametrize("key_field", ["attestation_secret_key", "proposal_secret_key"])
+    @pytest.mark.parametrize("slot_condition", ["activation_end", "below_activation", "old_window"])
+    def test_unreachable_slot_refuses_and_preserves_eligible_signing(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        key_field: Literal["attestation_secret_key", "proposal_secret_key"],
+        slot_condition: str,
+    ) -> None:
+        """Impossible-duty rejection with an exact error and preserved eligible signing."""
+        scheme = TARGET_SIGNATURE_SCHEME
+        leaves_per_bottom_tree = scheme.config.LEAVES_PER_BOTTOM_TREE
+        activation_start = leaves_per_bottom_tree if slot_condition == "below_activation" else 0
+        active_slot_count = (
+            4 * leaves_per_bottom_tree
+            if slot_condition == "old_window"
+            else 2 * leaves_per_bottom_tree
+        )
+        key_pair = scheme.key_gen(Slot(activation_start), Uint64(active_slot_count))
+        secret_key = key_pair.secret_key
+        if slot_condition == "old_window":
+            secret_key = scheme.advance_preparation(secret_key)
+        activation_interval = scheme.get_activation_interval(secret_key)
+        prepared_interval = scheme.get_prepared_interval(secret_key)
+        requested_slot = (
+            activation_interval.stop
+            if slot_condition == "activation_end"
+            else prepared_interval.start - 1
+        )
+        if slot_condition == "old_window":
+            assert requested_slot in activation_interval
+        validator_entry = replace(_make_entry(key_manager), **{key_field: secret_key})
+        validator_registry = ValidatorRegistry()
+        validator_registry.add(validator_entry)
+        validator_service = ValidatorService(
+            sync_service, SlotClock(genesis_time=Uint64(0)), validator_registry
+        )
+        signing_message = Bytes32(b"\x42" * 32)
+        advancement_count = 0
+
+        def bounded_advance(secret_key: SecretKey) -> SecretKey:
+            nonlocal advancement_count
+            advancement_count += 1
+            # Fail a regressed busy loop deterministically instead of hanging pytest.
+            assert advancement_count <= 2, "service repeatedly advances an unreachable slot"
+            return scheme.advance_preparation(secret_key)
+
+        with patch(_SCHEME, wraps=scheme) as observed_scheme:
+            observed_scheme.advance_preparation.side_effect = bounded_advance
+            control_slot = Slot(prepared_interval.start + 1)
+            control_signature = validator_service._sign_with_key(
+                validator_entry, control_slot, signing_message, key_field
+            )
+            assert scheme.verify(
+                key_pair.public_key, control_slot, signing_message, control_signature
+            )
+            registered_entry = validator_registry.get(validator_entry.index)
+            assert registered_entry is not None
+
+            with pytest.raises(ValueError) as exception_info:
+                validator_service._sign_with_key(
+                    registered_entry, Slot(requested_slot), signing_message, key_field
+                )
+
+            expected_error_message = (
+                f"Slot {requested_slot} is outside the prepared interval "
+                f"[{prepared_interval.start}, {prepared_interval.stop}); "
+                "preparation cannot move backward."
+                if slot_condition == "old_window"
+                else "Key is not active for the specified slot."
+            )
+            assert str(exception_info.value) == expected_error_message
+
+            assert advancement_count == 0, (
+                "impossible slots should be rejected before preparing trees"
+            )
+            assert validator_registry.get(validator_entry.index) is registered_entry
+            assert observed_scheme.sign.call_count == 1, "the rejected duty must not reach signing"
+            recovery_slot = Slot(prepared_interval.start + 2)
+            recovery_signature = validator_service._sign_with_key(
+                registered_entry, recovery_slot, signing_message, key_field
+            )
+            assert scheme.verify(
+                key_pair.public_key, recovery_slot, signing_message, recovery_signature
+            )
+
+    @pytest.mark.parametrize("key_field", ["attestation_secret_key", "proposal_secret_key"])
+    def test_non_progressing_preparation_refuses_without_signing(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        key_field: Literal["attestation_secret_key", "proposal_secret_key"],
+    ) -> None:
+        """Non-progressing preparation rejection with an exact error and verified recovery."""
+        scheme = TARGET_SIGNATURE_SCHEME
+        key_pair = scheme.key_gen(Slot(0), Uint64(4 * scheme.config.LEAVES_PER_BOTTOM_TREE))
+        validator_entry = replace(_make_entry(key_manager), **{key_field: key_pair.secret_key})
+        secret_key = getattr(validator_entry, key_field)
+        prepared_interval = scheme.get_prepared_interval(secret_key)
+        requested_slot = Slot(prepared_interval.stop)
+        assert int(requested_slot) in scheme.get_activation_interval(secret_key)
+        validator_registry = ValidatorRegistry()
+        validator_registry.add(validator_entry)
+        validator_service = ValidatorService(
+            sync_service, SlotClock(genesis_time=Uint64(0)), validator_registry
+        )
+
+        with patch(_SCHEME, wraps=scheme) as observed_scheme:
+            # Model a backend that cannot make progress, with a bounded baseline failure.
+            observed_scheme.advance_preparation.side_effect = [
+                secret_key,
+                AssertionError("repeated no-op"),
+            ]
+            with pytest.raises(ValueError) as exception_info:
+                validator_service._sign_with_key(
+                    validator_entry, requested_slot, Bytes32(b"\x44" * 32), key_field
+                )
+            assert (
+                str(exception_info.value)
+                == f"Cannot advance preparation for slot {requested_slot}."
+            )
+            observed_scheme.advance_preparation.assert_called_once_with(secret_key)
+            observed_scheme.sign.assert_not_called()
+            assert validator_registry.get(validator_entry.index) is validator_entry
+            recovery_slot = Slot(prepared_interval.start + 1)
+            signing_message = Bytes32(b"\x45" * 32)
+            signed_signature = validator_service._sign_with_key(
+                validator_entry, recovery_slot, signing_message, key_field
+            )
+            assert scheme.verify(
+                key_pair.public_key, recovery_slot, signing_message, signed_signature
+            )
+
+    @pytest.mark.parametrize("key_field", ["attestation_secret_key", "proposal_secret_key"])
+    def test_reachable_future_slot_advances_and_remains_usable(
+        self,
+        sync_service: SyncService,
+        key_manager: XmssKeyManager,
+        key_field: Literal["attestation_secret_key", "proposal_secret_key"],
+    ) -> None:
+        """Verified future-duty signing across three preparation transitions with role isolation."""
+        scheme = TARGET_SIGNATURE_SCHEME
+        leaves_per_bottom_tree = scheme.config.LEAVES_PER_BOTTOM_TREE
+        key_pair = scheme.key_gen(Slot(0), Uint64(6 * leaves_per_bottom_tree))
+        validator_entry = replace(_make_entry(key_manager), **{key_field: key_pair.secret_key})
+        validator_registry = ValidatorRegistry()
+        validator_registry.add(validator_entry)
+        validator_service = ValidatorService(
+            sync_service, SlotClock(genesis_time=Uint64(0)), validator_registry
+        )
+        requested_slot = Slot(4 * leaves_per_bottom_tree + 1)
+        signing_message = Bytes32(b"\x43" * 32)
+
+        with patch(_SCHEME, wraps=scheme) as observed_scheme:
+            signed_signature = validator_service._sign_with_key(
+                validator_entry, requested_slot, signing_message, key_field
+            )
+            assert scheme.verify(
+                key_pair.public_key, requested_slot, signing_message, signed_signature
+            )
+            assert observed_scheme.advance_preparation.call_count == 3
+            advanced_entry = validator_registry.get(validator_entry.index)
+            assert advanced_entry is not None
+            assert int(requested_slot) in scheme.get_prepared_interval(
+                getattr(advanced_entry, key_field)
+            )
+            other_key_field = (
+                "proposal_secret_key"
+                if key_field == "attestation_secret_key"
+                else "attestation_secret_key"
+            )
+            assert advanced_entry == replace(
+                validator_entry, **{key_field: getattr(advanced_entry, key_field)}
+            )
+            assert getattr(advanced_entry, other_key_field) is getattr(
+                validator_entry, other_key_field
+            )
+            recovery_signature = validator_service._sign_with_key(
+                advanced_entry, requested_slot + Slot(1), signing_message, key_field
+            )
+            assert scheme.verify(
+                key_pair.public_key, requested_slot + Slot(1), signing_message, recovery_signature
+            )
 
 
 class TestValidatorServiceBasic:

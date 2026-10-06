@@ -378,17 +378,32 @@ class ValidatorService:
         key_field: Literal["attestation_secret_key", "proposal_secret_key"],
     ) -> Signature:
         """
-        Advance the chosen XMSS key to the slot, sign, and persist the advanced key.
+        Signing with forward-only preparation and retained key state.
 
-        XMSS keys are stateful one-time signatures, so each signature consumes key state.
-        The advanced key is written back so the next slot does not reuse it.
+        Preparation moves the resident tree window forward.
+        Signing history requires separate tracking.
+        Impossible slots must be rejected before tree construction or signing.
         """
         scheme = TARGET_SIGNATURE_SCHEME
         secret_key = getattr(validator_entry, key_field)
 
-        slot_int = int(slot)
-        while slot_int not in scheme.get_prepared_interval(secret_key):
-            secret_key = scheme.advance_preparation(secret_key)
+        requested_slot = int(slot)
+        if requested_slot not in scheme.get_activation_interval(secret_key):
+            raise ValueError("Key is not active for the specified slot.")
+
+        prepared_interval = scheme.get_prepared_interval(secret_key)
+        if requested_slot < prepared_interval.start:
+            raise ValueError(
+                f"Slot {slot} is outside the prepared interval "
+                f"[{prepared_interval.start}, {prepared_interval.stop}); "
+                "preparation cannot move backward."
+            )
+        while requested_slot not in prepared_interval:
+            advanced_secret_key = scheme.advance_preparation(secret_key)
+            advanced_prepared_interval = scheme.get_prepared_interval(advanced_secret_key)
+            if advanced_prepared_interval.start <= prepared_interval.start:
+                raise ValueError(f"Cannot advance preparation for slot {slot}.")
+            secret_key, prepared_interval = advanced_secret_key, advanced_prepared_interval
 
         signature = scheme.sign(secret_key, slot, message)
 
