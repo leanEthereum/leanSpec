@@ -7,24 +7,17 @@ from enum import Enum, auto
 
 class SyncState(Enum):
     """
-    Three-phase progression for the sync service.
+    Sync lifecycle and gossip eligibility.
 
-    Lifecycle:
+    Peer status activates a service that starts idle.
+    A finalized-slot gap resumes syncing after the service catches up.
 
-        IDLE -> SYNCING -> SYNCED
-          ^         |         |
-          +---------+---------+
-
-    - IDLE: no peers connected, or shutdown requested.
-    - SYNCING: active block processing and backfill driven by gossip.
-    - SYNCED: caught up to the network finalized slot.
-
-    Either active state may fall back to IDLE on disconnect.
-    SYNCED falls back to SYNCING when a gap reappears.
+    Peer disconnection preserves the current phase.
+    Shutdown stops the service tasks while preserving the phase.
     """
 
     IDLE = auto()
-    """No peers connected, or shutdown requested."""
+    """Initial phase awaiting peer status when immediate gossip processing is disabled."""
     SYNCING = auto()
     """Active block processing and backfill driven by gossip."""
     SYNCED = auto()

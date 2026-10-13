@@ -193,8 +193,8 @@ class Node:
         """
         Create a fully-wired node from genesis configuration.
 
-        If a database path is provided and contains existing state, the node
-        resumes from the persisted state. Otherwise, it starts fresh from genesis.
+        Store selection prefers persisted state, then a checkpoint anchor, then fresh genesis.
+        All three startup paths enable gossip before the first peer status exchange.
 
         Args:
             config: Node configuration with genesis parameters.

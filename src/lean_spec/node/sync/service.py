@@ -96,10 +96,20 @@ class SyncService:
     """Async callback for publishing aggregated attestations, or None when no publisher is wired."""
 
     state: SyncState = field(default=SyncState.IDLE)
-    """Current sync state. Defaults to IDLE, awaiting peer status."""
+    """
+    Current sync phase.
+
+    Default construction awaits peer status.
+    Immediate gossip startup overrides the initial phase.
+    """
 
     genesis_start: bool = field(default=False)
-    """When True, start in SYNCING state to accept gossip without waiting for peers."""
+    """
+    Enable gossip processing immediately at startup.
+
+    The node enables this for genesis, database recovery, and checkpoint anchors.
+    The flag selects the initial phase independently of the store source.
+    """
 
     _backfill: BackfillSync | None = field(default=None)
     """Backfill syncer instance (created lazily)."""
@@ -159,7 +169,7 @@ class SyncService:
     """
 
     def __post_init__(self) -> None:
-        """Wire sub-components and apply the genesis-start state hint."""
+        """Sync component wiring and initial gossip eligibility."""
         # Seed the persisted-head tracker from disk so a restarted node
         # diffs its slot index against the chain the database last saw.
         if self.database is not None:
@@ -177,8 +187,8 @@ class SyncService:
             process_block=self.process_block,
         )
 
-        # Genesis validators already hold the full genesis state.
-        # They process gossip blocks immediately without a peer status exchange.
+        # Every node startup path already supplies a local store.
+        # Immediate gossip processing also lets local validator callbacks process their products.
         if self.genesis_start:
             self.state = SyncState.SYNCING
 
